@@ -345,6 +345,14 @@ impl FireSim {
         Ok(())
     }
 
+    /// Arrival times for the whole grid, `i32::MIN` where still unburnt.
+    ///
+    /// Exposed as a slice because the renderer interpolates it: drawing fire
+    /// at the 20 m cell it was computed on is what makes a CA look like a CA.
+    pub fn arrival_times(&self) -> &[i32] {
+        &self.ignited_at
+    }
+
     /// Simulated time each cell ignited, or `None` if still unburnt.
     pub fn arrival_time(&self, c: Cell) -> Option<i32> {
         let v = self.ignited_at[c.row * self.world.fire_cols + c.col];

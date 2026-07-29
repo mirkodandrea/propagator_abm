@@ -6,13 +6,19 @@
 
 mod agents;
 mod camera;
+mod capture;
+mod field;
 mod fire_view;
 mod frame;
 mod roads;
 mod sim;
 mod terrain_mesh;
+mod textures;
 mod ui;
+mod vegetation;
 
+use bevy::core_pipeline::bloom::BloomSettings;
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use fire::Weather;
@@ -37,8 +43,8 @@ fn main() -> anyhow::Result<()> {
 
     let sim = Sim::new(scn, Weather::default(), 42)?;
 
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Spotorno — wildfire incident command".into(),
                 resolution: (1600.0, 1000.0).into(),
@@ -47,27 +53,46 @@ fn main() -> anyhow::Result<()> {
             ..default()
         }))
         .insert_resource(ClearColor(Color::srgb(0.55, 0.66, 0.78)))
+        // Ambient is sky bounce, so it is cool and weak; the sun carries the
+        // scene. Kept modest because vegetation is drawn at sub-pixel scale
+        // from altitude, and an over-lit canopy aliases into white sparkle.
         .insert_resource(AmbientLight {
-            color: Color::srgb(0.75, 0.80, 0.95),
-            brightness: 320.0,
+            color: Color::srgb(0.72, 0.78, 0.92),
+            brightness: 130.0,
         })
         .add_plugins(EguiPlugin)
         .init_resource::<ui::UiFocus>()
         .insert_resource(sim)
-        .add_systems(Startup, (setup_scene, fire_view::setup, agents::spawn))
+        .add_systems(
+            Startup,
+            (setup_scene, fire_view::setup, vegetation::spawn, agents::spawn),
+        )
         .add_systems(
             Update,
             (
                 ui::panel,
                 camera::controls.after(ui::panel),
                 controls,
+                fire_view::layer_controls,
                 sim::step_fire,
-                fire_view::update,
+                fire_view::update_overlay,
+                fire_view::update_flames,
+                vegetation::burn,
                 agents::animate_beacons,
                 agents::update_beacons,
+                capture::manual,
             ),
-        )
-        .run();
+        );
+
+    // Unattended capture: runs the scenario forward, grabs one frame per fire
+    // layer and exits. Only active when SPOTORNO_SHOT names a directory.
+    if let Some(capture) = capture::from_env() {
+        app.insert_resource(capture)
+            .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
+            .add_systems(Update, capture::scripted.after(fire_view::update_flames));
+    }
+
+    app.run();
 
     Ok(())
 }
@@ -84,7 +109,9 @@ fn setup_scene(
     // Late-afternoon sun from the south-west: the hour when Ligurian fires run.
     commands.spawn(DirectionalLightBundle {
         directional_light: DirectionalLight {
-            illuminance: 12_000.0,
+            illuminance: 9_500.0,
+            // Warm, low sun: the light a Ligurian fire actually runs under.
+            color: Color::srgb(1.0, 0.93, 0.82),
             shadows_enabled: true,
             ..default()
         },
@@ -102,10 +129,16 @@ fn setup_scene(
     let focus = frame::to_bevy(p, h);
     commands.spawn((
         Camera3dBundle {
+            // HDR plus bloom is what makes the flames read as light rather
+            // than as orange paint: the fire layers deliberately push vertex
+            // colours above 1.0, and without an HDR target that just clips.
+            camera: Camera { hdr: true, ..default() },
+            tonemapping: Tonemapping::TonyMcMapface,
             transform: Transform::from_xyz(focus.x, focus.y + 2000.0, focus.z + 2000.0),
             projection: PerspectiveProjection { far: 40_000.0, ..default() }.into(),
             ..default()
         },
+        BloomSettings { intensity: 0.20, ..BloomSettings::NATURAL },
         OrbitCamera { focus, distance: 2600.0, ..default() },
     ));
 }

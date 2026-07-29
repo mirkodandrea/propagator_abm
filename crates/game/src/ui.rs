@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use fire::CellFire;
 
+use crate::fire_view::FireLayer;
 use crate::sim::Sim;
 
 /// Speed presets, in simulated seconds per wall-clock second. An initial
@@ -19,7 +20,12 @@ const PRESETS: [(f32, &str); 5] =
 #[derive(Resource, Default)]
 pub struct UiFocus(pub bool);
 
-pub fn panel(mut contexts: EguiContexts, mut sim: ResMut<Sim>, mut focus: ResMut<UiFocus>) {
+pub fn panel(
+    mut contexts: EguiContexts,
+    mut sim: ResMut<Sim>,
+    mut layer: ResMut<FireLayer>,
+    mut focus: ResMut<UiFocus>,
+) {
     let ctx = contexts.ctx_mut();
 
     let burning = sim.fire.state().iter().filter(|s| **s == CellFire::Burning).count();
@@ -34,10 +40,12 @@ pub fn panel(mut contexts: EguiContexts, mut sim: ResMut<Sim>, mut focus: ResMut
         .fold(0.0f32, f32::max);
     let threatened = sim.fire.exposure().threatened(0.05).count();
     let lost = sim.fire.exposure().fields().iter().filter(|f| f.alight).count();
+    let peak_hazard = sim.fire.hazard().peak();
     let clock = sim.clock();
     let playing = sim.playing;
     let mut speed = sim.speed;
     let mut toggle = false;
+    let mut selected = *layer;
 
     egui::Window::new("Incident")
         .anchor(egui::Align2::LEFT_TOP, [12.0, 12.0])
@@ -80,6 +88,18 @@ pub fn panel(mut contexts: EguiContexts, mut sim: ResMut<Sim>, mut focus: ResMut
             });
 
             ui.separator();
+            ui.label("Fire layer");
+            ui.horizontal_wrapped(|ui| {
+                for (i, l) in FireLayer::ALL.iter().enumerate() {
+                    let label = format!("{}  {}", i + 1, l.label());
+                    if ui.selectable_label(selected == *l, label).clicked() {
+                        selected = *l;
+                    }
+                }
+            });
+            ui.small(selected.legend());
+
+            ui.separator();
             egui::Grid::new("stats").num_columns(2).show(ui, |ui| {
                 ui.label("Burnt");
                 ui.label(format!("{:.1} ha", (burning + burnt) as f32 * cell_ha));
@@ -93,6 +113,9 @@ pub fn panel(mut contexts: EguiContexts, mut sim: ResMut<Sim>, mut focus: ResMut
                     fire::exposure::flame_length_m(peak_fli)
                 ));
                 ui.end_row();
+                ui.label("Peak spread risk");
+                ui.label(format!("{:.0}% next step", peak_hazard * 100.0));
+                ui.end_row();
                 ui.label("Households threatened");
                 ui.label(format!("{threatened}"));
                 ui.end_row();
@@ -102,11 +125,17 @@ pub fn panel(mut contexts: EguiContexts, mut sim: ResMut<Sim>, mut focus: ResMut
             });
 
             ui.separator();
-            ui.small("space play/pause · [ ] speed · drag orbit · right-drag pan · scroll zoom");
+            ui.small(
+                "space play/pause · [ ] speed · 1-4 fire layer · drag orbit · \
+                 right-drag pan · scroll zoom",
+            );
         });
 
     if toggle {
         sim.playing = !sim.playing;
+    }
+    if selected != *layer {
+        *layer = selected;
     }
     if (speed - sim.speed).abs() > f32::EPSILON {
         sim.speed = speed.clamp(MIN_SPEED, MAX_SPEED);

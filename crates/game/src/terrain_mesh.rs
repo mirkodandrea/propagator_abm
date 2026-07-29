@@ -5,15 +5,21 @@
 //! is split into chunks instead, each its own entity, so the renderer can cull
 //! and the driver gets sensibly sized buffers.
 //!
-//! Vertex colour comes from the 20 m fuel raster, sampled per vertex. That is
-//! the one place the coarse grid is allowed to show through visually, and it
-//! reads as vegetation patches rather than stair-steps because the geometry
-//! underneath is smooth.
+//! The terrain is **ground**, not vegetation. It used to be painted with the
+//! fuel raster's classes, which read as a camouflage patchwork however much
+//! the boundaries were warped — the underlying data is 20 m and no amount of
+//! colour dithering hides that. Vegetation is now drawn as actual plants (see
+//! [`crate::vegetation`]), and this layer paints only what is under them:
+//! soil, rock on the steep faces, sand at the shore, sea below the waterline.
+//! Ground colour therefore varies with slope, elevation and noise — geology,
+//! not land cover — which is both honest and far better looking.
 
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
 use scenario::{Cell, Pos, Scenario};
+
+use crate::field::noise;
 
 /// Samples per chunk edge. 128 keeps each chunk at ~16 k vertices.
 const CHUNK: usize = 128;
@@ -21,17 +27,51 @@ const CHUNK: usize = 128;
 #[derive(Component)]
 pub struct TerrainChunk;
 
-/// Colour per `eu_fuel12` class. Deliberately desaturated: the fire overlay
-/// has to read clearly on top of this.
-fn fuel_color(fuel: i32, elev: f32) -> Color {
-    let c = match fuel {
-        1..=3 => Color::srgb(0.62, 0.63, 0.36),   // grassland
-        4..=6 => Color::srgb(0.24, 0.38, 0.21),   // broadleaves
-        7..=9 => Color::srgb(0.44, 0.47, 0.26),   // shrubs / macchia
-        10..=12 => Color::srgb(0.15, 0.29, 0.20), // conifers
-        _ if elev <= 0.5 => Color::srgb(0.10, 0.16, 0.30), // sea
-        _ => Color::srgb(0.42, 0.40, 0.36),       // bare / built
+/// Ground colour from elevation, steepness and noise.
+///
+/// `slope_cos` is the vertical component of the surface normal: 1 on the flat,
+/// falling toward 0 on a cliff. Ligurian ground is dry pale limestone soil,
+/// with bare rock showing wherever it is too steep to hold any.
+fn ground_color(elev: f32, slope_cos: f32, p: Pos) -> [f32; 3] {
+    if elev <= 0.5 {
+        return [0.07, 0.13, 0.26]; // sea
+    }
+
+    // Two scales of variation: broad soil banding, plus a fine grain that
+    // keeps the 5 m posting from reading as flat facets.
+    let broad = noise(p.x / 140.0, p.y / 140.0, 0x1A);
+    let grain = noise(p.x / 11.0, p.y / 11.0, 0x2B);
+    let mottle = 0.90 + 0.18 * (0.7 * broad + 0.3 * grain);
+
+    // Grey-olive, not red-brown: this is limestone karst with a thin dry duff
+    // over it. Saturated soil colour reads as Mars from altitude, especially
+    // under a warm sun.
+    let soil = [0.30, 0.28, 0.22];
+    let duff = [0.25, 0.25, 0.19];
+    let rock = [0.46, 0.45, 0.42];
+    let sand = [0.60, 0.56, 0.46];
+
+    // Flatter ground holds more litter and is darker; ridges wash out.
+    let soil = {
+        let litter = ((slope_cos - 0.90) / 0.10).clamp(0.0, 1.0) * broad;
+        [
+            soil[0] * (1.0 - litter) + duff[0] * litter,
+            soil[1] * (1.0 - litter) + duff[1] * litter,
+            soil[2] * (1.0 - litter) + duff[2] * litter,
+        ]
     };
+
+    // Rock takes over as the face steepens; sand only within a few metres of
+    // sea level, where the beach actually is.
+    let rockiness = ((0.86 - slope_cos) / 0.26).clamp(0.0, 1.0);
+    let beach = ((6.0 - elev) / 6.0).clamp(0.0, 1.0) * (slope_cos - 0.8).max(0.0) * 5.0;
+    let beach = beach.clamp(0.0, 1.0);
+
+    let mut c = [0.0; 3];
+    for i in 0..3 {
+        let base = soil[i] * (1.0 - rockiness) + rock[i] * rockiness;
+        c[i] = (base * (1.0 - beach) + sand[i] * beach) * mottle;
+    }
     c
 }
 
@@ -81,9 +121,8 @@ pub fn build(
                     let n = t.normal_at(p);
                     normals.push([n[0], n[1], -n[2]]);
 
-                    let cell = scn.world.cell_of(p);
-                    let fuel = scn.fuel[cell.row * scn.world.fire_cols + cell.col];
-                    let col = fuel_color(fuel, elev).to_linear();
+                    let col = ground_color(elev, n[1], p);
+                    let col = Color::srgb(col[0], col[1], col[2]).to_linear();
                     colors.push([col.red, col.green, col.blue, 1.0]);
                     uvs.push([c as f32 / cn as f32, r as f32 / rn as f32]);
                 }
