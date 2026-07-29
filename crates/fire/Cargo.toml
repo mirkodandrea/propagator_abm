@@ -1,0 +1,11 @@
+[package]
+name = "fire"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PROPAGATOR core integration: stepping, intervention, structure exposure"
+
+[dependencies]
+propagator-core.workspace = true
+scenario.workspace = true
+anyhow.workspace = true

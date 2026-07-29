@@ -1,0 +1,11 @@
+[package]
+name = "scenario"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Baked Spotorno scenario assets: terrain, OSM vectors, population"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
