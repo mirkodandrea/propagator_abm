@@ -10,6 +10,7 @@ mod buildings;
 mod camera;
 mod capture;
 mod command;
+mod far_terrain;
 mod field;
 mod fire_shader;
 mod fire_view;
@@ -77,12 +78,17 @@ fn main() -> anyhow::Result<()> {
         .add_plugins(fire_shader::FireShaderPlugin)
         .add_plugins(sky::SkyPlugin)
         .add_plugins(sea::SeaPlugin)
+        .add_plugins(far_terrain::FarTerrainPlugin)
         .init_resource::<ui::UiFocus>()
         .init_resource::<ignition_edit::IgnitionTool>()
         .init_resource::<inspect::Selected>()
         .init_resource::<inspect::ClickTracker>()
         .init_resource::<command::OrderTool>()
         .init_resource::<browser::BrowserUi>()
+        .init_resource::<camera::CameraMode>()
+        .init_resource::<camera::FirstPersonLook>()
+        .init_resource::<buildings::HoveredHousehold>()
+        .init_resource::<ui::PanelState>()
         .add_event::<sim::SimRestarted>()
         .insert_resource(sim)
         .add_systems(
@@ -103,29 +109,34 @@ fn main() -> anyhow::Result<()> {
         )
         // Ordering that matters, and only that: the panels decide whether the
         // pointer belongs to the UI, so they run before anything that reads the
-        // mouse; and the restart resets have to land before the views that
-        // would otherwise read the stale state they are clearing.
+        // mouse; the docked panels have to all land before `sync_viewport` reads
+        // what space is left for the 3D camera; and the restart resets have to
+        // land before the views that would otherwise read the stale state they
+        // are clearing.
         .add_systems(
             Update,
             (
                 (
                     ui::panel,
                     ui::wildfire_panel,
-                    inspect::panel,
-                    command::panel,
                     browser::panel,
+                    command::panel,
+                    inspect::panel,
+                    ui::sync_viewport,
                 )
                     .chain(),
                 (
+                    camera::validate_mode,
                     camera::controls,
                     ignition_edit::hover,
                     ignition_edit::place,
                     command::hover,
                     command::place,
                     inspect::pick_click,
+                    buildings::hover,
                 )
                     .chain()
-                    .after(command::panel),
+                    .after(inspect::panel),
             ),
         )
         .add_systems(
@@ -143,6 +154,7 @@ fn main() -> anyhow::Result<()> {
                     inspect::reset,
                     units::reset,
                     command::reset,
+                    camera::reset,
                 )
                     .after(ui::wildfire_panel),
                 (
@@ -150,8 +162,6 @@ fn main() -> anyhow::Result<()> {
                     fire_view::update_flames,
                     vegetation::burn,
                     buildings::damage,
-                    agents::animate_beacons,
-                    agents::update_beacons,
                     people::spawn_vehicles,
                     people::update_people,
                     people::update_vehicles,
@@ -267,6 +277,7 @@ fn controls(
     keys: Res<ButtonInput<KeyCode>>,
     mut sim: ResMut<Sim>,
     mut tool: ResMut<ignition_edit::IgnitionTool>,
+    mut cam_mode: ResMut<camera::CameraMode>,
     mut restarted: EventWriter<sim::SimRestarted>,
 ) {
     if keys.just_pressed(KeyCode::Space) {
@@ -289,9 +300,11 @@ fn controls(
         };
     }
     // Escape leaves placing mode, which is the reflex for it, without also
-    // being a second binding for anything else.
+    // being a second binding for anything else. It also drops out of a
+    // follow or first-person ride back to the free orbit camera.
     if keys.just_pressed(KeyCode::Escape) {
         tool.mode = ignition_edit::EditMode::Off;
+        *cam_mode = camera::CameraMode::Free;
     }
     if keys.just_pressed(KeyCode::KeyR) {
         match sim.restart() {

@@ -24,6 +24,11 @@ const ZOOM_DISTANCE_M: f32 = 220.0;
 #[derive(Resource)]
 pub struct BrowserUi {
     pub open: bool,
+    /// Collapsed to a thin strip rather than closed outright — see the other
+    /// docked panels' chevron in `crate::ui::PanelState`. Kept as its own
+    /// field rather than folded into `PanelState` because this panel's other
+    /// toggle (`open`, closed with "✕" or `b`) already lives here.
+    pub collapsed: bool,
     pub search: String,
     pub show_households: bool,
     /// Off by default: 1,577 people is most of the roster, and the household
@@ -36,7 +41,8 @@ pub struct BrowserUi {
 impl Default for BrowserUi {
     fn default() -> Self {
         Self {
-            open: false,
+            open: true,
+            collapsed: false,
             search: String::new(),
             show_households: true,
             show_people: false,
@@ -70,21 +76,28 @@ pub fn panel(
     let ctx = contexts.ctx_mut();
     let mut jump_to: Option<Target> = None;
     let mut close = false;
+    let mut collapsed = browser.collapsed;
 
-    egui::Window::new("Entities")
-        .anchor(egui::Align2::RIGHT_TOP, [-12.0, 12.0])
+    egui::SidePanel::right("entities_dock")
         .default_width(340.0)
-        .default_height(480.0)
-        .resizable(true)
+        .resizable(!collapsed)
+        .width_range(if collapsed { 26.0..=26.0 } else { 240.0..=560.0 })
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("Entities");
+                let open = crate::ui::collapse_button(ui, !collapsed, "⏵", "⏴");
+                collapsed = !open;
+                if !collapsed {
+                    ui.heading("Entities");
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("✕").clicked() {
+                    if ui.small_button("✕").on_hover_text("Close (b to reopen)").clicked() {
                         close = true;
                     }
                 });
             });
+            if collapsed {
+                return;
+            }
 
             ui.horizontal(|ui| {
                 ui.label("Search");
@@ -123,6 +136,7 @@ pub fn panel(
             ui.small("click a row to select and centre the camera on it · b to close");
         });
 
+    browser.collapsed = collapsed;
     if close {
         browser.open = false;
     }

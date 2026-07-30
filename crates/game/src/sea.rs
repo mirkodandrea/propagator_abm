@@ -52,6 +52,32 @@ const WATER_ELEV_MAX: f32 = 0.6;
 /// sitting in the water. Shipped once at 0.35 m, which cleared neither.
 const WATER_BASE_Y: f32 = 2.0;
 
+/// How far past the real window edge the animated sea keeps going.
+///
+/// The real window's edge is a straight line, and a straight world-space
+/// line viewed obliquely is a straight line on screen no matter the angle —
+/// so where this mesh used to stop dead and hand off to
+/// `crate::far_terrain`'s flat, unanimated "sea colour" ground, the two
+/// never quite agreed on height or shading and the seam between them showed
+/// up as a stark, dead-straight line across the horizon. A modest real
+/// extension, still animated, still lit the same way as the rest of the
+/// water, removes the seam where the coastline is actually looked at; past
+/// this the flat continuation in `far_terrain` (which nothing gets close
+/// enough to compare against) takes over.
+const SEA_EXTEND_M: f32 = 3000.0;
+
+/// Elevation for a point that may be outside the real terrain grid: the real
+/// bilinear field inside the window, `far_terrain`'s continuation beyond it
+/// — so the "is this wet" test agrees with the ground the extension actually
+/// sits on instead of just clamping to the window edge's own elevation.
+fn elev_at(scn: &Scenario, p: Pos) -> f32 {
+    if scn.world.contains(p) {
+        scn.terrain.height_at(p)
+    } else {
+        crate::far_terrain::far_height(scn, p)
+    }
+}
+
 /// Probe ring radii for [`distance_to_shore`], metres. Past the last ring, a
 /// water point is "open water" for shading purposes — the shallow/deep split
 /// only needs to resolve the first hundred-odd metres off a beach.
@@ -119,7 +145,12 @@ fn distance_to_shore(scn: &Scenario, p: Pos) -> f32 {
         for k in 0..SHORE_PROBE_DIRS {
             let a = k as f32 / SHORE_PROBE_DIRS as f32 * std::f32::consts::TAU;
             let probe = Pos { x: p.x + r * a.cos(), y: p.y + r * a.sin() };
-            if !scn.world.contains(probe) || scn.terrain.height_at(probe) > WATER_ELEV_MAX {
+            // `elev_at`, not a bare `world.contains` check: a point already
+            // out in the `SEA_EXTEND_M` extension is by definition outside
+            // the real window, so the old `!contains(probe)` test tripped on
+            // the very first, smallest probe ring in every direction and
+            // reported the whole extension as if it were lapping the shore.
+            if elev_at(scn, probe) > WATER_ELEV_MAX {
                 return r;
             }
         }
@@ -137,8 +168,10 @@ fn spawn_sea(
     let t = &scn.terrain;
     let stride_m = t.posting * WATER_STRIDE as f32;
 
-    let coarse_cols = (t.cols - 1) / WATER_STRIDE + 1;
-    let coarse_rows = (t.rows - 1) / WATER_STRIDE + 1;
+    let x0 = -SEA_EXTEND_M;
+    let y0 = -SEA_EXTEND_M;
+    let coarse_cols = ((t.width_m + 2.0 * SEA_EXTEND_M) / stride_m).ceil() as usize + 1;
+    let coarse_rows = ((t.height_m + 2.0 * SEA_EXTEND_M) / stride_m).ceil() as usize + 1;
     let chunks_x = (coarse_cols - 1).div_ceil(WATER_CHUNK);
     let chunks_y = (coarse_rows - 1).div_ceil(WATER_CHUNK);
 
@@ -172,11 +205,9 @@ fn spawn_sea(
 
             for r in 0..rn {
                 for c in 0..cn {
-                    let row = ((r0 + r) * WATER_STRIDE).min(t.rows - 1);
-                    let col = ((c0 + c) * WATER_STRIDE).min(t.cols - 1);
-                    let gx = col as f32 * t.posting;
-                    let gy = t.height_m - row as f32 * t.posting;
-                    let e = t.elev[row * t.cols + col];
+                    let gx = x0 + (c0 + c) as f32 * stride_m;
+                    let gy = y0 + (r0 + r) as f32 * stride_m;
+                    let e = elev_at(scn, Pos { x: gx, y: gy });
                     elev.push(e);
 
                     positions.push([gx, WATER_BASE_Y, -gy]);

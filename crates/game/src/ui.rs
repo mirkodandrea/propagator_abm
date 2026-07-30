@@ -28,13 +28,54 @@ const PRESETS: [(f32, &str); 5] =
 #[derive(Resource, Default)]
 pub struct UiFocus(pub bool);
 
+/// Collapsed/expanded state of the four always-docked panels — Entities has
+/// its own `BrowserUi::open` (a full close, since it has no other job once
+/// hidden) and the Inspector has both this *and* its "✕" (which also drops
+/// the selection); collapsing this one just reclaims the screen space
+/// without losing what is selected.
+#[derive(Resource)]
+pub struct PanelState {
+    pub incident: bool,
+    pub wildfire: bool,
+    pub resources: bool,
+    pub inspector: bool,
+}
+
+impl Default for PanelState {
+    fn default() -> Self {
+        PanelState { incident: true, wildfire: true, resources: true, inspector: true }
+    }
+}
+
+/// A collapse/expand chevron, consistent across every docked panel. Returns
+/// the new state; callers still own writing it back to `PanelState` since
+/// each panel's `open` is a local copy taken out for the frame.
+pub(crate) fn collapse_button(
+    ui: &mut egui::Ui,
+    open: bool,
+    collapse_glyph: &str,
+    expand_glyph: &str,
+) -> bool {
+    let clicked = ui
+        .small_button(if open { collapse_glyph } else { expand_glyph })
+        .on_hover_text(if open { "Collapse" } else { "Expand" })
+        .clicked();
+    if clicked {
+        !open
+    } else {
+        open
+    }
+}
+
 pub fn panel(
     mut contexts: EguiContexts,
     mut sim: ResMut<Sim>,
     mut layer: ResMut<FireLayer>,
     mut focus: ResMut<UiFocus>,
+    mut panels: ResMut<PanelState>,
 ) {
     let ctx = contexts.ctx_mut();
+    let mut open = panels.incident;
 
     let burning = sim.fire.state().iter().filter(|s| **s == CellFire::Burning).count();
     let burnt = sim.fire.state().iter().filter(|s| **s == CellFire::Burnt).count();
@@ -60,20 +101,28 @@ pub fn panel(
     let mut toggle = false;
     let mut selected = *layer;
 
-    egui::Window::new("Incident")
-        .anchor(egui::Align2::LEFT_TOP, [12.0, 12.0])
-        .resizable(false)
+    egui::SidePanel::left("incident_dock")
+        .resizable(open)
+        .default_width(340.0)
+        .width_range(if open { 280.0..=560.0 } else { 26.0..=26.0 })
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.heading(format!("T+{clock}"));
-                ui.add_space(8.0);
-                if ui
-                    .button(if playing { "⏸ Pause" } else { "▶ Play" })
-                    .clicked()
-                {
-                    toggle = true;
+                open = collapse_button(ui, open, "⏴", "⏵");
+                if open {
+                    ui.heading(format!("T+{clock}"));
+                    ui.add_space(8.0);
+                    if ui
+                        .button(if playing { "⏸ Pause" } else { "▶ Play" })
+                        .clicked()
+                    {
+                        toggle = true;
+                    }
                 }
             });
+            if !open {
+                return;
+            }
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
 
             ui.separator();
             ui.label("Time acceleration");
@@ -194,6 +243,7 @@ pub fn panel(
                  i place ignition · r restart · click a house/person/car to \
                  inspect it · drag orbit · right-drag pan · scroll zoom",
             );
+            });
         });
 
     if let Some((centre, radius)) = order {
@@ -209,6 +259,7 @@ pub fn panel(
     if (speed - sim.speed).abs() > f32::EPSILON {
         sim.speed = speed.clamp(MIN_SPEED, MAX_SPEED);
     }
+    panels.incident = open;
 
     focus.0 = ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
@@ -225,9 +276,11 @@ pub fn wildfire_panel(
     mut sim: ResMut<Sim>,
     mut tool: ResMut<IgnitionTool>,
     mut focus: ResMut<UiFocus>,
+    mut panels: ResMut<PanelState>,
     mut restarted: EventWriter<SimRestarted>,
 ) {
     let ctx = contexts.ctx_mut();
+    let mut open = panels.wildfire;
 
     let mut weather = sim.weather;
     let mut commit_weather = false;
@@ -243,11 +296,22 @@ pub fn wildfire_panel(
     let added = sim.ignitions.len() - opening;
     let running = sim.time_s();
 
-    egui::Window::new("Wildfire")
-        .anchor(egui::Align2::RIGHT_TOP, [-12.0, 12.0])
-        .resizable(false)
-        .default_width(280.0)
+    egui::SidePanel::right("wildfire_dock")
+        .resizable(open)
+        .default_width(300.0)
+        .width_range(if open { 260.0..=520.0 } else { 26.0..=26.0 })
         .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                open = collapse_button(ui, open, "⏵", "⏴");
+                if open {
+                    ui.heading("Wildfire");
+                }
+            });
+            if !open {
+                return;
+            }
+            ui.separator();
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.label("Wind");
             ui.horizontal(|ui| {
                 compass(ui, live.wind_dir_deg as f32, weather.wind_dir_deg as f32);
@@ -396,6 +460,7 @@ pub fn wildfire_panel(
                     hhmm(running)
                 ));
             }
+            });
         });
 
     // Radius and mode are pure view state, so they go back immediately.
@@ -447,6 +512,7 @@ pub fn wildfire_panel(
             Err(e) => error!("restart failed: {e:#}"),
         }
     }
+    panels.wildfire = open;
 
     focus.0 |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
@@ -524,4 +590,54 @@ fn cardinal(deg: f32) -> &'static str {
 
 fn hhmm(s: i64) -> String {
     format!("{}h {:02}m", s / 3600, (s / 60) % 60)
+}
+
+/// Point the 3D camera's own viewport at whatever screen area the docked
+/// panels have *not* claimed this frame.
+///
+/// The panels are docked (`SidePanel`/`TopBottomPanel`), not floating windows,
+/// specifically so the game reads as one application with an external menu
+/// rather than a 3D view with widgets glued on top of it. That only pays off
+/// if the 3D render actually retreats into the leftover space instead of
+/// rendering full-screen underneath the panels' opaque backgrounds — and
+/// setting `Camera::viewport` is also what keeps click-to-inspect accurate,
+/// since `Camera::world_to_viewport`/`viewport_to_world` already account for
+/// it. Must run after every docked panel has called `.show()` this frame, or
+/// `ctx.available_rect()` reports space a panel is about to claim.
+pub fn sync_viewport(
+    mut contexts: EguiContexts,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    mut camera: Query<&mut Camera, With<crate::camera::OrbitCamera>>,
+) {
+    let ctx = contexts.ctx_mut();
+    let Ok(window) = windows.get_single() else {
+        return;
+    };
+    let Ok(mut cam) = camera.get_single_mut() else {
+        return;
+    };
+
+    let rect = ctx.available_rect();
+    let scale = window.scale_factor() as f32;
+    let phys_w = window.physical_width();
+    let phys_h = window.physical_height();
+
+    let min_x = (rect.min.x * scale).round().max(0.0) as u32;
+    let min_y = (rect.min.y * scale).round().max(0.0) as u32;
+    let w = (rect.width() * scale).round().max(0.0) as u32;
+    let h = (rect.height() * scale).round().max(0.0) as u32;
+    // Clamp against the render target: a panel resize can momentarily report
+    // a rect that runs past the window edge, and Bevy panics on a viewport
+    // that does not fit inside its target.
+    let w = w.min(phys_w.saturating_sub(min_x));
+    let h = h.min(phys_h.saturating_sub(min_y));
+    if w == 0 || h == 0 {
+        return;
+    }
+
+    cam.viewport = Some(bevy::render::camera::Viewport {
+        physical_position: UVec2::new(min_x, min_y),
+        physical_size: UVec2::new(w, h),
+        depth: 0.0..1.0,
+    });
 }

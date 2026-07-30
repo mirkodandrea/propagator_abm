@@ -390,19 +390,21 @@ pub fn reset(
 
 /// The **Resources** panel: the roster, the selection, and the orders.
 ///
-/// Its own window rather than a section of "Incident" for the reason those two
+/// Its own dock rather than a section of "Incident" for the reason those two
 /// are already split: this is where the player *acts*, and it is read while
-/// pointing at the map. It lives bottom-left so the roster is under the incident
-/// readout it is a response to, and clear of the "Wildfire" authoring panel on
-/// the right.
+/// pointing at the map. Docked along the bottom, outside the 3D viewport, so
+/// giving an order never means a panel is sitting on top of the ground the
+/// order is about.
 pub fn panel(
     mut contexts: EguiContexts,
     mut sim: ResMut<Sim>,
     mut tool: ResMut<OrderTool>,
     mut ignition: ResMut<IgnitionTool>,
     mut focus: ResMut<crate::ui::UiFocus>,
+    mut panels: ResMut<crate::ui::PanelState>,
 ) {
     let ctx = contexts.ctx_mut();
+    let mut open = panels.resources;
     let stats = sim.crews.stats();
     let air_eta = sim.crews.air_eta_s();
     let mut select: Option<usize> = tool.selected;
@@ -410,11 +412,22 @@ pub fn panel(
     let mut request_air = false;
     let mut recall: Option<usize> = None;
 
-    egui::Window::new("Resources")
-        .anchor(egui::Align2::LEFT_BOTTOM, [12.0, -12.0])
-        .resizable(false)
-        .default_width(330.0)
+    egui::TopBottomPanel::bottom("resources_dock")
+        .resizable(open)
+        .default_height(260.0)
+        .height_range(if open { 140.0..=420.0 } else { 26.0..=26.0 })
         .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                open = crate::ui::collapse_button(ui, open, "⏷", "⏶");
+                if open {
+                    ui.heading("Resources");
+                }
+            });
+            if !open {
+                return;
+            }
+            ui.separator();
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             egui::Grid::new("supp").num_columns(2).show(ui, |ui| {
                 ui.label("Working");
                 ui.label(format!("{} of {}", stats.working, sim.crews.units.len()));
@@ -576,6 +589,7 @@ pub fn panel(
                 }
             });
             ui.small("tab next unit · a attack · l cut line · d drop · x stand down · esc cancel");
+            });
         });
 
     if select != tool.selected {
@@ -597,6 +611,7 @@ pub fn panel(
         let n = sim.crews.request_air();
         info!("air support requested: {n} aircraft");
     }
+    panels.resources = open;
 
     focus.0 |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }

@@ -35,9 +35,25 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
+use scenario::population::Status;
 use scenario::{Building, Pos, Scenario};
 
 use crate::sim::Sim;
+
+/// Unlit window glass — dark enough that a daylit building reads as an
+/// ordinary wall with punched openings, not a lattice of black holes.
+const WINDOW_GLASS: [f32; 4] = [0.06, 0.07, 0.10, 1.0];
+
+/// A lit window after dark. Pushed above 1.0 like the fire's own emissive
+/// tricks (`Damage::Alight`), so the bloom pass catches it and a lit house
+/// actually reads as a small light in the dark rather than a beige square.
+const WINDOW_LIT: [f32; 4] = [2.1, 1.55, 0.85, 1.0];
+
+/// Below this fraction of `SunState::brightness`, windows switch on. Not a
+/// fade: a lit window is a binary fact about a house (is anyone home, is it
+/// dark out), and a threshold crossed twice a run is a cheaper and just as
+/// honest a signal as a continuous glow ramp.
+const NIGHT_BRIGHTNESS: f32 = 0.15;
 
 /// Chunk edge in metres.
 const CHUNK_M: f32 = 512.0;
@@ -68,7 +84,16 @@ struct Structure {
     pos: Pos,
     vert_start: u32,
     vert_end: u32,
+    /// Window quads, a contiguous sub-range of `vert_start..vert_end` — see
+    /// `emit_building`. `window_start == window_end` for a shed or
+    /// industrial hall, which gets none.
+    window_start: u32,
+    window_end: u32,
     drawn: u8,
+    /// Whether this structure's windows are currently lit. Cached rather
+    /// than recomputed on every read, because both the damage pass and the
+    /// hover pass need to know it and only the former has the sim handy.
+    lit: bool,
     /// Simulated time this structure caught, if it has.
     alight_at_s: f32,
 }
@@ -83,7 +108,18 @@ struct Chunk {
 #[derive(Resource)]
 pub struct Buildings {
     chunks: Vec<Chunk>,
+    /// Household id -> (chunk index, structure index), for the hover pass
+    /// and the click-select pipeline: both need to go from "which house" to
+    /// "which few thousand vertices" without a linear scan.
+    by_household: HashMap<u32, (usize, usize)>,
 }
+
+/// Which structure, if any, the cursor is currently over — a household id,
+/// same key as `Buildings::by_household`. Kept apart from `inspect::Selected`
+/// because hovering and selecting are different gestures: hovering never
+/// requires a click and is not undone by one landing elsewhere.
+#[derive(Resource, Default)]
+pub struct HoveredHousehold(pub Option<usize>);
 
 pub fn spawn(
     mut commands: Commands,
@@ -128,6 +164,7 @@ pub fn spawn(
     }
 
     let mut chunks = Vec::new();
+    let mut by_household: HashMap<u32, (usize, usize)> = HashMap::new();
     let (mut count, mut tris) = (0usize, 0usize);
 
     for bucket in buckets {
@@ -139,15 +176,25 @@ pub fn spawn(
 
         for b in bucket {
             let start = builder.positions.len() as u32;
-            if !emit_building(scn, b, levels.get(&b.id).copied(), &mut builder) {
+            let Some((win_start, win_end)) =
+                emit_building(scn, b, levels.get(&b.id).copied(), &mut builder)
+            else {
                 continue;
+            };
+            let households = residents.get(&b.id).cloned().unwrap_or_default();
+            let struct_idx = structures.len();
+            for &h in &households {
+                by_household.insert(h, (chunks.len(), struct_idx));
             }
             structures.push(Structure {
-                households: residents.get(&b.id).cloned().unwrap_or_default(),
+                households,
                 pos: Pos { x: b.centroid[0], y: b.centroid[1] },
                 vert_start: start,
                 vert_end: builder.positions.len() as u32,
+                window_start: win_start,
+                window_end: win_end,
                 drawn: Damage::None as u8,
+                lit: false,
                 alight_at_s: f32::INFINITY,
             });
             count += 1;
@@ -172,7 +219,7 @@ pub fn spawn(
         chunks.len(),
         tris as f32 / 1e6
     );
-    commands.insert_resource(Buildings { chunks });
+    commands.insert_resource(Buildings { chunks, by_household });
 }
 
 /// What kind of thing this is, which sets its height, its roof and its palette.
@@ -236,20 +283,22 @@ mod palette {
     pub const CIVIC_WALL: [f32; 3] = [0.90, 0.89, 0.85];
 }
 
-/// Emit one building. Returns false for footprints too degenerate to draw.
+/// Emit one building, and return the vertex range of its window quads
+/// (`start == end` if it has none). `None` for footprints too degenerate to
+/// draw.
 fn emit_building(
     scn: &Scenario,
     b: &Building,
     baked_levels: Option<u8>,
     out: &mut Builder,
-) -> bool {
+) -> Option<(u32, u32)> {
     let n = b.ring.len();
     if n < 3 {
-        return false;
+        return None;
     }
     let area = b.area();
     if area < 6.0 {
-        return false;
+        return None;
     }
 
     // OSM rings repeat the first point as the last; drop it, and drop any
@@ -273,7 +322,7 @@ fn emit_building(
         }
     }
     if ring.len() < 3 {
-        return false;
+        return None;
     }
     // Wind counter-clockwise so wall normals face outward.
     if signed_area(&ring) < 0.0 {
@@ -361,6 +410,23 @@ fn emit_building(
         );
     }
 
+    // Windows: only where someone plausibly lives or works, punched into the
+    // wall just emitted above. Emitted as their own small quads (not a
+    // texture) so they can be recoloured independently of the wall behind
+    // them — dark glass by day, lit or dark by night depending on whether the
+    // household is home. Contiguous in the builder, so the whole run is one
+    // vertex range.
+    let window_start = out.positions.len() as u32;
+    if matches!(kind, Kind::House | Kind::Apartments | Kind::Civic) {
+        let rows = (storeys.round() as usize).clamp(1, 6);
+        for i in 0..m {
+            let a = ring[i];
+            let c = ring[(i + 1) % m];
+            emit_windows(a, c, plinth_top, eave, rows, out);
+        }
+    }
+    let window_end = out.positions.len() as u32;
+
     // The eave ring is the footprint pushed outward, which both casts the
     // shadow line and hides the seam where roof meets wall.
     let eaves: Vec<Pos> = offset_ring(&ring, centroid, EAVE_M);
@@ -425,7 +491,53 @@ fn emit_building(
             [roof[0] * 1.12, roof[1] * 1.1, roof[2] * 1.08],
         );
     }
-    true
+    Some((window_start, window_end))
+}
+
+/// Punch up to two windows per storey into the wall segment `a -> c`, pushed
+/// a few centimetres proud of the wall plane so they do not z-fight with it.
+/// Skips edges too short to hold one convincingly — a gable end on a shed-
+/// sized footprint gets no window rather than one spanning the whole wall.
+fn emit_windows(a: Pos, c: Pos, plinth_top: f32, eave: f32, rows: usize, out: &mut Builder) {
+    let elen = ((c.x - a.x).powi(2) + (c.y - a.y).powi(2)).sqrt();
+    if elen < 3.0 {
+        return;
+    }
+    let cols: &[f32] = if elen > 7.0 { &[0.32, 0.68] } else { &[0.5] };
+    let half_w = (elen * 0.09).clamp(0.35, 0.9);
+    // The wall's own outward normal, from the same three corners its quad
+    // was built from — reusing it keeps the window coplanar-but-proud rather
+    // than needing its own (and possibly inward-facing) offset.
+    let wn = normal(
+        [a.x, plinth_top, -a.y],
+        [c.x, plinth_top, -c.y],
+        [c.x, eave, -c.y],
+    );
+    let push = |p: [f32; 3]| {
+        [p[0] + wn[0] * 0.04, p[1] + wn[1] * 0.04, p[2] + wn[2] * 0.04]
+    };
+
+    let band = (eave - plinth_top) / rows as f32;
+    for r in 0..rows {
+        let band_lo = plinth_top + band * r as f32;
+        let win_h = band * 0.5;
+        let y_lo = band_lo + band * 0.25;
+        let y_hi = y_lo + win_h;
+        for &t in cols {
+            let cx = a.x + (c.x - a.x) * t;
+            let cy = a.y + (c.y - a.y) * t;
+            let (tx, ty) = ((c.x - a.x) / elen, (c.y - a.y) / elen);
+            let (lx, ly) = (cx - tx * half_w, cy - ty * half_w);
+            let (rx, ry) = (cx + tx * half_w, cy + ty * half_w);
+            out.quad(
+                push([lx, y_lo, -ly]),
+                push([rx, y_lo, -ry]),
+                push([rx, y_hi, -ry]),
+                push([lx, y_hi, -ly]),
+                [WINDOW_GLASS[0], WINDOW_GLASS[1], WINDOW_GLASS[2]],
+            );
+        }
+    }
 }
 
 fn signed_area(ring: &[Pos]) -> f32 {
@@ -561,6 +673,7 @@ pub fn reset(
         for s in &mut chunk.structures {
             s.alight_at_s = f32::INFINITY;
             s.drawn = Damage::None as u8;
+            s.lit = false;
         }
         if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, chunk.base.clone());
@@ -571,7 +684,7 @@ pub fn reset(
 impl Buildings {
     /// Damage state of the structure a household lives in, for the inspector.
     /// `None` for a household whose building was too small or degenerate to
-    /// draw (`emit_building` returned false for it).
+    /// draw (`emit_building` returned `None` for it).
     pub fn status_of(&self, household_id: usize) -> Option<&'static str> {
         let id = household_id as u32;
         for chunk in &self.chunks {
@@ -590,22 +703,85 @@ impl Buildings {
     }
 }
 
-pub fn damage(sim: Res<Sim>, mut buildings: ResMut<Buildings>, mut meshes: ResMut<Assets<Mesh>>) {
+/// Recompute one structure's colours from scratch: `base` plus whatever
+/// `s.drawn`/`s.lit` currently say. Shared by the damage pass (which decides
+/// those two fields) and the hover pass (which only ever replays them) so
+/// the two can never disagree about what an un-hovered, undamaged building
+/// looks like.
+fn recolor_structure(colors: &mut [[f32; 4]], base: &[[f32; 4]], s: &Structure) {
+    let range = s.vert_start as usize..s.vert_end as usize;
+    match s.drawn {
+        x if x == Damage::Threatened as u8 => {
+            // Lit by the fire rather than damaged by it: warm, and just
+            // enough to pick the building out of the street.
+            for i in range {
+                let c = base[i];
+                colors[i] = [(c[0] * 1.15 + 0.10).min(1.4), c[1] * 0.95, c[2] * 0.80, 1.0];
+            }
+        }
+        x if x == Damage::Alight as u8 => {
+            // Above 1.0 so the bloom pass catches it, like the vegetation
+            // flare.
+            for i in range {
+                colors[i] = [2.4, 0.75, 0.14, 1.0];
+            }
+        }
+        x if x == Damage::Destroyed as u8 => {
+            for i in range {
+                let c = base[i];
+                colors[i] = [0.10 + c[0] * 0.08, 0.09 + c[1] * 0.07, 0.09 + c[2] * 0.07, 1.0];
+            }
+        }
+        _ => {
+            for i in range {
+                colors[i] = base[i];
+            }
+            if s.lit {
+                for i in (s.window_start as usize)..(s.window_end as usize) {
+                    colors[i] = WINDOW_LIT;
+                }
+            }
+        }
+    }
+}
+
+/// A temporary brightening laid on top of whatever `recolor_structure` just
+/// computed — the hover feedback that used to be a floating beacon.
+fn hover_boost(colors: &mut [[f32; 4]], s: &Structure) {
+    for c in &mut colors[s.vert_start as usize..s.vert_end as usize] {
+        *c = [(c[0] * 1.35 + 0.18).min(2.2), (c[1] * 1.30 + 0.15).min(2.0), (c[2] * 1.25 + 0.12).min(2.0), c[3]];
+    }
+}
+
+pub fn damage(
+    sim: Res<Sim>,
+    sun: Res<crate::sky::SunState>,
+    hovered: Res<HoveredHousehold>,
+    mut buildings: ResMut<Buildings>,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
     if !sim.is_changed() {
         return;
     }
     let exposure = sim.fire.exposure();
     let threat = sim.fire.threat();
     let now = sim.time_s() as f32;
+    let night = sun.brightness < NIGHT_BRIGHTNESS;
 
-    for chunk in &mut buildings.chunks {
+    let Buildings { chunks, by_household } = &mut *buildings;
+    let hovered_at = hovered.0.and_then(|h| by_household.get(&(h as u32)).copied());
+
+    for (ci, chunk) in chunks.iter_mut().enumerate() {
         let mut dirty = false;
         for s in &mut chunk.structures {
             let (mut alight, mut load) = (false, 0.0f32);
+            let mut occupied = false;
             for &h in &s.households {
+                let Some(hh) = sim.agents.households.get(h as usize) else { continue };
                 let f = exposure.get(h as usize);
                 alight |= f.alight;
                 load = load.max(f.radiant + f.ember);
+                occupied |= !matches!(hh.status, Status::Evacuating | Status::Evacuated);
             }
             if s.households.is_empty() {
                 // No residents, so no exposure record: fall back to how
@@ -630,6 +806,15 @@ pub fn damage(sim: Res<Sim>, mut buildings: ResMut<Buildings>, mut meshes: ResMu
                 s.drawn = want;
                 dirty = true;
             }
+            // Windows only matter while the structure reads as undamaged —
+            // threatened/alight/destroyed already overwrite the whole range,
+            // window quads included (finding #14's lesson generalises: don't
+            // maintain two sources of truth for the same vertices).
+            let lit = want == Damage::None as u8 && night && occupied;
+            if lit != s.lit {
+                s.lit = lit;
+                dirty = true;
+            }
         }
         if !dirty {
             continue;
@@ -637,34 +822,76 @@ pub fn damage(sim: Res<Sim>, mut buildings: ResMut<Buildings>, mut meshes: ResMu
 
         let mut colors = chunk.base.clone();
         for s in &chunk.structures {
-            let range = s.vert_start as usize..s.vert_end as usize;
-            match s.drawn {
-                x if x == Damage::Threatened as u8 => {
-                    // Lit by the fire rather than damaged by it: warm, and
-                    // just enough to pick the building out of the street.
-                    for c in &mut colors[range] {
-                        *c = [
-                            (c[0] * 1.15 + 0.10).min(1.4),
-                            c[1] * 0.95,
-                            c[2] * 0.80,
-                            1.0,
-                        ];
-                    }
-                }
-                x if x == Damage::Alight as u8 => {
-                    // Above 1.0 so the bloom pass catches it, like the
-                    // vegetation flare.
-                    for c in &mut colors[range] {
-                        *c = [2.4, 0.75, 0.14, 1.0];
-                    }
-                }
-                x if x == Damage::Destroyed as u8 => {
-                    for c in &mut colors[range] {
-                        *c = [0.10 + c[0] * 0.08, 0.09 + c[1] * 0.07, 0.09 + c[2] * 0.07, 1.0];
-                    }
-                }
-                _ => {}
+            recolor_structure(&mut colors, &chunk.base, s);
+        }
+        if let Some((hci, hsi)) = hovered_at {
+            if hci == ci {
+                hover_boost(&mut colors, &chunk.structures[hsi]);
             }
+        }
+        if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
+            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+        }
+    }
+}
+
+/// Screen-space hover test against every occupiable household, the same
+/// technique `inspect::pick_click` uses for the click itself — projecting a
+/// few hundred candidate points is cheap enough to repeat every frame, and
+/// it is what makes the hover zoom-invariant. Only rewrites the (at most
+/// two) chunks whose highlight actually changed.
+pub fn hover(
+    ui_focus: Res<crate::ui::UiFocus>,
+    tool: Res<crate::ignition_edit::IgnitionTool>,
+    order: Res<crate::command::OrderTool>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    camera: Query<(&Camera, &GlobalTransform), With<crate::camera::OrbitCamera>>,
+    sim: Res<Sim>,
+    mut hovered: ResMut<HoveredHousehold>,
+    buildings: Res<Buildings>,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
+    let armed = tool.mode != crate::ignition_edit::EditMode::Off || order.is_armed();
+    let mut new_hover = None;
+    if !ui_focus.0 && !armed {
+        if let (Ok(window), Ok((camera, cam_tf))) = (windows.get_single(), camera.get_single()) {
+            if let Some(cursor) = window.cursor_position() {
+                let mut best: Option<(f32, usize)> = None;
+                for h in &sim.agents.households {
+                    if h.status == Status::Evacuated {
+                        continue;
+                    }
+                    let ground = sim.scenario.terrain.height_at(h.home);
+                    let world = crate::frame::to_bevy(h.home, ground + 4.0);
+                    if let Some(screen) = camera.world_to_viewport(cam_tf, world) {
+                        let d = screen.distance(cursor);
+                        if d < crate::inspect::PICK_PX && best.map_or(true, |(bd, _)| d < bd) {
+                            best = Some((d, h.id));
+                        }
+                    }
+                }
+                new_hover = best.map(|(_, id)| id);
+            }
+        }
+    }
+
+    if new_hover == hovered.0 {
+        return;
+    }
+    let old = hovered.0;
+    hovered.0 = new_hover;
+
+    for id in [old, new_hover].into_iter().flatten() {
+        let Some(&(ci, si)) = buildings.by_household.get(&(id as u32)) else {
+            continue;
+        };
+        let chunk = &buildings.chunks[ci];
+        let mut colors = chunk.base.clone();
+        for s in &chunk.structures {
+            recolor_structure(&mut colors, &chunk.base, s);
+        }
+        if hovered.0 == Some(id) {
+            hover_boost(&mut colors, &chunk.structures[si]);
         }
         if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);

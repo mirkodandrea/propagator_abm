@@ -29,7 +29,7 @@ use crate::sim::Sim;
 
 /// Screen-space pick radius, logical pixels. Generous: these are small
 /// figures at commander altitude, and a miss reads as a broken control.
-const PICK_PX: f32 = 26.0;
+pub(crate) const PICK_PX: f32 = 26.0;
 
 /// A press-then-release further apart than this on screen is a drag (camera
 /// orbit), not a click.
@@ -142,15 +142,15 @@ pub fn pick_click(
         }
     };
 
-    // Households, at the beacon height they're actually drawn at — see
-    // `agents::spawn`. An evacuated household's beacon is hidden, so it isn't
-    // a pickable target either.
+    // Households are picked at the building itself now, not a floating
+    // marker — mid-wall height reads as "click the house", and an evacuated
+    // household's building has nobody left to select for.
     for h in &sim.agents.households {
         if h.status == Status::Evacuated {
             continue;
         }
         let ground = sim.scenario.terrain.height_at(h.home);
-        try_pick(frame::to_bevy(h.home, ground + 22.0), Target::Household(h.id));
+        try_pick(frame::to_bevy(h.home, ground + 4.0), Target::Household(h.id));
     }
 
     // People currently drawn as their own figure — indoors, or riding a car,
@@ -221,6 +221,19 @@ pub(crate) fn target_pos(sim: &Sim, target: Target) -> Option<scenario::Pos> {
     }
 }
 
+/// Which way a target is heading, world bearing in radians — only meaningful
+/// for the entities that actually travel continuously. `None` for anything
+/// else (a household never moves; a person on foot is tracked as a
+/// traveller). Shared with [`crate::camera`]'s first-person view, which needs
+/// a facing direction and not just a point.
+pub(crate) fn target_heading(sim: &Sim, target: Target) -> Option<f32> {
+    match target {
+        Target::Traveller(i) => sim.agents.travellers.get(i).map(|t| t.heading),
+        Target::Unit(id) => sim.crews.units.get(id).map(|u| u.heading),
+        _ => None,
+    }
+}
+
 /// Position the highlight ring on whatever is selected, or hide it.
 pub fn update_ring(
     sim: Res<Sim>,
@@ -266,6 +279,8 @@ pub fn panel(
     mut contexts: EguiContexts,
     mut selected: ResMut<Selected>,
     mut focus: ResMut<crate::ui::UiFocus>,
+    mut mode: ResMut<crate::camera::CameraMode>,
+    mut panels: ResMut<crate::ui::PanelState>,
     sim: Res<Sim>,
     buildings: Res<Buildings>,
 ) {
@@ -273,30 +288,43 @@ pub fn panel(
         return;
     };
     let ctx = contexts.ctx_mut();
+    let mut open = panels.inspector;
     let mut close = false;
     let mut jump_to: Option<Target> = None;
 
-    egui::Window::new("Inspector")
-        .anchor(egui::Align2::LEFT_BOTTOM, [12.0, -12.0])
-        .resizable(false)
-        .default_width(300.0)
+    egui::TopBottomPanel::bottom("inspector_dock")
+        .resizable(open)
+        .default_height(240.0)
+        .height_range(if open { 140.0..=420.0 } else { 26.0..=26.0 })
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.heading(title(target));
+                open = crate::ui::collapse_button(ui, open, "⏷", "⏶");
+                if open {
+                    ui.heading(title(target));
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("✕").clicked() {
+                    if ui.small_button("✕").on_hover_text("Deselect").clicked() {
                         close = true;
                     }
                 });
             });
+            if !open {
+                return;
+            }
             ui.separator();
 
-            match target {
-                Target::Household(id) => household_panel(ui, &sim, &buildings, id, &mut jump_to),
-                Target::Person(id) => person_panel(ui, &sim, id, &mut jump_to),
-                Target::Traveller(i) => traveller_panel(ui, &sim, i, &mut jump_to),
-                Target::Unit(id) => unit_panel(ui, &sim, id),
-            }
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                match target {
+                    Target::Household(id) => {
+                        household_panel(ui, &sim, &buildings, id, &mut jump_to)
+                    }
+                    Target::Person(id) => person_panel(ui, &sim, id, &mut jump_to),
+                    Target::Traveller(i) => {
+                        traveller_panel(ui, &sim, i, &mut jump_to, &mut mode)
+                    }
+                    Target::Unit(id) => unit_panel(ui, &sim, id, &mut mode),
+                }
+            });
         });
 
     if close {
@@ -304,6 +332,7 @@ pub fn panel(
     } else if let Some(t) = jump_to {
         selected.0 = Some(t);
     }
+    panels.inspector = open;
     focus.0 |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
 
@@ -458,7 +487,13 @@ fn person_panel(ui: &mut egui::Ui, sim: &Sim, id: usize, jump_to: &mut Option<Ta
     }
 }
 
-fn traveller_panel(ui: &mut egui::Ui, sim: &Sim, i: usize, jump_to: &mut Option<Target>) {
+fn traveller_panel(
+    ui: &mut egui::Ui,
+    sim: &Sim,
+    i: usize,
+    jump_to: &mut Option<Target>,
+    mode: &mut crate::camera::CameraMode,
+) {
     let Some(t) = sim.agents.travellers.get(i) else {
         ui.label("(gone)");
         return;
@@ -513,13 +548,15 @@ fn traveller_panel(ui: &mut egui::Ui, sim: &Sim, i: usize, jump_to: &mut Option<
             *jump_to = Some(Target::Household(t.household));
         }
     }
+
+    camera_controls(ui, mode, Target::Traveller(i));
 }
 
 /// A suppression unit's own account of itself: what it is, what it has been
 /// told to do, and what it has actually achieved — the same numbers as the
 /// Resources panel's hover text (`crate::command::panel`), but reachable by
 /// clicking the unit on the map rather than finding it in the roster list.
-fn unit_panel(ui: &mut egui::Ui, sim: &Sim, id: usize) {
+fn unit_panel(ui: &mut egui::Ui, sim: &Sim, id: usize, mode: &mut crate::camera::CameraMode) {
     use abm::suppression::{Task, UnitKind, UnitState};
 
     let Some(u) = sim.crews.units.get(id) else {
@@ -601,6 +638,38 @@ fn unit_panel(ui: &mut egui::Ui, sim: &Sim, id: usize) {
     if !u.note.is_empty() {
         ui.separator();
         ui.colored_label(egui::Color32::from_rgb(240, 180, 60), u.note);
+    }
+
+    camera_controls(ui, mode, Target::Unit(id));
+}
+
+/// Follow / first-person toggle, shared by the two targets that actually
+/// travel continuously. A household never moves and a lone person is tracked
+/// through its traveller, so those two panels have nothing to hand this.
+fn camera_controls(ui: &mut egui::Ui, mode: &mut crate::camera::CameraMode, target: Target) {
+    use crate::camera::CameraMode;
+
+    ui.separator();
+    ui.horizontal(|ui| {
+        let following = *mode == CameraMode::Follow(target);
+        if ui
+            .selectable_label(following, "🎥 Follow")
+            .on_hover_text("Keep the camera's focus on this as it moves. Orbit and zoom still work.")
+            .clicked()
+        {
+            *mode = if following { CameraMode::Free } else { CameraMode::Follow(target) };
+        }
+        let riding = *mode == CameraMode::FirstPerson(target);
+        if ui
+            .selectable_label(riding, "👁 First person")
+            .on_hover_text("Ride along, looking the way it's heading. Left-drag to look around.")
+            .clicked()
+        {
+            *mode = if riding { CameraMode::Free } else { CameraMode::FirstPerson(target) };
+        }
+    });
+    if *mode == CameraMode::FirstPerson(target) {
+        ui.small("left-drag to look around · click again, or esc, to return to the orbit view");
     }
 }
 

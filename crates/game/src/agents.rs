@@ -1,28 +1,14 @@
 //! Household and person entities.
 //!
-//! At ~750 households and ~1,600 people this is small enough to give every
-//! household its own entity and mesh instance, which is what makes
-//! click-to-inspect possible later. The data layout is kept flat (ids indexing
-//! parallel arrays in the scenario) so scaling to tens of thousands means
-//! swapping the renderer, not rewriting the model.
+//! Status used to be a floating beacon hovering over every house — 750 of
+//! them, which buried the town under permanent markers. It is now read off
+//! the building itself: `crate::buildings` glows the structure on hover and
+//! lights its windows after dark for whoever is still home, and the
+//! Inspector/Entities panels give the same status in words. This module now
+//! only supplies the status palette shared with `crate::people` for vehicles.
 
 use bevy::prelude::*;
 use scenario::population::Status;
-use scenario::Pos;
-
-use crate::sim::Sim;
-
-#[derive(Component)]
-pub struct HouseholdMarker {
-    pub id: usize,
-}
-
-/// Floating indicator above each house, coloured by status. Same idea as
-/// igad's beacons: the status has to be readable from commander altitude.
-#[derive(Component)]
-pub struct Beacon {
-    pub household: usize,
-}
 
 pub fn status_color(status: Status) -> Color {
     match status {
@@ -37,107 +23,10 @@ pub fn status_color(status: Status) -> Color {
     }
 }
 
-pub fn spawn(
-    mut commands: Commands,
-    sim: Res<Sim>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    let scn = &sim.scenario;
-    let beacon_mesh = meshes.add(Sphere::new(3.0).mesh().ico(2).unwrap());
-
-    // One material per status, shared across households, so status changes are
-    // a material swap rather than an asset allocation.
-    let status_mats: Vec<Handle<StandardMaterial>> = [
-        Status::Normal,
-        Status::Warned,
-        Status::Preparing,
-        Status::Evacuating,
-        Status::Evacuated,
-        Status::Defending,
-        Status::Trapped,
-        Status::Casualty,
-    ]
-    .iter()
-    .map(|s| {
-        let c = status_color(*s);
-        materials.add(StandardMaterial {
-            base_color: c,
-            emissive: c.to_linear() * 2.0,
-            ..default()
-        })
-    })
-    .collect();
-
-    for h in &scn.population.households {
-        let p = Pos { x: h.pos[0], y: h.pos[1] };
-        let ground = scn.terrain.height_at(p);
-
-        commands.spawn((
-            PbrBundle {
-                mesh: beacon_mesh.clone(),
-                material: status_mats[0].clone(),
-                transform: Transform::from_xyz(p.x, ground + 22.0, -p.y),
-                ..default()
-            },
-            Beacon { household: h.id },
-            HouseholdMarker { id: h.id },
-        ));
-    }
-
-    commands.insert_resource(StatusMaterials(status_mats));
+pub fn spawn(sim: Res<crate::sim::Sim>) {
     info!(
         "spawned {} households ({} people)",
-        scn.population.households.len(),
-        scn.population.people.len()
+        sim.scenario.population.households.len(),
+        sim.scenario.population.people.len()
     );
-}
-
-#[derive(Resource)]
-pub struct StatusMaterials(pub Vec<Handle<StandardMaterial>>);
-
-/// Bob the beacons so they read as markers rather than scenery.
-pub fn animate_beacons(time: Res<Time>, mut query: Query<(&Beacon, &mut Transform)>) {
-    let t = time.elapsed_seconds();
-    for (b, mut tf) in &mut query {
-        let phase = b.household as f32 * 0.7;
-        tf.translation.y += (t * 2.0 + phase).sin() * 0.02;
-        tf.rotate_y(time.delta_seconds() * 0.8);
-    }
-}
-
-/// Recolour beacons from each household's own decision state.
-///
-/// This is the agent model's status, not the fire's: warned, milling,
-/// on the road, out, defending, cut off. What the fire does to a house is
-/// drawn on the house itself (see [`crate::buildings`]); what it does to the
-/// people is here.
-pub fn update_beacons(
-    sim: Res<Sim>,
-    mats: Res<StatusMaterials>,
-    mut query: Query<(&Beacon, &mut Handle<StandardMaterial>, &mut Visibility)>,
-) {
-    if !sim.is_changed() {
-        return;
-    }
-    for (beacon, mut handle, mut vis) in &mut query {
-        let Some(h) = sim.agents.households.get(beacon.household) else {
-            continue;
-        };
-        // An empty house is not worth a marker; the town is dense enough that
-        // 750 permanent beacons bury the ones that matter.
-        let want = if h.status == Status::Evacuated {
-            Visibility::Hidden
-        } else {
-            Visibility::Inherited
-        };
-        if *vis != want {
-            *vis = want;
-        }
-        if let Some(m) = mats.0.get(h.status as usize) {
-            if *handle != *m {
-                *handle = m.clone();
-            }
-        }
-    }
 }
