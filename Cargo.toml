@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/scenario", "crates/fire", "crates/abm", "crates/game"]
+members = ["crates/scenario", "crates/fire", "crates/abm", "crates/game", "crates/propagator-core"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,9 +8,10 @@ edition = "2021"
 license = "EUPL-1.2"
 
 [workspace.dependencies]
-# The PROPAGATOR Rust core is std-only and dependency-free, so it drops in as a
-# plain path dependency -- no FFI, no Python at runtime.
-propagator-core = { path = "../../fire/propagator/propagator_sim/rust/propagator-core" }
+# Vendored from CIMAFoundation/propagator_sim at a2749c81. Cargo cannot refer
+# to a crate in a Git repository subdirectory, so keeping this small std-only
+# core here makes CI and GitHub Pages self-contained.
+propagator-core = { path = "crates/propagator-core" }
 
 scenario = { path = "crates/scenario" }
 fire = { path = "crates/fire" }
