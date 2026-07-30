@@ -39,7 +39,7 @@ use crate::sim::Sim;
 /// worse than the plain edge it was meant to hide. Trusting the real,
 /// per-pixel fog and simply extending the mesh past its reach is both
 /// simpler and looks right.
-const SKIRT_EXTENT_M: f32 = 25_000.0;
+pub(crate) const SKIRT_EXTENT_M: f32 = 25_000.0;
 
 /// Lattice spacing for the skirt terrain: twenty times the real terrain's 5 m
 /// posting, since nobody stands on this ground and its only job is to fill
@@ -86,11 +86,25 @@ fn dist_outside(scn: &Scenario, p: Pos) -> f32 {
 /// the shoreline to 1 a few metres inland, so only ground that was already
 /// dry gets any relief.
 pub(crate) fn far_height(scn: &Scenario, p: Pos) -> f32 {
-    let edge = scn.terrain.height_at(p);
     let dist = dist_outside(scn, p);
     if dist <= 0.0 {
-        return edge;
+        return scn.terrain.height_at(p);
     }
+    // Clamping means the edge profile is extruded *exactly* straight outward,
+    // and the one place that shows is the waterline: the coast past the
+    // window becomes a set of dead-straight lines running due north (or east,
+    // or south), which the sea's own lattice then cuts into a staircase of
+    // rectangular headlands — a pixel-art coastline, and the more obviously
+    // fake the further out it goes. Warping the query point by a slow noise
+    // before sampling costs two more noise lookups and makes the same
+    // extrusion wander like a coastline instead. The warp is zero at the
+    // window edge, so the real terrain still joins it exactly.
+    let warp = 300.0 * (dist / 1500.0).clamp(0.0, 1.0);
+    let q = Pos {
+        x: p.x + (noise(p.x / 900.0, p.y / 900.0, 0x9A33) - 0.5) * 2.0 * warp,
+        y: p.y + (noise(p.x / 900.0, p.y / 900.0, 0x9A44) - 0.5) * 2.0 * warp,
+    };
+    let edge = scn.terrain.height_at(q);
     let land_weight = ((edge - 0.5) / 4.0).clamp(0.0, 1.0);
     let hills = (noise(p.x / 1600.0, p.y / 1600.0, 0x9A11) - 0.5) * 140.0
         + (noise(p.x / 480.0, p.y / 480.0, 0x9A22) - 0.5) * 30.0;
@@ -196,7 +210,15 @@ fn spawn_skirt(
                         continue;
                     }
                     let (i, right, down, diag) = (i as u32, right as u32, down as u32, diag as u32);
-                    indices.extend_from_slice(&[i, down, right, right, down, diag]);
+                    // `crate::terrain_mesh` winds the same lattice `i, down,
+                    // right` — but its rows run *north to south* (row 0 is
+                    // the north edge) while this one runs south to north, so
+                    // copying its index order hands every triangle the
+                    // opposite orientation and back-face culling eats the
+                    // whole skirt. Finding 11 in CLAUDE.md, and it fails the
+                    // same silent way: the meshes build, the counts log, and
+                    // the world outside the window is simply not there.
+                    indices.extend_from_slice(&[i, right, down, right, diag, down]);
                     tri_count += 2;
                 }
             }
@@ -454,8 +476,14 @@ struct Builder {
 
 impl Builder {
     /// Flat-shaded quad, wound a-b-c-d, vertices not shared between faces.
+    ///
+    /// Emitted in reverse (a-c-b, a-d-c): the callers lay their corners out
+    /// clockwise seen from outside the solid, which is the back face. The
+    /// trees never noticed — their material is `cull_mode: None` — so the
+    /// only thing this ever showed as was distant houses with no walls and no
+    /// roof, standing on ground that was itself inside-out (see `spawn_skirt`).
     fn quad(&mut self, a: [f32; 3], b: [f32; 3], c: [f32; 3], d: [f32; 3], color: [f32; 3]) {
-        let n = face_normal(a, b, c);
+        let n = face_normal(a, c, b);
         let start = self.positions.len() as u32;
         for v in [a, b, c, d] {
             self.positions.push(v);
@@ -463,7 +491,7 @@ impl Builder {
             self.colors.push([color[0], color[1], color[2], 1.0]);
         }
         self.indices
-            .extend_from_slice(&[start, start + 1, start + 2, start, start + 2, start + 3]);
+            .extend_from_slice(&[start, start + 2, start + 1, start, start + 3, start + 2]);
     }
 
     fn finish(self) -> Mesh {

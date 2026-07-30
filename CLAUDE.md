@@ -194,6 +194,15 @@ the lot. Wind ground-facing ribbons `a, a+2, a+1` — verified for the roads and
 the ignition rings. Any new draped strip needs the same check, and the check is
 "can I see it", because nothing else will tell you.
 
+It came back on the far-terrain skirt, and copying working code is what did it:
+`terrain_mesh` walks its lattice **north to south** (row 0 is the DEM's north
+edge) while `far_terrain` walks south to north, so the same index order winds
+the two meshes opposite ways. The whole skirt, and every distant house, was
+culled — the world outside the window was sky — while the logs happily reported
+314 k triangles. The only survivors were the cardboard trees, whose material
+sets `cull_mode: None`. **A lattice's winding depends on which way its rows
+run, not on the index expression that produced it.**
+
 **12. Draping only samples the terrain where there is a vertex.** OSM ways carry
 vertices where the road *bends*, so a straight run over a ridge can be a single
 200 m segment — which drapes as a chord straight through the hill and
@@ -270,6 +279,28 @@ view), and the vehicle entities (indexed into an append-only `travellers` list).
 Miss one and the new run opens with the old run's charred buildings, drifting
 plume, or cars parked on roads that never burnt. `SimRestarted` fans out to the
 three `reset` systems; `SPOTORNO_SELFTEST=1` is what checks they ran.
+
+**22. A custom `Material` gets no fog, and the sea is too big to get away with
+it.** `StandardMaterial` applies `FogSettings` at the end of its own fragment
+shader; nothing applies it for you. The water shader went without, so the one
+surface in the scene that ignores the atmosphere was also the widest: it held
+the same saturated blue out to the edge of its mesh while the coast beside it
+hazed away properly, and the straight line where it stopped read as a slab of
+blue laid over the horizon. `shaders/water.wgsl::apply_scene_fog` transcribes
+`bevy_pbr::pbr_functions::apply_fog` — transcribes, because importing that
+module also pulls in `pbr_bindings`, which redeclares `StandardMaterial`'s
+`@group(2)` on top of the material's own.
+
+**23. Any boundary where one surface hands off to another is a straight line
+on the horizon.** A straight world-space line viewed obliquely is straight on
+screen from every angle, so two surfaces pretending to be one sea can never be
+made to agree — the sea/`far_terrain` handoff was rebuilt twice before the
+answer turned out to be one sea: `crates/game/src/sea.rs` meshes the near water
+at 20 m and continues it in four coarse bands to the same 25 km the skirt
+reaches, each band's spacing derived from its own span so it lands exactly on
+the inner mesh's edge. The outer boundary is trimmed to a **disc**, not the box
+the lattice is built on: a horizon the same distance away in every direction
+cannot resolve into a ruled line.
 
 ---
 
@@ -400,6 +431,9 @@ SPOTORNO_SELFTEST=1 cargo run --release -p game
 SPOTORNO_SHOT=/tmp/shots SPOTORNO_SHOT_AT=1800 SPOTORNO_SHOT_DIST=400 \
   SPOTORNO_SHOT_FOCUS=4875,2875 SPOTORNO_SHOT_LAYER=Flames \
   SPOTORNO_AUTOPLAY=1 cargo run --release -p game
+SPOTORNO_SHOT_YAW=270 SPOTORNO_SHOT_PITCH=-14 ...  # orbit angle, degrees --
+       # the only way to review something that is wrong from one direction
+       # (a seam on the horizon), which the default three-quarter view misses
 SPOTORNO_PLACE=1 ...   # open with the ignition tool armed, so the rings show
 ```
 

@@ -52,19 +52,76 @@ const WATER_ELEV_MAX: f32 = 0.6;
 /// sitting in the water. Shipped once at 0.35 m, which cleared neither.
 const WATER_BASE_Y: f32 = 2.0;
 
-/// How far past the real window edge the animated sea keeps going.
+/// How far past the real window edge the sea keeps its full [`WATER_STRIDE`]
+/// resolution.
 ///
-/// The real window's edge is a straight line, and a straight world-space
-/// line viewed obliquely is a straight line on screen no matter the angle —
-/// so where this mesh used to stop dead and hand off to
-/// `crate::far_terrain`'s flat, unanimated "sea colour" ground, the two
-/// never quite agreed on height or shading and the seam between them showed
-/// up as a stark, dead-straight line across the horizon. A modest real
-/// extension, still animated, still lit the same way as the rest of the
-/// water, removes the seam where the coastline is actually looked at; past
-/// this the flat continuation in `far_terrain` (which nothing gets close
-/// enough to compare against) takes over.
+/// Past this the water continues at [`OPEN_SEA_STRIDE_M`] instead of
+/// stopping: the real window's edge is a straight line, and a straight
+/// world-space line viewed obliquely is a straight line on screen no matter
+/// the angle, so *any* boundary where the water hands off to something else
+/// shows up as a stark, dead-straight line across the horizon. It shipped
+/// twice: first at the window edge itself, then here at 3 km, where the flat
+/// "sea colour" ground of `crate::far_terrain` took over — a different
+/// colour, differently lit, and not fogged by the same amount at the same
+/// distance, so the join read as a solid slab of blue laid over the horizon.
+/// Two surfaces pretending to be one sea cannot be made to agree; one sea can.
 const SEA_EXTEND_M: f32 = 3000.0;
+
+/// Target lattice spacing for the open sea past [`SEA_EXTEND_M`]. It carries
+/// the same waves and the same shader — it is the same sea — but nothing is
+/// ever closer than 3 km to it, and the swell it drops at this spacing is
+/// half a metre of vertical displacement seen from kilometres away.
+///
+/// Matched to `far_terrain::SKIRT_STRIDE_M` rather than made as coarse as it
+/// could get away with: past the window the coastline is the far terrain's
+/// own extruded edge, and where the two disagree about their sampling the
+/// waterline turns into a staircase of one lattice cut against the other.
+const OPEN_SEA_STRIDE_M: f32 = 150.0;
+
+/// The open sea is trimmed to a disc of this radius about the window's
+/// centre, not to the square its lattice is built on. A horizon that is the
+/// same distance away in every direction cannot resolve into a straight
+/// ruled line the way a box's near side does, and what fog has not quite
+/// finished erasing at this range is exactly a straight line's worth of
+/// residual blue.
+const OPEN_SEA_RADIUS_M: f32 = crate::far_terrain::SKIRT_EXTENT_M;
+
+/// One rectangular water lattice: origin, cell counts and (possibly
+/// non-round) cell size. The open-sea bands derive their spacing from their
+/// own span rather than taking [`OPEN_SEA_STRIDE_M`] literally, so each band
+/// ends *exactly* on the inner mesh's boundary — a lattice that merely came
+/// close would leave either a strip of missing sea or a strip of two water
+/// surfaces z-fighting all along the join.
+struct Patch {
+    x0: f32,
+    y0: f32,
+    cols: usize,
+    rows: usize,
+    sx: f32,
+    sy: f32,
+    /// Whether vertices carry a real [`distance_to_shore`]. Only the near
+    /// patch does: the probe is 48 terrain samples a vertex, and what it
+    /// buys — the shallow-water colour and the shoreline foam — is a
+    /// metres-wide band nothing ever sees from 3 km out.
+    probe_shore: bool,
+}
+
+impl Patch {
+    /// A patch spanning `[x0, x1] x [y0, y1]` at close to `target` spacing.
+    fn spanning(x0: f32, x1: f32, y0: f32, y1: f32, target: f32, probe_shore: bool) -> Patch {
+        let nx = ((x1 - x0) / target).ceil().max(1.0);
+        let ny = ((y1 - y0) / target).ceil().max(1.0);
+        Patch {
+            x0,
+            y0,
+            cols: nx as usize + 1,
+            rows: ny as usize + 1,
+            sx: (x1 - x0) / nx,
+            sy: (y1 - y0) / ny,
+            probe_shore,
+        }
+    }
+}
 
 /// Elevation for a point that may be outside the real terrain grid: the real
 /// bilinear field inside the window, `far_terrain`'s continuation beyond it
@@ -76,6 +133,15 @@ fn elev_at(scn: &Scenario, p: Pos) -> f32 {
     } else {
         crate::far_terrain::far_height(scn, p)
     }
+}
+
+/// Whether a lattice vertex (in Bevy space, as pushed into the mesh) is
+/// within [`OPEN_SEA_RADIUS_M`] of the window's centre. Cells outside are
+/// dropped, which rounds the sea's outer boundary off into a disc.
+fn inside_horizon(scn: &Scenario, p: [f32; 3]) -> bool {
+    let dx = p[0] - scn.terrain.width_m * 0.5;
+    let dz = -p[2] - scn.terrain.height_m * 0.5;
+    dx * dx + dz * dz <= OPEN_SEA_RADIUS_M * OPEN_SEA_RADIUS_M
 }
 
 /// Probe ring radii for [`distance_to_shore`], metres. Past the last ring, a
@@ -168,13 +234,6 @@ fn spawn_sea(
     let t = &scn.terrain;
     let stride_m = t.posting * WATER_STRIDE as f32;
 
-    let x0 = -SEA_EXTEND_M;
-    let y0 = -SEA_EXTEND_M;
-    let coarse_cols = ((t.width_m + 2.0 * SEA_EXTEND_M) / stride_m).ceil() as usize + 1;
-    let coarse_rows = ((t.height_m + 2.0 * SEA_EXTEND_M) / stride_m).ceil() as usize + 1;
-    let chunks_x = (coarse_cols - 1).div_ceil(WATER_CHUNK);
-    let chunks_y = (coarse_rows - 1).div_ceil(WATER_CHUNK);
-
     let handle = materials.add(WaterMaterial {
         uniform: WaterUniform {
             wind: Vec4::ZERO,
@@ -186,7 +245,47 @@ fn spawn_sea(
     });
     commands.insert_resource(WaterHandle(handle.clone()));
 
+    // The near sea at full resolution, then four bands of open sea around it
+    // reaching the same distance the far terrain does. The east and west
+    // bands run the full height, so the corners belong to them and no band
+    // has to meet another one diagonally.
+    let (inner_x0, inner_x1) = (-SEA_EXTEND_M, t.width_m + SEA_EXTEND_M);
+    let (inner_y0, inner_y1) = (-SEA_EXTEND_M, t.height_m + SEA_EXTEND_M);
+    let out = crate::far_terrain::SKIRT_EXTENT_M;
+    let (outer_x0, outer_x1) = (-out, t.width_m + out);
+    let (outer_y0, outer_y1) = (-out, t.height_m + out);
+    let s = OPEN_SEA_STRIDE_M;
+    let patches = [
+        Patch::spanning(inner_x0, inner_x1, inner_y0, inner_y1, stride_m, true),
+        Patch::spanning(outer_x0, inner_x0, outer_y0, outer_y1, s, false),
+        Patch::spanning(inner_x1, outer_x1, outer_y0, outer_y1, s, false),
+        Patch::spanning(inner_x0, inner_x1, outer_y0, inner_y0, s, false),
+        Patch::spanning(inner_x0, inner_x1, inner_y1, outer_y1, s, false),
+    ];
+
     let (mut count, mut tri_count) = (0usize, 0usize);
+    for patch in &patches {
+        let (c, t) = spawn_patch(patch, scn, &mut commands, &mut meshes, &handle);
+        count += c;
+        tri_count += t;
+    }
+
+    info!("sea: {count} chunks, {} k triangles @ {stride_m} m lattice", tri_count / 1000);
+}
+
+/// Mesh one lattice, chunked so the water still culls in pieces.
+fn spawn_patch(
+    patch: &Patch,
+    scn: &Scenario,
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    handle: &Handle<WaterMaterial>,
+) -> (usize, usize) {
+    let (coarse_cols, coarse_rows) = (patch.cols, patch.rows);
+    let chunks_x = (coarse_cols - 1).div_ceil(WATER_CHUNK);
+    let chunks_y = (coarse_rows - 1).div_ceil(WATER_CHUNK);
+    let (mut count, mut tri_count) = (0usize, 0usize);
+
     for cy in 0..chunks_y {
         for cx in 0..chunks_x {
             let c0 = cx * WATER_CHUNK;
@@ -205,18 +304,19 @@ fn spawn_sea(
 
             for r in 0..rn {
                 for c in 0..cn {
-                    let gx = x0 + (c0 + c) as f32 * stride_m;
-                    let gy = y0 + (r0 + r) as f32 * stride_m;
+                    let gx = patch.x0 + (c0 + c) as f32 * patch.sx;
+                    let gy = patch.y0 + (r0 + r) as f32 * patch.sy;
                     let e = elev_at(scn, Pos { x: gx, y: gy });
                     elev.push(e);
 
                     positions.push([gx, WATER_BASE_Y, -gy]);
                     normals.push([0.0, 1.0, 0.0]);
-                    uvs.push([
-                        (c0 + c) as f32 * stride_m / 200.0,
-                        (r0 + r) as f32 * stride_m / 200.0,
-                    ]);
-                    let depth = distance_to_shore(scn, Pos { x: gx, y: gy });
+                    uvs.push([gx / 200.0, gy / 200.0]);
+                    let depth = if patch.probe_shore {
+                        distance_to_shore(scn, Pos { x: gx, y: gy })
+                    } else {
+                        SHORE_PROBE_RADII[SHORE_PROBE_RADII.len() - 1]
+                    };
                     colors.push([depth, depth, depth, 1.0]);
                 }
             }
@@ -229,7 +329,7 @@ fn spawn_sea(
                     let i01 = i00 + cn;
                     let i11 = i01 + 1;
                     let wet = [i00, i10, i01, i11].iter().all(|&i| elev[i] <= WATER_ELEV_MAX);
-                    if !wet {
+                    if !wet || !inside_horizon(scn, positions[i00]) {
                         continue;
                     }
                     let (a, b, cc, d) = (i00 as u32, i10 as u32, i01 as u32, i11 as u32);
@@ -263,7 +363,7 @@ fn spawn_sea(
         }
     }
 
-    info!("sea: {count} chunks, {} k triangles @ {stride_m} m lattice", tri_count / 1000);
+    (count, tri_count)
 }
 
 fn update_water(

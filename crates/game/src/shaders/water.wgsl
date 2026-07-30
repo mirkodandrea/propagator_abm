@@ -12,7 +12,9 @@
 #import bevy_pbr::forward_io::{Vertex, VertexOutput}
 #import bevy_pbr::mesh_functions
 #import bevy_pbr::view_transformations::position_world_to_clip
-#import bevy_pbr::mesh_view_bindings::{view, globals}
+#import bevy_pbr::mesh_view_bindings::{view, globals, fog, lights}
+#import bevy_pbr::mesh_view_types
+#import bevy_pbr::fog as scene_fog
 
 struct WaterUniform {
     // xy: downwind unit direction in world XZ (bevy x, z). z: wind speed, m/s.
@@ -60,6 +62,49 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     out.uv = vertex.uv;
     out.color = vertex.color;
     return out;
+}
+
+// The scene's own distance fog, applied by hand.
+//
+// `StandardMaterial` gets this for free at the end of its fragment shader;
+// this material does not, and the sea is big enough that going without shows.
+// Unfogged water stays the same flat, saturated blue all the way to the far
+// edge of the mesh while the coastline beside it hazes out properly, so the
+// water reads as a solid slab laid over the horizon, with a hard straight
+// line where it ends and `crate::far_terrain`'s (correctly fogged) flat sea
+// takes over. That line is the whole "the world outside the window is broken"
+// look — the sea being the one surface in the scene that ignores the
+// atmosphere.
+//
+// The body is `bevy_pbr::pbr_functions::apply_fog` transcribed, because
+// importing that module would also pull in `pbr_bindings`, which declares
+// `StandardMaterial`'s own `@group(2)` layout on top of this material's.
+fn apply_scene_fog(input_color: vec4<f32>, world_position: vec3<f32>) -> vec4<f32> {
+    let view_to_world = world_position - view.world_position.xyz;
+    let distance = length(view_to_world);
+
+    var scattering = vec3<f32>(0.0);
+    if fog.directional_light_color.a > 0.0 {
+        let view_to_world_normalized = view_to_world / distance;
+        for (var i: u32 = 0u; i < lights.n_directional_lights; i = i + 1u) {
+            let light = lights.directional_lights[i];
+            scattering += pow(
+                max(dot(view_to_world_normalized, light.direction_to_light), 0.0),
+                fog.directional_light_exponent,
+            ) * light.color.rgb * view.exposure;
+        }
+    }
+
+    if fog.mode == mesh_view_types::FOG_MODE_LINEAR {
+        return scene_fog::linear_fog(fog, input_color, distance, scattering);
+    } else if fog.mode == mesh_view_types::FOG_MODE_EXPONENTIAL {
+        return scene_fog::exponential_fog(fog, input_color, distance, scattering);
+    } else if fog.mode == mesh_view_types::FOG_MODE_EXPONENTIAL_SQUARED {
+        return scene_fog::exponential_squared_fog(fog, input_color, distance, scattering);
+    } else if fog.mode == mesh_view_types::FOG_MODE_ATMOSPHERIC {
+        return scene_fog::atmospheric_fog(fog, input_color, distance, scattering);
+    }
+    return input_color;
 }
 
 fn hash21(p: vec2<f32>) -> f32 {
@@ -135,5 +180,5 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let foam = foam_edge * step(0.35, foam_noise + foam_edge * 0.4);
     col = mix(col, vec3<f32>(0.9, 0.93, 0.95) * light, foam * 0.85);
 
-    return vec4<f32>(col, 1.0);
+    return apply_scene_fog(vec4<f32>(col, 1.0), in.world_position.xyz);
 }

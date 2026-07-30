@@ -34,6 +34,11 @@ pub struct Capture {
     /// World-frame point to look at, when the interesting thing is not the
     /// fire -- the town, a junction, a refuge.
     focus: Option<Pos>,
+    /// Orbit yaw/pitch in degrees, when the thing under review is only wrong
+    /// from one direction -- a seam on the horizon, say, which the default
+    /// three-quarter view happens to point away from.
+    yaw_deg: Option<f32>,
+    pitch_deg: Option<f32>,
     remaining: Vec<FireLayer>,
     settle: u32,
 }
@@ -52,6 +57,8 @@ pub fn from_env() -> Option<Capture> {
         let (x, y) = v.split_once(',')?;
         Some(Pos { x: x.trim().parse().ok()?, y: y.trim().parse().ok()? })
     });
+    let yaw_deg = std::env::var("SPOTORNO_SHOT_YAW").ok().and_then(|v| v.parse().ok());
+    let pitch_deg = std::env::var("SPOTORNO_SHOT_PITCH").ok().and_then(|v| v.parse().ok());
     // A single layer can be named, for iterating on one view.
     let only = std::env::var("SPOTORNO_SHOT_LAYER").ok();
     let mut remaining: Vec<FireLayer> = FireLayer::ALL
@@ -59,7 +66,16 @@ pub fn from_env() -> Option<Capture> {
         .filter(|l| only.as_deref().map_or(true, |o| l.label().eq_ignore_ascii_case(o)))
         .collect();
     remaining.reverse(); // popped from the back
-    Some(Capture { dir, at_sim_s, distance, focus, remaining, settle: SETTLE_FRAMES })
+    Some(Capture {
+        dir,
+        at_sim_s,
+        distance,
+        focus,
+        yaw_deg,
+        pitch_deg,
+        remaining,
+        settle: SETTLE_FRAMES,
+    })
 }
 
 pub fn manual(
@@ -116,6 +132,21 @@ pub fn scripted(
             // A close shot wants a shallower angle: from 300 m, looking
             // straight down shows nothing but the top of the canopy.
             orbit.pitch = -0.35;
+        }
+        capture.settle = SETTLE_FRAMES;
+        return;
+    }
+
+    // After the distance block, so an explicit pitch wins over the shallow
+    // angle a close shot otherwise picks for itself.
+    if capture.yaw_deg.is_some() || capture.pitch_deg.is_some() {
+        if let Ok(mut orbit) = orbit.get_single_mut() {
+            if let Some(yaw) = capture.yaw_deg.take() {
+                orbit.yaw = yaw.to_radians();
+            }
+            if let Some(pitch) = capture.pitch_deg.take() {
+                orbit.pitch = pitch.to_radians();
+            }
         }
         capture.settle = SETTLE_FRAMES;
         return;
