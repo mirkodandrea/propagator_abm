@@ -226,15 +226,21 @@ fn spawn_skirt(
                 continue;
             }
 
-            let mut mesh =
-                Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::default(),
+            );
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
             mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
             mesh.insert_indices(Indices::U32(indices));
 
             commands.spawn((
-                PbrBundle { mesh: meshes.add(mesh), material: material.clone(), ..default() },
+                PbrBundle {
+                    mesh: meshes.add(mesh),
+                    material: material.clone(),
+                    ..default()
+                },
                 FarTerrain,
                 // Well outside the directional light's cascade coverage
                 // (`maximum_distance: 4000.0` in `main.rs`) anyway, so this
@@ -357,8 +363,7 @@ fn spawn_props(
                     if n < 0.62 {
                         continue;
                     }
-                    let mut rng =
-                        Rng::seeded(hash2(cx * 10_000 + i, cy * 10_000 + j, 0xB17A));
+                    let mut rng = Rng::seeded(hash2(cx * 10_000 + i, cy * 10_000 + j, 0xB17A));
                     let houses_n = 3 + (rng.unit() * 5.0) as u32;
                     for _ in 0..houses_n {
                         let hx = cx_p + (rng.unit() - 0.5) * 260.0;
@@ -401,15 +406,14 @@ fn spawn_props(
 /// vegetation, fading out toward the far edge of the skirt so the forest
 /// thins into open haze rather than stopping on a line.
 fn tree_density(p: Pos, dist: f32) -> f32 {
-    let n = noise(p.x / 220.0, p.y / 220.0, 0x7EE0) * 0.7
-        + noise(p.x / 70.0, p.y / 70.0, 0x7EE1) * 0.3;
+    let n =
+        noise(p.x / 220.0, p.y / 220.0, 0x7EE0) * 0.7 + noise(p.x / 70.0, p.y / 70.0, 0x7EE1) * 0.3;
     let fade = (1.0 - dist / SKIRT_EXTENT_M).clamp(0.0, 1.0);
     (0.30 * n * fade).clamp(0.0, 1.0)
 }
 
 fn hash2(a: i32, b: i32, salt: u64) -> u64 {
-    (a as i64 as u64)
-        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+    (a as i64 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
         ^ (b as i64 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
         ^ salt
 }
@@ -433,12 +437,22 @@ fn emit_cardboard_tree(b: &mut Builder, x: f32, elev: f32, y: f32, rng: &mut Rng
         let p1 = base + right;
         let p2 = p1 + Vec3::Y * height;
         let p3 = p0 + Vec3::Y * height;
-        b.quad(p0.to_array(), p1.to_array(), p2.to_array(), p3.to_array(), green);
+        b.quad(
+            p0.to_array(),
+            p1.to_array(),
+            p2.to_array(),
+            p3.to_array(),
+            green,
+        );
     }
 }
 
-const HOUSE_WALLS: [[f32; 3]; 4] =
-    [[0.82, 0.72, 0.56], [0.78, 0.62, 0.50], [0.85, 0.82, 0.72], [0.72, 0.68, 0.62]];
+const HOUSE_WALLS: [[f32; 3]; 4] = [
+    [0.82, 0.72, 0.56],
+    [0.78, 0.62, 0.50],
+    [0.85, 0.82, 0.72],
+    [0.72, 0.68, 0.62],
+];
 const HOUSE_ROOFS: [[f32; 3]; 2] = [[0.58, 0.30, 0.22], [0.50, 0.50, 0.52]];
 
 /// A flat-roofed box, four walls and a cap: not the traced-footprint
@@ -456,14 +470,31 @@ fn emit_low_res_house(b: &mut Builder, x: f32, elev: f32, y: f32, rng: &mut Rng)
     let right = Vec3::new(c, 0.0, s) * hs;
     let fwd = Vec3::new(-s, 0.0, c) * hs;
     let base = Vec3::new(x, elev, -y);
-    let corners = [base - right - fwd, base + right - fwd, base + right + fwd, base - right + fwd];
+    let corners = [
+        base - right - fwd,
+        base + right - fwd,
+        base + right + fwd,
+        base - right + fwd,
+    ];
     let top: Vec<Vec3> = corners.iter().map(|v| *v + Vec3::Y * height).collect();
 
     for i in 0..4 {
         let j = (i + 1) % 4;
-        b.quad(corners[i].to_array(), corners[j].to_array(), top[j].to_array(), top[i].to_array(), wall);
+        b.quad(
+            corners[i].to_array(),
+            corners[j].to_array(),
+            top[j].to_array(),
+            top[i].to_array(),
+            wall,
+        );
     }
-    b.quad(top[0].to_array(), top[1].to_array(), top[2].to_array(), top[3].to_array(), roof);
+    b.quad(
+        top[0].to_array(),
+        top[1].to_array(),
+        top[2].to_array(),
+        top[3].to_array(),
+        roof,
+    );
 }
 
 #[derive(Default)]
@@ -495,7 +526,10 @@ impl Builder {
     }
 
     fn finish(self) -> Mesh {
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, self.colors);
@@ -507,7 +541,11 @@ impl Builder {
 fn face_normal(a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> [f32; 3] {
     let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
     let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-    let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    let n = [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ];
     let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-6);
     [n[0] / len, n[1] / len, n[2] / len]
 }

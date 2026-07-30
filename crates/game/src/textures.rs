@@ -47,7 +47,11 @@ impl Noise {
 
 fn image(pixels: Vec<u8>) -> Image {
     Image::new(
-        Extent3d { width: SIZE, height: SIZE, depth_or_array_layers: 1 },
+        Extent3d {
+            width: SIZE,
+            height: SIZE,
+            depth_or_array_layers: 1,
+        },
         TextureDimension::D2,
         pixels,
         TextureFormat::Rgba8UnormSrgb,
@@ -115,7 +119,12 @@ pub fn spark() -> Image {
             let u = x as f32 / (SIZE - 1) as f32 * 2.0 - 1.0;
             let r = (u * u + v * v).sqrt();
             let a = (1.0 - r).clamp(0.0, 1.0).powf(3.5);
-            pixels.extend_from_slice(&[255, (140.0 + 115.0 * a) as u8, (40.0 * a) as u8, (a * 255.0) as u8]);
+            pixels.extend_from_slice(&[
+                255,
+                (140.0 + 115.0 * a) as u8,
+                (40.0 * a) as u8,
+                (a * 255.0) as u8,
+            ]);
         }
     }
     image(pixels)

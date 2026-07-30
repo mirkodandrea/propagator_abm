@@ -51,19 +51,31 @@ pub fn from_env() -> Option<Capture> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(1800);
-    let distance = std::env::var("SPOTORNO_SHOT_DIST").ok().and_then(|v| v.parse().ok());
+    let distance = std::env::var("SPOTORNO_SHOT_DIST")
+        .ok()
+        .and_then(|v| v.parse().ok());
     // "x,y" in world metres.
     let focus = std::env::var("SPOTORNO_SHOT_FOCUS").ok().and_then(|v| {
         let (x, y) = v.split_once(',')?;
-        Some(Pos { x: x.trim().parse().ok()?, y: y.trim().parse().ok()? })
+        Some(Pos {
+            x: x.trim().parse().ok()?,
+            y: y.trim().parse().ok()?,
+        })
     });
-    let yaw_deg = std::env::var("SPOTORNO_SHOT_YAW").ok().and_then(|v| v.parse().ok());
-    let pitch_deg = std::env::var("SPOTORNO_SHOT_PITCH").ok().and_then(|v| v.parse().ok());
+    let yaw_deg = std::env::var("SPOTORNO_SHOT_YAW")
+        .ok()
+        .and_then(|v| v.parse().ok());
+    let pitch_deg = std::env::var("SPOTORNO_SHOT_PITCH")
+        .ok()
+        .and_then(|v| v.parse().ok());
     // A single layer can be named, for iterating on one view.
     let only = std::env::var("SPOTORNO_SHOT_LAYER").ok();
     let mut remaining: Vec<FireLayer> = FireLayer::ALL
         .into_iter()
-        .filter(|l| only.as_deref().map_or(true, |o| l.label().eq_ignore_ascii_case(o)))
+        .filter(|l| {
+            only.as_deref()
+                .map_or(true, |o| l.label().eq_ignore_ascii_case(o))
+        })
         .collect();
     remaining.reverse(); // popped from the back
     Some(Capture {
@@ -173,7 +185,9 @@ pub fn scripted(
     let Ok(window) = windows.get_single() else {
         return;
     };
-    let path = capture.dir.join(format!("{}.png", next.label().to_lowercase()));
+    let path = capture
+        .dir
+        .join(format!("{}.png", next.label().to_lowercase()));
     // Frame rate at the moment of capture: the vegetation budget is decided
     // by this number, so it belongs next to the picture it paid for.
     let fps = diagnostics

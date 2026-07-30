@@ -364,7 +364,11 @@ pub fn update_cursor(
     commands.spawn((
         PbrBundle {
             mesh: meshes.add(ring_mesh(&sim.scenario, p, CURSOR_R_M)),
-            material: if ok { assets.ok.clone() } else { assets.blocked.clone() },
+            material: if ok {
+                assets.ok.clone()
+            } else {
+                assets.blocked.clone()
+            },
             ..default()
         },
         OrderCursor,
@@ -376,10 +380,7 @@ pub fn update_cursor(
 /// Unit ids survive a restart (the roster is rebuilt identically), so the
 /// selection *could* be kept — but a half-placed line anchored in the previous
 /// run, and a refusal explaining a fire that no longer exists, could not.
-pub fn reset(
-    mut restarted: EventReader<crate::sim::SimRestarted>,
-    mut tool: ResMut<OrderTool>,
-) {
+pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut tool: ResMut<OrderTool>) {
     if restarted.is_empty() {
         return;
     }
@@ -630,10 +631,7 @@ pub fn status_line(sim: &Sim, id: usize) -> String {
         Task::Attack { .. } => s.push_str(" · direct attack"),
         Task::Line { from, to } => {
             let total = ((to.x - from.x).powi(2) + (to.y - from.y).powi(2)).sqrt();
-            s.push_str(&format!(
-                " · line {:.0}/{:.0} m",
-                u.line_done_m, total
-            ));
+            s.push_str(&format!(" · line {:.0}/{:.0} m", u.line_done_m, total));
         }
         Task::Drop { .. } => s.push_str(" · drop run"),
         Task::Return => s.push_str(" · returning"),

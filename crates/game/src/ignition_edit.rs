@@ -139,7 +139,12 @@ pub fn setup(
         HoverRing,
     ));
 
-    commands.insert_resource(RingAssets { placed, ok, blocked, drawn: 0 });
+    commands.insert_resource(RingAssets {
+        placed,
+        ok,
+        blocked,
+        drawn: 0,
+    });
 }
 
 /// Track the ground point under the cursor, and whether it is ignitable.
@@ -159,8 +164,12 @@ pub fn hover(
     let (Ok(window), Ok((camera, cam_tf))) = (windows.get_single(), camera.get_single()) else {
         return;
     };
-    tool.hover = pick::cursor_ground(&sim.scenario, camera, cam_tf, window)
-        .map(|p| (p, ignitable(&sim.scenario, sim.scenario.world.cell_of(p), tool.radius_m)));
+    tool.hover = pick::cursor_ground(&sim.scenario, camera, cam_tf, window).map(|p| {
+        (
+            p,
+            ignitable(&sim.scenario, sim.scenario.world.cell_of(p), tool.radius_m),
+        )
+    });
 }
 
 /// Light a fire where the player clicked.
@@ -200,11 +209,11 @@ fn ignitable(scn: &Scenario, centre: Cell, radius_m: f32) -> bool {
             if row < 0 || col < 0 {
                 continue;
             }
-            let c = Cell { row: row as usize, col: col as usize };
-            if c.row < scn.world.fire_rows
-                && c.col < scn.world.fire_cols
-                && scn.is_burnable(c)
-            {
+            let c = Cell {
+                row: row as usize,
+                col: col as usize,
+            };
+            if c.row < scn.world.fire_rows && c.col < scn.world.fire_cols && scn.is_burnable(c) {
                 return true;
             }
         }
@@ -219,7 +228,11 @@ pub fn update_hover(
     assets: Res<RingAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut query: Query<
-        (&Handle<Mesh>, &mut Visibility, &mut Handle<StandardMaterial>),
+        (
+            &Handle<Mesh>,
+            &mut Visibility,
+            &mut Handle<StandardMaterial>,
+        ),
         With<HoverRing>,
     >,
 ) {
@@ -334,7 +347,10 @@ pub(crate) fn ring_mesh(scn: &Scenario, centre: Pos, radius_m: f32) -> Mesh {
         let a = i as f32 / RING_SEGMENTS as f32 * std::f32::consts::TAU;
         let (s, c) = a.sin_cos();
         for r in [inner, outer] {
-            let p = Pos { x: centre.x + c * r, y: centre.y + s * r };
+            let p = Pos {
+                x: centre.x + c * r,
+                y: centre.y + s * r,
+            };
             // Clamped, not skipped: a ring straddling the window edge should
             // still close rather than come apart.
             let h = scn.terrain.height_at(p) + RING_LIFT_M;
@@ -350,8 +366,10 @@ pub(crate) fn ring_mesh(scn: &Scenario, centre: Pos, radius_m: f32) -> Mesh {
         indices.extend_from_slice(&[a, a + 2, a + 1, a + 1, a + 2, a + 3]);
     }
 
-    let mut mesh =
-        Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -360,8 +378,10 @@ pub(crate) fn ring_mesh(scn: &Scenario, centre: Pos, radius_m: f32) -> Mesh {
 }
 
 fn empty_mesh() -> Mesh {
-    let mut mesh =
-        Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<[f32; 3]>::new());
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, Vec::<[f32; 3]>::new());
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, Vec::<[f32; 2]>::new());

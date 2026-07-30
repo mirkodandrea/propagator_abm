@@ -158,8 +158,10 @@ impl Sim {
             agents.refuges.len()
         );
 
-        let crews =
-            Suppression::new(&scenario, &staging(&agents, scenario.world.centre_of(ignition.centre)))?;
+        let crews = Suppression::new(
+            &scenario,
+            &staging(&agents, scenario.world.centre_of(ignition.centre)),
+        )?;
         println!(
             "suppression: {} units staged, {} air tankers on call",
             crews.units.iter().filter(|u| !u.kind.is_air()).count(),
@@ -265,7 +267,11 @@ impl Sim {
     pub fn add_ignition(&mut self, centre: Cell, radius_m: f32) -> anyhow::Result<()> {
         let at_s = self.time_s();
         self.fire.ignite_patch(centre, radius_m, &self.scenario)?;
-        self.ignitions.push(Ignition { centre, radius_m, at_s });
+        self.ignitions.push(Ignition {
+            centre,
+            radius_m,
+            at_s,
+        });
         self.generation += 1;
         info!(
             "ignition added at ({}, {}) r={radius_m:.0} m, T+{at_s} s",
@@ -376,8 +382,12 @@ pub fn step_fire(mut sim: ResMut<Sim>, time: Res<Time>) {
     // non-empty after a restart: see `Sim::restart`.
     if !sim.pending_ignitions.is_empty() {
         let now = sim.time_s();
-        let due: Vec<Ignition> =
-            sim.pending_ignitions.iter().copied().filter(|i| i.at_s <= now).collect();
+        let due: Vec<Ignition> = sim
+            .pending_ignitions
+            .iter()
+            .copied()
+            .filter(|i| i.at_s <= now)
+            .collect();
         sim.pending_ignitions.retain(|i| i.at_s > now);
         for ig in due {
             let Sim { fire, scenario, .. } = &mut *sim;
@@ -389,7 +399,13 @@ pub fn step_fire(mut sim: ResMut<Sim>, time: Res<Time>) {
 
     match sim.fire.advance(advance) {
         Ok(_) => {
-            let Sim { fire, agents, crews, scenario, .. } = &mut *sim;
+            let Sim {
+                fire,
+                agents,
+                crews,
+                scenario,
+                ..
+            } = &mut *sim;
             agents.step(advance as f32, fire, scenario);
             // The units read the fire, then the fire is handed what they did.
             // Queued rather than applied, so it lands as one merged boundary

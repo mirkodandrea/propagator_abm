@@ -72,7 +72,12 @@ pub fn setup(
         ..default()
     });
     commands.spawn((
-        PbrBundle { mesh, material, visibility: Visibility::Hidden, ..default() },
+        PbrBundle {
+            mesh,
+            material,
+            visibility: Visibility::Hidden,
+            ..default()
+        },
         SelectionRing,
     ));
 }
@@ -81,10 +86,7 @@ pub fn setup(
 /// stable, but `Target::Traveller` indexes the rebuilt, append-only
 /// `travellers` list, and a stale index there would silently point at
 /// whatever unrelated group ends up at that slot.
-pub fn reset(
-    mut restarted: EventReader<crate::sim::SimRestarted>,
-    mut selected: ResMut<Selected>,
-) {
+pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut selected: ResMut<Selected>) {
     if restarted.is_empty() {
         return;
     }
@@ -150,7 +152,10 @@ pub fn pick_click(
             continue;
         }
         let ground = sim.scenario.terrain.height_at(h.home);
-        try_pick(frame::to_bevy(h.home, ground + 4.0), Target::Household(h.id));
+        try_pick(
+            frame::to_bevy(h.home, ground + 4.0),
+            Target::Household(h.id),
+        );
     }
 
     // People currently drawn as their own figure — indoors, or riding a car,
@@ -313,18 +318,16 @@ pub fn panel(
             }
             ui.separator();
 
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                match target {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| match target {
                     Target::Household(id) => {
                         household_panel(ui, &sim, &buildings, id, &mut jump_to)
                     }
                     Target::Person(id) => person_panel(ui, &sim, id, &mut jump_to),
-                    Target::Traveller(i) => {
-                        traveller_panel(ui, &sim, i, &mut jump_to, &mut mode)
-                    }
+                    Target::Traveller(i) => traveller_panel(ui, &sim, i, &mut jump_to, &mut mode),
                     Target::Unit(id) => unit_panel(ui, &sim, id, &mut mode),
-                }
-            });
+                });
         });
 
     if close {
@@ -437,7 +440,9 @@ fn household_panel(
     ui.label(format!("Members ({})", h.members.len()));
     egui::Grid::new("hh_members").num_columns(3).show(ui, |ui| {
         for &pid in &h.members {
-            let Some(p) = sim.agents.people.get(pid) else { continue };
+            let Some(p) = sim.agents.people.get(pid) else {
+                continue;
+            };
             ui.label(format!("#{pid}"));
             ui.label(format!("age {}", p.age));
             if ui.small_button(status_text(p.status)).clicked() {
@@ -477,7 +482,10 @@ fn person_panel(ui: &mut egui::Ui, sim: &Sim, id: usize, jump_to: &mut Option<Ta
     });
 
     ui.separator();
-    if ui.button(format!("Inspect household #{}", p.household)).clicked() {
+    if ui
+        .button(format!("Inspect household #{}", p.household))
+        .clicked()
+    {
         *jump_to = Some(Target::Household(p.household));
     }
     if let Some(ti) = p.traveller {
@@ -544,7 +552,10 @@ fn traveller_panel(
 
     if !t.solo {
         ui.separator();
-        if ui.button(format!("Inspect household #{}", t.household)).clicked() {
+        if ui
+            .button(format!("Inspect household #{}", t.household))
+            .clicked()
+        {
             *jump_to = Some(Target::Household(t.household));
         }
     }
@@ -599,7 +610,10 @@ fn unit_panel(ui: &mut egui::Ui, sim: &Sim, id: usize, mode: &mut crate::camera:
                 ui.label(format!("{:.0} L", u.water_used_l));
                 ui.end_row();
                 ui.label("Hose reach");
-                ui.label(format!("{:.0} m of a road it can reach", abm::suppression::ENGINE_REACH_M));
+                ui.label(format!(
+                    "{:.0} m of a road it can reach",
+                    abm::suppression::ENGINE_REACH_M
+                ));
                 ui.end_row();
             }
             UnitKind::HandCrew => {
@@ -654,10 +668,16 @@ fn camera_controls(ui: &mut egui::Ui, mode: &mut crate::camera::CameraMode, targ
         let following = *mode == CameraMode::Follow(target);
         if ui
             .selectable_label(following, "🎥 Follow")
-            .on_hover_text("Keep the camera's focus on this as it moves. Orbit and zoom still work.")
+            .on_hover_text(
+                "Keep the camera's focus on this as it moves. Orbit and zoom still work.",
+            )
             .clicked()
         {
-            *mode = if following { CameraMode::Free } else { CameraMode::Follow(target) };
+            *mode = if following {
+                CameraMode::Free
+            } else {
+                CameraMode::Follow(target)
+            };
         }
         let riding = *mode == CameraMode::FirstPerson(target);
         if ui
@@ -665,7 +685,11 @@ fn camera_controls(ui: &mut egui::Ui, mode: &mut crate::camera::CameraMode, targ
             .on_hover_text("Ride along, looking the way it's heading. Left-drag to look around.")
             .clicked()
         {
-            *mode = if riding { CameraMode::Free } else { CameraMode::FirstPerson(target) };
+            *mode = if riding {
+                CameraMode::Free
+            } else {
+                CameraMode::FirstPerson(target)
+            };
         }
     });
     if *mode == CameraMode::FirstPerson(target) {

@@ -59,7 +59,8 @@ pub fn setup(
 ) {
     // A capsule reads as a person at any angle and costs almost nothing; the
     // silhouette is doing all the work at this distance anyway.
-    let person: Handle<Mesh> = meshes.add(Capsule3d::new(0.32, 1.1).mesh().latitudes(4).longitudes(6));
+    let person: Handle<Mesh> =
+        meshes.add(Capsule3d::new(0.32, 1.1).mesh().latitudes(4).longitudes(6));
     let car = meshes.add(Cuboid::new(1.8, 1.5, 4.3));
 
     let status: Vec<Handle<StandardMaterial>> = [
@@ -150,11 +151,7 @@ pub fn reset(
 
 /// Give an entity to every household that has taken to the road since the last
 /// frame. Travellers are append-only, so this is a tail scan.
-pub fn spawn_vehicles(
-    mut commands: Commands,
-    sim: Res<Sim>,
-    mut assets: ResMut<PeopleAssets>,
-) {
+pub fn spawn_vehicles(mut commands: Commands, sim: Res<Sim>, mut assets: ResMut<PeopleAssets>) {
     let total = sim.agents.travellers.len();
     if total == assets.spawned_vehicles {
         return;
@@ -204,7 +201,11 @@ pub fn update_people(
             .map(|t| t.mode == Mode::Car && t.state != TravelState::Cutoff)
             .unwrap_or(false);
         let outside = matches!(p.status, Status::Evacuating | Status::Trapped) && !in_vehicle;
-        let want = if outside { Visibility::Inherited } else { Visibility::Hidden };
+        let want = if outside {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
         if *vis != want {
             *vis = want;
         }
@@ -288,7 +289,10 @@ pub fn mark_refuges(
         ..default()
     });
     for r in &sim.agents.refuges {
-        let p = Pos { x: r.pos.x, y: r.pos.y };
+        let p = Pos {
+            x: r.pos.x,
+            y: r.pos.y,
+        };
         let ground = sim.scenario.terrain.height_at(p);
         commands.spawn(PbrBundle {
             mesh: mesh.clone(),

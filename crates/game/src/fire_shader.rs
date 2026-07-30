@@ -83,7 +83,12 @@ pub struct FireShaderPlugin;
 
 impl Plugin for FireShaderPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, FLAME_SHADER_HANDLE, "shaders/flame.wgsl", Shader::from_wgsl);
+        load_internal_asset!(
+            app,
+            FLAME_SHADER_HANDLE,
+            "shaders/flame.wgsl",
+            Shader::from_wgsl
+        );
         load_internal_asset!(
             app,
             GROUND_SHADER_HANDLE,

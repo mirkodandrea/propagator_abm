@@ -174,16 +174,13 @@ pub fn controls(
     // is never stuck.
     let orbit_button = tool.mode != crate::ignition_edit::EditMode::Place && !order.is_armed();
 
-    if orbit_button && buttons.pressed(MouseButton::Left) && !keys.pressed(KeyCode::ShiftLeft)
-    {
+    if orbit_button && buttons.pressed(MouseButton::Left) && !keys.pressed(KeyCode::ShiftLeft) {
         orbit.yaw -= drag.x * 0.005;
         orbit.pitch = (orbit.pitch - drag.y * 0.005).clamp(-1.5, -0.05);
     }
 
     if buttons.pressed(MouseButton::Right)
-        || (orbit_button
-            && buttons.pressed(MouseButton::Left)
-            && keys.pressed(KeyCode::ShiftLeft))
+        || (orbit_button && buttons.pressed(MouseButton::Left) && keys.pressed(KeyCode::ShiftLeft))
     {
         // Pan in the camera's ground plane, scaled by zoom so the world moves
         // with the cursor at any distance.
@@ -208,7 +205,8 @@ pub fn controls(
         kb.x += 1.0;
     }
     if kb != Vec3::ZERO {
-        let step = Quat::from_rotation_y(orbit.yaw) * kb.normalize()
+        let step = Quat::from_rotation_y(orbit.yaw)
+            * kb.normalize()
             * orbit.distance
             * time.delta_seconds();
         orbit.focus += step;
@@ -247,7 +245,10 @@ pub fn controls(
     transform.translation = orbit.focus + dir * orbit.distance;
     // Clamp against the ground under the *camera*, not the focus: see
     // `MIN_GROUND_CLEARANCE_M`.
-    let ground = sim.scenario.terrain.height_at(crate::frame::to_world(transform.translation));
+    let ground = sim
+        .scenario
+        .terrain
+        .height_at(crate::frame::to_world(transform.translation));
     transform.translation.y = transform.translation.y.max(ground + MIN_GROUND_CLEARANCE_M);
     transform.look_at(orbit.focus, Vec3::Y);
 }

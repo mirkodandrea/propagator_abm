@@ -81,7 +81,11 @@ pub fn panel(
     egui::SidePanel::right("entities_dock")
         .default_width(340.0)
         .resizable(!collapsed)
-        .width_range(if collapsed { 26.0..=26.0 } else { 240.0..=560.0 })
+        .width_range(if collapsed {
+            26.0..=26.0
+        } else {
+            240.0..=560.0
+        })
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let open = crate::ui::collapse_button(ui, !collapsed, "⏵", "⏴");
@@ -90,7 +94,11 @@ pub fn panel(
                     ui.heading("Entities");
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("✕").on_hover_text("Close (b to reopen)").clicked() {
+                    if ui
+                        .small_button("✕")
+                        .on_hover_text("Close (b to reopen)")
+                        .clicked()
+                    {
                         close = true;
                     }
                 });
@@ -118,11 +126,9 @@ pub fn panel(
             ui.label(format!("{} of {}", rows.len(), total_count(&sim)));
 
             let row_h = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(
-                ui,
-                row_h,
-                rows.len(),
-                |ui, range| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show_rows(ui, row_h, rows.len(), |ui, range| {
                     for &t in &rows[range] {
                         let is_selected = selected.0 == Some(t);
                         let label = row_label(&sim, t);
@@ -131,8 +137,7 @@ pub fn panel(
                             jump_to = Some(t);
                         }
                     }
-                },
-            );
+                });
             ui.small("click a row to select and centre the camera on it · b to close");
         });
 
@@ -184,9 +189,13 @@ fn build_rows(sim: &Sim, browser: &BrowserUi) -> Vec<Target> {
         );
     }
     if browser.show_travellers {
-        rows.extend(sim.agents.travellers.iter().enumerate().filter_map(|(i, t)| {
-            matches_traveller(t, i, &q).then_some(Target::Traveller(i))
-        }));
+        rows.extend(
+            sim.agents
+                .travellers
+                .iter()
+                .enumerate()
+                .filter_map(|(i, t)| matches_traveller(t, i, &q).then_some(Target::Traveller(i))),
+        );
     }
     if browser.show_units {
         rows.extend(
@@ -242,7 +251,11 @@ fn row_label(sim: &Sim, t: Target) -> String {
         },
         Target::Person(id) => match sim.agents.people.get(id) {
             Some(p) => {
-                format!("🚶 #{id}  {}, age {}", crate::inspect::status_text(p.status), p.age)
+                format!(
+                    "🚶 #{id}  {}, age {}",
+                    crate::inspect::status_text(p.status),
+                    p.age
+                )
             }
             None => format!("🚶 #{id}  (gone)"),
         },
@@ -258,7 +271,11 @@ fn row_label(sim: &Sim, t: Target) -> String {
             None => "🚗 (gone)".to_string(),
         },
         Target::Unit(id) => match sim.crews.units.get(id) {
-            Some(u) => format!("🚒 {}  {}", u.callsign, crate::command::status_line(sim, id)),
+            Some(u) => format!(
+                "🚒 {}  {}",
+                u.callsign,
+                crate::command::status_line(sim, id)
+            ),
             None => format!("🚒 #{id}  (gone)"),
         },
     }

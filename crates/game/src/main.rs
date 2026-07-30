@@ -59,139 +59,141 @@ fn main() -> anyhow::Result<()> {
 
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Spotorno — wildfire incident command".into(),
-                #[cfg(target_arch = "wasm32")]
-                canvas: Some("#spotorno".into()),
-                #[cfg(target_arch = "wasm32")]
-                fit_canvas_to_parent: true,
-                #[cfg(target_arch = "wasm32")]
-                prevent_default_event_handling: true,
-                #[cfg(target_arch = "wasm32")]
-                resolution: (1280.0, 720.0).into(),
-                #[cfg(not(target_arch = "wasm32"))]
-                resolution: (1600.0, 1000.0).into(),
-                ..default()
-            }),
+        primary_window: Some(Window {
+            title: "Spotorno — wildfire incident command".into(),
+            #[cfg(target_arch = "wasm32")]
+            canvas: Some("#spotorno".into()),
+            #[cfg(target_arch = "wasm32")]
+            fit_canvas_to_parent: true,
+            #[cfg(target_arch = "wasm32")]
+            prevent_default_event_handling: true,
+            #[cfg(target_arch = "wasm32")]
+            resolution: (1280.0, 720.0).into(),
+            #[cfg(not(target_arch = "wasm32"))]
+            resolution: (1600.0, 1000.0).into(),
             ..default()
-        }))
-        .insert_resource(ClearColor(Color::srgb(0.55, 0.66, 0.78)))
-        // Ambient is sky bounce, so it is cool and weak; the sun carries the
-        // scene. Kept modest because vegetation is drawn at sub-pixel scale
-        // from altitude, and an over-lit canopy aliases into white sparkle.
-        .insert_resource(AmbientLight {
-            color: Color::srgb(0.72, 0.78, 0.92),
-            brightness: 130.0,
-        })
-        .add_plugins(EguiPlugin)
-        .add_plugins(fire_shader::FireShaderPlugin)
-        .add_plugins(sky::SkyPlugin)
-        .add_plugins(sea::SeaPlugin)
-        .add_plugins(far_terrain::FarTerrainPlugin)
-        .init_resource::<ui::UiFocus>()
-        .init_resource::<ignition_edit::IgnitionTool>()
-        .init_resource::<inspect::Selected>()
-        .init_resource::<inspect::ClickTracker>()
-        .init_resource::<command::OrderTool>()
-        .init_resource::<browser::BrowserUi>()
-        .init_resource::<camera::CameraMode>()
-        .init_resource::<camera::FirstPersonLook>()
-        .init_resource::<buildings::HoveredHousehold>()
-        .init_resource::<ui::PanelState>()
-        .add_event::<sim::SimRestarted>()
-        .insert_resource(sim)
-        .add_systems(
-            Startup,
+        }),
+        ..default()
+    }))
+    .insert_resource(ClearColor(Color::srgb(0.55, 0.66, 0.78)))
+    // Ambient is sky bounce, so it is cool and weak; the sun carries the
+    // scene. Kept modest because vegetation is drawn at sub-pixel scale
+    // from altitude, and an over-lit canopy aliases into white sparkle.
+    .insert_resource(AmbientLight {
+        color: Color::srgb(0.72, 0.78, 0.92),
+        brightness: 130.0,
+    })
+    .add_plugins(EguiPlugin)
+    .add_plugins(fire_shader::FireShaderPlugin)
+    .add_plugins(sky::SkyPlugin)
+    .add_plugins(sea::SeaPlugin)
+    .add_plugins(far_terrain::FarTerrainPlugin)
+    .init_resource::<ui::UiFocus>()
+    .init_resource::<ui::HelpUi>()
+    .init_resource::<ignition_edit::IgnitionTool>()
+    .init_resource::<inspect::Selected>()
+    .init_resource::<inspect::ClickTracker>()
+    .init_resource::<command::OrderTool>()
+    .init_resource::<browser::BrowserUi>()
+    .init_resource::<camera::CameraMode>()
+    .init_resource::<camera::FirstPersonLook>()
+    .init_resource::<buildings::HoveredHousehold>()
+    .init_resource::<ui::PanelState>()
+    .add_event::<sim::SimRestarted>()
+    .insert_resource(sim)
+    .add_systems(
+        Startup,
+        (
+            setup_scene,
+            fire_view::setup,
+            ignition_edit::setup,
+            inspect::setup,
+            command::setup,
+            vegetation::spawn,
+            buildings::spawn,
+            agents::spawn,
+            people::setup,
+            people::mark_refuges,
+            units::setup,
+        ),
+    )
+    // Ordering that matters, and only that: the panels decide whether the
+    // pointer belongs to the UI, so they run before anything that reads the
+    // mouse; the docked panels have to all land before `sync_viewport` reads
+    // what space is left for the 3D camera; and the restart resets have to
+    // land before the views that would otherwise read the stale state they
+    // are clearing.
+    .add_systems(
+        Update,
+        (
             (
-                setup_scene,
-                fire_view::setup,
-                ignition_edit::setup,
-                inspect::setup,
-                command::setup,
-                vegetation::spawn,
-                buildings::spawn,
-                agents::spawn,
-                people::setup,
-                people::mark_refuges,
-                units::setup,
-            ),
-        )
-        // Ordering that matters, and only that: the panels decide whether the
-        // pointer belongs to the UI, so they run before anything that reads the
-        // mouse; the docked panels have to all land before `sync_viewport` reads
-        // what space is left for the 3D camera; and the restart resets have to
-        // land before the views that would otherwise read the stale state they
-        // are clearing.
-        .add_systems(
-            Update,
+                ui::panel,
+                ui::help_panel,
+                ui::wildfire_panel,
+                browser::panel,
+                command::panel,
+                inspect::panel,
+                ui::sync_viewport,
+            )
+                .chain(),
             (
-                (
-                    ui::panel,
-                    ui::wildfire_panel,
-                    browser::panel,
-                    command::panel,
-                    inspect::panel,
-                    ui::sync_viewport,
-                )
-                    .chain(),
-                (
-                    camera::validate_mode,
-                    camera::controls,
-                    ignition_edit::hover,
-                    ignition_edit::place,
-                    command::hover,
-                    command::place,
-                    inspect::pick_click,
-                    buildings::hover,
-                )
-                    .chain()
-                    .after(inspect::panel),
-            ),
-        )
-        .add_systems(
-            Update,
+                camera::validate_mode,
+                camera::controls,
+                ignition_edit::hover,
+                ignition_edit::place,
+                command::hover,
+                command::place,
+                inspect::pick_click,
+                buildings::hover,
+            )
+                .chain()
+                .after(inspect::panel),
+        ),
+    )
+    .add_systems(
+        Update,
+        (
+            controls,
+            browser::toggle,
+            fire_view::layer_controls,
+            command::controls.before(command::hover),
+            sim::step_fire.after(ui::wildfire_panel),
             (
-                controls,
-                browser::toggle,
-                fire_view::layer_controls,
-                command::controls.before(command::hover),
-                sim::step_fire.after(ui::wildfire_panel),
-                (
-                    fire_view::reset,
-                    buildings::reset,
-                    people::reset,
-                    inspect::reset,
-                    units::reset,
-                    command::reset,
-                    camera::reset,
-                )
-                    .after(ui::wildfire_panel),
-                (
-                    fire_view::update_overlay,
-                    fire_view::update_flames,
-                    vegetation::burn,
-                    buildings::damage,
-                    people::spawn_vehicles,
-                    people::update_people,
-                    people::update_vehicles,
-                    ignition_edit::sync_markers,
-                    ignition_edit::show_markers.after(ignition_edit::sync_markers),
-                    ignition_edit::update_hover,
-                    inspect::update_ring,
-                    units::update_units,
-                    units::sync_orders,
-                    units::update_work_overlay,
-                    command::update_cursor,
-                )
-                    .after(fire_view::reset)
-                    .after(buildings::reset)
-                    .after(people::reset)
-                    .after(inspect::reset)
-                    .after(units::reset)
-                    .after(command::reset),
-                capture::manual,
-            ),
-        );
+                fire_view::reset,
+                buildings::reset,
+                people::reset,
+                inspect::reset,
+                units::reset,
+                command::reset,
+                camera::reset,
+            )
+                .after(ui::wildfire_panel),
+            (
+                fire_view::update_overlay,
+                fire_view::update_flames,
+                vegetation::burn,
+                buildings::damage,
+                people::spawn_vehicles,
+                people::update_people,
+                people::update_vehicles,
+                ignition_edit::sync_markers,
+                ignition_edit::show_markers.after(ignition_edit::sync_markers),
+                ignition_edit::update_hover,
+                inspect::update_ring,
+                units::update_units,
+                units::sync_orders,
+                units::update_work_overlay,
+                command::update_cursor,
+            )
+                .after(fire_view::reset)
+                .after(buildings::reset)
+                .after(people::reset)
+                .after(inspect::reset)
+                .after(units::reset)
+                .after(command::reset),
+            capture::manual,
+        ),
+    );
 
     // Unattended exercise of the wildfire controls. Runs after the resets so
     // it observes the state the views will actually see.
@@ -245,7 +247,10 @@ fn setup_scene(
     // camera's minimum zoom.
     commands.spawn((
         DirectionalLightBundle {
-            directional_light: DirectionalLight { shadows_enabled: true, ..default() },
+            directional_light: DirectionalLight {
+                shadows_enabled: true,
+                ..default()
+            },
             cascade_shadow_config: CascadeShadowConfigBuilder {
                 num_cascades: 4,
                 minimum_distance: 2.0,
@@ -267,18 +272,32 @@ fn setup_scene(
             // HDR plus bloom is what makes the flames read as light rather
             // than as orange paint: the fire layers deliberately push vertex
             // colours above 1.0, and without an HDR target that just clips.
-            camera: Camera { hdr: true, ..default() },
+            camera: Camera {
+                hdr: true,
+                ..default()
+            },
             tonemapping: Tonemapping::TonyMcMapface,
             transform: Transform::from_xyz(focus.x, focus.y + 2000.0, focus.z + 2000.0),
-            projection: PerspectiveProjection { far: 40_000.0, ..default() }.into(),
+            projection: PerspectiveProjection {
+                far: 40_000.0,
+                ..default()
+            }
+            .into(),
             ..default()
         },
-        BloomSettings { intensity: 0.20, ..BloomSettings::NATURAL },
+        BloomSettings {
+            intensity: 0.20,
+            ..BloomSettings::NATURAL
+        },
         // Atmospheric haze, coloured to match the sky every frame by
         // `sky::update_sky` — the fallback here only matters for the one
         // frame before that system first runs.
         FogSettings::default(),
-        OrbitCamera { focus, distance: 2600.0, ..default() },
+        OrbitCamera {
+            focus,
+            distance: 2600.0,
+            ..default()
+        },
     ));
 }
 

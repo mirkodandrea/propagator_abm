@@ -385,7 +385,10 @@ pub fn update_work_overlay(
     let mut cleared: Vec<Cell> = Vec::new();
     let mut wet: Vec<Cell> = Vec::new();
     for (i, flag) in sim.fire.cleared().iter().enumerate() {
-        let c = Cell { row: i / w.fire_cols, col: i % w.fire_cols };
+        let c = Cell {
+            row: i / w.fire_cols,
+            col: i % w.fire_cols,
+        };
         if *flag {
             cleared.push(c);
         } else if sim.fire.added_moisture()[i] >= WET_SHOW_PTS {
@@ -433,7 +436,10 @@ fn cell_patches(scn: &Scenario, cells: &[Cell]) -> Mesh {
         let p = scn.world.centre_of(*c);
         let base = (n * 4) as u32;
         for (dx, dy) in [(-h, -h), (h, -h), (-h, h), (h, h)] {
-            let q = Pos { x: p.x + dx, y: p.y + dy };
+            let q = Pos {
+                x: p.x + dx,
+                y: p.y + dy,
+            };
             positions.push([q.x, scn.terrain.height_at(q) + RING_LIFT_M, -q.y]);
             normals.push([0.0, 1.0, 0.0]);
             uvs.push([(dx > 0.0) as u32 as f32, (dy > 0.0) as u32 as f32]);
@@ -444,7 +450,10 @@ fn cell_patches(scn: &Scenario, cells: &[Cell]) -> Mesh {
         indices.extend_from_slice(&[base, base + 2, base + 1, base + 1, base + 2, base + 3]);
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -476,7 +485,10 @@ pub(crate) fn ribbon(scn: &Scenario, a: Pos, b: Pos, width_m: f32) -> Mesh {
         let t = i as f32 / steps as f32;
         let c = lerp(a, b, t);
         for s in [-1.0f32, 1.0] {
-            let p = Pos { x: c.x + nx * s, y: c.y + ny * s };
+            let p = Pos {
+                x: c.x + nx * s,
+                y: c.y + ny * s,
+            };
             positions.push([p.x, scn.terrain.height_at(p) + RING_LIFT_M, -p.y]);
             normals.push([0.0, 1.0, 0.0]);
             uvs.push([(s > 0.0) as u32 as f32, t]);
@@ -487,7 +499,10 @@ pub(crate) fn ribbon(scn: &Scenario, a: Pos, b: Pos, width_m: f32) -> Mesh {
         indices.extend_from_slice(&[k, k + 2, k + 1, k + 1, k + 2, k + 3]);
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -498,7 +513,10 @@ pub(crate) fn ribbon(scn: &Scenario, a: Pos, b: Pos, width_m: f32) -> Mesh {
 /// Fuselage plus wing, as one mesh: an unmistakable plan-view aircraft at any
 /// zoom, and cheaper than loading a model for eight pixels of screen.
 fn tanker_mesh() -> Mesh {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     let mut positions: Vec<[f32; 3]> = Vec::new();
     let mut normals: Vec<[f32; 3]> = Vec::new();
     let mut uvs: Vec<[f32; 2]> = Vec::new();
@@ -514,9 +532,23 @@ fn tanker_mesh() -> Mesh {
                 uvs.push([0.0, 0.0]);
             }
             if ny > 0.0 {
-                indices.extend_from_slice(&[base, base + 2, base + 1, base + 1, base + 2, base + 3]);
+                indices.extend_from_slice(&[
+                    base,
+                    base + 2,
+                    base + 1,
+                    base + 1,
+                    base + 2,
+                    base + 3,
+                ]);
             } else {
-                indices.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+                indices.extend_from_slice(&[
+                    base,
+                    base + 1,
+                    base + 2,
+                    base + 1,
+                    base + 3,
+                    base + 2,
+                ]);
             }
         }
     };
@@ -532,5 +564,8 @@ fn tanker_mesh() -> Mesh {
 
 fn lerp(a: Pos, b: Pos, t: f32) -> Pos {
     let t = t.clamp(0.0, 1.0);
-    Pos { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+    Pos {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+    }
 }

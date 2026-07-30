@@ -63,7 +63,9 @@ impl Default for DayClock {
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
             .unwrap_or(16.5);
-        DayClock { start_hour: start_hour.rem_euclid(24.0) }
+        DayClock {
+            start_hour: start_hour.rem_euclid(24.0),
+        }
     }
 }
 
@@ -89,7 +91,12 @@ pub struct SunState {
 
 impl Default for SunState {
     fn default() -> Self {
-        SunState { direction: Vec3::Y, color: Vec3::ONE, day_gate: 0.0, brightness: 0.0 }
+        SunState {
+            direction: Vec3::Y,
+            color: Vec3::ONE,
+            day_gate: 0.0,
+            brightness: 0.0,
+        }
     }
 }
 
@@ -141,7 +148,12 @@ pub struct SkyPlugin;
 
 impl Plugin for SkyPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SKY_SHADER_HANDLE, "shaders/sky.wgsl", Shader::from_wgsl);
+        load_internal_asset!(
+            app,
+            SKY_SHADER_HANDLE,
+            "shaders/sky.wgsl",
+            Shader::from_wgsl
+        );
         app.init_resource::<DayClock>()
             .init_resource::<SunState>()
             .add_plugins(MaterialPlugin::<SkyMaterial>::default())
@@ -156,10 +168,16 @@ fn spawn_sky(
     mut materials: ResMut<Assets<SkyMaterial>>,
 ) {
     let mesh = meshes.add(uv_sphere(SKY_RADIUS, 24, 16));
-    let handle = materials.add(SkyMaterial { uniform: SkyUniform::default() });
+    let handle = materials.add(SkyMaterial {
+        uniform: SkyUniform::default(),
+    });
     commands.insert_resource(SkyHandle(handle.clone()));
     commands.spawn((
-        MaterialMeshBundle { mesh, material: handle, ..default() },
+        MaterialMeshBundle {
+            mesh,
+            material: handle,
+            ..default()
+        },
         SkyDome,
         // A 30 km sphere left as a default shadow caster/receiver blows up
         // the directional light's cascade-fitting: Bevy sizes each cascade's
@@ -207,7 +225,10 @@ fn uv_sphere(radius: f32, sectors: usize, stacks: usize) -> Mesh {
         }
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -220,10 +241,13 @@ fn uv_sphere(radius: f32, sectors: usize, stacks: usize) -> Mesh {
 /// / hour-angle formula; see the module doc for what it deliberately skips.
 fn solar_position(hour_of_day: f32) -> (f32, f32) {
     let lat = SITE_LAT_DEG.to_radians();
-    let decl = 23.44f32.to_radians() * (((360.0 / 365.0) * (DAY_OF_YEAR + 284.0)).to_radians()).sin();
+    let decl =
+        23.44f32.to_radians() * (((360.0 / 365.0) * (DAY_OF_YEAR + 284.0)).to_radians()).sin();
     let h = (hour_of_day - 12.0) * 15f32.to_radians();
 
-    let el = (lat.sin() * decl.sin() + lat.cos() * decl.cos() * h.cos()).clamp(-1.0, 1.0).asin();
+    let el = (lat.sin() * decl.sin() + lat.cos() * decl.cos() * h.cos())
+        .clamp(-1.0, 1.0)
+        .asin();
     let az_cos = ((decl.sin() - el.sin() * lat.sin()) / (el.cos() * lat.cos())).clamp(-1.0, 1.0);
     let az = if h.rem_euclid(std::f32::consts::TAU) <= std::f32::consts::PI {
         az_cos.acos()
@@ -237,7 +261,11 @@ fn solar_position(hour_of_day: f32) -> (f32, f32) {
 /// +y up, +z south — see `crate::frame`).
 fn sun_direction(elevation: f32, azimuth: f32) -> Vec3 {
     let horiz = elevation.cos();
-    Vec3::new(azimuth.sin() * horiz, elevation.sin(), -azimuth.cos() * horiz)
+    Vec3::new(
+        azimuth.sin() * horiz,
+        elevation.sin(),
+        -azimuth.cos() * horiz,
+    )
 }
 
 /// Piecewise-linear interpolation over sorted `(elevation_deg, value)` stops,
@@ -273,8 +301,14 @@ fn ramp1(t: f32, stops: &[(f32, f32)]) -> f32 {
     stops[stops.len() - 1].1
 }
 
-const ILLUMINANCE: [(f32, f32); 6] =
-    [(-90.0, 0.0), (-6.0, 15.0), (0.0, 600.0), (10.0, 4200.0), (30.0, 8200.0), (60.0, 10_500.0)];
+const ILLUMINANCE: [(f32, f32); 6] = [
+    (-90.0, 0.0),
+    (-6.0, 15.0),
+    (0.0, 600.0),
+    (10.0, 4200.0),
+    (30.0, 8200.0),
+    (60.0, 10_500.0),
+];
 const SUN_COLOR: [(f32, [f32; 3]); 6] = [
     (-90.0, [0.60, 0.60, 0.70]),
     (-6.0, [1.00, 0.35, 0.18]),
@@ -345,7 +379,12 @@ pub fn update_sky(
     let day_gate = el.sin().clamp(0.0, 1.0);
     let brightness = (illuminance / ILLUMINANCE[ILLUMINANCE.len() - 1].1).clamp(0.0, 1.0);
 
-    *sun_state = SunState { direction: dir, color: Vec3::from(sun_color), day_gate, brightness };
+    *sun_state = SunState {
+        direction: dir,
+        color: Vec3::from(sun_color),
+        day_gate,
+        brightness,
+    };
 
     for (mut transform, mut light) in &mut sun_q {
         *transform = Transform::IDENTITY.looking_to(-dir, Vec3::Y);

@@ -204,10 +204,8 @@ pub fn spawn(
                     };
                     let mut rng = Rng::seeded(r as u64 * 65_536 + c as u64);
                     let centre = scn.world.centre_of(cell);
-                    let expected =
-                        DENSITY[species as usize] * density * patchiness(centre);
-                    let n = expected.floor() as u32
-                        + u32::from(rng.unit() < expected.fract());
+                    let expected = DENSITY[species as usize] * density * patchiness(centre);
+                    let n = expected.floor() as u32 + u32::from(rng.unit() < expected.fract());
 
                     for _ in 0..n {
                         let start = builder.positions.len() as u32;
@@ -240,7 +238,12 @@ pub fn spawn(
                 material: material.clone(),
                 ..default()
             });
-            chunks.push(Chunk { mesh, plants, base, drawn });
+            chunks.push(Chunk {
+                mesh,
+                plants,
+                base,
+                drawn,
+            });
         }
     }
 
@@ -331,7 +334,15 @@ fn conifer(
     // the top third — the profile that makes a Ligurian ridge look like one.
     let height = (12.0 + rng.unit() * 9.0) * scale;
     let radius = height * (0.26 + rng.unit() * 0.10);
-    out.prism(base, height * 0.62, height * 0.040, height * 0.022, yaw, wood, 4);
+    out.prism(
+        base,
+        height * 0.62,
+        height * 0.040,
+        height * 0.022,
+        yaw,
+        wood,
+        4,
+    );
 
     // Three skirts, each narrower and higher; the lowest is the widest.
     for i in 0..3 {
@@ -363,7 +374,15 @@ fn broadleaf(
     // Holm oak: short trunk, crown wider than the tree is tall.
     let height = (7.0 + rng.unit() * 6.0) * scale;
     let trunk = height * 0.34;
-    out.prism(base, trunk * 1.2, height * 0.055, height * 0.038, yaw, wood, 4);
+    out.prism(
+        base,
+        trunk * 1.2,
+        height * 0.055,
+        height * 0.038,
+        yaw,
+        wood,
+        4,
+    );
 
     // Three offset lobes read as a broad, lumpy crown; one alone is a
     // lollipop from every angle.
@@ -396,7 +415,13 @@ fn shrub(out: &mut Builder, base: Vec3, scale: f32, yaw: f32, foliage: [f32; 3],
         let off = Vec3::new(a.cos() * reach, 0.0, a.sin() * reach);
         // Lobes vary in tone: macchia is a mix of species, never one green.
         let tone = mul(foliage, 0.80 + rng.unit() * 0.45);
-        out.dome(base + off, r * (0.45 + rng.unit() * 0.35), r * (0.5 + rng.unit() * 0.4), a, tone);
+        out.dome(
+            base + off,
+            r * (0.45 + rng.unit() * 0.35),
+            r * (0.5 + rng.unit() * 0.4),
+            a,
+            tone,
+        );
     }
 }
 
@@ -465,7 +490,8 @@ impl Builder {
         for i in 0..sides {
             let a = start + (i as u32) * 2;
             let b = start + (((i + 1) % sides) as u32) * 2;
-            self.indices.extend_from_slice(&[a, b, a + 1, b, b + 1, a + 1]);
+            self.indices
+                .extend_from_slice(&[a, b, a + 1, b, b + 1, a + 1]);
         }
     }
 
@@ -578,8 +604,10 @@ impl Builder {
             *n = Vec3::from(*n).normalize_or_zero().into();
         }
 
-        let mut mesh =
-            Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, self.colors);
@@ -643,7 +671,12 @@ pub fn burn(sim: Res<Sim>, mut veg: ResMut<Vegetation>, mut meshes: ResMut<Asset
                 // Charcoal, keeping a trace of the original tint so a burnt
                 // conifer stand still reads differently from burnt grass.
                 for c in &mut colors[range] {
-                    *c = [0.07 + c[0] * 0.10, 0.06 + c[1] * 0.08, 0.06 + c[2] * 0.08, 1.0];
+                    *c = [
+                        0.07 + c[0] * 0.10,
+                        0.06 + c[1] * 0.08,
+                        0.06 + c[2] * 0.08,
+                        1.0,
+                    ];
                 }
             }
         }

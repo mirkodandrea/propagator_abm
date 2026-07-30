@@ -195,7 +195,10 @@ impl Grid {
         // Offset both edges once per vertex; segments then just index into it.
         let mut edges: Vec<(Pos, Pos)> = Vec::with_capacity(n);
         for i in 0..n {
-            let p = Pos { x: line[i][0], y: line[i][1] };
+            let p = Pos {
+                x: line[i][0],
+                y: line[i][1],
+            };
             let into = dir(line[i.saturating_sub(1)], line[i]);
             let out = dir(line[i], line[(i + 1).min(n - 1)]);
             // Average the two directions, then mitre: dividing by the cosine of
@@ -217,8 +220,14 @@ impl Grid {
             // left-hand normal of the tangent, in the ground plane
             let (nx, ny) = (-ty * w, tx * w);
             edges.push((
-                Pos { x: p.x - nx, y: p.y - ny },
-                Pos { x: p.x + nx, y: p.y + ny },
+                Pos {
+                    x: p.x - nx,
+                    y: p.y - ny,
+                },
+                Pos {
+                    x: p.x + nx,
+                    y: p.y + ny,
+                },
             ));
         }
 
@@ -283,8 +292,10 @@ impl RibbonBuilder {
     }
 
     fn finish(self) -> Mesh {
-        let mut mesh =
-            Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);

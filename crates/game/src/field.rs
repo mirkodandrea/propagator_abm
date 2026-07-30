@@ -46,7 +46,12 @@ impl<'a> FireField<'a> {
         let (x0, y0) = (x0 as usize, y0 as usize);
         let cols = self.world.fire_cols;
         (
-            [y0 * cols + x0, y0 * cols + x1, y1 * cols + x0, y1 * cols + x1],
+            [
+                y0 * cols + x0,
+                y0 * cols + x1,
+                y1 * cols + x0,
+                y1 * cols + x1,
+            ],
             fx.fract(),
             fy.fract(),
         )

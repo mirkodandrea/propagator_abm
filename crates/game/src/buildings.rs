@@ -188,7 +188,10 @@ pub fn spawn(
             }
             structures.push(Structure {
                 households,
-                pos: Pos { x: b.centroid[0], y: b.centroid[1] },
+                pos: Pos {
+                    x: b.centroid[0],
+                    y: b.centroid[1],
+                },
                 vert_start: start,
                 vert_end: builder.positions.len() as u32,
                 window_start: win_start,
@@ -211,7 +214,11 @@ pub fn spawn(
             material: material.clone(),
             ..default()
         });
-        chunks.push(Chunk { mesh, structures, base });
+        chunks.push(Chunk {
+            mesh,
+            structures,
+            base,
+        });
     }
 
     info!(
@@ -219,7 +226,10 @@ pub fn spawn(
         chunks.len(),
         tris as f32 / 1e6
     );
-    commands.insert_resource(Buildings { chunks, by_household });
+    commands.insert_resource(Buildings {
+        chunks,
+        by_household,
+    });
 }
 
 /// What kind of thing this is, which sets its height, its roof and its palette.
@@ -348,12 +358,14 @@ fn emit_building(
         Kind::Civic => by_area.max(2.0),
         // A detached house stays a house however wide its footprint is.
         Kind::House => baked_levels.map(f32::from).unwrap_or(2.0).max(2.0).min(3.0),
-        Kind::Apartments => baked_levels
-            .map(f32::from)
-            .unwrap_or(0.0)
-            .max(by_area)
-            .max(3.0)
-            + (h * 2.0).floor(),
+        Kind::Apartments => {
+            baked_levels
+                .map(f32::from)
+                .unwrap_or(0.0)
+                .max(by_area)
+                .max(3.0)
+                + (h * 2.0).floor()
+        }
     };
     let wall_h = match kind {
         // A shed's storey is not 3.2 m, and an industrial hall's is much more.
@@ -514,7 +526,11 @@ fn emit_windows(a: Pos, c: Pos, plinth_top: f32, eave: f32, rows: usize, out: &m
         [c.x, eave, -c.y],
     );
     let push = |p: [f32; 3]| {
-        [p[0] + wn[0] * 0.04, p[1] + wn[1] * 0.04, p[2] + wn[2] * 0.04]
+        [
+            p[0] + wn[0] * 0.04,
+            p[1] + wn[1] * 0.04,
+            p[2] + wn[2] * 0.04,
+        ]
     };
 
     let band = (eave - plinth_top) / rows as f32;
@@ -570,7 +586,10 @@ fn offset_ring(ring: &[Pos], c: Pos, d: f32) -> Vec<Pos> {
             let len = (vx * vx + vy * vy).sqrt().max(1e-3);
             // Never let an inward offset cross the centroid.
             let k = if d < 0.0 { d.max(-len * 0.75) } else { d };
-            Pos { x: p.x + vx / len * k, y: p.y + vy / len * k }
+            Pos {
+                x: p.x + vx / len * k,
+                y: p.y + vy / len * k,
+            }
         })
         .collect()
 }
@@ -618,7 +637,10 @@ impl Builder {
     }
 
     fn finish(self) -> Mesh {
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, self.colors);
@@ -729,7 +751,12 @@ fn recolor_structure(colors: &mut [[f32; 4]], base: &[[f32; 4]], s: &Structure) 
         x if x == Damage::Destroyed as u8 => {
             for i in range {
                 let c = base[i];
-                colors[i] = [0.10 + c[0] * 0.08, 0.09 + c[1] * 0.07, 0.09 + c[2] * 0.07, 1.0];
+                colors[i] = [
+                    0.10 + c[0] * 0.08,
+                    0.09 + c[1] * 0.07,
+                    0.09 + c[2] * 0.07,
+                    1.0,
+                ];
             }
         }
         _ => {
@@ -749,7 +776,12 @@ fn recolor_structure(colors: &mut [[f32; 4]], base: &[[f32; 4]], s: &Structure) 
 /// computed — the hover feedback that used to be a floating beacon.
 fn hover_boost(colors: &mut [[f32; 4]], s: &Structure) {
     for c in &mut colors[s.vert_start as usize..s.vert_end as usize] {
-        *c = [(c[0] * 1.35 + 0.18).min(2.2), (c[1] * 1.30 + 0.15).min(2.0), (c[2] * 1.25 + 0.12).min(2.0), c[3]];
+        *c = [
+            (c[0] * 1.35 + 0.18).min(2.2),
+            (c[1] * 1.30 + 0.15).min(2.0),
+            (c[2] * 1.25 + 0.12).min(2.0),
+            c[3],
+        ];
     }
 }
 
@@ -768,8 +800,13 @@ pub fn damage(
     let now = sim.time_s() as f32;
     let night = sun.brightness < NIGHT_BRIGHTNESS;
 
-    let Buildings { chunks, by_household } = &mut *buildings;
-    let hovered_at = hovered.0.and_then(|h| by_household.get(&(h as u32)).copied());
+    let Buildings {
+        chunks,
+        by_household,
+    } = &mut *buildings;
+    let hovered_at = hovered
+        .0
+        .and_then(|h| by_household.get(&(h as u32)).copied());
 
     for (ci, chunk) in chunks.iter_mut().enumerate() {
         let mut dirty = false;
@@ -777,7 +814,9 @@ pub fn damage(
             let (mut alight, mut load) = (false, 0.0f32);
             let mut occupied = false;
             for &h in &s.households {
-                let Some(hh) = sim.agents.households.get(h as usize) else { continue };
+                let Some(hh) = sim.agents.households.get(h as usize) else {
+                    continue;
+                };
                 let f = exposure.get(h as usize);
                 alight |= f.alight;
                 load = load.max(f.radiant + f.ember);

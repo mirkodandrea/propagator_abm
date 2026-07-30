@@ -53,7 +53,9 @@ enum Stage {
 }
 
 pub fn from_env() -> Option<SelfTest> {
-    std::env::var("SPOTORNO_SELFTEST").ok().map(|_| SelfTest::default())
+    std::env::var("SPOTORNO_SELFTEST")
+        .ok()
+        .map(|_| SelfTest::default())
 }
 
 pub fn run(
@@ -144,10 +146,18 @@ pub fn run(
                     Err(why) => println!("[selftest] {id} refused the order: {why}"),
                 }
             }
-            check(&mut test, sent > 0, "no ground unit accepted an attack order");
+            check(
+                &mut test,
+                sent > 0,
+                "no ground unit accepted an attack order",
+            );
 
             let air = sim.crews.request_air();
-            check(&mut test, air > 0, "no air support was available to request");
+            check(
+                &mut test,
+                air > 0,
+                "no air support was available to request",
+            );
             check(
                 &mut test,
                 sim.crews.air_eta_s().is_some_and(|e| e > 0.0),
@@ -155,7 +165,12 @@ pub fn run(
             );
             // An inbound aircraft can be briefed but must not teleport onto the
             // incident to serve the briefing.
-            let first_air = sim.crews.units.iter().find(|u| u.kind.is_air()).map(|u| u.id);
+            let first_air = sim
+                .crews
+                .units
+                .iter()
+                .find(|u| u.kind.is_air())
+                .map(|u| u.id);
             if let Some(id) = first_air {
                 check(
                     &mut test,
@@ -211,7 +226,11 @@ pub fn run(
                  {} drops, {tasked} aircraft now tasked",
                 s.working, s.water_l, s.line_m, s.drops
             );
-            check(&mut test, s.lost == 0, "a unit was burnt over obeying an order");
+            check(
+                &mut test,
+                s.lost == 0,
+                "a unit was burnt over obeying an order",
+            );
             // The work has to have reached the *fire*, not just the unit's own
             // counters: this is the whole intervention path, queue included.
             check(
@@ -229,7 +248,11 @@ pub fn run(
             let scar_before = burnt;
             sim.weather.wind_dir_deg = 270.0;
             sim.weather.wind_speed_kmh = 50.0;
-            check(&mut test, sim.weather_dirty(), "staged weather did not read as pending");
+            check(
+                &mut test,
+                sim.weather_dirty(),
+                "staged weather did not read as pending",
+            );
             if let Err(e) = sim.apply_weather() {
                 check(&mut test, false, &format!("applying weather failed: {e:#}"));
             }
@@ -243,7 +266,9 @@ pub fn run(
                 (burnt_ha(&sim) - scar_before).abs() < 0.01,
                 "applying weather changed the existing burn scar",
             );
-            println!("[selftest] wind shifted to 50 km/h from W, scar intact at {scar_before:.1} ha");
+            println!(
+                "[selftest] wind shifted to 50 km/h from W, scar intact at {scar_before:.1} ha"
+            );
             test.stage = Stage::BurnShifted;
         }
         Stage::BurnShifted => {
@@ -263,7 +288,11 @@ pub fn run(
                 }
                 Err(e) => check(&mut test, false, &format!("restart failed: {e:#}")),
             }
-            check(&mut test, sim.time_s() == 0, "restart did not rewind the clock");
+            check(
+                &mut test,
+                sim.time_s() == 0,
+                "restart did not rewind the clock",
+            );
             check(
                 &mut test,
                 sim.generation > gen_before,
@@ -308,7 +337,10 @@ pub fn run(
             );
             check(
                 &mut test,
-                sim.crews.units.iter().all(|u| matches!(u.task, abm::Task::Hold)),
+                sim.crews
+                    .units
+                    .iter()
+                    .all(|u| matches!(u.task, abm::Task::Hold)),
                 "restart left a unit still under orders",
             );
             let had_water = test.first_leg_water_l > 0.0;

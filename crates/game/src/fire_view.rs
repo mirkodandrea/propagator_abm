@@ -44,8 +44,12 @@ pub enum FireLayer {
 }
 
 impl FireLayer {
-    pub const ALL: [FireLayer; 4] =
-        [FireLayer::Flames, FireLayer::Intensity, FireLayer::Arrival, FireLayer::Hazard];
+    pub const ALL: [FireLayer; 4] = [
+        FireLayer::Flames,
+        FireLayer::Intensity,
+        FireLayer::Arrival,
+        FireLayer::Hazard,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -185,7 +189,11 @@ pub fn setup(
     });
 
     commands.spawn((
-        MaterialMeshBundle { mesh: overlay.clone(), material: overlay_mat, ..default() },
+        MaterialMeshBundle {
+            mesh: overlay.clone(),
+            material: overlay_mat,
+            ..default()
+        },
         FireOverlay,
     ));
     commands.spawn(MaterialMeshBundle {
@@ -198,7 +206,11 @@ pub fn setup(
         material: spark_mat,
         ..default()
     });
-    commands.spawn(PbrBundle { mesh: smoke_mesh.clone(), material: smoke_mat, ..default() });
+    commands.spawn(PbrBundle {
+        mesh: smoke_mesh.clone(),
+        material: smoke_mat,
+        ..default()
+    });
 
     commands.init_resource::<FireLayer>();
     commands.insert_resource(FireView {
@@ -216,7 +228,10 @@ pub fn setup(
 }
 
 fn empty_mesh() -> Mesh {
-    let mut m = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut m = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     m.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<[f32; 3]>::new());
     m.insert_attribute(Mesh::ATTRIBUTE_NORMAL, Vec::<[f32; 3]>::new());
     m.insert_attribute(Mesh::ATTRIBUTE_COLOR, Vec::<[f32; 4]>::new());
@@ -246,10 +261,7 @@ pub fn layer_controls(keys: Res<ButtonInput<KeyCode>>, mut layer: ResMut<FireLay
 /// and embers are the exception: they are *simulated here*, carrying their own
 /// position and age, and a plume left over from the old fire would go on
 /// drifting over a landscape that never burnt.
-pub fn reset(
-    mut restarted: EventReader<crate::sim::SimRestarted>,
-    mut view: ResMut<FireView>,
-) {
+pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut view: ResMut<FireView>) {
     if restarted.is_empty() {
         return;
     }
@@ -294,7 +306,11 @@ pub fn update_overlay(
         return;
     };
     let span = (r1 - r0).max(c1 - c0);
-    let subdiv = if span > OVERLAY_SUBDIV_MAX_SPAN { 1 } else { OVERLAY_SUBDIV };
+    let subdiv = if span > OVERLAY_SUBDIV_MAX_SPAN {
+        1
+    } else {
+        OVERLAY_SUBDIV
+    };
     let step = w.cellsize / subdiv as f32;
 
     let nx = (c1 - c0) * subdiv + 1;
@@ -358,8 +374,8 @@ fn touched_bounds(
     let w = sim.scenario.world;
     let (mut r0, mut r1, mut c0, mut c1) = (usize::MAX, 0usize, usize::MAX, 0usize);
     for (i, state) in sim.fire.state().iter().enumerate() {
-        let touched = *state != CellFire::Unburnt
-            || (layer == FireLayer::Hazard && hazard[i] > 0.01);
+        let touched =
+            *state != CellFire::Unburnt || (layer == FireLayer::Hazard && hazard[i] > 0.01);
         if !touched {
             continue;
         }
@@ -381,13 +397,7 @@ fn touched_bounds(
 }
 
 /// Colour and alpha of the overlay at one world point, per layer.
-fn sample_color(
-    layer: FireLayer,
-    field: &FireField,
-    hazard: &[f32],
-    p: Pos,
-    now: f32,
-) -> [f32; 4] {
+fn sample_color(layer: FireLayer, field: &FireField, hazard: &[f32], p: Pos, now: f32) -> [f32; 4] {
     // Coverage feathered around the half-burnt contour: this is what turns a
     // staircase of cell edges into a burn perimeter. The band is narrow —
     // widen it and the perimeter stops being a perimeter and becomes a haze.
@@ -407,8 +417,9 @@ fn sample_color(
             // Char and ash, at a scale the CA has no opinion about: a burn is
             // never one flat tone, and without this the scar reads as paint.
             let ash = 0.72
-                + 0.85 * (0.6 * noise(p.x / 23.0, p.y / 23.0, 0x77)
-                    + 0.4 * noise(p.x / 8.0, p.y / 8.0, 0x88));
+                + 0.85
+                    * (0.6 * noise(p.x / 23.0, p.y / 23.0, 0x77)
+                        + 0.4 * noise(p.x / 8.0, p.y / 8.0, 0x88));
             [
                 (0.085 + 0.10 * embers) * ash + 2.4 * glow,
                 0.065 * ash + 0.70 * glow * glow,
@@ -574,8 +585,10 @@ impl QuadBuilder {
     }
 
     fn finish(self) -> Mesh {
-        let mut mesh =
-            Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, self.colors);
@@ -773,12 +786,18 @@ fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
         if e.flare {
             continue;
         }
-        let ground = scn.terrain.height_at(Pos { x: e.pos.x, y: -e.pos.z });
+        let ground = scn.terrain.height_at(Pos {
+            x: e.pos.x,
+            y: -e.pos.z,
+        });
         let dying = e.age >= e.life || e.pos.y <= ground + 0.4;
         if !dying {
             continue;
         }
-        let landing = Pos { x: e.pos.x, y: -e.pos.z };
+        let landing = Pos {
+            x: e.pos.x,
+            y: -e.pos.z,
+        };
         if !scn.world.contains(landing) {
             continue;
         }
@@ -798,7 +817,11 @@ fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
     view.embers.retain(|e| {
         e.age < e.life
             && (e.flare
-                || e.pos.y > scn.terrain.height_at(Pos { x: e.pos.x, y: -e.pos.z }) + 0.4)
+                || e.pos.y
+                    > scn.terrain.height_at(Pos {
+                        x: e.pos.x,
+                        y: -e.pos.z,
+                    }) + 0.4)
     });
     view.embers.extend(flares);
 
@@ -809,8 +832,8 @@ fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
 
     // Spawn budgets scale with the front but are capped: a 20 000-cell fire
     // does not get 20 000 plumes, it gets a full sky.
-    let smoke_budget = ((active.len() as f32 * dt * 1.2) as usize)
-        .min(MAX_SMOKE.saturating_sub(view.smoke.len()));
+    let smoke_budget =
+        ((active.len() as f32 * dt * 1.2) as usize).min(MAX_SMOKE.saturating_sub(view.smoke.len()));
     let ember_budget = ((active.len() as f32 * dt * 0.5) as usize)
         .min(MAX_EMBERS.saturating_sub(view.embers.len()));
 
@@ -826,7 +849,10 @@ fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
         let half = scn.world.cellsize * 0.5;
         let jx = hash01(view.seed) - 0.5;
         let jy = hash01(view.seed ^ 0xABCD) - 0.5;
-        let p = Pos { x: centre.x + jx * 2.0 * half, y: centre.y + jy * 2.0 * half };
+        let p = Pos {
+            x: centre.x + jx * 2.0 * half,
+            y: centre.y + jy * 2.0 * half,
+        };
         let ground = scn.terrain.height_at(p);
         let phase = hash01(view.seed ^ 0x1234);
 
@@ -851,7 +877,11 @@ fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
             // `alignment = cos(offset)` is 1 directly downwind — the same
             // quantity `compute_spotting` calls `(w_dir - angle).cos()`.
             let offset = phase * std::f32::consts::TAU;
-            let wind_hat = if wind_ms > 0.05 { drift / wind_ms } else { Vec3::Z };
+            let wind_hat = if wind_ms > 0.05 {
+                drift / wind_ms
+            } else {
+                Vec3::Z
+            };
             let perp = Vec3::new(-wind_hat.z, 0.0, wind_hat.x);
             let (s, c) = offset.sin_cos();
             let launch_dir = wind_hat * c + perp * s;

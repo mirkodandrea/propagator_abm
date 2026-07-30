@@ -16,7 +16,9 @@
 //! shifts the fire.
 
 use bevy::asset::load_internal_asset;
-use bevy::pbr::{Material, MaterialPipeline, MaterialPipelineKey, NotShadowCaster, NotShadowReceiver};
+use bevy::pbr::{
+    Material, MaterialPipeline, MaterialPipelineKey, NotShadowCaster, NotShadowReceiver,
+};
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
@@ -195,7 +197,12 @@ pub struct SeaPlugin;
 
 impl Plugin for SeaPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, WATER_SHADER_HANDLE, "shaders/water.wgsl", Shader::from_wgsl);
+        load_internal_asset!(
+            app,
+            WATER_SHADER_HANDLE,
+            "shaders/water.wgsl",
+            Shader::from_wgsl
+        );
         app.add_plugins(MaterialPlugin::<WaterMaterial>::default())
             .add_systems(Startup, spawn_sea)
             .add_systems(Update, update_water);
@@ -210,7 +217,10 @@ fn distance_to_shore(scn: &Scenario, p: Pos) -> f32 {
     for &r in &SHORE_PROBE_RADII {
         for k in 0..SHORE_PROBE_DIRS {
             let a = k as f32 / SHORE_PROBE_DIRS as f32 * std::f32::consts::TAU;
-            let probe = Pos { x: p.x + r * a.cos(), y: p.y + r * a.sin() };
+            let probe = Pos {
+                x: p.x + r * a.cos(),
+                y: p.y + r * a.sin(),
+            };
             // `elev_at`, not a bare `world.contains` check: a point already
             // out in the `SEA_EXTEND_M` extension is by definition outside
             // the real window, so the old `!contains(probe)` test tripped on
@@ -270,7 +280,10 @@ fn spawn_sea(
         tri_count += t;
     }
 
-    info!("sea: {count} chunks, {} k triangles @ {stride_m} m lattice", tri_count / 1000);
+    info!(
+        "sea: {count} chunks, {} k triangles @ {stride_m} m lattice",
+        tri_count / 1000
+    );
 }
 
 /// Mesh one lattice, chunked so the water still culls in pieces.
@@ -328,7 +341,9 @@ fn spawn_patch(
                     let i10 = i00 + 1;
                     let i01 = i00 + cn;
                     let i11 = i01 + 1;
-                    let wet = [i00, i10, i01, i11].iter().all(|&i| elev[i] <= WATER_ELEV_MAX);
+                    let wet = [i00, i10, i01, i11]
+                        .iter()
+                        .all(|&i| elev[i] <= WATER_ELEV_MAX);
                     if !wet || !inside_horizon(scn, positions[i00]) {
                         continue;
                     }
@@ -341,8 +356,10 @@ fn spawn_patch(
                 continue;
             }
 
-            let mut mesh =
-                Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::default(),
+            );
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
             mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
@@ -350,7 +367,11 @@ fn spawn_patch(
             mesh.insert_indices(Indices::U32(indices));
 
             commands.spawn((
-                MaterialMeshBundle { mesh: meshes.add(mesh), material: handle.clone(), ..default() },
+                MaterialMeshBundle {
+                    mesh: meshes.add(mesh),
+                    material: handle.clone(),
+                    ..default()
+                },
                 SeaMesh,
                 // The water shader computes its own lighting from scratch
                 // (see `shaders/water.wgsl`) and never samples the scene's
@@ -373,7 +394,9 @@ fn update_water(
     mut materials: ResMut<Assets<WaterMaterial>>,
 ) {
     let Some(handle) = handle else { return };
-    let Some(mat) = materials.get_mut(&handle.0) else { return };
+    let Some(mat) = materials.get_mut(&handle.0) else {
+        return;
+    };
 
     let weather = sim.fire.weather();
     let from = (weather.wind_dir_deg as f32).to_radians();

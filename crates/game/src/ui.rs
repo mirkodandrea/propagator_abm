@@ -20,13 +20,42 @@ use crate::sim::{Sim, SimRestarted, MAX_IGNITION_RADIUS_M, MIN_IGNITION_RADIUS_M
 /// orders of magnitude and the slider has to be logarithmic to be usable.
 pub const MIN_SPEED: f32 = 1.0;
 pub const MAX_SPEED: f32 = 512.0;
-const PRESETS: [(f32, &str); 5] =
-    [(1.0, "1x"), (8.0, "8x"), (30.0, "30x"), (120.0, "2min/s"), (512.0, "max")];
+const PRESETS: [(f32, &str); 5] = [
+    (1.0, "1x"),
+    (8.0, "8x"),
+    (30.0, "30x"),
+    (120.0, "2min/s"),
+    (512.0, "max"),
+];
 
 /// True while the cursor is over the panel, so the camera does not orbit when
 /// the user is dragging the slider.
 #[derive(Resource, Default)]
 pub struct UiFocus(pub bool);
+
+/// State for the short, player-facing introduction. It opens with the
+/// scenario so a first-time player understands the role before unpausing,
+/// then remains one click away from the Incident panel.
+#[derive(Resource)]
+pub struct HelpUi {
+    pub open: bool,
+    pub language: HelpLanguage,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum HelpLanguage {
+    English,
+    Italian,
+}
+
+impl Default for HelpUi {
+    fn default() -> Self {
+        Self {
+            open: true,
+            language: HelpLanguage::English,
+        }
+    }
+}
 
 /// Collapsed/expanded state of the four always-docked panels — Entities has
 /// its own `BrowserUi::open` (a full close, since it has no other job once
@@ -43,7 +72,12 @@ pub struct PanelState {
 
 impl Default for PanelState {
     fn default() -> Self {
-        PanelState { incident: true, wildfire: true, resources: true, inspector: true }
+        PanelState {
+            incident: true,
+            wildfire: true,
+            resources: true,
+            inspector: true,
+        }
     }
 }
 
@@ -73,12 +107,23 @@ pub fn panel(
     mut layer: ResMut<FireLayer>,
     mut focus: ResMut<UiFocus>,
     mut panels: ResMut<PanelState>,
+    mut help: ResMut<HelpUi>,
 ) {
     let ctx = contexts.ctx_mut();
     let mut open = panels.incident;
 
-    let burning = sim.fire.state().iter().filter(|s| **s == CellFire::Burning).count();
-    let burnt = sim.fire.state().iter().filter(|s| **s == CellFire::Burnt).count();
+    let burning = sim
+        .fire
+        .state()
+        .iter()
+        .filter(|s| **s == CellFire::Burning)
+        .count();
+    let burnt = sim
+        .fire
+        .state()
+        .iter()
+        .filter(|s| **s == CellFire::Burnt)
+        .count();
     let cell_ha = (sim.scenario.world.cellsize * sim.scenario.world.cellsize) / 10_000.0;
     let front = sim.fire.active_cells().len();
     let peak_fli = sim
@@ -88,7 +133,13 @@ pub fn panel(
         .map(|c| sim.fire.cell_intensity(*c))
         .fold(0.0f32, f32::max);
     let threatened = sim.fire.exposure().threatened(0.05).count();
-    let lost = sim.fire.exposure().fields().iter().filter(|f| f.alight).count();
+    let lost = sim
+        .fire
+        .exposure()
+        .fields()
+        .iter()
+        .filter(|f| f.alight)
+        .count();
     let peak_hazard = sim.fire.hazard().peak();
     let evac = sim.agents.stats();
     let median_evac = sim.agents.median_evacuation_s();
@@ -117,133 +168,147 @@ pub fn panel(
                     {
                         toggle = true;
                     }
+                    if ui
+                        .button("? Help / Aiuto")
+                        .on_hover_text("What this simulation is and how to use it / Cos'è questa simulazione e come usarla")
+                        .clicked()
+                    {
+                        help.open = true;
+                    }
                 }
             });
             if !open {
                 return;
             }
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-
-            ui.separator();
-            ui.label("Time acceleration");
-            ui.add(
-                // No `.suffix()`: egui appends it *after* the custom formatter,
-                // which turns "9 min/s" into "9 min/sx".
-                egui::Slider::new(&mut speed, MIN_SPEED..=MAX_SPEED)
-                    .logarithmic(true)
-                    .custom_formatter(|v, _| {
-                        // Above a minute per second, wall-clock multipliers stop
-                        // being meaningful; show simulated time per second.
-                        if v >= 60.0 {
-                            format!("{:.0} min/s", v / 60.0)
-                        } else {
-                            format!("{v:.0}x")
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.separator();
+                    ui.label("Time acceleration");
+                    ui.add(
+                        // No `.suffix()`: egui appends it *after* the custom formatter,
+                        // which turns "9 min/s" into "9 min/sx".
+                        egui::Slider::new(&mut speed, MIN_SPEED..=MAX_SPEED)
+                            .logarithmic(true)
+                            .custom_formatter(|v, _| {
+                                // Above a minute per second, wall-clock multipliers stop
+                                // being meaningful; show simulated time per second.
+                                if v >= 60.0 {
+                                    format!("{:.0} min/s", v / 60.0)
+                                } else {
+                                    format!("{v:.0}x")
+                                }
+                            }),
+                    );
+                    ui.horizontal(|ui| {
+                        for (v, label) in PRESETS {
+                            if ui
+                                .selectable_label((speed - v).abs() < 0.5, label)
+                                .clicked()
+                            {
+                                speed = v;
+                            }
                         }
-                    }),
-            );
-            ui.horizontal(|ui| {
-                for (v, label) in PRESETS {
-                    if ui.selectable_label((speed - v).abs() < 0.5, label).clicked() {
-                        speed = v;
-                    }
-                }
-            });
+                    });
 
-            ui.separator();
-            ui.label("Fire layer");
-            ui.horizontal_wrapped(|ui| {
-                for (i, l) in FireLayer::ALL.iter().enumerate() {
-                    let label = format!("{}  {}", i + 1, l.label());
-                    if ui.selectable_label(selected == *l, label).clicked() {
-                        selected = *l;
-                    }
-                }
-            });
-            ui.small(selected.legend());
+                    ui.separator();
+                    ui.label("Fire layer");
+                    ui.horizontal_wrapped(|ui| {
+                        for (i, l) in FireLayer::ALL.iter().enumerate() {
+                            let label = format!("{}  {}", i + 1, l.label());
+                            if ui.selectable_label(selected == *l, label).clicked() {
+                                selected = *l;
+                            }
+                        }
+                    });
+                    ui.small(selected.legend());
 
-            ui.separator();
-            egui::Grid::new("stats").num_columns(2).show(ui, |ui| {
-                ui.label("Burnt");
-                ui.label(format!("{:.1} ha", (burning + burnt) as f32 * cell_ha));
-                ui.end_row();
-                ui.label("Active front");
-                ui.label(format!("{front} cells"));
-                ui.end_row();
-                ui.label("Peak intensity");
-                ui.label(format!(
-                    "{peak_fli:.0} kW/m  ({:.1} m flames)",
-                    fire::exposure::flame_length_m(peak_fli)
-                ));
-                ui.end_row();
-                ui.label("Peak spread risk");
-                ui.label(format!("{:.0}% next step", peak_hazard * 100.0));
-                ui.end_row();
-                ui.label("Households threatened");
-                ui.label(format!("{threatened}"));
-                ui.end_row();
-                ui.label("Structures lost");
-                ui.label(format!("{lost}"));
-                ui.end_row();
-            });
+                    ui.separator();
+                    egui::Grid::new("stats").num_columns(2).show(ui, |ui| {
+                        ui.label("Burnt");
+                        ui.label(format!("{:.1} ha", (burning + burnt) as f32 * cell_ha));
+                        ui.end_row();
+                        ui.label("Active front");
+                        ui.label(format!("{front} cells"));
+                        ui.end_row();
+                        ui.label("Peak intensity");
+                        ui.label(format!(
+                            "{peak_fli:.0} kW/m  ({:.1} m flames)",
+                            fire::exposure::flame_length_m(peak_fli)
+                        ));
+                        ui.end_row();
+                        ui.label("Peak spread risk");
+                        ui.label(format!("{:.0}% next step", peak_hazard * 100.0));
+                        ui.end_row();
+                        ui.label("Households threatened");
+                        ui.label(format!("{threatened}"));
+                        ui.end_row();
+                        ui.label("Structures lost");
+                        ui.label(format!("{lost}"));
+                        ui.end_row();
+                    });
 
-            ui.separator();
-            ui.label("Evacuation");
-            egui::Grid::new("evac").num_columns(2).show(ui, |ui| {
-                ui.label("Ordered out");
-                ui.label(format!("{ordered} households"));
-                ui.end_row();
-                ui.label("Milling / preparing");
-                ui.label(format!("{}", evac.preparing));
-                ui.end_row();
-                ui.label("On the road");
-                ui.label(format!(
-                    "{} households · {} cars · {} on foot",
-                    evac.moving, evac.cars_moving, evac.on_foot
-                ));
-                ui.end_row();
-                ui.label("Out");
-                ui.label(format!("{} households · {} people", evac.safe, evac.people_safe));
-                ui.end_row();
-                ui.label("Staying to defend");
-                ui.label(format!("{}", evac.defending));
-                ui.end_row();
-                ui.label("Cut off / trapped");
-                ui.label(format!("{}", evac.cutoff));
-                ui.end_row();
-                ui.label("Casualties");
-                ui.label(format!("{} households", evac.casualties));
-                ui.end_row();
-                ui.label("Median time out");
-                ui.label(match median_evac {
-                    Some(s) => format!("{:.0} min", s / 60.0),
-                    None => "—".to_string(),
-                });
-                ui.end_row();
-            });
+                    ui.separator();
+                    ui.label("Evacuation");
+                    egui::Grid::new("evac").num_columns(2).show(ui, |ui| {
+                        ui.label("Ordered out");
+                        ui.label(format!("{ordered} households"));
+                        ui.end_row();
+                        ui.label("Milling / preparing");
+                        ui.label(format!("{}", evac.preparing));
+                        ui.end_row();
+                        ui.label("On the road");
+                        ui.label(format!(
+                            "{} households · {} cars · {} on foot",
+                            evac.moving, evac.cars_moving, evac.on_foot
+                        ));
+                        ui.end_row();
+                        ui.label("Out");
+                        ui.label(format!(
+                            "{} households · {} people",
+                            evac.safe, evac.people_safe
+                        ));
+                        ui.end_row();
+                        ui.label("Staying to defend");
+                        ui.label(format!("{}", evac.defending));
+                        ui.end_row();
+                        ui.label("Cut off / trapped");
+                        ui.label(format!("{}", evac.cutoff));
+                        ui.end_row();
+                        ui.label("Casualties");
+                        ui.label(format!("{} households", evac.casualties));
+                        ui.end_row();
+                        ui.label("Median time out");
+                        ui.label(match median_evac {
+                            Some(s) => format!("{:.0} min", s / 60.0),
+                            None => "—".to_string(),
+                        });
+                        ui.end_row();
+                    });
 
-            ui.horizontal(|ui| {
-                if ui
-                    .button("Evacuate 2 km around the fire")
-                    .on_hover_text(
-                        "Households still hear the order over their own channel, \
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button("Evacuate 2 km around the fire")
+                            .on_hover_text(
+                                "Households still hear the order over their own channel, \
                          and still have to decide and pack.",
-                    )
-                    .clicked()
-                {
-                    order = Some((ignition_pos, 2000.0));
-                }
-                if ui.button("Evacuate everyone").clicked() {
-                    order = Some((ignition_pos, 20_000.0));
-                }
-            });
+                            )
+                            .clicked()
+                        {
+                            order = Some((ignition_pos, 2000.0));
+                        }
+                        if ui.button("Evacuate everyone").clicked() {
+                            order = Some((ignition_pos, 20_000.0));
+                        }
+                    });
 
-            ui.separator();
-            ui.small(
-                "space play/pause · [ ] speed · 1-4 fire layer · e evacuate · \
+                    ui.separator();
+                    ui.small(
+                        "space play/pause · [ ] speed · 1-4 fire layer · e evacuate · \
                  i place ignition · r restart · click a house/person/car to \
                  inspect it · drag orbit · right-drag pan · scroll zoom",
-            );
-            });
+                    );
+                });
         });
 
     if let Some((centre, radius)) = order {
@@ -262,6 +327,135 @@ pub fn panel(
     panels.incident = open;
 
     focus.0 = ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+}
+
+/// A plain-language guide for the simulation. This intentionally describes a
+/// useful first turn before listing shortcuts: a new player should know what
+/// to try, rather than having to infer a workflow from the control panels.
+pub fn help_panel(
+    mut contexts: EguiContexts,
+    mut help: ResMut<HelpUi>,
+    mut focus: ResMut<UiFocus>,
+) {
+    if !help.open {
+        return;
+    }
+
+    let ctx = contexts.ctx_mut();
+    let mut open = help.open;
+    let mut language = help.language;
+    egui::Window::new("Help & quick start")
+        .open(&mut open)
+        .default_width(480.0)
+        .max_width(620.0)
+        .resizable(true)
+        .collapsible(false)
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Language / Lingua:");
+                ui.selectable_value(&mut language, HelpLanguage::English, "English");
+                ui.selectable_value(&mut language, HelpLanguage::Italian, "Italiano");
+            });
+            ui.separator();
+            match language {
+                HelpLanguage::English => help_english(ui),
+                HelpLanguage::Italian => help_italian(ui),
+            }
+        });
+
+    help.open = open;
+    help.language = language;
+    focus.0 |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+}
+
+fn help_english(ui: &mut egui::Ui) {
+    ui.heading("What is this?");
+    ui.label("You are the incident commander for a wildfire near Spotorno. The fire, weather, roads, households and response crews are simulated in real time. Your job is to watch the situation, protect people, and use the available crews where they can make a difference.");
+    ui.add_space(8.0);
+    ui.heading("A simple first run");
+    ui.label("1. Look at the fire and choose a fire layer in the Incident panel.");
+    ui.label("2. Order an evacuation when people may be at risk.");
+    ui.label("3. Select a unit in Resources, choose an order, then click the map to place it.");
+    ui.label("4. Press Play and adjust time acceleration as the incident develops.");
+    ui.small("There is no score: use the information in the panels to see the consequences of each decision.");
+    ui.add_space(8.0);
+    ui.heading("Reading the panels");
+    ui.label("Incident shows the clock, fire size, intensity, risk, structure losses and evacuation progress.");
+    ui.label("Wildfire lets you change wind, moisture and ignitions; use Restart to run a revised scenario from T+0.");
+    ui.label("Resources is where you select crews and assign direct attack, a fire line or a water drop. Request air support early: it takes time to arrive.");
+    ui.label("Entities helps you find households, people, vehicles and units. Click something on the map or in the list to inspect it.");
+    controls_guide(
+        ui,
+        [
+            (
+                "Move the view",
+                "left-drag orbit · right-drag pan · scroll zoom",
+            ),
+            ("Run time", "Space play/pause · [ and ] change speed"),
+            ("Evacuate", "E orders everyone out"),
+            ("Fire layers", "1–4 switch the map overlay"),
+            ("Ignition", "I, then click the map · R restarts"),
+            (
+                "Crew orders",
+                "Tab next unit · A attack · L line · D drop · X stand down",
+            ),
+            ("Cancel", "Esc cancels the active map tool"),
+        ],
+    );
+}
+
+fn help_italian(ui: &mut egui::Ui) {
+    ui.heading("Che cos'è?");
+    ui.label("Sei il responsabile delle operazioni per un incendio boschivo vicino a Spotorno. Incendio, meteo, strade, famiglie e squadre di intervento sono simulati in tempo reale. Il tuo compito è osservare la situazione, proteggere le persone e usare le squadre dove possono fare la differenza.");
+    ui.add_space(8.0);
+    ui.heading("Una prima simulazione semplice");
+    ui.label("1. Osserva l'incendio e scegli un livello nella sezione Incident.");
+    ui.label("2. Ordina l'evacuazione quando le persone potrebbero essere in pericolo.");
+    ui.label("3. Seleziona una squadra in Resources, scegli un ordine e poi clicca sulla mappa per assegnarlo.");
+    ui.label("4. Premi Play e regola l'accelerazione del tempo mentre l'emergenza evolve.");
+    ui.small("Non c'è un punteggio: usa le informazioni nei pannelli per capire le conseguenze delle decisioni.");
+    ui.add_space(8.0);
+    ui.heading("Come leggere i pannelli");
+    ui.label("Incident mostra l'orologio, l'estensione e l'intensità dell'incendio, il rischio, le strutture perse e l'avanzamento dell'evacuazione.");
+    ui.label("Wildfire permette di cambiare vento, umidità e inneschi; usa Restart per ripartire da T+0 con uno scenario modificato.");
+    ui.label("Resources serve per selezionare le squadre e assegnare un attacco diretto, una linea tagliafuoco o un lancio d'acqua. Richiedi presto il supporto aereo: serve tempo perché arrivi.");
+    ui.label("Entities aiuta a trovare famiglie, persone, veicoli e squadre. Clicca un elemento sulla mappa o nell'elenco per ispezionarlo.");
+    controls_guide(
+        ui,
+        [
+            (
+                "Muovere la visuale",
+                "trascina a sinistra per ruotare · a destra per spostare · rotella per zoom",
+            ),
+            ("Tempo", "Spazio avvia/pausa · [ e ] cambiano velocità"),
+            ("Evacuazione", "E ordina l'evacuazione generale"),
+            (
+                "Livelli incendio",
+                "1–4 cambiano la sovrapposizione sulla mappa",
+            ),
+            ("Innesco", "I, poi clicca la mappa · R riavvia"),
+            (
+                "Ordini alle squadre",
+                "Tab squadra successiva · A attacco · L linea · D lancio · X rientro",
+            ),
+            ("Annulla", "Esc annulla lo strumento attivo sulla mappa"),
+        ],
+    );
+}
+
+fn controls_guide(ui: &mut egui::Ui, rows: [(&str, &str); 7]) {
+    ui.add_space(8.0);
+    ui.heading("Controls / Comandi");
+    egui::Grid::new("help_controls")
+        .num_columns(2)
+        .spacing([18.0, 4.0])
+        .show(ui, |ui| {
+            for (label, action) in rows {
+                ui.strong(label);
+                ui.label(action);
+                ui.end_row();
+            }
+        });
 }
 
 /// The wildfire controls: weather, ignitions, restart.
@@ -311,156 +505,167 @@ pub fn wildfire_panel(
                 return;
             }
             ui.separator();
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            ui.label("Wind");
-            ui.horizontal(|ui| {
-                compass(ui, live.wind_dir_deg as f32, weather.wind_dir_deg as f32);
-                ui.vertical(|ui| {
-                    // Both directions spelled out, always. `w_dir` is the
-                    // bearing the wind blows *from*, the kernel reads it in a
-                    // way that looks like the opposite convention, and a bare
-                    // number here is the single easiest thing in this UI to
-                    // misread by 180 degrees.
-                    let from = weather.wind_dir_deg as f32;
-                    ui.label(format!(
-                        "from {} ({:.0}°)",
-                        cardinal(from),
-                        from
-                    ));
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "drives fire {}",
-                            cardinal((from + 180.0) % 360.0)
-                        ))
-                        .strong(),
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.label("Wind");
+                    ui.horizontal(|ui| {
+                        compass(ui, live.wind_dir_deg as f32, weather.wind_dir_deg as f32);
+                        ui.vertical(|ui| {
+                            // Both directions spelled out, always. `w_dir` is the
+                            // bearing the wind blows *from*, the kernel reads it in a
+                            // way that looks like the opposite convention, and a bare
+                            // number here is the single easiest thing in this UI to
+                            // misread by 180 degrees.
+                            let from = weather.wind_dir_deg as f32;
+                            ui.label(format!("from {} ({:.0}°)", cardinal(from), from));
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "drives fire {}",
+                                    cardinal((from + 180.0) % 360.0)
+                                ))
+                                .strong(),
+                            );
+                        });
+                    });
+                    let r = ui.add(
+                        egui::Slider::new(&mut weather.wind_dir_deg, 0.0..=359.0)
+                            .step_by(5.0)
+                            .custom_formatter(|v, _| format!("{v:.0}° from {}", cardinal(v as f32)))
+                            .text("direction"),
                     );
-                });
-            });
-            let r = ui.add(
-                egui::Slider::new(&mut weather.wind_dir_deg, 0.0..=359.0)
-                    .step_by(5.0)
-                    .custom_formatter(|v, _| format!("{v:.0}° from {}", cardinal(v as f32)))
-                    .text("direction"),
-            );
-            commit_weather |= r.drag_stopped() || r.lost_focus();
-            let r = ui.add(
-                egui::Slider::new(&mut weather.wind_speed_kmh, 0.0..=90.0)
-                    .suffix(" km/h")
-                    .text("speed"),
-            );
-            commit_weather |= r.drag_stopped() || r.lost_focus();
+                    commit_weather |= r.drag_stopped() || r.lost_focus();
+                    let r = ui.add(
+                        egui::Slider::new(&mut weather.wind_speed_kmh, 0.0..=90.0)
+                            .suffix(" km/h")
+                            .text("speed"),
+                    );
+                    commit_weather |= r.drag_stopped() || r.lost_focus();
 
-            ui.add_space(4.0);
-            ui.label("Fuel moisture");
-            let r = ui.add(
-                egui::Slider::new(&mut weather.moisture_pct, 2.0..=40.0)
-                    .suffix(" %")
-                    .text("dead fine fuel"),
-            );
-            commit_weather |= r.drag_stopped() || r.lost_focus();
-            ui.small(match weather.moisture_pct {
-                m if m < 8.0 => "critically dry — fire spreads freely",
-                m if m < 15.0 => "dry",
-                m if m < 25.0 => "damp — spread slows sharply",
-                _ => "wet — most fuels will not carry fire",
-            });
+                    ui.add_space(4.0);
+                    ui.label("Fuel moisture");
+                    let r = ui.add(
+                        egui::Slider::new(&mut weather.moisture_pct, 2.0..=40.0)
+                            .suffix(" %")
+                            .text("dead fine fuel"),
+                    );
+                    commit_weather |= r.drag_stopped() || r.lost_focus();
+                    ui.small(match weather.moisture_pct {
+                        m if m < 8.0 => "critically dry — fire spreads freely",
+                        m if m < 15.0 => "dry",
+                        m if m < 25.0 => "damp — spread slows sharply",
+                        _ => "wet — most fuels will not carry fire",
+                    });
 
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                let apply = ui
-                    .add_enabled(dirty, egui::Button::new("Apply weather"))
-                    .on_hover_text(
-                        "Takes effect from now on. What the fire has already \
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        let apply = ui
+                            .add_enabled(dirty, egui::Button::new("Apply weather"))
+                            .on_hover_text(
+                                "Takes effect from now on. What the fire has already \
                          burnt is not rewritten — this is a wind shift, not a \
                          different scenario.",
-                    );
-                commit_weather |= apply.clicked();
-                if dirty {
-                    ui.colored_label(egui::Color32::from_rgb(240, 180, 60), "● pending");
-                }
-            });
+                            );
+                        commit_weather |= apply.clicked();
+                        if dirty {
+                            ui.colored_label(egui::Color32::from_rgb(240, 180, 60), "● pending");
+                        }
+                    });
 
-            ui.separator();
-            ui.label("Ignition");
-            let placing = mode == EditMode::Place;
-            if ui
-                .selectable_label(placing, if placing { "◉ Click the map to light a fire" } else { "Place ignition  (i)" })
-                .on_hover_text(
-                    "Left-click lights a patch where you point. Right-drag \
+                    ui.separator();
+                    ui.label("Ignition");
+                    let placing = mode == EditMode::Place;
+                    if ui
+                        .selectable_label(
+                            placing,
+                            if placing {
+                                "◉ Click the map to light a fire"
+                            } else {
+                                "Place ignition  (i)"
+                            },
+                        )
+                        .on_hover_text(
+                            "Left-click lights a patch where you point. Right-drag \
                      still orbits, so you keep the camera.",
-                )
-                .clicked()
-            {
-                mode = if placing { EditMode::Off } else { EditMode::Place };
-            }
-            let r = ui.add(
-                egui::Slider::new(&mut radius, MIN_IGNITION_RADIUS_M..=MAX_IGNITION_RADIUS_M)
-                    .suffix(" m")
-                    .text("radius"),
-            );
-            // Not applied on release: the cursor ring has to resize as it is
-            // dragged, or the control has no feedback at all.
-            let _ = r;
-            ui.small(format!(
-                "≈{:.0} ha. Below {MIN_IGNITION_RADIUS_M:.0} m a single patch \
+                        )
+                        .clicked()
+                    {
+                        mode = if placing {
+                            EditMode::Off
+                        } else {
+                            EditMode::Place
+                        };
+                    }
+                    let r = ui.add(
+                        egui::Slider::new(
+                            &mut radius,
+                            MIN_IGNITION_RADIUS_M..=MAX_IGNITION_RADIUS_M,
+                        )
+                        .suffix(" m")
+                        .text("radius"),
+                    );
+                    // Not applied on release: the cursor ring has to resize as it is
+                    // dragged, or the control has no feedback at all.
+                    let _ = r;
+                    ui.small(format!(
+                        "≈{:.0} ha. Below {MIN_IGNITION_RADIUS_M:.0} m a single patch \
                  often fails to establish.",
-                std::f32::consts::PI * radius * radius / 10_000.0
-            ));
+                        std::f32::consts::PI * radius * radius / 10_000.0
+                    ));
 
-            egui::Grid::new("ign").num_columns(2).show(ui, |ui| {
-                ui.label("Opening fire");
-                ui.label(format!("{opening} patch(es)"));
-                ui.end_row();
-                ui.label("Added since start");
-                ui.label(format!("{added}"));
-                ui.end_row();
-            });
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(added > 0, egui::Button::new("Forget added"))
-                    .on_hover_text("Drop the fires you lit mid-run from the restart list.")
-                    .clicked()
-                {
-                    clear_extra = true;
-                }
-                if ui
-                    .button("Replan for wind")
-                    .on_hover_text(
-                        "Move the opening fire to the best-measured start for \
+                    egui::Grid::new("ign").num_columns(2).show(ui, |ui| {
+                        ui.label("Opening fire");
+                        ui.label(format!("{opening} patch(es)"));
+                        ui.end_row();
+                        ui.label("Added since start");
+                        ui.label(format!("{added}"));
+                        ui.end_row();
+                    });
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add_enabled(added > 0, egui::Button::new("Forget added"))
+                            .on_hover_text("Drop the fires you lit mid-run from the restart list.")
+                            .clicked()
+                        {
+                            clear_extra = true;
+                        }
+                        if ui
+                            .button("Replan for wind")
+                            .on_hover_text(
+                                "Move the opening fire to the best-measured start for \
                          this wind direction — inland, in continuous fuel, \
                          upwind of the town.",
-                    )
-                    .clicked()
-                {
-                    replan = true;
-                }
-            });
+                            )
+                            .clicked()
+                        {
+                            replan = true;
+                        }
+                    });
 
-            ui.separator();
-            ui.horizontal(|ui| {
-                ui.label("Seed");
-                ui.add(egui::DragValue::new(&mut seed).speed(1.0));
-            });
-            let restart = ui
-                .add_sized(
-                    [ui.available_width(), 28.0],
-                    egui::Button::new("⟲  Restart simulation  (r)").fill(
-                        egui::Color32::from_rgb(120, 40, 32),
-                    ),
-                )
-                .on_hover_text(
-                    "Relights the scenario at T+0 with the current weather, \
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.label("Seed");
+                        ui.add(egui::DragValue::new(&mut seed).speed(1.0));
+                    });
+                    let restart = ui
+                        .add_sized(
+                            [ui.available_width(), 28.0],
+                            egui::Button::new("⟲  Restart simulation  (r)")
+                                .fill(egui::Color32::from_rgb(120, 40, 32)),
+                        )
+                        .on_hover_text(
+                            "Relights the scenario at T+0 with the current weather, \
                      seed and ignitions. The terrain, buildings and population \
                      are kept; the fire and every household's decision are not.",
-                );
-            do_restart = restart.clicked();
-            if running > 0 {
-                ui.small(format!(
-                    "{} of simulated time will be discarded.",
-                    hhmm(running)
-                ));
-            }
-            });
+                        );
+                    do_restart = restart.clicked();
+                    if running > 0 {
+                        ui.small(format!(
+                            "{} of simulated time will be discarded.",
+                            hhmm(running)
+                        ));
+                    }
+                });
         });
 
     // Radius and mode are pure view state, so they go back immediately.
@@ -581,8 +786,8 @@ fn bearing_vec(deg: f32) -> egui::Vec2 {
 /// Nearest 16-point compass name for a bearing.
 fn cardinal(deg: f32) -> &'static str {
     const NAMES: [&str; 16] = [
-        "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W",
-        "WNW", "NW", "NNW",
+        "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW",
+        "NW", "NNW",
     ];
     let i = (((deg.rem_euclid(360.0)) / 22.5).round() as usize) % 16;
     NAMES[i]
