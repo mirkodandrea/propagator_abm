@@ -23,7 +23,6 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
-      - uses: taiki-e/install-action@wasm-opt
       - run: ./scripts/build_web.sh
       - uses: actions/upload-pages-artifact@v3
         with:
