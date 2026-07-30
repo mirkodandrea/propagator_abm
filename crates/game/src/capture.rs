@@ -13,6 +13,8 @@ use bevy::prelude::*;
 use bevy::render::view::screenshot::ScreenshotManager;
 use bevy::window::PrimaryWindow;
 
+use scenario::Pos;
+
 use crate::camera::OrbitCamera;
 use crate::fire_view::FireLayer;
 use crate::sim::Sim;
@@ -29,6 +31,9 @@ pub struct Capture {
     /// Camera orbit distance to shoot from, when asked. Close shots are how
     /// the vegetation and flame detail gets reviewed at all.
     distance: Option<f32>,
+    /// World-frame point to look at, when the interesting thing is not the
+    /// fire -- the town, a junction, a refuge.
+    focus: Option<Pos>,
     remaining: Vec<FireLayer>,
     settle: u32,
 }
@@ -42,6 +47,11 @@ pub fn from_env() -> Option<Capture> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(1800);
     let distance = std::env::var("SPOTORNO_SHOT_DIST").ok().and_then(|v| v.parse().ok());
+    // "x,y" in world metres.
+    let focus = std::env::var("SPOTORNO_SHOT_FOCUS").ok().and_then(|v| {
+        let (x, y) = v.split_once(',')?;
+        Some(Pos { x: x.trim().parse().ok()?, y: y.trim().parse().ok()? })
+    });
     // A single layer can be named, for iterating on one view.
     let only = std::env::var("SPOTORNO_SHOT_LAYER").ok();
     let mut remaining: Vec<FireLayer> = FireLayer::ALL
@@ -49,7 +59,7 @@ pub fn from_env() -> Option<Capture> {
         .filter(|l| only.as_deref().map_or(true, |o| l.label().eq_ignore_ascii_case(o)))
         .collect();
     remaining.reverse(); // popped from the back
-    Some(Capture { dir, at_sim_s, distance, remaining, settle: SETTLE_FRAMES })
+    Some(Capture { dir, at_sim_s, distance, focus, remaining, settle: SETTLE_FRAMES })
 }
 
 pub fn manual(
@@ -93,6 +103,12 @@ pub fn scripted(
     // functions of simulated time, and a frozen sim photographs as a still.
     sim.playing = true;
     sim.speed = 1.0;
+
+    if let Some(focus) = capture.focus.take() {
+        if let Ok(mut orbit) = orbit.get_single_mut() {
+            orbit.focus = crate::frame::to_bevy(focus, sim.scenario.terrain.height_at(focus));
+        }
+    }
 
     if let Some(distance) = capture.distance.take() {
         if let Ok(mut orbit) = orbit.get_single_mut() {

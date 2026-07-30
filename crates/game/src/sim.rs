@@ -6,6 +6,7 @@
 //! simulated second; the speed control multiplies that. Stepping is capped per
 //! frame so a slow step cannot spiral into a death loop.
 
+use abm::Abm;
 use bevy::prelude::*;
 use fire::{FireSim, IgnitionPlan, Weather};
 use scenario::Scenario;
@@ -30,6 +31,10 @@ const STEP_QUANTUM_S: i64 = 2;
 #[derive(Resource)]
 pub struct Sim {
     pub fire: FireSim,
+    /// The civilian agent model. Stepped with the same simulated seconds the
+    /// fire gets, immediately after it, so agents always react to the fire
+    /// state of the step they are in rather than the previous one.
+    pub agents: Abm,
     pub scenario: Scenario,
     pub playing: bool,
     /// Simulated seconds per wall-clock second.
@@ -38,6 +43,10 @@ pub struct Sim {
     /// Bumped whenever the fire state changes, so views rebuild only then.
     pub generation: u64,
     pub ignition: IgnitionPlan,
+    /// Simulated time at which a general evacuation order fires by itself.
+    /// Only set by `SPOTORNO_ORDER_AT`, for unattended runs and screenshots --
+    /// in play the order is the commander's to give.
+    auto_order_s: Option<i64>,
 }
 
 impl Sim {
@@ -57,8 +66,19 @@ impl Sim {
             ignition.corridor_fuel * 100.0
         );
         fire.ignite_patch(ignition.centre, ignition.radius_m, &scenario)?;
+
+        let agents = Abm::new(&scenario, seed)?;
+        println!(
+            "agents: {} households, {} people, {} road nodes, {} refuges",
+            agents.households.len(),
+            agents.people.len(),
+            agents.network.len(),
+            agents.refuges.len()
+        );
+
         Ok(Sim {
             fire,
+            agents,
             scenario,
             // SPOTORNO_AUTOPLAY=1 starts running immediately, for screenshots
             // and for headless timing runs.
@@ -67,6 +87,9 @@ impl Sim {
             accumulator: 0.0,
             generation: 0,
             ignition,
+            auto_order_s: std::env::var("SPOTORNO_ORDER_AT")
+                .ok()
+                .and_then(|v| v.parse().ok()),
         })
     }
 
@@ -95,8 +118,20 @@ pub fn step_fire(mut sim: ResMut<Sim>, time: Res<Time>) {
     let advance = (whole / STEP_QUANTUM_S) * STEP_QUANTUM_S;
     sim.accumulator -= advance as f32;
 
+    if let Some(at) = sim.auto_order_s {
+        if sim.time_s() >= at {
+            let n = sim.agents.order_evacuation_all();
+            info!("scheduled general evacuation at T+{at}s: {n} households");
+            sim.auto_order_s = None;
+        }
+    }
+
     match sim.fire.advance(advance) {
-        Ok(_) => sim.generation += 1,
+        Ok(_) => {
+            let Sim { fire, agents, scenario, .. } = &mut *sim;
+            agents.step(advance as f32, fire, scenario);
+            sim.generation += 1;
+        }
         Err(e) => {
             error!("fire core failed: {e:#}");
             sim.playing = false;

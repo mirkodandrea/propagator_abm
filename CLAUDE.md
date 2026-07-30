@@ -43,16 +43,17 @@ asking.
 
 ```
 crates/scenario/   baked assets + coordinate frames   (no Bevy, no fire core)
-crates/fire/       PROPAGATOR integration, exposure, interventions, ignition
+crates/fire/       PROPAGATOR integration, exposure, threat, interventions
+crates/abm/        civilians: perception, decision, road network, evacuation
 crates/game/       Bevy app
 scripts/           offline asset baking (Python) — never runs at game time
 data/              the baked scenario
 ```
 
 The dependency direction is strict: `scenario` knows nothing about Bevy or the
-fire core; `fire` depends on `scenario`; `game` depends on both. Keep it that
-way — it is what makes the headless tests fast and the model testable without
-a window.
+fire core; `fire` depends on `scenario`; `abm` depends on both; `game` depends
+on all three. Keep it that way — it is what makes the headless tests fast and
+the model testable without a window.
 
 ### Coordinate frames — read this before touching rendering
 
@@ -155,15 +156,75 @@ core's per-cell fireline intensity (kW/m, Byram) via `get_fireline_int()`:
 flame length `L = 0.0775·I^0.46`, radiant reach = 4L (Butler & Cohen safe
 separation), ember reach ∝ √I × wind.
 
+**7. There are two threat layers, and they are not interchangeable.**
+`fire::exposure` answers "is this *building* being destroyed" — slow,
+integrated, at ~750 fixed points, ember reach out to 2.5 km.
+`fire::threat::ThreatField` answers "is it survivable to *stand here*" —
+instantaneous, sampled anywhere, ember reach capped at 400 m. Firebrands
+destroy houses hours later at distances that do not threaten a pedestrian;
+using one field for both makes either the evacuation absurdly panicky or the
+structure loss absurdly local.
+
+**8. Routing is a field, not a search.** Every agent wants the same thing —
+the nearest reachable refuge — so one multi-source Dijkstra from all refuges
+gives every node its distance to safety and its next hop. 61,431 nodes, both
+travel modes, **6.4 ms** per refresh (`routing_cost`), once per simulated
+minute, versus 750 per-agent searches. Rerouting around a road the fire has
+cut then falls out of the field instead of being something each agent has to
+discover.
+
+**9. Refuges have to be measured too.** The same failure as ignition
+placement: a plausible-looking assembly point sitting in continuous macchia is
+a death trap the model will happily route everyone into. `abm::refuge` picks
+road nodes with <12% burnable fuel within 300 m, which selects the waterfront,
+the town core and the port — all at 0–16 m elevation, which is the check that
+they are real.
+
+**10. OSM ways run past the window edge, and that is useful.** Some road
+vertices sit a few metres outside the 10.24 km frame. Rather than clamping
+them, driving off the map counts as evacuated — the A10 and the Aurelia both
+leave the window, and someone who takes them has left the incident.
+
 ---
 
 ## Current state
 
-**Working:** terrain mesh (256 chunks, vertex-coloured by fuel), road ribbons
-with the drivable/track split, 750 household entities with status beacons,
-orbit camera, fire rendered as an age-coloured mesh rebuilt only on sim
-generation change, egui "Incident" panel with a logarithmic 1x–512x time
-slider, play/pause, live stats.
+**Working:** terrain mesh (256 chunks), procedural vegetation from the fuel
+raster, road ribbons with the drivable/track split, orbit camera, fire
+rendered as an age-coloured mesh rebuilt only on sim generation change, egui
+"Incident" panel with a logarithmic 1x–512x time slider, play/pause, live
+stats.
+
+**Buildings** (`crates/game/src/buildings.rs`): all 7,611 drawable OSM
+footprints extruded — walls on the traced outline, plinth course, overhanging
+eave, hipped or flat roof by building kind, Ligurian palette hashed per
+building. Merged into 195 chunks, 0.49 M triangles. Storey counts take the
+population bake as a *floor* only: it sits at 2 for 98% of dwellings, which
+draws the old town as bungalows. Structures recolour through
+`fire::StructureExposure` — threatened, alight, charred — never through the
+fire mask.
+
+**Agents** (`crates/abm`): the four-stage evacuation model — perception,
+decision, preparation, movement. Households perceive through the threat field,
+structure exposure and a coarse 200 m distance-to-fire field (what they can
+*see*); decide on `intent`, `risk_perception` and `trust_authority`; mill for
+`prep_time_min`; then move on the real road graph by car or on foot, with
+congestion, slope, rerouting and abandonment of vehicles on a cut road. The
+commander's order is a lever, not a teleport: it still arrives over each
+household's own channel (90 s mobile alert → 20 min for no channel at all).
+People who were away from home start their own walk out. Rendered as one
+capsule per person plus one vehicle per driving household, drawn at 3× life
+size (`people::FIGURE_SCALE`) because at command altitude a person is
+sub-pixel.
+
+A representative run — general order at T+5 min, 2 h incident:
+
+```
+        aware  prep  moving  safe  defend  cutoff  dead
+ 30 min     3    66      39   166      51       0     0
+ 60 min     3     2       5   264      51       0     0
+120 min     3     0       1   272      49       0     0
+```
 
 Interventions go through the core's own boundary conditions rather than being
 bolted on: `Fireline` → `vegetation_changes`, `Water` → `additional_moisture`.
@@ -178,28 +239,35 @@ ignition at cell (153, 246), r=250 m):
  120 min   49.0 ha   front 200   FLI 66,596        threatened 137
 ```
 
-**Not built yet:** any agent behaviour — households are exposure-coloured
-markers, not decision-makers. No crews or engines as entities. No
-click-to-inspect. No debrief. No wasm.
+**Not built yet:** crews and engines as entities (interventions exist in
+`fire`, nobody drives them). No click-to-inspect. No debrief. No wasm. No
+reunification behaviour — people who are out do not go home for family.
 
 ### Commands
 
 ```bash
 cargo run --release -p game              # play
 SPOTORNO_AUTOPLAY=1 cargo run --release -p game   # start running immediately
-cargo test -p fire --release             # fast headless model tests
-cargo test -p fire --release -- --ignored --nocapture   # slow calibration sweeps
+SPOTORNO_ORDER_AT=600 cargo run --release -p game  # auto-order evacuation at T+10 min
+cargo test --release                     # everything, ~4 s
+cargo test -p abm --release -- --ignored --nocapture     # evacuation timeline + routing cost
+cargo test -p fire --release -- --ignored --nocapture    # slow calibration sweeps
+
+# screenshots without a human at the keyboard
+SPOTORNO_SHOT=/tmp/shots SPOTORNO_SHOT_AT=1800 SPOTORNO_SHOT_DIST=400 \
+  SPOTORNO_SHOT_FOCUS=4875,2875 SPOTORNO_SHOT_LAYER=Flames \
+  SPOTORNO_AUTOPLAY=1 cargo run --release -p game
 ```
 
-Controls: `space` play/pause · `[` `]` speed · drag orbit · right-drag pan ·
-scroll zoom.
+Controls: `space` play/pause · `[` `]` speed · `1`–`4` fire layer · `e` general
+evacuation order · drag orbit · right-drag pan · scroll zoom.
 
 ---
 
 ## Working agreements
 
 - **Two agents are active.** One (this line of work) owns the model:
-  `crates/scenario`, `crates/fire`, `scripts/`, `data/`. Another owns
+  `crates/scenario`, `crates/fire`, `crates/abm`, `scripts/`, `data/`. Another owns
   rendering. The contract between them is `crates/scenario` — the world frame,
   `Terrain::height_at()`, and the asset formats. Changing those needs
   coordination; changing materials, meshes, shaders or camera does not.
@@ -224,4 +292,15 @@ scroll zoom.
 - At `max` speed the per-frame step cap (30 simulated seconds) will bind on a
   large fire, so achieved speed will fall below requested. Honest fix is
   displaying both, not raising the cap.
-- Nothing is committed to git yet (`git init` done, no commits).
+- Structure loss being rare means the building damage states (alight, charred)
+  are almost never seen in play. Worth checking they look right before tuning
+  the fire to produce more of them.
+- 135 households intend to stay and defend and, at the current tuning, mostly
+  never leave — the fire does not reach them. That is defensible, but it means
+  the most interesting civilian behaviour in the model is currently inert.
+- Congestion is a per-link occupancy count with a linear slowdown. It gives the
+  right *shape* (a late mass departure is slower) but is not a traffic model;
+  gridlock on the Aurelia does not emerge from it.
+- The 6.4 ms routing refresh lands in a single frame, so at 512x there is a
+  visible hitch once a simulated minute. Spreading it over frames or solving on
+  a task pool is the fix if it starts to matter.

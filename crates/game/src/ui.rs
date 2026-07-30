@@ -3,6 +3,7 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use fire::CellFire;
+use scenario::Pos;
 
 use crate::fire_view::FireLayer;
 use crate::sim::Sim;
@@ -41,6 +42,11 @@ pub fn panel(
     let threatened = sim.fire.exposure().threatened(0.05).count();
     let lost = sim.fire.exposure().fields().iter().filter(|f| f.alight).count();
     let peak_hazard = sim.fire.hazard().peak();
+    let evac = sim.agents.stats();
+    let median_evac = sim.agents.median_evacuation_s();
+    let ordered = sim.agents.households.iter().filter(|h| h.ordered).count();
+    let ignition_pos = sim.scenario.world.centre_of(sim.ignition.centre);
+    let mut order: Option<(Pos, f32)> = None;
     let clock = sim.clock();
     let playing = sim.playing;
     let mut speed = sim.speed;
@@ -125,12 +131,67 @@ pub fn panel(
             });
 
             ui.separator();
+            ui.label("Evacuation");
+            egui::Grid::new("evac").num_columns(2).show(ui, |ui| {
+                ui.label("Ordered out");
+                ui.label(format!("{ordered} households"));
+                ui.end_row();
+                ui.label("Milling / preparing");
+                ui.label(format!("{}", evac.preparing));
+                ui.end_row();
+                ui.label("On the road");
+                ui.label(format!(
+                    "{} households · {} cars · {} on foot",
+                    evac.moving, evac.cars_moving, evac.on_foot
+                ));
+                ui.end_row();
+                ui.label("Out");
+                ui.label(format!("{} households · {} people", evac.safe, evac.people_safe));
+                ui.end_row();
+                ui.label("Staying to defend");
+                ui.label(format!("{}", evac.defending));
+                ui.end_row();
+                ui.label("Cut off / trapped");
+                ui.label(format!("{}", evac.cutoff));
+                ui.end_row();
+                ui.label("Casualties");
+                ui.label(format!("{} households", evac.casualties));
+                ui.end_row();
+                ui.label("Median time out");
+                ui.label(match median_evac {
+                    Some(s) => format!("{:.0} min", s / 60.0),
+                    None => "—".to_string(),
+                });
+                ui.end_row();
+            });
+
+            ui.horizontal(|ui| {
+                if ui
+                    .button("Evacuate 2 km around the fire")
+                    .on_hover_text(
+                        "Households still hear the order over their own channel, \
+                         and still have to decide and pack.",
+                    )
+                    .clicked()
+                {
+                    order = Some((ignition_pos, 2000.0));
+                }
+                if ui.button("Evacuate everyone").clicked() {
+                    order = Some((ignition_pos, 20_000.0));
+                }
+            });
+
+            ui.separator();
             ui.small(
-                "space play/pause · [ ] speed · 1-4 fire layer · drag orbit · \
-                 right-drag pan · scroll zoom",
+                "space play/pause · [ ] speed · 1-4 fire layer · e evacuate · \
+                 drag orbit · right-drag pan · scroll zoom",
             );
         });
 
+    if let Some((centre, radius)) = order {
+        let n = sim.agents.order_evacuation(centre, radius);
+        info!("evacuation order issued to {n} households within {radius:.0} m");
+    }
     if toggle {
         sim.playing = !sim.playing;
     }

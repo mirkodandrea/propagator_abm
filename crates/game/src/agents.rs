@@ -44,14 +44,7 @@ pub fn spawn(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let scn = &sim.scenario;
-    let house_mesh = meshes.add(Cuboid::new(7.0, 5.0, 7.0));
     let beacon_mesh = meshes.add(Sphere::new(3.0).mesh().ico(2).unwrap());
-
-    let house_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.75, 0.72, 0.66),
-        perceptual_roughness: 0.9,
-        ..default()
-    });
 
     // One material per status, shared across households, so status changes are
     // a material swap rather than an asset allocation.
@@ -82,22 +75,13 @@ pub fn spawn(
 
         commands.spawn((
             PbrBundle {
-                mesh: house_mesh.clone(),
-                material: house_mat.clone(),
-                transform: Transform::from_xyz(p.x, ground + 2.5, -p.y),
-                ..default()
-            },
-            HouseholdMarker { id: h.id },
-        ));
-
-        commands.spawn((
-            PbrBundle {
                 mesh: beacon_mesh.clone(),
                 material: status_mats[0].clone(),
-                transform: Transform::from_xyz(p.x, ground + 16.0, -p.y),
+                transform: Transform::from_xyz(p.x, ground + 22.0, -p.y),
                 ..default()
             },
             Beacon { household: h.id },
+            HouseholdMarker { id: h.id },
         ));
     }
 
@@ -122,34 +106,35 @@ pub fn animate_beacons(time: Res<Time>, mut query: Query<(&Beacon, &mut Transfor
     }
 }
 
-/// Recolour beacons from the fire's structure-exposure model. Until the
-/// behavioural model lands, this is what shows the fire actually reaching
-/// people: exposure is proximity-based, because houses sit on non-burnable
-/// cells and can never appear in the fire mask itself.
+/// Recolour beacons from each household's own decision state.
+///
+/// This is the agent model's status, not the fire's: warned, milling,
+/// on the road, out, defending, cut off. What the fire does to a house is
+/// drawn on the house itself (see [`crate::buildings`]); what it does to the
+/// people is here.
 pub fn update_beacons(
     sim: Res<Sim>,
     mats: Res<StatusMaterials>,
-    mut query: Query<(&Beacon, &mut Handle<StandardMaterial>)>,
+    mut query: Query<(&Beacon, &mut Handle<StandardMaterial>, &mut Visibility)>,
 ) {
     if !sim.is_changed() {
         return;
     }
-    let exposure = sim.fire.exposure();
-    for (beacon, mut handle) in &mut query {
-        let f = exposure.get(beacon.household);
-        let status = if f.alight {
-            Status::Casualty
-        } else if f.radiant + f.ember > 0.35 {
-            Status::Trapped
-        } else if f.radiant + f.ember > 0.08 {
-            Status::Preparing
-        } else if f.ember > 0.0 {
-            Status::Warned
-        } else {
-            Status::Normal
+    for (beacon, mut handle, mut vis) in &mut query {
+        let Some(h) = sim.agents.households.get(beacon.household) else {
+            continue;
         };
-        let idx = status as usize;
-        if let Some(m) = mats.0.get(idx) {
+        // An empty house is not worth a marker; the town is dense enough that
+        // 750 permanent beacons bury the ones that matter.
+        let want = if h.status == Status::Evacuated {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        };
+        if *vis != want {
+            *vis = want;
+        }
+        if let Some(m) = mats.0.get(h.status as usize) {
             if *handle != *m {
                 *handle = m.clone();
             }

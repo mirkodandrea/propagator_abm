@@ -22,11 +22,13 @@ pub mod fuels;
 pub mod hazard;
 pub mod ignition;
 pub mod intervention;
+pub mod threat;
 
 pub use exposure::{ExposureField, StructureExposure};
 pub use hazard::HazardField;
 pub use ignition::{plan as plan_ignition, plan_with_standoff, IgnitionPlan};
 pub use intervention::{Intervention, InterventionKind};
+pub use threat::ThreatField;
 
 /// Weather driving the fire. Applied as boundary conditions; changing any of
 /// these mid-run schedules a new event.
@@ -74,6 +76,8 @@ pub struct FireSim {
     exposure: StructureExposure,
     /// One-step spread probability ahead of the front, for the hazard overlay.
     hazard: HazardField,
+    /// Danger to people in the open, sampled anywhere: see [`threat`].
+    threat: ThreatField,
     pending: Vec<Intervention>,
 }
 
@@ -116,6 +120,7 @@ impl FireSim {
             intensity: vec![0.0; n],
             exposure: StructureExposure::new(scn),
             hazard,
+            threat: ThreatField::new(scn.world),
             pending: Vec::new(),
         })
     }
@@ -152,6 +157,11 @@ impl FireSim {
     /// Where the fire is likely to go next: see [`hazard`].
     pub fn hazard(&self) -> &HazardField {
         &self.hazard
+    }
+
+    /// How survivable it is to be standing somewhere: see [`threat`].
+    pub fn threat(&self) -> &ThreatField {
+        &self.threat
     }
 
     pub fn cell_state(&self, c: Cell) -> CellFire {
@@ -255,6 +265,8 @@ impl FireSim {
             seconds as f32,
         );
         self.hazard.update(&self.active, &self.state, self.weather);
+        self.threat
+            .update(&self.state, &self.active, &self.intensity, self.weather);
         Ok(self.active.len().saturating_sub(before))
     }
 

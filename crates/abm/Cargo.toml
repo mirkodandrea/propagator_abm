@@ -1,0 +1,13 @@
+[package]
+name = "abm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Civilian agent model: perception, decision, evacuation on the real road network"
+
+[dependencies]
+scenario.workspace = true
+fire.workspace = true
+anyhow.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true

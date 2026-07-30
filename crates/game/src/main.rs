@@ -5,11 +5,13 @@
 //! used only offline, to bake the scenario assets under `data/`.
 
 mod agents;
+mod buildings;
 mod camera;
 mod capture;
 mod field;
 mod fire_view;
 mod frame;
+mod people;
 mod roads;
 mod sim;
 mod terrain_mesh;
@@ -65,7 +67,15 @@ fn main() -> anyhow::Result<()> {
         .insert_resource(sim)
         .add_systems(
             Startup,
-            (setup_scene, fire_view::setup, vegetation::spawn, agents::spawn),
+            (
+                setup_scene,
+                fire_view::setup,
+                vegetation::spawn,
+                buildings::spawn,
+                agents::spawn,
+                people::setup,
+                people::mark_refuges,
+            ),
         )
         .add_systems(
             Update,
@@ -78,8 +88,12 @@ fn main() -> anyhow::Result<()> {
                 fire_view::update_overlay,
                 fire_view::update_flames,
                 vegetation::burn,
+                buildings::damage,
                 agents::animate_beacons,
                 agents::update_beacons,
+                people::spawn_vehicles,
+                people::update_people,
+                people::update_vehicles,
                 capture::manual,
             ),
         );
@@ -152,6 +166,10 @@ fn controls(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>) {
     }
     if keys.just_pressed(KeyCode::BracketLeft) {
         sim.speed = (sim.speed / 2.0).max(ui::MIN_SPEED);
+    }
+    if keys.just_pressed(KeyCode::KeyE) {
+        let n = sim.agents.order_evacuation_all();
+        info!("general evacuation ordered: {n} households");
     }
 }
 
