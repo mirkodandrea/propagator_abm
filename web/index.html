@@ -15,9 +15,18 @@
     <div id="loading">Loading the Spotorno incident simulation…</div>
     <script type="module">
       import init from './game.js';
-      init().then(() => document.querySelector('#loading').remove())
+      const loading = document.querySelector('#loading');
+      // Winit 0.30 deliberately throws this exception after handing control to
+      // the browser event loop. The game is running at that point; it is not a
+      // failed wasm initialization.
+      const winitControlFlow = 'Using exceptions for control flow, don\'t mind me.';
+      init().then(() => loading.remove())
         .catch(error => {
-          document.querySelector('#loading').textContent = `Could not start the simulation: ${error}`;
+          if (String(error).includes(winitControlFlow)) {
+            loading.remove();
+            return;
+          }
+          loading.textContent = `Could not start the simulation: ${error}`;
           console.error(error);
         });
     </script>
