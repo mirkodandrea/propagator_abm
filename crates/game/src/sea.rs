@@ -44,9 +44,13 @@ const WATER_CHUNK: usize = 64;
 const WATER_ELEV_MAX: f32 = 0.6;
 
 /// Flat base height for the (unwaved) lattice; the vertex shader adds the
-/// swell on top of this every frame. Just enough above the terrain's own sea
-/// floor to avoid z-fighting with it through the shore fringe.
-const WATER_BASE_Y: f32 = 0.35;
+/// swell on top of this every frame. Has to clear both `WATER_ELEV_MAX`
+/// (ground under the water can sit up to 0.6 m) *and* the deepest wave
+/// trough the shader can produce (see the amplitude clamp in
+/// `shaders/water.wgsl`) — undershoot either and the terrain pokes through
+/// the animated surface, which reads as a patch of dark, static "shadow"
+/// sitting in the water. Shipped once at 0.35 m, which cleared neither.
+const WATER_BASE_Y: f32 = 2.0;
 
 /// Probe ring radii for [`distance_to_shore`], metres. Past the last ring, a
 /// water point is "open water" for shading purposes — the shallow/deep split
@@ -243,5 +247,9 @@ fn update_water(
 
     mat.uniform.wind = Vec4::new(drift.x, drift.z, wind_ms, 0.0);
     mat.uniform.sun_dir = sun.direction.extend(sun.day_gate);
-    mat.uniform.sun_color = sun.color.extend(1.0);
+    // `.a` rides along as the water's own brightness gate (see
+    // `shaders/water.wgsl`) — `sun.brightness`, not `sun.day_gate`, so the
+    // sea tracks the same illuminance curve the rest of the scene is lit
+    // from instead of dimming early on a perfectly sunny afternoon.
+    mat.uniform.sun_color = sun.color.extend(sun.brightness);
 }

@@ -33,12 +33,12 @@ use crate::ignition_edit::{ring_mesh, RING_LIFT_M};
 use crate::sim::Sim;
 
 /// How far above life size units are drawn.
-const SYMBOL_SCALE: f32 = 5.0;
+pub(crate) const SYMBOL_SCALE: f32 = 5.0;
 
 /// Altitude an air tanker is drawn at, metres above the ground beneath it. A
 /// Canadair on a drop run is at 30-45 m; drawn there it is lost in the canopy
 /// and the smoke, so it flies as a symbol well above both.
-const AIR_ALTITUDE_M: f32 = 220.0;
+pub(crate) const AIR_ALTITUDE_M: f32 = 220.0;
 
 /// Radius of the ring marking where a unit was ordered to work.
 const ORDER_RING_M: f32 = 45.0;

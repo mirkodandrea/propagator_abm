@@ -32,7 +32,10 @@ fn wave_height(p: vec2<f32>, t: f32) -> f32 {
     let speed = water.wind.z;
     // A dead calm sea is glassy: amplitude collapses toward zero with speed,
     // same as the ember/spotting model treats zero wind as no transport.
-    let amp = clamp(speed * 0.045, 0.03, 1.1);
+    // Capped at 0.5: `WATER_BASE_Y` (`crate::sea`) is only sized to clear a
+    // trough this deep, and a bigger cap here needs a bigger base height to
+    // match or the terrain pokes through at the bottom of the swell.
+    let amp = clamp(speed * 0.045, 0.03, 0.5);
     let s = 0.7 + speed * 0.05;
     var h = 0.0;
     h += amp * sin(dot(p, dir0) * 0.055 + t * s);
@@ -106,9 +109,13 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // This shader does not run through the scene's own lighting, so it has
     // to dim itself: without this the sea stays lit like noon after the sun
     // sets, which is exactly the always-bright-water bug this comment is
-    // here to stop someone reintroducing. `sun_dir.w` is the same day gate
-    // the specular term below already uses.
-    let light = mix(0.12, 1.0, water.sun_dir.w);
+    // here to stop someone reintroducing. `sun_color.a` carries the sun's
+    // own illuminance-normalised brightness (`SunState::brightness`), not
+    // the coarser `sin(elevation)` gate used for the specular term below —
+    // that gate alone stayed under 0.5 at a properly sunny mid-afternoon
+    // sun and made the sea visibly dimmer than a shoreline lit by the same
+    // light.
+    let light = mix(0.12, 1.0, water.sun_color.a);
     col *= light;
 
     let sky_reflection = (water.deep_color.rgb * 0.4 + vec3<f32>(0.55, 0.62, 0.68)) * light;

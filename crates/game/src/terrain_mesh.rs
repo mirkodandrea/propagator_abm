@@ -121,15 +121,15 @@ pub fn build(
                     let elev = t.elev[(r0 + r) * t.cols + (c0 + c)];
 
                     positions.push([gx, elev, -gy]);
+                    // Deliberately the plain heightfield normal, not a
+                    // noise-perturbed one: a per-vertex jittered normal feeds
+                    // straight into the directional light's shadow-map bias,
+                    // and at a jitter scale finer than the shadow map texel
+                    // it produces exactly the blotchy close-range
+                    // self-shadowing this comment is here to stop someone
+                    // reintroducing (it shipped once, briefly).
                     let n = t.normal_at(p);
-                    // Perturb the heightfield's own (smooth, 5 m) normal with
-                    // fine noise so broken ground catches specular light
-                    // unevenly instead of reading as a poured, perfect slope.
-                    let jitter = 0.06;
-                    let nx = n[0] + jitter * (noise(p.x / 3.1, p.y / 3.1, 0x4C) - 0.5);
-                    let nz = n[2] + jitter * (noise(p.x / 3.1 + 50.0, p.y / 3.1 + 50.0, 0x4D) - 0.5);
-                    let bumped = Vec3::new(nx, n[1], nz).normalize();
-                    normals.push([bumped.x, bumped.y, -bumped.z]);
+                    normals.push([n[0], n[1], -n[2]]);
 
                     let col = ground_color(elev, n[1], p);
                     let col = Color::srgb(col[0], col[1], col[2]).to_linear();

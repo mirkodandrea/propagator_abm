@@ -43,6 +43,8 @@ pub enum Target {
     /// its car mid-route and continue on foot, and the inspector should keep
     /// following the same group rather than losing the selection.
     Traveller(usize),
+    /// Index into `Suppression::units` — an engine, hand crew or air tanker.
+    Unit(usize),
 }
 
 #[derive(Resource, Default)]
@@ -185,6 +187,22 @@ pub fn pick_click(
         );
     }
 
+    // Suppression units, at the altitude they're actually drawn at — see
+    // `units::update_units`'s visibility rule, matched here so the pick
+    // target is exactly what's drawn.
+    for u in &sim.crews.units {
+        if !(u.on_scene() || u.state == abm::suppression::UnitState::Lost) {
+            continue;
+        }
+        let ground = sim.scenario.terrain.height_at(u.pos);
+        let lift = if u.kind.is_air() {
+            crate::units::AIR_ALTITUDE_M
+        } else {
+            crate::units::SYMBOL_SCALE * 1.3
+        };
+        try_pick(frame::to_bevy(u.pos, ground + lift), Target::Unit(u.id));
+    }
+
     // A click that hit nothing deselects, same as clicking empty ground in
     // any RTS.
     selected.0 = best.map(|(_, t)| t);
@@ -211,6 +229,7 @@ pub fn update_ring(
         Target::Household(id) => sim.agents.households.get(id).map(|h| h.home),
         Target::Person(id) => sim.agents.people.get(id).map(|p| p.pos),
         Target::Traveller(i) => sim.agents.travellers.get(i).map(|t| t.pos),
+        Target::Unit(id) => sim.crews.units.get(id).map(|u| u.pos),
     };
     let Some(pos) = pos else {
         *vis = Visibility::Hidden;
@@ -228,6 +247,7 @@ pub fn update_ring(
         Target::Household(_) => 9.0,
         Target::Person(_) => 3.0,
         Target::Traveller(_) => 5.0,
+        Target::Unit(_) => 8.0,
     } * pulse;
     tf.translation = frame::to_bevy(pos, ground + 0.5);
     tf.scale = Vec3::new(radius, 1.0, radius);
@@ -268,6 +288,7 @@ pub fn panel(
                 Target::Household(id) => household_panel(ui, &sim, &buildings, id, &mut jump_to),
                 Target::Person(id) => person_panel(ui, &sim, id, &mut jump_to),
                 Target::Traveller(i) => traveller_panel(ui, &sim, i, &mut jump_to),
+                Target::Unit(id) => unit_panel(ui, &sim, id),
             }
         });
 
@@ -284,6 +305,7 @@ fn title(target: Target) -> String {
         Target::Household(id) => format!("Household #{id}"),
         Target::Person(id) => format!("Person #{id}"),
         Target::Traveller(_) => "On the move".to_string(),
+        Target::Unit(id) => format!("Unit #{id}"),
     }
 }
 
@@ -483,6 +505,95 @@ fn traveller_panel(ui: &mut egui::Ui, sim: &Sim, i: usize, jump_to: &mut Option<
         if ui.button(format!("Inspect household #{}", t.household)).clicked() {
             *jump_to = Some(Target::Household(t.household));
         }
+    }
+}
+
+/// A suppression unit's own account of itself: what it is, what it has been
+/// told to do, and what it has actually achieved — the same numbers as the
+/// Resources panel's hover text (`crate::command::panel`), but reachable by
+/// clicking the unit on the map rather than finding it in the roster list.
+fn unit_panel(ui: &mut egui::Ui, sim: &Sim, id: usize) {
+    use abm::suppression::{Task, UnitKind, UnitState};
+
+    let Some(u) = sim.crews.units.get(id) else {
+        ui.label("(gone)");
+        return;
+    };
+
+    egui::Grid::new("unit").num_columns(2).show(ui, |ui| {
+        ui.label("Callsign");
+        ui.label(&u.callsign);
+        ui.end_row();
+
+        ui.label("Kind");
+        ui.label(u.kind.label());
+        ui.end_row();
+
+        ui.label("State");
+        ui.label(crate::command::status_line(sim, id));
+        ui.end_row();
+
+        ui.label("Order");
+        ui.label(match u.task {
+            Task::Hold => "hold position".to_string(),
+            Task::Return => "returning to base".to_string(),
+            Task::Attack { .. } => "direct attack".to_string(),
+            Task::Drop { .. } => "drop run".to_string(),
+            Task::Line { from, to } => {
+                let total = ((to.x - from.x).powi(2) + (to.y - from.y).powi(2)).sqrt();
+                format!("cutting line — {:.0}/{:.0} m done", u.line_done_m, total)
+            }
+        });
+        ui.end_row();
+
+        match u.kind {
+            UnitKind::Engine => {
+                ui.label("Tank");
+                ui.label(format!("{:.0} of {:.0} L", u.water_l, u.tank_l));
+                ui.end_row();
+                ui.label("Delivered");
+                ui.label(format!("{:.0} L", u.water_used_l));
+                ui.end_row();
+                ui.label("Hose reach");
+                ui.label(format!("{:.0} m of a road it can reach", abm::suppression::ENGINE_REACH_M));
+                ui.end_row();
+            }
+            UnitKind::HandCrew => {
+                ui.label("Line cut");
+                ui.label(format!("{:.0} m", u.line_cut_m));
+                ui.end_row();
+                ui.label("Production rate");
+                ui.label(format!("{:.0} m/h", abm::suppression::LINE_M_PER_H));
+                ui.end_row();
+            }
+            UnitKind::AirTanker => {
+                ui.label("Drops");
+                ui.label(format!("{}", u.drops));
+                ui.end_row();
+                ui.label("Delivered");
+                ui.label(format!("{:.0} L", u.water_used_l));
+                ui.end_row();
+                ui.label("Load size");
+                ui.label(format!("{:.0} L", u.tank_l));
+                ui.end_row();
+                if u.state == UnitState::Inbound {
+                    ui.label("Arrives");
+                    ui.label(mmss((u.arrives_at_s - sim.crews.time_s()).max(0.0)));
+                    ui.end_row();
+                }
+            }
+        }
+
+        if u.heat_s > 0.0 {
+            ui.label("Heat exposure");
+            ui.label(format!("{:.0} s", u.heat_s));
+            ui.end_row();
+        }
+    });
+
+    if !u.note.is_empty() {
+        ui.separator();
+        ui.colored_label(egui::Color32::from_rgb(240, 180, 60), u.note);
     }
 }
 

@@ -247,14 +247,14 @@ DANGER_CUT`), so a refuge can stop counting mid-scenario.
 
 ---
 
-## The commander's policy levers
+## The evacuation lever
 
-The player (incident commander) has exactly one lever over the civilian
-model today: **when and where to issue the evacuation order.**
+The commander's lever over the civilian model is **when and where to issue the
+evacuation order.**
 
 - `order_evacuation(centre, radius_m)` — flags every household within
   `radius_m` of `centre` as `ordered` (used by the UI's click-a-zone flow,
-  `ui.rs:200`).
+  `ui.rs`).
 - `order_evacuation_all()` — orders everyone, regardless of distance (bound
   to the `e` key, and to `SPOTORNO_ORDER_AT` for scripted runs).
 
@@ -266,16 +266,209 @@ decision above. There's no way to target the order more precisely (e.g. "all
 incident commander can actually do (broadcast to an area, not to a
 psychographic segment).
 
-Fireline construction and water/retardant drops exist as boundary conditions
-in `fire::intervention` (`Fireline`, `Water { litres_per_m2 }`, applied via
-`FireSim::flush_interventions`), but as of now nothing in `game` or `abm`
-drives them — there's no crew/engine entity to issue the order to. They
-affect only the fire's own spread; the ABM has no interaction with them.
-That's listed as not-yet-built in CLAUDE.md.
+---
+
+# Part 2 — Suppression (`suppression.rs`)
+
+The second lever, and the only one that acts on the fire rather than on the
+people. A `Unit` is an agent in the same sense a household is: a position on the
+real network, a state, a task it was given, consumables it runs out of, and a
+safety rule that will override the order it was handed.
+
+There is no perception stage. A unit does what it is told, until it is told
+something else or the fire makes the order unsurvivable — which is the honest
+model of a crew under command, and it is what puts the decisions on the player
+instead of on a policy the player cannot see.
+
+## The three kinds, and why they are not interchangeable
+
+| | Moves on | Acts by | Runs out of | Held back by |
+|---|---|---|---|---|
+| **Hand crew** ×3 (`Squadra A–C`) | roads *and* tracks, then on foot | cutting line — permanent fuel removal | nothing | `LINE_M_PER_H` = 120 m/h in macchia |
+| **Engine** ×3 (`Autobotte 1–3`) | drivable roads only | water | `ENGINE_TANK_L` = 2,500 L, in 6 min of pumping | `ENGINE_REACH_M` = 60 m of hose |
+| **Air tanker** ×2 (`Canadair 1–2`) | straight lines, over everything | `TANKER_LOAD_L` = 6,137 L per swath | nothing, but every cycle costs minutes | `AIR_RESPONSE_S` = 25 min to arrive at all |
+
+Those three constraints are the whole game. The engine is fast and useless away
+from a road; the crew reaches anywhere and cuts line slower than the fire
+spreads; the aircraft hits anything but takes 25 minutes to show up and its water
+wears off. Every number is sourced in its own doc comment — published hand-line
+production rates for Mediterranean shrub, a real `autobotte`'s tank and pump, a
+CL-415's load and cruise — because a serious game that invents its production
+rates is just a game.
+
+The roster is deliberately thin (`DEFAULT_ENGINES`/`_CREWS`/`_TANKERS`): a
+Ligurian initial attack is two or three engines and a couple of volunteer squads,
+with air support requested and waited for. A commander who can solve the scenario
+with what is already on scene is not being asked anything.
+
+Units stage at the **measured refuges** (`refuge.rs`), sorted nearest-the-fire
+first by `sim.rs`'s `staging()`. A refuge is already known to be out of the fuel
+and reachable by vehicle, which is exactly what a staging area needs to be — the
+same "measure it, don't author it" rule that picks the refuges and the ignition.
+
+## Tasks
+
+`Task` is the commander's entire vocabulary:
+
+| Task | Who | What happens |
+|---|---|---|
+| `Hold` | any | Stand by where you are. |
+| `Attack { at }` | crew, engine | Work the fire there. Kind-specific — see below. |
+| `Line { from, to }` | crew only | Cut a fuel break along that alignment. |
+| `Drop { at }` | air only | One load there, then back for another until re-tasked. |
+| `Return` | any | Back to staging and wait. |
+
+`Suppression::assign` is the only way in, and it **returns the reason** an order
+cannot be taken rather than failing silently: "an engine cannot cut line — send a
+hand crew", "not on the incident: request air support first". The UI shows those
+verbatim. `request_air()` is separate, because asking for aircraft is its own
+decision with its own 25-minute price.
+
+An **inbound** aircraft can be briefed before it arrives (`Unit::assignable` is
+true while `Unit::on_scene` is false), and `arrive_if_due` puts it straight to
+work when it lands. That is what happens on a real incident, and it is the
+difference between air support that starts working the moment it is overhead and
+air support that circles waiting to be noticed.
+
+### `Attack` means something different per kind
+
+- **Engine**: drive as close to the point as the *drivable* network gets, then
+  wet the suppressible fuel within hose reach of **where it ended up** — not of
+  where it was sent. An engine parked 600 m short because that is where the
+  tarmac ends is still doing the most useful thing available to it: wetting the
+  fuel beside the road it is standing on. `Unit::note` says the ordered point was
+  out of reach, so the shortfall is visible rather than silent. Water goes on the
+  four hottest cells in range (`reachable_targets`), which is what makes the tank
+  matter: 2,500 L over 1,600 m² is ~45 moisture points, just past extinction, so
+  an engine can genuinely hold a couple of cells and nothing wider.
+- **Hand crew**: direct attack by a hand crew *is* cutting line at the fire's
+  edge, so the order is rewritten into a `Line` across the fire's approach
+  (`crew_alignment`: perpendicular to the nearest burning cell, 90 minutes of
+  production long — as much as the crew can actually finish) and runs through the
+  same code. Two models of one activity would be one too many.
+
+### Consumables and cycles
+
+- **Engine**: pumps at `ENGINE_PUMP_LPM` = 400 L/min, so a tank is six minutes of
+  work; then it drives itself to the nearest of the map's 102 **hydrants**,
+  refills at `HYDRANT_LPM` = 1,000 L/min, and resumes the task it was on
+  (`begin_refill` stores it in `resume`). Ninety minutes of tasking is therefore
+  seven tank-loads and six round trips, which is most of what an engine's day is.
+- **Air tanker**: `AirLeg` cycles `ToTarget → drop → ToWater → Scooping →
+  ToTarget`, scooping from the 13 mapped **open water** bodies at `SCOOP_S` = 90 s
+  per pass, flying at `TANKER_SPEED` = 80 m/s. With water close, that is a drop
+  every ~2.5 minutes.
+- **Hand crew**: cuts at `LINE_M_PER_H` along the alignment, position tracking
+  the cut head so the crew is drawn where the work is. `line_done_m` is its own
+  field rather than derived from position, so a crew that withdraws and comes back
+  does not start over.
+
+## Safety overrides orders
+
+- A unit will not work where the threat field reads `WORK_LIMIT` = 0.35 or above
+  — *below* the civilians' `IMPASSABLE` = 0.55, deliberately. Firefighters are not
+  civilians who happen to be braver; they are people with a stated safety margin,
+  and they disengage while they still can. State becomes `Withdrawing`, the note
+  says why, and the unit heads for staging.
+- It can still be caught: `heat_s` accumulates above `IMPASSABLE` exactly as a
+  civilian's does, and `BURNOVER_S` = 90 s of it is `UnitState::Lost`. That is
+  reachable only by the fire moving onto the unit, never by obedience — which is
+  the property `a_unit_sent_into_the_fire_withdraws_instead_of_dying` pins.
+
+## Routing: a field *and* a search
+
+The two models need opposite things from the same graph, and this is the clearest
+place in the project to see why one algorithm is not "the" right one:
+
+| | Civilians | Units |
+|---|---|---|
+| Destination | the *same* one for everybody — nearest refuge | a *different* one each — wherever the commander pointed |
+| Solution | one multi-source Dijkstra from all refuges, 6.4 ms, once a minute (`network::solve`) | one A* per unit (`network::route`), throttled to `REROUTE_S` = 60 s |
+| Count | 750 agents, one solve | ~8 units, one search each |
+
+A per-agent search for 750 civilians would be absurd; a refuge field cannot
+express "go *there*". Both treat danger the same way — an edge past `DANGER_CUT`
+is dropped, a smoky one is inflated `(1 + 40·danger)×` — except that `route`
+allows the *destination* to be dangerous, because that is frequently exactly
+where the work is.
+
+Two subtleties that cost real debugging (CLAUDE.md findings #17–18):
+
+- **`nearest_reachable`, not `nearest`.** OSM tags plenty of inland farm track as
+  drivable, and those stubs connect to nothing, so the nearest drivable node to a
+  point up in the macchia is routinely an island. Road components are labelled
+  once at build (`RoadNetwork::component`, a flood fill per travel mode), so
+  "can this unit get there at all" is an O(1) question and the answer is "drive as
+  close as the network gets".
+- **An empty route is not a request for one.** A unit that has arrived has an
+  empty route for the rest of the incident; re-planning on that condition ran a
+  61 k-node A* per unit per sub-step. The trigger is the *target* moving or
+  `REROUTE_S` elapsing.
+
+Movement is sub-stepped at `SUBSTEP_S` = 4 s for the same reason the civilians'
+is, and it matters more here: a unit's duty cycle is a chain of transitions —
+arrive, pump dry, drive to a hydrant, fill, drive back — and each is only noticed
+at a step boundary. Before the sub-step loop, water delivered differed by 20%
+between a 2 s and a 60 s step even though every rate was already per-second.
+
+## What the work does to the fire
+
+`Suppression::step` **returns** its interventions rather than applying them; the
+caller (`sim.rs`) hands them to `FireSim::queue`, and the core applies them as one
+merged boundary-condition event on its next advance. That is one 2 s step of
+latency, and it buys the units the ability to read the threat field and fire state
+immutably while deciding.
+
+Both routes into the core already existed as boundary conditions
+(`fire::intervention`), so suppression is expressed in the model's own terms:
+`Fireline` → `vegetation_changes` (fuel set to a non-burnable class, permanent),
+`Water` → `additional_moisture` (percentage points, decaying 1%/min, ~69 min half
+life).
+
+**Suppression acts on the fuel ahead of the front, never on the flames.** The
+kernel never un-lights a cell — burn-out is `fire`'s own ageing layer — so wetting
+the burning edge does exactly nothing. Every unit targets
+`FireSim::is_suppressible` (burnable, unburnt, not already cut). This is the same
+class of always-negative as houses never burning: the intuitive action reads as
+fighting the fire and is measurably worthless.
+
+The calibration that decides whether any of this matters is
+`MOISTURE_POINTS_PER_LITRE` = 30, derived from fuel load rather than guessed, and
+measured against the core's 30-point moisture of extinction
+(`crates/fire/tests/suppression.rs`, 2 h on the shipped scenario):
+
+| Action | Coverage | Moisture added | Area vs. free-burning |
+|---|---|---|---|
+| 60 m cut line, 1.4 km, 300 m ahead | — | — | 734 of 1,226 cells (**−40%**) |
+| 8 Canadair loads over the same band | 0.56 L/m² | +17 pts | −8% |
+| 20 loads (more than two aircraft could deliver) | 1.40 L/m² | +42 pts | −34% |
+
+Water buys time; cut fuel holds ground. Which is the operationally correct answer,
+and it is what makes both unit types worth having.
+
+## Does it change the outcome?
+
+`suppression_changes_the_outcome` (ignored by default; `cargo test -p abm
+--release -- --ignored --nocapture`) plays the same fire three ways:
+
+```
+2 h at seed 42, tramontana 35 km/h, 6% moisture
+  no suppression               49.0 ha
+  everything at one point      45.4 ha   (487 m line, 648 kL)
+  aircraft re-tasked every 5 min  38.7 ha   (491 m line, 648 kL)
+```
+
+The middle row is the intuitive plan and it wastes most of the water: the front
+passes the drop point and every load after that lands in the black. Re-reading the
+head of the fire off the map every few minutes is worth another 15% of the
+scenario for the same litres — which is the skill the feature is there to
+exercise.
 
 ---
 
-## Aggregate state (`Stats`)
+---
+
+# Aggregate state
 
 `Abm::stats()` walks households, people, and travellers once per call and
 buckets them by `Status`/`TravelState` for the HUD and debrief: `aware`,
@@ -285,10 +478,40 @@ counts), plus `people_safe`/`people_moving`/`people_at_risk` and
 departure-to-refuge time over households (not solo travellers, who started
 walking from an arbitrary point at T+0 and would just measure the map).
 
-## Where the numbers live
+`Suppression::stats()` does the same for the units — counts by state
+(`staged`/`responding`/`working`/`refilling`/`withdrawing`/`inbound`/`lost`, plus
+`unrequested` aircraft) and the cumulative work: `water_l`, `line_m`, `drops`.
+`air_eta_s()` reports how long until the next aircraft is overhead. Per-unit,
+`Unit::note` carries *why* a unit is not achieving what it was told to — the most
+useful thing the model knows about the map, and the reason it is a field rather
+than a log line.
+
+# Where the numbers live
 
 All the tunable constants above are `const`s at the top of
-`crates/abm/src/lib.rs` and `network.rs` — there's no config file. Changing
-one is a one-line edit; there's no runtime override. The best current
-end-to-end read on how they compose is the representative-run table and the
-shipped-scenario numbers in CLAUDE.md.
+`crates/abm/src/lib.rs`, `network.rs` and `suppression.rs` — there's no config
+file. Changing one is a one-line edit; there's no runtime override. The best
+current end-to-end read on how they compose is the representative-run table and
+the shipped-scenario numbers in CLAUDE.md.
+
+# Testing the models without a window
+
+Both models are deliberately Bevy-free, which is what makes a two-hour incident
+with 750 households, 1,577 people and 8 units cost about a second:
+
+```bash
+cargo test --release -p abm                              # both models, ~2 s
+cargo test --release -p abm -- --ignored --nocapture     # evacuation timeline,
+                                                         # routing cost, and the
+                                                         # suppression comparison
+cargo test --release -p fire -- --ignored --nocapture     # fire-side calibration
+SPOTORNO_SELFTEST=1 cargo run --release -p game           # the Bevy-only half:
+                                                         # orders, resets, restart
+SPOTORNO_ATTACK_AT=300 cargo run --release -p game        # unattended initial attack
+```
+
+The one thing the headless tests *cannot* cover is the wiring: resources, events,
+and the reset systems that a restart depends on. That is what `SPOTORNO_SELFTEST`
+is for, and it asserts the silent failures specifically — a restart that leaves
+the previous run's water on the fire, or its cut fuel, or a unit still under
+orders.

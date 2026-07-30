@@ -71,13 +71,22 @@ pub struct SunState {
     /// Unit vector from the ground toward the sun, in Bevy world space.
     pub direction: Vec3,
     pub color: Vec3,
-    /// 0 at and under the horizon, 1 at full daylight.
+    /// 0 at and under the horizon, 1 at full daylight. A `sin(elevation)`
+    /// gate — deliberately conservative, so it is right for gating things
+    /// that should have no business happening at night (a sun glint) but
+    /// wrong for anything meant to track how bright the *scene* actually is:
+    /// it is still only ~0.5 at a properly sunny 30° mid-afternoon sun.
     pub day_gate: f32,
+    /// `illuminance / ILLUMINANCE`'s own daylight ceiling, clamped to
+    /// [0, 1] — tracks the same curve the `DirectionalLight` itself is lit
+    /// from, so anything blended by this looks as bright as the rest of the
+    /// sunlit scene rather than dimming early the way `day_gate` does.
+    pub brightness: f32,
 }
 
 impl Default for SunState {
     fn default() -> Self {
-        SunState { direction: Vec3::Y, color: Vec3::ONE, day_gate: 0.0 }
+        SunState { direction: Vec3::Y, color: Vec3::ONE, day_gate: 0.0, brightness: 0.0 }
     }
 }
 
@@ -306,8 +315,9 @@ pub fn update_sky(
     let ambient_brightness = ramp1(el_deg, &AMBIENT_BRIGHTNESS);
     let ambient_color = ramp3(el_deg, &AMBIENT_COLOR);
     let day_gate = el.sin().clamp(0.0, 1.0);
+    let brightness = (illuminance / ILLUMINANCE[ILLUMINANCE.len() - 1].1).clamp(0.0, 1.0);
 
-    *sun_state = SunState { direction: dir, color: Vec3::from(sun_color), day_gate };
+    *sun_state = SunState { direction: dir, color: Vec3::from(sun_color), day_gate, brightness };
 
     for (mut transform, mut light) in &mut sun_q {
         *transform = Transform::IDENTITY.looking_to(-dir, Vec3::Y);
