@@ -32,6 +32,11 @@ pub fn load(dir: &Path) -> Result<Vec<FuelDefRaw>> {
     Ok(serde_json::from_slice(&bytes)?)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn load_web() -> Result<Vec<FuelDefRaw>> {
+    Ok(serde_json::from_slice(include_bytes!("../../../data/fuels_eu12.json"))?)
+}
+
 /// Human-readable class name, for the inspection UI.
 pub fn class_name(defs: &[FuelDefRaw], id: i32) -> &str {
     defs.iter()

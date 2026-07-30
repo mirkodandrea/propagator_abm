@@ -98,6 +98,7 @@ pub struct Scenario {
 
 impl Scenario {
     /// Load the baked assets from a data directory.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load(dir: impl AsRef<Path>) -> Result<Scenario> {
         let dir = dir.as_ref();
         let terrain = Terrain::load(dir).context("render terrain")?;
@@ -118,6 +119,29 @@ impl Scenario {
         Ok(Scenario { world, terrain, vectors, population, fuel, dem, fuel_defs })
     }
 
+    /// Web builds are self-contained: GitHub Pages has no filesystem for the
+    /// game to read, so the needed baked assets are compiled into the wasm.
+    /// The terrain is deliberately reduced to 20 m posting by `build.rs`.
+    #[cfg(target_arch = "wasm32")]
+    pub fn load(_dir: impl AsRef<Path>) -> Result<Scenario> {
+        let terrain = Terrain::load_web().context("embedded render terrain")?;
+        let vectors = Vectors::load_web().context("embedded osm vectors")?;
+        let population = Population::load_web().context("embedded population")?;
+
+        let world = World {
+            width_m: vectors.world_size_m[0],
+            height_m: vectors.world_size_m[1],
+            fire_rows: vectors.fire_grid.rows,
+            fire_cols: vectors.fire_grid.cols,
+            cellsize: vectors.fire_grid.cellsize,
+        };
+        let fuel = read_raw_bytes::<i32>(include_bytes!("../../../data/spotorno_fuel.i32"), world.fire_rows * world.fire_cols)?;
+        let dem = read_raw_bytes::<f64>(include_bytes!("../../../data/spotorno_dem.f64"), world.fire_rows * world.fire_cols)?;
+        let fuel_defs = fuels::load_web().context("embedded fuel table")?;
+
+        Ok(Scenario { world, terrain, vectors, population, fuel, dem, fuel_defs })
+    }
+
     pub fn fuel_at(&self, c: Cell) -> i32 {
         self.fuel[c.row * self.world.fire_cols + c.col]
     }
@@ -130,6 +154,7 @@ impl Scenario {
 /// Fuel and DEM are baked to raw little-endian arrays alongside the GeoTIFFs,
 /// because pulling a TIFF decoder in just to read two fixed-size grids is not
 /// worth the dependency.
+#[cfg(not(target_arch = "wasm32"))]
 fn load_fire_rasters(dir: &Path, rows: usize, cols: usize) -> Result<(Vec<i32>, Vec<f64>)> {
     let fuel = read_raw::<i32>(&dir.join("spotorno_fuel.i32"), rows * cols)
         .context("spotorno_fuel.i32 (run scripts/bake_fire_rasters.py)")?;
@@ -146,6 +171,16 @@ pub(crate) fn read_raw<T: Copy>(path: &Path, count: usize) -> Result<Vec<T>> {
         bytes.len() == want,
         "{}: expected {want} bytes ({count} elements), found {}",
         path.display(),
+        bytes.len()
+    );
+    read_raw_bytes(&bytes, count)
+}
+
+pub(crate) fn read_raw_bytes<T: Copy>(bytes: &[u8], count: usize) -> Result<Vec<T>> {
+    let want = count * std::mem::size_of::<T>();
+    anyhow::ensure!(
+        bytes.len() == want,
+        "expected {want} bytes ({count} elements), found {}",
         bytes.len()
     );
     let mut out = Vec::<T>::with_capacity(count);

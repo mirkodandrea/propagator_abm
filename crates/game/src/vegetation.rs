@@ -159,6 +159,12 @@ pub fn spawn(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let scn = &sim.scenario;
+    // WebGL browsers share GPU memory with the page.  A tenth of the desktop
+    // vegetation still reads as continuous cover from the command camera,
+    // while avoiding the multi-million-triangle startup spike.
+    #[cfg(target_arch = "wasm32")]
+    let density: f32 = 0.12;
+    #[cfg(not(target_arch = "wasm32"))]
     let density: f32 = std::env::var("SPOTORNO_VEG_DENSITY")
         .ok()
         .and_then(|v| v.parse().ok())

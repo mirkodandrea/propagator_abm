@@ -106,4 +106,9 @@ impl Population {
             .context("spotorno_population.json")?;
         Ok(serde_json::from_slice(&bytes)?)
     }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn load_web() -> Result<Population> {
+        Ok(serde_json::from_slice(include_bytes!("../../../data/spotorno_population.json"))?)
+    }
 }

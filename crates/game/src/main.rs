@@ -61,6 +61,15 @@ fn main() -> anyhow::Result<()> {
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Spotorno — wildfire incident command".into(),
+                #[cfg(target_arch = "wasm32")]
+                canvas: Some("#spotorno".into()),
+                #[cfg(target_arch = "wasm32")]
+                fit_canvas_to_parent: true,
+                #[cfg(target_arch = "wasm32")]
+                prevent_default_event_handling: true,
+                #[cfg(target_arch = "wasm32")]
+                resolution: (1280.0, 720.0).into(),
+                #[cfg(not(target_arch = "wasm32"))]
                 resolution: (1600.0, 1000.0).into(),
                 ..default()
             }),
@@ -315,4 +324,3 @@ fn controls(
         }
     }
 }
-

@@ -6,6 +6,8 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use crate::{read_raw, Pos};
+#[cfg(target_arch = "wasm32")]
+use crate::read_raw_bytes;
 
 #[derive(Debug, Deserialize)]
 struct TerrainMeta {
@@ -48,6 +50,27 @@ impl Terrain {
             height_m: meta.world_size_m[1],
             elev_min: meta.elev_min,
             elev_max: meta.elev_max,
+            elev,
+        })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn load_web() -> Result<Terrain> {
+        // Generated from every fourth 5 m source sample in build.rs.
+        const ROWS: usize = 512;
+        const COLS: usize = 512;
+        let elev = read_raw_bytes::<f32>(
+            include_bytes!(concat!(env!("OUT_DIR"), "/web_terrain.f32")),
+            ROWS * COLS,
+        )?;
+        Ok(Terrain {
+            rows: ROWS,
+            cols: COLS,
+            posting: 20.0,
+            width_m: 10_240.0,
+            height_m: 10_240.0,
+            elev_min: -1.0,
+            elev_max: 1_300.0,
             elev,
         })
     }

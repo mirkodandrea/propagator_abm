@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Spotorno wildfire incident command</title>
+    <style>
+      html, body, #game { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #101820; }
+      #spotorno { display: block; width: 100%; height: 100%; outline: none; }
+      #loading { position: fixed; inset: 0; display: grid; place-items: center; color: #dce8ed; font: 16px system-ui, sans-serif; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <main id="game"><canvas id="spotorno" tabindex="0"></canvas></main>
+    <div id="loading">Loading the Spotorno incident simulation…</div>
+    <script type="module">
+      import init from './game.js';
+      init().then(() => document.querySelector('#loading').remove())
+        .catch(error => {
+          document.querySelector('#loading').textContent = `Could not start the simulation: ${error}`;
+          console.error(error);
+        });
+    </script>
+  </body>
+</html>

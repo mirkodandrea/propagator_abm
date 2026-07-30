@@ -1,5 +1,6 @@
 /target
 /results
+/dist
 
 # Overpass response cache — 8.8 MB, purely a network cache. Deleting it just
 # forces scripts/fetch_osm.py to refetch.
