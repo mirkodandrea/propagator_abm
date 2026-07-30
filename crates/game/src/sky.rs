@@ -281,8 +281,16 @@ const HORIZON: [(f32, [f32; 3]); 6] = [
     (30.0, [0.68, 0.74, 0.80]),
     (60.0, [0.62, 0.73, 0.84]),
 ];
-const AMBIENT_BRIGHTNESS: [(f32, f32); 6] =
-    [(-90.0, 6.0), (-6.0, 20.0), (0.0, 45.0), (10.0, 80.0), (30.0, 130.0), (60.0, 170.0)];
+/// Open shade under a clear sky runs at roughly a sixth to an eighth of
+/// direct sun, not the couple of orders of magnitude a hand-tuned, much
+/// smaller ambient constant (this shipped at a flat 130 against a 9 500 lux
+/// sun — a 73:1 ratio) implies. That mismatch is what a self-shadowed
+/// hillside close to the camera exposed: correct terrain self-shadowing,
+/// crushed to flat black because the ambient fill light was never scaled to
+/// the direct sun it now has to counter across a full day. Tied to
+/// `illuminance` rather than its own elevation ramp so the two can never
+/// drift back out of proportion.
+const AMBIENT_FILL_RATIO: f32 = 6.0;
 const AMBIENT_COLOR: [(f32, [f32; 3]); 6] = [
     (-90.0, [0.05, 0.07, 0.14]),
     (-6.0, [0.20, 0.16, 0.22]),
@@ -312,7 +320,9 @@ pub fn update_sky(
     let sun_color = ramp3(el_deg, &SUN_COLOR);
     let zenith = ramp3(el_deg, &ZENITH);
     let horizon = ramp3(el_deg, &HORIZON);
-    let ambient_brightness = ramp1(el_deg, &AMBIENT_BRIGHTNESS);
+    // A floor so night keeps a faint moonlight-like fill rather than going
+    // to literal zero, same spirit as the sun's own illuminance floor.
+    let ambient_brightness = (illuminance / AMBIENT_FILL_RATIO).max(4.0);
     let ambient_color = ramp3(el_deg, &AMBIENT_COLOR);
     let day_gate = el.sin().clamp(0.0, 1.0);
     let brightness = (illuminance / ILLUMINANCE[ILLUMINANCE.len() - 1].1).clamp(0.0, 1.0);
