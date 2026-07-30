@@ -16,7 +16,7 @@
 //! shifts the fire.
 
 use bevy::asset::load_internal_asset;
-use bevy::pbr::{Material, MaterialPipeline, MaterialPipelineKey};
+use bevy::pbr::{Material, MaterialPipeline, MaterialPipelineKey, NotShadowCaster, NotShadowReceiver};
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
@@ -221,6 +221,12 @@ fn spawn_sea(
             commands.spawn((
                 MaterialMeshBundle { mesh: meshes.add(mesh), material: handle.clone(), ..default() },
                 SeaMesh,
+                // The water shader computes its own lighting from scratch
+                // (see `shaders/water.wgsl`) and never samples the scene's
+                // shadow maps, so casting/receiving would only cost a draw
+                // and risk an odd wavy shadow on the coastline for nothing.
+                NotShadowCaster,
+                NotShadowReceiver,
             ));
             count += 1;
         }

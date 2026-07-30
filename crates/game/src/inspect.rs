@@ -208,6 +208,19 @@ pub fn pick_click(
     selected.0 = best.map(|(_, t)| t);
 }
 
+/// Where a target actually is right now, in world space. Shared by the
+/// selection ring and [`crate::browser`]'s "zoom to" — the model position, not
+/// wherever the entity happens to be drawn (a person indoors has no figure on
+/// the map, but still has a `pos`).
+pub(crate) fn target_pos(sim: &Sim, target: Target) -> Option<scenario::Pos> {
+    match target {
+        Target::Household(id) => sim.agents.households.get(id).map(|h| h.home),
+        Target::Person(id) => sim.agents.people.get(id).map(|p| p.pos),
+        Target::Traveller(i) => sim.agents.travellers.get(i).map(|t| t.pos),
+        Target::Unit(id) => sim.crews.units.get(id).map(|u| u.pos),
+    }
+}
+
 /// Position the highlight ring on whatever is selected, or hide it.
 pub fn update_ring(
     sim: Res<Sim>,
@@ -225,13 +238,7 @@ pub fn update_ring(
         return;
     };
 
-    let pos = match target {
-        Target::Household(id) => sim.agents.households.get(id).map(|h| h.home),
-        Target::Person(id) => sim.agents.people.get(id).map(|p| p.pos),
-        Target::Traveller(i) => sim.agents.travellers.get(i).map(|t| t.pos),
-        Target::Unit(id) => sim.crews.units.get(id).map(|u| u.pos),
-    };
-    let Some(pos) = pos else {
+    let Some(pos) = target_pos(&sim, target) else {
         *vis = Visibility::Hidden;
         return;
     };
@@ -597,7 +604,7 @@ fn unit_panel(ui: &mut egui::Ui, sim: &Sim, id: usize) {
     }
 }
 
-fn status_text(s: Status) -> &'static str {
+pub(crate) fn status_text(s: Status) -> &'static str {
     match s {
         Status::Normal => "normal",
         Status::Warned => "warned",
@@ -610,7 +617,7 @@ fn status_text(s: Status) -> &'static str {
     }
 }
 
-fn travel_state_text(s: TravelState) -> &'static str {
+pub(crate) fn travel_state_text(s: TravelState) -> &'static str {
     match s {
         TravelState::Approaching => "walking to the road",
         TravelState::OnNetwork => "on the network",

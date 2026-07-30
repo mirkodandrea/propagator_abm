@@ -5,6 +5,7 @@
 //! used only offline, to bake the scenario assets under `data/`.
 
 mod agents;
+mod browser;
 mod buildings;
 mod camera;
 mod capture;
@@ -30,7 +31,7 @@ mod vegetation;
 
 use bevy::core_pipeline::bloom::BloomSettings;
 use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::pbr::FogSettings;
+use bevy::pbr::{CascadeShadowConfigBuilder, FogSettings};
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use fire::Weather;
@@ -81,6 +82,7 @@ fn main() -> anyhow::Result<()> {
         .init_resource::<inspect::Selected>()
         .init_resource::<inspect::ClickTracker>()
         .init_resource::<command::OrderTool>()
+        .init_resource::<browser::BrowserUi>()
         .add_event::<sim::SimRestarted>()
         .insert_resource(sim)
         .add_systems(
@@ -106,7 +108,14 @@ fn main() -> anyhow::Result<()> {
         .add_systems(
             Update,
             (
-                (ui::panel, ui::wildfire_panel, inspect::panel, command::panel).chain(),
+                (
+                    ui::panel,
+                    ui::wildfire_panel,
+                    inspect::panel,
+                    command::panel,
+                    browser::panel,
+                )
+                    .chain(),
                 (
                     camera::controls,
                     ignition_edit::hover,
@@ -123,6 +132,7 @@ fn main() -> anyhow::Result<()> {
             Update,
             (
                 controls,
+                browser::toggle,
                 fire_view::layer_controls,
                 command::controls.before(command::hover),
                 sim::step_fire.after(ui::wildfire_panel),
@@ -203,9 +213,28 @@ fn setup_scene(
     // `sky::update_sky`, which computes them from real solar geometry for
     // Spotorno's latitude and the simulated clock (`SPOTORNO_START_HOUR`).
     // What is spawned here only has to exist and cast shadows.
+    //
+    // The cascade config is not cosmetic here: Bevy's default assumes a
+    // ~1000 m scene and a 5 m first cascade, tuned for the default camera
+    // examples ship with. Ours is 10.24 km with a 40 000 m far plane, and
+    // with the stock config the near cascade degenerates once the camera
+    // gets close to the ground — the failure mode is not blocky shadows,
+    // it is a shadow-shaped region that tracks the *camera*, not the
+    // terrain, because the broken cascade's coverage is defined in
+    // view-space distance rather than world space. Explicit, scene-sized
+    // bounds are what keep the near cascade well-conditioned down to the
+    // camera's minimum zoom.
     commands.spawn((
         DirectionalLightBundle {
             directional_light: DirectionalLight { shadows_enabled: true, ..default() },
+            cascade_shadow_config: CascadeShadowConfigBuilder {
+                num_cascades: 4,
+                minimum_distance: 2.0,
+                maximum_distance: 4000.0,
+                first_cascade_far_bound: 80.0,
+                overlap_proportion: 0.3,
+            }
+            .into(),
             ..default()
         },
         sky::Sun,

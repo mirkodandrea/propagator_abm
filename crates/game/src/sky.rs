@@ -20,7 +20,10 @@
 //! all agree about where the sun is.
 
 use bevy::asset::load_internal_asset;
-use bevy::pbr::{FogFalloff, FogSettings, Material, MaterialPipeline, MaterialPipelineKey};
+use bevy::pbr::{
+    FogFalloff, FogSettings, Material, MaterialPipeline, MaterialPipelineKey, NotShadowCaster,
+    NotShadowReceiver,
+};
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
@@ -155,7 +158,22 @@ fn spawn_sky(
     let mesh = meshes.add(uv_sphere(SKY_RADIUS, 24, 16));
     let handle = materials.add(SkyMaterial { uniform: SkyUniform::default() });
     commands.insert_resource(SkyHandle(handle.clone()));
-    commands.spawn((MaterialMeshBundle { mesh, material: handle, ..default() }, SkyDome));
+    commands.spawn((
+        MaterialMeshBundle { mesh, material: handle, ..default() },
+        SkyDome,
+        // A 30 km sphere left as a default shadow caster/receiver blows up
+        // the directional light's cascade-fitting: Bevy sizes each cascade's
+        // shadow-map depth range to cover every caster inside that cascade's
+        // view slice, and the dome's radius dwarfs everything else in the
+        // scene by two to three orders of magnitude. The near cascade's
+        // depth range collapses trying to span metres to tens of
+        // kilometres in one map, and the failure reads as a solid,
+        // roughly-view-aligned shadow that tracks the camera rather than
+        // the terrain — because the dome itself is always centred on
+        // wherever the camera happens to be standing.
+        NotShadowCaster,
+        NotShadowReceiver,
+    ));
 }
 
 /// A plain UV sphere. Vertex count barely matters here — the dome is shaded

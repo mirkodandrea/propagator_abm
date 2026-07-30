@@ -4,6 +4,18 @@
 use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 
+use crate::sim::Sim;
+
+/// The camera's own height above the ground it is actually over, not the
+/// focus point's — a shallow-pitch orbit close to a sloped focus can put the
+/// *camera* metres from a hillside metres away, even though the focus itself
+/// sits in a clear valley. Below this, the near geometry is close enough to
+/// fill the frame at a grazing angle: a self-shadowed slope or canopy that
+/// would be an unremarkable dark patch from altitude instead reads as one
+/// huge, flat, near-black wedge. 25 m clears a typical Mediterranean canopy
+/// (vegetation runs 5-15 m, see `crate::vegetation`) with room to spare.
+const MIN_GROUND_CLEARANCE_M: f32 = 25.0;
+
 #[derive(Component)]
 pub struct OrbitCamera {
     /// Point on the ground the camera looks at, in Bevy space.
@@ -33,6 +45,7 @@ pub fn controls(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    sim: Res<Sim>,
     mut query: Query<(&mut OrbitCamera, &mut Transform)>,
 ) {
     let Ok((mut orbit, mut transform)) = query.get_single_mut() else {
@@ -120,5 +133,9 @@ pub fn controls(
         orbit.yaw.cos() * orbit.pitch.cos(),
     );
     transform.translation = orbit.focus + dir * orbit.distance;
+    // Clamp against the ground under the *camera*, not the focus: see
+    // `MIN_GROUND_CLEARANCE_M`.
+    let ground = sim.scenario.terrain.height_at(crate::frame::to_world(transform.translation));
+    transform.translation.y = transform.translation.y.max(ground + MIN_GROUND_CLEARANCE_M);
     transform.look_at(orbit.focus, Vec3::Y);
 }
