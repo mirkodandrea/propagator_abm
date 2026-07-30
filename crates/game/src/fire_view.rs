@@ -233,6 +233,25 @@ pub fn layer_controls(keys: Res<ButtonInput<KeyCode>>, mut layer: ResMut<FireLay
     }
 }
 
+/// Clear the drifting particles when the sim restarts.
+///
+/// The overlay and the flame billboards are rebuilt from the fire state every
+/// time it goes stale, so they need no help — the generation bump does it. Smoke
+/// and embers are the exception: they are *simulated here*, carrying their own
+/// position and age, and a plume left over from the old fire would go on
+/// drifting over a landscape that never burnt.
+pub fn reset(
+    mut restarted: EventReader<crate::sim::SimRestarted>,
+    mut view: ResMut<FireView>,
+) {
+    if restarted.is_empty() {
+        return;
+    }
+    restarted.clear();
+    view.smoke.clear();
+    view.embers.clear();
+}
+
 // --- ground overlay --------------------------------------------------------
 
 pub fn update_overlay(

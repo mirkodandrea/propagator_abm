@@ -26,6 +26,7 @@ impl Default for OrbitCamera {
 
 pub fn controls(
     focus: Res<crate::ui::UiFocus>,
+    tool: Res<crate::ignition_edit::IgnitionTool>,
     mut motion: EventReader<MouseMotion>,
     mut wheel: EventReader<MouseWheel>,
     buttons: Res<ButtonInput<MouseButton>>,
@@ -55,13 +56,21 @@ pub fn controls(
         scroll += ev.y;
     }
 
-    if buttons.pressed(MouseButton::Left) && !keys.pressed(KeyCode::ShiftLeft) {
+    // While the ignition tool is armed, left-drag belongs to it: orbiting on
+    // the same button would move the ground out from under the click. Pan,
+    // zoom and the keyboard all keep working, so the view is never stuck.
+    let orbit_button = tool.mode != crate::ignition_edit::EditMode::Place;
+
+    if orbit_button && buttons.pressed(MouseButton::Left) && !keys.pressed(KeyCode::ShiftLeft)
+    {
         orbit.yaw -= drag.x * 0.005;
         orbit.pitch = (orbit.pitch - drag.y * 0.005).clamp(-1.5, -0.05);
     }
 
     if buttons.pressed(MouseButton::Right)
-        || (buttons.pressed(MouseButton::Left) && keys.pressed(KeyCode::ShiftLeft))
+        || (orbit_button
+            && buttons.pressed(MouseButton::Left)
+            && keys.pressed(KeyCode::ShiftLeft))
     {
         // Pan in the camera's ground plane, scaled by zoom so the world moves
         // with the cursor at any distance.

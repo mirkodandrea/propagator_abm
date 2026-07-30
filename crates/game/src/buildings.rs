@@ -536,6 +536,33 @@ fn hash01(id: u64, salt: u64) -> f32 {
 /// fire mask: the household exposure model for anything with residents, and
 /// the agent threat field for the rest. Only chunks containing a changed
 /// structure are re-uploaded.
+/// Forget what the fire did to the town.
+///
+/// `alight_at_s` is the one piece of state here that is *not* recomputed from
+/// the sim each frame — it is a latch, deliberately, so a structure keeps
+/// burning down after the front has moved on. That makes it also the one piece
+/// a restart has to clear by hand, or the new run opens with the old run's
+/// charred buildings still standing in it.
+pub fn reset(
+    mut restarted: EventReader<crate::sim::SimRestarted>,
+    mut buildings: ResMut<Buildings>,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
+    if restarted.is_empty() {
+        return;
+    }
+    restarted.clear();
+    for chunk in &mut buildings.chunks {
+        for s in &mut chunk.structures {
+            s.alight_at_s = f32::INFINITY;
+            s.drawn = Damage::None as u8;
+        }
+        if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
+            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, chunk.base.clone());
+        }
+    }
+}
+
 pub fn damage(sim: Res<Sim>, mut buildings: ResMut<Buildings>, mut meshes: ResMut<Assets<Mesh>>) {
     if !sim.is_changed() {
         return;

@@ -11,8 +11,11 @@ mod capture;
 mod field;
 mod fire_view;
 mod frame;
+mod ignition_edit;
 mod people;
+mod pick;
 mod roads;
+mod selftest;
 mod sim;
 mod terrain_mesh;
 mod textures;
@@ -64,12 +67,15 @@ fn main() -> anyhow::Result<()> {
         })
         .add_plugins(EguiPlugin)
         .init_resource::<ui::UiFocus>()
+        .init_resource::<ignition_edit::IgnitionTool>()
+        .add_event::<sim::SimRestarted>()
         .insert_resource(sim)
         .add_systems(
             Startup,
             (
                 setup_scene,
                 fire_view::setup,
+                ignition_edit::setup,
                 vegetation::spawn,
                 buildings::spawn,
                 agents::spawn,
@@ -77,26 +83,64 @@ fn main() -> anyhow::Result<()> {
                 people::mark_refuges,
             ),
         )
+        // Ordering that matters, and only that: the panels decide whether the
+        // pointer belongs to the UI, so they run before anything that reads the
+        // mouse; and the restart resets have to land before the views that
+        // would otherwise read the stale state they are clearing.
         .add_systems(
             Update,
             (
-                ui::panel,
-                camera::controls.after(ui::panel),
+                (ui::panel, ui::wildfire_panel).chain(),
+                (
+                    camera::controls,
+                    ignition_edit::hover,
+                    ignition_edit::place,
+                )
+                    .chain()
+                    .after(ui::wildfire_panel),
+            ),
+        )
+        .add_systems(
+            Update,
+            (
                 controls,
                 fire_view::layer_controls,
-                sim::step_fire,
-                fire_view::update_overlay,
-                fire_view::update_flames,
-                vegetation::burn,
-                buildings::damage,
-                agents::animate_beacons,
-                agents::update_beacons,
-                people::spawn_vehicles,
-                people::update_people,
-                people::update_vehicles,
+                sim::step_fire.after(ui::wildfire_panel),
+                (fire_view::reset, buildings::reset, people::reset)
+                    .after(ui::wildfire_panel),
+                (
+                    fire_view::update_overlay,
+                    fire_view::update_flames,
+                    vegetation::burn,
+                    buildings::damage,
+                    agents::animate_beacons,
+                    agents::update_beacons,
+                    people::spawn_vehicles,
+                    people::update_people,
+                    people::update_vehicles,
+                    ignition_edit::sync_markers,
+                    ignition_edit::show_markers.after(ignition_edit::sync_markers),
+                    ignition_edit::update_hover,
+                )
+                    .after(fire_view::reset)
+                    .after(buildings::reset)
+                    .after(people::reset),
                 capture::manual,
             ),
         );
+
+    // Unattended exercise of the wildfire controls. Runs after the resets so
+    // it observes the state the views will actually see.
+    if let Some(test) = selftest::from_env() {
+        app.insert_resource(test).add_systems(
+            Update,
+            selftest::run
+                .after(sim::step_fire)
+                .after(fire_view::reset)
+                .after(buildings::reset)
+                .after(people::reset),
+        );
+    }
 
     // Unattended capture: runs the scenario forward, grabs one frame per fire
     // layer and exits. Only active when SPOTORNO_SHOT names a directory.
@@ -157,7 +201,12 @@ fn setup_scene(
     ));
 }
 
-fn controls(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>) {
+fn controls(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut sim: ResMut<Sim>,
+    mut tool: ResMut<ignition_edit::IgnitionTool>,
+    mut restarted: EventWriter<sim::SimRestarted>,
+) {
     if keys.just_pressed(KeyCode::Space) {
         sim.playing = !sim.playing;
     }
@@ -170,6 +219,25 @@ fn controls(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>) {
     if keys.just_pressed(KeyCode::KeyE) {
         let n = sim.agents.order_evacuation_all();
         info!("general evacuation ordered: {n} households");
+    }
+    if keys.just_pressed(KeyCode::KeyI) {
+        tool.mode = match tool.mode {
+            ignition_edit::EditMode::Off => ignition_edit::EditMode::Place,
+            ignition_edit::EditMode::Place => ignition_edit::EditMode::Off,
+        };
+    }
+    // Escape leaves placing mode, which is the reflex for it, without also
+    // being a second binding for anything else.
+    if keys.just_pressed(KeyCode::Escape) {
+        tool.mode = ignition_edit::EditMode::Off;
+    }
+    if keys.just_pressed(KeyCode::KeyR) {
+        match sim.restart() {
+            Ok(()) => {
+                restarted.send(sim::SimRestarted);
+            }
+            Err(e) => error!("restart failed: {e:#}"),
+        }
     }
 }
 

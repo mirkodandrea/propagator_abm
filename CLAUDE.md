@@ -185,6 +185,38 @@ vertices sit a few metres outside the 10.24 km frame. Rather than clamping
 them, driving off the map counts as evacuated — the A10 and the Aurelia both
 leave the window, and someone who takes them has left the incident.
 
+**11. A back-facing ribbon is invisible, not inside-out.** The road network
+existed, was built correctly, logged nothing wrong and drew *nothing at all*
+for two commits: the quad strip alternates right/left across the centreline, so
+the obvious index order (`a, a+1, a+2`) winds it clockwise seen from above, the
+faces point at the ground, and `StandardMaterial`'s back-face culling discards
+the lot. Wind ground-facing ribbons `a, a+2, a+1` — verified for the roads and
+the ignition rings. Any new draped strip needs the same check, and the check is
+"can I see it", because nothing else will tell you.
+
+**12. Draping only samples the terrain where there is a vertex.** OSM ways carry
+vertices where the road *bends*, so a straight run over a ridge can be a single
+200 m segment — which drapes as a chord straight through the hill and
+disappears into it. Resample to the render posting (5 m) before offsetting.
+Same trap for any polyline laid on the ground.
+
+**13. Anything drawn on the ground is under the canopy.** The vegetation is
+5–15 m of actual plants, so a marker lifted the half-metre that clears
+z-fighting is rendered perfectly and seen never. The ignition rings sit at
++20 m, next to the household beacons (+22 m) and refuge markers (+30 m). A
+"correct" overlay that nobody can see looks exactly like a broken one.
+
+**14. A restart has to clear the *latched* view state, and only that.** Almost
+every view here is recomputed from `Sim` each frame and needs no help — the
+`generation` bump does it, which is why that counter is monotonic across
+restarts rather than reset. The exceptions are the things that deliberately
+remember: `buildings::Structure::alight_at_s` (a latch, so a house keeps burning
+down after the front passes), the smoke and ember particles (simulated in the
+view), and the vehicle entities (indexed into an append-only `travellers` list).
+Miss one and the new run opens with the old run's charred buildings, drifting
+plume, or cars parked on roads that never burnt. `SimRestarted` fans out to the
+three `reset` systems; `SPOTORNO_SELFTEST=1` is what checks they ran.
+
 ---
 
 ## Current state
@@ -194,6 +226,23 @@ raster, road ribbons with the drivable/track split, orbit camera, fire
 rendered as an age-coloured mesh rebuilt only on sim generation change, egui
 "Incident" panel with a logarithmic 1x–512x time slider, play/pause, live
 stats.
+
+**Roads** (`crates/game/src/roads.rs`): 1,793 drivable ways and 1,676 tracks as
+casing-plus-surface ribbons draped on the 5 m field, resampled to 5 m and
+mitred at the joints, in 234 chunks / 656 k triangles. Asphalt dark, tracks
+pale dirt — the split is also the drive/walk distinction the ABM routes on.
+
+**Wildfire controls** (`crates/game/src/ui.rs` `wildfire_panel`,
+`ignition_edit.rs`, `pick.rs`): the "Wildfire" panel. Wind direction (with a
+compass that spells out *both* the from-bearing and the direction the fire is
+driven), wind speed, fuel moisture — staged and applied on release as a
+boundary condition, so a shift changes what the front does next without
+rewriting the scar. Click-to-place ignitions with a draped cursor ring that
+turns red where there is no burnable fuel, radius 60–600 m. Restart, which
+rebuilds `FireSim` and `Abm` and replays the ignition list. `Sim::ignitions`
+carries an `at_s` per patch, so a fire lit mid-run comes back at its own time
+rather than becoming part of the opening fire — a restart is a genuinely clean
+comparison, not a new roll of the dice.
 
 **Buildings** (`crates/game/src/buildings.rs`): all 7,611 drawable OSM
 footprints extruded — walls on the traced outline, plinth course, overhanging
@@ -240,8 +289,10 @@ ignition at cell (153, 246), r=250 m):
 ```
 
 **Not built yet:** crews and engines as entities (interventions exist in
-`fire`, nobody drives them). No click-to-inspect. No debrief. No wasm. No
-reunification behaviour — people who are out do not go home for family.
+`fire`, nobody drives them). No click-to-inspect — though `pick::cursor_ground`
+is now the ray it needs, and it hits the same 5 m field everything is placed
+on. No debrief. No wasm. No reunification behaviour — people who are out do not
+go home for family.
 
 ### Commands
 
@@ -253,14 +304,26 @@ cargo test --release                     # everything, ~4 s
 cargo test -p abm --release -- --ignored --nocapture     # evacuation timeline + routing cost
 cargo test -p fire --release -- --ignored --nocapture    # slow calibration sweeps
 
+# the wildfire controls, driven without a keyboard: place an ignition mid-run,
+# shift the wind, restart, and check each one actually did what it claims.
+# Exits non-zero on failure. The controls are Bevy behaviour -- resources,
+# events, the reset systems -- so this is the only place they can be tested.
+SPOTORNO_SELFTEST=1 cargo run --release -p game
+
 # screenshots without a human at the keyboard
 SPOTORNO_SHOT=/tmp/shots SPOTORNO_SHOT_AT=1800 SPOTORNO_SHOT_DIST=400 \
   SPOTORNO_SHOT_FOCUS=4875,2875 SPOTORNO_SHOT_LAYER=Flames \
   SPOTORNO_AUTOPLAY=1 cargo run --release -p game
+SPOTORNO_PLACE=1 ...   # open with the ignition tool armed, so the rings show
 ```
 
 Controls: `space` play/pause · `[` `]` speed · `1`–`4` fire layer · `e` general
-evacuation order · drag orbit · right-drag pan · scroll zoom.
+evacuation order · `i` arm the ignition tool (then left-click the map) · `esc`
+disarm · `r` restart · drag orbit · right-drag pan · scroll zoom.
+
+While the ignition tool is armed, left-click places a fire and left-drag no
+longer orbits — right-drag pan, scroll and WASD all still work, so the view is
+never stuck.
 
 ---
 

@@ -123,6 +123,29 @@ pub fn setup(
     });
 }
 
+/// Drop the vehicles when the sim restarts.
+///
+/// `VehicleView` holds an *index* into `Abm::travellers`, which is append-only
+/// within a run — which is what makes [`spawn_vehicles`] a cheap tail scan, and
+/// what makes these entities meaningless the moment the list is rebuilt. The
+/// people are not touched: they are keyed by person id, and the population is
+/// the same population.
+pub fn reset(
+    mut commands: Commands,
+    mut restarted: EventReader<crate::sim::SimRestarted>,
+    mut assets: ResMut<PeopleAssets>,
+    vehicles: Query<Entity, With<VehicleView>>,
+) {
+    if restarted.is_empty() {
+        return;
+    }
+    restarted.clear();
+    for e in &vehicles {
+        commands.entity(e).despawn();
+    }
+    assets.spawned_vehicles = 0;
+}
+
 /// Give an entity to every household that has taken to the road since the last
 /// frame. Travellers are append-only, so this is a tail scan.
 pub fn spawn_vehicles(

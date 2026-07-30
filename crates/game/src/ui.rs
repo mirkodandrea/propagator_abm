@@ -1,4 +1,10 @@
-//! Control panel: playback, time acceleration, and the incident readout.
+//! Control panels: playback and the incident readout, plus the wildfire
+//! controls — weather, ignition editing and restart.
+//!
+//! Kept as two windows because they are two different jobs. The **Incident**
+//! panel is what a commander reads while playing; **Wildfire** is the
+//! scenario-authoring side, where the fire itself is rewritten. Mixing them
+//! would put "restart the simulation" a few pixels from "evacuate everyone".
 
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
@@ -6,7 +12,8 @@ use fire::CellFire;
 use scenario::Pos;
 
 use crate::fire_view::FireLayer;
-use crate::sim::Sim;
+use crate::ignition_edit::{clamp_radius, EditMode, IgnitionTool};
+use crate::sim::{Sim, SimRestarted, MAX_IGNITION_RADIUS_M, MIN_IGNITION_RADIUS_M};
 
 /// Speed presets, in simulated seconds per wall-clock second. An initial
 /// attack runs for hours of simulated time, so the useful range spans three
@@ -184,7 +191,8 @@ pub fn panel(
             ui.separator();
             ui.small(
                 "space play/pause · [ ] speed · 1-4 fire layer · e evacuate · \
-                 drag orbit · right-drag pan · scroll zoom",
+                 i place ignition · r restart · drag orbit · right-drag pan · \
+                 scroll zoom",
             );
         });
 
@@ -203,4 +211,317 @@ pub fn panel(
     }
 
     focus.0 = ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+}
+
+/// The wildfire controls: weather, ignitions, restart.
+///
+/// Weather is staged rather than applied per-pixel-of-drag. Every change is a
+/// scheduled boundary condition in the core, so applying on each frame of a
+/// slider drag would push a hundred events for one gesture — the fire would
+/// still be right, but the event heap would carry the whole drag. It commits on
+/// release, and the Apply button covers keyboard entry.
+pub fn wildfire_panel(
+    mut contexts: EguiContexts,
+    mut sim: ResMut<Sim>,
+    mut tool: ResMut<IgnitionTool>,
+    mut focus: ResMut<UiFocus>,
+    mut restarted: EventWriter<SimRestarted>,
+) {
+    let ctx = contexts.ctx_mut();
+
+    let mut weather = sim.weather;
+    let mut commit_weather = false;
+    let mut do_restart = false;
+    let mut replan = false;
+    let mut clear_extra = false;
+    let mut mode = tool.mode;
+    let mut radius = tool.radius_m;
+    let mut seed = sim.seed;
+    let live = sim.fire.weather();
+    let dirty = sim.weather_dirty();
+    let opening = sim.ignitions.iter().filter(|i| i.at_s == 0).count();
+    let added = sim.ignitions.len() - opening;
+    let running = sim.time_s();
+
+    egui::Window::new("Wildfire")
+        .anchor(egui::Align2::RIGHT_TOP, [-12.0, 12.0])
+        .resizable(false)
+        .default_width(280.0)
+        .show(ctx, |ui| {
+            ui.label("Wind");
+            ui.horizontal(|ui| {
+                compass(ui, live.wind_dir_deg as f32, weather.wind_dir_deg as f32);
+                ui.vertical(|ui| {
+                    // Both directions spelled out, always. `w_dir` is the
+                    // bearing the wind blows *from*, the kernel reads it in a
+                    // way that looks like the opposite convention, and a bare
+                    // number here is the single easiest thing in this UI to
+                    // misread by 180 degrees.
+                    let from = weather.wind_dir_deg as f32;
+                    ui.label(format!(
+                        "from {} ({:.0}°)",
+                        cardinal(from),
+                        from
+                    ));
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "drives fire {}",
+                            cardinal((from + 180.0) % 360.0)
+                        ))
+                        .strong(),
+                    );
+                });
+            });
+            let r = ui.add(
+                egui::Slider::new(&mut weather.wind_dir_deg, 0.0..=359.0)
+                    .step_by(5.0)
+                    .custom_formatter(|v, _| format!("{v:.0}° from {}", cardinal(v as f32)))
+                    .text("direction"),
+            );
+            commit_weather |= r.drag_stopped() || r.lost_focus();
+            let r = ui.add(
+                egui::Slider::new(&mut weather.wind_speed_kmh, 0.0..=90.0)
+                    .suffix(" km/h")
+                    .text("speed"),
+            );
+            commit_weather |= r.drag_stopped() || r.lost_focus();
+
+            ui.add_space(4.0);
+            ui.label("Fuel moisture");
+            let r = ui.add(
+                egui::Slider::new(&mut weather.moisture_pct, 2.0..=40.0)
+                    .suffix(" %")
+                    .text("dead fine fuel"),
+            );
+            commit_weather |= r.drag_stopped() || r.lost_focus();
+            ui.small(match weather.moisture_pct {
+                m if m < 8.0 => "critically dry — fire spreads freely",
+                m if m < 15.0 => "dry",
+                m if m < 25.0 => "damp — spread slows sharply",
+                _ => "wet — most fuels will not carry fire",
+            });
+
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let apply = ui
+                    .add_enabled(dirty, egui::Button::new("Apply weather"))
+                    .on_hover_text(
+                        "Takes effect from now on. What the fire has already \
+                         burnt is not rewritten — this is a wind shift, not a \
+                         different scenario.",
+                    );
+                commit_weather |= apply.clicked();
+                if dirty {
+                    ui.colored_label(egui::Color32::from_rgb(240, 180, 60), "● pending");
+                }
+            });
+
+            ui.separator();
+            ui.label("Ignition");
+            let placing = mode == EditMode::Place;
+            if ui
+                .selectable_label(placing, if placing { "◉ Click the map to light a fire" } else { "Place ignition  (i)" })
+                .on_hover_text(
+                    "Left-click lights a patch where you point. Right-drag \
+                     still orbits, so you keep the camera.",
+                )
+                .clicked()
+            {
+                mode = if placing { EditMode::Off } else { EditMode::Place };
+            }
+            let r = ui.add(
+                egui::Slider::new(&mut radius, MIN_IGNITION_RADIUS_M..=MAX_IGNITION_RADIUS_M)
+                    .suffix(" m")
+                    .text("radius"),
+            );
+            // Not applied on release: the cursor ring has to resize as it is
+            // dragged, or the control has no feedback at all.
+            let _ = r;
+            ui.small(format!(
+                "≈{:.0} ha. Below {MIN_IGNITION_RADIUS_M:.0} m a single patch \
+                 often fails to establish.",
+                std::f32::consts::PI * radius * radius / 10_000.0
+            ));
+
+            egui::Grid::new("ign").num_columns(2).show(ui, |ui| {
+                ui.label("Opening fire");
+                ui.label(format!("{opening} patch(es)"));
+                ui.end_row();
+                ui.label("Added since start");
+                ui.label(format!("{added}"));
+                ui.end_row();
+            });
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(added > 0, egui::Button::new("Forget added"))
+                    .on_hover_text("Drop the fires you lit mid-run from the restart list.")
+                    .clicked()
+                {
+                    clear_extra = true;
+                }
+                if ui
+                    .button("Replan for wind")
+                    .on_hover_text(
+                        "Move the opening fire to the best-measured start for \
+                         this wind direction — inland, in continuous fuel, \
+                         upwind of the town.",
+                    )
+                    .clicked()
+                {
+                    replan = true;
+                }
+            });
+
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Seed");
+                ui.add(egui::DragValue::new(&mut seed).speed(1.0));
+            });
+            let restart = ui
+                .add_sized(
+                    [ui.available_width(), 28.0],
+                    egui::Button::new("⟲  Restart simulation  (r)").fill(
+                        egui::Color32::from_rgb(120, 40, 32),
+                    ),
+                )
+                .on_hover_text(
+                    "Relights the scenario at T+0 with the current weather, \
+                     seed and ignitions. The terrain, buildings and population \
+                     are kept; the fire and every household's decision are not.",
+                );
+            do_restart = restart.clicked();
+            if running > 0 {
+                ui.small(format!(
+                    "{} of simulated time will be discarded.",
+                    hhmm(running)
+                ));
+            }
+        });
+
+    // Radius and mode are pure view state, so they go back immediately.
+    if radius != tool.radius_m {
+        tool.radius_m = clamp_radius(radius);
+    }
+    if mode != tool.mode {
+        tool.mode = mode;
+    }
+
+    if seed != sim.seed {
+        sim.seed = seed;
+    }
+    if weather.wind_dir_deg != sim.weather.wind_dir_deg
+        || weather.wind_speed_kmh != sim.weather.wind_speed_kmh
+        || weather.moisture_pct != sim.weather.moisture_pct
+    {
+        sim.weather = weather;
+    }
+    if commit_weather && sim.weather_dirty() {
+        if let Err(e) = sim.apply_weather() {
+            error!("applying weather failed: {e:#}");
+        }
+    }
+    if clear_extra {
+        sim.ignitions.retain(|i| i.at_s == 0);
+    }
+    if replan {
+        let dir = sim.weather.wind_dir_deg;
+        let plan = fire::plan_ignition(&sim.scenario, dir, crate::sim::START_RADIUS_M);
+        info!(
+            "ignition replanned for wind from {dir:.0}°: ({}, {}), {} households downwind",
+            plan.centre.row, plan.centre.col, plan.households_downwind
+        );
+        sim.ignitions.retain(|i| i.at_s != 0);
+        sim.ignitions.push(crate::sim::Ignition {
+            centre: plan.centre,
+            radius_m: plan.radius_m,
+            at_s: 0,
+        });
+        sim.ignition = plan;
+        do_restart = true;
+    }
+    if do_restart {
+        match sim.restart() {
+            Ok(()) => {
+                restarted.send(SimRestarted);
+            }
+            Err(e) => error!("restart failed: {e:#}"),
+        }
+    }
+
+    focus.0 |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+}
+
+/// A wind rose. `live` is what the fire is running on, `staged` what the
+/// sliders currently say; they differ only while a change is pending.
+///
+/// Draws the arrow pointing the way the wind *pushes* — down-wind — because
+/// that is the direction the player is reasoning about, with a tick on the rim
+/// for the meteorological bearing the number reports.
+fn compass(ui: &mut egui::Ui, live: f32, staged: f32) {
+    let size = 64.0;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    let p = ui.painter();
+    let c = rect.center();
+    let r = size * 0.44;
+
+    p.circle_stroke(c, r, egui::Stroke::new(1.0, egui::Color32::from_gray(90)));
+    for (label, ang) in [("N", 0.0f32), ("E", 90.0), ("S", 180.0), ("W", 270.0)] {
+        let v = bearing_vec(ang) * (r + 7.0);
+        p.text(
+            c + v,
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::proportional(9.0),
+            egui::Color32::from_gray(140),
+        );
+    }
+
+    // Arrow along the down-wind direction.
+    let draw = |ang: f32, color: egui::Color32, width: f32| {
+        let down = bearing_vec((ang + 180.0) % 360.0);
+        let tail = c - down * r * 0.85;
+        let head = c + down * r * 0.85;
+        p.line_segment([tail, head], egui::Stroke::new(width, color));
+        // Head, as two barbs rather than a filled triangle: at 64 px a filled
+        // head is a blob.
+        let side = egui::vec2(-down.y, down.x);
+        for s in [-1.0, 1.0] {
+            p.line_segment(
+                [head, head - down * (r * 0.34) + side * s * (r * 0.22)],
+                egui::Stroke::new(width, color),
+            );
+        }
+        // Rim tick at the bearing the wind comes from.
+        let from = bearing_vec(ang);
+        p.line_segment(
+            [c + from * r * 0.86, c + from * r],
+            egui::Stroke::new(width, color),
+        );
+    };
+
+    if (live - staged).abs() > 0.5 {
+        draw(live, egui::Color32::from_gray(90), 1.0);
+    }
+    draw(staged, egui::Color32::from_rgb(255, 170, 60), 2.0);
+}
+
+/// Unit screen vector for a compass bearing: north up, east right, clockwise.
+/// Screen y grows downward, hence the negated cosine.
+fn bearing_vec(deg: f32) -> egui::Vec2 {
+    let a = deg.to_radians();
+    egui::vec2(a.sin(), -a.cos())
+}
+
+/// Nearest 16-point compass name for a bearing.
+fn cardinal(deg: f32) -> &'static str {
+    const NAMES: [&str; 16] = [
+        "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W",
+        "WNW", "NW", "NNW",
+    ];
+    let i = (((deg.rem_euclid(360.0)) / 22.5).round() as usize) % 16;
+    NAMES[i]
+}
+
+fn hhmm(s: i64) -> String {
+    format!("{}h {:02}m", s / 3600, (s / 60) % 60)
 }
