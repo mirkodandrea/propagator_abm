@@ -8,22 +8,29 @@ mod agents;
 mod buildings;
 mod camera;
 mod capture;
+mod command;
 mod field;
+mod fire_shader;
 mod fire_view;
 mod frame;
 mod ignition_edit;
+mod inspect;
 mod people;
 mod pick;
 mod roads;
+mod sea;
 mod selftest;
 mod sim;
+mod sky;
 mod terrain_mesh;
 mod textures;
 mod ui;
+mod units;
 mod vegetation;
 
 use bevy::core_pipeline::bloom::BloomSettings;
 use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::pbr::FogSettings;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use fire::Weather;
@@ -66,8 +73,14 @@ fn main() -> anyhow::Result<()> {
             brightness: 130.0,
         })
         .add_plugins(EguiPlugin)
+        .add_plugins(fire_shader::FireShaderPlugin)
+        .add_plugins(sky::SkyPlugin)
+        .add_plugins(sea::SeaPlugin)
         .init_resource::<ui::UiFocus>()
         .init_resource::<ignition_edit::IgnitionTool>()
+        .init_resource::<inspect::Selected>()
+        .init_resource::<inspect::ClickTracker>()
+        .init_resource::<command::OrderTool>()
         .add_event::<sim::SimRestarted>()
         .insert_resource(sim)
         .add_systems(
@@ -76,11 +89,14 @@ fn main() -> anyhow::Result<()> {
                 setup_scene,
                 fire_view::setup,
                 ignition_edit::setup,
+                inspect::setup,
+                command::setup,
                 vegetation::spawn,
                 buildings::spawn,
                 agents::spawn,
                 people::setup,
                 people::mark_refuges,
+                units::setup,
             ),
         )
         // Ordering that matters, and only that: the panels decide whether the
@@ -90,14 +106,17 @@ fn main() -> anyhow::Result<()> {
         .add_systems(
             Update,
             (
-                (ui::panel, ui::wildfire_panel).chain(),
+                (ui::panel, ui::wildfire_panel, inspect::panel, command::panel).chain(),
                 (
                     camera::controls,
                     ignition_edit::hover,
                     ignition_edit::place,
+                    command::hover,
+                    command::place,
+                    inspect::pick_click,
                 )
                     .chain()
-                    .after(ui::wildfire_panel),
+                    .after(command::panel),
             ),
         )
         .add_systems(
@@ -105,8 +124,16 @@ fn main() -> anyhow::Result<()> {
             (
                 controls,
                 fire_view::layer_controls,
+                command::controls.before(command::hover),
                 sim::step_fire.after(ui::wildfire_panel),
-                (fire_view::reset, buildings::reset, people::reset)
+                (
+                    fire_view::reset,
+                    buildings::reset,
+                    people::reset,
+                    inspect::reset,
+                    units::reset,
+                    command::reset,
+                )
                     .after(ui::wildfire_panel),
                 (
                     fire_view::update_overlay,
@@ -121,10 +148,18 @@ fn main() -> anyhow::Result<()> {
                     ignition_edit::sync_markers,
                     ignition_edit::show_markers.after(ignition_edit::sync_markers),
                     ignition_edit::update_hover,
+                    inspect::update_ring,
+                    units::update_units,
+                    units::sync_orders,
+                    units::update_work_overlay,
+                    command::update_cursor,
                 )
                     .after(fire_view::reset)
                     .after(buildings::reset)
-                    .after(people::reset),
+                    .after(people::reset)
+                    .after(inspect::reset)
+                    .after(units::reset)
+                    .after(command::reset),
                 capture::manual,
             ),
         );
@@ -164,23 +199,17 @@ fn setup_scene(
     terrain_mesh::build(&sim.scenario, &mut commands, &mut meshes, &mut materials);
     roads::build(&sim.scenario, &mut commands, &mut meshes, &mut materials);
 
-    // Late-afternoon sun from the south-west: the hour when Ligurian fires run.
-    commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight {
-            illuminance: 9_500.0,
-            // Warm, low sun: the light a Ligurian fire actually runs under.
-            color: Color::srgb(1.0, 0.93, 0.82),
-            shadows_enabled: true,
+    // Transform, illuminance and colour are all overwritten every frame by
+    // `sky::update_sky`, which computes them from real solar geometry for
+    // Spotorno's latitude and the simulated clock (`SPOTORNO_START_HOUR`).
+    // What is spawned here only has to exist and cast shadows.
+    commands.spawn((
+        DirectionalLightBundle {
+            directional_light: DirectionalLight { shadows_enabled: true, ..default() },
             ..default()
         },
-        transform: Transform::from_rotation(Quat::from_euler(
-            EulerRot::YXZ,
-            -0.9,
-            -0.65,
-            0.0,
-        )),
-        ..default()
-    });
+        sky::Sun,
+    ));
 
     // Start the camera looking at the ignition point.
     let (p, h) = terrain_mesh::cell_ground(&sim.scenario, sim.ignition.centre);
@@ -197,6 +226,10 @@ fn setup_scene(
             ..default()
         },
         BloomSettings { intensity: 0.20, ..BloomSettings::NATURAL },
+        // Atmospheric haze, coloured to match the sky every frame by
+        // `sky::update_sky` — the fallback here only matters for the one
+        // frame before that system first runs.
+        FogSettings::default(),
         OrbitCamera { focus, distance: 2600.0, ..default() },
     ));
 }

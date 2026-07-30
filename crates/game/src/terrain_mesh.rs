@@ -86,6 +86,9 @@ pub fn build(
         base_color: Color::WHITE,
         perceptual_roughness: 0.95,
         metallic: 0.0,
+        // Dry karst, not wet slate: a low reflectance keeps the sun's
+        // specular lobe from painting a bright sheet across every ridge.
+        reflectance: 0.12,
         ..default()
     });
 
@@ -119,7 +122,14 @@ pub fn build(
 
                     positions.push([gx, elev, -gy]);
                     let n = t.normal_at(p);
-                    normals.push([n[0], n[1], -n[2]]);
+                    // Perturb the heightfield's own (smooth, 5 m) normal with
+                    // fine noise so broken ground catches specular light
+                    // unevenly instead of reading as a poured, perfect slope.
+                    let jitter = 0.06;
+                    let nx = n[0] + jitter * (noise(p.x / 3.1, p.y / 3.1, 0x4C) - 0.5);
+                    let nz = n[2] + jitter * (noise(p.x / 3.1 + 50.0, p.y / 3.1 + 50.0, 0x4D) - 0.5);
+                    let bumped = Vec3::new(nx, n[1], nz).normalize();
+                    normals.push([bumped.x, bumped.y, -bumped.z]);
 
                     let col = ground_color(elev, n[1], p);
                     let col = Color::srgb(col[0], col[1], col[2]).to_linear();

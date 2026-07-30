@@ -46,7 +46,7 @@ const RING_SEGMENTS: usize = 96;
 /// as the household beacons (+22 m) and the refuge markers (+30 m) — high
 /// enough to clear the vegetation, still draped so it reads as lying on the
 /// hillside rather than hovering over it.
-const RING_LIFT_M: f32 = 20.0;
+pub(crate) const RING_LIFT_M: f32 = 20.0;
 
 /// What a left-click currently means.
 #[derive(Resource, Default, PartialEq, Eq, Clone, Copy, Debug)]
@@ -316,7 +316,12 @@ pub fn show_markers(
 }
 
 /// An annulus in world space, draped on the render terrain.
-fn ring_mesh(scn: &Scenario, centre: Pos, radius_m: f32) -> Mesh {
+///
+/// `pub(crate)` because the suppression order markers ([`crate::units`]) need
+/// exactly this symbol and exactly this draping: a ring built once and moved by
+/// a transform floats off the hillside, and a ring wound the other way is
+/// invisible. Both traps are already solved here, so they are solved once.
+pub(crate) fn ring_mesh(scn: &Scenario, centre: Pos, radius_m: f32) -> Mesh {
     let w = ring_width(radius_m) * 0.5;
     let (inner, outer) = ((radius_m - w).max(1.0), radius_m + w);
 

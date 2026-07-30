@@ -48,6 +48,17 @@ pub struct RoadNetwork {
     buckets: Vec<Vec<NodeId>>,
     bcols: usize,
     brows: usize,
+    /// Connected component of each node, per travel mode.
+    ///
+    /// Computed once at build because "is there any road from here to there"
+    /// has to be an O(1) question. It is asked by every unit that gets an order,
+    /// and the answer is usually *no* for the obvious candidate: the nearest
+    /// drivable node to a point up in the macchia is routinely an isolated farm
+    /// track that touches nothing. Discovering that with a failed A* — which
+    /// explores the whole component before giving up — is how the first version
+    /// of this managed to leave every engine parked at staging.
+    comp_drive: Vec<u32>,
+    comp_walk: Vec<u32>,
 }
 
 impl RoadNetwork {
@@ -66,6 +77,8 @@ impl RoadNetwork {
             buckets: vec![Vec::new(); brows * bcols],
             bcols,
             brows,
+            comp_drive: Vec::new(),
+            comp_walk: Vec::new(),
         };
 
         // Weld coincident vertices by exact key. Ways that cross without a
@@ -112,7 +125,56 @@ impl RoadNetwork {
                 net.buckets[by * bcols + bx].push(i as NodeId);
             }
         }
+        net.comp_drive = net.components(true);
+        net.comp_walk = net.components(false);
         net
+    }
+
+    /// Label every node with its connected component, for one travel mode.
+    /// Flood fill with an explicit stack: the walkable graph is one 61 k-node
+    /// component in places and recursion would blow the stack on it.
+    fn components(&self, drivable_only: bool) -> Vec<u32> {
+        const NONE: u32 = u32::MAX;
+        let mut comp = vec![NONE; self.nodes.len()];
+        let mut next = 0u32;
+        let mut stack = Vec::new();
+        for start in 0..self.nodes.len() as NodeId {
+            if comp[start as usize] != NONE {
+                continue;
+            }
+            // A node with no edges of this mode is its own island, which is the
+            // correct answer for a footpath vertex asked about driving.
+            comp[start as usize] = next;
+            stack.push(start);
+            while let Some(n) = stack.pop() {
+                for e in &self.adjacency[n as usize] {
+                    if drivable_only && !e.drivable {
+                        continue;
+                    }
+                    if comp[e.to as usize] == NONE {
+                        comp[e.to as usize] = next;
+                        stack.push(e.to);
+                    }
+                }
+            }
+            next += 1;
+        }
+        comp
+    }
+
+    /// Which connected component a node is in, for a travel mode. Two nodes
+    /// with the same label have *some* route between them; whether it is still
+    /// open is a question for [`route`].
+    pub fn component(&self, n: NodeId, drivable_only: bool) -> u32 {
+        let comp = if drivable_only { &self.comp_drive } else { &self.comp_walk };
+        comp[n as usize]
+    }
+
+    /// Number of connected components, for the diagnostics that make the
+    /// disconnected-stub problem visible instead of mysterious.
+    pub fn component_count(&self, drivable_only: bool) -> usize {
+        let comp = if drivable_only { &self.comp_drive } else { &self.comp_walk };
+        comp.iter().copied().max().map(|m| m as usize + 1).unwrap_or(0)
     }
 
     fn add_edge(&mut self, a: NodeId, b: NodeId, drivable: bool) {
@@ -146,10 +208,42 @@ impl RoadNetwork {
         self.adjacency[n as usize].iter().any(|e| e.drivable)
     }
 
+    /// Nearest node to `p` that a unit standing at `from` can actually get to.
+    ///
+    /// The distinction from [`nearest`] is the whole difference between an
+    /// engine that responds and one that sits at staging: the closest drivable
+    /// node to a point inland is very often a stub of farm track connected to
+    /// nothing. This is "drive as close as the road network gets", which is what
+    /// an engine crew does, and it is why the caller then has to bridge the
+    /// remaining metres with hose rather than with wheels.
+    pub fn nearest_reachable(
+        &self,
+        p: Pos,
+        drivable_only: bool,
+        from: NodeId,
+    ) -> Option<NodeId> {
+        if from == NO_NODE {
+            return None;
+        }
+        let want = self.component(from, drivable_only);
+        self.nearest_where(p, drivable_only, |n| {
+            self.component(n, drivable_only) == want
+        })
+    }
+
     /// Nearest node to a position, optionally restricted to drivable ways.
     /// Searches outward by bucket ring so a house up a footpath still finds
     /// the network it is actually on.
     pub fn nearest(&self, p: Pos, drivable_only: bool) -> Option<NodeId> {
+        self.nearest_where(p, drivable_only, |_| true)
+    }
+
+    fn nearest_where(
+        &self,
+        p: Pos,
+        drivable_only: bool,
+        accept: impl Fn(NodeId) -> bool,
+    ) -> Option<NodeId> {
         let bx = (p.x / BUCKET_M).max(0.0) as isize;
         let by = (p.y / BUCKET_M).max(0.0) as isize;
         let mut best = None;
@@ -169,6 +263,9 @@ impl RoadNetwork {
                     }
                     for &n in &self.buckets[ny as usize * self.bcols + nx as usize] {
                         if drivable_only && !self.is_drivable_node(n) {
+                            continue;
+                        }
+                        if !accept(n) {
                             continue;
                         }
                         let q = self.nodes[n as usize];
@@ -280,6 +377,89 @@ pub fn solve(
 
 fn midpoint(a: Pos, b: Pos) -> Pos {
     Pos { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 }
+}
+
+/// Shortest route from `from` to `to`, as the nodes to visit in order.
+///
+/// The deliberate opposite of [`solve`], and for a reason worth stating: the
+/// civilian model never needs this, because every civilian wants the *same*
+/// destination and one multi-source field answers all 750 of them at once. A
+/// suppression unit is the other case entirely — a dozen units, each sent to a
+/// different point the commander picked — so a per-unit search is both correct
+/// and cheap. Twelve A* searches on 61 k nodes cost less than one of the
+/// multi-source Dijkstras the civilians already pay for every simulated minute.
+///
+/// Danger is a cost penalty, not a wall, up to [`DANGER_CUT`]: an engine will
+/// drive a smoky road to get to work, and will not drive into the flame front.
+pub fn route(
+    net: &RoadNetwork,
+    from: NodeId,
+    to: NodeId,
+    threat: &fire::ThreatField,
+    drivable_only: bool,
+) -> Option<Vec<NodeId>> {
+    if from == NO_NODE || to == NO_NODE {
+        return None;
+    }
+    if from == to {
+        return Some(Vec::new());
+    }
+    let n = net.len();
+    let speed = if drivable_only { CAR_SPEED } else { FOOT_SPEED };
+    let goal = net.pos(to);
+    // Straight-line time at free speed: admissible, since no edge can be
+    // travelled faster than that and every penalty is >= 1.
+    let heuristic = |id: NodeId| {
+        let p = net.pos(id);
+        ((p.x - goal.x).powi(2) + (p.y - goal.y).powi(2)).sqrt() / speed
+    };
+
+    let mut cost = vec![f32::INFINITY; n];
+    let mut prev = vec![NO_NODE; n];
+    let mut heap: BinaryHeap<Entry> = BinaryHeap::new();
+    cost[from as usize] = 0.0;
+    heap.push(Entry { cost: heuristic(from), node: from });
+
+    while let Some(Entry { node, .. }) = heap.pop() {
+        if node == to {
+            break;
+        }
+        let here = cost[node as usize];
+        for e in net.neighbours(node) {
+            if drivable_only && !e.drivable {
+                continue;
+            }
+            let mid = midpoint(net.pos(node), net.pos(e.to));
+            let danger = threat.at(mid).max(threat.at(net.pos(e.to)));
+            // The destination itself may be hot -- that is often exactly where
+            // the work is -- so only *intermediate* nodes are refused.
+            if danger >= DANGER_CUT && e.to != to {
+                continue;
+            }
+            let step = e.length_m / speed * (1.0 + DANGER_PENALTY * danger);
+            let next = here + step;
+            if next < cost[e.to as usize] {
+                cost[e.to as usize] = next;
+                prev[e.to as usize] = node;
+                heap.push(Entry { cost: next + heuristic(e.to), node: e.to });
+            }
+        }
+    }
+
+    if !cost[to as usize].is_finite() {
+        return None;
+    }
+    let mut path = vec![to];
+    let mut at = to;
+    while let Some(p) = Some(prev[at as usize]).filter(|p| *p != NO_NODE) {
+        if p == from {
+            break;
+        }
+        path.push(p);
+        at = p;
+    }
+    path.reverse();
+    Some(path)
 }
 
 /// Min-heap entry. `BinaryHeap` is a max-heap and `f32` is not `Ord`, so the

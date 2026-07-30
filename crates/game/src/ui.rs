@@ -191,8 +191,8 @@ pub fn panel(
             ui.separator();
             ui.small(
                 "space play/pause · [ ] speed · 1-4 fire layer · e evacuate · \
-                 i place ignition · r restart · drag orbit · right-drag pan · \
-                 scroll zoom",
+                 i place ignition · r restart · click a house/person/car to \
+                 inspect it · drag orbit · right-drag pan · scroll zoom",
             );
         });
 

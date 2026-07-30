@@ -45,9 +45,12 @@ use scenario::{Pos, Scenario};
 
 pub mod network;
 pub mod refuge;
+pub mod suppression;
 
 use network::{NodeId, RoadNetwork, RouteField, NO_NODE};
 use refuge::Refuge;
+
+pub use suppression::{Suppression, SuppressionStats, Task, Unit, UnitKind, UnitState};
 
 /// How often the household decision layer runs, in simulated seconds. People
 /// do not re-evaluate continuously, and this keeps the cost off the movement

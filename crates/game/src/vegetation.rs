@@ -166,8 +166,12 @@ pub fn spawn(
 
     let material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
-        perceptual_roughness: 0.9,
+        perceptual_roughness: 0.92,
         metallic: 0.0,
+        // Leaves are matte, not glassy: a near-zero reflectance is what
+        // stops a sunlit canopy from picking up a specular sheen no real
+        // macchia has.
+        reflectance: 0.04,
         // Foliage is thin: lighting it from one side only makes a forest read
         // as a flat dark mass from the shaded quarter.
         double_sided: true,

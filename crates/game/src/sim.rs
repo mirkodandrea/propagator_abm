@@ -6,10 +6,10 @@
 //! simulated second; the speed control multiplies that. Stepping is capped per
 //! frame so a slow step cannot spiral into a death loop.
 
-use abm::Abm;
+use abm::{Abm, Suppression};
 use bevy::prelude::*;
 use fire::{FireSim, IgnitionPlan, Weather};
-use scenario::{Cell, Scenario};
+use scenario::{Cell, Pos, Scenario};
 
 /// Radius of the fire the scenario opens with: already a going fire at the
 /// WUI edge, which is the situation an incident commander is called to.
@@ -59,6 +59,13 @@ pub struct Sim {
     /// fire gets, immediately after it, so agents always react to the fire
     /// state of the step they are in rather than the previous one.
     pub agents: Abm,
+    /// Crews, engines and aircraft. Stepped alongside the civilians and reading
+    /// the same fire state; the interventions it returns are queued for the
+    /// core's *next* advance, which is one step (2 s of simulated time) of
+    /// latency between a crew swinging a tool and the fuel changing. Cheaper
+    /// than the alternative, which is borrowing the fire mutably while the units
+    /// are still reading the threat field off it.
+    pub crews: Suppression,
     pub scenario: Scenario,
     pub playing: bool,
     /// Simulated seconds per wall-clock second.
@@ -92,6 +99,29 @@ pub struct Sim {
     auto_order_s: Option<i64>,
     /// `SPOTORNO_ORDER_AT`, kept so a restart re-arms the same auto-order.
     auto_order_env_s: Option<i64>,
+    /// Simulated time at which every unit is committed to the head of the fire
+    /// by itself, and air support is requested. `SPOTORNO_ATTACK_AT` only, for
+    /// screenshots and unattended runs — in play this is the commander's job,
+    /// and doing it well is most of the game.
+    auto_attack_s: Option<i64>,
+    auto_attack_env_s: Option<i64>,
+}
+
+/// Where suppression units stage, in the order they are handed out.
+///
+/// The measured refuges (`abm::refuge`), closest to the fire first. Both halves
+/// matter: a refuge is already known to be out of the fuel and reachable by
+/// vehicle, which is exactly what a staging area needs to be; and ordering by
+/// distance to the ignition puts the roster on the near side of town rather than
+/// round the far side of the bay, so the first engine is a few minutes out
+/// instead of twenty.
+fn staging(agents: &Abm, ignition: Pos) -> Vec<Pos> {
+    let mut v: Vec<Pos> = agents.refuges.iter().map(|r| r.pos).collect();
+    v.sort_by(|a, b| {
+        let d = |p: &Pos| (p.x - ignition.x).powi(2) + (p.y - ignition.y).powi(2);
+        d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    v
 }
 
 /// Raised on the frame a restart happened, so views holding state the sim no
@@ -128,13 +158,25 @@ impl Sim {
             agents.refuges.len()
         );
 
+        let crews =
+            Suppression::new(&scenario, &staging(&agents, scenario.world.centre_of(ignition.centre)))?;
+        println!(
+            "suppression: {} units staged, {} air tankers on call",
+            crews.units.iter().filter(|u| !u.kind.is_air()).count(),
+            crews.units.iter().filter(|u| u.kind.is_air()).count(),
+        );
+
         let auto_order_env_s = std::env::var("SPOTORNO_ORDER_AT")
+            .ok()
+            .and_then(|v| v.parse().ok());
+        let auto_attack_env_s = std::env::var("SPOTORNO_ATTACK_AT")
             .ok()
             .and_then(|v| v.parse().ok());
 
         Ok(Sim {
             fire,
             agents,
+            crews,
             scenario,
             // SPOTORNO_AUTOPLAY=1 starts running immediately, for screenshots
             // and for headless timing runs.
@@ -153,6 +195,8 @@ impl Sim {
             seed,
             auto_order_s: auto_order_env_s,
             auto_order_env_s,
+            auto_attack_s: auto_attack_env_s,
+            auto_attack_env_s,
         })
     }
 
@@ -186,11 +230,18 @@ impl Sim {
         }
 
         self.agents = Abm::new(&self.scenario, self.seed)?;
+        // Rebuilt, not reset: a restart has to discard every order the player
+        // gave, every litre spent and every metre of line cut, or comparing two
+        // plans compares nothing. The roster is deterministic, so unit ids are
+        // stable across the rebuild and the views keyed by them survive.
+        let ig = self.scenario.world.centre_of(self.ignition.centre);
+        self.crews = Suppression::new(&self.scenario, &staging(&self.agents, ig))?;
         self.fire = fire;
         self.ignitions = ignitions;
         self.pending_ignitions = pending;
         self.accumulator = 0.0;
         self.auto_order_s = self.auto_order_env_s;
+        self.auto_attack_s = self.auto_attack_env_s;
         // Not reset: `generation` (a staleness token -- see the field) and
         // `speed`/`playing`, which are the player's view settings and not part
         // of the scenario.
@@ -243,6 +294,47 @@ impl Sim {
             || (live.moisture_pct - self.weather.moisture_pct).abs() > 1e-6
     }
 
+    /// The furthest-downwind burning cell: the head of the fire, which is where
+    /// an initial attack goes. Falls back to the ignition before anything is
+    /// alight.
+    pub fn fire_head(&self) -> Pos {
+        self.fire
+            .active_cells()
+            .iter()
+            .map(|c| self.scenario.world.centre_of(*c))
+            .min_by(|a, b| a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or_else(|| self.scenario.world.centre_of(self.ignition.centre))
+    }
+
+    /// Send every ground unit to the head of the fire, request air support, and
+    /// task whatever aircraft are already on station. Returns units committed.
+    ///
+    /// The "everything, now" plan. Not a good plan — the measured comparison in
+    /// `abm`'s `suppression_changes_the_outcome` shows re-tasking the aircraft
+    /// onto the moving head saves half again as much ground — but it is the
+    /// plan a screenshot and an unattended run need, and it is what a player
+    /// does in their first thirty seconds.
+    pub fn commit_all_to_head(&mut self) -> usize {
+        let head = self.fire_head();
+        // Air support is asked for *first*: an aircraft that has not been
+        // requested cannot be tasked, but one that is merely inbound can be
+        // briefed, and then goes to work the moment it is on station.
+        self.crews.request_air();
+        let ids: Vec<usize> = self.crews.units.iter().map(|u| u.id).collect();
+        let mut n = 0;
+        for id in ids {
+            let task = if self.crews.units[id].kind.is_air() {
+                abm::Task::Drop { at: head }
+            } else {
+                abm::Task::Attack { at: head }
+            };
+            if self.crews.assign(id, task).is_ok() {
+                n += 1;
+            }
+        }
+        n
+    }
+
     /// `HH:MM:SS` since ignition, for the HUD.
     pub fn clock(&self) -> String {
         let t = self.fire.time_s();
@@ -272,6 +364,14 @@ pub fn step_fire(mut sim: ResMut<Sim>, time: Res<Time>) {
         }
     }
 
+    if let Some(at) = sim.auto_attack_s {
+        if sim.time_s() >= at {
+            sim.auto_attack_s = None;
+            let n = sim.commit_all_to_head();
+            info!("scheduled initial attack at T+{at}s: {n} units committed");
+        }
+    }
+
     // Replayed mid-run ignitions, lit as the clock reaches them. Only ever
     // non-empty after a restart: see `Sim::restart`.
     if !sim.pending_ignitions.is_empty() {
@@ -289,8 +389,14 @@ pub fn step_fire(mut sim: ResMut<Sim>, time: Res<Time>) {
 
     match sim.fire.advance(advance) {
         Ok(_) => {
-            let Sim { fire, agents, scenario, .. } = &mut *sim;
+            let Sim { fire, agents, crews, scenario, .. } = &mut *sim;
             agents.step(advance as f32, fire, scenario);
+            // The units read the fire, then the fire is handed what they did.
+            // Queued rather than applied, so it lands as one merged boundary
+            // condition on the next advance: see `Suppression::step`.
+            for action in crews.step(advance as f32, &agents.network, fire, scenario) {
+                fire.queue(action);
+            }
             sim.generation += 1;
         }
         Err(e) => {

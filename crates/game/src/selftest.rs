@@ -30,6 +30,10 @@ pub struct SelfTest {
     stage: Stage,
     /// Burnt area at the end of the first leg, to compare the restart against.
     first_leg_ha: f32,
+    /// Water the fire had received before the restart, which afterwards must be
+    /// zero again: a restart that keeps the old run's suppression is not a
+    /// clean comparison.
+    first_leg_water_l: f64,
     failures: Vec<String>,
 }
 
@@ -39,6 +43,8 @@ enum Stage {
     Burn,
     AddIgnition,
     BurnMore,
+    Dispatch,
+    Working,
     ShiftWind,
     BurnShifted,
     Restart,
@@ -119,6 +125,101 @@ pub fn run(
                 burnt > baseline,
                 "fire did not grow after the second ignition",
             );
+            test.stage = Stage::Dispatch;
+        }
+
+        // Commit the ground units to the head of the fire and call for air.
+        // Only reachable through the same `Suppression` API the panel uses, so
+        // this exercises the assignment rules as well as the movement.
+        Stage::Dispatch => {
+            let head = head_of_fire(&sim);
+            let ids: Vec<usize> = sim.crews.units.iter().map(|u| u.id).collect();
+            let mut sent = 0;
+            for id in ids {
+                if sim.crews.units[id].kind.is_air() {
+                    continue;
+                }
+                match sim.crews.assign(id, abm::Task::Attack { at: head }) {
+                    Ok(()) => sent += 1,
+                    Err(why) => println!("[selftest] {id} refused the order: {why}"),
+                }
+            }
+            check(&mut test, sent > 0, "no ground unit accepted an attack order");
+
+            let air = sim.crews.request_air();
+            check(&mut test, air > 0, "no air support was available to request");
+            check(
+                &mut test,
+                sim.crews.air_eta_s().is_some_and(|e| e > 0.0),
+                "air support was requested but has no arrival time",
+            );
+            // An inbound aircraft can be briefed but must not teleport onto the
+            // incident to serve the briefing.
+            let first_air = sim.crews.units.iter().find(|u| u.kind.is_air()).map(|u| u.id);
+            if let Some(id) = first_air {
+                check(
+                    &mut test,
+                    sim.crews.assign(id, abm::Task::Drop { at: head }).is_ok(),
+                    "an inbound aircraft could not be briefed",
+                );
+                check(
+                    &mut test,
+                    !sim.crews.units[id].on_scene(),
+                    "briefing an inbound aircraft put it on the incident early",
+                );
+            }
+            println!(
+                "[selftest] dispatched {sent} ground units to ({:.0}, {:.0}), \
+                 {air} aircraft inbound",
+                head.x, head.y
+            );
+            test.stage = Stage::Working;
+        }
+
+        // Long enough for the aircraft to arrive (25 min) and work.
+        Stage::Working => {
+            if t < LEG_S * 2 + 30 * 60 {
+                return;
+            }
+            // Task the aircraft now that they are on station.
+            let head = head_of_fire(&sim);
+            let air: Vec<usize> = sim
+                .crews
+                .units
+                .iter()
+                .filter(|u| u.kind.is_air())
+                .map(|u| u.id)
+                .collect();
+            let mut tasked = 0;
+            for id in air {
+                if !sim.crews.units[id].on_scene() {
+                    continue;
+                }
+                if sim.crews.assign(id, abm::Task::Drop { at: head }).is_ok() {
+                    tasked += 1;
+                }
+            }
+            check(
+                &mut test,
+                tasked > 0,
+                "no aircraft was on the incident after the response time",
+            );
+
+            let s = sim.crews.stats();
+            println!(
+                "[selftest] T+{t}s suppression: {} working, {:.0} L used, {:.0} m line, \
+                 {} drops, {tasked} aircraft now tasked",
+                s.working, s.water_l, s.line_m, s.drops
+            );
+            check(&mut test, s.lost == 0, "a unit was burnt over obeying an order");
+            // The work has to have reached the *fire*, not just the unit's own
+            // counters: this is the whole intervention path, queue included.
+            check(
+                &mut test,
+                sim.fire.litres_applied > 0.0 || sim.fire.cleared().iter().any(|c| *c),
+                "units reported work but the fire received no intervention",
+            );
+            test.first_leg_water_l = sim.fire.litres_applied;
             test.stage = Stage::ShiftWind;
         }
 
@@ -191,6 +292,36 @@ pub fn run(
                 sim.agents.households.iter().all(|h| !h.ordered),
                 "restart left households still under an evacuation order",
             );
+            // The suppression roster is rebuilt, so every order, every litre and
+            // every metre of line from the old run has to be gone -- including
+            // the fuel the old run's crews cut, which lives in the fire.
+            let s = sim.crews.stats();
+            check(
+                &mut test,
+                s.water_l == 0.0 && s.line_m == 0.0 && s.drops == 0,
+                "restart kept the old run's suppression work on the units",
+            );
+            check(
+                &mut test,
+                s.unrequested > 0,
+                "restart left air support already requested",
+            );
+            check(
+                &mut test,
+                sim.crews.units.iter().all(|u| matches!(u.task, abm::Task::Hold)),
+                "restart left a unit still under orders",
+            );
+            let had_water = test.first_leg_water_l > 0.0;
+            check(
+                &mut test,
+                had_water && sim.fire.litres_applied == 0.0,
+                "restart kept water the previous run had put on the fire",
+            );
+            check(
+                &mut test,
+                !sim.fire.cleared().iter().any(|c| *c),
+                "restart kept fuel the previous run's crews had cut",
+            );
             println!("[selftest] restarted: T+0, {after:.1} ha, {ignitions} ignition(s) replayed");
             test.stage = Stage::Verify;
         }
@@ -222,6 +353,18 @@ pub fn run(
             }
         }
     }
+}
+
+/// The furthest-downwind burning cell, in world metres — what a commander reads
+/// off the map when deciding where to put the units. Falls back to the ignition
+/// if nothing is alight, so the stage still exercises the assignment path.
+fn head_of_fire(sim: &Sim) -> scenario::Pos {
+    sim.fire
+        .active_cells()
+        .iter()
+        .map(|c| sim.scenario.world.centre_of(*c))
+        .min_by(|a, b| a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap_or_else(|| sim.scenario.world.centre_of(sim.ignition.centre))
 }
 
 fn burnt_ha(sim: &Sim) -> f32 {

@@ -28,6 +28,7 @@ use fire::CellFire;
 use scenario::Pos;
 
 use crate::field::{noise, FireField};
+use crate::fire_shader::{FireGroundMaterial, FireMaterial};
 use crate::sim::Sim;
 use crate::textures;
 
@@ -96,6 +97,21 @@ const MAX_FLAME_CELLS: usize = 3_500;
 const MAX_SMOKE: usize = 800;
 const MAX_EMBERS: usize = 700;
 
+/// Shape of the firebrand's flight, mirroring `compute_spotting` in
+/// `propagator-core/src/kernel.rs` — the median landing distance is linear in
+/// wind speed and grows with the source cell's fireline intensity through
+/// plume lofting (`d ~ U * I^(1/3)`), concentrated downwind. This is a visual
+/// echo only: the core decides where the fire actually spots, this only
+/// decides where the ember on screen appears to land. Kept in step with the
+/// core's constants so a low-wind creeping fire visibly throws embers a few
+/// metres and a wind-driven crown fire throws them across a field, matching
+/// what the model is doing underneath.
+const SPOT_DISTANCE_REF_M: f32 = 100.0;
+const SPOT_WIND_REF_KMH: f32 = 20.0;
+const SPOT_FLI_REF: f32 = 10_000.0;
+const SPOT_FLI_EXPONENT: f32 = 1.0 / 3.0;
+const SPOT_ANISOTROPY: f32 = 5.0;
+
 #[derive(Component)]
 pub struct FireOverlay;
 
@@ -123,12 +139,18 @@ struct Particle {
     size: f32,
     /// Per-particle randomness, reused for rotation and shade.
     phase: f32,
+    /// Set on the brief flash spawned where a firebrand lands on unburnt
+    /// fuel — the visual echo of the core's own spotting model landing an
+    /// ember (see `step_particles`). Ordinary embers leave this false.
+    flare: bool,
 }
 
 pub fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut fire_materials: ResMut<Assets<FireMaterial>>,
+    mut ground_materials: ResMut<Assets<FireGroundMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
     let overlay = meshes.add(empty_mesh());
@@ -140,36 +162,16 @@ pub fn setup(
     let puff_tex = images.add(textures::puff());
     let spark_tex = images.add(textures::spark());
 
-    // Unlit: the overlay is data, and data must not change value because a
-    // ridge is in shadow.
-    let overlay_mat = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        unlit: true,
-        alpha_mode: AlphaMode::Blend,
-        double_sided: true,
-        cull_mode: None,
-        ..default()
-    });
-    // Additive: flames and embers are light, not surfaces. Vertex colours run
-    // above 1.0 so the camera's bloom pass catches them.
-    let flame_mat = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        base_color_texture: Some(flame_tex),
-        unlit: true,
-        alpha_mode: AlphaMode::Add,
-        double_sided: true,
-        cull_mode: None,
-        ..default()
-    });
-    let spark_mat = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        base_color_texture: Some(spark_tex),
-        unlit: true,
-        alpha_mode: AlphaMode::Add,
-        double_sided: true,
-        cull_mode: None,
-        ..default()
-    });
+    // A shader material: the overlay's own colour already carries the glow
+    // flag (red channel > 1.0), so the fragment shader only needs to animate
+    // it. See `crate::fire_shader`.
+    let overlay_mat = ground_materials.add(FireGroundMaterial {});
+    // Shader materials, additive: flames and embers are light, not surfaces.
+    // Vertex colours run above 1.0 so the camera's bloom pass catches them,
+    // and the fragment shader domain-warps the texture lookup so the flame
+    // edge roils instead of sitting still.
+    let flame_mat = fire_materials.add(FireMaterial { texture: flame_tex });
+    let spark_mat = fire_materials.add(FireMaterial { texture: spark_tex });
     // Smoke occludes: alpha blending, and unlit so a plume does not flicker
     // as it crosses the terrain's shadow line.
     let smoke_mat = materials.add(StandardMaterial {
@@ -183,16 +185,20 @@ pub fn setup(
     });
 
     commands.spawn((
-        PbrBundle { mesh: overlay.clone(), material: overlay_mat, ..default() },
+        MaterialMeshBundle { mesh: overlay.clone(), material: overlay_mat, ..default() },
         FireOverlay,
     ));
-    for (mesh, material) in [
-        (flames.clone(), flame_mat),
-        (sparks.clone(), spark_mat),
-        (smoke_mesh.clone(), smoke_mat),
-    ] {
-        commands.spawn(PbrBundle { mesh, material, ..default() });
-    }
+    commands.spawn(MaterialMeshBundle {
+        mesh: flames.clone(),
+        material: flame_mat,
+        ..default()
+    });
+    commands.spawn(MaterialMeshBundle {
+        mesh: sparks.clone(),
+        material: spark_mat,
+        ..default()
+    });
+    commands.spawn(PbrBundle { mesh: smoke_mesh.clone(), material: smoke_mat, ..default() });
 
     commands.init_resource::<FireLayer>();
     commands.insert_resource(FireView {
@@ -696,6 +702,17 @@ pub fn update_flames(
     let mut sparks = QuadBuilder::default();
     for ember in &view.embers {
         let k = (ember.age / ember.life).clamp(0.0, 1.0);
+        if ember.flare {
+            // A quick, bright pop where a firebrand has just landed on
+            // unburnt fuel — sharp attack, quick decay, not a fade like an
+            // ordinary ember: this is a spot-ignition risk lighting up, not
+            // embers cooling.
+            let pulse = (1.0 - k).powf(0.5) * (1.0 - (k * 3.0 - 1.0).max(0.0));
+            let size = ember.size * (1.0 + 1.5 * (1.0 - k));
+            let c = [4.0 * pulse, 2.2 * pulse, 0.9 * pulse, 1.0];
+            sparks.billboard(ember.pos, right * size, up * size, 1.0, c, c);
+            continue;
+        }
         let fade = 1.0 - k;
         let size = ember.size * (0.6 + 0.6 * fade);
         let c = [2.6 * fade, 0.65 * fade, 0.10 * fade, 1.0];
@@ -736,13 +753,54 @@ fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
 
     for ember in &mut view.embers {
         ember.age += dt;
-        ember.vel = ember.vel.lerp(drift * 0.9 + Vec3::NEG_Y * 2.0, dt * 0.9);
+        if ember.flare {
+            continue;
+        }
+        // A real firebrand's horizontal speed barely changes in flight — the
+        // wind carries it — so only gravity acts on the vertical component;
+        // the horizontal speed was chosen at launch to cover the modelled
+        // spotting distance in the modelled travel time (see the spawn
+        // site), and damping it away early would strand it short.
+        ember.vel.y -= 9.0 * dt;
         ember.pos += ember.vel * dt;
+    }
+    // A firebrand that reaches ground level on unburnt, burnable fuel is
+    // exactly what the core's own spotting model is throwing ahead of the
+    // front — flash it there instead of silently despawning it like a spent,
+    // harmless spark.
+    let mut flares = Vec::new();
+    for e in &view.embers {
+        if e.flare {
+            continue;
+        }
+        let ground = scn.terrain.height_at(Pos { x: e.pos.x, y: -e.pos.z });
+        let dying = e.age >= e.life || e.pos.y <= ground + 0.4;
+        if !dying {
+            continue;
+        }
+        let landing = Pos { x: e.pos.x, y: -e.pos.z };
+        if !scn.world.contains(landing) {
+            continue;
+        }
+        let cell = scn.world.cell_of(landing);
+        if scn.is_burnable(cell) && sim.fire.cell_state(cell) == CellFire::Unburnt {
+            flares.push(Particle {
+                pos: Vec3::new(e.pos.x, ground + 0.6, e.pos.z),
+                vel: Vec3::ZERO,
+                age: 0.0,
+                life: 1.1,
+                size: 2.6,
+                phase: e.phase,
+                flare: true,
+            });
+        }
     }
     view.embers.retain(|e| {
         e.age < e.life
-            && e.pos.y > scn.terrain.height_at(Pos { x: e.pos.x, y: -e.pos.z }) + 0.4
+            && (e.flare
+                || e.pos.y > scn.terrain.height_at(Pos { x: e.pos.x, y: -e.pos.z }) + 0.4)
     });
+    view.embers.extend(flares);
 
     let active = sim.fire.active_cells();
     if active.is_empty() {
@@ -782,21 +840,54 @@ fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
                 life: 22.0 + phase * 20.0,
                 size: 12.0 + 16.0 * plume,
                 phase,
+                flare: false,
             });
         } else {
             // Only a cell with a real plume lofts embers.
             if fli < 400.0 {
                 continue;
             }
-            let angle = phase * std::f32::consts::TAU;
+            // Launch azimuth measured *from* the downwind direction, so
+            // `alignment = cos(offset)` is 1 directly downwind — the same
+            // quantity `compute_spotting` calls `(w_dir - angle).cos()`.
+            let offset = phase * std::f32::consts::TAU;
+            let wind_hat = if wind_ms > 0.05 { drift / wind_ms } else { Vec3::Z };
+            let perp = Vec3::new(-wind_hat.z, 0.0, wind_hat.x);
+            let (s, c) = offset.sin_cos();
+            let launch_dir = wind_hat * c + perp * s;
+            let alignment = c;
+
+            // Median landing distance: linear in wind, ~intensity^(1/3) via
+            // plume lofting, concentrated downwind. Jittered log-normally
+            // about that median, same as the core.
+            let d_median = SPOT_DISTANCE_REF_M
+                * (weather.wind_speed_kmh as f32 / SPOT_WIND_REF_KMH).max(0.0)
+                * (fli / SPOT_FLI_REF).max(0.001).powf(SPOT_FLI_EXPONENT);
+            let directional = (SPOT_ANISOTROPY * (alignment - 1.0)).exp();
+            let jitter = 0.55 + hash01(view.seed ^ 0x9E37) * 0.9;
+            // Capped at the same 400 m the threat field uses for ember reach
+            // (`ThreatField`, `fire::threat`) — the distance a real crown
+            // fire throws brands can run past a kilometre, but this is a
+            // particle the player watches fly, not a hazard sample.
+            let distance = (d_median * directional * jitter).max(2.0).min(400.0);
+
+            let transport_speed = (wind_ms * alignment.max(0.15)).max(0.5);
+            let travel_time = (distance / transport_speed).clamp(2.0, 12.0);
+
+            // Ballistic vertical launch: apex at travel_time / 2, back to
+            // spawn height at travel_time, so a long throw arcs high and a
+            // short one barely lifts off — the loft the core's model
+            // attributes to plume convection (`H ~ I^(2/3)`) made visible.
+            const GRAVITY: f32 = 9.0;
+            let v_y0 = 0.5 * GRAVITY * travel_time;
             view.embers.push(Particle {
                 pos: Vec3::new(p.x, ground + 3.0, -p.y),
-                vel: Vec3::new(angle.cos() * 2.0, 5.0 + (fli / 700.0).min(16.0), angle.sin() * 2.0)
-                    + drift * 0.5,
+                vel: launch_dir * (distance / travel_time) + Vec3::Y * v_y0,
                 age: 0.0,
-                life: 4.0 + phase * 7.0,
+                life: travel_time,
                 size: 1.6 + phase * 1.6,
                 phase,
+                flare: false,
             });
         }
     }

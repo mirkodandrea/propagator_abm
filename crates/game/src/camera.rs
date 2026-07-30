@@ -1,7 +1,7 @@
 //! Orbit camera for a commander's view: left-drag orbits, right-drag pans,
 //! scroll zooms. Ported in spirit from the igad-to-rust camera.
 
-use bevy::input::mouse::{MouseMotion, MouseWheel};
+use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 
 #[derive(Component)]
@@ -27,6 +27,7 @@ impl Default for OrbitCamera {
 pub fn controls(
     focus: Res<crate::ui::UiFocus>,
     tool: Res<crate::ignition_edit::IgnitionTool>,
+    order: Res<crate::command::OrderTool>,
     mut motion: EventReader<MouseMotion>,
     mut wheel: EventReader<MouseWheel>,
     buttons: Res<ButtonInput<MouseButton>>,
@@ -51,15 +52,23 @@ pub fn controls(
     for ev in motion.read() {
         drag += ev.delta;
     }
+    // Trackpads report pixel deltas (tens of units per event) while wheel
+    // clicks report line deltas (~1 per notch); treating them the same made
+    // trackpad scrolling wildly oversensitive. Normalise both to "notches".
     let mut scroll = 0.0;
     for ev in wheel.read() {
-        scroll += ev.y;
+        scroll += match ev.unit {
+            MouseScrollUnit::Line => ev.y,
+            MouseScrollUnit::Pixel => ev.y / 50.0,
+        };
     }
+    let scroll = scroll.clamp(-3.0, 3.0);
 
-    // While the ignition tool is armed, left-drag belongs to it: orbiting on
-    // the same button would move the ground out from under the click. Pan,
-    // zoom and the keyboard all keep working, so the view is never stuck.
-    let orbit_button = tool.mode != crate::ignition_edit::EditMode::Place;
+    // While the ignition tool or a suppression order is armed, left-drag
+    // belongs to it: orbiting on the same button would move the ground out from
+    // under the click. Pan, zoom and the keyboard all keep working, so the view
+    // is never stuck.
+    let orbit_button = tool.mode != crate::ignition_edit::EditMode::Place && !order.is_armed();
 
     if orbit_button && buttons.pressed(MouseButton::Left) && !keys.pressed(KeyCode::ShiftLeft)
     {
@@ -102,7 +111,7 @@ pub fn controls(
     }
 
     if scroll != 0.0 {
-        orbit.distance = (orbit.distance * (1.0 - scroll * 0.12)).clamp(60.0, 14000.0);
+        orbit.distance = (orbit.distance * (1.0 - scroll * 0.08)).clamp(60.0, 14000.0);
     }
 
     let dir = Vec3::new(

@@ -25,7 +25,9 @@ use crate::frame;
 use crate::sim::Sim;
 
 /// How far above life size people and cars are drawn. See the module note.
-const FIGURE_SCALE: f32 = 3.0;
+/// `pub(crate)` so [`crate::inspect`] can pick at the same height these are
+/// actually drawn at, rather than duplicating the constant and drifting.
+pub(crate) const FIGURE_SCALE: f32 = 3.0;
 
 #[derive(Component)]
 pub struct PersonView {

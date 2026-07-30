@@ -206,7 +206,61 @@ z-fighting is rendered perfectly and seen never. The ignition rings sit at
 +20 m, next to the household beacons (+22 m) and refuge markers (+30 m). A
 "correct" overlay that nobody can see looks exactly like a broken one.
 
-**14. A restart has to clear the *latched* view state, and only that.** Almost
+**14. `vegetation_changes` is sparse *by NaN*, and getting that wrong is
+silent.** The core writes every **non-NaN** cell of that grid into the fuel map.
+The first version of `flush_interventions` built it with `Grid2::filled(rows,
+cols, 0.0)` and wrote the line into it, which reclassified the entire 512×512
+window as non-vegetated — so *any* intervention stopped the fire everywhere at
+once. It survived review because the only test asserted the fire got smaller,
+which it certainly did. Regression: `a_fireline_is_local`.
+
+**15. `additional_moisture` is percentage points, and a litre is worth ~30 of
+them.** The core takes the field in percent, accumulates it, decays it 1% per
+minute, and stops spread past its 30-point moisture of extinction. The original
+`1 mm ≈ 1 point` guess made a full Canadair load worth about half a percent —
+aircraft that changed nothing. Fine fuel load is ~1 kg/m² and moisture is water
+mass over dry fuel mass, so with ~⅓ of a drop reaching the fine fuel, 1 L/m² is
+~30 points (`MOISTURE_POINTS_PER_LITRE`). Measured on the shipped scenario over
+2 h: a 60 m cut line 300 m ahead of the front saves 40% of the area, a light
+drop (0.56 L/m², +17 pts) 8%, a saturating one (+42 pts) 34%. Water buys time,
+cut fuel holds ground — which is the operationally correct answer, and it is
+what makes both unit types worth having.
+
+**16. Suppression works on the fuel ahead of the front, never on the flames.**
+The kernel never un-lights a cell — burn-out is `fire`'s own ageing layer — so
+wetting the burning edge does exactly nothing. Every unit targets
+`FireSim::is_suppressible` (burnable, unburnt, not already cut). This is the same
+class of always-negative as houses never burning: the intuitive action reads as
+fighting the fire and is measurably worthless.
+
+**17. The nearest drivable node is usually the wrong one.** OSM tags plenty of
+inland farm track as drivable, and those stubs connect to nothing, so
+`net.nearest(p, true)` for a point up in the macchia routinely returns an island.
+A* then explores the whole component and fails, which is how the first engine
+dispatch left every engine parked at staging with no error anywhere. Road
+components are now labelled once at build (`RoadNetwork::component`) and units
+ask `nearest_reachable`, which is O(1) and means "drive as close as the road
+network gets" — the hose then bridges the rest, or the note says it cannot.
+
+**18. An A* per sub-step is not free, and "route is empty" is not "needs a
+route".** A unit that has arrived has an empty route for the rest of the
+incident. Re-planning on that condition ran a 61 k-node search per unit per
+4 s sub-step and took the model from ~1 ms to minutes per test. The re-plan
+trigger is the *target* moving or `REROUTE_S` elapsing.
+
+**19. Closing the last metres by fractions never terminates.** The crew walk-in
+was `while on_foot > 0.0 { f = on_foot/d; move f; on_foot -= d*f }`, which in f32
+leaves a rounding residue every iteration and spins forever — a hang, in a model
+whose tests otherwise finish in a second. One straight move per sub-step covers
+at most 4.4 m and needs no loop at all.
+
+**20. "Attack the head of the fire" puts the click *on* a burning cell.** Both
+the crew's line alignment and the drop run are derived from the direction of the
+nearest active cell, which degenerates to a zero vector in exactly the most
+common case. Unguarded, every crew reported "that line is too short to cut" and
+did nothing — visible only in a screenshot, because nothing errored.
+
+**21. A restart has to clear the *latched* view state, and only that.** Almost
 every view here is recomputed from `Sim` each frame and needs no help — the
 `generation` bump does it, which is why that counter is monotonic across
 restarts rather than reset. The exceptions are the things that deliberately
@@ -275,8 +329,38 @@ A representative run — general order at T+5 min, 2 h incident:
 120 min     3     0       1   272      49       0     0
 ```
 
+**Suppression** (`crates/abm/src/suppression.rs`, `crates/game/src/command.rs`,
+`units.rs`): crews, engines and aircraft as agents, and the commander's second
+lever. Three kinds, deliberately not interchangeable — and the three constraints
+below are the whole game:
+
+| | Moves on | Acts by | Limited by |
+|---|---|---|---|
+| **Hand crew** ×3 (`Squadra A–C`) | roads, tracks, then on foot | cutting line — permanent | 120 m/h in macchia: slower than the fire |
+| **Engine** ×3 (`Autobotte 1–3`) | drivable roads only | water | 2,500 L (6 min of pumping), 60 m of hose |
+| **Air tanker** ×2 (`Canadair 1–2`) | straight lines | 6,137 L a load | arriving at all: 25 min after you ask |
+
+Air support has to be **requested** and can be **briefed while inbound**, so it
+goes to work the moment it is on station. Every refusal is a sentence in the
+panel, not a silent no-op: "no road within hose reach of there", "an engine
+cannot cut line — send a hand crew", "pulled back: not survivable here". An
+engine sent past the end of the tarmac works the roadside where it stopped and
+says so, rather than refusing. Safety overrides orders: a unit ordered into
+lethal threat withdraws (`WORK_LIMIT` = 0.35, below the civilians' 0.55 — they
+disengage while they still can), though it can still be burnt over if the fire
+comes to it.
+
 Interventions go through the core's own boundary conditions rather than being
 bolted on: `Fireline` → `vegetation_changes`, `Water` → `additional_moisture`.
+Both are calibrated and measured — see findings 14–16 — and the model rewards
+flying the aircraft properly rather than parking them:
+
+```
+2 h, seed 42, tramontana 35 km/h, 6% moisture
+  no suppression               49.0 ha
+  everything at one point      45.4 ha   (487 m line, 648 kL)
+  aircraft re-tasked every 5 min  38.7 ha   (491 m line, 648 kL)
+```
 
 **The shipped scenario** (seed 42, tramontana 35 km/h from N, 6% moisture,
 ignition at cell (153, 246), r=250 m):
@@ -288,11 +372,12 @@ ignition at cell (153, 246), r=250 m):
  120 min   49.0 ha   front 200   FLI 66,596        threatened 137
 ```
 
-**Not built yet:** crews and engines as entities (interventions exist in
-`fire`, nobody drives them). No click-to-inspect — though `pick::cursor_ground`
-is now the ray it needs, and it hits the same 5 m field everything is placed
-on. No debrief. No wasm. No reunification behaviour — people who are out do not
-go home for family.
+**Not built yet:** no debrief. No wasm. No reunification behaviour — people who
+are out do not go home for family. No dozers (the only line-cutting resource is a
+hand crew, which is why line production is the binding constraint). Units are
+selected from the Resources panel, not by clicking them on the map — the
+screen-space picker in `inspect` would do it, but three tools already contend for
+left-click and a fourth needs a rule, not a patch.
 
 ### Commands
 
@@ -300,6 +385,7 @@ go home for family.
 cargo run --release -p game              # play
 SPOTORNO_AUTOPLAY=1 cargo run --release -p game   # start running immediately
 SPOTORNO_ORDER_AT=600 cargo run --release -p game  # auto-order evacuation at T+10 min
+SPOTORNO_ATTACK_AT=300 cargo run --release -p game # commit every unit to the head at T+5 min
 cargo test --release                     # everything, ~4 s
 cargo test -p abm --release -- --ignored --nocapture     # evacuation timeline + routing cost
 cargo test -p fire --release -- --ignored --nocapture    # slow calibration sweeps
@@ -321,9 +407,17 @@ Controls: `space` play/pause · `[` `]` speed · `1`–`4` fire layer · `e` gen
 evacuation order · `i` arm the ignition tool (then left-click the map) · `esc`
 disarm · `r` restart · drag orbit · right-drag pan · scroll zoom.
 
-While the ignition tool is armed, left-click places a fire and left-drag no
-longer orbits — right-drag pan, scroll and WASD all still work, so the view is
-never stuck.
+Suppression: `tab` next unit · `a` attack here · `l` cut line (two clicks) ·
+`d` drop here · `x` stand down · `c` request air support. Units are selected in
+the **Resources** panel or with `tab`; the order is then placed by clicking the
+ground.
+
+**Three tools contend for left-click** — ignition placement, agent inspection,
+and suppression orders — and the invariant is that at most one is armed. Arming
+either tool disarms the other, `inspect::pick_click` stands down while either is
+armed, and `esc` returns to plain inspect-and-orbit. While a tool is armed
+left-drag no longer orbits; right-drag pan, scroll and WASD always work, so the
+view is never stuck.
 
 ---
 
@@ -367,3 +461,18 @@ never stuck.
 - The 6.4 ms routing refresh lands in a single frame, so at 512x there is a
   visible hitch once a simulated minute. Spreading it over frames or solving on
   a task pool is the fix if it starts to matter.
+- Suppression units re-plan with an A* each, throttled to once a simulated
+  minute. Eight units is nothing, but the throttle is the only thing keeping it
+  nothing, and a larger roster would want the same multi-source treatment the
+  civilians get.
+- Hand crews are almost decorative at 120 m/h: 240 m of line in a two-hour
+  incident, against a fire whose flanks spread 500 m each way. That is the real
+  published rate and the honest answer, but it means the crews' role is holding a
+  short piece of *existing* break rather than cutting new line. Worth measuring
+  whether tasking them onto road-adjacent alignments (widening what is already
+  there) makes them matter.
+- Nothing models crew fatigue, shift length, or the water actually running out
+  at the hydrant. Engines can shuttle indefinitely.
+- The engine's four-cell work footprint is what makes its tank matter (see
+  `reachable_targets`), but it is a tuning constant chosen to put one tank just
+  past moisture of extinction. It has not been swept.

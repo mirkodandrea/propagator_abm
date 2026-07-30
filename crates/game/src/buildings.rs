@@ -106,8 +106,13 @@ pub fn spawn(
 
     let material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
-        perceptual_roughness: 0.85,
+        perceptual_roughness: 0.75,
         metallic: 0.0,
+        // Sunbaked lime-washed plaster and glazed terracotta both carry a
+        // faint sheen a matte material (the terrain's own 0.12) does not —
+        // enough to pick out a highlight along a wall at low sun, not enough
+        // to look wet.
+        reflectance: 0.35,
         ..default()
     });
 
@@ -560,6 +565,28 @@ pub fn reset(
         if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, chunk.base.clone());
         }
+    }
+}
+
+impl Buildings {
+    /// Damage state of the structure a household lives in, for the inspector.
+    /// `None` for a household whose building was too small or degenerate to
+    /// draw (`emit_building` returned false for it).
+    pub fn status_of(&self, household_id: usize) -> Option<&'static str> {
+        let id = household_id as u32;
+        for chunk in &self.chunks {
+            for s in &chunk.structures {
+                if s.households.contains(&id) {
+                    return Some(match s.drawn {
+                        x if x == Damage::Threatened as u8 => "threatened",
+                        x if x == Damage::Alight as u8 => "alight",
+                        x if x == Damage::Destroyed as u8 => "destroyed",
+                        _ => "undamaged",
+                    });
+                }
+            }
+        }
+        None
     }
 }
 

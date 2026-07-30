@@ -27,7 +27,9 @@ pub mod threat;
 pub use exposure::{ExposureField, StructureExposure};
 pub use hazard::HazardField;
 pub use ignition::{plan as plan_ignition, plan_with_standoff, IgnitionPlan};
-pub use intervention::{Intervention, InterventionKind};
+pub use intervention::{
+    cells_along, cells_in_radius, Intervention, InterventionKind,
+};
 pub use threat::ThreatField;
 
 /// Weather driving the fire. Applied as boundary conditions; changing any of
@@ -79,7 +81,25 @@ pub struct FireSim {
     /// Danger to people in the open, sampled anywhere: see [`threat`].
     threat: ThreatField,
     pending: Vec<Intervention>,
+    /// Cells whose fuel has been cleared by a fireline. Kept here as well as
+    /// in the core because the core has no "why" — this is what the renderer
+    /// draws a cut line from, and what a debrief counts.
+    cleared: Vec<bool>,
+    /// Added fuel moisture per cell, percentage points, mirroring the core's
+    /// own accumulate-and-decay. A duplicate of state the core holds privately,
+    /// maintained for exactly one reason: a player who has just spent a
+    /// Canadair load needs to see where the water went, and there is no getter
+    /// for `actions_moisture`.
+    added_moisture: Vec<f32>,
+    /// Litres applied and metres of line cut, for the readout.
+    pub litres_applied: f64,
+    pub line_cells: usize,
 }
+
+/// Decay of added moisture, per minute, matching `ACTIONS_MOISTURE_DECAY` in
+/// the core. Mirrored rather than read because the core does not expose it;
+/// `added_moisture_matches_core_decay` pins the two together.
+const MOISTURE_DECAY_PER_MIN: f32 = 0.01;
 
 /// How long a cell keeps radiating after ignition before it is spent. The core
 /// itself has no notion of burn-out -- once a cell is lit it stays lit -- so
@@ -122,6 +142,10 @@ impl FireSim {
             hazard,
             threat: ThreatField::new(scn.world),
             pending: Vec::new(),
+            cleared: vec![false; n],
+            added_moisture: vec![0.0; n],
+            litres_applied: 0.0,
+            line_cells: 0,
         })
     }
 
@@ -253,6 +277,7 @@ impl FireSim {
         let target = self.time_s + seconds;
         self.sim.step_window(seconds).context("stepping fire core")?;
         self.time_s = target;
+        self.decay_added_moisture(seconds);
 
         let before = self.active.len();
         self.refresh_state()?;
@@ -280,28 +305,46 @@ impl FireSim {
         let (rows, cols) = (self.world.fire_rows, self.world.fire_cols);
         let mut veg_change: Option<Grid2<f64>> = None;
         let mut moisture: Option<Grid2<f32>> = None;
+        let cell_m2 = (self.world.cellsize * self.world.cellsize) as f64;
 
         for action in std::mem::take(&mut self.pending) {
             match action.kind {
                 InterventionKind::Fireline => {
+                    // NaN, not zero. `vegetation_changes` is sparse *by NaN*:
+                    // the core writes every non-NaN cell into the fuel map, so
+                    // a zero-filled grid reclassifies the entire window as
+                    // non-vegetated and stops the fire everywhere. See the note
+                    // in `intervention`.
                     let g = veg_change
-                        .get_or_insert_with(|| Grid2::filled(rows, cols, 0.0));
+                        .get_or_insert_with(|| Grid2::filled(rows, cols, f64::NAN));
                     for c in &action.cells {
-                        // negative = fuel removed; the kernel treats a fully
-                        // cleared cell as non-burnable
-                        g.as_mut_slice()[c.row * cols + c.col] = -1.0;
+                        let i = c.row * cols + c.col;
+                        g.as_mut_slice()[i] = intervention::CLEARED_FUEL_CODE;
+                        if !self.cleared[i] {
+                            self.cleared[i] = true;
+                            self.line_cells += 1;
+                        }
                     }
                 }
                 InterventionKind::Water { litres_per_m2 } => {
                     let g = moisture
                         .get_or_insert_with(|| Grid2::filled(rows, cols, 0.0));
-                    // 1 mm of water over a cell is ~1 percentage point of added
-                    // fuel moisture; the core decays this over time on its own.
-                    let add = (litres_per_m2 * 1.0) as f32;
+                    let add = litres_per_m2 as f32
+                        * intervention::MOISTURE_POINTS_PER_LITRE;
                     for c in &action.cells {
                         let i = c.row * cols + c.col;
-                        g.as_mut_slice()[i] = (g.as_slice()[i] + add).min(60.0);
+                        // Clamped against what the cell has *already* absorbed,
+                        // so repeatedly dumping on a saturated cell reports as
+                        // the waste it is rather than stacking forever.
+                        let headroom =
+                            (intervention::MAX_ADDED_MOISTURE_PTS - self.added_moisture[i])
+                                .max(0.0);
+                        let applied = add.min(headroom);
+                        g.as_mut_slice()[i] += applied;
+                        self.added_moisture[i] += applied;
                     }
+                    self.litres_applied +=
+                        litres_per_m2 * cell_m2 * action.cells.len() as f64;
                 }
             }
         }
@@ -355,6 +398,46 @@ impl FireSim {
             }
         }
         Ok(())
+    }
+
+    /// Mirror of the core's own moisture decay, so the overlay fades at the
+    /// rate the physics does. Exponential in *minutes*, matching the kernel.
+    fn decay_added_moisture(&mut self, seconds: i64) {
+        if seconds <= 0 {
+            return;
+        }
+        let factor =
+            (1.0 - MOISTURE_DECAY_PER_MIN).powf(seconds as f32 / 60.0);
+        for v in &mut self.added_moisture {
+            *v *= factor;
+        }
+    }
+
+    /// Cells whose fuel a fireline has removed, indexed like [`state`].
+    pub fn cleared(&self) -> &[bool] {
+        &self.cleared
+    }
+
+    pub fn is_cleared(&self, c: Cell) -> bool {
+        self.cleared[c.row * self.world.fire_cols + c.col]
+    }
+
+    /// Added fuel moisture per cell, percentage points on top of the weather's.
+    /// Compare against 30, the core's moisture of extinction.
+    pub fn added_moisture(&self) -> &[f32] {
+        &self.added_moisture
+    }
+
+    pub fn added_moisture_at(&self, c: Cell) -> f32 {
+        self.added_moisture[c.row * self.world.fire_cols + c.col]
+    }
+
+    /// Is this cell a sensible target for suppression: burnable fuel that has
+    /// not been lit or cleared yet? The one place the unit model asks, so that
+    /// "useful" means the same thing everywhere.
+    pub fn is_suppressible(&self, c: Cell, scn: &Scenario) -> bool {
+        let i = c.row * self.world.fire_cols + c.col;
+        scn.is_burnable(c) && self.state[i] == CellFire::Unburnt && !self.cleared[i]
     }
 
     /// Arrival times for the whole grid, `i32::MIN` where still unburnt.
