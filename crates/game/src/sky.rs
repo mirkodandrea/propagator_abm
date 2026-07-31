@@ -157,8 +157,8 @@ impl Plugin for SkyPlugin {
         app.init_resource::<DayClock>()
             .init_resource::<SunState>()
             .add_plugins(MaterialPlugin::<SkyMaterial>::default())
-            .add_systems(Startup, spawn_sky)
-            .add_systems(Update, update_sky);
+            .add_systems(OnEnter(crate::AppState::Playing), spawn_sky)
+            .add_systems(Update, update_sky.run_if(bevy::prelude::in_state(crate::AppState::Playing)));
     }
 }
 
