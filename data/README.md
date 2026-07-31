@@ -39,8 +39,15 @@ When you run the game without setting `SPOTORNO_SCENARIO`, you'll see the scenar
 - Lists all scenarios from `scenarios.json`
 - Shows metadata: buildings count, households, people, location
 - Shows grid dimensions
-- Select a scenario and click "Launch" to start the game
+- Dev scenarios marked with 🔧 badge
+- Select a scenario and click "Launch" to load it and start the game
 - Close without selecting to use the default scenario
+- Window title updates to show loaded scenario name
+
+The selector supports:
+- **Interactive selection** (default): pick scenario from list, click Launch
+- **Fast path via env var**: `SPOTORNO_SCENARIO=scenario_id` skips UI, loads directly
+- **Headless/CI**: env var auto-selects scenario, game loads without UI interaction
 
 ---
 
