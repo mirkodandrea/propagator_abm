@@ -21,7 +21,7 @@ use egui_snarl::{
     InPin, InPinId, NodeId, OutPin, OutPinId, Snarl,
 };
 
-use behavior::{registry, Category, NodeSpec, ParamValue, ValueType};
+use behavior::{registry, Category, Domain, NodeSpec, ParamValue, ValueType};
 
 use super::Composer;
 
@@ -72,6 +72,10 @@ fn pin_for(ty: ValueType) -> PinInfo {
 pub struct Viewer<'a> {
     /// Nodes the validator has something to say about, and what.
     pub issues: &'a behavior::Report,
+    /// Which kind of agent the open graph is about. The two add-node menus
+    /// filter on it for the same reason the palette does: a node from the other
+    /// domain cannot be placed, so offering it offers an error.
+    pub domain: Domain,
     /// Filled in by the canvas when the author asks for something the
     /// `Composer` has to act on — snarl owns `&mut Snarl` for the duration of
     /// `show`, so the composer cannot be borrowed at the same time.
@@ -322,7 +326,7 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
         ui.separator();
         for cat in Category::ALL {
             ui.menu_button(cat.label(), |ui| {
-                for spec in registry().in_category(cat) {
+                for spec in registry().in_category_and_domain(cat, self.domain) {
                     if ui.button(spec.name).on_hover_text(spec.doc).clicked() {
                         let id = snarl.insert_node(pos, EditorNode::new(spec.id));
                         self.selected = Some(id);
@@ -363,7 +367,7 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
 
         ui.label(format!("Connect this {} to…", want.label()));
         ui.separator();
-        for spec in registry().all() {
+        for spec in registry().in_domain(self.domain) {
             let ports = if from_output { spec.inputs } else { spec.outputs };
             let Some(port) = ports.iter().position(|p| p.ty == want) else { continue };
             if ui.button(spec.name).on_hover_text(spec.doc).clicked() {
@@ -405,7 +409,8 @@ pub fn canvas(ui: &mut egui::Ui, c: &mut Composer) {
     // The viewer borrows the report, so the projection has to be taken out of
     // the composer before snarl takes `&mut`.
     let report = std::mem::take(&mut c.report);
-    let mut viewer = Viewer { issues: &report, selected: None, added: false };
+    let mut viewer =
+        Viewer { issues: &report, domain: c.domain(), selected: None, added: false };
     let style = super::editor_style();
     c.snarl.show(&mut viewer, &style, "behaviour-canvas", ui);
     let (selected, added) = (viewer.selected, viewer.added);

@@ -123,7 +123,7 @@ pub fn pick_click(
         return;
     }
     let down = tracker.down_at.take();
-    if tool.mode != EditMode::Off || order.is_armed() || ui_focus.0 {
+    if tool.mode != EditMode::Off || order.is_armed() || ui_focus.pointer {
         return;
     }
     let (Some(down), Some(cur), Ok((camera, cam_tf))) =
@@ -338,7 +338,7 @@ pub fn panel(
         selected.0 = Some(t);
     }
     panels.inspector = open;
-    focus.0 |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+    focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
 
 fn title(target: Target) -> String {

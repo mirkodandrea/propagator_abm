@@ -98,7 +98,12 @@ pub fn handle_launch_selection(
     }
 }
 
-/// Show the scenario selector window and handle selection.
+/// The scenario chooser.
+///
+/// Also the screen the game returns to from Scenario ▸ Load scenario…, which is
+/// why it is a `CentralPanel` with no close button rather than a floating
+/// window: closing it mid-game used to mean "launch the default", which is a
+/// destructive answer to an accidental click on a ✕.
 pub fn show_selector_ui(
     mut contexts: EguiContexts,
     mut selector: ResMut<ScenarioSelector>,
@@ -131,53 +136,109 @@ pub fn show_selector_ui(
         .collect();
 
     let default_id = registry.default_id().to_string();
+    let mut launch = false;
 
-    let mut open = true;
-    egui::Window::new("Select Scenario")
-        .open(&mut open)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .show(contexts.ctx_mut(), |ui| {
-            ui.vertical(|ui| {
-                ui.heading("Choose a Scenario");
-                ui.separator();
+    // Not closable: this is a screen, not a dialogue. It is also reachable
+    // again mid-game from Scenario ▸ Load scenario…, so it has to stand on its
+    // own rather than assume it is the first thing the player ever sees.
+    egui::CentralPanel::default().show(contexts.ctx_mut(), |ui| {
+        ui.add_space(ui.available_height() * 0.12);
+        ui.vertical_centered(|ui| {
+            ui.heading("Wildfire incident command");
+            ui.label(
+                egui::RichText::new("Choose a scenario to command")
+                    .weak(),
+            );
+        });
+        ui.add_space(16.0);
 
-                for (id, name, buildings, households, people, location, description, grid_size) in scenarios_data {
-                    let is_selected = selector.selected.as_ref() == Some(&id);
-                    let button_text = format!(
-                        "{}\n{} buildings · {} households · {} people",
-                        name, buildings, households, people
-                    );
+        let width = 560.0f32.min(ui.available_width() - 40.0);
+        ui.vertical_centered(|ui| {
+            ui.allocate_ui(egui::vec2(width, ui.available_height()), |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(ui.available_height() - 70.0)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        for (id, name, buildings, households, people, location, description, grid_size) in scenarios_data {
+                            let is_selected = selector.selected.as_ref() == Some(&id);
+                            let is_test = id.starts_with("test_");
 
-                    if ui.selectable_label(is_selected, button_text).clicked() {
-                        selector.selected = Some(id.clone());
-                    }
+                            // One frame per scenario, so the metadata belongs to
+                            // the card it describes. The old list put the detail
+                            // *below* the row, which meant selecting a different
+                            // scenario reflowed everything under the cursor.
+                            let frame = egui::Frame::group(ui.style())
+                                .fill(if is_selected {
+                                    ui.visuals().selection.bg_fill.gamma_multiply(0.35)
+                                } else {
+                                    ui.visuals().faint_bg_color
+                                })
+                                .stroke(if is_selected {
+                                    egui::Stroke::new(1.5, ui.visuals().selection.stroke.color)
+                                } else {
+                                    ui.visuals().widgets.noninteractive.bg_stroke
+                                });
 
-                    if is_selected {
-                        ui.label(format!("📍 {}", location));
-                        ui.label(description.as_str());
-                        ui.label(format!("Grid: {}×{} cells (20 m)", grid_size[0], grid_size[1]));
+                            let r = frame.show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new(&name).strong().size(15.0));
+                                    if is_test {
+                                        ui.colored_label(egui::Color32::YELLOW, "🔧 DEV");
+                                    }
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            ui.small(format!("📍 {location}"));
+                                        },
+                                    );
+                                });
+                                ui.small(description.as_str());
+                                ui.add_space(2.0);
+                                ui.small(format!(
+                                    "{buildings} buildings · {households} households · \
+                                     {people} people · {}×{} cells @ 20 m",
+                                    grid_size[0], grid_size[1]
+                                ));
+                            });
 
-                        // Show dev badge for test scenarios
-                        if id.starts_with("test_") {
-                            ui.colored_label(egui::Color32::YELLOW, "🔧 DEV SCENARIO");
+                            // The whole card is the hit target, not just its
+                            // title: a click that lands between two words of the
+                            // description and does nothing reads as a broken UI.
+                            let hit = ui.interact(
+                                r.response.rect,
+                                egui::Id::new(("scenario_card", &id)),
+                                egui::Sense::click(),
+                            );
+                            if hit.clicked() {
+                                selector.selected = Some(id.clone());
+                            }
+                            if hit.double_clicked() {
+                                selector.selected = Some(id.clone());
+                                launch = true;
+                            }
+                            ui.add_space(6.0);
                         }
-                    }
-                }
+                    });
 
-                ui.separator();
-
-                // Confirm button
+                ui.add_space(10.0);
                 let has_selection = selector.selected.is_some();
-                if ui.add_enabled(has_selection, egui::Button::new("Launch")).clicked() {
-                    selector.confirmed = true;
+                if ui
+                    .add_enabled(
+                        has_selection,
+                        egui::Button::new(egui::RichText::new("▶  Launch").size(15.0))
+                            .min_size(egui::vec2(ui.available_width(), 34.0)),
+                    )
+                    .on_hover_text("Or double-click a scenario.")
+                    .clicked()
+                {
+                    launch = true;
                 }
             });
         });
+    });
 
-    if !open {
-        // User closed the window without selecting - use default
+    if launch {
         selector.confirmed = true;
         if selector.selected.is_none() {
             selector.selected = Some(default_id);

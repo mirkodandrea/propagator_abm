@@ -1,0 +1,32 @@
+{
+  "id": "cautious-engines",
+  "name": "Cautious engines",
+  "description": "Engines only. Pulls back earlier, breaks off for water with a third of the tank left rather than running it dry, and leaves on accumulated heat as well as on the threat in front of it. The comparison worth running: it delivers less water per unit time and loses fewer engines, and which of those matters is the question.",
+  "author": "shipped",
+  "tags": [
+    "cautious",
+    "engines"
+  ],
+  "graph": "default-unit-policy",
+  "overrides": {
+    "0.engine_limit": {
+      "t": "number",
+      "v": 0.25
+    },
+    "0.heat_limit": {
+      "t": "number",
+      "v": 0.4
+    },
+    "1.refill_below": {
+      "t": "number",
+      "v": 0.33
+    }
+  },
+  "traits": {},
+  "capabilities": {},
+  "share": 0.0,
+  "unit_kinds": [
+    "engine"
+  ],
+  "enabled": false
+}

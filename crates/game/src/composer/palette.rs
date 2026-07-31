@@ -6,6 +6,12 @@
 //! comparisons, which is what a scientist actually types. The list is built
 //! from the registry every frame, which means a node added anywhere in the
 //! codebase is here with no further work.
+//!
+//! Two things are filtered before the search ever runs. The palette shows one
+//! [`Domain`] at a time, because a node from the other one cannot be placed and
+//! offering it would be offering an error. And **Blocks** is first and open by
+//! default: it is the level a behaviour should be authored at, and the
+//! primitives below it are there for when a block's numbers are not enough.
 
 use bevy_egui::egui;
 
@@ -14,6 +20,7 @@ use behavior::{registry, Category};
 use super::{viewer::EditorNode, Composer};
 
 pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
+    let domain = c.domain();
     ui.heading("Palette");
     ui.horizontal(|ui| {
         ui.label("🔍");
@@ -25,10 +32,10 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
     });
     let query = c.palette_query.to_lowercase();
 
-    let total = registry().len();
-    let matching = registry().all().filter(|s| s.matches(&query)).count();
+    let total = registry().in_domain(domain).count();
+    let matching = registry().in_domain(domain).filter(|s| s.matches(&query)).count();
     ui.small(if query.is_empty() {
-        format!("{total} nodes")
+        format!("{total} nodes for {}", domain.agent_label())
     } else {
         format!("{matching} of {total}")
     });
@@ -36,15 +43,21 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         for cat in Category::ALL {
-            let hits: Vec<_> =
-                registry().in_category(cat).filter(|s| s.matches(&query)).collect();
+            let hits: Vec<_> = registry()
+                .in_category_and_domain(cat, domain)
+                .filter(|s| s.matches(&query))
+                .collect();
             if hits.is_empty() {
                 continue;
             }
-            // Searching opens every group that has a hit; browsing keeps them
-            // collapsed, because the observation list alone is two dozen long.
+            // Searching opens every group that has a hit. Browsing opens the
+            // blocks and the sinks and leaves the rest shut: the observation
+            // list alone is two dozen long, and a scientist who needs it will
+            // search.
+            let open = !query.is_empty()
+                || matches!(cat, Category::Block | Category::Action | Category::Output);
             egui::CollapsingHeader::new(format!("{} ({})", cat.label(), hits.len()))
-                .default_open(!query.is_empty() || cat != Category::Observation)
+                .default_open(open)
                 .show(ui, |ui| {
                     for spec in hits {
                         let r = ui.add(

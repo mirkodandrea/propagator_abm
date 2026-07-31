@@ -909,7 +909,7 @@ pub fn hover(
 ) {
     let armed = tool.mode != crate::ignition_edit::EditMode::Off || order.is_armed();
     let mut new_hover = None;
-    if !ui_focus.0 && !armed {
+    if !ui_focus.pointer && !armed {
         if let (Ok(window), Ok((camera, cam_tf))) = (windows.get_single(), camera.get_single()) {
             if let Some(cursor) = window.cursor_position() {
                 let mut best: Option<(f32, usize)> = None;

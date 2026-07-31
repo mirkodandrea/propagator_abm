@@ -157,7 +157,7 @@ pub fn hover(
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     camera: Query<(&Camera, &GlobalTransform), With<OrbitCamera>>,
 ) {
-    if tool.mode != EditMode::Place || ui_focus.0 {
+    if tool.mode != EditMode::Place || ui_focus.pointer {
         if tool.hover.is_some() {
             tool.hover = None;
         }

@@ -1,11 +1,16 @@
-//! Running an authored behaviour instead of the hand-written decision layer.
+//! Running an authored behaviour instead of the hand-written decision layers.
 //!
-//! The composer replaces exactly one thing: the block in [`Abm::decide`] that
-//! decides whether a household departs, defends or shelters. Perception,
-//! preparation, movement, congestion, rerouting and the lethality model are
-//! untouched — an authored graph changes *when* people act, not what acting
-//! costs them. That boundary is the reason a graph a scientist wrote can be
-//! run in a real scenario without review.
+//! Two of them, one per [`behavior::Domain`], and each replaces exactly one
+//! block:
+//!
+//! | | Replaces | Leaves alone |
+//! |---|---|---|
+//! | Households | the departure decision in [`Abm::decide`](crate::Abm) | perception, milling, movement, congestion, lethality |
+//! | Suppression units | the self-preservation and resupply policy in [`Suppression::step`](crate::Suppression) | where units are sent, how fast they move, what their work does to the fire |
+//!
+//! An authored graph changes *when* an agent acts, not what acting costs it.
+//! That boundary is the reason a graph a scientist wrote can be run in a real
+//! scenario without review, and it is the same boundary in both domains.
 //!
 //! Three properties are preserved deliberately, because they are what the rest
 //! of the model's tests rest on:
@@ -26,8 +31,12 @@
 use std::collections::BTreeMap;
 
 pub use behavior::subtype::{Capability, TraitKey};
-use behavior::{ActionKind, CompiledGraph, Decision, Library, Observation, Scratch};
+use behavior::{
+    ActionKind, CompiledGraph, Decision, Library, Observation, Scratch, UnitKindKey,
+};
 use scenario::population::Intent;
+
+use crate::suppression::UnitKind;
 
 /// One compiled subtype, ready to run.
 pub struct SubtypeRuntime {
@@ -199,10 +208,165 @@ pub enum Outcome {
 
 pub fn outcome_of(a: ActionKind) -> Outcome {
     match a {
-        ActionKind::Stay => Outcome::Hold,
         ActionKind::Prepare => Outcome::Prepare,
         ActionKind::EvacuateNow => Outcome::Go,
         ActionKind::Defend => Outcome::Defend,
         ActionKind::Shelter => Outcome::Shelter,
+        // `Stay`, plus the suppression half of the enum, which a validated
+        // household graph cannot produce.
+        _ => Outcome::Hold,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Suppression units
+// ---------------------------------------------------------------------------
+
+/// What the suppression layer does with each unit action.
+///
+/// Written out here rather than inline in `step` for the same reason
+/// [`Outcome`] is: it is the whole semantics of an authored unit policy, and it
+/// should be readable in one place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnitOutcome {
+    /// Get on with the order. The overwhelmingly common answer.
+    Carry,
+    /// Break off and pull back to staging. The safety action.
+    Withdraw,
+    /// Break off for water and resume the same order afterwards.
+    Refill,
+    /// Stop where you are and stand by.
+    Hold,
+    /// Drive back to staging and await orders.
+    Return,
+}
+
+pub fn unit_outcome_of(a: ActionKind) -> UnitOutcome {
+    match a {
+        ActionKind::Withdraw => UnitOutcome::Withdraw,
+        ActionKind::Refill => UnitOutcome::Refill,
+        ActionKind::HoldPosition => UnitOutcome::Hold,
+        ActionKind::ReturnToBase => UnitOutcome::Return,
+        // `Continue`, plus the household half of the enum, which a validated
+        // unit graph cannot produce.
+        _ => UnitOutcome::Carry,
+    }
+}
+
+/// `suppression`'s unit kind, as the composer's.
+///
+/// The two enums are deliberately separate — `behavior` is a leaf crate that
+/// knows nothing about the road network or the fire model — and this is the one
+/// place they meet, exactly as [`intent_of`] is for households.
+pub fn unit_kind_of(k: UnitKind) -> UnitKindKey {
+    match k {
+        UnitKind::HandCrew => UnitKindKey::HandCrew,
+        UnitKind::Engine => UnitKindKey::Engine,
+        UnitKind::AirTanker => UnitKindKey::AirTanker,
+    }
+}
+
+/// One compiled unit profile, ready to run.
+pub struct UnitPolicy {
+    pub id: String,
+    pub name: String,
+    /// Which kinds this profile governs. Empty means every kind.
+    pub kinds: Vec<UnitKindKey>,
+    graph: CompiledGraph,
+    scratch: Scratch,
+}
+
+/// Everything the suppression model needs to run an authored policy.
+///
+/// The shape differs from [`BehaviorRuntime`] in one way, and it is the
+/// interesting difference: households are assigned a profile by a hash of their
+/// id because there are 750 anonymous families, while a unit takes the first
+/// profile that names its kind because there are eight named individuals. A
+/// hash would make "why did Autobotte 2 do that" unanswerable from the files.
+pub struct UnitRuntime {
+    policies: Vec<UnitPolicy>,
+}
+
+impl UnitRuntime {
+    /// Compile every enabled suppression profile.
+    ///
+    /// Fails as a whole rather than dropping one that will not compile, for the
+    /// same reason [`BehaviorRuntime::build`] does: a run with two of three
+    /// policies in it is a different experiment.
+    pub fn build(lib: &Library) -> Result<Option<UnitRuntime>, RuntimeErrors> {
+        let ids = lib.unit_assignment();
+        if ids.is_empty() {
+            return Ok(None);
+        }
+
+        let mut policies = Vec::with_capacity(ids.len());
+        let mut errors = Vec::new();
+        for id in ids {
+            let Some(s) = lib.subtypes.get(&id) else { continue };
+            match lib.compile(&id) {
+                Ok(graph) => {
+                    let scratch = Scratch::new(&graph);
+                    policies.push(UnitPolicy {
+                        id: id.clone(),
+                        name: s.name.clone(),
+                        kinds: s.unit_kinds.clone(),
+                        graph,
+                        scratch,
+                    });
+                }
+                Err(e) => errors.push(e.to_string()),
+            }
+        }
+
+        if !errors.is_empty() {
+            return Err(RuntimeErrors(errors));
+        }
+        if policies.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(UnitRuntime { policies }))
+    }
+
+    pub fn len(&self) -> usize {
+        self.policies.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.policies.is_empty()
+    }
+
+    pub fn policy(&self, i: usize) -> Option<&UnitPolicy> {
+        self.policies.get(i)
+    }
+
+    pub fn names(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.policies.iter().map(|p| (p.id.as_str(), p.name.as_str()))
+    }
+
+    /// Which policy governs a unit of `kind`: the first that names it, or the
+    /// first that names none. `None` means this kind is not covered, and the
+    /// caller runs the hand-written policy for it — a partial library governs
+    /// the units it mentions and leaves the rest alone.
+    pub fn assign(&self, kind: UnitKindKey) -> Option<usize> {
+        self.policies
+            .iter()
+            .position(|p| p.kinds.is_empty() || p.kinds.contains(&kind))
+    }
+
+    /// Evaluate one unit's policy.
+    pub fn decide(&mut self, policy: usize, obs: &Observation) -> Decision {
+        let Some(p) = self.policies.get_mut(policy) else { return Decision::default() };
+        p.graph.eval_with(obs, &mut p.scratch)
+    }
+
+    /// Evaluate with a full trace, for the unit inspector. Slower, and only ever
+    /// called for the one unit the player has selected.
+    pub fn explain(
+        &self,
+        policy: usize,
+        obs: &Observation,
+    ) -> Option<(Decision, behavior::Trace)> {
+        let p = self.policies.get(policy)?;
+        Some(p.graph.eval_traced(obs))
     }
 }

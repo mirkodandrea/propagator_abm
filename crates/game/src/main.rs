@@ -27,6 +27,7 @@ mod fire_view;
 mod frame;
 mod ignition_edit;
 mod inspect;
+mod menu;
 mod people;
 mod pick;
 mod roads;
@@ -45,7 +46,6 @@ mod vegetation;
 use bevy::core_pipeline::bloom::BloomSettings;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::pbr::{CascadeShadowConfigBuilder, FogSettings};
-use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 
 use crate::camera::OrbitCamera;
@@ -103,20 +103,22 @@ fn main() -> anyhow::Result<()> {
     .init_resource::<ui::PanelState>()
     .add_event::<sim::SimRestarted>()
     .insert_resource(data_path_resource)
-    .add_systems(
-        Startup,
-        (
-            scenario_selector::init_selector,
-            fire_view::setup,
-            ignition_edit::setup,
-            inspect::setup,
-            command::setup,
-        ),
-    )
+    .add_systems(Startup, scenario_selector::init_selector)
+    // Everything that spawns a scene entity or caches a per-scenario handle
+    // builds on entry and is torn down on exit, so "Load scenario…" is a
+    // genuine round trip rather than a second scene laid on top of the first.
+    // The four that used to sit in `Startup` (the fire overlay, the ignition
+    // hover ring, the selection ring, the order cursor's materials) are here
+    // for that reason: `teardown_scene` cannot leave behind a marker whose
+    // spawner will never run again.
     .add_systems(
         OnEnter(AppState::Playing),
         (
             setup_scene,
+            fire_view::setup,
+            ignition_edit::setup,
+            inspect::setup,
+            command::setup,
             vegetation::spawn,
             buildings::spawn,
             agents::spawn,
@@ -125,12 +127,13 @@ fn main() -> anyhow::Result<()> {
             units::setup,
         ),
     )
-    // Ordering that matters, and only that: the panels decide whether the
-    // pointer belongs to the UI, so they run before anything that reads the
-    // mouse; the docked panels have to all land before `sync_viewport` reads
-    // what space is left for the 3D camera; and the restart resets have to
-    // land before the views that would otherwise read the stale state they
-    // are clearing.
+    .add_systems(OnExit(AppState::Playing), teardown_scene)
+    // Ordering that matters, and only that: `menu::menubar` decides who owns
+    // the pointer and the keyboard this frame, so it runs before every other
+    // panel and before every shortcut system; the docked panels have to all
+    // land before `sync_viewport` reads what space is left for the 3D camera;
+    // and the restart resets have to land before the views that would
+    // otherwise read the stale state they are clearing.
     .add_systems(
         Update,
         (
@@ -139,12 +142,10 @@ fn main() -> anyhow::Result<()> {
                 .before(scenario_selector::show_selector_ui),
             scenario_selector::show_selector_ui,
             (
+                menu::menubar,
                 ui::panel,
-                ui::dev_hud,
                 ui::help_panel,
-                ui::wildfire_panel,
-                browser::panel,
-                command::panel,
+                ui::dock,
                 inspect::panel,
                 ui::sync_viewport,
             )
@@ -168,13 +169,18 @@ fn main() -> anyhow::Result<()> {
     .add_systems(
         Update,
         (
+            // Every shortcut system reads `UiFocus::keyboard`, which the menu
+            // bar wrote this frame — so they must all run after it.
             (
                 controls,
                 browser::toggle,
                 fire_view::layer_controls,
                 command::controls.before(command::hover),
-                sim::step_fire.after(ui::wildfire_panel),
             )
+                .after(menu::menubar)
+                .run_if(in_state(AppState::Playing)),
+            sim::step_fire
+                .after(ui::dock)
                 .run_if(in_state(AppState::Playing)),
             (
                 fire_view::reset,
@@ -185,7 +191,7 @@ fn main() -> anyhow::Result<()> {
                 command::reset,
                 camera::reset,
             )
-                .after(ui::wildfire_panel)
+                .after(ui::dock)
                 .run_if(in_state(AppState::Playing)),
             (
                 fire_view::update_overlay,
@@ -366,13 +372,33 @@ fn setup_scene(
     ));
 }
 
+/// The global shortcuts: transport, the general evacuation order, the ignition
+/// tool, restart, help.
+///
+/// Gated on [`ui::UiFocus::typing`] like every other shortcut system. Without
+/// it, `e` typed into any text field in the application orders the town to
+/// evacuate — which is not a hypothetical, since the Entities tab's search box
+/// and the composer's node fields are both plain egui text edits.
 fn controls(
     keys: Res<ButtonInput<KeyCode>>,
+    focus: Res<ui::UiFocus>,
     mut sim: ResMut<Sim>,
     mut tool: ResMut<ignition_edit::IgnitionTool>,
     mut cam_mode: ResMut<camera::CameraMode>,
+    mut help: ResMut<ui::HelpUi>,
+    mut panels: ResMut<ui::PanelState>,
     mut restarted: EventWriter<sim::SimRestarted>,
 ) {
+    // Escape is the exception: it is what gets you *out* of a state, so it has
+    // to work even while a widget has focus.
+    if keys.just_pressed(KeyCode::Escape) {
+        tool.mode = ignition_edit::EditMode::Off;
+        *cam_mode = camera::CameraMode::Free;
+    }
+    if focus.typing() {
+        return;
+    }
+
     if keys.just_pressed(KeyCode::Space) {
         sim.playing = !sim.playing;
     }
@@ -391,13 +417,12 @@ fn controls(
             ignition_edit::EditMode::Off => ignition_edit::EditMode::Place,
             ignition_edit::EditMode::Place => ignition_edit::EditMode::Off,
         };
+        if tool.mode == ignition_edit::EditMode::Place {
+            panels.focus_tab(ui::DockTab::Fire);
+        }
     }
-    // Escape leaves placing mode, which is the reflex for it, without also
-    // being a second binding for anything else. It also drops out of a
-    // follow or first-person ride back to the free orbit camera.
-    if keys.just_pressed(KeyCode::Escape) {
-        tool.mode = ignition_edit::EditMode::Off;
-        *cam_mode = camera::CameraMode::Free;
+    if keys.just_pressed(KeyCode::F1) {
+        help.open = !help.open;
     }
     if keys.just_pressed(KeyCode::KeyR) {
         match sim.restart() {
@@ -407,4 +432,26 @@ fn controls(
             Err(e) => error!("restart failed: {e:#}"),
         }
     }
+}
+
+/// Empty the world on the way back to the scenario selector.
+///
+/// Everything the scene is made of — terrain chunks, roads, buildings, the
+/// vegetation, the sky and sea, the figures and vehicles, the camera and the
+/// sun, and the map symbols — is a root entity with a `Transform`, and nothing
+/// else in the app is. So the query *is* the definition of "the scene", which
+/// is what keeps this from being a list that silently goes stale every time
+/// something new is spawned. Bevy's own bookkeeping entities (the window, and
+/// what `bevy_egui` hangs off it) carry no `Transform` and are untouched.
+///
+/// Per-scenario resources are not cleared here: each one is re-inserted by its
+/// `OnEnter(Playing)` setup, which is the only place that knows what the new
+/// scenario's version of it should be.
+fn teardown_scene(mut commands: Commands, roots: Query<Entity, (With<Transform>, Without<Parent>)>) {
+    let mut n = 0;
+    for e in &roots {
+        commands.entity(e).despawn_recursive();
+        n += 1;
+    }
+    info!("scene torn down: {n} root entities");
 }

@@ -9,7 +9,7 @@
 //! ever unreachable and picking either way opens the same Inspector.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::egui;
 
 use crate::camera::OrbitCamera;
 use crate::frame;
@@ -23,12 +23,6 @@ const ZOOM_DISTANCE_M: f32 = 220.0;
 
 #[derive(Resource)]
 pub struct BrowserUi {
-    pub open: bool,
-    /// Collapsed to a thin strip rather than closed outright — see the other
-    /// docked panels' chevron in `crate::ui::PanelState`. Kept as its own
-    /// field rather than folded into `PanelState` because this panel's other
-    /// toggle (`open`, closed with "✕" or `b`) already lives here.
-    pub collapsed: bool,
     pub search: String,
     pub show_households: bool,
     /// Off by default: 1,577 people is most of the roster, and the household
@@ -41,8 +35,6 @@ pub struct BrowserUi {
 impl Default for BrowserUi {
     fn default() -> Self {
         Self {
-            open: true,
-            collapsed: false,
             search: String::new(),
             show_households: true,
             show_people: false,
@@ -52,109 +44,86 @@ impl Default for BrowserUi {
     }
 }
 
-pub fn toggle(keys: Res<ButtonInput<KeyCode>>, mut ui: ResMut<BrowserUi>) {
+/// `B` brings the Entities tab forward. It used to *also* open the behaviour
+/// composer, which shared the binding — both fired, so the composer opened over
+/// a browser that had just changed state underneath it. The composer is now `G`.
+pub fn toggle(
+    keys: Res<ButtonInput<KeyCode>>,
+    focus: Res<crate::ui::UiFocus>,
+    mut panels: ResMut<crate::ui::PanelState>,
+) {
+    if focus.typing() {
+        return;
+    }
     if keys.just_pressed(KeyCode::KeyB) {
-        ui.open = !ui.open;
+        if panels.tab == crate::ui::DockTab::Entities && panels.dock {
+            panels.dock = false;
+        } else {
+            panels.focus_tab(crate::ui::DockTab::Entities);
+        }
     }
 }
 
-/// The panel itself: filters, a virtualised list (`show_rows`, so a roster of
-/// a couple of thousand people costs only as many egui widgets as are
+/// The **Entities** tab: filters, a virtualised list (`show_rows`, so a roster
+/// of a couple of thousand people costs only as many egui widgets as are
 /// actually on screen), and a click that both selects and recentres the
 /// camera — the two things "find this entity" always means together.
-pub fn panel(
-    mut contexts: EguiContexts,
-    mut browser: ResMut<BrowserUi>,
-    mut selected: ResMut<Selected>,
-    mut focus: ResMut<crate::ui::UiFocus>,
-    sim: Res<Sim>,
-    mut camera: Query<&mut OrbitCamera>,
+pub fn entities_body(
+    ui: &mut egui::Ui,
+    browser: &mut BrowserUi,
+    selected: &mut Selected,
+    sim: &Sim,
+    camera: &mut Query<&mut OrbitCamera>,
 ) {
-    if !browser.open {
-        return;
-    }
-    let ctx = contexts.ctx_mut();
     let mut jump_to: Option<Target> = None;
-    let mut close = false;
-    let mut collapsed = browser.collapsed;
 
-    egui::SidePanel::right("entities_dock")
-        .default_width(340.0)
-        .resizable(!collapsed)
-        .width_range(if collapsed {
-            26.0..=26.0
-        } else {
-            240.0..=560.0
-        })
-        .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                let open = crate::ui::collapse_button(ui, !collapsed, "⏵", "⏴");
-                collapsed = !open;
-                if !collapsed {
-                    ui.heading("Entities");
+    ui.horizontal(|ui| {
+        ui.label("🔍");
+        // Takes the width it can get: this is the control the tab exists for,
+        // and a search box you have to aim at is one you stop using.
+        ui.add(
+            egui::TextEdit::singleline(&mut browser.search)
+                .hint_text("id, status, callsign…")
+                .desired_width(ui.available_width() - 28.0),
+        );
+        if ui.small_button("×").on_hover_text("Clear search").clicked() {
+            browser.search.clear();
+        }
+    });
+    ui.horizontal_wrapped(|ui| {
+        ui.checkbox(&mut browser.show_households, "Households");
+        ui.checkbox(&mut browser.show_people, "People");
+        ui.checkbox(&mut browser.show_travellers, "On the move");
+        ui.checkbox(&mut browser.show_units, "Units");
+    });
+
+    let rows = build_rows(sim, browser);
+    ui.add_space(4.0);
+    crate::ui::section(ui, &format!("{} of {}", rows.len(), total_count(sim)));
+
+    let row_h = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
+    egui::ScrollArea::vertical()
+        .id_source("entities_rows")
+        .auto_shrink([false, false])
+        .show_rows(ui, row_h, rows.len(), |ui, range| {
+            for &t in &rows[range] {
+                let is_selected = selected.0 == Some(t);
+                let label = row_label(sim, t);
+                let resp = ui.selectable_label(is_selected, label);
+                if resp.clicked() {
+                    jump_to = Some(t);
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .small_button("✕")
-                        .on_hover_text("Close (b to reopen)")
-                        .clicked()
-                    {
-                        close = true;
-                    }
-                });
-            });
-            if collapsed {
-                return;
             }
-
-            ui.horizontal(|ui| {
-                ui.label("Search");
-                ui.text_edit_singleline(&mut browser.search);
-                if ui.small_button("×").on_hover_text("Clear search").clicked() {
-                    browser.search.clear();
-                }
-            });
-            ui.horizontal_wrapped(|ui| {
-                ui.checkbox(&mut browser.show_households, "Households");
-                ui.checkbox(&mut browser.show_people, "People");
-                ui.checkbox(&mut browser.show_travellers, "On the move");
-                ui.checkbox(&mut browser.show_units, "Units");
-            });
-            ui.separator();
-
-            let rows = build_rows(&sim, &browser);
-            ui.label(format!("{} of {}", rows.len(), total_count(&sim)));
-
-            let row_h = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show_rows(ui, row_h, rows.len(), |ui, range| {
-                    for &t in &rows[range] {
-                        let is_selected = selected.0 == Some(t);
-                        let label = row_label(&sim, t);
-                        let resp = ui.selectable_label(is_selected, label);
-                        if resp.clicked() {
-                            jump_to = Some(t);
-                        }
-                    }
-                });
-            ui.small("click a row to select and centre the camera on it · b to close");
         });
 
-    browser.collapsed = collapsed;
-    if close {
-        browser.open = false;
-    }
     if let Some(t) = jump_to {
         selected.0 = Some(t);
-        if let (Some(pos), Ok(mut orbit)) = (target_pos(&sim, t), camera.get_single_mut()) {
+        if let (Some(pos), Ok(mut orbit)) = (target_pos(sim, t), camera.get_single_mut()) {
             let ground = sim.scenario.terrain.height_at(pos);
             orbit.focus = frame::to_bevy(pos, ground);
             orbit.distance = orbit.distance.clamp(ZOOM_DISTANCE_M * 0.5, ZOOM_DISTANCE_M);
         }
     }
-
-    focus.0 |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
 
 fn total_count(sim: &Sim) -> usize {

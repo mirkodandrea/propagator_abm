@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::domain::Domain;
 use crate::node::{registry, NodeSpec, ParamValue};
 
 /// Identifies a node inside one graph. Small and dense, so the compiler can
@@ -58,6 +59,12 @@ pub struct BehaviorGraph {
     /// Stable identifier, referenced by subtypes. Kebab-case by convention.
     pub id: String,
     pub name: String,
+    /// Which kind of agent this behaviour is about.
+    ///
+    /// Defaulted rather than required so every graph written before domains
+    /// existed loads as what it was: a household behaviour.
+    #[serde(default)]
+    pub domain: Domain,
     #[serde(default)]
     pub description: String,
     #[serde(default)]
@@ -67,10 +74,21 @@ pub struct BehaviorGraph {
 }
 
 impl BehaviorGraph {
+    /// A new household behaviour. Use [`BehaviorGraph::new_in`] for any other
+    /// domain.
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> BehaviorGraph {
+        BehaviorGraph::new_in(Domain::Household, id, name)
+    }
+
+    pub fn new_in(
+        domain: Domain,
+        id: impl Into<String>,
+        name: impl Into<String>,
+    ) -> BehaviorGraph {
         BehaviorGraph {
             id: id.into(),
             name: name.into(),
+            domain,
             description: String::new(),
             nodes: Vec::new(),
             wires: Vec::new(),
@@ -92,8 +110,15 @@ impl BehaviorGraph {
     }
 
     /// Add a node of `type_id` at `pos`, with the spec's default parameters.
+    ///
+    /// Refuses a node belonging to another domain. The editor's palette already
+    /// filters those out, so this is the guard for a graph built in code and
+    /// the reason the default library cannot be assembled wrong.
     pub fn add(&mut self, type_id: &str, pos: [f32; 2]) -> Option<NodeId> {
         let spec = registry().get(type_id)?;
+        if !spec.allowed_in(self.domain) {
+            return None;
+        }
         let id = self.next_id();
         let params = spec
             .params

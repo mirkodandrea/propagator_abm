@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::domain::Domain;
 use crate::eval::{CompiledGraph, Overrides};
 use crate::graph::BehaviorGraph;
 use crate::subtype::AgentSubtype;
@@ -168,18 +169,44 @@ impl Library {
             .map_err(|r| CompileError::Invalid(graph_id.to_string(), r))
     }
 
-    /// Subtypes with a non-zero share, and their shares normalised to sum to
-    /// one. Empty when nothing has a share, which the caller reads as "do not
-    /// use authored behaviour at all".
+    /// Which domain a subtype runs in, from the graph it points at.
+    ///
+    /// A subtype does not carry its own domain: it would be a second place for
+    /// the answer to live, and the two could disagree. `None` means it names a
+    /// graph that is not loaded, which `compile` reports properly.
+    pub fn domain_of(&self, subtype: &AgentSubtype) -> Option<Domain> {
+        self.graphs.get(&subtype.graph).map(|g| g.domain)
+    }
+
+    /// Household subtypes with a non-zero share, and their shares normalised to
+    /// sum to one. Empty when nothing has a share, which the caller reads as
+    /// "do not use authored behaviour for civilians at all".
     pub fn assignment(&self) -> Vec<(String, f32)> {
-        let total: f32 = self.subtypes.values().map(|s| s.share.max(0.0)).sum();
+        let mine: Vec<&AgentSubtype> = self
+            .subtypes
+            .values()
+            .filter(|s| self.domain_of(s) == Some(Domain::Household))
+            .collect();
+        let total: f32 = mine.iter().map(|s| s.share.max(0.0)).sum();
         if total <= 0.0 {
             return Vec::new();
         }
-        self.subtypes
-            .values()
+        mine.iter()
             .filter(|s| s.share > 0.0)
             .map(|s| (s.id.clone(), s.share / total))
+            .collect()
+    }
+
+    /// Suppression profiles that are in play, in id order.
+    ///
+    /// No shares and no normalisation: a unit takes the first profile in this
+    /// list that governs its kind. Empty means the units run the hand-written
+    /// policy, which stays the default for the same reason the civilians' does.
+    pub fn unit_assignment(&self) -> Vec<String> {
+        self.subtypes
+            .values()
+            .filter(|s| self.domain_of(s) == Some(Domain::SuppressionUnit) && s.enabled)
+            .map(|s| s.id.clone())
             .collect()
     }
 }

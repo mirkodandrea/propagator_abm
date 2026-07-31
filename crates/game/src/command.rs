@@ -22,7 +22,7 @@
 use abm::suppression::{Task, UnitKind, UnitState, ENGINE_REACH_M};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::egui;
 use scenario::Pos;
 
 use crate::camera::OrbitCamera;
@@ -142,15 +142,26 @@ pub fn setup(
 
 /// Keyboard: cycle the selection, arm the orders, stand down.
 ///
-/// Deliberately not overlapping the existing bindings: `i` is the ignition tool,
-/// `e` the evacuation order, `r` restart. `Tab` cycles units, `a`/`l`/`d` arm,
-/// `x` sends the selected unit back to staging, `c` calls for air support.
+/// `Tab` cycles units, `A`/`L`/`D` arm an order, `X` sends the selected unit
+/// back to staging, `C` calls for air support. `A` and `D` used to *also* pan
+/// the camera, because the camera panned on WASD — arming an attack slid the
+/// map west, which looked like the order having some mysterious side effect.
+/// The camera now pans on the arrow keys and these letters are unambiguous;
+/// see `crate::camera::controls`.
+///
+/// Every branch is behind [`UiFocus::typing`]: `d` is a perfectly ordinary
+/// letter to type into a search box.
 pub fn controls(
     keys: Res<ButtonInput<KeyCode>>,
+    focus: Res<crate::ui::UiFocus>,
     mut tool: ResMut<OrderTool>,
     mut ignition: ResMut<IgnitionTool>,
     mut sim: ResMut<Sim>,
+    mut panels: ResMut<crate::ui::PanelState>,
 ) {
+    if focus.typing() {
+        return;
+    }
     if keys.just_pressed(KeyCode::Escape) {
         tool.disarm();
     }
@@ -161,6 +172,9 @@ pub fn controls(
         tool.disarm();
     }
     if keys.just_pressed(KeyCode::Tab) {
+        // Cycling the units is only useful if you can see them, so it also
+        // brings the tab that lists them forward.
+        panels.focus_tab(crate::ui::DockTab::Units);
         let n = sim.crews.units.len();
         // Only through the units that can actually be given an order, so Tab
         // never parks the selection on an aircraft that has not been called.
@@ -192,6 +206,7 @@ pub fn controls(
                 ignition.mode = EditMode::Off;
             }
             tool.toggle(kind);
+            panels.focus_tab(crate::ui::DockTab::Units);
         }
     }
     if keys.just_pressed(KeyCode::KeyX) {
@@ -210,7 +225,7 @@ pub fn hover(
     windows: Query<&Window, With<PrimaryWindow>>,
     camera: Query<(&Camera, &GlobalTransform), With<OrbitCamera>>,
 ) {
-    if !tool.is_armed() || ui_focus.0 {
+    if !tool.is_armed() || ui_focus.pointer {
         if tool.hover.is_some() {
             tool.hover = None;
         }
@@ -394,23 +409,18 @@ pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut tool: Res
     tool.refusal = None;
 }
 
-/// The **Resources** panel: the roster, the selection, and the orders.
+/// The **Units** tab: the roster, the selection, and the orders.
 ///
-/// Its own dock rather than a section of "Incident" for the reason those two
-/// are already split: this is where the player *acts*, and it is read while
-/// pointing at the map. Docked along the bottom, outside the 3D viewport, so
-/// giving an order never means a panel is sitting on top of the ground the
-/// order is about.
-pub fn panel(
-    mut contexts: EguiContexts,
-    mut sim: ResMut<Sim>,
-    mut tool: ResMut<OrderTool>,
-    mut ignition: ResMut<IgnitionTool>,
-    mut focus: ResMut<crate::ui::UiFocus>,
-    mut panels: ResMut<crate::ui::PanelState>,
+/// A tab of the right-hand dock rather than a dock of its own, because it is
+/// mutually exclusive in practice with the other two — and because it is read
+/// while pointing at the map, so it must never be the panel sitting on top of
+/// the ground an order is about.
+pub fn units_body(
+    ui: &mut egui::Ui,
+    sim: &mut Sim,
+    tool: &mut OrderTool,
+    ignition: &mut IgnitionTool,
 ) {
-    let ctx = contexts.ctx_mut();
-    let mut open = panels.resources;
     let stats = sim.crews.stats();
     let air_eta = sim.crews.air_eta_s();
     let mut select: Option<usize> = tool.selected;
@@ -418,185 +428,172 @@ pub fn panel(
     let mut request_air = false;
     let mut recall: Option<usize> = None;
 
-    egui::TopBottomPanel::bottom("resources_dock")
-        .resizable(open)
-        .default_height(260.0)
-        .height_range(if open { 140.0..=420.0 } else { 26.0..=26.0 })
-        .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                open = crate::ui::collapse_button(ui, open, "⏷", "⏶");
-                if open {
-                    ui.heading("Resources");
-                }
-            });
-            if !open {
-                return;
-            }
-            ui.separator();
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            egui::Grid::new("supp").num_columns(2).show(ui, |ui| {
-                ui.label("Working");
-                ui.label(format!("{} of {}", stats.working, sim.crews.units.len()));
-                ui.end_row();
-                ui.label("Water used");
-                ui.label(format!("{:.1} kL · {} drops", stats.water_l / 1000.0, stats.drops));
-                ui.end_row();
-                ui.label("Line cut");
-                ui.label(format!("{:.0} m", stats.line_m));
-                ui.end_row();
-                if stats.lost > 0 {
-                    ui.colored_label(egui::Color32::from_rgb(255, 90, 70), "Units lost");
-                    ui.colored_label(
-                        egui::Color32::from_rgb(255, 90, 70),
-                        format!("{}", stats.lost),
-                    );
-                    ui.end_row();
-                }
-            });
+    crate::ui::section(ui, "Effort");
+    egui::Grid::new("supp").num_columns(2).show(ui, |ui| {
+        ui.label("Working");
+        ui.label(format!("{} of {}", stats.working, sim.crews.units.len()));
+        ui.end_row();
+        ui.label("Water used");
+        ui.label(format!("{:.1} kL · {} drops", stats.water_l / 1000.0, stats.drops));
+        ui.end_row();
+        ui.label("Line cut");
+        ui.label(format!("{:.0} m", stats.line_m));
+        ui.end_row();
+        if stats.lost > 0 {
+            ui.colored_label(egui::Color32::from_rgb(255, 90, 70), "Units lost");
+            ui.colored_label(
+                egui::Color32::from_rgb(255, 90, 70),
+                format!("{}", stats.lost),
+            );
+            ui.end_row();
+        }
+    });
 
-            ui.separator();
-            for u in &sim.crews.units {
-                let selected = tool.selected == Some(u.id);
-                let c = crate::units::colour(u.kind, u.state);
-                let srgb = c.to_srgba();
-                let colour = egui::Color32::from_rgb(
-                    (srgb.red * 255.0) as u8,
-                    (srgb.green * 255.0) as u8,
-                    (srgb.blue * 255.0) as u8,
-                );
-                let mut text = egui::RichText::new(format!(
-                    "{}  —  {}",
-                    u.callsign,
-                    status_line(&sim, u.id)
-                ))
-                .color(colour);
-                if selected {
-                    text = text.strong();
-                }
-                let row = ui.selectable_label(selected, text);
-                if row.clicked() {
-                    select = Some(u.id);
-                }
-                // Everything the unit knows about itself, on hover: the numbers
-                // that explain why it is or is not achieving anything.
-                let detail = match u.kind {
-                    UnitKind::Engine => format!(
-                        "{}\nTank {:.0} of {:.0} L · {:.0} L delivered\nWorks within {:.0} m of a road it can reach.",
-                        u.kind.label(),
-                        u.water_l,
-                        u.tank_l,
-                        u.water_used_l,
-                        ENGINE_REACH_M,
-                    ),
-                    UnitKind::HandCrew => format!(
-                        "{}\n{:.0} m of line cut · {:.0} m/h in this fuel\nGoes where vehicles cannot; cannot outpace the fire.",
-                        u.kind.label(),
-                        u.line_cut_m,
-                        abm::suppression::LINE_M_PER_H,
-                    ),
-                    UnitKind::AirTanker => format!(
-                        "{}\n{} drops · {:.0} L delivered\n{:.0} L a load, {:.0} s to scoop and return.",
-                        u.kind.label(),
-                        u.drops,
-                        u.water_used_l,
-                        u.tank_l,
-                        abm::suppression::SCOOP_S,
-                    ),
-                };
-                row.on_hover_text(detail);
-                if !u.note.is_empty() {
-                    ui.small(
-                        egui::RichText::new(format!("    {}", u.note))
-                            .color(egui::Color32::from_rgb(240, 180, 60)),
-                    );
-                }
-            }
+    ui.add_space(8.0);
+    crate::ui::section(ui, "Roster");
+    for u in &sim.crews.units {
+        let selected = tool.selected == Some(u.id);
+        let c = crate::units::colour(u.kind, u.state);
+        let srgb = c.to_srgba();
+        let colour = egui::Color32::from_rgb(
+            (srgb.red * 255.0) as u8,
+            (srgb.green * 255.0) as u8,
+            (srgb.blue * 255.0) as u8,
+        );
+        let mut text = egui::RichText::new(format!(
+            "{}  —  {}",
+            u.callsign,
+            status_line(&sim, u.id)
+        ))
+        .color(colour);
+        if selected {
+            text = text.strong();
+        }
+        let row = ui.selectable_label(selected, text);
+        if row.clicked() {
+            select = Some(u.id);
+        }
+        // Everything the unit knows about itself, on hover: the numbers
+        // that explain why it is or is not achieving anything.
+        let detail = match u.kind {
+            UnitKind::Engine => format!(
+                "{}\nTank {:.0} of {:.0} L · {:.0} L delivered\nWorks within {:.0} m of a road it can reach.",
+                u.kind.label(),
+                u.water_l,
+                u.tank_l,
+                u.water_used_l,
+                ENGINE_REACH_M,
+            ),
+            UnitKind::HandCrew => format!(
+                "{}\n{:.0} m of line cut · {:.0} m/h in this fuel\nGoes where vehicles cannot; cannot outpace the fire.",
+                u.kind.label(),
+                u.line_cut_m,
+                abm::suppression::LINE_M_PER_H,
+            ),
+            UnitKind::AirTanker => format!(
+                "{}\n{} drops · {:.0} L delivered\n{:.0} L a load, {:.0} s to scoop and return.",
+                u.kind.label(),
+                u.drops,
+                u.water_used_l,
+                u.tank_l,
+                abm::suppression::SCOOP_S,
+            ),
+        };
+        row.on_hover_text(detail);
+        if !u.note.is_empty() {
+            ui.small(
+                egui::RichText::new(format!("    {}", u.note))
+                    .color(egui::Color32::from_rgb(240, 180, 60)),
+            );
+        }
+    }
 
-            ui.separator();
-            match select.and_then(|id| sim.crews.units.get(id)) {
-                None => {
-                    ui.label("Select a unit to give it an order.");
-                }
-                Some(u) => {
-                    ui.label(format!("Orders for {}", u.callsign));
-                    ui.horizontal_wrapped(|ui| {
-                        for kind in [OrderKind::Attack, OrderKind::Line, OrderKind::Drop] {
-                            // Inbound aircraft included: briefing one is the
-                            // right move, not a mistake to grey out.
-                            let allowed = kind.allowed_for(u.kind) && u.assignable();
-                            let armed = tool.armed == Some(kind);
-                            let label = if armed {
-                                format!("◉ {}", kind.label())
-                            } else {
-                                kind.label().to_string()
-                            };
-                            let b = ui.add_enabled(
-                                allowed,
-                                egui::SelectableLabel::new(armed, label),
-                            );
-                            let b = match kind {
-                                OrderKind::Attack => b.on_hover_text(
-                                    "Click the ground. An engine wets the fuel within \
-                                     hose reach of the nearest road it can reach; a crew \
-                                     cuts line across the fire's approach.",
-                                ),
-                                OrderKind::Line => b.on_hover_text(
-                                    "Two clicks: where the line starts, and where it \
-                                     ends. Permanent — cut fuel does not grow back \
-                                     during the incident.",
-                                ),
-                                OrderKind::Drop => b.on_hover_text(
-                                    "Click the ground. One load, then back to the water \
-                                     and round again until you re-task it.",
-                                ),
-                            };
-                            if b.clicked() {
-                                arm = Some(kind);
-                            }
-                        }
-                        if ui
-                            .button("Stand down")
-                            .on_hover_text("Return to staging and wait. (x)")
-                            .clicked()
-                        {
-                            recall = Some(u.id);
-                        }
-                    });
-                    if tool.armed == Some(OrderKind::Line) && tool.line_from.is_none() {
-                        ui.small("Click where the line should start.");
-                    } else if tool.line_from.is_some() {
-                        ui.small("Now click where it should end.");
+    ui.add_space(8.0);
+    crate::ui::section(ui, "Orders");
+    match select.and_then(|id| sim.crews.units.get(id)) {
+        None => {
+            ui.label("Select a unit above, or press Tab, to give it an order.");
+        }
+        Some(u) => {
+            ui.label(format!("For {}", u.callsign));
+            ui.horizontal_wrapped(|ui| {
+                for kind in [OrderKind::Attack, OrderKind::Line, OrderKind::Drop] {
+                    // Inbound aircraft included: briefing one is the
+                    // right move, not a mistake to grey out.
+                    let allowed = kind.allowed_for(u.kind) && u.assignable();
+                    let armed = tool.armed == Some(kind);
+                    let label = if armed {
+                        format!("▶ {}", kind.label())
+                    } else {
+                        kind.label().to_string()
+                    };
+                    let b = ui.add_enabled(
+                        allowed,
+                        egui::SelectableLabel::new(armed, label),
+                    );
+                    let b = match kind {
+                        OrderKind::Attack => b.on_hover_text(
+                            "Click the ground. An engine wets the fuel within \
+                             hose reach of the nearest road it can reach; a crew \
+                             cuts line across the fire's approach.",
+                        ),
+                        OrderKind::Line => b.on_hover_text(
+                            "Two clicks: where the line starts, and where it \
+                             ends. Permanent — cut fuel does not grow back \
+                             during the incident.",
+                        ),
+                        OrderKind::Drop => b.on_hover_text(
+                            "Click the ground. One load, then back to the water \
+                             and round again until you re-task it.",
+                        ),
+                    };
+                    if b.clicked() {
+                        arm = Some(kind);
                     }
                 }
-            }
-
-            if let Some(why) = &tool.refusal {
-                ui.colored_label(egui::Color32::from_rgb(255, 140, 110), why);
-            }
-
-            ui.separator();
-            ui.horizontal(|ui| {
-                let none_left = stats.unrequested == 0;
                 if ui
-                    .add_enabled(!none_left, egui::Button::new("✈ Request air support  (c)"))
-                    .on_hover_text(
-                        "Aircraft come from the national fleet, not from Spotorno. \
-                         Ask early: they are 25 minutes out.",
-                    )
+                    .button("Stand down")
+                    .on_hover_text("Return to staging and wait. (X)")
                     .clicked()
                 {
-                    request_air = true;
-                }
-                if let Some(eta) = air_eta {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(240, 180, 60),
-                        format!("● {:.0} min out", (eta / 60.0).max(0.0)),
-                    );
+                    recall = Some(u.id);
                 }
             });
-            ui.small("tab next unit · a attack · l cut line · d drop · x stand down · esc cancel");
-            });
-        });
+            if tool.armed == Some(OrderKind::Line) && tool.line_from.is_none() {
+                ui.small("Click where the line should start.");
+            } else if tool.line_from.is_some() {
+                ui.small("Now click where it should end.");
+            }
+        }
+    }
+
+    if let Some(why) = &tool.refusal {
+        ui.colored_label(egui::Color32::from_rgb(255, 140, 110), why);
+    }
+
+    ui.add_space(8.0);
+    crate::ui::section(ui, "Air support");
+    ui.horizontal(|ui| {
+        let none_left = stats.unrequested == 0;
+        if ui
+            .add_enabled(!none_left, egui::Button::new("✈ Request air support  (C)"))
+            .on_hover_text(
+                "Aircraft come from the national fleet, not from Spotorno. \
+                 Ask early: they are 25 minutes out.",
+            )
+            .clicked()
+        {
+            request_air = true;
+        }
+        if let Some(eta) = air_eta {
+            ui.colored_label(
+                egui::Color32::from_rgb(240, 180, 60),
+                format!("● {:.0} min out", (eta / 60.0).max(0.0)),
+            );
+        }
+    });
+    ui.add_space(6.0);
+    ui.small("Tab next unit · A attack · L cut line · D drop · X stand down · Esc cancel");
 
     if select != tool.selected {
         tool.selected = select;
@@ -617,9 +614,6 @@ pub fn panel(
         let n = sim.crews.request_air();
         info!("air support requested: {n} aircraft");
     }
-    panels.resources = open;
-
-    focus.0 |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
 
 /// Text for the panel: what this unit is doing, in one line.

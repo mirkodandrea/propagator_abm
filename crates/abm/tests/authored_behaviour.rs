@@ -126,7 +126,11 @@ fn subtype_assignment_survives_a_rebuild() {
             m
         },
     );
-    assert_eq!(counts.len(), lib.subtypes.len(), "{counts:?}");
+    // Every *household* profile got someone. The library also carries the
+    // suppression profiles, which are assigned to units by kind and are not in
+    // this spread at all.
+    let households = lib.assignment().len();
+    assert_eq!(counts.len(), households, "{counts:?}");
 }
 
 /// The point of the whole exercise: change one number in the editor and the
@@ -135,7 +139,7 @@ fn subtype_assignment_survives_a_rebuild() {
 fn lowering_the_alarm_threshold_gets_more_people_out_sooner() {
     let scn = Scenario::load(data_dir()).unwrap();
     let g = behavior::defaults::default_graph();
-    let node = g.nodes.iter().find(|n| n.type_id == "intent.weight").unwrap();
+    let node = g.nodes.iter().find(|n| n.type_id == "block.alarm").unwrap();
 
     let safe_after = |threshold: f32| {
         let mut ov = BTreeMap::new();

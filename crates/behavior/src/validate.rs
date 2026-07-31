@@ -87,6 +87,22 @@ pub fn validate(g: &BehaviorGraph) -> Report {
             ));
             continue;
         };
+        // A foreign node would evaluate against a default observation rather
+        // than the agent's, which reads as a behaviour that quietly ignores
+        // half its inputs. Named as an error rather than dropped, because the
+        // author put it there on purpose.
+        if let Some(d) = spec.domain.filter(|d| *d != g.domain) {
+            issues.push(Issue::error(
+                Some(n.id),
+                format!(
+                    "\"{}\" is about {}, and this behaviour is about {}",
+                    spec.name,
+                    d.label().to_lowercase(),
+                    g.domain.label().to_lowercase()
+                ),
+            ));
+            continue;
+        }
         for (name, value) in &n.params {
             let Some(p) = spec.params.iter().find(|p| p.name == name) else {
                 issues.push(Issue::warn(
@@ -200,20 +216,18 @@ pub fn validate(g: &BehaviorGraph) -> Report {
     }
 
     // --- outputs -----------------------------------------------------------
-    let decisions = g
-        .nodes
-        .iter()
-        .filter(|n| n.type_id == crate::nodes::DECISION_OUTPUT)
-        .count();
+    let sink = g.domain.decision_output();
+    let sink_name = reg.get(sink).map(|s| s.name).unwrap_or("Decision");
+    let decisions = g.nodes.iter().filter(|n| n.type_id == sink).count();
     match decisions {
         0 => issues.push(Issue::error(
             None,
-            "no \"Decision\" output node — the model has nothing to read".into(),
+            format!("no \"{sink_name}\" output node — the model has nothing to read"),
         )),
         1 => {}
         n => issues.push(Issue::error(
             None,
-            format!("{n} \"Decision\" output nodes; a behaviour has exactly one"),
+            format!("{n} \"{sink_name}\" output nodes; a behaviour has exactly one"),
         )),
     }
 

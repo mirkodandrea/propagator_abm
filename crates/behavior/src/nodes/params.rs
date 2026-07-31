@@ -44,6 +44,7 @@ behavior_node! {
     id: "param.intent",
     name: "Fixed intent",
     category: Parameter,
+    domain: Household,
     doc: "A constant plan, for testing a graph against one population without \
           editing the observation.",
     keywords: ["constant", "plan", "override"],

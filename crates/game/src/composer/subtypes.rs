@@ -5,16 +5,26 @@
 //! panel is where that shows: everything a profile does to an agent is on one
 //! screen, and there is no parent to go and read.
 //!
-//! The share column is the other thing worth understanding. Shares are
-//! *relative* — 3 and 1 means three to one — and are normalised when the
-//! runtime is built, so a scientist can type whole numbers without having to
-//! make them add up. A subtype with a share of zero still exists and is still
-//! editable; it is simply not in the population.
+//! How a profile is *assigned* differs by domain, and it is the one place the
+//! two do not look alike:
+//!
+//! - **Civilians** carry a **share**. Shares are relative — 3 and 1 means three
+//!   to one — and are normalised when the runtime is built, so a scientist can
+//!   type whole numbers without making them add up. Zero keeps the profile and
+//!   takes it out of the population.
+//! - **Suppression units** carry a list of **kinds** and an on/off switch.
+//!   There are eight units and they are named individuals, so a share would
+//!   make "why did Autobotte 2 do that" a question about a hash rather than a
+//!   question about a file.
+//!
+//! Only the current domain's profiles are listed. A profile from the other one
+//! cannot be edited against the open graph anyway — its override keys name
+//! nodes that are not on this canvas.
 
 use bevy_egui::egui;
 
 use behavior::subtype::{Capability, TraitKey};
-use behavior::AgentSubtype;
+use behavior::{AgentSubtype, Domain, UnitKindKey};
 
 use super::Composer;
 
@@ -48,10 +58,19 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
         changed |= ui.text_edit_singleline(&mut s.author).changed();
     });
 
+    let domain = c.domain();
+
     ui.horizontal(|ui| {
         ui.label("Behaviour");
-        let ids: Vec<(String, String)> =
-            c.lib.graphs.values().map(|g| (g.id.clone(), g.name.clone())).collect();
+        // Only this domain's graphs: pointing a household profile at a unit
+        // policy would compile and then never match a single override.
+        let ids: Vec<(String, String)> = c
+            .lib
+            .graphs
+            .values()
+            .filter(|g| g.domain == domain)
+            .map(|g| (g.id.clone(), g.name.clone()))
+            .collect();
         let current = ids
             .iter()
             .find(|(gid, _)| *gid == s.graph)
@@ -74,13 +93,22 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
             });
     });
 
-    ui.horizontal(|ui| {
-        ui.label("Share").on_hover_text(
-            "Relative weight in the population. These are normalised, so 3 and 1 means three \
-             to one. Zero keeps the profile but takes it out of play.",
-        );
-        changed |= ui.add(egui::DragValue::new(&mut s.share).speed(0.01).range(0.0..=100.0)).changed();
-    });
+    match domain {
+        Domain::Household => {
+            ui.horizontal(|ui| {
+                ui.label("Share").on_hover_text(
+                    "Relative weight in the population. These are normalised, so 3 and 1 means \
+                     three to one. Zero keeps the profile but takes it out of play.",
+                );
+                changed |= ui
+                    .add(egui::DragValue::new(&mut s.share).speed(0.01).range(0.0..=100.0))
+                    .changed();
+            });
+        }
+        Domain::SuppressionUnit => {
+            changed |= unit_assignment(ui, &mut s);
+        }
+    }
 
     ui.horizontal_wrapped(|ui| {
         ui.label("Tags");
@@ -95,7 +123,107 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
         }
     });
 
-    // --- traits ------------------------------------------------------------
+    // --- traits and capabilities -------------------------------------------
+    // Households only. Both are ways of overriding what the population bake
+    // drew, and a suppression unit has no bake: its tank, its speed and its
+    // line production are properties of the equipment.
+    if domain == Domain::Household {
+        changed |= household_traits(ui, &mut s);
+    }
+
+    // --- overrides ---------------------------------------------------------
+    ui.separator();
+    ui.horizontal(|ui| {
+        ui.label(format!("{} parameter override(s)", s.overrides.len()));
+        if !s.overrides.is_empty() && ui.small_button("clear all").clicked() {
+            s.overrides.clear();
+            changed = true;
+        }
+    });
+    let mut drop = None;
+    for (key, value) in &s.overrides {
+        ui.horizontal(|ui| {
+            if ui.small_button("✖").on_hover_text("Back to the graph's value").clicked() {
+                drop = Some(key.clone());
+            }
+            ui.small(format!(
+                "{} = {}",
+                behavior::subtype::describe_key(key, Some(&c.graph)),
+                value.display()
+            ));
+        });
+    }
+    if let Some(k) = drop {
+        s.overrides.remove(&k);
+        changed = true;
+    }
+    if s.graph == c.graph_id {
+        ui.small("Select a node on the canvas to add or change an override.");
+        if ui
+            .small_button("Prune dead overrides")
+            .on_hover_text("Drop overrides whose node or parameter no longer exists")
+            .clicked()
+        {
+            let dead = s.prune(&c.graph);
+            changed = true;
+            c.set_status(if dead.is_empty() {
+                "nothing to prune".into()
+            } else {
+                format!("pruned {} override(s)", dead.len())
+            });
+        }
+    } else {
+        ui.small("This profile is on a different behaviour; open it to edit its overrides.");
+    }
+
+    if changed {
+        c.lib.subtypes.insert(id.clone(), s);
+        c.dirty = true;
+    }
+
+    ui.separator();
+    compare(ui, c, &id);
+}
+
+/// Which units a suppression profile governs, and whether it is in play.
+fn unit_assignment(ui: &mut egui::Ui, s: &mut AgentSubtype) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        changed |= ui
+            .checkbox(&mut s.enabled, "In play")
+            .on_hover_text(
+                "Off keeps the profile and leaves the units it would have governed on the \
+                 hand-written policy.",
+            )
+            .changed();
+    });
+
+    ui.label("Applies to").on_hover_text(
+        "Which resources this profile governs. With none ticked it governs every kind, which \
+         is usually what you want — the per-kind parameters on the blocks already express the \
+         differences that are real.",
+    );
+    ui.horizontal_wrapped(|ui| {
+        for k in UnitKindKey::ALL {
+            let mut on = s.unit_kinds.contains(&k);
+            if ui.checkbox(&mut on, k.label()).changed() {
+                s.unit_kinds.retain(|x| *x != k);
+                if on {
+                    s.unit_kinds.push(k);
+                }
+                changed = true;
+            }
+        }
+    });
+    if s.unit_kinds.is_empty() {
+        ui.small("every kind");
+    }
+    changed
+}
+
+/// Starting traits and capabilities. Households only.
+fn household_traits(ui: &mut egui::Ui, s: &mut AgentSubtype) -> bool {
+    let mut changed = false;
     ui.separator();
     ui.label("Starting traits").on_hover_text(
         "Replace what the population bake drew for this profile's households. Anything left \
@@ -162,59 +290,7 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
             ui.label(key.label());
         });
     }
-
-    // --- overrides ---------------------------------------------------------
-    ui.separator();
-    ui.horizontal(|ui| {
-        ui.label(format!("{} parameter override(s)", s.overrides.len()));
-        if !s.overrides.is_empty() && ui.small_button("clear all").clicked() {
-            s.overrides.clear();
-            changed = true;
-        }
-    });
-    let mut drop = None;
-    for (key, value) in &s.overrides {
-        ui.horizontal(|ui| {
-            if ui.small_button("✖").on_hover_text("Back to the graph's value").clicked() {
-                drop = Some(key.clone());
-            }
-            ui.small(format!(
-                "{} = {}",
-                behavior::subtype::describe_key(key, Some(&c.graph)),
-                value.display()
-            ));
-        });
-    }
-    if let Some(k) = drop {
-        s.overrides.remove(&k);
-        changed = true;
-    }
-    if s.graph == c.graph_id {
-        ui.small("Select a node on the canvas to add or change an override.");
-        if ui
-            .small_button("Prune dead overrides")
-            .on_hover_text("Drop overrides whose node or parameter no longer exists")
-            .clicked()
-        {
-            let dead = s.prune(&c.graph);
-            changed = true;
-            c.set_status(if dead.is_empty() {
-                "nothing to prune".into()
-            } else {
-                format!("pruned {} override(s)", dead.len())
-            });
-        }
-    } else {
-        ui.small("This profile is on a different behaviour; open it to edit its overrides.");
-    }
-
-    if changed {
-        c.lib.subtypes.insert(id.clone(), s);
-        c.dirty = true;
-    }
-
-    ui.separator();
-    compare(ui, c, &id);
+    changed
 }
 
 fn roster(ui: &mut egui::Ui, c: &mut Composer) {
@@ -242,7 +318,7 @@ fn roster(ui: &mut egui::Ui, c: &mut Composer) {
             if let Some(id) = selected {
                 match c.lib.delete_subtype(&c.root.clone(), &id) {
                     Ok(()) => {
-                        c.subtype = c.lib.subtypes.keys().next().cloned();
+                        c.subtype = c.first_subtype_in(c.domain());
                         c.dirty = true;
                         c.set_status(format!("deleted {id}"));
                     }
@@ -252,25 +328,40 @@ fn roster(ui: &mut egui::Ui, c: &mut Composer) {
         }
     });
 
-    let rows: Vec<(String, String, f32, bool)> = c
+    let domain = c.domain();
+    let rows: Vec<(String, String, f32, bool, bool)> = c
         .lib
         .subtypes
         .values()
-        .map(|s| (s.id.clone(), s.name.clone(), s.share, s.graph == c.graph_id))
+        .filter(|s| c.lib.domain_of(s) == Some(domain))
+        .map(|s| {
+            (s.id.clone(), s.name.clone(), s.share, s.graph == c.graph_id, s.enabled)
+        })
         .collect();
     let total: f32 = rows.iter().map(|r| r.2.max(0.0)).sum();
+    let inert = match domain {
+        Domain::Household => total <= 0.0,
+        Domain::SuppressionUnit => !rows.iter().any(|r| r.4),
+    };
 
     egui::ScrollArea::vertical().max_height(180.0).id_source("roster").show(ui, |ui| {
-        for (id, name, share, on_this_graph) in rows {
+        for (id, name, share, on_this_graph, enabled) in rows {
             ui.horizontal(|ui| {
                 let selected = c.subtype.as_deref() == Some(id.as_str());
                 if ui.selectable_label(selected, &name).clicked() {
                     c.subtype = Some(id.clone());
                 }
-                if share <= 0.0 {
-                    ui.small("—");
-                } else if total > 0.0 {
-                    ui.small(format!("{:.0}%", 100.0 * share / total));
+                match domain {
+                    Domain::Household if share <= 0.0 => {
+                        ui.small("—");
+                    }
+                    Domain::Household if total > 0.0 => {
+                        ui.small(format!("{:.0}%", 100.0 * share / total));
+                    }
+                    Domain::Household => {}
+                    Domain::SuppressionUnit => {
+                        ui.small(if enabled { "on" } else { "off" });
+                    }
                 }
                 if !on_this_graph {
                     ui.small("(other behaviour)");
@@ -278,10 +369,17 @@ fn roster(ui: &mut egui::Ui, c: &mut Composer) {
             });
         }
     });
-    if total <= 0.0 {
+    if inert {
         ui.colored_label(
             egui::Color32::from_rgb(0xd8, 0xa6, 0x4b),
-            "No profile has a share, so applying this would run the shipped model.",
+            match domain {
+                Domain::Household => {
+                    "No profile has a share, so applying this would run the shipped model."
+                }
+                Domain::SuppressionUnit => {
+                    "No profile is in play, so the units would run the hand-written policy."
+                }
+            },
         );
     }
     ui.horizontal(|ui| {
@@ -294,11 +392,12 @@ fn roster(ui: &mut egui::Ui, c: &mut Composer) {
 /// Two profiles, side by side, in the terms they were authored in.
 fn compare(ui: &mut egui::Ui, c: &mut Composer, left: &str) {
     ui.heading("Compare");
+    let domain = c.domain();
     let others: Vec<(String, String)> = c
         .lib
         .subtypes
         .values()
-        .filter(|s| s.id != left)
+        .filter(|s| s.id != left && c.lib.domain_of(s) == Some(domain))
         .map(|s| (s.id.clone(), s.name.clone()))
         .collect();
     if others.is_empty() {

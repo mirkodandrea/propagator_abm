@@ -6,14 +6,22 @@
 //! grouping into files is for readers, not for the registry.
 
 mod actions;
+mod blocks;
 mod logic;
 mod observations;
 mod outputs;
 mod params;
+mod unit_blocks;
+mod unit_observations;
 
-/// The one sink the model reads a decision from. Named here because the
+/// The sink the model reads a household's decision from. Named here because the
 /// validator and the compiler both need to find it, and a string literal
 /// repeated in three places is a rename waiting to go wrong.
+///
+/// Reach these through [`Domain::decision_output`](crate::Domain::decision_output)
+/// rather than by name wherever the domain is a variable.
 pub const DECISION_OUTPUT: &str = "out.decision";
+/// The same, for a suppression unit.
+pub const UNIT_DECISION_OUTPUT: &str = "out.unit_decision";
 pub const PREP_SCALE_OUTPUT: &str = "out.prep_scale";
 pub const URGENCY_OUTPUT: &str = "out.urgency";

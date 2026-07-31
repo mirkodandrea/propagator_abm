@@ -1,100 +1,28 @@
 {
   "id": "default-evacuation",
   "name": "Four-stage evacuation",
-  "description": "The behaviour the game ships with. Awareness rises from the fire the household can perceive; departure needs either that alarm to pass a threshold set by their stated plan, or an order they trust. Households that planned to defend hold until the fire is at the property; anyone whose route is cut shelters where they stand.",
+  "domain": "household",
+  "description": "The behaviour the game ships with. Departure needs either the household's own alarm to pass a threshold set by the plan they came in with, or an order they trust — and households that planned to defend do not move on an order at all. Anyone the fire reaches leaves immediately; anyone whose route is cut shelters where they stand.",
   "nodes": [
     {
       "id": 0,
-      "type": "obs.cue",
+      "type": "block.alarm",
       "pos": [
         0.0,
         0.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 1,
-      "type": "obs.risk_perception",
-      "pos": [
-        0.0,
-        90.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 2,
-      "type": "obs.jitter",
-      "pos": [
-        0.0,
-        180.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 3,
-      "type": "obs.intent",
-      "pos": [
-        0.0,
-        270.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 4,
-      "type": "obs.warning_received",
-      "pos": [
-        0.0,
-        360.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 5,
-      "type": "obs.trust_authority",
-      "pos": [
-        0.0,
-        450.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 6,
-      "type": "obs.threat",
-      "pos": [
-        0.0,
-        540.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 7,
-      "type": "obs.route_blocked",
-      "pos": [
-        0.0,
-        630.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 8,
-      "type": "obs.structure_alight",
-      "pos": [
-        0.0,
-        720.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 9,
-      "type": "intent.weight",
-      "pos": [
-        300.0,
-        180.0
       ],
       "params": {
         "leave_early": {
           "t": "number",
           "v": 0.02
+        },
+        "risk_relief": {
+          "t": "number",
+          "v": 0.15
+        },
+        "spread": {
+          "t": "number",
+          "v": 0.1
         },
         "stay_defend": {
           "t": "number",
@@ -107,183 +35,70 @@
       }
     },
     {
-      "id": 10,
-      "type": "math.scale",
+      "id": 1,
+      "type": "block.order_response",
       "pos": [
-        300.0,
-        90.0
+        0.0,
+        260.0
       ],
       "params": {
-        "gain": {
-          "t": "number",
-          "v": -0.15
+        "defenders_comply": {
+          "t": "bool",
+          "v": false
         },
-        "offset": {
-          "t": "number",
-          "v": 0.15
-        }
-      }
-    },
-    {
-      "id": 11,
-      "type": "math.scale",
-      "pos": [
-        300.0,
-        270.0
-      ],
-      "params": {
-        "gain": {
-          "t": "number",
-          "v": 0.1
-        },
-        "offset": {
-          "t": "number",
-          "v": -0.05
-        }
-      }
-    },
-    {
-      "id": 12,
-      "type": "math.add",
-      "pos": [
-        560.0,
-        135.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 13,
-      "type": "math.add",
-      "pos": [
-        560.0,
-        230.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 14,
-      "type": "cmp.greater",
-      "pos": [
-        800.0,
-        60.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 15,
-      "type": "cmp.above",
-      "pos": [
-        300.0,
-        450.0
-      ],
-      "params": {
-        "threshold": {
+        "trust_threshold": {
           "t": "number",
           "v": 0.35
         }
       }
     },
     {
-      "id": 16,
-      "type": "logic.and",
+      "id": 2,
+      "type": "block.fire_at_the_door",
       "pos": [
-        560.0,
-        400.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 17,
-      "type": "intent.is",
-      "pos": [
-        300.0,
-        360.0
+        0.0,
+        470.0
       ],
       "params": {
-        "plan": {
-          "t": "choice",
-          "v": "stay_defend"
-        }
-      }
-    },
-    {
-      "id": 18,
-      "type": "logic.not",
-      "pos": [
-        560.0,
-        330.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 19,
-      "type": "logic.and",
-      "pos": [
-        800.0,
-        360.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 20,
-      "type": "logic.or",
-      "pos": [
-        1040.0,
-        180.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 21,
-      "type": "param.number",
-      "pos": [
-        300.0,
-        540.0
-      ],
-      "params": {
-        "label": {
-          "t": "text",
-          "v": "not survivable outside"
-        },
-        "value": {
+        "threat_limit": {
           "t": "number",
           "v": 0.35
         }
       }
     },
     {
-      "id": 22,
-      "type": "cmp.greater",
+      "id": 3,
+      "type": "logic.any",
       "pos": [
-        560.0,
-        540.0
+        320.0,
+        80.0
       ],
       "params": {}
     },
     {
-      "id": 23,
-      "type": "logic.or",
+      "id": 4,
+      "type": "block.stand_ground",
       "pos": [
-        800.0,
-        600.0
+        320.0,
+        300.0
       ],
-      "params": {}
+      "params": {
+        "min_defensible_space": {
+          "t": "number",
+          "v": 0.0
+        },
+        "only_if_planned": {
+          "t": "bool",
+          "v": true
+        }
+      }
     },
     {
-      "id": 24,
-      "type": "logic.and",
-      "pos": [
-        800.0,
-        700.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 25,
+      "id": 5,
       "type": "action.prepare",
       "pos": [
-        1300.0,
-        120.0
+        600.0,
+        40.0
       ],
       "params": {
         "priority": {
@@ -293,11 +108,11 @@
       }
     },
     {
-      "id": 26,
+      "id": 6,
       "type": "action.evacuate_now",
       "pos": [
-        1300.0,
-        260.0
+        600.0,
+        180.0
       ],
       "params": {
         "priority": {
@@ -307,11 +122,11 @@
       }
     },
     {
-      "id": 27,
+      "id": 7,
       "type": "action.defend",
       "pos": [
-        1300.0,
-        400.0
+        600.0,
+        320.0
       ],
       "params": {
         "priority": {
@@ -321,29 +136,11 @@
       }
     },
     {
-      "id": 28,
-      "type": "logic.and",
-      "pos": [
-        1040.0,
-        400.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 29,
-      "type": "logic.not",
-      "pos": [
-        1040.0,
-        500.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 30,
+      "id": 8,
       "type": "action.shelter",
       "pos": [
-        1300.0,
-        560.0
+        600.0,
+        460.0
       ],
       "params": {
         "priority": {
@@ -353,20 +150,20 @@
       }
     },
     {
-      "id": 31,
+      "id": 9,
       "type": "out.decision",
       "pos": [
-        1600.0,
-        260.0
+        860.0,
+        200.0
       ],
       "params": {}
     },
     {
-      "id": 32,
-      "type": "intent.weight",
+      "id": 10,
+      "type": "block.preparation",
       "pos": [
-        1300.0,
-        700.0
+        600.0,
+        620.0
       ],
       "params": {
         "leave_early": {
@@ -384,272 +181,101 @@
       }
     },
     {
-      "id": 33,
+      "id": 11,
       "type": "out.prep_scale",
       "pos": [
-        1600.0,
-        700.0
+        860.0,
+        620.0
       ],
       "params": {}
     },
     {
-      "id": 34,
-      "type": "math.max",
-      "pos": [
-        1300.0,
-        820.0
-      ],
-      "params": {}
-    },
-    {
-      "id": 35,
+      "id": 12,
       "type": "out.urgency",
       "pos": [
-        1600.0,
-        820.0
+        860.0,
+        740.0
       ],
       "params": {}
     }
   ],
   "wires": [
     {
-      "from_node": 3,
+      "from_node": 0,
       "from_port": 0,
-      "to_node": 9,
+      "to_node": 3,
       "to_port": 0
     },
     {
       "from_node": 1,
       "from_port": 0,
-      "to_node": 10,
+      "to_node": 3,
+      "to_port": 0
+    },
+    {
+      "from_node": 3,
+      "from_port": 0,
+      "to_node": 4,
+      "to_port": 0
+    },
+    {
+      "from_node": 3,
+      "from_port": 0,
+      "to_node": 5,
       "to_port": 0
     },
     {
       "from_node": 2,
       "from_port": 0,
-      "to_node": 11,
-      "to_port": 0
-    },
-    {
-      "from_node": 9,
-      "from_port": 0,
-      "to_node": 12,
-      "to_port": 0
-    },
-    {
-      "from_node": 10,
-      "from_port": 0,
-      "to_node": 12,
-      "to_port": 1
-    },
-    {
-      "from_node": 12,
-      "from_port": 0,
-      "to_node": 13,
-      "to_port": 0
-    },
-    {
-      "from_node": 11,
-      "from_port": 0,
-      "to_node": 13,
-      "to_port": 1
-    },
-    {
-      "from_node": 0,
-      "from_port": 0,
-      "to_node": 14,
-      "to_port": 0
-    },
-    {
-      "from_node": 13,
-      "from_port": 0,
-      "to_node": 14,
-      "to_port": 1
-    },
-    {
-      "from_node": 5,
-      "from_port": 0,
-      "to_node": 15,
+      "to_node": 6,
       "to_port": 0
     },
     {
       "from_node": 4,
       "from_port": 0,
-      "to_node": 16,
+      "to_node": 7,
       "to_port": 0
     },
     {
-      "from_node": 15,
-      "from_port": 0,
-      "to_node": 16,
-      "to_port": 1
-    },
-    {
-      "from_node": 3,
-      "from_port": 0,
-      "to_node": 17,
+      "from_node": 2,
+      "from_port": 1,
+      "to_node": 8,
       "to_port": 0
     },
     {
-      "from_node": 17,
+      "from_node": 5,
       "from_port": 0,
-      "to_node": 18,
+      "to_node": 9,
       "to_port": 0
-    },
-    {
-      "from_node": 16,
-      "from_port": 0,
-      "to_node": 19,
-      "to_port": 0
-    },
-    {
-      "from_node": 18,
-      "from_port": 0,
-      "to_node": 19,
-      "to_port": 1
-    },
-    {
-      "from_node": 14,
-      "from_port": 0,
-      "to_node": 20,
-      "to_port": 0
-    },
-    {
-      "from_node": 19,
-      "from_port": 0,
-      "to_node": 20,
-      "to_port": 1
     },
     {
       "from_node": 6,
       "from_port": 0,
-      "to_node": 22,
+      "to_node": 9,
       "to_port": 0
     },
     {
-      "from_node": 21,
+      "from_node": 7,
       "from_port": 0,
-      "to_node": 22,
-      "to_port": 1
-    },
-    {
-      "from_node": 22,
-      "from_port": 0,
-      "to_node": 23,
+      "to_node": 9,
       "to_port": 0
     },
     {
       "from_node": 8,
       "from_port": 0,
-      "to_node": 23,
-      "to_port": 1
-    },
-    {
-      "from_node": 7,
-      "from_port": 0,
-      "to_node": 24,
+      "to_node": 9,
       "to_port": 0
     },
     {
-      "from_node": 23,
+      "from_node": 10,
       "from_port": 0,
-      "to_node": 24,
-      "to_port": 1
-    },
-    {
-      "from_node": 20,
-      "from_port": 0,
-      "to_node": 25,
-      "to_port": 0
-    },
-    {
-      "from_node": 23,
-      "from_port": 0,
-      "to_node": 26,
-      "to_port": 0
-    },
-    {
-      "from_node": 20,
-      "from_port": 0,
-      "to_node": 29,
-      "to_port": 0
-    },
-    {
-      "from_node": 17,
-      "from_port": 0,
-      "to_node": 28,
-      "to_port": 0
-    },
-    {
-      "from_node": 29,
-      "from_port": 0,
-      "to_node": 28,
-      "to_port": 1
-    },
-    {
-      "from_node": 28,
-      "from_port": 0,
-      "to_node": 27,
-      "to_port": 0
-    },
-    {
-      "from_node": 24,
-      "from_port": 0,
-      "to_node": 30,
-      "to_port": 0
-    },
-    {
-      "from_node": 25,
-      "from_port": 0,
-      "to_node": 31,
-      "to_port": 0
-    },
-    {
-      "from_node": 26,
-      "from_port": 0,
-      "to_node": 31,
-      "to_port": 0
-    },
-    {
-      "from_node": 27,
-      "from_port": 0,
-      "to_node": 31,
-      "to_port": 0
-    },
-    {
-      "from_node": 30,
-      "from_port": 0,
-      "to_node": 31,
-      "to_port": 0
-    },
-    {
-      "from_node": 3,
-      "from_port": 0,
-      "to_node": 32,
-      "to_port": 0
-    },
-    {
-      "from_node": 32,
-      "from_port": 0,
-      "to_node": 33,
+      "to_node": 11,
       "to_port": 0
     },
     {
       "from_node": 0,
-      "from_port": 0,
-      "to_node": 34,
-      "to_port": 0
-    },
-    {
-      "from_node": 6,
-      "from_port": 0,
-      "to_node": 34,
-      "to_port": 1
-    },
-    {
-      "from_node": 34,
-      "from_port": 0,
-      "to_node": 35,
+      "from_port": 2,
+      "to_node": 12,
       "to_port": 0
     }
   ]

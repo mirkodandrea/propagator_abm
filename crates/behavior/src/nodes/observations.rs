@@ -1,43 +1,48 @@
-//! One node per field of [`Observation`](crate::Observation).
+//! One node per field of [`HouseholdObs`](crate::HouseholdObs).
 //!
-//! Exposing a new agent capability to the editor is a one-line addition here:
-//! add the field to `Observation`, add the line, and the palette has it. The
-//! docs are the ones a scientist reads on hover, so they say what the quantity
-//! *is* rather than restating the field name.
+//! Exposing a new civilian capability to the editor is a one-line addition
+//! here: add the field to `HouseholdObs`, add the line, and the palette has it.
+//! The docs are the ones a scientist reads on hover, so they say what the
+//! quantity *is* rather than restating the field name.
+//!
+//! Every node here declares `domain: Household`, which is what keeps it out of
+//! a suppression unit's palette and out of a suppression graph.
 
 use crate::behavior_node;
 use crate::value::Value;
 
-/// A number read straight off the observation.
+/// A number read straight off the household observation.
 macro_rules! obs_number {
     ($id:literal, $name:literal, $doc:literal, [$($kw:literal),* $(,)?], $field:ident) => {
         behavior_node! {
             id: $id,
             name: $name,
             category: Observation,
+            domain: Household,
             doc: $doc,
             keywords: [$($kw),*],
             inputs: [],
             outputs: [(number "value", $doc)],
             params: [],
-            eval: |ctx, _p, _i, out| out.push(Value::Number(ctx.obs.$field)),
+            eval: |ctx, _p, _i, out| out.push(Value::Number(ctx.household().$field)),
         }
     };
 }
 
-/// A condition read straight off the observation.
+/// A condition read straight off the household observation.
 macro_rules! obs_bool {
     ($id:literal, $name:literal, $doc:literal, [$($kw:literal),* $(,)?], $field:ident) => {
         behavior_node! {
             id: $id,
             name: $name,
             category: Observation,
+            domain: Household,
             doc: $doc,
             keywords: [$($kw),*],
             inputs: [],
             outputs: [(bool "value", $doc)],
             params: [],
-            eval: |ctx, _p, _i, out| out.push(Value::Bool(ctx.obs.$field)),
+            eval: |ctx, _p, _i, out| out.push(Value::Bool(ctx.household().$field)),
         }
     };
 }
@@ -144,6 +149,7 @@ behavior_node! {
     id: "obs.intent",
     name: "Stated intent",
     category: Observation,
+    domain: Household,
     doc: "The household's pre-fire plan: leave early, wait and see, or stay \
           and defend. Compare it with \"Intent is\" or weight on it with \
           \"Intent weight\".",
@@ -151,7 +157,7 @@ behavior_node! {
     inputs: [],
     outputs: [(intent "value", "The household's stated plan")],
     params: [],
-    eval: |ctx, _p, _i, out| out.push(Value::Intent(ctx.obs.intent)),
+    eval: |ctx, _p, _i, out| out.push(Value::Intent(ctx.household().intent)),
 }
 
 obs_number!(

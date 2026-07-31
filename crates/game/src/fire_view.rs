@@ -62,8 +62,8 @@ impl FireLayer {
 
     pub fn legend(self) -> &'static str {
         match self {
-            FireLayer::Flames => "fresh burn → cooling → scar",
-            FireLayer::Intensity => "kW/m, log scale: 10 → 10 000",
+            FireLayer::Flames => "fresh burn · cooling · scar",
+            FireLayer::Intensity => "kW/m, log scale: 10 to 10 000",
             FireLayer::Arrival => "10-minute isochrones since ignition",
             FireLayer::Hazard => "probability the front takes this ground next",
         }
@@ -240,8 +240,16 @@ fn empty_mesh() -> Mesh {
     m
 }
 
-/// Number keys switch layers; the panel has buttons for the same thing.
-pub fn layer_controls(keys: Res<ButtonInput<KeyCode>>, mut layer: ResMut<FireLayer>) {
+/// Number keys switch layers; View ▸ Fire layer has the same four, with each
+/// one's legend on hover.
+pub fn layer_controls(
+    keys: Res<ButtonInput<KeyCode>>,
+    focus: Res<crate::ui::UiFocus>,
+    mut layer: ResMut<FireLayer>,
+) {
+    if focus.typing() {
+        return;
+    }
     for (key, value) in [
         (KeyCode::Digit1, FireLayer::Flames),
         (KeyCode::Digit2, FireLayer::Intensity),

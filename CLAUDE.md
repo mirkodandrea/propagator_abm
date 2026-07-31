@@ -37,7 +37,7 @@ asking.
 | Deferred | Web/wasm build, record/replay debrief |
 | Engine | Bevy **0.14** + `bevy_egui` **0.28**, matching igad so its UI ports directly |
 | Scenarios | **Multi-scenario support** — load different scenarios for ABM testing and validation |
-| Civilian behaviour | Authorable in-game as a node graph (`crates/behavior`), **opt-in**: the hand-written layer in `abm::decide` stays the default |
+| Agent behaviour | Authorable in-game as a node graph (`crates/behavior`) for **both** civilians and suppression units, **opt-in**: the hand-written layers in `abm::decide` and `abm::suppression` stay the default. One graph, one kind of agent; the editor works on one at a time |
 | Agent subtypes | Composition and flat parameter overrides. **No inheritance** — see the note in `crates/behavior/src/subtype.rs` |
 
 ---
@@ -47,7 +47,7 @@ asking.
 ```
 crates/scenario/   baked assets + coordinate frames   (no Bevy, no fire core)
 crates/fire/       PROPAGATOR integration, exposure, threat, interventions
-crates/behavior/   authored agent behaviour: node registry, graphs, subtypes
+crates/behavior/   authored agent behaviour: domains, node registry, graphs, subtypes
 crates/abm/        civilians: perception, decision, road network, evacuation
 crates/game/       Bevy app
 scripts/           offline asset baking (Python) — never runs at game time
@@ -58,8 +58,10 @@ The dependency direction is strict: `scenario` and `behavior` are both leaves,
 knowing nothing about Bevy, the fire core, or each other; `fire` depends on
 `scenario`; `abm` depends on all three; `game` depends on everything. Keep it
 that way — it is what makes the headless tests fast and the model testable
-without a window. In particular `behavior` restates `Intent` rather than
-importing it, so the editor and its tests run with no scenario loaded at all.
+without a window. In particular `behavior` restates `Intent` and `UnitKind`
+rather than importing them, so the editor and its tests run with no scenario,
+no fire model and no road network loaded at all; `abm::behaviour::intent_of` and
+`unit_kind_of` are the only two places the enums meet.
 
 ### Coordinate frames — read this before touching rendering
 
@@ -319,23 +321,92 @@ anything else touches them. The general shape: **an override keyed on an
 identity the editor is free to reassign has to be remapped at the moment of
 reassignment**, because every later opportunity looks like a valid graph.
 
+**25. A keyboard shortcut collides silently, and the loser is whichever system
+happens to read the key second — or neither, because both run.** Three of these
+shipped at once. `b` was bound to the Entities browser *and* the behaviour
+composer, and both systems fired on the same press, so opening the composer also
+toggled the panel behind it. `a` and `d` armed an attack and a drop *and* panned
+the camera west and east, because the camera panned on WASD — which reads as the
+order having a mysterious side effect, not as two bindings. And nothing was
+gated on egui's keyboard focus at all, so typing a household id into the
+Entities search box armed an attack, dropped a load, ordered a general
+evacuation and restarted the incident, one letter at a time. Bevy's
+`ButtonInput` has no notion of a binding table or of who has focus: every system
+that reads it is reading the raw keyboard, so **nothing warns you, nothing
+errors, and there is no place a conflict shows up except by playing**. The
+answers are all structural rather than clever: one system (`menu::menubar`)
+decides input ownership for the frame, every shortcut system is scheduled after
+it and returns early on `UiFocus::typing()`, and the camera moved to the arrow
+keys because it was the binding with a full mouse gesture already covering it.
+The menu bar then makes the whole table *visible*, which is the only thing that
+stops the next collision being found the same way.
+
+**26. A default that is also a legitimate value is an always-negative waiting
+to happen.** `block.unit_resupply` ships with `refill_below = 0.0`, meaning
+"break off when the tank is dry" — and the first version tested
+`water_fraction < refill_below`, which at 0.0 is *never true*. The block
+validated, appeared on the canvas wired to a live action, showed up in the
+override list, and did nothing at all; the shipped policy quietly lost its
+resupply rule while looking exactly like a working one. Inclusive comparison
+(`<=`), because the shipped setting sits on the boundary. The general shape is
+the same one as houses never burning and wetting the flames: **when a
+parameter's default is the edge of its own range, the comparison at that edge is
+the behaviour, not a corner case** — and the only thing that catches it is a
+test that asserts the branch *fires*, not that the graph runs.
+
+**27. A projection loses whatever it was not told to carry.** The composer keeps
+`egui_snarl` authoritative and derives `BehaviorGraph` from it every frame
+(`Composer::to_graph`), which is what stops the canvas disagreeing with the
+validator. Adding a domain to the graph made that a trap: `to_graph` built its
+output with `BehaviorGraph::new`, which defaults to `Household`, so the first
+sync after opening a unit policy silently rewrote it into a civilian behaviour —
+and a civilian behaviour containing only unit nodes fails validation with six
+errors about nodes that were perfectly correct a frame earlier. The domain lives
+in `Composer::graph_domain` because `self.graph` is the *output* of the
+projection and cannot be its input. **Anything a projection does not explicitly
+carry is reset to a default on every rebuild, and a default that validates is
+worse than one that does not.**
+
 ---
 
 ## Current state
 
 **Working:** terrain mesh (256 chunks), procedural vegetation from the fuel
 raster, road ribbons with the drivable/track split, orbit camera, fire
-rendered as an age-coloured mesh rebuilt only on sim generation change, egui
-"Incident" panel with a logarithmic 1x–512x time slider, play/pause, live
-stats.
+rendered as an age-coloured mesh rebuilt only on sim generation change.
+
+**The screen** (`crates/game/src/menu.rs`, `ui.rs`): a menu bar and three
+regions, and nothing else.
+
+- **Menu bar** — every action the game has, reachable in at most two clicks,
+  each row carrying its own shortcut in grey. Scenario (including **Load
+  scenario…**, a real round trip back to the selector), Simulation, Orders,
+  View, Tools, Help. Its right-hand end is the status strip: the clock, the
+  play button, the speed, and — in orange — what the next left-click will do
+  when a map tool is armed.
+- **Incident**, left — what the commander *reads*: the map legend, the fire
+  numbers, the evacuation breakdown behind a progress bar, and the two
+  evacuation orders. No transport, no layer buttons: those moved to the menu.
+- **The dock**, right — one panel, three tabs, because its three jobs are
+  mutually exclusive in practice: **Fire** (wind, moisture, ignition, seed,
+  restart), **Units** (roster, orders, air support), **Entities** (search
+  everything inspectable). `ui::DockTab`; `PanelState::focus_tab` is what makes
+  a shortcut or a menu item bring its tab forward rather than select it behind
+  a closed chevron.
+- **Inspector**, bottom — only when something is selected.
+
+This replaced five independent docks (two left/right side panels, two bottom
+panels, plus a floating dev window), which between them left the 3D view a
+strip in the middle. `ui::sync_viewport` still points the camera at whatever is
+left over, so the render never draws under an opaque panel.
 
 **Roads** (`crates/game/src/roads.rs`): 1,793 drivable ways and 1,676 tracks as
 casing-plus-surface ribbons draped on the 5 m field, resampled to 5 m and
 mitred at the joints, in 234 chunks / 656 k triangles. Asphalt dark, tracks
 pale dirt — the split is also the drive/walk distinction the ABM routes on.
 
-**Wildfire controls** (`crates/game/src/ui.rs` `wildfire_panel`,
-`ignition_edit.rs`, `pick.rs`): the "Wildfire" panel. Wind direction (with a
+**Wildfire controls** (`crates/game/src/ui.rs` `wildfire_body`,
+`ignition_edit.rs`, `pick.rs`): the dock's **Fire** tab. Wind direction (with a
 compass that spells out *both* the from-bearing and the direction the fire is
 driven), wind speed, fuel moisture — staged and applied on release as a
 boundary condition, so a shift changes what the front does next without
@@ -421,16 +492,45 @@ ignition at cell (153, 246), r=250 m):
 ```
 
 **Agent Behaviour Composer** (`crates/behavior`, `crates/game/src/composer/`):
-a node editor for the civilian decision layer, so the behavioural assumptions
-can be changed without writing Rust. `b` opens it.
+a node editor for the agent decision layers, so the behavioural assumptions can
+be changed without writing Rust. `g` opens it.
+
+It covers **two kinds of agent**, and works on one at a time. The domain
+selector at the top of the window scopes everything below it — the graph list,
+the palette, the profiles, the test bench — because the two share nothing but
+the arithmetic:
+
+| | Replaces | Action set |
+|---|---|---|
+| **Civilians** (a household) | the departure decision in `abm::decide` | prepare · evacuate now · defend · shelter |
+| **Suppression units** (a crew, engine or aircraft) | the safety and resupply policy in `abm::suppression` | withdraw · break off for water · hold · return to staging |
+
+A unit policy decides **when a unit stops**, not where it goes: pull back
+because the ground is not survivable, break off because the tank is low, hold or
+go home because the order was a bad one. Where a unit is sent stays the
+commander's job — a graph cannot produce a map position, exactly as a household
+graph cannot choose a destination.
 
 The developer-facing surface is one macro. A `behavior_node!` invocation
 anywhere in any linked crate is collected by `inventory` at link time and the
 node is in the palette, the validator, the inspector and the test bench with no
 further edit — there is no central list, which means there is no way to add a
-node the editor does not know about. 53 ship: one per field of
-`behavior::Observation`, plus arithmetic, comparison, boolean algebra, the two
-shaping curves, the action proposals and three sinks.
+node the editor does not know about. A node declares `domain:` or is
+domain-free; `anything_that_reads_the_world_declares_a_domain` is what stops a
+node reading a default observation in the wrong graph and looking like a branch
+that never fires. 88 ship — 60 offered to a civilian graph, 49 to a unit one,
+and the 21 in both are the arithmetic.
+
+**Blocks, not arithmetic.** The node set is two tiers, and the top one is where
+authoring is meant to happen. A `Category::Block` is one whole behavioural
+assumption — "how much alarm before they act", "when does a unit pull back" —
+reading what it needs off the observation itself and exposing the numbers that
+assumption turns on as parameters. That is also exactly what a subtype
+overrides, so a profile stops being a list of node ids and becomes a list of
+named quantities. The shipped evacuation behaviour was **31 nodes** written in
+observations and arithmetic; on blocks it is **13**, and the unit policy is 6.
+The primitives are all still in the palette — a block's *structure* is fixed,
+and rebuilding one out of `Logic` nodes is the supported way to change it.
 
 The scientist-facing surface is a graph. Four port types (`number`, `bool`,
 `intent`, `action`), and a wire is **refused while being dragged** rather than
@@ -438,20 +538,32 @@ reported afterwards — `viewer::connect` asks `behavior` the same question the
 validator does, so the canvas cannot disagree with the report under it.
 Validation is live and every issue names its node; clicking one selects it.
 
-An **agent subtype** is a graph plus a flat map of parameter overrides plus
-some starting traits — no inheritance, deliberately, so "why did this household
-do that" is answered by reading one file. Four ship, all on the one graph,
-differing only in numbers, which is the pattern the whole thing is for. The
-inspector edits the *override* when a profile is selected and says so, because
-a scientist who moves a threshold and finds they moved it for everyone has been
+An **agent subtype** is a graph plus a flat map of parameter overrides plus some
+starting traits — no inheritance, deliberately, so "why did this agent do that"
+is answered by reading one file. How a profile is *assigned* is the one place
+the two domains differ, and it follows from what is being assigned to:
+
+- **Civilians** carry a relative **share**, hashed onto 750 anonymous families.
+- **Units** carry a list of **kinds** and an on/off switch. There are eight of
+  them and they are named individuals; a hash would make "why did Autobotte 2
+  do that" a question about arithmetic rather than about a file.
+
+Six profiles ship: four civilian, on the one graph, differing only in numbers —
+which is the pattern the whole thing is for — plus `standing-orders` (the
+shipped unit policy, written down) and `cautious-engines` (off by default). The
+inspector edits the *override* when a profile is selected and says so, because a
+scientist who moves a threshold and finds they moved it for everyone has been
 badly served.
 
-The **test bench** puts a made-up household in a situation and reads back the
-answer node by node, plus a sweep that varies one field across its range and
-reports where the decision actually changes — a threshold here is never a
-single number, so the alternative is guessing.
+The **test bench** puts a made-up agent in a situation and reads back the answer
+node by node, plus a sweep that varies one field across its range and reports
+where the decision actually changes — a threshold here is never a single number,
+so the alternative is guessing. Situations, editable fields and sweep fields all
+follow the open graph's domain; eight civilian situations ship and nine unit
+ones, each chosen because it is a moment the hand-written layer either handled
+or visibly did not.
 
-`Apply and restart` rebuilds the agent model and replays the ignition list, so
+`Apply and restart` rebuilds both agent models and replays the ignition list, so
 "same fire, different behaviour" is a controlled comparison. Measured through
 the self-test, 15 minutes after a general order on an identical fire:
 
@@ -460,12 +572,26 @@ the self-test, 15 minutes after a general order on an identical fire:
   shipped behaviour library    473          (longer baked prep times per profile)
 ```
 
-The composer replaces exactly one block — the departure decision in
-`abm::decide`. Perception, preparation, movement, congestion and lethality are
-untouched, which is why a graph a scientist wrote can be run without review. It
-is also **off by default**: `Sim::behaviour` is `None` until the composer applies
-something, so every measurement in `crates/fire/tests` still describes the model
-it was taken on.
+And the unit policy's first interesting knob, measured on an engine attacking
+300 m downwind for 25 minutes (`refill_threshold_report`):
+
+```
+  refill_below 0.00   pump dry then go       3,140 L delivered
+  refill_below 0.33   go with a third left   3,387 L
+  refill_below 0.60   go with most of it     2,200 L
+```
+
+Breaking off early wins a little and then loses badly: the hydrant round trip is
+longer than six minutes of pumping, so past about a third the engine spends the
+incident shuttling. That number has not been swept properly, and it is the
+question `block.unit_resupply` exists to let someone answer.
+
+Both halves are **off by default**: `Sim::behaviour` is `None` until the
+composer applies something, and a library with no profile in play leaves each
+model on its own hand-written layer — so every measurement in
+`crates/fire/tests` still describes the model it was taken on. The shipped
+graphs are transcriptions of those layers and are pinned to reproduce them
+exactly (`the_shipped_policy_reproduces_the_hand_written_one`).
 
 **Not built yet:** no debrief. No wasm. No reunification behaviour — people who
 are out do not go home for family. No dozers (the only line-cutting resource is a
@@ -484,7 +610,8 @@ SPOTORNO_AUTOPLAY=1 cargo run --release -p game   # start running immediately (w
 SPOTORNO_ORDER_AT=600 cargo run --release -p game  # auto-order evacuation at T+10 min
 SPOTORNO_ATTACK_AT=300 cargo run --release -p game # commit every unit to the head at T+5 min
 cargo test --release                     # everything, ~4 s
-cargo test -p abm --release -- --ignored --nocapture     # evacuation timeline + routing cost
+cargo test -p abm --release -- --ignored --nocapture     # evacuation timeline,
+       # routing cost, and the engine refill-threshold sweep
 cargo test -p fire --release -- --ignored --nocapture    # slow calibration sweeps
 
 # the wildfire controls, driven without a keyboard: place an ignition mid-run,
@@ -501,12 +628,17 @@ SPOTORNO_SHOT_YAW=270 SPOTORNO_SHOT_PITCH=-14 ...  # orbit angle, degrees --
        # the only way to review something that is wrong from one direction
        # (a seam on the horizon), which the default three-quarter view misses
 SPOTORNO_PLACE=1 ...   # open with the ignition tool armed, so the rings show
+SPOTORNO_TAB=fire ...  # open on a chosen dock tab: fire | units | entities --
+       # the only way to screenshot one of them unattended
 
 # the behaviour composer, opened with the scenario -- the value picks the
 # right-hand tab, which is the only way to screenshot the bench unattended.
 SPOTORNO_COMPOSER=1 cargo run --release -p game          # inspector
 SPOTORNO_COMPOSER=subtypes ...                           # profiles and compare
 SPOTORNO_COMPOSER=test ...                               # the test bench
+SPOTORNO_COMPOSER_DOMAIN=units ...   # open on the suppression side rather than
+       # the civilian one -- the editor shows one kind of agent at a time, so
+       # this is the only way to screenshot the other one unattended
 
 # regenerate data/behaviours/ after editing crates/behavior/src/defaults.rs
 cargo test -p behavior --release -- --ignored write_shipped_library
@@ -514,20 +646,31 @@ cargo test -p behavior --release -- --ignored write_shipped_library
 
 Controls: `space` play/pause · `[` `]` speed · `1`–`4` fire layer · `e` general
 evacuation order · `i` arm the ignition tool (then left-click the map) · `esc`
-disarm · `r` restart · `b` the Agent Behaviour Composer · drag orbit ·
-right-drag pan · scroll zoom.
+disarm · `r` restart · `b` the Entities tab · `g` the Agent Behaviour Composer ·
+`f1` help · `f12` screenshot · drag orbit · right-drag pan · scroll zoom ·
+**arrow keys** pan.
 
 Suppression: `tab` next unit · `a` attack here · `l` cut line (two clicks) ·
 `d` drop here · `x` stand down · `c` request air support. Units are selected in
-the **Resources** panel or with `tab`; the order is then placed by clicking the
+the dock's **Units** tab or with `tab`; the order is then placed by clicking the
 ground.
+
+Everything above is also a row in the menu bar, with the key printed beside it.
+That is the only reason a player ever learns any of it.
 
 **Three tools contend for left-click** — ignition placement, agent inspection,
 and suppression orders — and the invariant is that at most one is armed. Arming
 either tool disarms the other, `inspect::pick_click` stands down while either is
 armed, and `esc` returns to plain inspect-and-orbit. While a tool is armed
-left-drag no longer orbits; right-drag pan, scroll and WASD always work, so the
-view is never stuck.
+left-drag no longer orbits; right-drag pan, scroll and the arrow keys always
+work, so the view is never stuck.
+
+**One system owns input arbitration.** `menu::menubar` runs first each frame
+and writes both halves of `ui::UiFocus`: `pointer` (assigned there, OR-ed into
+by every panel after it) and `keyboard` (egui's own `wants_keyboard_input`).
+Every shortcut system reads `UiFocus::typing()` as its first act and every one
+of them is scheduled `.after(menu::menubar)`. `esc` is the single exception,
+because it is what gets you *out* of a state.
 
 ---
 
@@ -548,14 +691,25 @@ view is never stuck.
   continuous fuel, not at the WUI edge.
 - Keep the model testable without a window. The headless tests in
   `crates/fire/tests/` run a full 2 h simulation in well under a second.
-- Exposing a new thing an agent can know is a field on `behavior::Observation`
-  plus one `obs_number!`/`obs_bool!` line. Exposing a new thing it can *do* is
-  harder on purpose: the action set is closed, and adding to it means teaching
-  `abm::behaviour::outcome_of` what the movement layer should do about it.
+- Exposing a new thing an agent can know is a field on `behavior::HouseholdObs`
+  or `UnitObs` plus one `obs_number!`/`unit_bool!` line. Exposing a new thing it
+  can *do* is harder on purpose: each domain's action set is closed, and adding
+  to it means teaching `abm::behaviour::outcome_of` or `unit_outcome_of` what
+  the movement or suppression layer should do about it.
+- **Prefer a block to a cluster of primitives.** A new behavioural assumption
+  should arrive as one `Category::Block` node with its numbers as parameters,
+  not as six `Logic` nodes a scientist has to wire in the right order. If it
+  cannot be expressed as one box, that is usually a sign the assumption has not
+  been decided yet.
+- A node that reads the observation **must** declare its `domain:`. A
+  domain-free one reads a default observation in whichever graph it lands in,
+  which behaves exactly like a branch that never fires. Pinned by
+  `anything_that_reads_the_world_declares_a_domain`.
 - An authored graph must not be able to break determinism or step-size
   invariance. There is no random node and no state between calls; per-agent
-  variation is `Observation::jitter`, hashed from the household id. Pinned by
-  `authored_behaviour_is_step_size_invariant`.
+  variation is `jitter`, hashed from the household or unit id. Pinned by
+  `authored_behaviour_is_step_size_invariant` and
+  `an_authored_policy_is_step_size_invariant`.
 
 ## Open questions
 
@@ -608,6 +762,32 @@ view is never stuck.
   uniformly across the town. Real behavioural profiles correlate with
   neighbourhood, tenure and age; nothing in the composer can express that yet.
 - The behaviour graph is evaluated per household per decision tick. At 750
-  households and ~40 nodes it does not show up next to the routing refresh, but
+  households and ~13 nodes it does not show up next to the routing refresh, but
   it has not been profiled at the top of the population range (2,000), and the
-  evaluator allocates a `Vec` per input slot per node.
+  evaluator allocates a `Vec` per input slot per node. The unit policy runs per
+  unit per 4 s sub-step, which at eight units is nothing.
+- **Composition is still one level deep.** A block is a shipped arrangement of
+  primitives, so only a developer can decide what a block *is*. A scientist who
+  wants "my own alarm rule, reused across four graphs" has to rebuild it out of
+  primitives each time. Nesting — one graph usable as a node inside another —
+  would fix that, and the cost is real: recursive validation, drill-in
+  navigation, and override keys becoming paths, which is finding 24 one level
+  deeper. Worth doing once the block vocabulary has settled from actual use.
+- The two block sets were written from the hand-written models, which means they
+  encode the assumptions that already existed. Whether they are the assumptions
+  a scientist *wants* to vary is unmeasured, and the honest test is somebody
+  other than us opening the editor.
+- A unit policy cannot pick targets. "Attack the nearest suppressible fuel",
+  "reposition to the flank", "go where the other engine is not" are all real
+  behaviours and all need a `Target` port type plus a resolution layer in `abm`
+  before a node for them would mean anything — and they would change what the
+  commander's job is, which is a game-design decision rather than a modelling
+  one.
+- Nothing an authored policy does is visible on the map beyond the unit's note.
+  A crew that pulled itself back because a graph said so looks identical to one
+  that was ordered back, which is the wrong way round for a tool whose point is
+  making assumptions legible.
+- `block.unit_futile` ships but nothing in the default policy uses it: the
+  shipped model's answer to a stranded unit is a note in the panel, and changing
+  that would change the shipped measurements. It is there for an author to wire
+  up, and until someone does, "what *should* a stranded engine do" is unanswered.

@@ -1,7 +1,12 @@
 //! Behaviour testing mode.
 //!
-//! Put a made-up household in a situation and read what the graph does, node
-//! by node. Three views, because they answer three different questions:
+//! Put a made-up agent in a situation and read what the graph does, node by
+//! node. Which kind of agent, which situations it can be put in and which
+//! fields are editable all follow the open graph's [`Domain`] — an engine and a
+//! household have no observation field in common, so there is nothing to share
+//! but the layout.
+//!
+//! Three views, because they answer three different questions:
 //!
 //! - **Evaluate** — one situation, the full trace. "Why did it decide that?"
 //! - **Sweep** — one field varied across its range. "*Where* does it change?"
@@ -17,7 +22,7 @@
 use bevy_egui::egui;
 
 use behavior::testbench::{self, SweepField};
-use behavior::{ActionKind, CompiledGraph, Observation, Trace};
+use behavior::{ActionKind, CompiledGraph, Domain, Observation, Trace};
 
 use super::Composer;
 
@@ -40,13 +45,34 @@ pub struct Bench {
 
 impl Default for Bench {
     fn default() -> Self {
-        let s = testbench::situations();
-        Bench {
+        let mut b = Bench {
             view: View::default(),
-            obs: s.get(2).map(|s| s.obs).unwrap_or_default(),
-            situation: 2,
+            obs: Observation::default(),
+            situation: 0,
             field: SweepField::Cue,
             verbose: false,
+        };
+        b.reset_to(Domain::Household);
+        b
+    }
+}
+
+impl Bench {
+    /// Point the bench at a domain: its situations, its fields, its sweeps.
+    ///
+    /// Opens on the third situation rather than the first, in both domains. The
+    /// first is deliberately the quiet one — nothing has happened, nothing
+    /// fires — which is the right thing to have in the list and the wrong thing
+    /// to open on, because it shows a behaviour doing nothing.
+    pub fn reset_to(&mut self, d: Domain) {
+        let s = testbench::situations_for(d);
+        self.situation = 2.min(s.len().saturating_sub(1));
+        self.obs = s
+            .get(self.situation)
+            .map(|s| s.obs)
+            .unwrap_or_else(|| Observation::empty(d));
+        if self.field.domain() != d {
+            self.field = SweepField::for_domain(d)[0];
         }
     }
 }
@@ -59,6 +85,15 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
             "This behaviour has errors and cannot be run. Fix them below the canvas.",
         );
         return;
+    }
+
+    // The bench holds an observation of whatever domain was last open. Switching
+    // the editor to the other kind of agent leaves it stale, and evaluating a
+    // unit policy against a household would answer with every field at its
+    // default — an entirely plausible-looking wrong answer.
+    let domain = c.domain();
+    if c.bench.obs.domain() != domain {
+        c.bench.reset_to(domain);
     }
 
     ui.horizontal(|ui| {
@@ -80,7 +115,8 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
 
 /// The situation: a preset, then every field of it editable.
 fn situation_picker(ui: &mut egui::Ui, c: &mut Composer) {
-    let situations = testbench::situations();
+    let domain = c.domain();
+    let situations = testbench::situations_for(domain);
     ui.horizontal(|ui| {
         ui.label("Situation");
         let name = situations.get(c.bench.situation).map(|s| s.name).unwrap_or("custom");
@@ -104,64 +140,124 @@ fn situation_picker(ui: &mut egui::Ui, c: &mut Composer) {
     }
 
     egui::CollapsingHeader::new("Agent inputs").default_open(false).show(ui, |ui| {
-        let o = &mut c.bench.obs;
         egui::Grid::new("bench-inputs").num_columns(2).striped(true).show(ui, |ui| {
-            let num = |ui: &mut egui::Ui, label: &str, v: &mut f32, lo: f32, hi: f32| {
-                ui.label(label);
-                ui.add(egui::Slider::new(v, lo..=hi));
-                ui.end_row();
-            };
-            num(ui, "Time (min)", &mut o.time_min, 0.0, 180.0);
-            num(ui, "Threat at home", &mut o.threat, 0.0, 1.0);
-            num(ui, "Radiant", &mut o.radiant, 0.0, 1.0);
-            num(ui, "Ember", &mut o.ember, 0.0, 1.0);
-            num(ui, "Distance to fire (m)", &mut o.fire_distance_m, 0.0, 2500.0);
-            num(ui, "Perceived alarm", &mut o.cue, 0.0, 1.0);
-            num(ui, "Minutes since order", &mut o.minutes_since_order, 0.0, 180.0);
-            num(ui, "Risk perception", &mut o.risk_perception, 0.0, 1.0);
-            num(ui, "Trust in authority", &mut o.trust_authority, 0.0, 1.0);
-            num(ui, "Preparation time (min)", &mut o.prep_time_min, 0.0, 120.0);
-            num(ui, "Defensible space", &mut o.defensible_space, 0.0, 1.0);
-            num(ui, "Household size", &mut o.household_size, 1.0, 8.0);
-            num(ui, "Distance to refuge (m)", &mut o.refuge_distance_m, 0.0, 5000.0);
-            num(ui, "Individual variation", &mut o.jitter, 0.0, 1.0);
-
-            ui.label("Stated intent");
-            egui::ComboBox::from_id_source("bench-intent")
-                .selected_text(o.intent.label())
-                .show_ui(ui, |ui| {
-                    for i in behavior::IntentValue::ALL {
-                        if ui.selectable_label(o.intent == i, i.label()).clicked() {
-                            o.intent = i;
-                        }
-                    }
-                });
-            ui.end_row();
-
-            for (label, flag) in [
-                ("House is alight", &mut o.structure_alight),
-                ("Order issued", &mut o.order_issued),
-                ("Warning received", &mut o.warning_received),
-                ("Has a vehicle", &mut o.has_vehicle),
-                ("Needs assistance", &mut o.needs_assistance),
-                ("Already preparing", &mut o.is_preparing),
-                ("Already moving", &mut o.is_moving),
-                ("Already defending", &mut o.is_defending),
-                ("Route blocked", &mut o.route_blocked),
-            ] {
-                ui.label(label);
-                ui.checkbox(flag, "");
-                ui.end_row();
+            match domain {
+                Domain::Household => household_inputs(ui, &mut c.bench.obs),
+                Domain::SuppressionUnit => unit_inputs(ui, &mut c.bench.obs),
             }
         });
         // Editing anything makes this a situation of the author's own, and
         // labelling it as one of the presets afterwards would be a lie.
         if ui.button("Reset to preset").clicked() {
-            if let Some(s) = testbench::situations().get(c.bench.situation) {
+            if let Some(s) = testbench::situations_for(domain).get(c.bench.situation) {
                 c.bench.obs = s.obs;
             }
         }
     });
+}
+
+fn slider(ui: &mut egui::Ui, label: &str, v: &mut f32, lo: f32, hi: f32) {
+    ui.label(label);
+    ui.add(egui::Slider::new(v, lo..=hi));
+    ui.end_row();
+}
+
+fn flags(ui: &mut egui::Ui, rows: &mut [(&str, &mut bool)]) {
+    for (label, flag) in rows {
+        ui.label(*label);
+        ui.checkbox(flag, "");
+        ui.end_row();
+    }
+}
+
+fn household_inputs(ui: &mut egui::Ui, obs: &mut Observation) {
+    let Some(o) = obs.household_mut() else { return };
+    slider(ui, "Time (min)", &mut o.time_min, 0.0, 180.0);
+    slider(ui, "Threat at home", &mut o.threat, 0.0, 1.0);
+    slider(ui, "Radiant", &mut o.radiant, 0.0, 1.0);
+    slider(ui, "Ember", &mut o.ember, 0.0, 1.0);
+    slider(ui, "Distance to fire (m)", &mut o.fire_distance_m, 0.0, 2500.0);
+    slider(ui, "Perceived alarm", &mut o.cue, 0.0, 1.0);
+    slider(ui, "Minutes since order", &mut o.minutes_since_order, 0.0, 180.0);
+    slider(ui, "Risk perception", &mut o.risk_perception, 0.0, 1.0);
+    slider(ui, "Trust in authority", &mut o.trust_authority, 0.0, 1.0);
+    slider(ui, "Preparation time (min)", &mut o.prep_time_min, 0.0, 120.0);
+    slider(ui, "Defensible space", &mut o.defensible_space, 0.0, 1.0);
+    slider(ui, "Household size", &mut o.household_size, 1.0, 8.0);
+    slider(ui, "Distance to refuge (m)", &mut o.refuge_distance_m, 0.0, 5000.0);
+    slider(ui, "Individual variation", &mut o.jitter, 0.0, 1.0);
+
+    ui.label("Stated intent");
+    egui::ComboBox::from_id_source("bench-intent")
+        .selected_text(o.intent.label())
+        .show_ui(ui, |ui| {
+            for i in behavior::IntentValue::ALL {
+                if ui.selectable_label(o.intent == i, i.label()).clicked() {
+                    o.intent = i;
+                }
+            }
+        });
+    ui.end_row();
+
+    flags(
+        ui,
+        &mut [
+            ("House is alight", &mut o.structure_alight),
+            ("Order issued", &mut o.order_issued),
+            ("Warning received", &mut o.warning_received),
+            ("Has a vehicle", &mut o.has_vehicle),
+            ("Needs assistance", &mut o.needs_assistance),
+            ("Already preparing", &mut o.is_preparing),
+            ("Already moving", &mut o.is_moving),
+            ("Already defending", &mut o.is_defending),
+            ("Route blocked", &mut o.route_blocked),
+        ],
+    );
+}
+
+fn unit_inputs(ui: &mut egui::Ui, obs: &mut Observation) {
+    let Some(o) = obs.unit_mut() else { return };
+    ui.label("Kind");
+    egui::ComboBox::from_id_source("bench-unit-kind")
+        .selected_text(o.kind.label())
+        .show_ui(ui, |ui| {
+            for k in behavior::UnitKindKey::ALL {
+                if ui.selectable_label(o.kind == k, k.label()).clicked() {
+                    o.kind = k;
+                    // The tank follows the kind, because a hand crew with water
+                    // in it is a situation the model cannot produce and a
+                    // policy tested against it is tested against nothing.
+                    o.carries_water = k != behavior::UnitKindKey::HandCrew;
+                    if !o.carries_water {
+                        o.water_fraction = 0.0;
+                    }
+                }
+            }
+        });
+    ui.end_row();
+
+    slider(ui, "Time (min)", &mut o.time_min, 0.0, 180.0);
+    slider(ui, "Threat at the unit", &mut o.threat_here, 0.0, 1.0);
+    slider(ui, "Accumulated heat", &mut o.heat_fraction, 0.0, 1.0);
+    slider(ui, "Distance to fire (m)", &mut o.distance_to_fire_m, 0.0, 3000.0);
+    slider(ui, "Water remaining", &mut o.water_fraction, 0.0, 1.0);
+    slider(ui, "Distance to the order (m)", &mut o.distance_to_task_m, 0.0, 5000.0);
+    slider(ui, "Distance to staging (m)", &mut o.distance_to_base_m, 0.0, 8000.0);
+    slider(ui, "Line cut so far", &mut o.line_progress, 0.0, 1.0);
+    slider(ui, "Minutes on this order", &mut o.minutes_on_task, 0.0, 180.0);
+    slider(ui, "Individual variation", &mut o.jitter, 0.0, 1.0);
+
+    flags(
+        ui,
+        &mut [
+            ("Carries water", &mut o.carries_water),
+            ("Has an order", &mut o.has_task),
+            ("Order is reachable", &mut o.task_reachable),
+            ("Something to work on", &mut o.work_available),
+            ("Already working", &mut o.is_working),
+            ("Already travelling", &mut o.is_moving),
+        ],
+    );
 }
 
 /// Compile the canvas with the selected profile's overrides applied — the same
@@ -197,7 +293,16 @@ fn evaluate(ui: &mut egui::Ui, c: &mut Composer) {
     ui.separator();
     ui.label("Proposals");
     if trace.proposals.is_empty() {
-        ui.small("Nothing fired — the household stays put.");
+        // What "nothing fired" *means* differs by domain, and it is the whole
+        // difference between the two decision sinks: a household that has been
+        // told nothing stays put, while a unit already has its orders.
+        ui.small(match c.domain() {
+            Domain::Household => "Nothing fired — the household stays put.",
+            Domain::SuppressionUnit => {
+                "Nothing fired — the unit gets on with the order it was given, which is \
+                 the common case."
+            }
+        });
     } else {
         for (i, (node, kind, prio)) in trace.proposals.iter().enumerate() {
             ui.horizontal(|ui| {
@@ -264,7 +369,7 @@ fn sweep(ui: &mut egui::Ui, c: &mut Composer) {
         egui::ComboBox::from_id_source("sweep-field")
             .selected_text(c.bench.field.label())
             .show_ui(ui, |ui| {
-                for f in SweepField::ALL {
+                for f in SweepField::for_domain(c.domain()).iter().copied() {
                     if ui.selectable_label(c.bench.field == f, f.label()).clicked() {
                         c.bench.field = f;
                     }
@@ -323,7 +428,7 @@ fn sweep(ui: &mut egui::Ui, c: &mut Composer) {
         for (at, from, to) in changes {
             ui.horizontal(|ui| {
                 ui.colored_label(action_colour(from), from.label());
-                ui.small("→");
+                ui.small("»");
                 ui.colored_label(action_colour(to), to.label());
                 ui.small(format!("at {at:.3}"));
             });
@@ -390,12 +495,24 @@ fn profiles(ui: &mut egui::Ui, c: &mut Composer) {
     );
 }
 
+/// One colour per action, shared by the proposal list, the trace and the sweep
+/// strip.
+///
+/// The two domains reuse the same five hues on purpose, matched by what the
+/// action *means* rather than by position: grey is "nothing changed", amber is
+/// "getting ready to move", blue is "moving", green is "committing to the job",
+/// red is "this is the dangerous one". Only one domain's actions are ever on
+/// screen at a time, so there is nothing to tell apart.
 fn action_colour(a: ActionKind) -> egui::Color32 {
     match a {
-        ActionKind::Stay => egui::Color32::from_rgb(0x5a, 0x60, 0x68),
-        ActionKind::Prepare => egui::Color32::from_rgb(0xd8, 0xa6, 0x4b),
-        ActionKind::EvacuateNow => egui::Color32::from_rgb(0x6f, 0xb1, 0xe8),
-        ActionKind::Defend => egui::Color32::from_rgb(0x7a, 0xb2, 0x8a),
-        ActionKind::Shelter => egui::Color32::from_rgb(0xe0, 0x6c, 0x5f),
+        ActionKind::Stay | ActionKind::Continue => egui::Color32::from_rgb(0x5a, 0x60, 0x68),
+        ActionKind::Prepare | ActionKind::HoldPosition => {
+            egui::Color32::from_rgb(0xd8, 0xa6, 0x4b)
+        }
+        ActionKind::EvacuateNow | ActionKind::ReturnToBase => {
+            egui::Color32::from_rgb(0x6f, 0xb1, 0xe8)
+        }
+        ActionKind::Defend | ActionKind::Refill => egui::Color32::from_rgb(0x7a, 0xb2, 0x8a),
+        ActionKind::Shelter | ActionKind::Withdraw => egui::Color32::from_rgb(0xe0, 0x6c, 0x5f),
     }
 }

@@ -21,7 +21,10 @@ use scenario::Cell;
 
 use crate::composer::Composer;
 use crate::ignition_edit::IgnitionTool;
+use crate::people::PersonView;
+use crate::scenario_selector::ScenarioSelector;
 use crate::sim::{Sim, SimRestarted};
+use crate::AppState;
 
 /// How far to run before each checkpoint, in simulated seconds.
 const LEG_S: i64 = 900;
@@ -38,6 +41,9 @@ pub struct SelfTest {
     /// Households evacuating under the shipped model, to compare the authored
     /// behaviour against.
     shipped_departed: usize,
+    /// Person figures on screen before the scenario reload — the count the
+    /// rebuilt scene has to match exactly.
+    figures_before: usize,
     failures: Vec<String>,
 }
 
@@ -55,6 +61,8 @@ enum Stage {
     Verify,
     ShippedLeg,
     BehaviourRun,
+    ReloadScenario,
+    Reloaded,
     Done,
 }
 
@@ -64,12 +72,16 @@ pub fn from_env() -> Option<SelfTest> {
         .map(|_| SelfTest::default())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     mut test: ResMut<SelfTest>,
     mut sim: ResMut<Sim>,
     mut tool: ResMut<IgnitionTool>,
     mut composer: ResMut<Composer>,
     mut restarted: EventWriter<SimRestarted>,
+    mut next_state: ResMut<NextState<AppState>>,
+    selector: Res<ScenarioSelector>,
+    figures: Query<(), With<PersonView>>,
     mut exit: EventWriter<AppExit>,
 ) {
     // Always running, always as fast as the step cap allows.
@@ -452,7 +464,31 @@ pub fn run(
                 assigned.len() == profiles,
                 &format!("{} of {profiles} profile(s) reached a household", assigned.len()),
             );
-            println!("[selftest] behaviour applied: {profiles} profile(s), all in play");
+            // The suppression half of the same library. Applying a behaviour
+            // rebuilds `Suppression` too, and a unit runtime that failed to
+            // build would leave the units silently on the hand-written policy —
+            // which looks exactly like a policy that agrees with it.
+            let unit_profiles = composer.lib.unit_assignment().len();
+            check(
+                &mut test,
+                unit_profiles > 0,
+                "the shipped behaviour library has no unit profile in play",
+            );
+            let governed = (0..sim.crews.units.len())
+                .filter(|i| sim.crews.policy_of(*i).is_some())
+                .count();
+            check(
+                &mut test,
+                governed == sim.crews.units.len(),
+                &format!(
+                    "{governed} of {} units are running the authored policy",
+                    sim.crews.units.len()
+                ),
+            );
+            println!(
+                "[selftest] behaviour applied: {profiles} household profile(s), \
+                 {unit_profiles} unit profile(s) governing {governed} units"
+            );
             sim.agents.order_evacuation_all();
             test.stage = Stage::BehaviourRun;
         }
@@ -484,6 +520,17 @@ pub fn run(
                 None => check(&mut test, false, "no explanation for a household under behaviour"),
             }
 
+            // The same for a unit. `Suppression::explain` builds the whole unit
+            // observation, including the two parts the civilians have no
+            // analogue of — reachability and work availability — so this is
+            // where a panic or a nonsense value in either would show up.
+            match sim.crews.explain(0, &sim.agents.network, &sim.fire, &sim.scenario) {
+                Some((_, trace)) => {
+                    check(&mut test, !trace.nodes.is_empty(), "the unit trace is empty");
+                }
+                None => check(&mut test, false, "no explanation for a unit under an authored policy"),
+            }
+
             // And back off it again: the shipped model has to still be one call
             // away, because every measurement in `crates/fire/tests` was taken
             // on it.
@@ -498,6 +545,51 @@ pub fn run(
                 sim.agents.behaviour_of(0).is_none(),
                 "reverting left the authored behaviour in place",
             );
+            check(
+                &mut test,
+                sim.crews.policy().is_none(),
+                "reverting left the authored unit policy in place",
+            );
+            test.stage = Stage::ReloadScenario;
+        }
+
+        // Scenario ▸ Load scenario… and straight back in. This is the only
+        // place the teardown can be tested: it is a state transition with an
+        // `OnExit` system, and what it has to get right is that the scene comes
+        // back exactly once. A teardown that missed something leaves the old
+        // scene's entities behind, so the figure count comes back *doubled* —
+        // which renders perfectly and is invisible in a screenshot.
+        Stage::ReloadScenario => {
+            let before = figures.iter().count();
+            test.figures_before = before;
+            check(
+                &mut test,
+                before > 0,
+                "no person figures before the scenario reload",
+            );
+            // `confirmed` is left set, so the selector relaunches the same
+            // scenario on its first frame rather than waiting for a click.
+            let _ = &selector;
+            next_state.set(AppState::SelectingScenario);
+            test.stage = Stage::Reloaded;
+        }
+
+        Stage::Reloaded => {
+            let now = figures.iter().count();
+            let before = test.figures_before;
+            println!(
+                "[selftest] scenario reloaded: {now} figures (was {before}), \
+                 T+{t}s, {burnt:.1} ha"
+            );
+            check(
+                &mut test,
+                now == before,
+                &format!(
+                    "the reloaded scene has {now} person figures, not {before} — \
+                     the teardown left the old scene behind"
+                ),
+            );
+            check(&mut test, t == 0, "the reloaded scenario did not start at T+0");
             test.stage = Stage::Done;
         }
 

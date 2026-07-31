@@ -15,11 +15,31 @@
 //!
 //! | | |
 //! |---|---|
+//! | [`Domain`] | which kind of agent a behaviour is about. One graph, one domain |
 //! | [`Observation`] | everything an agent may know. The whole contract with the model — a graph cannot reach past it |
 //! | [`NodeSpec`] | one kind of box: its ports, its parameters, one `fn` |
 //! | [`BehaviorGraph`] | boxes and wires, as saved |
 //! | [`CompiledGraph`] | a graph resolved against the registry with a subtype's overrides baked in |
 //! | [`AgentSubtype`] | a named profile: one graph, its overrides, starting traits |
+//!
+//! ### Two kinds of agent, one editor
+//!
+//! Households and suppression units are both authorable, and they share
+//! nothing but the arithmetic: separate observations, disjoint action sets,
+//! separate decision sinks. A graph declares its [`Domain`] and the editor
+//! works on one at a time, so a scientist is never looking at a palette half of
+//! which does not apply. See [`domain`] for why that is a hard partition rather
+//! than a filter.
+//!
+//! ### Blocks before primitives
+//!
+//! The node set is deliberately two-tier. A [`Category::Block`] is one whole
+//! behavioural assumption — "how much alarm before they act", "when does a unit
+//! pull back" — reading what it needs from the observation itself and exposing
+//! the numbers that assumption turns on as parameters. Underneath, the
+//! primitives that block is made of are all still in the palette, so its
+//! *structure* can be rebuilt where its numbers are not enough. Authoring
+//! should start at the top tier; the shipped library is written that way.
 //!
 //! ### Three rules it holds to
 //!
@@ -42,6 +62,7 @@
 //! for rather than quietly breaking it.
 
 pub mod defaults;
+pub mod domain;
 pub mod eval;
 pub mod graph;
 pub mod library;
@@ -58,6 +79,7 @@ pub mod value;
 #[doc(hidden)]
 pub use inventory;
 
+pub use domain::Domain;
 pub use eval::{CompiledGraph, Decision, NodeTrace, Overrides, Scratch, Trace};
 pub use graph::{BehaviorGraph, GraphNode, NodeId, Wire};
 pub use library::{CompileError, Library};
@@ -65,7 +87,7 @@ pub use node::{
     registry, Category, EvalCtx, EvalFn, Inputs, NodeSpec, ParamKind, ParamSpec, ParamValue,
     Params, PortSpec, Registry,
 };
-pub use observation::Observation;
+pub use observation::{HouseholdObs, Observation, UnitObs};
 pub use subtype::{AgentSubtype, Capability, Difference, TraitKey};
 pub use validate::{validate, Issue, Report, Severity};
-pub use value::{ActionKind, ActionProposal, IntentValue, Value, ValueType};
+pub use value::{ActionKind, ActionProposal, IntentValue, UnitKindKey, Value, ValueType};

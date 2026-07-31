@@ -29,7 +29,7 @@ use crate::sim::{Sim, SimRestarted, MAX_IGNITION_RADIUS_M, MIN_IGNITION_RADIUS_M
 /// orders of magnitude and the slider has to be logarithmic to be usable.
 pub const MIN_SPEED: f32 = 1.0;
 pub const MAX_SPEED: f32 = 512.0;
-const PRESETS: [(f32, &str); 5] = [
+pub const PRESETS: [(f32, &str); 5] = [
     (1.0, "1x"),
     (8.0, "8x"),
     (30.0, "30x"),
@@ -75,34 +75,17 @@ pub enum HelpLanguage {
     Italian,
 }
 
-/// Dev mode HUD for displaying debug info
-pub fn dev_hud(
-    mut contexts: EguiContexts,
-    sim: Res<Sim>,
-) {
-    if !sim.scenario.is_dev() {
-        return;
-    }
-
-    let ctx = contexts.ctx_mut();
-    egui::Window::new("🔧 DEV MODE")
-        .default_pos(egui::pos2(10.0, 10.0))
-        .auto_sized()
-        .show(ctx, |ui| {
-            ui.label(format!("Scenario: {}", sim.scenario.metadata.id));
-            ui.label(format!("People: {}", sim.agents.people.len()));
-            ui.label(format!("Households: {}", sim.agents.households.len()));
-            ui.label(format!("Buildings: {}", sim.scenario.vectors.buildings.len()));
-            ui.separator();
-            ui.label(format!("Fire grid: {}×{}", sim.scenario.world.fire_rows, sim.scenario.world.fire_cols));
-            ui.label(format!("World: {:.0} × {:.0} m", sim.scenario.world.width_m, sim.scenario.world.height_m));
-        });
-}
-
 impl Default for HelpUi {
     fn default() -> Self {
         Self {
-            open: true,
+            // Open for a player, shut for a script. An unattended run — a
+            // capture, the self-test, an autoplay demo — has nobody to dismiss
+            // it, and a modal window across the middle of every screenshot is
+            // the one thing that makes the captures useless for reviewing the
+            // thing they were taken to review.
+            open: ["SPOTORNO_AUTOPLAY", "SPOTORNO_SHOT", "SPOTORNO_SELFTEST"]
+                .iter()
+                .all(|k| std::env::var(k).is_err()),
             language: HelpLanguage::English,
         }
     }
@@ -156,7 +139,14 @@ impl Default for PanelState {
         PanelState {
             incident: true,
             dock: true,
-            tab: DockTab::Units,
+            // `SPOTORNO_TAB=fire` opens on a chosen tab, which is the only way
+            // to screenshot one unattended — the same reason `SPOTORNO_COMPOSER`
+            // takes the composer's tab name rather than just a flag.
+            tab: match std::env::var("SPOTORNO_TAB").as_deref() {
+                Ok("fire") => DockTab::Fire,
+                Ok("entities") => DockTab::Entities,
+                _ => DockTab::Units,
+            },
             inspector: true,
         }
     }
@@ -242,6 +232,28 @@ pub fn panel(
     let mut order: Option<(Pos, f32)> = None;
     let scenario_name = sim.scenario.metadata.name.clone();
     let is_dev = sim.scenario.is_dev();
+    let dev_rows: Vec<(String, String)> = if is_dev {
+        let w = &sim.scenario.world;
+        vec![
+            ("Scenario id".into(), sim.scenario.metadata.id.clone()),
+            ("People".into(), sim.agents.people.len().to_string()),
+            ("Households".into(), households.to_string()),
+            (
+                "Buildings".into(),
+                sim.scenario.vectors.buildings.len().to_string(),
+            ),
+            (
+                "Fire grid".into(),
+                format!("{}×{} @ {:.0} m", w.fire_rows, w.fire_cols, w.cellsize),
+            ),
+            (
+                "World".into(),
+                format!("{:.0} × {:.0} m", w.width_m, w.height_m),
+            ),
+        ]
+    } else {
+        Vec::new()
+    };
     let layer = *layer;
 
     egui::SidePanel::left("incident_dock")
@@ -309,11 +321,19 @@ pub fn panel(
                     // breakdown that explains it. A bar rather than a ratio
                     // because the useful reading is at a glance, mid-incident.
                     let done = evac.safe as f32 / households.max(1) as f32;
-                    ui.add(
-                        egui::ProgressBar::new(done)
-                            .desired_height(14.0)
-                            .text(format!("{} of {households} households out", evac.safe)),
-                    );
+                    ui.horizontal(|ui| {
+                        ui.label("Out");
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                ui.strong(format!("{} of {households}", evac.safe));
+                            },
+                        );
+                    });
+                    // The count is above the bar, not inside it: early in the
+                    // incident the fill is a few pixels wide and the label
+                    // inside it is the part that is unreadable.
+                    ui.add(egui::ProgressBar::new(done).desired_height(8.0));
                     if evac.casualties > 0 || evac.cutoff > 0 {
                         ui.colored_label(
                             egui::Color32::from_rgb(255, 110, 90),
@@ -381,6 +401,22 @@ pub fn panel(
                             order = Some((ignition_pos, 20_000.0));
                         }
                     });
+                    // The dev readout used to be a floating window that
+                    // covered the top-left corner of the map. It is diagnostic,
+                    // not operational, so it belongs folded away at the bottom
+                    // of the thing it describes.
+                    if is_dev {
+                        ui.add_space(6.0);
+                        ui.collapsing("🔧 Dev detail", |ui| {
+                            egui::Grid::new("dev").num_columns(2).show(ui, |ui| {
+                                for (k, v) in dev_rows.iter() {
+                                    ui.label(k.as_str());
+                                    ui.label(v.as_str());
+                                    ui.end_row();
+                                }
+                            });
+                        });
+                    }
                     ui.add_space(6.0);
                 });
         });
@@ -438,7 +474,7 @@ pub fn help_panel(
 
     help.open = open;
     help.language = language;
-    focus.0 |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+    focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
 
 fn help_english(ui: &mut egui::Ui) {
@@ -446,23 +482,23 @@ fn help_english(ui: &mut egui::Ui) {
     ui.label("You are the incident commander for a wildfire near Spotorno. The fire, weather, roads, households and response crews are simulated in real time. Your job is to watch the situation, protect people, and use the available crews where they can make a difference.");
     ui.add_space(8.0);
     ui.heading("A simple first run");
-    ui.label("1. Look at the fire and choose a fire layer in the Incident panel.");
+    ui.label("1. Look at the fire, and try the four map layers under View ▸ Fire layer (or press 1–4).");
     ui.label("2. Order an evacuation when people may be at risk.");
-    ui.label("3. Select a unit in Resources, choose an order, then click the map to place it.");
+    ui.label("3. Select a unit in the Units tab, choose an order, then click the map to place it.");
     ui.label("4. Press Play and adjust time acceleration as the incident develops.");
     ui.small("There is no score: use the information in the panels to see the consequences of each decision.");
     ui.add_space(8.0);
     ui.heading("Reading the panels");
-    ui.label("Incident shows the clock, fire size, intensity, risk, structure losses and evacuation progress.");
-    ui.label("Wildfire lets you change wind, moisture and ignitions; use Restart to run a revised scenario from T+0.");
-    ui.label("Resources is where you select crews and assign direct attack, a fire line or a water drop. Request air support early: it takes time to arrive.");
-    ui.label("Entities helps you find households, people, vehicles and units. Click something on the map or in the list to inspect it.");
+    ui.label("The menu bar along the top reaches everything, and the clock, play button and speed sit at its right-hand end.");
+    ui.label("Incident, on the left, shows fire size, intensity, risk, structure losses and evacuation progress.");
+    ui.label("The dock on the right has three tabs. Fire changes wind, moisture and ignitions, and restarts from T+0. Units is where you select crews and assign direct attack, a fire line or a water drop — request air support early, it takes 25 minutes to arrive. Entities finds any household, person, vehicle or unit.");
+    ui.label("Click something on the map or in a list and the Inspector opens along the bottom with everything the model knows about it.");
     controls_guide(
         ui,
         [
             (
                 "Move the view",
-                "left-drag orbit · right-drag pan · scroll zoom",
+                "left-drag orbit · right-drag pan · scroll zoom · arrow keys pan",
             ),
             ("Run time", "Space play/pause · [ and ] change speed"),
             ("Evacuate", "E orders everyone out"),
@@ -470,11 +506,11 @@ fn help_english(ui: &mut egui::Ui) {
             ("Ignition", "I, then click the map · R restarts"),
             (
                 "Crew orders",
-                "Tab next unit · A attack · L line · D drop · X stand down",
+                "Tab next unit · A attack · L line · D drop · X stand down · C request air",
             ),
             (
-                "Behaviours",
-                "B opens the Agent Behaviour Composer, where the civilian decision model can be edited",
+                "Panels",
+                "B the Entities tab · G the Agent Behaviour Composer · F1 this window",
             ),
             ("Cancel", "Esc cancels the active map tool"),
         ],
@@ -486,23 +522,23 @@ fn help_italian(ui: &mut egui::Ui) {
     ui.label("Sei il responsabile delle operazioni per un incendio boschivo vicino a Spotorno. Incendio, meteo, strade, famiglie e squadre di intervento sono simulati in tempo reale. Il tuo compito è osservare la situazione, proteggere le persone e usare le squadre dove possono fare la differenza.");
     ui.add_space(8.0);
     ui.heading("Una prima simulazione semplice");
-    ui.label("1. Osserva l'incendio e scegli un livello nella sezione Incident.");
+    ui.label("1. Osserva l'incendio e prova i quattro livelli in View ▸ Fire layer (o premi 1–4).");
     ui.label("2. Ordina l'evacuazione quando le persone potrebbero essere in pericolo.");
-    ui.label("3. Seleziona una squadra in Resources, scegli un ordine e poi clicca sulla mappa per assegnarlo.");
+    ui.label("3. Seleziona una squadra nella scheda Units, scegli un ordine e poi clicca sulla mappa per assegnarlo.");
     ui.label("4. Premi Play e regola l'accelerazione del tempo mentre l'emergenza evolve.");
     ui.small("Non c'è un punteggio: usa le informazioni nei pannelli per capire le conseguenze delle decisioni.");
     ui.add_space(8.0);
     ui.heading("Come leggere i pannelli");
-    ui.label("Incident mostra l'orologio, l'estensione e l'intensità dell'incendio, il rischio, le strutture perse e l'avanzamento dell'evacuazione.");
-    ui.label("Wildfire permette di cambiare vento, umidità e inneschi; usa Restart per ripartire da T+0 con uno scenario modificato.");
-    ui.label("Resources serve per selezionare le squadre e assegnare un attacco diretto, una linea tagliafuoco o un lancio d'acqua. Richiedi presto il supporto aereo: serve tempo perché arrivi.");
-    ui.label("Entities aiuta a trovare famiglie, persone, veicoli e squadre. Clicca un elemento sulla mappa o nell'elenco per ispezionarlo.");
+    ui.label("La barra dei menu in alto raggiunge ogni funzione; orologio, play e velocità stanno alla sua destra.");
+    ui.label("Incident, a sinistra, mostra estensione e intensità dell'incendio, rischio, strutture perse e avanzamento dell'evacuazione.");
+    ui.label("Il pannello a destra ha tre schede. Fire cambia vento, umidità e inneschi e riparte da T+0. Units serve a selezionare le squadre e assegnare attacco diretto, linea tagliafuoco o lancio d'acqua — richiedi presto il supporto aereo, servono 25 minuti. Entities trova qualsiasi famiglia, persona, veicolo o squadra.");
+    ui.label("Clicca un elemento sulla mappa o in un elenco e l'Inspector si apre in basso con tutto ciò che il modello sa su di esso.");
     controls_guide(
         ui,
         [
             (
                 "Muovere la visuale",
-                "trascina a sinistra per ruotare · a destra per spostare · rotella per zoom",
+                "trascina a sinistra per ruotare · a destra per spostare · rotella per zoom · frecce per scorrere",
             ),
             ("Tempo", "Spazio avvia/pausa · [ e ] cambiano velocità"),
             ("Evacuazione", "E ordina l'evacuazione generale"),
@@ -513,11 +549,11 @@ fn help_italian(ui: &mut egui::Ui) {
             ("Innesco", "I, poi clicca la mappa · R riavvia"),
             (
                 "Ordini alle squadre",
-                "Tab squadra successiva · A attacco · L linea · D lancio · X rientro",
+                "Tab squadra successiva · A attacco · L linea · D lancio · X rientro · C supporto aereo",
             ),
             (
-                "Comportamenti",
-                "B apre l'Agent Behaviour Composer, dove si può modificare il modello decisionale dei civili",
+                "Pannelli",
+                "B la scheda Entities · G l'Agent Behaviour Composer · F1 questa finestra",
             ),
             ("Annulla", "Esc annulla lo strumento attivo sulla mappa"),
         ],
@@ -539,6 +575,76 @@ fn controls_guide(ui: &mut egui::Ui, rows: [(&str, &str); 8]) {
         });
 }
 
+/// The right-hand dock: one panel, three tabs, one of them showing.
+///
+/// All three used to be their own `SidePanel`, which is why the 3D view was a
+/// letterbox. Sharing one dock also means they share one width the player sets
+/// once, rather than three they have to negotiate every time one is opened.
+#[allow(clippy::too_many_arguments)]
+pub fn dock(
+    mut contexts: EguiContexts,
+    mut sim: ResMut<Sim>,
+    mut panels: ResMut<PanelState>,
+    mut focus: ResMut<UiFocus>,
+    mut tool: ResMut<IgnitionTool>,
+    mut order: ResMut<crate::command::OrderTool>,
+    mut browser: ResMut<crate::browser::BrowserUi>,
+    mut selected: ResMut<crate::inspect::Selected>,
+    mut restarted: EventWriter<SimRestarted>,
+    mut camera: Query<&mut crate::camera::OrbitCamera>,
+) {
+    let ctx = contexts.ctx_mut();
+    let mut open = panels.dock;
+    let mut tab = panels.tab;
+
+    egui::SidePanel::right("work_dock")
+        .resizable(open)
+        .default_width(340.0)
+        .width_range(if open { 280.0..=560.0 } else { 26.0..=26.0 })
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                open = collapse_button(ui, open, "⏵", "⏴");
+                if !open {
+                    return;
+                }
+                // Selecting a tab is the only navigation in this dock, so it
+                // gets the whole header row and no competing heading text.
+                for t in DockTab::ALL {
+                    if ui
+                        .selectable_label(tab == t, t.label())
+                        .on_hover_text(t.hint())
+                        .clicked()
+                    {
+                        tab = t;
+                    }
+                }
+            });
+            if !open {
+                return;
+            }
+            ui.separator();
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| match tab {
+                    DockTab::Fire => wildfire_body(ui, &mut sim, &mut tool, &mut restarted),
+                    DockTab::Units => {
+                        crate::command::units_body(ui, &mut sim, &mut order, &mut tool)
+                    }
+                    DockTab::Entities => crate::browser::entities_body(
+                        ui,
+                        &mut browser,
+                        &mut selected,
+                        &sim,
+                        &mut camera,
+                    ),
+                });
+        });
+
+    panels.dock = open;
+    panels.tab = tab;
+    focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+}
+
 /// The wildfire controls: weather, ignitions, restart.
 ///
 /// Weather is staged rather than applied per-pixel-of-drag. Every change is a
@@ -554,7 +660,7 @@ pub fn wildfire_body(
 ) {
     let mut weather = sim.weather;
     let mut commit_weather = false;
-    let mut do_restart = false;
+    let mut do_restart;
     let mut replan = false;
     let mut clear_extra = false;
     let mut mode = tool.mode;
@@ -566,183 +672,164 @@ pub fn wildfire_body(
     let added = sim.ignitions.len() - opening;
     let running = sim.time_s();
 
-    egui::SidePanel::right("wildfire_dock")
-        .resizable(open)
-        .default_width(300.0)
-        .width_range(if open { 260.0..=520.0 } else { 26.0..=26.0 })
-        .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                open = collapse_button(ui, open, "⏵", "⏴");
-                if open {
-                    ui.heading("Wildfire");
-                }
-            });
-            if !open {
-                return;
-            }
-            ui.separator();
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.label("Wind");
-                    ui.horizontal(|ui| {
-                        compass(ui, live.wind_dir_deg as f32, weather.wind_dir_deg as f32);
-                        ui.vertical(|ui| {
-                            // Both directions spelled out, always. `w_dir` is the
-                            // bearing the wind blows *from*, the kernel reads it in a
-                            // way that looks like the opposite convention, and a bare
-                            // number here is the single easiest thing in this UI to
-                            // misread by 180 degrees.
-                            let from = weather.wind_dir_deg as f32;
-                            ui.label(format!("from {} ({:.0}°)", cardinal(from), from));
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "drives fire {}",
-                                    cardinal((from + 180.0) % 360.0)
-                                ))
-                                .strong(),
-                            );
-                        });
-                    });
-                    let r = ui.add(
-                        egui::Slider::new(&mut weather.wind_dir_deg, 0.0..=359.0)
-                            .step_by(5.0)
-                            .custom_formatter(|v, _| format!("{v:.0}° from {}", cardinal(v as f32)))
-                            .text("direction"),
-                    );
-                    commit_weather |= r.drag_stopped() || r.lost_focus();
-                    let r = ui.add(
-                        egui::Slider::new(&mut weather.wind_speed_kmh, 0.0..=90.0)
-                            .suffix(" km/h")
-                            .text("speed"),
-                    );
-                    commit_weather |= r.drag_stopped() || r.lost_focus();
-
-                    ui.add_space(4.0);
-                    ui.label("Fuel moisture");
-                    let r = ui.add(
-                        egui::Slider::new(&mut weather.moisture_pct, 2.0..=40.0)
-                            .suffix(" %")
-                            .text("dead fine fuel"),
-                    );
-                    commit_weather |= r.drag_stopped() || r.lost_focus();
-                    ui.small(match weather.moisture_pct {
-                        m if m < 8.0 => "critically dry — fire spreads freely",
-                        m if m < 15.0 => "dry",
-                        m if m < 25.0 => "damp — spread slows sharply",
-                        _ => "wet — most fuels will not carry fire",
-                    });
-
-                    ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        let apply = ui
-                            .add_enabled(dirty, egui::Button::new("Apply weather"))
-                            .on_hover_text(
-                                "Takes effect from now on. What the fire has already \
-                         burnt is not rewritten — this is a wind shift, not a \
-                         different scenario.",
-                            );
-                        commit_weather |= apply.clicked();
-                        if dirty {
-                            ui.colored_label(egui::Color32::from_rgb(240, 180, 60), "● pending");
-                        }
-                    });
-
-                    ui.separator();
-                    ui.label("Ignition");
-                    let placing = mode == EditMode::Place;
-                    if ui
-                        .selectable_label(
-                            placing,
-                            if placing {
-                                "◉ Click the map to light a fire"
-                            } else {
-                                "Place ignition  (i)"
-                            },
-                        )
-                        .on_hover_text(
-                            "Left-click lights a patch where you point. Right-drag \
-                     still orbits, so you keep the camera.",
-                        )
-                        .clicked()
-                    {
-                        mode = if placing {
-                            EditMode::Off
-                        } else {
-                            EditMode::Place
-                        };
-                    }
-                    let r = ui.add(
-                        egui::Slider::new(
-                            &mut radius,
-                            MIN_IGNITION_RADIUS_M..=MAX_IGNITION_RADIUS_M,
-                        )
-                        .suffix(" m")
-                        .text("radius"),
-                    );
-                    // Not applied on release: the cursor ring has to resize as it is
-                    // dragged, or the control has no feedback at all.
-                    let _ = r;
-                    ui.small(format!(
-                        "≈{:.0} ha. Below {MIN_IGNITION_RADIUS_M:.0} m a single patch \
-                 often fails to establish.",
-                        std::f32::consts::PI * radius * radius / 10_000.0
-                    ));
-
-                    egui::Grid::new("ign").num_columns(2).show(ui, |ui| {
-                        ui.label("Opening fire");
-                        ui.label(format!("{opening} patch(es)"));
-                        ui.end_row();
-                        ui.label("Added since start");
-                        ui.label(format!("{added}"));
-                        ui.end_row();
-                    });
-                    ui.horizontal(|ui| {
-                        if ui
-                            .add_enabled(added > 0, egui::Button::new("Forget added"))
-                            .on_hover_text("Drop the fires you lit mid-run from the restart list.")
-                            .clicked()
-                        {
-                            clear_extra = true;
-                        }
-                        if ui
-                            .button("Replan for wind")
-                            .on_hover_text(
-                                "Move the opening fire to the best-measured start for \
-                         this wind direction — inland, in continuous fuel, \
-                         upwind of the town.",
-                            )
-                            .clicked()
-                        {
-                            replan = true;
-                        }
-                    });
-
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        ui.label("Seed");
-                        ui.add(egui::DragValue::new(&mut seed).speed(1.0));
-                    });
-                    let restart = ui
-                        .add_sized(
-                            [ui.available_width(), 28.0],
-                            egui::Button::new("⟲  Restart simulation  (r)")
-                                .fill(egui::Color32::from_rgb(120, 40, 32)),
-                        )
-                        .on_hover_text(
-                            "Relights the scenario at T+0 with the current weather, \
-                     seed and ignitions. The terrain, buildings and population \
-                     are kept; the fire and every household's decision are not.",
-                        );
-                    do_restart = restart.clicked();
-                    if running > 0 {
-                        ui.small(format!(
-                            "{} of simulated time will be discarded.",
-                            hhmm(running)
-                        ));
-                    }
-                });
+    section(ui, "Wind");
+    ui.horizontal(|ui| {
+        compass(ui, live.wind_dir_deg as f32, weather.wind_dir_deg as f32);
+        ui.vertical(|ui| {
+            // Both directions spelled out, always. `w_dir` is the
+            // bearing the wind blows *from*, the kernel reads it in a
+            // way that looks like the opposite convention, and a bare
+            // number here is the single easiest thing in this UI to
+            // misread by 180 degrees.
+            let from = weather.wind_dir_deg as f32;
+            ui.label(format!("from {} ({:.0}°)", cardinal(from), from));
+            ui.label(
+                egui::RichText::new(format!(
+                    "drives fire {}",
+                    cardinal((from + 180.0) % 360.0)
+                ))
+                .strong(),
+            );
         });
+    });
+    let r = ui.add(
+        egui::Slider::new(&mut weather.wind_dir_deg, 0.0..=359.0)
+            .step_by(5.0)
+            .custom_formatter(|v, _| format!("{v:.0}° from {}", cardinal(v as f32)))
+            .text("direction"),
+    );
+    commit_weather |= r.drag_stopped() || r.lost_focus();
+    let r = ui.add(
+        egui::Slider::new(&mut weather.wind_speed_kmh, 0.0..=90.0)
+            .suffix(" km/h")
+            .text("speed"),
+    );
+    commit_weather |= r.drag_stopped() || r.lost_focus();
+
+    ui.add_space(8.0);
+    section(ui, "Fuel moisture");
+    let r = ui.add(
+        egui::Slider::new(&mut weather.moisture_pct, 2.0..=40.0)
+            .suffix(" %")
+            .text("dead fine fuel"),
+    );
+    commit_weather |= r.drag_stopped() || r.lost_focus();
+    ui.small(match weather.moisture_pct {
+        m if m < 8.0 => "critically dry — fire spreads freely",
+        m if m < 15.0 => "dry",
+        m if m < 25.0 => "damp — spread slows sharply",
+        _ => "wet — most fuels will not carry fire",
+    });
+
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        let apply = ui
+            .add_enabled(dirty, egui::Button::new("Apply weather"))
+            .on_hover_text(
+                "Takes effect from now on. What the fire has already \
+         burnt is not rewritten — this is a wind shift, not a \
+         different scenario.",
+            );
+        commit_weather |= apply.clicked();
+        if dirty {
+            ui.colored_label(egui::Color32::from_rgb(240, 180, 60), "● pending");
+        }
+    });
+
+    ui.add_space(8.0);
+    section(ui, "Ignition");
+    let placing = mode == EditMode::Place;
+    if ui
+        .selectable_label(
+            placing,
+            if placing {
+                "▶ Click the map to light a fire"
+            } else {
+                "Place ignition  (I)"
+            },
+        )
+        .on_hover_text(
+            "Left-click lights a patch where you point. Right-drag \
+     still orbits, so you keep the camera.",
+        )
+        .clicked()
+    {
+        mode = if placing {
+            EditMode::Off
+        } else {
+            EditMode::Place
+        };
+    }
+    let r = ui.add(
+        egui::Slider::new(
+            &mut radius,
+            MIN_IGNITION_RADIUS_M..=MAX_IGNITION_RADIUS_M,
+        )
+        .suffix(" m")
+        .text("radius"),
+    );
+    // Not applied on release: the cursor ring has to resize as it is
+    // dragged, or the control has no feedback at all.
+    let _ = r;
+    ui.small(format!(
+        "≈{:.0} ha. Below {MIN_IGNITION_RADIUS_M:.0} m a single patch \
+                 often fails to establish.",
+        std::f32::consts::PI * radius * radius / 10_000.0
+    ));
+
+    egui::Grid::new("ign").num_columns(2).show(ui, |ui| {
+        ui.label("Opening fire");
+        ui.label(format!("{opening} patch(es)"));
+        ui.end_row();
+        ui.label("Added since start");
+        ui.label(format!("{added}"));
+        ui.end_row();
+    });
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(added > 0, egui::Button::new("Forget added"))
+            .on_hover_text("Drop the fires you lit mid-run from the restart list.")
+            .clicked()
+        {
+            clear_extra = true;
+        }
+        if ui
+            .button("Replan for wind")
+            .on_hover_text(
+                "Move the opening fire to the best-measured start for \
+         this wind direction — inland, in continuous fuel, \
+         upwind of the town.",
+            )
+            .clicked()
+        {
+            replan = true;
+        }
+    });
+
+    ui.add_space(8.0);
+    section(ui, "Run");
+    ui.horizontal(|ui| {
+        ui.label("Seed");
+        ui.add(egui::DragValue::new(&mut seed).speed(1.0));
+    });
+    let restart = ui
+        .add_sized(
+            [ui.available_width(), 28.0],
+            egui::Button::new("⟲  Restart incident  (R)")
+                .fill(egui::Color32::from_rgb(120, 40, 32)),
+        )
+        .on_hover_text(
+            "Relights the scenario at T+0 with the current weather, \
+     seed and ignitions. The terrain, buildings and population \
+     are kept; the fire and every household's decision are not.",
+        );
+    do_restart = restart.clicked();
+    if running > 0 {
+        ui.small(format!(
+            "{} of simulated time will be discarded.",
+            hhmm(running)
+        ));
+    }
 
     // Radius and mode are pure view state, so they go back immediately.
     if radius != tool.radius_m {
@@ -793,9 +880,6 @@ pub fn wildfire_body(
             Err(e) => error!("restart failed: {e:#}"),
         }
     }
-    panels.wildfire = open;
-
-    focus.0 |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
 
 /// A wind rose. `live` is what the fire is running on, `staged` what the

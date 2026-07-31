@@ -9,11 +9,11 @@
   ],
   "graph": "default-evacuation",
   "overrides": {
-    "9.leave_early": {
+    "0.leave_early": {
       "t": "number",
       "v": 0.02
     },
-    "9.wait_and_see": {
+    "0.wait_and_see": {
       "t": "number",
       "v": 0.1
     }
@@ -24,5 +24,6 @@
     "defensible_space": 0.7
   },
   "capabilities": {},
-  "share": 0.25
+  "share": 0.25,
+  "enabled": true
 }

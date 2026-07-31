@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::eval::Overrides;
 use crate::graph::BehaviorGraph;
 use crate::node::ParamValue;
+use crate::value::UnitKindKey;
 
 /// A trait value a subtype starts its households with, replacing whatever the
 /// population bake drew.
@@ -112,13 +113,39 @@ pub struct AgentSubtype {
     pub traits: BTreeMap<TraitKey, f32>,
 
     /// Capabilities forced on or off. Absent means "leave it as baked".
+    ///
+    /// Households only.
     #[serde(default)]
     pub capabilities: BTreeMap<Capability, bool>,
 
     /// Share of the population assigned this subtype, before normalisation.
     /// Zero means the subtype exists but is not in play.
+    ///
+    /// **Households only.** A share is how you assign a profile to 750
+    /// anonymous families; there are eight suppression units and they are named
+    /// individuals, so a unit profile says which *kinds* it governs instead —
+    /// see [`AgentSubtype::unit_kinds`].
     #[serde(default)]
     pub share: f32,
+
+    /// Which unit kinds this profile governs. **Suppression units only.**
+    ///
+    /// Empty means every kind, which is the usual case: a safety policy that
+    /// differs between a crew and an engine is a safety policy someone has to
+    /// remember to keep in step, and the per-kind parameters on
+    /// `block.unit_safety` already express the difference where it is real.
+    ///
+    /// The first profile matching a unit's kind wins, in id order. Deliberately
+    /// not a share: assigning a named engine a policy by a hash of its id would
+    /// make "why did Autobotte 2 do that" unanswerable from the files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unit_kinds: Vec<UnitKindKey>,
+
+    /// Whether this profile is in play at all. **Suppression units only** —
+    /// households use `share` for the same purpose, because a share of zero
+    /// already says it.
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 impl AgentSubtype {
@@ -134,7 +161,14 @@ impl AgentSubtype {
             traits: BTreeMap::new(),
             capabilities: BTreeMap::new(),
             share: 1.0,
+            unit_kinds: Vec::new(),
+            enabled: true,
         }
+    }
+
+    /// Whether this profile governs a unit of `kind`.
+    pub fn governs(&self, kind: UnitKindKey) -> bool {
+        self.enabled && (self.unit_kinds.is_empty() || self.unit_kinds.contains(&kind))
     }
 
     /// A copy under a new id, with the name marked so two of them are
@@ -210,6 +244,14 @@ pub fn compare(
     push("Behaviour graph", a.graph.clone(), b.graph.clone());
     push("Share", format!("{:.2}", a.share), format!("{:.2}", b.share));
     push("Tags", a.tags.join(", "), b.tags.join(", "));
+    let kinds = |s: &AgentSubtype| {
+        if s.unit_kinds.is_empty() {
+            "every kind".to_string()
+        } else {
+            s.unit_kinds.iter().map(|k| k.label()).collect::<Vec<_>>().join(", ")
+        }
+    };
+    push("Applies to", kinds(a), kinds(b));
 
     let keys: BTreeSet<&String> = a.overrides.keys().chain(b.overrides.keys()).collect();
     for k in keys {

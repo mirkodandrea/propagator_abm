@@ -19,21 +19,32 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-use crate::observation::Observation;
-use crate::value::{ActionKind, ActionProposal, IntentValue, Value, ValueType};
+use crate::domain::Domain;
+use crate::observation::{HouseholdObs, Observation, UnitObs};
+use crate::value::{ActionKind, ActionProposal, IntentValue, UnitKindKey, Value, ValueType};
 
 #[cfg(feature = "reflect")]
 use bevy_reflect::Reflect;
 
 /// Where a node sits in the palette, and what it is allowed to do.
 ///
-/// The categories are not cosmetic: an `Observation` is the only kind that may
-/// read the world, and an `Output` is the only kind the evaluator collects
-/// results from.
+/// The categories are not cosmetic: a `Block` or an `Observation` are the only
+/// kinds that may read the world, and an `Output` is the only kind the
+/// evaluator collects results from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "reflect", derive(Reflect))]
 #[serde(rename_all = "snake_case")]
 pub enum Category {
+    /// A whole behavioural assumption in one box: reads what it needs from the
+    /// [`Observation`] itself and exposes the numbers that assumption turns on
+    /// as parameters.
+    ///
+    /// This is the level a scientist should be working at, and it is first in
+    /// the palette for that reason. The primitives below it are still there —
+    /// a block is only a shipped default arrangement of them, and rebuilding
+    /// one out of `Logic` nodes is the supported way to change its *structure*
+    /// rather than its numbers.
+    Block,
     /// Reads one field of the [`Observation`]. No inputs.
     Observation,
     /// A constant the scientist sets, and the thing a subtype overrides.
@@ -48,7 +59,8 @@ pub enum Category {
 }
 
 impl Category {
-    pub const ALL: [Category; 5] = [
+    pub const ALL: [Category; 6] = [
+        Category::Block,
         Category::Observation,
         Category::Parameter,
         Category::Logic,
@@ -58,6 +70,7 @@ impl Category {
 
     pub fn label(self) -> &'static str {
         match self {
+            Category::Block => "Blocks",
             Category::Observation => "Observations",
             Category::Parameter => "Parameters",
             Category::Logic => "Logic",
@@ -69,6 +82,7 @@ impl Category {
     /// Header tint for the editor, sRGB bytes.
     pub fn colour(self) -> [u8; 3] {
         match self {
+            Category::Block => [0x4a, 0x6d, 0x5c],
             Category::Observation => [0x3a, 0x62, 0x7a],
             Category::Parameter => [0x5c, 0x52, 0x76],
             Category::Logic => [0x3f, 0x4a, 0x5a],
@@ -202,6 +216,9 @@ impl<'a> Params<'a> {
     pub fn action(&self, i: usize) -> ActionKind {
         ActionKind::from_key(self.key(i)).unwrap_or(ActionKind::Stay)
     }
+    pub fn unit_kind(&self, i: usize) -> UnitKindKey {
+        UnitKindKey::from_key(self.key(i)).unwrap_or(UnitKindKey::HandCrew)
+    }
 }
 
 /// The values arriving on a node's inputs.
@@ -241,8 +258,26 @@ impl<'a> Inputs<'a> {
 }
 
 /// Everything a node may read that is not on a wire.
+///
+/// The two accessors are how a domain-tagged node reaches its own observation.
+/// Neither can fail: the validator has already refused a graph containing a
+/// node of a domain other than its own, so a `Household` node only ever runs
+/// against a household. See [`Observation::household`] for why that is a
+/// default rather than a panic.
 pub struct EvalCtx<'a> {
     pub obs: &'a Observation,
+}
+
+impl<'a> EvalCtx<'a> {
+    pub fn household(&self) -> HouseholdObs {
+        self.obs.household()
+    }
+    pub fn unit(&self) -> UnitObs {
+        self.obs.unit()
+    }
+    pub fn domain(&self) -> Domain {
+        self.obs.domain()
+    }
 }
 
 /// The evaluation function. Writes one value per declared output, in order.
@@ -255,6 +290,13 @@ pub struct NodeSpec {
     pub id: &'static str,
     pub name: &'static str,
     pub category: Category,
+    /// Which kind of agent this node is about, or `None` for one that is about
+    /// none of them — arithmetic, boolean algebra, constants.
+    ///
+    /// A node with a domain may only appear in a graph of that domain, which is
+    /// what stops "Threat at home" turning up in an engine's policy and reading
+    /// zero forever.
+    pub domain: Option<Domain>,
     pub doc: &'static str,
     /// Extra words the palette search matches on, for the terms a scientist
     /// would actually type: "smoke" finds the fire-distance observation.
@@ -268,6 +310,11 @@ pub struct NodeSpec {
 impl NodeSpec {
     pub fn param_index(&self, name: &str) -> Option<usize> {
         self.params.iter().position(|p| p.name == name)
+    }
+
+    /// Whether this node may be placed in a graph of `domain`.
+    pub fn allowed_in(&self, domain: Domain) -> bool {
+        self.domain.map_or(true, |d| d == domain)
     }
 
     pub fn default_params(&self) -> Vec<ParamValue> {
@@ -323,6 +370,20 @@ impl Registry {
     pub fn in_category(&self, c: Category) -> impl Iterator<Item = &'static NodeSpec> + '_ {
         self.all().filter(move |s| s.category == c)
     }
+
+    /// Everything a graph of `domain` may contain: its own nodes plus the
+    /// domain-free ones.
+    pub fn in_domain(&self, d: Domain) -> impl Iterator<Item = &'static NodeSpec> + '_ {
+        self.all().filter(move |s| s.allowed_in(d))
+    }
+
+    pub fn in_category_and_domain(
+        &self,
+        c: Category,
+        d: Domain,
+    ) -> impl Iterator<Item = &'static NodeSpec> + '_ {
+        self.all().filter(move |s| s.category == c && s.allowed_in(d))
+    }
 }
 
 /// The process-wide node registry.
@@ -368,6 +429,9 @@ macro_rules! __port {
     (bool $name:literal, $doc:literal, $d:expr) => {
         $crate::PortSpec { name: $name, ty: $crate::ValueType::Bool, doc: $doc, default: Some($crate::Value::Bool($d)), multi: false }
     };
+    (bools $name:literal, $doc:literal) => {
+        $crate::PortSpec { name: $name, ty: $crate::ValueType::Bool, doc: $doc, default: None, multi: true }
+    };
     (intent $name:literal, $doc:literal) => {
         $crate::PortSpec { name: $name, ty: $crate::ValueType::Intent, doc: $doc, default: None, multi: false }
     };
@@ -407,6 +471,18 @@ macro_rules! __param {
     };
 }
 
+/// Resolve the optional `domain:` key. Not called directly.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __domain {
+    () => {
+        None
+    };
+    ($d:ident) => {
+        Some($crate::Domain::$d)
+    };
+}
+
 /// Register one behaviour node.
 ///
 /// This is the whole developer-facing surface for exposing a new agent
@@ -429,12 +505,30 @@ macro_rules! __param {
 ///     eval: |_ctx, _p, i, out| out.push(Value::Bool(i.boolean(0) && i.boolean(1))),
 /// }
 /// ```
+///
+/// `domain:` is optional and goes after `category:`. Omitting it declares a
+/// node that is about no particular kind of agent — arithmetic and constants —
+/// and such a node appears in every domain's palette. Anything that reads the
+/// observation *must* declare one, because that is what guarantees the field it
+/// reads is there:
+///
+/// ```ignore
+/// behavior_node! {
+///     id: "unit.water_fraction",
+///     name: "Water remaining",
+///     category: Observation,
+///     domain: SuppressionUnit,
+///     ...
+///     eval: |ctx, _p, _i, out| out.push(Value::Number(ctx.unit().water_fraction)),
+/// }
+/// ```
 #[macro_export]
 macro_rules! behavior_node {
     (
         id: $id:literal,
         name: $name:literal,
         category: $cat:ident,
+        $(domain: $dom:ident,)?
         doc: $doc:literal,
         $(keywords: [$($kw:literal),* $(,)?],)?
         inputs: [ $(( $($itok:tt)* )),* $(,)? ],
@@ -447,6 +541,7 @@ macro_rules! behavior_node {
                 id: $id,
                 name: $name,
                 category: $crate::Category::$cat,
+                domain: $crate::__domain!($($dom)?),
                 doc: $doc,
                 keywords: &[$($($kw),*)?],
                 inputs: &[ $($crate::__port!($($itok)*)),* ],

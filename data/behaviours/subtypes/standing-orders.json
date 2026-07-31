@@ -1,0 +1,15 @@
+{
+  "id": "standing-orders",
+  "name": "Standing orders",
+  "description": "The shipped policy, applied to every unit: disengage above 0.35 of threat, and pump the tank dry before going for water. This is what the model does with no authored behaviour at all, written down.",
+  "author": "shipped",
+  "tags": [
+    "baseline"
+  ],
+  "graph": "default-unit-policy",
+  "overrides": {},
+  "traits": {},
+  "capabilities": {},
+  "share": 0.0,
+  "enabled": true
+}

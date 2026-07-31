@@ -13,6 +13,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::domain::Domain;
 use crate::graph::{BehaviorGraph, NodeId};
 use crate::node::{registry, EvalCtx, Inputs, NodeSpec, ParamValue, Params};
 use crate::nodes;
@@ -37,6 +38,7 @@ struct CompiledNode {
 /// A graph resolved against the registry and a set of overrides, ready to run.
 pub struct CompiledGraph {
     pub graph_id: String,
+    pub domain: Domain,
     nodes: Vec<CompiledNode>,
     /// Compiled index of the single `out.decision` node.
     decision: usize,
@@ -147,10 +149,11 @@ impl CompiledGraph {
         let find = |type_id: &str| {
             nodes.iter().position(|n| n.spec.id == type_id)
         };
-        let decision = find(nodes::DECISION_OUTPUT).expect("validated");
+        let decision = find(graph.domain.decision_output()).expect("validated");
 
         Ok(CompiledGraph {
             graph_id: graph.id.clone(),
+            domain: graph.domain,
             decision,
             prep_scale: find(nodes::PREP_SCALE_OUTPUT),
             urgency: find(nodes::URGENCY_OUTPUT),
@@ -237,7 +240,11 @@ impl CompiledGraph {
         let chosen = s.outputs[self.decision]
             .first()
             .map(|v| v.as_action())
-            .unwrap_or_default_proposal();
+            .unwrap_or_else(|| crate::value::ActionProposal {
+                kind: self.domain.default_action(),
+                priority: 0.0,
+                fired: false,
+            });
         Decision {
             action: chosen.kind,
             priority: chosen.priority,
@@ -279,18 +286,3 @@ impl Scratch {
     }
 }
 
-/// Small helper so the `Option<ActionProposal>` fallback reads as one line at
-/// the call site.
-trait OrDefaultProposal {
-    fn unwrap_or_default_proposal(self) -> crate::value::ActionProposal;
-}
-
-impl OrDefaultProposal for Option<crate::value::ActionProposal> {
-    fn unwrap_or_default_proposal(self) -> crate::value::ActionProposal {
-        self.unwrap_or(crate::value::ActionProposal {
-            kind: ActionKind::Stay,
-            priority: 0.0,
-            fired: false,
-        })
-    }
-}

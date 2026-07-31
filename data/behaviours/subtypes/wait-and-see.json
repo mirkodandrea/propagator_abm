@@ -13,5 +13,6 @@
     "prep_time_min": 25.0
   },
   "capabilities": {},
-  "share": 0.45
+  "share": 0.45,
+  "enabled": true
 }

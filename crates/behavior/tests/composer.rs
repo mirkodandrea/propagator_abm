@@ -7,13 +7,16 @@
 
 use std::collections::BTreeMap;
 
-use behavior::defaults::{default_graph, default_subtypes, DEFAULT_GRAPH_ID};
+use behavior::defaults::{
+    default_graph, default_subtypes, default_unit_graph, default_unit_subtypes, DEFAULT_GRAPH_ID,
+    DEFAULT_UNIT_GRAPH_ID,
+};
 use behavior::eval::Overrides;
 use behavior::graph::Wire;
 use behavior::testbench::{self, SweepField};
 use behavior::{
-    registry, ActionKind, BehaviorGraph, Category, CompiledGraph, IntentValue, Observation,
-    ParamValue, Severity,
+    registry, ActionKind, BehaviorGraph, Category, CompiledGraph, Domain, HouseholdObs,
+    IntentValue, Observation, ParamValue, Severity, UnitObs,
 };
 
 // --- the registry ----------------------------------------------------------
@@ -28,6 +31,7 @@ fn nodes_register_themselves() {
         assert!(reg.in_category(c).next().is_some(), "{c:?} is empty");
     }
     assert!(reg.get("out.decision").is_some());
+    assert!(reg.get("out.unit_decision").is_some());
 }
 
 #[test]
@@ -38,24 +42,65 @@ fn every_node_declares_itself_coherently() {
         assert!(spec.id.contains('.'), "{} is not namespaced", spec.id);
         match spec.category {
             // An observation with an input could read something other than the
-            // observation, which is the one thing the sandbox rests on.
+            // observation, which is the one thing the sandbox rests on. A block
+            // reads the observation too, and mostly has no inputs for the same
+            // reason — but it is allowed them, because some genuinely need to
+            // be told something downstream of themselves.
             Category::Observation | Category::Parameter => {
                 assert!(spec.inputs.is_empty(), "{} is a source with inputs", spec.id);
                 assert!(!spec.outputs.is_empty(), "{} produces nothing", spec.id);
             }
+            Category::Block => {
+                assert!(!spec.outputs.is_empty(), "{} produces nothing", spec.id);
+                assert!(!spec.params.is_empty(), "{} is a block with no knobs", spec.id);
+            }
             _ => assert!(!spec.inputs.is_empty(), "{} consumes nothing", spec.id),
         }
-        // Only the decision sink takes several wires; anywhere else it would
-        // silently drop all but the first.
+        // Multi-connection inputs are for combining an unknown number of
+        // things. Anywhere else they would silently drop all but the first.
         for p in spec.inputs {
+            let combiner =
+                matches!(spec.id, "out.decision" | "out.unit_decision" | "logic.any" | "logic.all");
+            assert!(!p.multi || combiner, "{}.{} is multi-connection", spec.id, p.name);
+        }
+    }
+}
+
+/// The invariant that makes the domain split load-bearing rather than
+/// decorative: anything that reads the world has to say whose world it is.
+///
+/// A block or an observation without a domain would read a default observation
+/// in whichever graph it was dropped into — every field zero, every condition
+/// false — and behave exactly like a correctly-wired node whose branch never
+/// fires. That is the worst failure mode this crate has, and this is the only
+/// place it can be caught.
+#[test]
+fn anything_that_reads_the_world_declares_a_domain() {
+    for spec in registry().all() {
+        if matches!(spec.category, Category::Observation | Category::Block | Category::Action) {
             assert!(
-                !p.multi || spec.id == "out.decision",
-                "{}.{} is multi-connection",
-                spec.id,
-                p.name
+                spec.domain.is_some(),
+                "{} reads or writes an agent's world without declaring a domain",
+                spec.id
             );
         }
     }
+}
+
+#[test]
+fn every_domain_has_exactly_one_decision_sink_of_its_own() {
+    for d in Domain::ALL {
+        let spec = registry()
+            .get(d.decision_output())
+            .unwrap_or_else(|| panic!("{d:?} names a sink that is not registered"));
+        assert_eq!(spec.domain, Some(d), "{}'s sink belongs to another domain", spec.id);
+        assert_eq!(spec.category, Category::Output);
+    }
+    // And the two are not the same node.
+    assert_ne!(
+        Domain::Household.decision_output(),
+        Domain::SuppressionUnit.decision_output()
+    );
 }
 
 #[test]
@@ -122,8 +167,37 @@ fn a_household_that_planned_to_defend_does_not_leave_on_an_order() {
         .obs;
 
     assert_eq!(g.eval(&ordered).action, ActionKind::Prepare);
-    let defending = Observation { intent: IntentValue::StayDefend, ..ordered };
+    let defending =
+        Observation::from(HouseholdObs { intent: IntentValue::StayDefend, ..ordered.household() });
     assert_eq!(g.eval(&defending).action, ActionKind::Defend);
+}
+
+/// The graph is written in blocks, and that is the point of this round of work:
+/// the same behaviour used to take thirty-one nodes.
+///
+/// Pinned rather than left as a comment because the whole complaint the blocks
+/// answer was "the detail is too fine grained", and a graph that drifts back up
+/// to thirty nodes has quietly undone it.
+#[test]
+fn the_default_graph_is_written_in_blocks() {
+    let g = default_graph();
+    assert!(
+        g.nodes.len() <= 14,
+        "the shipped behaviour is back up to {} nodes",
+        g.nodes.len()
+    );
+    let blocks = g
+        .nodes
+        .iter()
+        .filter(|n| n.spec().map(|s| s.category) == Some(Category::Block))
+        .count();
+    assert!(blocks >= 4, "only {blocks} of the graph is blocks");
+    // No bare arithmetic left: every number in the shipped behaviour is a
+    // parameter on a named assumption, which is what a subtype overrides.
+    assert!(
+        !g.nodes.iter().any(|n| n.type_id.starts_with("math.")),
+        "the shipped behaviour is doing arithmetic on the canvas again"
+    );
 }
 
 #[test]
@@ -143,7 +217,13 @@ fn subtypes_share_one_graph_and_differ_only_in_numbers() {
     let lib = behavior::defaults::default_library();
     assert!(lib.subtypes.len() >= 4);
     for s in lib.subtypes.values() {
-        assert_eq!(s.graph, DEFAULT_GRAPH_ID, "{} has its own graph", s.id);
+        // One graph per domain, not one graph per profile. Variation without
+        // duplication is the whole pattern.
+        assert!(
+            s.graph == DEFAULT_GRAPH_ID || s.graph == DEFAULT_UNIT_GRAPH_ID,
+            "{} has its own graph",
+            s.id
+        );
         lib.compile(&s.id).unwrap_or_else(|e| panic!("{}: {e}", s.id));
     }
 }
@@ -152,7 +232,7 @@ fn subtypes_share_one_graph_and_differ_only_in_numbers() {
 fn an_override_actually_changes_the_answer() {
     let g = default_graph();
     // The alarm threshold a wait-and-see household has to pass.
-    let node = g.nodes.iter().find(|n| n.type_id == "intent.weight").unwrap();
+    let node = g.nodes.iter().find(|n| n.type_id == "block.alarm").unwrap();
     let key = BehaviorGraph::override_key(node.id, "wait_and_see");
 
     let smoke = testbench::situations()
@@ -243,8 +323,8 @@ fn a_type_mismatch_cannot_be_connected() {
 #[test]
 fn a_type_mismatch_smuggled_past_connect_is_still_reported() {
     let mut g = default_graph();
-    let cue = g.nodes.iter().find(|n| n.type_id == "obs.cue").unwrap().id;
-    let and = g.nodes.iter().find(|n| n.type_id == "logic.and").unwrap().id;
+    let cue = g.add("obs.cue", [0.0, 0.0]).unwrap();
+    let and = g.add("logic.and", [0.0, 0.0]).unwrap();
     // What a hand-edited file looks like.
     g.wires.push(Wire { from_node: cue, from_port: 0, to_node: and, to_port: 0 });
     assert!(first_error(&g).contains("takes a bool"));
@@ -291,18 +371,30 @@ fn a_required_input_left_dangling_is_reported() {
 #[test]
 fn a_second_wire_into_a_single_input_is_reported() {
     let mut g = default_graph();
-    let cue = g.nodes.iter().find(|n| n.type_id == "obs.cue").unwrap().id;
+    let cue = g.add("obs.cue", [0.0, 0.0]).unwrap();
+    let threat = g.add("obs.threat", [0.0, 0.0]).unwrap();
     let above = g.add("cmp.above", [0.0, 0.0]).unwrap();
     g.wires.push(Wire { from_node: cue, from_port: 0, to_node: above, to_port: 0 });
-    let threat = g.nodes.iter().find(|n| n.type_id == "obs.threat").unwrap().id;
     g.wires.push(Wire { from_node: threat, from_port: 0, to_node: above, to_port: 0 });
     assert!(first_error(&g).contains("which takes one"));
+}
+
+/// The same rule, on the port that is *meant* to take several.
+#[test]
+fn a_combining_input_takes_as_many_wires_as_it_is_given() {
+    let mut g = default_graph();
+    let any = g.add("logic.any", [0.0, 0.0]).unwrap();
+    let alight = g.add("obs.structure_alight", [0.0, 0.0]).unwrap();
+    let blocked = g.add("obs.route_blocked", [0.0, 0.0]).unwrap();
+    assert!(g.connect(Wire { from_node: alight, from_port: 0, to_node: any, to_port: 0 }));
+    assert!(g.connect(Wire { from_node: blocked, from_port: 0, to_node: any, to_port: 0 }));
+    assert!(behavior::validate(&g).ok());
 }
 
 #[test]
 fn a_choice_parameter_cannot_be_set_to_something_that_does_not_exist() {
     let mut g = default_graph();
-    let n = g.nodes.iter().find(|n| n.type_id == "intent.is").unwrap().id;
+    let n = g.add("intent.is", [0.0, 0.0]).unwrap();
     g.node_mut(n)
         .unwrap()
         .params
@@ -338,7 +430,11 @@ fn a_trace_records_every_node_and_ranks_the_proposals() {
 #[test]
 fn a_sweep_finds_the_threshold_it_was_pointed_at() {
     let g = CompiledGraph::compile(&default_graph(), &Overrides::new()).unwrap();
-    let base = Observation { warning_received: false, order_issued: false, ..Observation::default() };
+    let base = Observation::from(HouseholdObs {
+        warning_received: false,
+        order_issued: false,
+        ..HouseholdObs::default()
+    });
     let pts = testbench::sweep(&g, &base, SweepField::Cue, 101);
     let changes = testbench::transitions(&pts);
     assert!(!changes.is_empty(), "alarm never changes the answer");
@@ -352,8 +448,12 @@ fn a_sweep_finds_the_threshold_it_was_pointed_at() {
 #[test]
 fn subtypes_can_be_compared_on_one_situation() {
     let lib = behavior::defaults::default_library();
-    let compiled: Vec<_> =
-        lib.subtypes.keys().map(|id| (id.clone(), lib.compile(id).unwrap())).collect();
+    let compiled: Vec<_> = lib
+        .subtypes
+        .values()
+        .filter(|s| lib.domain_of(s) == Some(Domain::Household))
+        .map(|s| (s.id.clone(), lib.compile(&s.id).unwrap()))
+        .collect();
     let refs: Vec<(String, &CompiledGraph)> =
         compiled.iter().map(|(id, g)| (id.clone(), g)).collect();
 
@@ -369,6 +469,221 @@ fn subtypes_can_be_compared_on_one_situation() {
     let distinct: std::collections::BTreeSet<_> =
         answers.iter().map(|a| a.decision.action).collect();
     assert!(distinct.len() > 1, "every subtype answered the same: {answers:#?}");
+}
+
+// --- domains ---------------------------------------------------------------
+
+#[test]
+fn a_graph_carries_its_domain_through_json() {
+    let g = default_unit_graph();
+    assert_eq!(g.domain, Domain::SuppressionUnit);
+    let back = BehaviorGraph::from_json(&g.to_json().unwrap()).unwrap();
+    assert_eq!(g, back);
+}
+
+/// Every graph written before domains existed is a household behaviour, and has
+/// to keep loading as one.
+#[test]
+fn a_graph_file_without_a_domain_loads_as_a_household() {
+    let json = r#"{
+        "id": "old", "name": "From before domains",
+        "nodes": [{"id": 0, "type": "out.decision"}],
+        "wires": []
+    }"#;
+    let g = BehaviorGraph::from_json(json).unwrap();
+    assert_eq!(g.domain, Domain::Household);
+    assert!(behavior::validate(&g).ok());
+}
+
+#[test]
+fn a_node_from_the_other_domain_cannot_be_placed() {
+    let mut units = default_unit_graph();
+    assert!(units.add("obs.cue", [0.0, 0.0]).is_none(), "a household cue went into a unit policy");
+    let mut people = default_graph();
+    assert!(people.add("unit.water_fraction", [0.0, 0.0]).is_none());
+    // The domain-free nodes go in either.
+    assert!(units.add("math.add", [0.0, 0.0]).is_some());
+    assert!(people.add("math.add", [0.0, 0.0]).is_some());
+}
+
+/// The same rule for a file someone hand-edited, or a graph whose domain was
+/// changed after it was built.
+#[test]
+fn a_node_from_the_other_domain_smuggled_into_a_file_is_reported() {
+    let mut g = default_graph();
+    g.domain = Domain::SuppressionUnit;
+    let msg = first_error(&g);
+    assert!(msg.contains("civilians") && msg.contains("suppression"), "{msg}");
+}
+
+/// The household sink is not a unit sink, so swapping the domain over cannot
+/// leave a graph that quietly reads the wrong answer out.
+#[test]
+fn each_domain_wants_its_own_decision_sink() {
+    let mut g = BehaviorGraph::new_in(Domain::SuppressionUnit, "u", "U");
+    g.add("out.decision", [0.0, 0.0]);
+    assert!(!behavior::validate(&g).ok());
+    assert!(g.add("out.unit_decision", [0.0, 0.0]).is_some());
+}
+
+// --- the shipped unit policy -----------------------------------------------
+
+#[test]
+fn the_default_unit_graph_validates() {
+    let g = default_unit_graph();
+    let r = behavior::validate(&g);
+    for i in &r.issues {
+        assert_ne!(i.severity, Severity::Error, "{}", i.message);
+    }
+    assert_eq!(r.order.len(), g.nodes.len());
+}
+
+/// The shipped policy has to reproduce the hand-written one exactly, or turning
+/// the composer on silently changes what every suppression measurement means.
+#[test]
+fn the_default_unit_policy_answers_the_shipped_situations() {
+    let g = CompiledGraph::compile(&default_unit_graph(), &Overrides::new()).unwrap();
+    let expect = |name: &str, want: ActionKind| {
+        let s = testbench::unit_situations()
+            .into_iter()
+            .find(|s| s.name == name)
+            .unwrap_or_else(|| panic!("no situation {name:?}"));
+        let got = g.eval(&s.obs);
+        assert_eq!(got.action, want, "{name}: got {:?}", got.action);
+    };
+
+    // A unit with nothing to say about its own situation gets on with the
+    // order, which is the common case and is why this graph is five nodes.
+    expect("Staged", ActionKind::Continue);
+    expect("Responding", ActionKind::Continue);
+    expect("Working the fuel", ActionKind::Continue);
+    // The two things the hand-written policy did.
+    expect("Tank dry", ActionKind::Refill);
+    expect("Past the safety limit", ActionKind::Withdraw);
+    // And the two it did not: the accumulated-heat trigger is off by default,
+    // and an aircraft is not a ground unit.
+    expect("Taking heat", ActionKind::Continue);
+    expect("Tanker over the front", ActionKind::Continue);
+}
+
+/// Safety has to outbid resupply. A unit that is both dry and standing
+/// somewhere lethal drives *out*, not to the hydrant.
+#[test]
+fn withdrawing_outbids_going_for_water() {
+    let g = CompiledGraph::compile(&default_unit_graph(), &Overrides::new()).unwrap();
+    let obs = Observation::from(UnitObs {
+        kind: behavior::UnitKindKey::Engine,
+        carries_water: true,
+        water_fraction: 0.0,
+        is_working: true,
+        threat_here: 0.9,
+        has_task: true,
+        ..UnitObs::default()
+    });
+    assert_eq!(g.eval(&obs).action, ActionKind::Withdraw);
+}
+
+/// A hand crew carries no water, so the resupply branch must never fire for
+/// one — the classic always-negative that would look like a working policy.
+#[test]
+fn a_hand_crew_never_breaks_off_for_water() {
+    let mut ov = Overrides::new();
+    let g = default_unit_graph();
+    // Even with the trigger wound right up.
+    let key = BehaviorGraph::override_key(
+        g.nodes.iter().find(|n| n.type_id == "block.unit_resupply").unwrap().id,
+        "refill_below",
+    );
+    ov.insert(key, ParamValue::Number(1.0));
+    let compiled = CompiledGraph::compile(&g, &ov).unwrap();
+
+    let crew = Observation::from(UnitObs {
+        kind: behavior::UnitKindKey::HandCrew,
+        carries_water: false,
+        water_fraction: 0.0,
+        is_working: true,
+        has_task: true,
+        ..UnitObs::default()
+    });
+    assert_ne!(compiled.eval(&crew).action, ActionKind::Refill);
+}
+
+#[test]
+fn a_unit_profile_governs_the_kinds_it_names() {
+    let cautious = default_unit_subtypes()
+        .into_iter()
+        .find(|s| s.id == "cautious-engines")
+        .unwrap();
+    // Off by default, like every authored behaviour.
+    assert!(!cautious.enabled);
+    let mut on = cautious.clone();
+    on.enabled = true;
+    assert!(on.governs(behavior::UnitKindKey::Engine));
+    assert!(!on.governs(behavior::UnitKindKey::HandCrew));
+
+    // An empty list means every kind.
+    let standing = default_unit_subtypes()
+        .into_iter()
+        .find(|s| s.id == "standing-orders")
+        .unwrap();
+    assert!(behavior::UnitKindKey::ALL.into_iter().all(|k| standing.governs(k)));
+}
+
+/// The profile that exists to show the per-kind parameters are worth having has
+/// to actually answer differently, or it is decoration.
+#[test]
+fn the_cautious_profile_pulls_engines_out_earlier() {
+    let lib = behavior::defaults::default_library();
+    let stock = lib.compile("standing-orders").unwrap();
+    let cautious = lib.compile("cautious-engines").unwrap();
+
+    let marginal = Observation::from(UnitObs {
+        kind: behavior::UnitKindKey::Engine,
+        carries_water: true,
+        water_fraction: 0.5,
+        is_working: true,
+        has_task: true,
+        threat_here: 0.30,
+        ..UnitObs::default()
+    });
+    assert_eq!(stock.eval(&marginal).action, ActionKind::Continue);
+    assert_eq!(cautious.eval(&marginal).action, ActionKind::Withdraw);
+}
+
+#[test]
+fn a_unit_sweep_finds_the_safety_threshold() {
+    let g = CompiledGraph::compile(&default_unit_graph(), &Overrides::new()).unwrap();
+    let base = Observation::from(UnitObs {
+        kind: behavior::UnitKindKey::Engine,
+        carries_water: true,
+        water_fraction: 1.0,
+        is_working: true,
+        has_task: true,
+        ..UnitObs::default()
+    });
+    let pts = testbench::sweep(&g, &base, SweepField::UnitThreat, 101);
+    let changes = testbench::transitions(&pts);
+    assert_eq!(changes.len(), 1, "{changes:?}");
+    let (at, from, to) = changes[0];
+    assert_eq!(from, ActionKind::Continue);
+    assert_eq!(to, ActionKind::Withdraw);
+    assert!((0.34..0.37).contains(&at), "engines disengage at {at}");
+}
+
+/// A sweep only offers fields the graph's own agent has. Offering the others
+/// would offer a sweep that provably varies nothing.
+#[test]
+fn sweep_fields_are_scoped_to_the_domain() {
+    for d in Domain::ALL {
+        let fields = SweepField::for_domain(d);
+        assert!(!fields.is_empty());
+        assert!(fields.iter().all(|f| f.domain() == d), "{d:?} offers a foreign sweep");
+    }
+    // And a foreign sweep is inert rather than corrupting: setting a household
+    // field on a unit observation does nothing at all.
+    let mut obs = Observation::empty(Domain::SuppressionUnit);
+    SweepField::Cue.set(&mut obs, 0.9);
+    assert_eq!(obs, Observation::empty(Domain::SuppressionUnit));
 }
 
 // --- the library -----------------------------------------------------------

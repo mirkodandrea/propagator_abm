@@ -51,7 +51,7 @@ pub mod suppression;
 use network::{NodeId, RoadNetwork, RouteField, NO_NODE};
 use refuge::Refuge;
 
-pub use behaviour::{BehaviorRuntime, Outcome};
+pub use behaviour::{BehaviorRuntime, Outcome, UnitOutcome, UnitRuntime};
 pub use suppression::{Suppression, SuppressionStats, Task, Unit, UnitKind, UnitState};
 
 /// How often the household decision layer runs, in simulated seconds. People
@@ -622,7 +622,7 @@ impl Abm {
 
         let needs_assistance = h.members.iter().any(|p| self.people[*p].needs_assistance);
 
-        behavior::Observation {
+        behavior::HouseholdObs {
             time_min: self.time_s / 60.0,
             threat: danger,
             radiant: ex.radiant,
@@ -652,6 +652,7 @@ impl Abm {
             refuge_distance_m,
             jitter,
         }
+        .into()
     }
 
     /// Which subtype a household is running, and the last decision its graph

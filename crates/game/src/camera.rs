@@ -123,7 +123,7 @@ pub fn controls(
             drag += ev.delta;
         }
         wheel.clear();
-        if !focus.0 && buttons.pressed(MouseButton::Left) {
+        if !focus.pointer && buttons.pressed(MouseButton::Left) {
             look.yaw -= drag.x * 0.005;
             look.pitch = (look.pitch - drag.y * 0.005).clamp(-1.3, 1.3);
         }
@@ -146,7 +146,7 @@ pub fn controls(
     // Dragging the speed slider must not also orbit the camera. The events are
     // cleared rather than simply ignored, so a drag over the panel does not
     // queue up and then snap the camera once the cursor leaves it.
-    if focus.0 {
+    if focus.pointer {
         motion.clear();
         wheel.clear();
         return;
@@ -190,19 +190,29 @@ pub fn controls(
         orbit.focus += (-right * drag.x + fwd * drag.y) * scale;
     }
 
-    // WASD pans too, for keyboard-only use.
+    // The arrow keys pan, for keyboard-only use.
+    //
+    // This was WASD, and WASD is what an RTS player reaches for — but `a` and
+    // `d` are also "arm an attack" and "arm a drop" (`crate::command::controls`)
+    // and `w`/`s` sat one keycap away from the rest of the order set. Pressing
+    // `a` armed an attack *and* slid the map west, which reads as the order
+    // having a mysterious side effect rather than as two bindings firing. One
+    // of the two had to move, and the camera is the one with a full mouse
+    // gesture already covering it: right-drag pans, and always did.
     let mut kb = Vec3::ZERO;
-    if keys.pressed(KeyCode::KeyW) {
-        kb.z -= 1.0;
-    }
-    if keys.pressed(KeyCode::KeyS) {
-        kb.z += 1.0;
-    }
-    if keys.pressed(KeyCode::KeyA) {
-        kb.x -= 1.0;
-    }
-    if keys.pressed(KeyCode::KeyD) {
-        kb.x += 1.0;
+    if !focus.typing() {
+            if keys.pressed(KeyCode::ArrowUp) {
+            kb.z -= 1.0;
+        }
+        if keys.pressed(KeyCode::ArrowDown) {
+            kb.z += 1.0;
+        }
+        if keys.pressed(KeyCode::ArrowLeft) {
+            kb.x -= 1.0;
+        }
+        if keys.pressed(KeyCode::ArrowRight) {
+            kb.x += 1.0;
+        }
     }
     if kb != Vec3::ZERO {
         let step = Quat::from_rotation_y(orbit.yaw)

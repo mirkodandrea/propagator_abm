@@ -91,16 +91,23 @@ impl IntentValue {
     }
 }
 
-/// What the graph tells the household to do this decision tick.
+/// What the graph tells an agent to do this decision tick.
 ///
-/// These are the four states the movement layer in `abm` already understands.
-/// A graph cannot invent a fifth — the point of the composer is to change
-/// *when* people do these things, not to add new physics.
+/// One flat set covering both domains, tagged by [`ActionKind::domain`]. Flat
+/// rather than nested so a proposal, a wire and a decision are the same shape
+/// whichever kind of agent produced them; the domains stay apart because a
+/// graph can only contain its own domain's action nodes, which the validator
+/// enforces.
+///
+/// Neither half is extensible from a graph. The point of the composer is to
+/// change *when* an agent does these things, not to add new physics — adding an
+/// action means teaching the movement or suppression layer what to do about it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "reflect", derive(Reflect))]
 #[serde(rename_all = "snake_case")]
 pub enum ActionKind {
-    /// Carry on as normal. What a graph produces when nothing fires.
+    // --- households --------------------------------------------------------
+    /// Carry on as normal. What a household's graph produces when nothing fires.
     Stay,
     /// Start milling: gather people and belongings, then leave.
     Prepare,
@@ -110,15 +117,36 @@ pub enum ActionKind {
     Defend,
     /// Too late to move — take shelter where they are.
     Shelter,
+
+    // --- suppression units -------------------------------------------------
+    /// Get on with the order. What a unit's graph produces when nothing fires,
+    /// which is the common case: a unit already has instructions.
+    Continue,
+    /// Break off and pull back to staging. The safety override, and the one
+    /// thing a unit does against its orders.
+    Withdraw,
+    /// Break off for water and resume afterwards. Meaningless for a hand crew.
+    Refill,
+    /// Stop where you are and stand by. Unlike `Withdraw` this does not travel:
+    /// it is a unit that has decided the job in front of it is not worth doing.
+    HoldPosition,
+    /// Go back to staging and await orders. Unlike `Withdraw` this is not a
+    /// safety action and does not carry the withdrawal note.
+    ReturnToBase,
 }
 
 impl ActionKind {
-    pub const ALL: [ActionKind; 5] = [
+    pub const ALL: [ActionKind; 10] = [
         ActionKind::Stay,
         ActionKind::Prepare,
         ActionKind::EvacuateNow,
         ActionKind::Defend,
         ActionKind::Shelter,
+        ActionKind::Continue,
+        ActionKind::Withdraw,
+        ActionKind::Refill,
+        ActionKind::HoldPosition,
+        ActionKind::ReturnToBase,
     ];
 
     pub fn key(self) -> &'static str {
@@ -128,6 +156,11 @@ impl ActionKind {
             ActionKind::EvacuateNow => "evacuate_now",
             ActionKind::Defend => "defend",
             ActionKind::Shelter => "shelter",
+            ActionKind::Continue => "continue",
+            ActionKind::Withdraw => "withdraw",
+            ActionKind::Refill => "refill",
+            ActionKind::HoldPosition => "hold_position",
+            ActionKind::ReturnToBase => "return_to_base",
         }
     }
 
@@ -138,11 +171,73 @@ impl ActionKind {
             ActionKind::EvacuateNow => "Evacuate now",
             ActionKind::Defend => "Defend property",
             ActionKind::Shelter => "Shelter in place",
+            ActionKind::Continue => "Carry on",
+            ActionKind::Withdraw => "Withdraw",
+            ActionKind::Refill => "Break off for water",
+            ActionKind::HoldPosition => "Hold position",
+            ActionKind::ReturnToBase => "Return to staging",
         }
+    }
+
+    pub fn domain(self) -> crate::domain::Domain {
+        use crate::domain::Domain;
+        match self {
+            ActionKind::Stay
+            | ActionKind::Prepare
+            | ActionKind::EvacuateNow
+            | ActionKind::Defend
+            | ActionKind::Shelter => Domain::Household,
+            _ => Domain::SuppressionUnit,
+        }
+    }
+
+    /// This domain's actions, in the order they are offered.
+    pub fn for_domain(d: crate::domain::Domain) -> impl Iterator<Item = ActionKind> {
+        ActionKind::ALL.into_iter().filter(move |a| a.domain() == d)
     }
 
     pub fn from_key(k: &str) -> Option<ActionKind> {
         ActionKind::ALL.into_iter().find(|a| a.key() == k)
+    }
+}
+
+/// Which suppression resource a unit is.
+///
+/// Restated here rather than imported from `abm::suppression` for the same
+/// reason [`IntentValue`] is restated: this crate is a leaf, and the editor and
+/// its tests run with no scenario, no fire model and no road network loaded.
+/// `abm` owns the one conversion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "reflect", derive(Reflect))]
+#[serde(rename_all = "snake_case")]
+pub enum UnitKindKey {
+    HandCrew,
+    Engine,
+    AirTanker,
+}
+
+impl UnitKindKey {
+    pub const ALL: [UnitKindKey; 3] =
+        [UnitKindKey::HandCrew, UnitKindKey::Engine, UnitKindKey::AirTanker];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            UnitKindKey::HandCrew => "hand_crew",
+            UnitKindKey::Engine => "engine",
+            UnitKindKey::AirTanker => "air_tanker",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            UnitKindKey::HandCrew => "Hand crew",
+            UnitKindKey::Engine => "Engine",
+            UnitKindKey::AirTanker => "Air tanker",
+        }
+    }
+
+    pub fn from_key(k: &str) -> Option<UnitKindKey> {
+        UnitKindKey::ALL.into_iter().find(|u| u.key() == k)
     }
 }
 

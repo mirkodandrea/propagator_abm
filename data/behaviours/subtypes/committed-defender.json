@@ -8,13 +8,13 @@
   ],
   "graph": "default-evacuation",
   "overrides": {
-    "21.value": {
-      "t": "number",
-      "v": 0.55
-    },
-    "9.stay_defend": {
+    "0.stay_defend": {
       "t": "number",
       "v": 0.75
+    },
+    "2.threat_limit": {
+      "t": "number",
+      "v": 0.55
     }
   },
   "traits": {
@@ -22,5 +22,6 @@
     "defensible_space": 0.85
   },
   "capabilities": {},
-  "share": 0.2
+  "share": 0.2,
+  "enabled": true
 }

@@ -1,19 +1,20 @@
 //! What an agent can know.
 //!
-//! This struct is the whole contract between the model and an authored graph.
-//! A graph can only read fields that appear here, which is what makes an
-//! authored behaviour safe to run: there is no way to write a node that
-//! reaches into the fire model, the road network, or another household.
+//! One struct per [`Domain`], and they are the whole contract between the model
+//! and an authored graph. A graph can only read fields that appear in its own
+//! domain's struct, which is what makes an authored behaviour safe to run:
+//! there is no way to write a node that reaches into the fire model, the road
+//! network, or another agent.
 //!
-//! Every field is a *perceived* quantity, not ground truth, with one
-//! exception: [`Observation::threat`] is the real survivability at the house,
-//! because the movement layer needs it to decide who dies and it would be
-//! dishonest to let a graph author that away. Everything a household acts on
-//! before that point — `cue`, `fire_distance_m`, `warning_received` — is
-//! filtered through the household's own attention and warning channel by
-//! `abm` before it reaches here.
+//! [`Observation`] wraps the two so one evaluator, one registry and one editor
+//! serve both. The wrapper is an enum rather than a trait because the node
+//! table is static: an eval function is a plain `fn` pointer with no generics,
+//! and that is what keeps a decision tick free of allocation and dynamic
+//! dispatch. A node asks for the domain it declared, and the validator has
+//! already guaranteed it will get it.
 
-use crate::value::IntentValue;
+use crate::domain::Domain;
+use crate::value::{IntentValue, UnitKindKey};
 
 use serde::{Deserialize, Serialize};
 
@@ -21,10 +22,18 @@ use serde::{Deserialize, Serialize};
 use bevy_reflect::Reflect;
 
 /// One household's view of the incident at one decision tick.
+///
+/// Every field is a *perceived* quantity, not ground truth, with one exception:
+/// [`HouseholdObs::threat`] is the real survivability at the house, because the
+/// movement layer needs it to decide who dies and it would be dishonest to let
+/// a graph author that away. Everything a household acts on before that point —
+/// `cue`, `fire_distance_m`, `warning_received` — is filtered through the
+/// household's own attention and warning channel by `abm` before it reaches
+/// here.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "reflect", derive(Reflect))]
 #[serde(default)]
-pub struct Observation {
+pub struct HouseholdObs {
     // --- the incident ----------------------------------------------------
     /// Simulated minutes since the incident started.
     pub time_min: f32,
@@ -96,9 +105,9 @@ pub struct Observation {
     pub jitter: f32,
 }
 
-impl Default for Observation {
+impl Default for HouseholdObs {
     fn default() -> Self {
-        Observation {
+        HouseholdObs {
             time_min: 0.0,
             threat: 0.0,
             radiant: 0.0,
@@ -124,5 +133,178 @@ impl Default for Observation {
             refuge_distance_m: 800.0,
             jitter: 0.5,
         }
+    }
+}
+
+/// One suppression unit's view of its own situation at one sub-step.
+///
+/// Deliberately egocentric. A unit knows what it can see from where it is
+/// standing, what it is carrying, and what it was told to do — not the shape of
+/// the fire, not what the other units are doing, and not where the good targets
+/// are. That is the same restriction the household observation carries, and for
+/// the same reason: a graph that could read the whole incident state would be a
+/// planner, and the planner in this game is the player.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "reflect", derive(Reflect))]
+#[serde(default)]
+pub struct UnitObs {
+    /// Simulated minutes since the incident started.
+    pub time_min: f32,
+    /// What kind of resource this is. The one observation that is a *category*
+    /// rather than a quantity, and it is here so one graph can serve all three
+    /// kinds — which is what makes a shared safety policy expressible.
+    pub kind: UnitKindKey,
+
+    // --- the fire, from where the unit is standing -------------------------
+    /// Survivability where the unit is, 0–1, from `fire::ThreatField`. The same
+    /// field the civilians read, and the same scale: 0.35 is the firefighters'
+    /// stated working limit and 0.55 is impassable.
+    pub threat_here: f32,
+    /// Accumulated flame exposure as a fraction of what this unit survives.
+    /// Reaching 1.0 is being burnt over, which is terminal and is not something
+    /// a graph can author away.
+    pub heat_fraction: f32,
+    /// Metres to the nearest burning cell. Large when there is no fire.
+    pub distance_to_fire_m: f32,
+
+    // --- what it is carrying -----------------------------------------------
+    /// Tank remaining, 0–1. Always zero for a hand crew.
+    pub water_fraction: f32,
+    /// This unit carries water at all. False for a hand crew, whose consumable
+    /// is daylight.
+    pub carries_water: bool,
+
+    // --- the order ---------------------------------------------------------
+    /// It has been given something to do beyond standing by.
+    pub has_task: bool,
+    /// Metres to where the order points. Large when there is no order.
+    pub distance_to_task_m: f32,
+    /// The ordered point is on a stretch of network this unit can actually
+    /// reach. False is the engine parked at the end of the tarmac.
+    pub task_reachable: bool,
+    /// Fraction of an ordered fuel break already cut, 0–1. Zero for anything
+    /// that is not cutting line.
+    pub line_progress: f32,
+    /// Minutes since this unit was given its current order.
+    pub minutes_on_task: f32,
+    /// There is something worth working on within this unit's reach: unburnt
+    /// burnable fuel for an engine or an aircraft, unfinished line for a crew.
+    pub work_available: bool,
+
+    // --- where it is in its own cycle --------------------------------------
+    /// Actually working, as opposed to travelling to the job.
+    pub is_working: bool,
+    /// Travelling.
+    pub is_moving: bool,
+    /// Metres back to staging.
+    pub distance_to_base_m: f32,
+
+    /// Per-agent deterministic jitter, 0–1, stable for the life of the run.
+    /// Hashed from the unit id, for the same reason the household's is.
+    pub jitter: f32,
+}
+
+impl Default for UnitObs {
+    fn default() -> Self {
+        UnitObs {
+            time_min: 0.0,
+            kind: UnitKindKey::HandCrew,
+            threat_here: 0.0,
+            heat_fraction: 0.0,
+            distance_to_fire_m: 5000.0,
+            water_fraction: 0.0,
+            carries_water: false,
+            has_task: false,
+            distance_to_task_m: 1.0e6,
+            task_reachable: true,
+            line_progress: 0.0,
+            minutes_on_task: 0.0,
+            work_available: false,
+            is_working: false,
+            is_moving: false,
+            distance_to_base_m: 0.0,
+            jitter: 0.5,
+        }
+    }
+}
+
+/// What one agent knows, whichever kind of agent it is.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "reflect", derive(Reflect))]
+#[serde(tag = "domain", rename_all = "snake_case")]
+pub enum Observation {
+    Household(HouseholdObs),
+    SuppressionUnit(UnitObs),
+}
+
+impl Default for Observation {
+    fn default() -> Self {
+        Observation::Household(HouseholdObs::default())
+    }
+}
+
+impl Observation {
+    pub fn domain(&self) -> Domain {
+        match self {
+            Observation::Household(_) => Domain::Household,
+            Observation::SuppressionUnit(_) => Domain::SuppressionUnit,
+        }
+    }
+
+    /// An empty observation of `domain`, for the test bench and for a node that
+    /// has nothing to read yet.
+    pub fn empty(domain: Domain) -> Observation {
+        match domain {
+            Domain::Household => Observation::Household(HouseholdObs::default()),
+            Domain::SuppressionUnit => Observation::SuppressionUnit(UnitObs::default()),
+        }
+    }
+
+    /// The household view.
+    ///
+    /// Returns the default when this is not a household observation, which the
+    /// validator guarantees cannot happen in a graph that compiled: a node
+    /// declaring `domain: Household` is an error in any other graph. Returning
+    /// a default rather than panicking keeps a half-built graph in the editor
+    /// evaluable, which is the same choice [`crate::Inputs`] makes for a
+    /// dangling port.
+    pub fn household(&self) -> HouseholdObs {
+        match self {
+            Observation::Household(h) => *h,
+            _ => HouseholdObs::default(),
+        }
+    }
+
+    pub fn unit(&self) -> UnitObs {
+        match self {
+            Observation::SuppressionUnit(u) => *u,
+            _ => UnitObs::default(),
+        }
+    }
+
+    pub fn household_mut(&mut self) -> Option<&mut HouseholdObs> {
+        match self {
+            Observation::Household(h) => Some(h),
+            _ => None,
+        }
+    }
+
+    pub fn unit_mut(&mut self) -> Option<&mut UnitObs> {
+        match self {
+            Observation::SuppressionUnit(u) => Some(u),
+            _ => None,
+        }
+    }
+}
+
+impl From<HouseholdObs> for Observation {
+    fn from(h: HouseholdObs) -> Observation {
+        Observation::Household(h)
+    }
+}
+
+impl From<UnitObs> for Observation {
+    fn from(u: UnitObs) -> Observation {
+        Observation::SuppressionUnit(u)
     }
 }

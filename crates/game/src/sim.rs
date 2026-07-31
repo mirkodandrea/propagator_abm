@@ -230,6 +230,20 @@ impl Sim {
         }
     }
 
+    /// The same, for the suppression half of the library.
+    ///
+    /// Separate from [`Sim::runtime`] rather than one call returning both,
+    /// because they are independent: a library may author the civilians, the
+    /// units, both or neither, and each half falls back to its own hand-written
+    /// model on its own.
+    fn unit_runtime(&self) -> anyhow::Result<Option<abm::UnitRuntime>> {
+        match &self.behaviour {
+            None => Ok(None),
+            Some(lib) => abm::UnitRuntime::build(lib)
+                .map_err(|e| anyhow::anyhow!("authored unit policy: {e}")),
+        }
+    }
+
     /// Adopt an authored behaviour library and restart onto it.
     ///
     /// A restart rather than a hot swap, deliberately. Households are
@@ -283,7 +297,11 @@ impl Sim {
         // plans compares nothing. The roster is deterministic, so unit ids are
         // stable across the rebuild and the views keyed by them survive.
         let ig = self.scenario.world.centre_of(self.ignition.centre);
-        self.crews = Suppression::new(&self.scenario, &staging(&self.agents, ig))?;
+        self.crews = Suppression::with_policy(
+            &self.scenario,
+            &staging(&self.agents, ig),
+            self.unit_runtime()?,
+        )?;
         self.fire = fire;
         self.ignitions = ignitions;
         self.pending_ignitions = pending;

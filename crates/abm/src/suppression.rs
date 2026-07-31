@@ -38,11 +38,28 @@
 //! says is lethal withdraws and says so ([`Unit::note`]), rather than dying
 //! quietly to satisfy the player. It can still be caught — [`UnitState::Lost`]
 //! is reachable — but only by the fire moving onto it, never by obedience.
+//!
+//! ## What a unit decides for itself, and what the composer can replace
+//!
+//! Almost everything a unit does is the commander's decision. What is left —
+//! and it is the whole of the unit's own agency — is *when to stop*: pull back
+//! because the ground is not survivable, break off because the tank is empty,
+//! hold or go home because the order was a bad one. That block, and only that
+//! block, is what an authored policy replaces; see
+//! [`Suppression::unit_outcome`]. Where a unit is sent, how fast it gets there
+//! and what its work does to the fire are all untouched, which is why a policy
+//! a scientist wrote can be run without review.
+//!
+//! With no policy loaded the same function returns the hand-written answer —
+//! [`WORK_LIMIT`] and a dry tank — so the shipped model is the default and
+//! every measurement in `crates/fire/tests` still describes it.
 
 use anyhow::Result;
+use behavior::{Observation, UnitObs};
 use fire::{FireSim, Intervention};
 use scenario::{Cell, Pos, Scenario};
 
+use crate::behaviour::{unit_kind_of, unit_outcome_of, UnitOutcome, UnitRuntime};
 use crate::network::{self, NodeId, RoadNetwork, NO_NODE};
 
 // --- rates and capacities ---------------------------------------------------
@@ -254,6 +271,12 @@ pub struct Unit {
     route_to: Option<Pos>,
     /// Task to resume once refilling is done.
     resume: Option<Task>,
+    /// Simulated time this unit's current order was given, for
+    /// `UnitObs::minutes_on_task`.
+    tasked_at_s: f32,
+    /// Which authored policy governs this unit, if any. Resolved once at build
+    /// from the unit's kind; `None` runs the hand-written policy.
+    policy: Option<usize>,
     /// Where an air tanker is heading right now: the target, or the water.
     air_leg: AirLeg,
     air_timer_s: f32,
@@ -322,6 +345,10 @@ pub struct Suppression {
     hydrants: Vec<Pos>,
     open_water: Vec<Pos>,
     time_s: f32,
+    /// Authored unit policy, when the scenario is running one. `None` runs the
+    /// hand-written policy in [`Suppression::unit_outcome`], which stays the
+    /// default for the same reason the civilians' does.
+    policy: Option<UnitRuntime>,
     /// Bumped whenever something a view would draw has changed.
     pub generation: u64,
 }
@@ -342,6 +369,20 @@ impl Suppression {
     /// same set of properties a staging area needs, and reusing them means the
     /// engines start somewhere defensible rather than somewhere authored.
     pub fn new(scn: &Scenario, bases: &[Pos]) -> Result<Suppression> {
+        Suppression::with_policy(scn, bases, None)
+    }
+
+    /// The same, running an authored unit policy.
+    ///
+    /// The runtime arrives here rather than being attached afterwards so which
+    /// policy governs each unit is resolved once, at build, from its kind —
+    /// which is what makes the answer to "why did this engine do that" a lookup
+    /// in one file rather than a re-derivation.
+    pub fn with_policy(
+        scn: &Scenario,
+        bases: &[Pos],
+        policy: Option<UnitRuntime>,
+    ) -> Result<Suppression> {
         anyhow::ensure!(!bases.is_empty(), "no staging area for suppression units");
 
         let hydrants: Vec<Pos> = scn
@@ -360,6 +401,9 @@ impl Suppression {
             .collect();
 
         let mut units = Vec::new();
+        let policy_for = |kind: UnitKind| {
+            policy.as_ref().and_then(|rt| rt.assign(unit_kind_of(kind)))
+        };
         let push = |kind: UnitKind, n: usize, units: &mut Vec<Unit>| {
             for i in 0..n {
                 // Round-robin the staging areas so the roster is spread across
@@ -404,6 +448,8 @@ impl Suppression {
                     planned_at_s: f32::NEG_INFINITY,
                     route_to: None,
                     resume: None,
+                    tasked_at_s: 0.0,
+                    policy: policy_for(kind),
                     air_leg: AirLeg::ToTarget,
                     air_timer_s: 0.0,
                 });
@@ -418,12 +464,45 @@ impl Suppression {
             hydrants,
             open_water,
             time_s: 0.0,
+            policy,
             generation: 0,
         })
     }
 
     pub fn time_s(&self) -> f32 {
         self.time_s
+    }
+
+    /// The authored unit policy in force, if any.
+    pub fn policy(&self) -> Option<&UnitRuntime> {
+        self.policy.as_ref()
+    }
+
+    /// Which policy governs a unit, for the inspector. `None` means it is
+    /// running the hand-written one.
+    pub fn policy_of(&self, unit: usize) -> Option<(&str, &str)> {
+        let rt = self.policy.as_ref()?;
+        let p = rt.policy(self.units.get(unit)?.policy?)?;
+        Some((&p.id, &p.name))
+    }
+
+    /// Re-run one unit's policy with a full trace, for the inspector.
+    ///
+    /// Deliberately not cached, for the same reason `Abm::explain` is not: the
+    /// answer has to be the one the current fire state produces rather than the
+    /// one from whenever the sub-step last ran.
+    pub fn explain(
+        &self,
+        unit: usize,
+        net: &RoadNetwork,
+        fire: &FireSim,
+        scn: &Scenario,
+    ) -> Option<(behavior::Decision, behavior::Trace)> {
+        let rt = self.policy.as_ref()?;
+        let policy = self.units.get(unit)?.policy?;
+        let danger = fire.threat().at(self.units[unit].pos);
+        let obs = self.observe(unit, danger, Some(net), fire, scn);
+        rt.explain(policy, &obs)
     }
 
     /// Give a unit an order.
@@ -458,6 +537,7 @@ impl Suppression {
         unit.resume = None;
         unit.route.clear();
         unit.planned_at_s = f32::NEG_INFINITY;
+        unit.tasked_at_s = self.time_s;
         // An inbound aircraft keeps its state: the order is a briefing, and
         // `arrive_if_due` picks it up the moment it is on station.
         if unit.state != UnitState::Inbound {
@@ -598,6 +678,213 @@ impl Suppression {
         out
     }
 
+    // --- the unit's own decision --------------------------------------------
+
+    /// Assemble what unit `i` can know, for an authored policy.
+    ///
+    /// Everything here is either already to hand or one cheap scan; the only
+    /// one worth a note is `work_available`, which for an engine means running
+    /// [`Suppression::reachable_targets`] over a 60 m radius — twenty-five cells,
+    /// three engines, once a sub-step. That is nothing next to the routing
+    /// refresh, and it is the observation that makes "there is nothing left to
+    /// wet here" authorable rather than a note in the panel.
+    fn observe(&self, i: usize, danger: f32, net: Option<&RoadNetwork>, fire: &FireSim, scn: &Scenario) -> Observation {
+        let u = &self.units[i];
+        let kind = unit_kind_of(u.kind);
+
+        let distance_to_fire_m = fire
+            .active_cells()
+            .iter()
+            .map(|c| dist2(scn.world.centre_of(*c), u.pos))
+            .fold(f32::INFINITY, f32::min)
+            .sqrt();
+
+        let focus = u.task.focus();
+        let distance_to_task_m = focus.map(|f| dist(u.pos, f)).unwrap_or(1.0e6);
+
+        // "Reachable" means what `nearest_reachable` means: the road network
+        // gets there from where this unit is. Air is always reachable, which is
+        // the entire point of aircraft.
+        let task_reachable = match (focus, net) {
+            (None, _) => true,
+            (Some(_), _) if u.kind.is_air() => true,
+            (Some(f), Some(net)) => {
+                let drivable = u.kind.drivable_only();
+                net.nearest(u.pos, drivable)
+                    .and_then(|a| net.nearest_reachable(f, drivable, a))
+                    .is_some()
+            }
+            // No network to ask, which is only the case in a unit test.
+            (Some(_), None) => true,
+        };
+
+        let work_available = match u.kind {
+            UnitKind::Engine => !self.reachable_targets(u.pos, ENGINE_REACH_M, fire, scn).is_empty(),
+            // A crew's work is the line it was given, so "something to do" is
+            // "the line is not finished".
+            UnitKind::HandCrew => match u.task {
+                Task::Line { from, to } => u.line_done_m < dist(from, to),
+                Task::Attack { .. } => true,
+                _ => false,
+            },
+            // An aircraft with a load and somewhere to put it.
+            UnitKind::AirTanker => u.water_l > 0.0 && matches!(u.task, Task::Drop { .. }),
+        };
+
+        UnitObs {
+            time_min: self.time_s / 60.0,
+            kind,
+            threat_here: danger,
+            heat_fraction: (u.heat_s / BURNOVER_S).clamp(0.0, 1.0),
+            distance_to_fire_m: if distance_to_fire_m.is_finite() {
+                distance_to_fire_m
+            } else {
+                1.0e6
+            },
+            water_fraction: u.water_frac(),
+            carries_water: u.tank_l > 0.0,
+            has_task: !matches!(u.task, Task::Hold),
+            distance_to_task_m,
+            task_reachable,
+            line_progress: match u.task {
+                Task::Line { from, to } => {
+                    let total = dist(from, to);
+                    if total > 1.0 {
+                        (u.line_done_m / total).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    }
+                }
+                _ => 0.0,
+            },
+            minutes_on_task: (self.time_s - u.tasked_at_s).max(0.0) / 60.0,
+            work_available,
+            is_working: u.state == UnitState::Working,
+            is_moving: u.state == UnitState::Moving,
+            distance_to_base_m: dist(u.pos, u.base),
+            jitter: crate::hash01(u.id as u64, 0x9C4D),
+        }
+        .into()
+    }
+
+    /// What unit `i` decides to do about its own situation.
+    ///
+    /// **This is the one block an authored policy replaces.** With no policy in
+    /// force it returns the hand-written answer, which is the two rules that
+    /// used to be inline here: pull back above [`WORK_LIMIT`], and go for water
+    /// when the tank is empty. With one, it is whatever the graph says.
+    ///
+    /// Only consulted for a unit that is doing something. A unit already
+    /// withdrawing or refilling is mid-manoeuvre, and asking again every
+    /// sub-step would let a policy restart the manoeuvre forever — the refill
+    /// case in particular would reset the task it was going to resume.
+    fn unit_outcome(
+        &mut self,
+        i: usize,
+        danger: f32,
+        net: Option<&RoadNetwork>,
+        fire: &FireSim,
+        scn: &Scenario,
+    ) -> UnitOutcome {
+        if !matches!(
+            self.units[i].state,
+            UnitState::Staged | UnitState::Moving | UnitState::Working
+        ) {
+            return UnitOutcome::Carry;
+        }
+        let Some(policy) = self.units[i].policy else {
+            // The shipped policy, unchanged. `Refill` is deliberately not
+            // returned here: the hand-written model only breaks off for water
+            // at the point of pumping, and `engine_attack` still does that.
+            return if danger >= WORK_LIMIT {
+                UnitOutcome::Withdraw
+            } else {
+                UnitOutcome::Carry
+            };
+        };
+        let obs = self.observe(i, danger, net, fire, scn);
+        let d = self.policy.as_mut().expect("policy index implies a runtime").decide(policy, &obs);
+        unit_outcome_of(d.action)
+    }
+
+    /// Act on an authored outcome. Returns whether the unit's normal duty cycle
+    /// should be skipped this sub-step.
+    fn apply_outcome(&mut self, i: usize, outcome: UnitOutcome) -> bool {
+        match outcome {
+            UnitOutcome::Carry => false,
+            UnitOutcome::Withdraw => {
+                // An aircraft has no retreat to drive: it breaks off the run
+                // and orbits. Giving it `Withdrawing` instead would leave it in
+                // a state `step_air` never clears, which is a unit that
+                // silently stops existing.
+                if self.units[i].kind.is_air() {
+                    let u = &mut self.units[i];
+                    u.state = UnitState::Staged;
+                    u.task = Task::Hold;
+                    u.note = "broke off: not survivable there";
+                    return true;
+                }
+                // Idempotent: a unit already withdrawing is not sent back to
+                // the start of its retreat every sub-step.
+                if self.units[i].state != UnitState::Withdrawing {
+                    let u = &mut self.units[i];
+                    u.state = UnitState::Withdrawing;
+                    u.note = "pulled back: not survivable here";
+                    u.route.clear();
+                    u.planned_at_s = f32::NEG_INFINITY;
+                }
+                false
+            }
+            UnitOutcome::Refill => {
+                // A hand crew has nothing to fill. Saying so beats silently
+                // parking it at a hydrant.
+                if self.units[i].tank_l <= 0.0 {
+                    self.units[i].note = "a hand crew carries no water";
+                    return false;
+                }
+                if self.units[i].kind.is_air() {
+                    self.units[i].air_leg = AirLeg::ToWater;
+                    return false;
+                }
+                let resume = self.units[i].task;
+                self.begin_refill(i, resume);
+                true
+            }
+            UnitOutcome::Hold => {
+                let u = &mut self.units[i];
+                if u.state != UnitState::Staged {
+                    u.state = UnitState::Staged;
+                    u.task = Task::Hold;
+                    u.note = "holding: nothing useful to do here";
+                    u.route.clear();
+                }
+                true
+            }
+            UnitOutcome::Return => {
+                // Same for air: `step_air` only understands `Drop`, and
+                // anything else is "orbit at base", which is what returning
+                // means for an aircraft.
+                if self.units[i].kind.is_air() {
+                    let u = &mut self.units[i];
+                    u.state = UnitState::Staged;
+                    u.task = Task::Hold;
+                    u.note = "standing down";
+                    return true;
+                }
+                if !matches!(self.units[i].task, Task::Return) {
+                    let u = &mut self.units[i];
+                    u.task = Task::Return;
+                    u.state = UnitState::Moving;
+                    u.note = "returning to staging";
+                    u.route.clear();
+                    u.planned_at_s = f32::NEG_INFINITY;
+                    u.tasked_at_s = self.time_s;
+                }
+                false
+            }
+        }
+    }
+
     /// An inbound aircraft becoming available.
     fn arrive_if_due(&mut self, i: usize) {
         let u = &mut self.units[i];
@@ -622,7 +909,9 @@ impl Suppression {
         scn: &Scenario,
         out: &mut Vec<Intervention>,
     ) {
-        // --- safety, before anything else ----------------------------------
+        // --- physics, before anything else ---------------------------------
+        // Burning over is not a decision and is not authorable: a unit standing
+        // in flame accumulates exposure and is lost, whatever any policy says.
         let danger = fire.threat().at(self.units[i].pos);
         {
             let u = &mut self.units[i];
@@ -636,12 +925,12 @@ impl Suppression {
             } else {
                 u.heat_s = (u.heat_s - dt * HEAT_RECOVERY).max(0.0);
             }
-            if danger >= WORK_LIMIT && u.state != UnitState::Withdrawing {
-                u.state = UnitState::Withdrawing;
-                u.note = "pulled back: not survivable here";
-                u.route.clear();
-                u.planned_at_s = f32::NEG_INFINITY;
-            }
+        }
+
+        // --- the unit's own decision ---------------------------------------
+        let outcome = self.unit_outcome(i, danger, Some(net), fire, scn);
+        if self.apply_outcome(i, outcome) {
+            return;
         }
 
         match self.units[i].state {
@@ -1021,6 +1310,17 @@ impl Suppression {
         scn: &Scenario,
         out: &mut Vec<Intervention>,
     ) {
+        // Aircraft get the same consultation ground units do. With no policy in
+        // force it is a no-op — the hand-written answer for something that is
+        // never in threat is always "carry on" — so this changes nothing about
+        // the shipped model while making "come home when the fire is out" and
+        // "scoop before you are empty" authorable.
+        let danger = fire.threat().at(self.units[i].pos);
+        let outcome = self.unit_outcome(i, danger, None, fire, scn);
+        if self.apply_outcome(i, outcome) {
+            return;
+        }
+
         let Task::Drop { at } = self.units[i].task else {
             // Nothing to do: orbit at base rather than pretending to work.
             if self.units[i].state != UnitState::Staged {

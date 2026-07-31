@@ -232,6 +232,37 @@ behavior_node! {
 }
 
 behavior_node! {
+    id: "logic.any",
+    name: "Any of",
+    category: Logic,
+    doc: "True when any of the conditions wired in is true. Takes as many as \
+          you like, which is the difference between one box and a chain of \
+          three \"Or\"s that has to be re-wired every time a branch is added.",
+    keywords: ["or", "either", "some", "chain", "combine"],
+    inputs: [(bools "conditions", "Any number of conditions")],
+    outputs: [(bool "out", "True when at least one holds")],
+    params: [],
+    eval: |_c, _p, i, out| {
+        out.push(Value::Bool(i.all(0).iter().any(|v| v.as_bool())));
+    },
+}
+
+behavior_node! {
+    id: "logic.all",
+    name: "All of",
+    category: Logic,
+    doc: "True when every condition wired in is true. With nothing wired in it \
+          is true, which is the useful convention: an unconstrained branch fires.",
+    keywords: ["and", "every", "both", "chain", "combine"],
+    inputs: [(bools "conditions", "Any number of conditions")],
+    outputs: [(bool "out", "True when they all hold")],
+    params: [],
+    eval: |_c, _p, i, out| {
+        out.push(Value::Bool(i.all(0).iter().all(|v| v.as_bool())));
+    },
+}
+
+behavior_node! {
     id: "flow.pick_number",
     name: "Pick number",
     category: Logic,
@@ -255,6 +286,7 @@ behavior_node! {
     id: "intent.is",
     name: "Intent is",
     category: Logic,
+    domain: Household,
     doc: "True when the household's stated plan is the one selected here.",
     keywords: ["plan", "equals", "leave", "defend", "wait"],
     inputs: [(intent "intent", "The household's stated plan")],
@@ -270,6 +302,7 @@ behavior_node! {
     id: "intent.weight",
     name: "Intent weight",
     category: Logic,
+    domain: Household,
     doc: "A number chosen by the household's stated plan. This is the honest \
           way to say \"people who planned to leave react sooner\" without \
           building three separate graphs.",

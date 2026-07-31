@@ -8,17 +8,17 @@
   ],
   "graph": "default-evacuation",
   "overrides": {
-    "15.threshold": {
+    "0.wait_and_see": {
+      "t": "number",
+      "v": 0.08
+    },
+    "1.trust_threshold": {
       "t": "number",
       "v": 0.2
     },
-    "25.priority": {
+    "5.priority": {
       "t": "number",
       "v": 1.0
-    },
-    "9.wait_and_see": {
-      "t": "number",
-      "v": 0.08
     }
   },
   "traits": {
@@ -28,5 +28,6 @@
     "vehicle": false,
     "needs_assistance": true
   },
-  "share": 0.1
+  "share": 0.1,
+  "enabled": true
 }

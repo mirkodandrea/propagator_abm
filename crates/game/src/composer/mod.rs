@@ -35,7 +35,7 @@ use bevy_egui::{egui, EguiContexts};
 use egui_snarl::{ui::SnarlStyle, Snarl};
 
 use behavior::{
-    BehaviorGraph, Library, Observation, ParamValue, Report, Wire,
+    BehaviorGraph, Domain, Library, Observation, ParamValue, Report, Wire,
 };
 
 mod bench;
@@ -69,6 +69,14 @@ pub struct Composer {
     pub graph_id: String,
     pub graph_name: String,
     pub graph_description: String,
+    /// Which kind of agent the graph in `snarl` is about.
+    ///
+    /// Held here rather than read off `self.graph`, because `self.graph` is the
+    /// *output* of [`Composer::to_graph`] and `to_graph` needs the domain to
+    /// build it. Without this the projection would default every graph back to
+    /// a household one on the first sync — which validates, and silently makes
+    /// a unit policy into a broken civilian behaviour.
+    pub graph_domain: Domain,
 
     /// Live validation of `snarl`, recomputed every frame it is drawn.
     pub report: Report,
@@ -101,11 +109,15 @@ pub struct ApplyBehaviour;
 impl Composer {
     fn new(root: PathBuf) -> Composer {
         let lib = Library::load_or_default(&root);
+        // Open on a civilian behaviour when there is one: it is the domain the
+        // composer is mostly used for, and opening on whichever id sorts first
+        // would make that a property of the alphabet.
         let graph_id = lib
             .graphs
-            .keys()
-            .next()
-            .cloned()
+            .values()
+            .find(|g| g.domain == Domain::Household)
+            .or_else(|| lib.graphs.values().next())
+            .map(|g| g.id.clone())
             .unwrap_or_else(|| behavior::defaults::DEFAULT_GRAPH_ID.to_string());
         let mut c = Composer {
             // `SPOTORNO_COMPOSER` opens it with the scenario, so an
@@ -118,6 +130,7 @@ impl Composer {
             graph_id: graph_id.clone(),
             graph_name: String::new(),
             graph_description: String::new(),
+            graph_domain: Domain::Household,
             report: Report::default(),
             graph: BehaviorGraph::new(&graph_id, ""),
             right: match std::env::var("SPOTORNO_COMPOSER").as_deref() {
@@ -136,7 +149,21 @@ impl Composer {
             dirty: false,
         };
         c.load_graph(&graph_id);
-        c.subtype = c.lib.subtypes.keys().next().cloned();
+        c.subtype = c.first_subtype_in(c.domain());
+        // `SPOTORNO_COMPOSER_DOMAIN` opens on the other kind of agent. The
+        // editor shows one domain at a time and the switch is a click, so this
+        // is the only way to screenshot the suppression side unattended — the
+        // same reason `SPOTORNO_COMPOSER` picks the right-hand tab.
+        if let Ok(key) = std::env::var("SPOTORNO_COMPOSER_DOMAIN") {
+            match Domain::from_key(&key).or(match key.as_str() {
+                "units" | "unit" | "suppression" => Some(Domain::SuppressionUnit),
+                "civilians" | "people" => Some(Domain::Household),
+                _ => None,
+            }) {
+                Some(d) => c.switch_domain(d),
+                None => c.set_error(format!("no such agent kind: {key:?}")),
+            }
+        }
         c
     }
 
@@ -149,6 +176,7 @@ impl Composer {
         self.graph_id = g.id.clone();
         self.graph_name = g.name.clone();
         self.graph_description = g.description.clone();
+        self.graph_domain = g.domain;
         self.snarl = Snarl::new();
         self.selected = None;
 
@@ -211,7 +239,7 @@ impl Composer {
     }
 
     pub fn to_graph(&self) -> BehaviorGraph {
-        let mut g = BehaviorGraph::new(&self.graph_id, &self.graph_name);
+        let mut g = BehaviorGraph::new_in(self.graph_domain, &self.graph_id, &self.graph_name);
         g.description = self.graph_description.clone();
         for (id, pos, node) in self.snarl.nodes_pos_ids() {
             g.nodes.push(behavior::GraphNode {
@@ -278,6 +306,86 @@ impl Composer {
         self.report.ok()
     }
 
+    /// Which kind of agent the editor is currently working on.
+    ///
+    /// Read off the loaded graph rather than held as its own field: two places
+    /// for the answer is two places that can disagree, and the one that would
+    /// win is whichever the palette happened to consult.
+    pub fn domain(&self) -> Domain {
+        self.graph_domain
+    }
+
+    /// Switch the whole editor to another kind of agent.
+    ///
+    /// Loads that domain's first graph, or starts one if it has none. The
+    /// editor deliberately shows one domain at a time: the palettes are
+    /// disjoint, the test bench situations are disjoint, and a canvas holding
+    /// both would be a canvas where half the boxes silently do nothing.
+    pub fn switch_domain(&mut self, d: Domain) {
+        if self.domain() == d {
+            return;
+        }
+        self.commit();
+        let first = self
+            .lib
+            .graphs
+            .values()
+            .find(|g| g.domain == d)
+            .map(|g| g.id.clone());
+        match first {
+            Some(id) => self.load_graph(&id),
+            None => self.new_graph(d),
+        }
+        // The selected profile almost certainly belonged to the old domain.
+        self.subtype = self.first_subtype_in(d);
+        self.compare_with = None;
+        self.selected = None;
+    }
+
+    /// Start an empty behaviour in `domain`, and open it.
+    pub fn new_graph(&mut self, domain: Domain) {
+        let id = self.lib.free_id(
+            match domain {
+                Domain::Household => "new-behaviour",
+                Domain::SuppressionUnit => "new-unit-policy",
+            },
+            true,
+        );
+        let mut g = BehaviorGraph::new_in(domain, &id, "New behaviour");
+        // An empty canvas cannot validate — every graph needs its domain's one
+        // sink — so it opens with it already placed rather than opening on an
+        // error.
+        g.add(domain.decision_output(), [600.0, 200.0]);
+        self.lib.graphs.insert(id.clone(), g);
+        self.load_graph(&id);
+        self.set_status(format!("new {} behaviour", domain.label().to_lowercase()));
+    }
+
+    /// The first profile belonging to `domain`, for when the selection has to
+    /// be replaced.
+    ///
+    /// Prefers one that is actually in play. Ids sort alphabetically, so
+    /// without this the editor opens on whichever profile happens to sort
+    /// first — which is quite likely to be a disabled one, and a bench showing
+    /// the answers of a profile no agent is running is a bench that misleads.
+    pub fn first_subtype_in(&self, domain: Domain) -> Option<String> {
+        let mine = || {
+            self.lib
+                .subtypes
+                .values()
+                .filter(move |s| self.lib.domain_of(s) == Some(domain))
+        };
+        let live = |s: &&behavior::AgentSubtype| match domain {
+            Domain::Household => s.share > 0.0,
+            Domain::SuppressionUnit => s.enabled,
+        };
+        mine()
+            .find(live)
+            .or_else(|| mine().next())
+            .map(|s| s.id.clone())
+    }
+
+
     /// The subtype currently selected, if it is on this graph.
     pub fn active_overrides(&self) -> behavior::Overrides {
         self.subtype
@@ -337,20 +445,28 @@ impl Plugin for ComposerPlugin {
     }
 }
 
-/// `b` opens and closes the composer.
+/// `G` opens and closes the composer.
 ///
 /// Deliberately not a left-click tool: the composer is a modal workbench, not
 /// a fourth thing contending for the pointer over the map (see the
 /// three-tools rule in CLAUDE.md).
+///
+/// It was `b`, which `crate::browser` also claimed — both systems fired on the
+/// same press, so opening the composer also toggled the Entities panel behind
+/// it. `g` for graph; the browser kept `b`.
+///
+/// Gated on the keyboard, not the pointer: the old pointer gate meant the
+/// composer could not be closed from the keyboard while the cursor happened to
+/// rest over it, which is where the cursor always is.
 fn toggle(
     keys: Res<ButtonInput<KeyCode>>,
     mut composer: ResMut<Composer>,
     focus: Res<crate::ui::UiFocus>,
 ) {
-    if focus.0 {
+    if focus.typing() {
         return;
     }
-    if keys.just_pressed(KeyCode::KeyB) {
+    if keys.just_pressed(KeyCode::KeyG) {
         composer.open = !composer.open;
     }
 }
@@ -407,19 +523,43 @@ fn window(
 
     // The canvas eats drags and the text fields eat keys; without this the
     // camera orbits behind the window and `space` pauses the sim mid-rename.
-    focus.0 |= ctx.is_pointer_over_area() || ctx.wants_keyboard_input();
+    focus.pointer |= ctx.is_pointer_over_area() || ctx.wants_keyboard_input();
 
     composer.open &= open;
 }
 
 fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBehaviour>) {
+    // Which kind of agent, first and on its own row: everything below it —
+    // the graph list, the palette, the profiles, the bench — is scoped to this
+    // one choice, and a control that changes that much should not be sitting in
+    // a line of buttons.
+    ui.horizontal(|ui| {
+        let current = c.domain();
+        for d in Domain::ALL {
+            let r = ui
+                .selectable_label(d == current, d.label())
+                .on_hover_text(d.doc());
+            if r.clicked() && d != current {
+                c.switch_domain(d);
+            }
+        }
+        ui.separator();
+        ui.small(format!("editing {}", current.agent_label()));
+    });
+
     ui.horizontal_wrapped(|ui| {
         let current = c.graph_id.clone();
+        let domain = c.domain();
         egui::ComboBox::from_id_source("composer-graph")
             .selected_text(c.graph_name.clone())
             .show_ui(ui, |ui| {
-                let ids: Vec<(String, String)> =
-                    c.lib.graphs.values().map(|g| (g.id.clone(), g.name.clone())).collect();
+                let ids: Vec<(String, String)> = c
+                    .lib
+                    .graphs
+                    .values()
+                    .filter(|g| g.domain == domain)
+                    .map(|g| (g.id.clone(), g.name.clone()))
+                    .collect();
                 for (id, name) in ids {
                     if ui.selectable_label(id == current, name).clicked() && id != current {
                         c.commit();
@@ -430,15 +570,7 @@ fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBeh
 
         if ui.button("New").on_hover_text("Start an empty behaviour").clicked() {
             c.commit();
-            let id = c.lib.free_id("new-behaviour", true);
-            let mut g = BehaviorGraph::new(&id, "New behaviour");
-            // An empty canvas cannot validate — every graph needs the one
-            // sink — so it opens with it already placed rather than opening
-            // on an error.
-            g.add("out.decision", [600.0, 200.0]);
-            c.lib.graphs.insert(id.clone(), g);
-            c.load_graph(&id);
-            c.set_status("new behaviour".into());
+            c.new_graph(domain);
         }
 
         if ui.button("Duplicate").clicked() {
