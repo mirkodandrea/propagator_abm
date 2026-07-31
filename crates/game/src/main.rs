@@ -19,6 +19,7 @@ mod buildings;
 mod camera;
 mod capture;
 mod command;
+mod composer;
 mod far_terrain;
 mod field;
 mod fire_shader;
@@ -29,6 +30,7 @@ mod inspect;
 mod people;
 mod pick;
 mod roads;
+mod retro;
 mod scenario_selector;
 mod sea;
 mod selftest;
@@ -80,10 +82,12 @@ fn main() -> anyhow::Result<()> {
         brightness: 130.0,
     })
     .add_plugins(EguiPlugin)
-    .add_plugins(fire_shader::FireShaderPlugin)
+.add_plugins(fire_shader::FireShaderPlugin)
+.add_plugins(retro::RetroShaderPlugin)
     .add_plugins(sky::SkyPlugin)
     .add_plugins(sea::SeaPlugin)
     .add_plugins(far_terrain::FarTerrainPlugin)
+    .add_plugins(composer::ComposerPlugin)
     .init_state::<AppState>()
     .init_resource::<ui::UiFocus>()
     .init_resource::<ui::HelpUi>()
@@ -208,6 +212,9 @@ fn main() -> anyhow::Result<()> {
                 .after(command::reset)
                 .run_if(in_state(AppState::Playing)),
             capture::manual.run_if(in_state(AppState::Playing)),
+            apply_behaviour
+                .after(sim::step_fire)
+                .run_if(in_state(AppState::Playing)),
         ),
     );
 
@@ -238,11 +245,52 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Rebuild the agent model on whatever the composer currently holds.
+///
+/// Routed through `SimRestarted` like every other restart, so the latched view
+/// state — charred buildings, the plume, the vehicle entities — is cleared by
+/// the same three `reset` systems (see finding 21 in CLAUDE.md). A behaviour
+/// change that left the old run's cars parked on the map would be the same bug
+/// in a new coat.
+fn apply_behaviour(
+    mut events: EventReader<composer::ApplyBehaviour>,
+    mut sim: ResMut<Sim>,
+    mut composer: ResMut<composer::Composer>,
+    mut restarted: EventWriter<sim::SimRestarted>,
+) {
+    if events.is_empty() {
+        return;
+    }
+    events.clear();
+
+    // No profile carries a share: that is a deliberate "run the shipped
+    // model", not an empty library, and it has to say so rather than looking
+    // like a failed apply.
+    let lib = (!composer.lib.assignment().is_empty()).then(|| composer.lib.clone());
+    let described = match &lib {
+        Some(l) => format!("{} profile(s)", l.assignment().len()),
+        None => "the shipped model".to_string(),
+    };
+
+    match sim.apply_behaviour(lib) {
+        Ok(()) => {
+            restarted.send(sim::SimRestarted);
+            composer.dirty = false;
+            composer.set_status(format!("restarted on {described}"));
+            info!("agent behaviour applied: {described}");
+        }
+        Err(e) => {
+            composer.set_error(format!("{e:#}"));
+            error!("applying behaviour failed: {e:#}");
+        }
+    }
+}
+
 fn setup_scene(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<retro::RetroMaterial>>,
 ) {
     terrain_mesh::build(&sim.scenario, &mut commands, &mut meshes, &mut materials);
     roads::build(&sim.scenario, &mut commands, &mut meshes, &mut materials);

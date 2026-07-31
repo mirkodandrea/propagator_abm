@@ -9,6 +9,7 @@ description = "Bevy front end for the Spotorno wildfire serious game"
 scenario.workspace = true
 fire.workspace = true
 abm.workspace = true
+behavior = { workspace = true, features = ["reflect"] }
 anyhow.workspace = true
 uuid.workspace = true
 getrandom.workspace = true
@@ -17,3 +18,4 @@ bevy = { version = "0.14", default-features = true }
 # igad-to-rust: bevy_egui 0.28's wasm clipboard code targets an older web-sys
 # `Navigator::clipboard()` signature. Nothing here needs OS clipboard access.
 bevy_egui = { version = "0.28", default-features = false, features = ["open_url", "default_fonts", "render"] }
+egui-snarl = { version = "0.4.4", features = ["serde"] }

@@ -14,6 +14,27 @@ pub enum ScenarioType {
     Hybrid,
 }
 
+/// Flat colour palette for the "VR training mission" look applied to dev
+/// scenarios: a void-colored background, a quiet void floor, and flat
+/// unlit geometry — no textures, no realistic sun/sky. Only meaningful when
+/// [`ScenarioMetadata::is_dev`] is set; see [`crate::Scenario::vr_palette`].
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct VrPalette {
+    pub void: [f32; 3],
+    pub grid: [f32; 3],
+    pub accent: [f32; 3],
+}
+
+impl VrPalette {
+    /// MGS1 VR-mission navy-and-cyan, used for any dev scenario that does not
+    /// specify its own palette.
+    pub const DEFAULT: VrPalette = VrPalette {
+        void: [0.02, 0.03, 0.08],
+        grid: [0.0, 0.85, 1.0],
+        accent: [0.90, 0.95, 1.0],
+    };
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ScenarioMetadata {
     pub id: String,
@@ -36,6 +57,11 @@ pub struct ScenarioMetadata {
     /// Mark as development/test scenario for ABM testing
     #[serde(default)]
     pub is_dev: bool,
+    /// Optional per-scenario override for the VR-training palette. Ignored
+    /// unless `is_dev` is set; falls back to [`VrPalette::DEFAULT`] when dev
+    /// and unset.
+    #[serde(default)]
+    pub vr_palette: Option<VrPalette>,
 }
 
 /// Registry of available scenarios discovered from the data directory.

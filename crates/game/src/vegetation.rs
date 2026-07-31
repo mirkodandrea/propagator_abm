@@ -33,6 +33,8 @@ use fire::CellFire;
 use scenario::{Cell, Pos, Scenario};
 
 use crate::field::{noise, FireField};
+use crate::retro;
+use crate::retro::RetroMaterial;
 use crate::sim::Sim;
 
 /// Chunk edge in fire cells. 32 cells = 640 m, matching the terrain chunking,
@@ -156,7 +158,7 @@ pub fn spawn(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
     let scn = &sim.scenario;
     // WebGL browsers share GPU memory with the page.  A tenth of the desktop
@@ -170,8 +172,16 @@ pub fn spawn(
         .and_then(|v| v.parse().ok())
         .unwrap_or(1.0);
 
-    let material = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
+    // VR-training dev scenarios tint every plant toward the palette's grid
+    // colour instead of leaving it white — vertex colour still carries the
+    // per-species shape, but the hue reads as training-ground foliage, not
+    // real macchia.
+    let base_color = match scn.vr_palette() {
+        Some(pal) => Color::srgb(pal.grid[0] * 0.5, pal.grid[1] * 0.5, pal.grid[2] * 0.5),
+        None => Color::WHITE,
+    };
+    let material = materials.add(retro::material(StandardMaterial {
+        base_color,
         perceptual_roughness: 0.92,
         metallic: 0.0,
         // Leaves are matte, not glassy: a near-zero reflectance is what
@@ -182,8 +192,9 @@ pub fn spawn(
         // as a flat dark mass from the shaded quarter.
         double_sided: true,
         cull_mode: None,
+        unlit: scn.vr_palette().is_some(),
         ..default()
-    });
+    }, scn.vr_palette().is_some()));
 
     let (rows, cols) = (scn.world.fire_rows, scn.world.fire_cols);
     let chunks_y = rows.div_ceil(CHUNK_CELLS);
@@ -233,7 +244,7 @@ pub fn spawn(
             let drawn = vec![CellFire::Unburnt as u8; plants.len()];
             let mesh = meshes.add(builder.finish());
 
-            commands.spawn(PbrBundle {
+            commands.spawn(MaterialMeshBundle::<RetroMaterial> {
                 mesh: mesh.clone(),
                 material: material.clone(),
                 ..default()

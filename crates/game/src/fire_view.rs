@@ -329,7 +329,7 @@ pub fn update_overlay(
                 y: w.height_m - (r0 * subdiv + iy) as f32 * step,
             };
             let warped = field.warp(p);
-            let color = sample_color(layer, &field, hazard, warped, now);
+            let color = sample_color(layer, &field, hazard, warped, now, scn.vr_palette());
             // Lift the whole overlay slightly and let hot ground sit higher,
             // so a flaming edge is never buried under the scar beside it.
             let lift = 0.5 + 1.2 * color[3].min(1.0) * f32::from(color[0] > 1.0);
@@ -397,7 +397,28 @@ fn touched_bounds(
 }
 
 /// Colour and alpha of the overlay at one world point, per layer.
-fn sample_color(layer: FireLayer, field: &FireField, hazard: &[f32], p: Pos, now: f32) -> [f32; 4] {
+/// Recolours a ramp output into a VR-training palette while preserving its
+/// luma — so intensity bands, isochrone contours and hazard gradients stay
+/// exactly as legible, just in the scenario's void/accent hues instead of
+/// realistic fire colour. `None` for the realistic scenarios.
+fn stylize(c: [f32; 3], pal: Option<scenario::VrPalette>) -> [f32; 3] {
+    let Some(pal) = pal else { return c };
+    let luma = (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]).clamp(0.0, 1.0);
+    [
+        pal.void[0] + (pal.accent[0] - pal.void[0]) * luma,
+        pal.void[1] + (pal.accent[1] - pal.void[1]) * luma,
+        pal.void[2] + (pal.accent[2] - pal.void[2]) * luma,
+    ]
+}
+
+fn sample_color(
+    layer: FireLayer,
+    field: &FireField,
+    hazard: &[f32],
+    p: Pos,
+    now: f32,
+    pal: Option<scenario::VrPalette>,
+) -> [f32; 4] {
     // Coverage feathered around the half-burnt contour: this is what turns a
     // staircase of cell edges into a burn perimeter. The band is narrow —
     // widen it and the perimeter stops being a perimeter and becomes a haze.
@@ -406,7 +427,7 @@ fn sample_color(layer: FireLayer, field: &FireField, hazard: &[f32], p: Pos, now
         return [0.0, 0.0, 0.0, 0.0];
     }
 
-    match layer {
+    let [r, g, b, a] = match layer {
         FireLayer::Flames => {
             let age = field.arrival(p).map(|t| now - t).unwrap_or(0.0).max(0.0);
             // Incandescent only just behind the front, then straight to scar.
@@ -452,7 +473,9 @@ fn sample_color(layer: FireLayer, field: &FireField, hazard: &[f32], p: Pos, now
                 [0.0, 0.0, 0.0, 0.0]
             }
         }
-    }
+    };
+    let [r, g, b] = stylize([r, g, b], pal);
+    [r, g, b, a]
 }
 
 /// The hazard field shares the fire grid, so it interpolates the same way.

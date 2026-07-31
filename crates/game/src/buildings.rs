@@ -39,6 +39,8 @@ use scenario::population::Status;
 use scenario::{Building, Pos, Scenario};
 
 use crate::sim::Sim;
+use crate::retro;
+use crate::retro::RetroMaterial;
 
 /// Unlit window glass — dark enough that a daylit building reads as an
 /// ordinary wall with punched openings, not a lattice of black holes.
@@ -125,7 +127,7 @@ pub fn spawn(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
     let scn = &sim.scenario;
 
@@ -140,7 +142,7 @@ pub fn spawn(
         residents.entry(h.building).or_default().push(h.id as u32);
     }
 
-    let material = materials.add(StandardMaterial {
+    let material = materials.add(retro::material(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 0.75,
         metallic: 0.0,
@@ -149,8 +151,11 @@ pub fn spawn(
         // enough to pick out a highlight along a wall at low sun, not enough
         // to look wet.
         reflectance: 0.35,
+        // VR-training dev scenarios are flat unlit geometry, not sunlit
+        // plaster.
+        unlit: scn.vr_palette().is_some(),
         ..default()
-    });
+    }, scn.vr_palette().is_some()));
 
     let cols = (scn.world.width_m / CHUNK_M).ceil() as usize + 1;
     let rows = (scn.world.height_m / CHUNK_M).ceil() as usize + 1;
@@ -209,7 +214,7 @@ pub fn spawn(
         tris += builder.indices.len() / 3;
         let base = builder.colors.clone();
         let mesh = meshes.add(builder.finish());
-        commands.spawn(PbrBundle {
+        commands.spawn(MaterialMeshBundle::<RetroMaterial> {
             mesh: mesh.clone(),
             material: material.clone(),
             ..default()
@@ -388,14 +393,22 @@ fn emit_building(
     let eave = hi + wall_h;
 
     let centroid = centroid(&ring);
-    let wall = match kind {
-        Kind::Industrial => palette::INDUSTRIAL_WALL,
-        Kind::Civic => palette::CIVIC_WALL,
-        _ => palette::WALLS[(hash01(b.id as u64, 0x7C) * 8.0) as usize % 8],
-    };
-    let roof = match kind {
-        Kind::Industrial | Kind::Shed => palette::INDUSTRIAL_ROOF,
-        _ => palette::ROOFS[(hash01(b.id as u64, 0x3D) * 4.0) as usize % 4],
+    let (wall, roof) = match scn.vr_palette() {
+        // VR-training look: every building is the same two flat tones —
+        // walls in the palette's accent, roofs in its grid colour — so the
+        // silhouette reads as training-ground blocks, not real construction.
+        Some(pal) => (pal.accent, pal.grid),
+        None => (
+            match kind {
+                Kind::Industrial => palette::INDUSTRIAL_WALL,
+                Kind::Civic => palette::CIVIC_WALL,
+                _ => palette::WALLS[(hash01(b.id as u64, 0x7C) * 8.0) as usize % 8],
+            },
+            match kind {
+                Kind::Industrial | Kind::Shed => palette::INDUSTRIAL_ROOF,
+                _ => palette::ROOFS[(hash01(b.id as u64, 0x3D) * 4.0) as usize % 4],
+            },
+        ),
     };
     // A plinth: the darker, damper base course every masonry building on this
     // coast has. It is also what stops a wall reading as an untextured plane.
@@ -798,7 +811,11 @@ pub fn damage(
     let exposure = sim.fire.exposure();
     let threat = sim.fire.threat();
     let now = sim.time_s() as f32;
-    let night = sun.brightness < NIGHT_BRIGHTNESS;
+    // VR-training dev scenarios have no sun and never update `SunState`, so
+    // it would otherwise read as permanent night (the resource's default is
+    // `brightness: 0.0`) and every occupied house would glow regardless of
+    // the actual simulated hour.
+    let night = sim.scenario.vr_palette().is_none() && sun.brightness < NIGHT_BRIGHTNESS;
 
     let Buildings {
         chunks,

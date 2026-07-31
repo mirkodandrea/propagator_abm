@@ -146,6 +146,11 @@ fn spawn_skirt(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let scn = &sim.scenario;
+    // VR-training dev scenarios are a void beyond the grid floor, not a
+    // distant landscape.
+    if scn.vr_palette().is_some() {
+        return;
+    }
     let w = scn.terrain.width_m;
     let h = scn.terrain.height_m;
 
@@ -284,6 +289,9 @@ fn spawn_props(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let scn = &sim.scenario;
+    if scn.vr_palette().is_some() {
+        return;
+    }
     let w = scn.terrain.width_m;
     let h = scn.terrain.height_m;
 

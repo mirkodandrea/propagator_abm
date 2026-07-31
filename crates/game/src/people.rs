@@ -22,6 +22,8 @@ use scenario::population::Status;
 use scenario::Pos;
 
 use crate::frame;
+use crate::retro;
+use crate::retro::RetroMaterial;
 use crate::sim::Sim;
 
 /// How far above life size people and cars are drawn. See the module note.
@@ -43,9 +45,9 @@ pub struct VehicleView {
 pub struct PeopleAssets {
     car: Handle<Mesh>,
     /// Indexed by [`Status`].
-    status: Vec<Handle<StandardMaterial>>,
-    car_normal: Handle<StandardMaterial>,
-    car_stuck: Handle<StandardMaterial>,
+    status: Vec<Handle<RetroMaterial>>,
+    car_normal: Handle<RetroMaterial>,
+    car_stuck: Handle<RetroMaterial>,
     /// Vehicles already given an entity, so new departures can be picked up
     /// without rescanning.
     spawned_vehicles: usize,
@@ -55,7 +57,7 @@ pub fn setup(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
     // A capsule reads as a person at any angle and costs almost nothing; the
     // silhouette is doing all the work at this distance anyway.
@@ -63,7 +65,13 @@ pub fn setup(
         meshes.add(Capsule3d::new(0.32, 1.1).mesh().latitudes(4).longitudes(6));
     let car = meshes.add(Cuboid::new(1.8, 1.5, 4.3));
 
-    let status: Vec<Handle<StandardMaterial>> = [
+    // VR-training dev scenarios render everyone flat and unlit — the status
+    // colours themselves stay meaningful (they are what the ABM testing
+    // these scenarios exist for actually cares about), only the shading
+    // model changes.
+    let vr = sim.scenario.vr_palette().is_some();
+    let mut add = |base: StandardMaterial| materials.add(retro::material(base, vr));
+    let status: Vec<Handle<RetroMaterial>> = [
         Status::Normal,
         Status::Warned,
         Status::Preparing,
@@ -76,27 +84,30 @@ pub fn setup(
     .iter()
     .map(|s| {
         let c = crate::agents::status_color(*s);
-        materials.add(StandardMaterial {
+        add(StandardMaterial {
             base_color: c,
             // A little self-illumination, or a figure in the smoke shadow
             // vanishes exactly when the player most needs to see it.
             emissive: c.to_linear() * 0.9,
             perceptual_roughness: 0.8,
+            unlit: vr,
             ..default()
         })
     })
     .collect();
 
-    let car_normal = materials.add(StandardMaterial {
+    let car_normal = add(StandardMaterial {
         base_color: Color::srgb(0.88, 0.90, 0.94),
         emissive: LinearRgba::rgb(0.20, 0.24, 0.32),
         perceptual_roughness: 0.4,
+        unlit: vr,
         ..default()
     });
-    let car_stuck = materials.add(StandardMaterial {
+    let car_stuck = add(StandardMaterial {
         base_color: Color::srgb(0.95, 0.35, 0.20),
         emissive: LinearRgba::rgb(0.9, 0.22, 0.05),
         perceptual_roughness: 0.5,
+        unlit: vr,
         ..default()
     });
 
@@ -104,7 +115,7 @@ pub fn setup(
     for p in &sim.agents.people {
         let ground = sim.scenario.terrain.height_at(p.pos);
         commands.spawn((
-            PbrBundle {
+            MaterialMeshBundle::<RetroMaterial> {
                 mesh: person.clone(),
                 material: status[Status::Evacuating as usize].clone(),
                 transform: Transform::from_translation(frame::to_bevy(p.pos, ground))
@@ -163,7 +174,7 @@ pub fn spawn_vehicles(mut commands: Commands, sim: Res<Sim>, mut assets: ResMut<
         }
         let ground = sim.scenario.terrain.height_at(t.pos);
         commands.spawn((
-            PbrBundle {
+            MaterialMeshBundle::<RetroMaterial> {
                 mesh: assets.car.clone(),
                 material: assets.car_normal.clone(),
                 transform: Transform::from_translation(frame::to_bevy(t.pos, ground + 1.0))
@@ -183,7 +194,7 @@ pub fn update_people(
         &PersonView,
         &mut Transform,
         &mut Visibility,
-        &mut Handle<StandardMaterial>,
+        &mut Handle<RetroMaterial>,
     )>,
 ) {
     if !sim.is_changed() {
@@ -229,7 +240,7 @@ pub fn update_vehicles(
         &VehicleView,
         &mut Transform,
         &mut Visibility,
-        &mut Handle<StandardMaterial>,
+        &mut Handle<RetroMaterial>,
     )>,
 ) {
     if !sim.is_changed() {
@@ -279,22 +290,22 @@ pub fn mark_refuges(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
     let mesh = meshes.add(Cylinder::new(12.0, 60.0));
-    let mat = materials.add(StandardMaterial {
+    let mat = materials.add(retro::material(StandardMaterial {
         base_color: Color::srgba(0.30, 0.85, 0.95, 0.55),
         emissive: LinearRgba::rgb(0.15, 0.9, 1.1),
         alpha_mode: AlphaMode::Blend,
         ..default()
-    });
+    }, sim.scenario.vr_palette().is_some()));
     for r in &sim.agents.refuges {
         let p = Pos {
             x: r.pos.x,
             y: r.pos.y,
         };
         let ground = sim.scenario.terrain.height_at(p);
-        commands.spawn(PbrBundle {
+        commands.spawn(MaterialMeshBundle::<RetroMaterial> {
             mesh: mesh.clone(),
             material: mat.clone(),
             transform: Transform::from_translation(frame::to_bevy(p, ground + 30.0)),

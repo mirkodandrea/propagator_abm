@@ -1,10 +1,19 @@
-//! Control panels: playback and the incident readout, plus the wildfire
-//! controls — weather, ignition editing and restart.
+//! The screen furniture: the incident readout on the left, the working dock on
+//! the right, and the help window.
 //!
-//! Kept as two windows because they are two different jobs. The **Incident**
-//! panel is what a commander reads while playing; **Wildfire** is the
-//! scenario-authoring side, where the fire itself is rewritten. Mixing them
-//! would put "restart the simulation" a few pixels from "evacuate everyone".
+//! The layout is deliberately three regions and no more. Everything the player
+//! *reads while watching the fire* is the left dock; everything they *do* is
+//! either the menu bar (`crate::menu`) or one tab of the right dock; whatever is
+//! selected explains itself along the bottom. Before this there were five
+//! independent docks competing for the same screen and the 3D view was the
+//! narrow strip left over — a panel per feature is a rational way to *build* a
+//! UI and a poor way to use one.
+//!
+//! The right dock is tabbed rather than stacked because its three jobs are
+//! mutually exclusive in practice: you are rewriting the scenario (**Fire**),
+//! directing units (**Units**), or looking something up (**Entities**). Only one
+//! of those is ever the current task, so only one of them should be costing
+//! screen space.
 
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
@@ -28,10 +37,28 @@ const PRESETS: [(f32, &str); 5] = [
     (512.0, "max"),
 ];
 
-/// True while the cursor is over the panel, so the camera does not orbit when
-/// the user is dragging the slider.
+/// Who owns the input this frame — the UI, or the map.
+///
+/// `pointer` is the older of the two: the camera must not orbit while a slider
+/// is being dragged. `keyboard` is what makes single-letter shortcuts safe at
+/// all. Every shortcut here is one keystroke with no modifier, so without this
+/// gate typing "Bergeggi" into the Entities search box toggles the browser,
+/// arms an attack, drops a load and restarts the incident — and the same is
+/// true of every text field in the behaviour composer. A shortcut system reads
+/// this before it reads the keyboard.
 #[derive(Resource, Default)]
-pub struct UiFocus(pub bool);
+pub struct UiFocus {
+    pub pointer: bool,
+    pub keyboard: bool,
+}
+
+impl UiFocus {
+    /// True when the map should ignore the keyboard: egui has a text field,
+    /// drag value or focused widget that wants the keystroke instead.
+    pub fn typing(&self) -> bool {
+        self.keyboard
+    }
+}
 
 /// State for the short, player-facing introduction. It opens with the
 /// scenario so a first-time player understands the role before unpausing,
@@ -59,7 +86,7 @@ pub fn dev_hud(
 
     let ctx = contexts.ctx_mut();
     egui::Window::new("🔧 DEV MODE")
-        .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 10.0))
+        .default_pos(egui::pos2(10.0, 10.0))
         .auto_sized()
         .show(ctx, |ui| {
             ui.label(format!("Scenario: {}", sim.scenario.metadata.id));
@@ -81,16 +108,46 @@ impl Default for HelpUi {
     }
 }
 
-/// Collapsed/expanded state of the four always-docked panels — Entities has
-/// its own `BrowserUi::open` (a full close, since it has no other job once
-/// hidden) and the Inspector has both this *and* its "✕" (which also drops
-/// the selection); collapsing this one just reclaims the screen space
-/// without losing what is selected.
+/// The three jobs the right-hand dock does, one at a time.
+#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DockTab {
+    /// Weather, ignitions, seed, restart — rewriting the scenario.
+    Fire,
+    /// The roster and the orders — directing the response.
+    Units,
+    /// The searchable roster of everything inspectable.
+    Entities,
+}
+
+impl DockTab {
+    pub const ALL: [DockTab; 3] = [DockTab::Fire, DockTab::Units, DockTab::Entities];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            DockTab::Fire => "🔥 Fire",
+            DockTab::Units => "🚒 Units",
+            DockTab::Entities => "🔍 Entities",
+        }
+    }
+
+    pub fn hint(self) -> &'static str {
+        match self {
+            DockTab::Fire => "Wind, moisture, ignitions, seed and restart.",
+            DockTab::Units => "Crews, engines and aircraft, and the orders you give them.",
+            DockTab::Entities => "Find any household, person, vehicle or unit.",
+        }
+    }
+}
+
+/// Collapsed/expanded state of the three docks. Collapsing leaves a thin strip
+/// with its chevron rather than removing the dock, so nothing the player opened
+/// can go missing — and the Inspector keeps this separate from its "✕", which
+/// also drops the selection.
 #[derive(Resource)]
 pub struct PanelState {
     pub incident: bool,
-    pub wildfire: bool,
-    pub resources: bool,
+    pub dock: bool,
+    pub tab: DockTab,
     pub inspector: bool,
 }
 
@@ -98,10 +155,20 @@ impl Default for PanelState {
     fn default() -> Self {
         PanelState {
             incident: true,
-            wildfire: true,
-            resources: true,
+            dock: true,
+            tab: DockTab::Units,
             inspector: true,
         }
+    }
+}
+
+impl PanelState {
+    /// Bring a tab to the front, expanding the dock if it was collapsed —
+    /// "show me the units" from a menu or a shortcut has to actually show them,
+    /// not silently select a tab behind a closed chevron.
+    pub fn focus_tab(&mut self, tab: DockTab) {
+        self.tab = tab;
+        self.dock = true;
     }
 }
 
@@ -125,13 +192,15 @@ pub(crate) fn collapse_button(
     }
 }
 
+/// The **Incident** dock: what the commander reads. No controls beyond the two
+/// evacuation orders, because those are the only decisions that are made *from*
+/// this information rather than from the map.
 pub fn panel(
     mut contexts: EguiContexts,
     mut sim: ResMut<Sim>,
-    mut layer: ResMut<FireLayer>,
+    layer: Res<FireLayer>,
     mut focus: ResMut<UiFocus>,
     mut panels: ResMut<PanelState>,
-    mut help: ResMut<HelpUi>,
 ) {
     let ctx = contexts.ctx_mut();
     let mut open = panels.incident;
@@ -170,11 +239,9 @@ pub fn panel(
     let ordered = sim.agents.households.iter().filter(|h| h.ordered).count();
     let ignition_pos = sim.scenario.world.centre_of(sim.ignition.centre);
     let mut order: Option<(Pos, f32)> = None;
-    let clock = sim.clock();
-    let playing = sim.playing;
-    let mut speed = sim.speed;
-    let mut toggle = false;
-    let mut selected = *layer;
+    let scenario_name = sim.scenario.metadata.name.clone();
+    let is_dev = sim.scenario.is_dev();
+    let layer = *layer;
 
     egui::SidePanel::left("incident_dock")
         .resizable(open)
@@ -184,81 +251,33 @@ pub fn panel(
             ui.horizontal(|ui| {
                 open = collapse_button(ui, open, "⏴", "⏵");
                 if open {
-                    ui.heading(format!("T+{clock}"));
-                    ui.add_space(8.0);
-                    if ui
-                        .button(if playing { "⏸ Pause" } else { "▶ Play" })
-                        .clicked()
-                    {
-                        toggle = true;
-                    }
-                    if ui
-                        .button("? Help / Aiuto")
-                        .on_hover_text("What this simulation is and how to use it / Cos'è questa simulazione e come usarla")
-                        .clicked()
-                    {
-                        help.open = true;
-                    }
+                    ui.heading("Incident");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if is_dev {
+                            ui.colored_label(egui::Color32::YELLOW, "🔧 DEV")
+                                .on_hover_text("A synthetic test scenario, not real data.");
+                        }
+                        ui.label(egui::RichText::new(&scenario_name).weak());
+                    });
                 }
             });
-
-            // Show scenario name and dev mode indicator
-            if open {
-                ui.horizontal(|ui| {
-                    ui.label(format!("Scenario: {}", sim.scenario.metadata.name));
-                    if sim.scenario.is_dev() {
-                        ui.colored_label(egui::Color32::YELLOW, "🔧 DEV");
-                    }
-                });
-            }
 
             if !open {
                 return;
             }
+            ui.separator();
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.separator();
-                    ui.label("Time acceleration");
-                    ui.add(
-                        // No `.suffix()`: egui appends it *after* the custom formatter,
-                        // which turns "9 min/s" into "9 min/sx".
-                        egui::Slider::new(&mut speed, MIN_SPEED..=MAX_SPEED)
-                            .logarithmic(true)
-                            .custom_formatter(|v, _| {
-                                // Above a minute per second, wall-clock multipliers stop
-                                // being meaningful; show simulated time per second.
-                                if v >= 60.0 {
-                                    format!("{:.0} min/s", v / 60.0)
-                                } else {
-                                    format!("{v:.0}x")
-                                }
-                            }),
-                    );
-                    ui.horizontal(|ui| {
-                        for (v, label) in PRESETS {
-                            if ui
-                                .selectable_label((speed - v).abs() < 0.5, label)
-                                .clicked()
-                            {
-                                speed = v;
-                            }
-                        }
-                    });
+                    // The legend belongs next to the numbers, not next to the
+                    // layer buttons in the menu bar: it explains what the map is
+                    // currently coloured by, which is something you read while
+                    // looking at the map rather than while switching layers.
+                    ui.label(egui::RichText::new(format!("Map: {}", layer.label())).strong());
+                    ui.small(layer.legend());
 
-                    ui.separator();
-                    ui.label("Fire layer");
-                    ui.horizontal_wrapped(|ui| {
-                        for (i, l) in FireLayer::ALL.iter().enumerate() {
-                            let label = format!("{}  {}", i + 1, l.label());
-                            if ui.selectable_label(selected == *l, label).clicked() {
-                                selected = *l;
-                            }
-                        }
-                    });
-                    ui.small(selected.legend());
-
-                    ui.separator();
+                    ui.add_space(6.0);
+                    section(ui, "Fire");
                     egui::Grid::new("stats").num_columns(2).show(ui, |ui| {
                         ui.label("Burnt");
                         ui.label(format!("{:.1} ha", (burning + burnt) as f32 * cell_ha));
@@ -283,8 +302,27 @@ pub fn panel(
                         ui.end_row();
                     });
 
-                    ui.separator();
-                    ui.label("Evacuation");
+                    ui.add_space(6.0);
+                    section(ui, "Evacuation");
+                    // The one number that answers "how is this going", above the
+                    // breakdown that explains it. A bar rather than a ratio
+                    // because the useful reading is at a glance, mid-incident.
+                    let done = evac.safe as f32 / households.max(1) as f32;
+                    ui.add(
+                        egui::ProgressBar::new(done)
+                            .desired_height(14.0)
+                            .text(format!("{} of {households} households out", evac.safe)),
+                    );
+                    if evac.casualties > 0 || evac.cutoff > 0 {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(255, 110, 90),
+                            format!(
+                                "⚠ {} cut off · {} casualties",
+                                evac.cutoff, evac.casualties
+                            ),
+                        );
+                    }
+                    ui.add_space(4.0);
                     egui::Grid::new("evac").num_columns(2).show(ui, |ui| {
                         ui.label("Ordered out");
                         ui.label(format!("{ordered} households"));
@@ -340,8 +378,9 @@ pub fn panel(
                     ui.separator();
                     ui.small(
                         "space play/pause · [ ] speed · 1-4 fire layer · e evacuate · \
-                 i place ignition · r restart · click a house/person/car to \
-                 inspect it · drag orbit · right-drag pan · scroll zoom",
+                 i place ignition · r restart · b behaviour composer · \
+                 click a house/person/car to inspect it · drag orbit · \
+                 right-drag pan · scroll zoom",
                     );
                 });
         });
@@ -434,6 +473,10 @@ fn help_english(ui: &mut egui::Ui) {
                 "Crew orders",
                 "Tab next unit · A attack · L line · D drop · X stand down",
             ),
+            (
+                "Behaviours",
+                "B opens the Agent Behaviour Composer, where the civilian decision model can be edited",
+            ),
             ("Cancel", "Esc cancels the active map tool"),
         ],
     );
@@ -473,12 +516,16 @@ fn help_italian(ui: &mut egui::Ui) {
                 "Ordini alle squadre",
                 "Tab squadra successiva · A attacco · L linea · D lancio · X rientro",
             ),
+            (
+                "Comportamenti",
+                "B apre l'Agent Behaviour Composer, dove si può modificare il modello decisionale dei civili",
+            ),
             ("Annulla", "Esc annulla lo strumento attivo sulla mappa"),
         ],
     );
 }
 
-fn controls_guide(ui: &mut egui::Ui, rows: [(&str, &str); 7]) {
+fn controls_guide(ui: &mut egui::Ui, rows: [(&str, &str); 8]) {
     ui.add_space(8.0);
     ui.heading("Controls / Comandi");
     egui::Grid::new("help_controls")

@@ -107,7 +107,7 @@ impl Default for SunState {
 pub struct Sun;
 
 #[derive(Component)]
-struct SkyDome;
+pub struct SkyDome;
 
 #[derive(Resource)]
 pub(crate) struct SkyHandle(Handle<SkyMaterial>);
@@ -352,6 +352,42 @@ const AMBIENT_COLOR: [(f32, [f32; 3]); 6] = [
     (60.0, [0.72, 0.78, 0.92]),
 ];
 
+/// The VR-training look has no sun and no procedural sky: a flat void colour,
+/// a matching flat fog that fades to it quickly (the "training room" has no
+/// horizon), and the dome hidden so `ClearColor` shows through unobstructed.
+fn apply_vr_sky(
+    pal: scenario::VrPalette,
+    mut ambient: ResMut<AmbientLight>,
+    mut clear_color: ResMut<ClearColor>,
+    mut sun_q: Query<(&mut Transform, &mut DirectionalLight), With<Sun>>,
+    mut fog_q: Query<&mut FogSettings>,
+    mut dome_q: Query<&mut Visibility, With<SkyDome>>,
+) {
+    let void = Color::srgb(pal.void[0], pal.void[1], pal.void[2]);
+    clear_color.0 = void;
+    // Flat, bright and colourless: geometry is unlit in this mode anyway, so
+    // this only matters for anything that still reads lighting (e.g. shadow
+    // receivers left on by default).
+    ambient.brightness = 400.0;
+    ambient.color = Color::WHITE;
+    for (_, mut light) in &mut sun_q {
+        light.illuminance = 0.0;
+    }
+    for mut fog in &mut fog_q {
+        fog.color = void;
+        fog.directional_light_color = Color::NONE;
+        // The camera starts 2 600 m out from its focus (`main::setup_scene`)
+        // and a dev scenario's world is up to 5 120 m across, so a "fades
+        // quickly" distance still has to clear both or the fog swallows the
+        // entire map before it reaches the lens -- which reads as nothing
+        // rendering at all, not as a training room with no horizon.
+        fog.falloff = FogFalloff::from_visibility_colors(7000.0, void, void);
+    }
+    for mut vis in &mut dome_q {
+        *vis = Visibility::Hidden;
+    }
+}
+
 pub fn update_sky(
     sim: Res<Sim>,
     day: Res<DayClock>,
@@ -362,7 +398,13 @@ pub fn update_sky(
     mut clear_color: ResMut<ClearColor>,
     mut sun_q: Query<(&mut Transform, &mut DirectionalLight), With<Sun>>,
     mut fog_q: Query<&mut FogSettings>,
+    mut dome_q: Query<&mut Visibility, With<SkyDome>>,
 ) {
+    if let Some(pal) = sim.scenario.vr_palette() {
+        apply_vr_sky(pal, ambient, clear_color, sun_q, fog_q, dome_q);
+        return;
+    }
+
     let hour = day.start_hour + sim.time_s() as f32 / 3600.0;
     let (el, az) = solar_position(hour);
     let el_deg = el.to_degrees();
@@ -419,5 +461,9 @@ pub fn update_sky(
             horizon_col,
             Color::srgb(horizon[0] * 0.92, horizon[1] * 0.94, horizon[2] * 0.98),
         );
+    }
+
+    for mut vis in &mut dome_q {
+        *vis = Visibility::Inherited;
     }
 }

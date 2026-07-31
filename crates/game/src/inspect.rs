@@ -24,6 +24,8 @@ use scenario::population::Status;
 use crate::buildings::Buildings;
 use crate::camera::OrbitCamera;
 use crate::frame;
+use crate::retro;
+use crate::retro::RetroMaterial;
 use crate::ignition_edit::EditMode;
 use crate::sim::Sim;
 
@@ -61,18 +63,18 @@ pub struct SelectionRing;
 pub fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
     let mesh = meshes.add(Cylinder::new(1.0, 0.4));
-    let material = materials.add(StandardMaterial {
+    let material = materials.add(retro::material(StandardMaterial {
         base_color: Color::srgba(1.0, 1.0, 1.0, 0.55),
         emissive: LinearRgba::rgb(2.2, 2.2, 2.4),
         unlit: true,
         alpha_mode: AlphaMode::Blend,
         ..default()
-    });
+    }, true));
     commands.spawn((
-        PbrBundle {
+        MaterialMeshBundle::<RetroMaterial> {
             mesh,
             material,
             visibility: Visibility::Hidden,
@@ -458,6 +460,70 @@ fn household_panel(
             *jump_to = Some(Target::Traveller(ti));
         }
     }
+
+    behaviour_panel(ui, sim, id);
+}
+
+/// Why this household is doing what it is doing, when it is running an
+/// authored behaviour.
+///
+/// Absent entirely under the shipped hand-written model, rather than showing an
+/// empty section: there is no graph to explain, and a panel that always
+/// appeared would imply there was.
+fn behaviour_panel(ui: &mut egui::Ui, sim: &Sim, id: usize) {
+    let Some((subtype_id, subtype_name, decision)) = sim.agents.behaviour_of(id) else {
+        return;
+    };
+    ui.separator();
+    ui.horizontal(|ui| {
+        ui.strong("Behaviour");
+        ui.label(subtype_name).on_hover_text(subtype_id);
+    });
+    ui.label(format!(
+        "{}  ·  priority {:.2}  ·  prep ×{:.2}",
+        decision.action.label(),
+        decision.priority,
+        decision.prep_scale
+    ));
+    if decision.urgency > 0.0 {
+        ui.small(format!("urgency readout {:.2}", decision.urgency));
+    }
+
+    // Re-evaluated against the current fire rather than cached from the last
+    // decision tick, so what it shows is what the household would decide right
+    // now. It is one graph on one household at UI rate.
+    egui::CollapsingHeader::new("Why").default_open(false).show(ui, |ui| {
+        let Some((_, trace)) = sim.agents.explain(id, &sim.fire) else {
+            ui.small("(no explanation available)");
+            return;
+        };
+        if trace.proposals.is_empty() {
+            ui.small("No branch of the behaviour fired: the household stays put.");
+        } else {
+            for (i, (node, kind, prio)) in trace.proposals.iter().enumerate() {
+                ui.small(format!(
+                    "{} {} @ {prio:.2} (node #{node})",
+                    if i == 0 { "▶" } else { " " },
+                    kind.label()
+                ));
+            }
+        }
+        ui.separator();
+        for n in &trace.nodes {
+            // Observations are already on the panel above; what is worth
+            // reading here is what the behaviour *made* of them.
+            let is_obs = behavior::registry()
+                .get(n.type_id)
+                .map(|s| s.category == behavior::Category::Observation)
+                .unwrap_or(false);
+            if is_obs {
+                continue;
+            }
+            let values =
+                n.outputs.iter().map(behavior::Value::display).collect::<Vec<_>>().join(", ");
+            ui.small(format!("{} = {values}", n.name));
+        }
+    });
 }
 
 fn person_panel(ui: &mut egui::Ui, sim: &Sim, id: usize, jump_to: &mut Option<Target>) {

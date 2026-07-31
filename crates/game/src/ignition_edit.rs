@@ -25,6 +25,8 @@ use bevy::render::render_asset::RenderAssetUsages;
 use scenario::{Cell, Pos, Scenario};
 
 use crate::camera::OrbitCamera;
+use crate::retro;
+use crate::retro::RetroMaterial;
 use crate::pick;
 use crate::sim::{Sim, MAX_IGNITION_RADIUS_M, MIN_IGNITION_RADIUS_M};
 
@@ -96,10 +98,10 @@ pub struct HoverRing;
 
 #[derive(Resource)]
 pub struct RingAssets {
-    placed: Handle<StandardMaterial>,
+    placed: Handle<RetroMaterial>,
     /// Cursor ring where a fire can start, and where it cannot.
-    ok: Handle<StandardMaterial>,
-    blocked: Handle<StandardMaterial>,
+    ok: Handle<RetroMaterial>,
+    blocked: Handle<RetroMaterial>,
     /// Rings already given an entity, so placing one more is not a rescan.
     drawn: usize,
 }
@@ -107,12 +109,12 @@ pub struct RingAssets {
 pub fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
     // Unlit and emissive: these are map symbols, and a symbol must not change
     // value because it crossed into a hillside's shadow.
     let mut ring = |r: f32, g: f32, b: f32, a: f32| {
-        materials.add(StandardMaterial {
+        materials.add(retro::material(StandardMaterial {
             base_color: Color::srgba(r, g, b, a),
             emissive: LinearRgba::rgb(r * 1.6, g * 1.6, b * 1.6),
             unlit: true,
@@ -120,7 +122,7 @@ pub fn setup(
             double_sided: true,
             cull_mode: None,
             ..default()
-        })
+        }, true))
     };
     let placed = ring(1.0, 0.45, 0.10, 0.85);
     let ok = ring(1.0, 0.92, 0.35, 0.80);
@@ -130,7 +132,7 @@ pub fn setup(
     // spawning and despawning it per frame would fight the asset system for no
     // gain.
     commands.spawn((
-        PbrBundle {
+        MaterialMeshBundle::<RetroMaterial> {
             mesh: meshes.add(empty_mesh()),
             material: ok.clone(),
             visibility: Visibility::Hidden,
@@ -231,7 +233,7 @@ pub fn update_hover(
         (
             &Handle<Mesh>,
             &mut Visibility,
-            &mut Handle<StandardMaterial>,
+            &mut Handle<RetroMaterial>,
         ),
         With<HoverRing>,
     >,
@@ -290,7 +292,7 @@ pub fn sync_markers(
     for ig in sim.ignitions.iter().skip(assets.drawn) {
         let p = sim.scenario.world.centre_of(ig.centre);
         commands.spawn((
-            PbrBundle {
+            MaterialMeshBundle::<RetroMaterial> {
                 mesh: meshes.add(ring_mesh(&sim.scenario, p, ig.radius_m)),
                 material: assets.placed.clone(),
                 // Shown only while placing: see `show_markers`.

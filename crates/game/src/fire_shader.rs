@@ -53,7 +53,7 @@ impl Material for FireMaterial {
     }
 }
 
-/// The ground overlay: an untextured lattice whose colour comes entirely from
+/// The ground overlay: an untextured fire mask whose colour comes entirely from
 /// vertex colour, animated only where `sample_color` has marked a fragment as
 /// glowing. See `shaders/fire_ground.wgsl`.
 #[derive(Asset, TypePath, AsBindGroup, Clone, Default)]

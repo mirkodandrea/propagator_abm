@@ -29,6 +29,8 @@ use bevy::render::render_asset::RenderAssetUsages;
 use scenario::{Cell, Pos, Scenario};
 
 use crate::frame;
+use crate::retro;
+use crate::retro::RetroMaterial;
 use crate::ignition_edit::{ring_mesh, RING_LIFT_M};
 use crate::sim::Sim;
 
@@ -59,11 +61,11 @@ pub struct WorkOverlay;
 
 #[derive(Resource)]
 pub struct UnitAssets {
-    order_ring: Handle<StandardMaterial>,
-    line_cut: Handle<StandardMaterial>,
-    line_todo: Handle<StandardMaterial>,
-    cleared: Handle<StandardMaterial>,
-    wetted: Handle<StandardMaterial>,
+    order_ring: Handle<RetroMaterial>,
+    line_cut: Handle<RetroMaterial>,
+    line_todo: Handle<RetroMaterial>,
+    cleared: Handle<RetroMaterial>,
+    wetted: Handle<RetroMaterial>,
     /// Suppression generation the markers were built for.
     orders_gen: u64,
     /// Fire generation the work overlay was built for, plus the counts it was
@@ -92,7 +94,7 @@ pub fn setup(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
     // Silhouettes, not models: a box on wheels, a figure with a tool, a cross
     // with wings. At this distance the shape is the whole read.
@@ -100,15 +102,17 @@ pub fn setup(
     let crew = meshes.add(Capsule3d::new(0.5, 1.4).mesh().latitudes(4).longitudes(6));
     let tanker = meshes.add(tanker_mesh());
 
+    let vr = sim.scenario.vr_palette().is_some();
     let mut mat = |c: Color, emissive: f32| {
-        materials.add(StandardMaterial {
+        materials.add(retro::material(StandardMaterial {
             base_color: c,
             // Strongly self-lit: these have to be findable in smoke shadow on a
             // north-facing slope, which is precisely where the work is.
             emissive: c.to_linear() * emissive,
             perceptual_roughness: 0.5,
+            unlit: vr,
             ..default()
-        })
+        }, vr))
     };
 
     for u in &sim.crews.units {
@@ -119,7 +123,7 @@ pub fn setup(
         };
         let ground = sim.scenario.terrain.height_at(u.pos);
         commands.spawn((
-            PbrBundle {
+                MaterialMeshBundle::<RetroMaterial> {
                 mesh,
                 material: mat(colour(u.kind, u.state), 1.2),
                 transform: Transform::from_translation(frame::to_bevy(u.pos, ground))
@@ -138,7 +142,7 @@ pub fn setup(
     info!("suppression layer: {} unit symbols", sim.crews.units.len());
 
     let mut unlit = |r: f32, g: f32, b: f32, a: f32| {
-        materials.add(StandardMaterial {
+        materials.add(retro::material(StandardMaterial {
             base_color: Color::srgba(r, g, b, a),
             emissive: LinearRgba::rgb(r * 1.4, g * 1.4, b * 1.4),
             unlit: true,
@@ -146,7 +150,7 @@ pub fn setup(
             double_sided: true,
             cull_mode: None,
             ..default()
-        })
+        }, vr))
     };
     commands.insert_resource(UnitAssets {
         order_ring: unlit(0.30, 0.95, 1.00, 0.85),
@@ -193,12 +197,12 @@ pub fn reset(
 
 pub fn update_units(
     sim: Res<Sim>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<RetroMaterial>>,
     mut query: Query<(
         &UnitView,
         &mut Transform,
         &mut Visibility,
-        &Handle<StandardMaterial>,
+        &Handle<RetroMaterial>,
     )>,
 ) {
     if !sim.is_changed() {
@@ -237,9 +241,9 @@ pub fn update_units(
         // unit visibly change state without a swap table.
         if let Some(m) = materials.get_mut(mat) {
             let c = colour(u.kind, u.state);
-            if m.base_color != c {
-                m.base_color = c;
-                m.emissive = c.to_linear() * 1.2;
+            if m.base.base_color != c {
+                m.base.base_color = c;
+                m.base.emissive = c.to_linear() * 1.2;
             }
         }
     }
@@ -273,7 +277,7 @@ pub fn sync_orders(
             Task::Hold | Task::Return => {}
             Task::Attack { at } | Task::Drop { at } => {
                 commands.spawn((
-                    PbrBundle {
+                    MaterialMeshBundle::<RetroMaterial> {
                         mesh: meshes.add(ring_mesh(&sim.scenario, at, ORDER_RING_M)),
                         material: assets.order_ring.clone(),
                         ..default()
@@ -290,7 +294,7 @@ pub fn sync_orders(
                 // that does not need a number.
                 if done > 0.001 {
                     commands.spawn((
-                        PbrBundle {
+                        MaterialMeshBundle::<RetroMaterial> {
                             mesh: meshes.add(ribbon(&sim.scenario, from, head, 8.0)),
                             material: assets.line_cut.clone(),
                             ..default()
@@ -300,7 +304,7 @@ pub fn sync_orders(
                 }
                 if done < 0.999 {
                     commands.spawn((
-                        PbrBundle {
+                        MaterialMeshBundle::<RetroMaterial> {
                             mesh: meshes.add(ribbon(&sim.scenario, head, to, 4.0)),
                             material: assets.line_todo.clone(),
                             ..default()
@@ -404,7 +408,7 @@ pub fn update_work_overlay(
             continue;
         }
         commands.spawn((
-            PbrBundle {
+            MaterialMeshBundle::<RetroMaterial> {
                 mesh: meshes.add(cell_patches(&sim.scenario, &cells)),
                 material,
                 ..default()

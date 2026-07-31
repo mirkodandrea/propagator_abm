@@ -20,6 +20,8 @@ use bevy::render::render_asset::RenderAssetUsages;
 use scenario::{Cell, Pos, Scenario};
 
 use crate::field::noise;
+use crate::retro;
+use crate::retro::RetroMaterial;
 
 /// Samples per chunk edge. 128 keeps each chunk at ~16 k vertices.
 const CHUNK: usize = 128;
@@ -75,22 +77,41 @@ fn ground_color(elev: f32, slope_cos: f32, p: Pos) -> [f32; 3] {
     c
 }
 
+/// The dev floor is a void, not a coordinate display.  The old 40 m grid was
+/// useful while debugging placement, but it dominated the scene and made the
+/// terrain look like a wire lattice.  A broad, deliberately quiet variation
+/// keeps the floor legible without exposing the simulation's cell boundaries.
+fn vr_floor_color(pal: scenario::VrPalette, p: Pos) -> [f32; 3] {
+    let drift = 0.94 + 0.10 * noise(p.x / 180.0, p.y / 180.0, 0x5A17);
+    [
+        pal.void[0] * drift + 0.008,
+        pal.void[1] * drift + 0.012,
+        pal.void[2] * drift + 0.024,
+    ]
+}
+
 pub fn build(
     scn: &Scenario,
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
+    materials: &mut Assets<RetroMaterial>,
 ) {
     let t = &scn.terrain;
-    let material = materials.add(StandardMaterial {
+    let pal = scn.vr_palette();
+    let material = materials.add(retro::material(StandardMaterial {
         base_color: Color::WHITE,
-        perceptual_roughness: 0.95,
+        perceptual_roughness: 1.0,
         metallic: 0.0,
         // Dry karst, not wet slate: a low reflectance keeps the sun's
         // specular lobe from painting a bright sheet across every ridge.
-        reflectance: 0.12,
+        reflectance: 0.02,
+        // VR-training dev scenarios are a flat unlit void floor, not lit
+        // ground — no sun to bounce off of.
+        unlit: pal.is_some(),
         ..default()
-    });
+    // The terrain is the backdrop, not a participating neon object: keep the
+    // dev floor matte and opt it out of the animated edge treatment.
+    }, false));
 
     let chunks_x = (t.cols - 1).div_ceil(CHUNK);
     let chunks_y = (t.rows - 1).div_ceil(CHUNK);
@@ -131,7 +152,10 @@ pub fn build(
                     let n = t.normal_at(p);
                     normals.push([n[0], n[1], -n[2]]);
 
-                    let col = ground_color(elev, n[1], p);
+                    let col = match pal {
+                        Some(pal) => vr_floor_color(pal, p),
+                        None => ground_color(elev, n[1], p),
+                    };
                     let col = Color::srgb(col[0], col[1], col[2]).to_linear();
                     colors.push([col.red, col.green, col.blue, 1.0]);
                     uvs.push([c as f32 / cn as f32, r as f32 / rn as f32]);
@@ -160,7 +184,7 @@ pub fn build(
             mesh.insert_indices(Indices::U32(indices));
 
             commands.spawn((
-                PbrBundle {
+                MaterialMeshBundle::<RetroMaterial> {
                     mesh: meshes.add(mesh),
                     material: material.clone(),
                     ..default()

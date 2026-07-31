@@ -67,6 +67,16 @@ pub struct Sim {
     /// are still reading the threat field off it.
     pub crews: Suppression,
     pub scenario: Scenario,
+    /// Authored agent behaviour in force, from the composer.
+    ///
+    /// Held as the *library* rather than a compiled runtime because a restart
+    /// has to rebuild the runtime from scratch: a compiled graph owns
+    /// evaluation scratch space that is only valid for one `Abm`, and reusing
+    /// it across a rebuild would be the same class of bug as reusing the
+    /// household list.
+    ///
+    /// `None` runs the hand-written decision layer, which stays the default.
+    pub behaviour: Option<behavior::Library>,
     pub playing: bool,
     /// Simulated seconds per wall-clock second.
     pub speed: f32,
@@ -180,6 +190,7 @@ impl Sim {
             agents,
             crews,
             scenario,
+            behaviour: None,
             // SPOTORNO_AUTOPLAY=1 starts running immediately, for screenshots
             // and for headless timing runs.
             playing: std::env::var("SPOTORNO_AUTOPLAY").is_ok(),
@@ -204,6 +215,41 @@ impl Sim {
 
     pub fn time_s(&self) -> i64 {
         self.fire.time_s()
+    }
+
+    /// Compile the authored behaviour, if there is one.
+    ///
+    /// Fails loudly rather than falling back to the shipped model: a run that
+    /// silently ignored the behaviour a scientist just authored, and reported
+    /// its numbers anyway, is the worst outcome available here.
+    fn runtime(&self) -> anyhow::Result<Option<abm::BehaviorRuntime>> {
+        match &self.behaviour {
+            None => Ok(None),
+            Some(lib) => abm::BehaviorRuntime::build(lib)
+                .map_err(|e| anyhow::anyhow!("authored behaviour: {e}")),
+        }
+    }
+
+    /// Adopt an authored behaviour library and restart onto it.
+    ///
+    /// A restart rather than a hot swap, deliberately. Households are
+    /// mid-decision — milling, on the road, committed to defending — and a new
+    /// decision layer would be answering about a state the old one produced.
+    /// The fire, the weather, the seed and the ignition list are untouched, so
+    /// this *is* the controlled comparison.
+    pub fn apply_behaviour(&mut self, lib: Option<behavior::Library>) -> anyhow::Result<()> {
+        let previous = self.behaviour.take();
+        self.behaviour = lib;
+        match self.restart() {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                // Leave the sim on something that runs. A composer error must
+                // not take the game down with it.
+                self.behaviour = previous;
+                let _ = self.restart();
+                Err(e)
+            }
+        }
     }
 
     /// Rebuild the fire and the agents from scratch and replay the ignition
@@ -231,7 +277,7 @@ impl Sim {
             }
         }
 
-        self.agents = Abm::new(&self.scenario, self.seed)?;
+        self.agents = Abm::with_behavior(&self.scenario, self.seed, self.runtime()?)?;
         // Rebuilt, not reset: a restart has to discard every order the player
         // gave, every litre spent and every metre of line cut, or comparing two
         // plans compares nothing. The roster is deterministic, so unit ids are

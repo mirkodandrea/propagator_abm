@@ -24,7 +24,7 @@ pub mod terrain;
 pub mod vectors;
 
 pub use fuels::FuelDefRaw;
-pub use metadata::{ScenarioMetadata, ScenarioRegistry};
+pub use metadata::{ScenarioMetadata, ScenarioRegistry, VrPalette};
 pub use population::{Dwelling, Household, Person, Population};
 pub use terrain::Terrain;
 pub use vectors::{Building, Road, Vectors, WaterSource};
@@ -104,6 +104,15 @@ impl Scenario {
     /// Returns true if this is a development/test scenario
     pub fn is_dev(&self) -> bool {
         self.metadata.is_dev
+    }
+
+    /// The VR-training palette to render this scenario with, or `None` for
+    /// the realistic look. Only dev scenarios ever get one — see
+    /// `metadata::VrPalette`.
+    pub fn vr_palette(&self) -> Option<VrPalette> {
+        self.metadata
+            .is_dev
+            .then(|| self.metadata.vr_palette.unwrap_or(VrPalette::DEFAULT))
     }
 }
 
@@ -203,6 +212,7 @@ impl Scenario {
                     version: String::new(),
                     tags: vec![],
                     is_dev: false,
+                    vr_palette: None,
                 },
                 world,
                 terrain,
@@ -254,6 +264,7 @@ impl Scenario {
             version: env!("CARGO_PKG_VERSION").to_string(),
             tags: vec!["web".to_string()],
             is_dev: false,
+            vr_palette: None,
         };
 
         Ok(Scenario {

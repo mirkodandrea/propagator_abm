@@ -28,6 +28,9 @@ use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
 use scenario::{Pos, Scenario};
 
+use crate::retro;
+use crate::retro::RetroMaterial;
+
 /// Half-widths in metres, by road role. Generous: at command altitude a real
 /// 3 m lane is under a pixel, and the network has to stay legible while zoomed
 /// out. Same map-symbol exaggeration as `people::FIGURE_SCALE`.
@@ -65,32 +68,69 @@ pub fn build(
     scn: &Scenario,
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
+    materials: &mut Assets<RetroMaterial>,
 ) {
+    let dev = scn.vr_palette().is_some();
+    let mut add = |base: StandardMaterial| materials.add(retro::material(base, dev));
     // Asphalt, and the darker shoulder under it. Rough and unlit-ish: a road
     // that specularly flares in the low sun draws the eye away from the fire.
-    let drivable_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.20, 0.20, 0.22),
-        perceptual_roughness: 0.95,
-        ..default()
-    });
-    let drivable_casing = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.11, 0.11, 0.12),
-        perceptual_roughness: 1.0,
-        ..default()
-    });
-    // Tracks are pale dirt: the contrast against dark asphalt is the whole
-    // point of the split, because it is also the drive/walk distinction.
-    let track_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.58, 0.52, 0.41),
-        perceptual_roughness: 1.0,
-        ..default()
-    });
-    let track_casing = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.38, 0.33, 0.26),
-        perceptual_roughness: 1.0,
-        ..default()
-    });
+    //
+    // VR-training dev scenarios swap this for glowing accent-coloured lines
+    // on the grid floor, unlit, drivable brighter than track — same
+    // drive/walk contrast the realistic palette carries, just neon instead
+    // of asphalt-vs-dirt.
+    let (drivable_mat, drivable_casing, track_mat, track_casing) = match scn.vr_palette() {
+        Some(pal) => {
+            let dim = |c: [f32; 3], k: f32| Color::srgb(c[0] * k, c[1] * k, c[2] * k);
+            (
+                add(StandardMaterial {
+                    base_color: dim(pal.accent, 1.0),
+                    unlit: true,
+                    ..default()
+                }),
+                add(StandardMaterial {
+                    base_color: dim(pal.grid, 0.6),
+                    unlit: true,
+                    ..default()
+                }),
+                add(StandardMaterial {
+                    base_color: dim(pal.accent, 0.55),
+                    unlit: true,
+                    ..default()
+                }),
+                add(StandardMaterial {
+                    base_color: dim(pal.grid, 0.35),
+                    unlit: true,
+                    ..default()
+                }),
+            )
+        }
+        None => (
+            add(StandardMaterial {
+                base_color: Color::srgb(0.20, 0.20, 0.22),
+                perceptual_roughness: 0.95,
+                ..default()
+            }),
+            add(StandardMaterial {
+                base_color: Color::srgb(0.11, 0.11, 0.12),
+                perceptual_roughness: 1.0,
+                ..default()
+            }),
+            // Tracks are pale dirt: the contrast against dark asphalt is the
+            // whole point of the split, because it is also the drive/walk
+            // distinction.
+            add(StandardMaterial {
+                base_color: Color::srgb(0.58, 0.52, 0.41),
+                perceptual_roughness: 1.0,
+                ..default()
+            }),
+            add(StandardMaterial {
+                base_color: Color::srgb(0.38, 0.33, 0.26),
+                perceptual_roughness: 1.0,
+                ..default()
+            }),
+        ),
+    };
 
     // Four layers, each chunked independently: casings under surfaces, tracks
     // under drivable roads, so a lane crossing a path reads the right way.
@@ -129,7 +169,7 @@ pub fn build(
             tri_count += builder.indices.len() / 3;
             chunk_count += 1;
             commands.spawn((
-                PbrBundle {
+                MaterialMeshBundle::<RetroMaterial> {
                     mesh: meshes.add(builder.finish()),
                     material: mat.clone(),
                     ..default()

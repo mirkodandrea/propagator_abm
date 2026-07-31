@@ -241,6 +241,11 @@ fn spawn_sea(
     mut materials: ResMut<Assets<WaterMaterial>>,
 ) {
     let scn = &sim.scenario;
+    // VR-training dev scenarios are a void with a grid floor, not a coastline
+    // — there is nothing for the sea to sit against.
+    if scn.vr_palette().is_some() {
+        return;
+    }
     let t = &scn.terrain;
     let stride_m = t.posting * WATER_STRIDE as f32;
 

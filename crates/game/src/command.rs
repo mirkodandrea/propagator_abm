@@ -28,6 +28,8 @@ use scenario::Pos;
 use crate::camera::OrbitCamera;
 use crate::ignition_edit::{ring_mesh, EditMode, IgnitionTool};
 use crate::pick;
+use crate::retro;
+use crate::retro::RetroMaterial;
 use crate::sim::Sim;
 
 /// What an armed left-click will order.
@@ -107,18 +109,21 @@ pub struct OrderCursor;
 
 #[derive(Resource)]
 pub struct CursorAssets {
-    ok: Handle<StandardMaterial>,
-    blocked: Handle<StandardMaterial>,
-    anchor: Handle<StandardMaterial>,
+    ok: Handle<RetroMaterial>,
+    blocked: Handle<RetroMaterial>,
+    anchor: Handle<RetroMaterial>,
 }
 
 /// Radius of the cursor ring, metres. Sized to the thing being ordered: an
 /// engine's is its hose reach, so the ring *is* the area it can work.
 const CURSOR_R_M: f32 = 60.0;
 
-pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
+pub fn setup(
+    mut commands: Commands,
+    mut materials: ResMut<Assets<RetroMaterial>>,
+) {
     let mut ring = |r: f32, g: f32, b: f32, a: f32| {
-        materials.add(StandardMaterial {
+        materials.add(retro::material(StandardMaterial {
             base_color: Color::srgba(r, g, b, a),
             emissive: LinearRgba::rgb(r * 1.6, g * 1.6, b * 1.6),
             unlit: true,
@@ -126,7 +131,7 @@ pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMateri
             double_sided: true,
             cull_mode: None,
             ..default()
-        })
+        }, true))
     };
     commands.insert_resource(CursorAssets {
         ok: ring(0.35, 0.95, 1.00, 0.80),
@@ -341,7 +346,7 @@ pub fn update_cursor(
     }
     if let Some(from) = tool.line_from {
         commands.spawn((
-            PbrBundle {
+            MaterialMeshBundle::<RetroMaterial> {
                 mesh: meshes.add(ring_mesh(&sim.scenario, from, 25.0)),
                 material: assets.anchor.clone(),
                 ..default()
@@ -351,7 +356,7 @@ pub fn update_cursor(
         // And the alignment as it would be if the player clicked now.
         if let Some((p, _)) = tool.hover {
             commands.spawn((
-                PbrBundle {
+                MaterialMeshBundle::<RetroMaterial> {
                     mesh: meshes.add(crate::units::ribbon(&sim.scenario, from, p, 5.0)),
                     material: assets.anchor.clone(),
                     ..default()
@@ -362,7 +367,7 @@ pub fn update_cursor(
     }
     let Some((p, ok)) = tool.hover else { return };
     commands.spawn((
-        PbrBundle {
+        MaterialMeshBundle::<RetroMaterial> {
             mesh: meshes.add(ring_mesh(&sim.scenario, p, CURSOR_R_M)),
             material: if ok {
                 assets.ok.clone()
