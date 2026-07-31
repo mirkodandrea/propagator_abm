@@ -237,6 +237,7 @@ pub fn panel(
     let evac = sim.agents.stats();
     let median_evac = sim.agents.median_evacuation_s();
     let ordered = sim.agents.households.iter().filter(|h| h.ordered).count();
+    let households = sim.agents.households.len();
     let ignition_pos = sim.scenario.world.centre_of(sim.ignition.centre);
     let mut order: Option<(Pos, f32)> = None;
     let scenario_name = sim.scenario.metadata.name.clone();
@@ -359,7 +360,9 @@ pub fn panel(
                         ui.end_row();
                     });
 
-                    ui.horizontal(|ui| {
+                    ui.add_space(6.0);
+                    section(ui, "Order");
+                    ui.horizontal_wrapped(|ui| {
                         if ui
                             .button("Evacuate 2 km around the fire")
                             .on_hover_text(
@@ -370,18 +373,15 @@ pub fn panel(
                         {
                             order = Some((ignition_pos, 2000.0));
                         }
-                        if ui.button("Evacuate everyone").clicked() {
+                        if ui
+                            .button("Evacuate everyone  (E)")
+                            .on_hover_text("A general order to the whole window.")
+                            .clicked()
+                        {
                             order = Some((ignition_pos, 20_000.0));
                         }
                     });
-
-                    ui.separator();
-                    ui.small(
-                        "space play/pause · [ ] speed · 1-4 fire layer · e evacuate · \
-                 i place ignition · r restart · b behaviour composer · \
-                 click a house/person/car to inspect it · drag orbit · \
-                 right-drag pan · scroll zoom",
-                    );
+                    ui.add_space(6.0);
                 });
         });
 
@@ -389,18 +389,17 @@ pub fn panel(
         let n = sim.agents.order_evacuation(centre, radius);
         info!("evacuation order issued to {n} households within {radius:.0} m");
     }
-    if toggle {
-        sim.playing = !sim.playing;
-    }
-    if selected != *layer {
-        *layer = selected;
-    }
-    if (speed - sim.speed).abs() > f32::EPSILON {
-        sim.speed = speed.clamp(MIN_SPEED, MAX_SPEED);
-    }
     panels.incident = open;
 
-    focus.0 = ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+    focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+}
+
+/// A section rule: a heading with a hairline under it. The docks were a wall of
+/// undifferentiated `separator()`s, which reads as one long list rather than as
+/// grouped answers to different questions.
+pub(crate) fn section(ui: &mut egui::Ui, title: &str) {
+    ui.label(egui::RichText::new(title.to_uppercase()).small().weak());
+    ui.separator();
 }
 
 /// A plain-language guide for the simulation. This intentionally describes a
@@ -547,17 +546,12 @@ fn controls_guide(ui: &mut egui::Ui, rows: [(&str, &str); 8]) {
 /// slider drag would push a hundred events for one gesture — the fire would
 /// still be right, but the event heap would carry the whole drag. It commits on
 /// release, and the Apply button covers keyboard entry.
-pub fn wildfire_panel(
-    mut contexts: EguiContexts,
-    mut sim: ResMut<Sim>,
-    mut tool: ResMut<IgnitionTool>,
-    mut focus: ResMut<UiFocus>,
-    mut panels: ResMut<PanelState>,
-    mut restarted: EventWriter<SimRestarted>,
+pub fn wildfire_body(
+    ui: &mut egui::Ui,
+    sim: &mut Sim,
+    tool: &mut IgnitionTool,
+    restarted: &mut EventWriter<SimRestarted>,
 ) {
-    let ctx = contexts.ctx_mut();
-    let mut open = panels.wildfire;
-
     let mut weather = sim.weather;
     let mut commit_weather = false;
     let mut do_restart = false;
