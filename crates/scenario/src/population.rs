@@ -102,13 +102,13 @@ pub struct Population {
 
 impl Population {
     pub fn load(dir: &Path) -> Result<Population> {
-        let bytes = std::fs::read(dir.join("spotorno_population.json"))
-            .context("spotorno_population.json")?;
+        let bytes = std::fs::read(dir.join("population.json"))
+            .context("population.json")?;
         Ok(serde_json::from_slice(&bytes)?)
     }
 
     #[cfg(target_arch = "wasm32")]
     pub fn load_web() -> Result<Population> {
-        Ok(serde_json::from_slice(include_bytes!("../../../data/spotorno_population.json"))?)
+        Ok(serde_json::from_slice(include_bytes!(concat!(env!("OUT_DIR"), "/web_population.json")))?)
     }
 }

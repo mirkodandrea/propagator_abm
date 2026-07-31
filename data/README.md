@@ -1,4 +1,41 @@
-# Spotorno scenario data
+# Scenario data
+
+The project now supports **multiple scenarios** for testing and validating the ABM.
+
+## Scenario structure
+
+Each scenario is stored in its own directory under `scenarios/`:
+
+```
+data/
+├── scenarios.json                 # Registry of all available scenarios
+├── fuels_eu12.json               # Shared fuel table (used by all scenarios)
+├── scenarios/
+│   ├── spotorno/
+│   │   ├── scenario.json         # Scenario metadata
+│   │   ├── render_terrain.f32    # 2048² elevation @ 5 m
+│   │   ├── render_terrain.json
+│   │   ├── dem.f64               # 512² elevation @ 20 m (fire grid)
+│   │   ├── fuel.i32              # 512² fuel classes @ 20 m
+│   │   ├── osm.json              # Buildings, roads, water
+│   │   └── population.json       # Dwellings, households, people
+│   └── [other scenarios]/
+│       └── (same structure)
+```
+
+### Loading scenarios
+
+**Desktop build:**
+- Default: loads the scenario specified in `scenarios.json` as `default`
+- Override: `SPOTORNO_SCENARIO=scenario_id cargo run --release -p game`
+
+**Web build:**
+- Default: loads spotorno
+- Override: `SPOTORNO_WEB_SCENARIO=scenario_id cargo build --release --target wasm32-unknown-unknown -p game`
+
+---
+
+## Spotorno scenario data
 
 Window: 512 x 512 cells @ 20 m = **10.24 x 10.24 km**, EPSG:32632 (WGS84 UTM 32N),
 SW corner at UTM `(448360, 4892080)`. Covers Spotorno, Bergeggi, Noli and the
@@ -26,20 +63,22 @@ constraint of the fire model alone — nothing else is quantised to it.
 Both COGs share one grid (origin `(0, 7960000)`, 20 m), so DEM and fuel windows
 use identical row/col indexing. Access needs `AWS_PROFILE=return`.
 
-## Files
+## Files (Spotorno scenario)
 
-| File | Contents |
-|---|---|
-| `spotorno_fuel.tif` | 512² int fuel classes, 20 m — source, for inspection |
-| `spotorno_dem.tif` | 512² float elevation, 20 m — source, for inspection |
-| `spotorno_fuel.i32` | same fuel grid as raw little-endian i32 — **read by the game** |
-| `spotorno_dem.f64` | same DEM as raw little-endian f64 — **read by the game** |
-| `fuels_eu12.json` | the 12-class fuel table — **read by the game** |
-| `spotorno_render_terrain.f32` + `.json` | 2048² float32 heightfield @ 5 m — rendering only |
-| `spotorno_render_terrain.tif` | same, as GeoTIFF for inspection |
-| `spotorno_osm.json` | buildings, roads, water, in world metres |
-| `spotorno_population.json` | dwellings, households, people |
-| `osm_raw.json` | raw Overpass response (cache; delete to refetch) |
+| File | Contents | Location |
+|---|---|---|
+| `scenario.json` | Scenario metadata (name, description, grid size, counts) | `scenarios/spotorno/` |
+| `fuel.i32` | 512² int fuel classes, 20 m — **read by the game** | `scenarios/spotorno/` |
+| `dem.f64` | 512² float elevation, 20 m — **read by the game** | `scenarios/spotorno/` |
+| `fuel.tif` | same fuel grid as GeoTIFF — source, for inspection | `scenarios/spotorno/` |
+| `dem.tif` | same DEM as GeoTIFF — source, for inspection | `scenarios/spotorno/` |
+| `render_terrain.f32` | 2048² float32 heightfield @ 5 m — **read by the game** | `scenarios/spotorno/` |
+| `render_terrain.json` | Metadata for render terrain (rows, cols, posting, bounds) | `scenarios/spotorno/` |
+| `render_terrain.tif` | same, as GeoTIFF for inspection | `scenarios/spotorno/` |
+| `osm.json` | buildings, roads, water, in world metres | `scenarios/spotorno/` |
+| `population.json` | dwellings, households, people | `scenarios/spotorno/` |
+| `fuels_eu12.json` | the 12-class fuel table — **read by all scenarios** | `data/` (top level) |
+| `osm_raw.json` | raw Overpass response (cache; delete to refetch) | `data/` (top level) |
 
 ## Source COGs
 
@@ -60,7 +99,9 @@ Access needs `AWS_PROFILE=return`, which lives in `~/.aws/credentials` (not
 `~/.aws/config`, so grepping config alone finds nothing). The machine's
 `[default]` profile is a different account and gets 403 on this bucket.
 
-## Regenerating
+## Regenerating Spotorno
+
+To regenerate Spotorno scenario assets in `scenarios/spotorno/`:
 
 ```bash
 export AWS_PROFILE=return
@@ -68,9 +109,9 @@ PY=/Users/mirko/dev/fire/propagator/propagator_sim/.venv/bin/python
 
 # 1. rasters: 512x512 window centred on Spotorno (grid col 22674, row 153140)
 gdal_translate -srcwin 22418 152884 512 512 \
-  /vsis3/cima-propagator-return/cogs/eu/eu_fuel12_utm_32.tif data/spotorno_fuel.tif
+  /vsis3/cima-propagator-return/cogs/eu/eu_fuel12_utm_32.tif data/scenarios/spotorno/fuel.tif
 gdal_translate -srcwin 22418 152884 512 512 \
-  /vsis3/cima-propagator-return/cogs/eu/eu_dem_utm_32.tif  data/spotorno_dem.tif
+  /vsis3/cima-propagator-return/cogs/eu/eu_dem_utm_32.tif  data/scenarios/spotorno/dem.tif
 
 # 2. everything downstream
 $PY scripts/fetch_osm.py              # cached; delete osm_raw.json to refetch
@@ -82,9 +123,12 @@ $PY scripts/run_spotorno.py           # optional: Python-side fire model check
 ```
 
 `bake_fire_rasters.py` and `bake_fuels.py` are **required** — the game loads
-`spotorno_fuel.i32`, `spotorno_dem.f64` and `fuels_eu12.json`, not the
-GeoTIFFs. Pulling a TIFF decoder into the Rust build just to read two
-fixed-size grids is not worth the dependency.
+`fuel.i32`, `dem.f64` and `fuels_eu12.json`, not the GeoTIFFs. Pulling a TIFF
+decoder into the Rust build just to read two fixed-size grids is not worth
+the dependency.
+
+Scripts are designed to output to `data/scenarios/spotorno/` by default (note the
+new path). Adjust them if creating a different scenario.
 
 ## Current population (seed 42)
 

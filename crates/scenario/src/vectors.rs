@@ -58,8 +58,8 @@ pub struct Vectors {
 
 impl Vectors {
     pub fn load(dir: &Path) -> Result<Vectors> {
-        let bytes = std::fs::read(dir.join("spotorno_osm.json"))
-            .context("spotorno_osm.json")?;
+        let bytes = std::fs::read(dir.join("osm.json"))
+            .context("osm.json")?;
         Ok(serde_json::from_slice(&bytes)?)
     }
 

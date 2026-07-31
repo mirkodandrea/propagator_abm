@@ -1,0 +1,23 @@
+{
+  "default": "spotorno",
+  "scenarios": [
+    {
+      "id": "spotorno",
+      "name": "Spotorno, Liguria",
+      "description": "Real data scenario: coastal Italian town with synthetic population and behavioral priors from wildfire evacuation literature",
+      "location": "Spotorno, Italy",
+      "country": "Italy",
+      "coordinates": [44.2265, 8.4176],
+      "utm_zone": 32,
+      "world_size_m": [10240.0, 10240.0],
+      "fire_grid_size": [512, 512],
+      "buildings_count": 7629,
+      "households_count": 750,
+      "people_count": 1577,
+      "scenario_type": "real",
+      "creation_date": "2024-01-15",
+      "version": "1.0.0",
+      "tags": ["real-data", "coastal", "wui", "liguria", "italy"]
+    }
+  ]
+}

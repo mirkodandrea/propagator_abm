@@ -20,6 +20,7 @@ mod inspect;
 mod people;
 mod pick;
 mod roads;
+mod scenario_selector;
 mod sea;
 mod selftest;
 mod sim;
@@ -36,13 +37,35 @@ use bevy::pbr::{CascadeShadowConfigBuilder, FogSettings};
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use fire::Weather;
-use scenario::Scenario;
+use std::path::Path;
 
 use crate::camera::OrbitCamera;
 use crate::sim::Sim;
 
 fn main() -> anyhow::Result<()> {
     let data = std::env::var("SPOTORNO_DATA").unwrap_or_else(|_| "data".to_string());
+    let data_path = Path::new(&data);
+
+    // Load scenario registry to discover available scenarios
+    #[cfg(not(target_arch = "wasm32"))]
+    let registry = scenario::ScenarioRegistry::discover(data_path)
+        .ok();
+
+    // Determine which scenario to load
+    let scenario_id = if let Ok(id) = std::env::var("SPOTORNO_SCENARIO") {
+        id
+    } else if let Some(reg) = &registry {
+        reg.default_id().to_string()
+    } else {
+        "spotorno".to_string()
+    };
+
+    // Load the selected scenario
+    #[cfg(not(target_arch = "wasm32"))]
+    let scn = scenario::Scenario::load_by_id(data_path, &scenario_id)
+        .map_err(|e| anyhow::anyhow!("loading scenario '{scenario_id}': {e:#}"))?;
+
+    #[cfg(target_arch = "wasm32")]
     let scn = Scenario::load(&data)
         .map_err(|e| anyhow::anyhow!("loading scenario from {data}: {e:#}"))?;
 
@@ -57,10 +80,12 @@ fn main() -> anyhow::Result<()> {
 
     let sim = Sim::new(scn, Weather::default(), 42)?;
 
+    let window_title = format!("{} — wildfire incident command", sim.scenario.metadata.name);
+
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: "Spotorno — wildfire incident command".into(),
+            title: window_title.into(),
             #[cfg(target_arch = "wasm32")]
             canvas: Some("#spotorno".into()),
             #[cfg(target_arch = "wasm32")]

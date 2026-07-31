@@ -1,0 +1,30 @@
+{
+  "id": "spotorno",
+  "name": "Spotorno, Liguria",
+  "description": "Real data scenario: coastal Italian town with synthetic population and behavioral priors from wildfire evacuation literature",
+  "location": "Spotorno, Italy",
+  "country": "Italy",
+  "coordinates": [44.2265, 8.4176],
+  "utm_zone": 32,
+  "utm_corner": [448360, 4892080],
+  "world_size_m": [10240.0, 10240.0],
+  "fire_grid_size": [512, 512],
+  "fire_cellsize_m": 20.0,
+  "buildings_count": 7629,
+  "households_count": 750,
+  "people_count": 1577,
+  "scenario_type": "real",
+  "data_provenance": {
+    "fuel": "s3://cima-propagator-return/cogs/eu/eu_fuel12_utm_32.tif",
+    "dem": "s3://cima-propagator-return/cogs/eu/eu_dem_utm_32.tif",
+    "buildings": "OpenStreetMap (Overpass)",
+    "roads": "OpenStreetMap",
+    "hydrants": "OpenStreetMap",
+    "population": "Derived from ISTAT + synthetic"
+  },
+  "creation_date": "2024-01-15",
+  "version": "1.0.0",
+  "tags": ["real-data", "coastal", "wui", "liguria", "italy"],
+  "authors": ["Mirko D'Andrea"],
+  "license": "EUPL-1.2"
+}

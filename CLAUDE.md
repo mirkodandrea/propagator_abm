@@ -27,7 +27,7 @@ asking.
 |---|---|
 | Player role | Incident commander, RTS-style |
 | Time model | Real-time play, plus a turn-based after-action debrief (debrief deferred) |
-| Place | One handcrafted area: **Spotorno, Liguria** (44.2265 N, 8.4176 E), UTM 32N |
+| Place | **Multiple scenarios supported** — Spotorno, Liguria is the default (44.2265 N, 8.4176 E, UTM 32N). Others can be added. |
 | Agent types | Civilians (individual humans), ground crews on foot, engines/vehicles. **No aircraft.** |
 | Population | ~500–2,000 people, each individually inspectable |
 | Scenario length | 1–3 h simulated (initial attack) |
@@ -36,6 +36,7 @@ asking.
 | Architecture | New cargo workspace here; `propagator-core` as a path dependency |
 | Deferred | Web/wasm build, record/replay debrief |
 | Engine | Bevy **0.14** + `bevy_egui` **0.28**, matching igad so its UI ports directly |
+| Scenarios | **Multi-scenario support** — load different scenarios for ABM testing and validation |
 
 ---
 
