@@ -13,8 +13,11 @@ const RETRO_SHADER_HANDLE: Handle<Shader> =
 /// on the GPU and therefore also covers merged vegetation and building meshes.
 #[derive(Asset, AsBindGroup, TypePath, Clone, Default)]
 pub struct RetroExtension {
+    // A bare f32 uniform is 4 bytes, which WebGL2 rejects (bindings must be a
+    // multiple of 16 bytes there; desktop backends don't enforce it, so this
+    // only ever broke the web build). Pad to a full vec4 and read `.x`.
     #[uniform(100)]
-    pub enabled: f32,
+    pub enabled: Vec4,
 }
 
 pub type RetroMaterial = ExtendedMaterial<StandardMaterial, RetroExtension>;
@@ -44,7 +47,7 @@ pub fn material(base: StandardMaterial, dev: bool) -> RetroMaterial {
     RetroMaterial {
         base,
         extension: RetroExtension {
-            enabled: dev as u8 as f32,
+            enabled: Vec4::new(dev as u8 as f32, 0.0, 0.0, 0.0),
         },
     }
 }

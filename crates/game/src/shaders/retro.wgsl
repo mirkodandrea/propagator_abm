@@ -12,7 +12,7 @@
 #import bevy_pbr::mesh_view_bindings::globals
 
 struct RetroUniform {
-    enabled: f32,
+    enabled: vec4<f32>,
 };
 @group(2) @binding(100) var<uniform> retro: RetroUniform;
 
@@ -36,7 +36,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let carrier = 0.5 + 0.5 * sin(t * 2.2 + phase);
     let scan = 0.5 + 0.5 * sin(p.y * 0.42 - t * 5.0 + phase * 0.7);
     let grain = hash21(floor(p.xz * 0.08 + t * 0.08));
-    let pulse = (0.025 + carrier * 0.04 + scan * 0.012 + grain * 0.008) * retro.enabled;
+    let pulse = (0.025 + carrier * 0.04 + scan * 0.012 + grain * 0.008) * retro.enabled.x;
 
     // Two complementary edge detectors keep this useful across the very
     // different dev meshes. Fresnel catches the visible silhouette; fwidth of
@@ -56,7 +56,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let vertex_luma = dot(in.color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
     burn_gate = smoothstep(0.075, 0.13, vertex_luma);
 #endif
-    let edge = max(silhouette_edge, facet_edge) * retro.enabled * burn_gate;
+    let edge = max(silhouette_edge, facet_edge) * retro.enabled.x * burn_gate;
     let edge_pulse = (0.42 + carrier * 0.75 + scan * 0.28 + grain * 0.12) * edge;
 
     // A small additive lift is much more visible than changing emissive on an
