@@ -1,0 +1,63 @@
+{
+  "id": "congestion_funnel",
+  "name": "ABM Lab: Single-Exit Congestion",
+  "description": "Send many household cars through one shared collector and expose queueing and mode choice.",
+  "location": "Synthetic ABM laboratory",
+  "country": "Synthetic",
+  "coordinates": [
+    0.0,
+    0.0
+  ],
+  "utm_zone": 0,
+  "world_size_m": [
+    3200.0,
+    3200.0
+  ],
+  "fire_grid_size": [
+    128,
+    128
+  ],
+  "buildings_count": 80,
+  "households_count": 80,
+  "people_count": 240,
+  "scenario_type": "synthetic",
+  "creation_date": "2026-07-31",
+  "version": "2.0.0",
+  "tags": [
+    "dev",
+    "abm-lab",
+    "bottleneck",
+    "fire-moderate",
+    "car_heavy"
+  ],
+  "is_dev": true,
+  "vr_palette": {
+    "void": [
+      0.02,
+      0.03,
+      0.08
+    ],
+    "grid": [
+      0.0,
+      0.85,
+      1.0
+    ],
+    "accent": [
+      0.9,
+      0.95,
+      1.0
+    ]
+  },
+  "development": {
+    "focus": "Send many household cars through one shared collector and expose queueing and mode choice.",
+    "fire_profile": "moderate",
+    "road_profile": "bottleneck",
+    "population_profile": "car_heavy",
+    "suggested_runs": [
+      "no evacuation order",
+      "early general order",
+      "late/zoned order",
+      "suppression before evacuation"
+    ]
+  }
+}

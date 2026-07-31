@@ -19,9 +19,27 @@ data/
 │   │   ├── fuel.i32              # 512² fuel classes @ 20 m
 │   │   ├── osm.json              # Buildings, roads, water
 │   │   └── population.json       # Dwellings, households, people
-│   └── [other scenarios]/
-│       └── (same structure)
+│   ├── [other scenarios]/
+│   │   └── (same structure)
+└── behaviours/                    # authored agent behaviour, scenario-independent
+    ├── graphs/*.json              # node graphs from the Agent Behaviour Composer
+    └── subtypes/*.json            # named behavioural profiles over those graphs
 ```
+
+`behaviours/` sits beside `scenarios/` rather than inside one because a
+behaviour is a hypothesis about people, not a property of a place: the whole
+point of running one against `abm_micro` and then against `spotorno` is that
+it is the same behaviour. It is loaded from
+`$SPOTORNO_DATA/behaviours`, and a missing directory is not an error — the game
+falls back to the library built into `crates/behavior/src/defaults.rs`, which is
+also what regenerates these files:
+
+```bash
+cargo test -p behavior --release -- --ignored write_shipped_library
+```
+
+One file per graph and per profile, so a changed threshold is a three-line diff
+and two people editing different profiles do not conflict.
 
 ### Loading scenarios
 
@@ -48,6 +66,33 @@ The selector supports:
 - **Interactive selection** (default): pick scenario from list, click Launch
 - **Fast path via env var**: `SPOTORNO_SCENARIO=scenario_id` skips UI, loads directly
 - **Headless/CI**: env var auto-selects scenario, game loads without UI interaction
+
+### Synthetic ABM labs
+
+Regenerate the complete development catalog with:
+
+```bash
+python3 scripts/generate_synthetic_scenarios.py
+```
+
+The script removes generated synthetic directories, never touches `spotorno`,
+and writes deterministic populations, terrain, fuel and connected road graphs.
+The labs are deliberately focused rather than random miniature towns:
+
+| Scenario | People | Development purpose |
+|---|---:|---|
+| `abm_micro` | 8 | inspect individual people, households, cars and departures |
+| `policy_lab` | 48 | compare warning/evacuation policy timing across four cohorts |
+| `suppression_access` | 60 | engine roads, crew-only track, hydrants and open water |
+| `road_cutoff` | 90 | fire-cut short exit, vehicle detour and foot escape |
+| `congestion_funnel` | 240 | car-heavy evacuation through one collector |
+| `fire_mild` / `fire_extreme` | 120 each | controlled pair: identical population and roads, different fuel and slope |
+| `town_scale` | 1,200 | whole-ABM development at small-town scale |
+| `mass_evacuation` | 5,000 | performance and aggregate behaviour at multi-thousand scale |
+
+Every synthetic `scenario.json` also contains a `development` brief describing
+its focus and suggested no-order, early-order, late/zoned-order and suppression
+runs. Unknown metadata is intentionally safe for older loaders to ignore.
 
 ---
 
@@ -151,6 +196,17 @@ new path). Adjust them if creating a different scenario.
 750 households, 1,577 people, mean household size 2.10. 61% of households sit
 within 100 m of burnable fuel; 28% have no vehicle; 22% of people need
 assistance to move; 497 are aged 65+.
+
+## Shipped behaviour library
+
+One graph, `default-evacuation` (36 nodes, 40 wires), transcribing the
+hand-written decision layer in `abm::decide`, and four profiles over it —
+`prepared-resident` (25%), `wait-and-see` (45%), `committed-defender` (20%),
+`needs-assistance` (10%). They share the graph and differ only in parameter
+overrides and starting traits, which is the pattern the composer exists for.
+
+Nothing runs it unless the composer applies it: `Sim::behaviour` is `None` by
+default and the shipped hand-written model is what a fresh run uses.
 
 ## Known caveats
 

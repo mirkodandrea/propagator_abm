@@ -1,0 +1,2110 @@
+{
+  "synthetic": true,
+  "seed": 41,
+  "dwellings": [
+    {
+      "osm_id": 1,
+      "kind": "residential",
+      "pos": [
+        1013.633208823696,
+        795.1434567250848
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        40
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 2,
+      "kind": "residential",
+      "pos": [
+        1048.4348252369355,
+        793.9744512075569
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        41
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 3,
+      "kind": "residential",
+      "pos": [
+        1092.871229254455,
+        789.4678598100961
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        43
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 4,
+      "kind": "residential",
+      "pos": [
+        1132.58589513312,
+        791.7873206502892
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        45
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 5,
+      "kind": "residential",
+      "pos": [
+        1171.213297192819,
+        796.9543535016172
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        46
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 6,
+      "kind": "residential",
+      "pos": [
+        1207.2435516868036,
+        791.0022858077862
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        48
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 7,
+      "kind": "residential",
+      "pos": [
+        1251.403545049344,
+        791.9671121019463
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        50
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 8,
+      "kind": "residential",
+      "pos": [
+        1284.9093676817467,
+        794.7804934207866
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        51
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 9,
+      "kind": "residential",
+      "pos": [
+        1324.0640936039288,
+        793.9828349999449
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        52
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 10,
+      "kind": "residential",
+      "pos": [
+        1368.786063246114,
+        790.0724268343151
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        54
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 11,
+      "kind": "residential",
+      "pos": [
+        1406.9861008796954,
+        795.9350219027142
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        56
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 12,
+      "kind": "residential",
+      "pos": [
+        1446.580226598657,
+        794.7117341745743
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        57
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 13,
+      "kind": "residential",
+      "pos": [
+        1484.5307872348196,
+        795.297892007757
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        59
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 14,
+      "kind": "residential",
+      "pos": [
+        1526.0797599054733,
+        795.0420464501847
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        61
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 15,
+      "kind": "residential",
+      "pos": [
+        1569.7818499863895,
+        792.482341483536
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        62
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 16,
+      "kind": "residential",
+      "pos": [
+        1604.6956278333328,
+        796.6487826196598
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        64
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 17,
+      "kind": "residential",
+      "pos": [
+        1642.9617874339651,
+        793.505820123001
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        65
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 18,
+      "kind": "residential",
+      "pos": [
+        1686.3425681472897,
+        795.246720584417
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        67
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 19,
+      "kind": "residential",
+      "pos": [
+        1727.194221436761,
+        791.0376184111886
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        69
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 20,
+      "kind": "residential",
+      "pos": [
+        1767.7787561232014,
+        795.5715674284506
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        70
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 21,
+      "kind": "residential",
+      "pos": [
+        1802.4752036239047,
+        790.5173251550848
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        72
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 22,
+      "kind": "residential",
+      "pos": [
+        1843.6572411493585,
+        795.1272879511549
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        73
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 23,
+      "kind": "residential",
+      "pos": [
+        1886.6851097442043,
+        790.8428350144958
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        75
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 24,
+      "kind": "residential",
+      "pos": [
+        1926.9685186135014,
+        793.3968407214521
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        77
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 25,
+      "kind": "residential",
+      "pos": [
+        1963.7332175779609,
+        792.5839257899939
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        78
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 26,
+      "kind": "residential",
+      "pos": [
+        1999.429341638596,
+        794.1307915824606
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        79
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 27,
+      "kind": "residential",
+      "pos": [
+        2041.4743184464862,
+        792.0759767194862
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        81
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 28,
+      "kind": "residential",
+      "pos": [
+        2080.7870473663716,
+        794.9415287360575
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        83
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 29,
+      "kind": "residential",
+      "pos": [
+        2118.938923922535,
+        794.8350169967762
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        84
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 30,
+      "kind": "residential",
+      "pos": [
+        2163.5631248388527,
+        791.0759270857684
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        96,
+        86
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    }
+  ],
+  "households": [
+    {
+      "id": 0,
+      "building": 1,
+      "pos": [
+        1013.633208823696,
+        795.1434567250848
+      ],
+      "cell": [
+        96,
+        40
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 0,
+      "risk_perception": 0.8018968477302771,
+      "prior_fire_experience": true,
+      "warning_channel": "self_observed",
+      "trust_authority": 0.47735884383197275,
+      "intent": "leave_early",
+      "prep_time_min": 19.85368627617925,
+      "defensible_space": 0.49162494052281785,
+      "has_pets_livestock": true,
+      "status": "normal",
+      "members": [
+        0,
+        1,
+        2
+      ]
+    },
+    {
+      "id": 1,
+      "building": 2,
+      "pos": [
+        1048.4348252369355,
+        793.9744512075569
+      ],
+      "cell": [
+        96,
+        41
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.46958585555530497,
+      "prior_fire_experience": false,
+      "warning_channel": "self_observed",
+      "trust_authority": 0.5290380089831199,
+      "intent": "wait_and_see",
+      "prep_time_min": 22.419621576279454,
+      "defensible_space": 0.7341906570560358,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "id": 2,
+      "building": 3,
+      "pos": [
+        1092.871229254455,
+        789.4678598100961
+      ],
+      "cell": [
+        96,
+        43
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.43040246906489094,
+      "prior_fire_experience": false,
+      "warning_channel": "mobile_alert",
+      "trust_authority": 0.6293662069250432,
+      "intent": "wait_and_see",
+      "prep_time_min": 28.161303637063998,
+      "defensible_space": 0.21271393416342152,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "id": 3,
+      "building": 4,
+      "pos": [
+        1132.58589513312,
+        791.7873206502892
+      ],
+      "cell": [
+        96,
+        45
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 2,
+      "risk_perception": 0.39814102546435115,
+      "prior_fire_experience": false,
+      "warning_channel": "self_observed",
+      "trust_authority": 0.356386897184171,
+      "intent": "stay_defend",
+      "prep_time_min": 31.22865155616157,
+      "defensible_space": 0.1951957185532504,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        9,
+        10,
+        11
+      ]
+    },
+    {
+      "id": 4,
+      "building": 5,
+      "pos": [
+        1171.213297192819,
+        796.9543535016172
+      ],
+      "cell": [
+        96,
+        46
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 0,
+      "risk_perception": 0.47875055527640936,
+      "prior_fire_experience": false,
+      "warning_channel": "siren",
+      "trust_authority": 0.7109637498033243,
+      "intent": "leave_early",
+      "prep_time_min": 31.277142703771727,
+      "defensible_space": 0.3093686691268064,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        12,
+        13,
+        14
+      ]
+    },
+    {
+      "id": 5,
+      "building": 6,
+      "pos": [
+        1207.2435516868036,
+        791.0022858077862
+      ],
+      "cell": [
+        96,
+        48
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.8100885317570937,
+      "prior_fire_experience": false,
+      "warning_channel": "self_observed",
+      "trust_authority": 0.6121584803451628,
+      "intent": "stay_defend",
+      "prep_time_min": 31.539739053411413,
+      "defensible_space": 0.1844518074244932,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        15,
+        16,
+        17
+      ]
+    },
+    {
+      "id": 6,
+      "building": 7,
+      "pos": [
+        1251.403545049344,
+        791.9671121019463
+      ],
+      "cell": [
+        96,
+        50
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.7226824918198848,
+      "prior_fire_experience": false,
+      "warning_channel": "self_observed",
+      "trust_authority": 0.28424736269320866,
+      "intent": "wait_and_see",
+      "prep_time_min": 11.834406029950518,
+      "defensible_space": 0.6993683967466532,
+      "has_pets_livestock": true,
+      "status": "normal",
+      "members": [
+        18,
+        19,
+        20
+      ]
+    },
+    {
+      "id": 7,
+      "building": 8,
+      "pos": [
+        1284.9093676817467,
+        794.7804934207866
+      ],
+      "cell": [
+        96,
+        51
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 2,
+      "risk_perception": 0.7908456619778798,
+      "prior_fire_experience": true,
+      "warning_channel": "mobile_alert",
+      "trust_authority": 0.7753984673169365,
+      "intent": "wait_and_see",
+      "prep_time_min": 5.414714907708969,
+      "defensible_space": 0.6785152389678097,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        21,
+        22,
+        23
+      ]
+    },
+    {
+      "id": 8,
+      "building": 9,
+      "pos": [
+        1324.0640936039288,
+        793.9828349999449
+      ],
+      "cell": [
+        96,
+        52
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 0,
+      "risk_perception": 0.8844037962086861,
+      "prior_fire_experience": false,
+      "warning_channel": "mobile_alert",
+      "trust_authority": 0.6697456439635553,
+      "intent": "wait_and_see",
+      "prep_time_min": 33.52406752122032,
+      "defensible_space": 0.5525640571331903,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        24,
+        25,
+        26
+      ]
+    },
+    {
+      "id": 9,
+      "building": 10,
+      "pos": [
+        1368.786063246114,
+        790.0724268343151
+      ],
+      "cell": [
+        96,
+        54
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.29570274674263475,
+      "prior_fire_experience": false,
+      "warning_channel": "siren",
+      "trust_authority": 0.33294400190562706,
+      "intent": "wait_and_see",
+      "prep_time_min": 24.247558653308065,
+      "defensible_space": 0.4835371303487926,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        27,
+        28,
+        29
+      ]
+    },
+    {
+      "id": 10,
+      "building": 11,
+      "pos": [
+        1406.9861008796954,
+        795.9350219027142
+      ],
+      "cell": [
+        96,
+        56
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.36027832895787043,
+      "prior_fire_experience": false,
+      "warning_channel": "siren",
+      "trust_authority": 0.7403118534872354,
+      "intent": "wait_and_see",
+      "prep_time_min": 33.95296859463577,
+      "defensible_space": 0.5166998897094589,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        30,
+        31,
+        32
+      ]
+    },
+    {
+      "id": 11,
+      "building": 12,
+      "pos": [
+        1446.580226598657,
+        794.7117341745743
+      ],
+      "cell": [
+        96,
+        57
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 2,
+      "risk_perception": 0.5732916812530147,
+      "prior_fire_experience": false,
+      "warning_channel": "self_observed",
+      "trust_authority": 0.48545354882112,
+      "intent": "leave_early",
+      "prep_time_min": 20.041750508527198,
+      "defensible_space": 0.24188496248074248,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        33,
+        34,
+        35
+      ]
+    },
+    {
+      "id": 12,
+      "building": 13,
+      "pos": [
+        1484.5307872348196,
+        795.297892007757
+      ],
+      "cell": [
+        96,
+        59
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 0,
+      "risk_perception": 0.8875438010411968,
+      "prior_fire_experience": false,
+      "warning_channel": "self_observed",
+      "trust_authority": 0.7349436971242008,
+      "intent": "wait_and_see",
+      "prep_time_min": 9.781717342016579,
+      "defensible_space": 0.6532315127066856,
+      "has_pets_livestock": true,
+      "status": "normal",
+      "members": [
+        36,
+        37,
+        38
+      ]
+    },
+    {
+      "id": 13,
+      "building": 14,
+      "pos": [
+        1526.0797599054733,
+        795.0420464501847
+      ],
+      "cell": [
+        96,
+        61
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.6717831751632258,
+      "prior_fire_experience": false,
+      "warning_channel": "mobile_alert",
+      "trust_authority": 0.6683520906409742,
+      "intent": "leave_early",
+      "prep_time_min": 6.82659479776413,
+      "defensible_space": 0.6128934863111168,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        39,
+        40,
+        41
+      ]
+    },
+    {
+      "id": 14,
+      "building": 15,
+      "pos": [
+        1569.7818499863895,
+        792.482341483536
+      ],
+      "cell": [
+        96,
+        62
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.43346170112916993,
+      "prior_fire_experience": true,
+      "warning_channel": "siren",
+      "trust_authority": 0.5187094707857722,
+      "intent": "wait_and_see",
+      "prep_time_min": 27.00722933741818,
+      "defensible_space": 0.2251314599287654,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "id": 15,
+      "building": 16,
+      "pos": [
+        1604.6956278333328,
+        796.6487826196598
+      ],
+      "cell": [
+        96,
+        64
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 2,
+      "risk_perception": 0.8629756049042254,
+      "prior_fire_experience": false,
+      "warning_channel": "mobile_alert",
+      "trust_authority": 0.32156286741386164,
+      "intent": "stay_defend",
+      "prep_time_min": 18.147382604889373,
+      "defensible_space": 0.24210584445416702,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        45,
+        46,
+        47
+      ]
+    },
+    {
+      "id": 16,
+      "building": 17,
+      "pos": [
+        1642.9617874339651,
+        793.505820123001
+      ],
+      "cell": [
+        96,
+        65
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 0,
+      "risk_perception": 0.3778078568620365,
+      "prior_fire_experience": false,
+      "warning_channel": "siren",
+      "trust_authority": 0.7231183241317803,
+      "intent": "wait_and_see",
+      "prep_time_min": 30.722321131695654,
+      "defensible_space": 0.43894236515506657,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        48,
+        49,
+        50
+      ]
+    },
+    {
+      "id": 17,
+      "building": 18,
+      "pos": [
+        1686.3425681472897,
+        795.246720584417
+      ],
+      "cell": [
+        96,
+        67
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.7573044296805503,
+      "prior_fire_experience": false,
+      "warning_channel": "mobile_alert",
+      "trust_authority": 0.5190739198310074,
+      "intent": "stay_defend",
+      "prep_time_min": 22.28813803345306,
+      "defensible_space": 0.6530913262938602,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        51,
+        52,
+        53
+      ]
+    },
+    {
+      "id": 18,
+      "building": 19,
+      "pos": [
+        1727.194221436761,
+        791.0376184111886
+      ],
+      "cell": [
+        96,
+        69
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.42512994315959035,
+      "prior_fire_experience": false,
+      "warning_channel": "mobile_alert",
+      "trust_authority": 0.8182946834407739,
+      "intent": "wait_and_see",
+      "prep_time_min": 28.61418287115242,
+      "defensible_space": 0.5293851094229923,
+      "has_pets_livestock": true,
+      "status": "normal",
+      "members": [
+        54,
+        55,
+        56
+      ]
+    },
+    {
+      "id": 19,
+      "building": 20,
+      "pos": [
+        1767.7787561232014,
+        795.5715674284506
+      ],
+      "cell": [
+        96,
+        70
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 2,
+      "risk_perception": 0.7853500436682959,
+      "prior_fire_experience": false,
+      "warning_channel": "mobile_alert",
+      "trust_authority": 0.2737450840148008,
+      "intent": "wait_and_see",
+      "prep_time_min": 13.630146780541024,
+      "defensible_space": 0.30553228055878945,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        57,
+        58,
+        59
+      ]
+    },
+    {
+      "id": 20,
+      "building": 21,
+      "pos": [
+        1802.4752036239047,
+        790.5173251550848
+      ],
+      "cell": [
+        96,
+        72
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 0,
+      "risk_perception": 0.8013036126685508,
+      "prior_fire_experience": false,
+      "warning_channel": "siren",
+      "trust_authority": 0.5041315473764431,
+      "intent": "stay_defend",
+      "prep_time_min": 22.555271582990933,
+      "defensible_space": 0.345114309155596,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        60,
+        61,
+        62
+      ]
+    },
+    {
+      "id": 21,
+      "building": 22,
+      "pos": [
+        1843.6572411493585,
+        795.1272879511549
+      ],
+      "cell": [
+        96,
+        73
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.6845651610327056,
+      "prior_fire_experience": true,
+      "warning_channel": "mobile_alert",
+      "trust_authority": 0.7872907286034825,
+      "intent": "wait_and_see",
+      "prep_time_min": 19.14544719701879,
+      "defensible_space": 0.7286665651714468,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        63,
+        64,
+        65
+      ]
+    },
+    {
+      "id": 22,
+      "building": 23,
+      "pos": [
+        1886.6851097442043,
+        790.8428350144958
+      ],
+      "cell": [
+        96,
+        75
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.6838233677207138,
+      "prior_fire_experience": false,
+      "warning_channel": "siren",
+      "trust_authority": 0.4031963174123866,
+      "intent": "wait_and_see",
+      "prep_time_min": 6.656989887668081,
+      "defensible_space": 0.21851943406074184,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        66,
+        67,
+        68
+      ]
+    },
+    {
+      "id": 23,
+      "building": 24,
+      "pos": [
+        1926.9685186135014,
+        793.3968407214521
+      ],
+      "cell": [
+        96,
+        77
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 2,
+      "risk_perception": 0.5781422834799833,
+      "prior_fire_experience": false,
+      "warning_channel": "none",
+      "trust_authority": 0.6541700556881221,
+      "intent": "wait_and_see",
+      "prep_time_min": 11.17234654219694,
+      "defensible_space": 0.11023377414812235,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        69,
+        70,
+        71
+      ]
+    },
+    {
+      "id": 24,
+      "building": 25,
+      "pos": [
+        1963.7332175779609,
+        792.5839257899939
+      ],
+      "cell": [
+        96,
+        78
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 0,
+      "risk_perception": 0.3866100818199145,
+      "prior_fire_experience": false,
+      "warning_channel": "mobile_alert",
+      "trust_authority": 0.41108250468916857,
+      "intent": "wait_and_see",
+      "prep_time_min": 17.525611796289997,
+      "defensible_space": 0.5802070009962559,
+      "has_pets_livestock": true,
+      "status": "normal",
+      "members": [
+        72,
+        73,
+        74
+      ]
+    },
+    {
+      "id": 25,
+      "building": 26,
+      "pos": [
+        1999.429341638596,
+        794.1307915824606
+      ],
+      "cell": [
+        96,
+        79
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.5256205142406029,
+      "prior_fire_experience": false,
+      "warning_channel": "siren",
+      "trust_authority": 0.25185341854470283,
+      "intent": "wait_and_see",
+      "prep_time_min": 11.358739888013744,
+      "defensible_space": 0.4344087703528815,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        75,
+        76,
+        77
+      ]
+    },
+    {
+      "id": 26,
+      "building": 27,
+      "pos": [
+        2041.4743184464862,
+        792.0759767194862
+      ],
+      "cell": [
+        96,
+        81
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.5295637494203215,
+      "prior_fire_experience": false,
+      "warning_channel": "neighbour",
+      "trust_authority": 0.47329111919410255,
+      "intent": "wait_and_see",
+      "prep_time_min": 23.367626478167036,
+      "defensible_space": 0.5787612117003536,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        78,
+        79,
+        80
+      ]
+    },
+    {
+      "id": 27,
+      "building": 28,
+      "pos": [
+        2080.7870473663716,
+        794.9415287360575
+      ],
+      "cell": [
+        96,
+        83
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 2,
+      "risk_perception": 0.7053529756539781,
+      "prior_fire_experience": false,
+      "warning_channel": "siren",
+      "trust_authority": 0.4132744230842271,
+      "intent": "wait_and_see",
+      "prep_time_min": 20.134992799263873,
+      "defensible_space": 0.23389068590640996,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        81,
+        82,
+        83
+      ]
+    },
+    {
+      "id": 28,
+      "building": 29,
+      "pos": [
+        2118.938923922535,
+        794.8350169967762
+      ],
+      "cell": [
+        96,
+        84
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 0,
+      "risk_perception": 0.6352160065068418,
+      "prior_fire_experience": true,
+      "warning_channel": "siren",
+      "trust_authority": 0.742665080339262,
+      "intent": "stay_defend",
+      "prep_time_min": 19.051553604959462,
+      "defensible_space": 0.5319849812147321,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        84,
+        85,
+        86
+      ]
+    },
+    {
+      "id": 29,
+      "building": 30,
+      "pos": [
+        2163.5631248388527,
+        791.0759270857684
+      ],
+      "cell": [
+        96,
+        86
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.8327726924634127,
+      "prior_fire_experience": false,
+      "warning_channel": "mobile_alert",
+      "trust_authority": 0.8500114995944587,
+      "intent": "wait_and_see",
+      "prep_time_min": 22.955672698182823,
+      "defensible_space": 0.1799387800369025,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        87,
+        88,
+        89
+      ]
+    }
+  ],
+  "people": [
+    {
+      "id": 0,
+      "household": 0,
+      "age": 8,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": false
+    },
+    {
+      "id": 1,
+      "household": 0,
+      "age": 17,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 2,
+      "household": 0,
+      "age": 34,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 3,
+      "household": 1,
+      "age": 17,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 4,
+      "household": 1,
+      "age": 34,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 5,
+      "household": 1,
+      "age": 48,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 6,
+      "household": 2,
+      "age": 34,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 7,
+      "household": 2,
+      "age": 48,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": false
+    },
+    {
+      "id": 8,
+      "household": 2,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 9,
+      "household": 3,
+      "age": 48,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 10,
+      "household": 3,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 11,
+      "household": 3,
+      "age": 8,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 12,
+      "household": 4,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 13,
+      "household": 4,
+      "age": 8,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 14,
+      "household": 4,
+      "age": 17,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": false
+    },
+    {
+      "id": 15,
+      "household": 5,
+      "age": 8,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 16,
+      "household": 5,
+      "age": 17,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 17,
+      "household": 5,
+      "age": 34,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 18,
+      "household": 6,
+      "age": 17,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 19,
+      "household": 6,
+      "age": 34,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 20,
+      "household": 6,
+      "age": 48,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 21,
+      "household": 7,
+      "age": 34,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": false
+    },
+    {
+      "id": 22,
+      "household": 7,
+      "age": 48,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 23,
+      "household": 7,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 24,
+      "household": 8,
+      "age": 48,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 25,
+      "household": 8,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 26,
+      "household": 8,
+      "age": 8,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 27,
+      "household": 9,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 28,
+      "household": 9,
+      "age": 8,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": false
+    },
+    {
+      "id": 29,
+      "household": 9,
+      "age": 17,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 30,
+      "household": 10,
+      "age": 8,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 31,
+      "household": 10,
+      "age": 17,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 32,
+      "household": 10,
+      "age": 34,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 33,
+      "household": 11,
+      "age": 17,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 34,
+      "household": 11,
+      "age": 34,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 35,
+      "household": 11,
+      "age": 48,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": false
+    },
+    {
+      "id": 36,
+      "household": 12,
+      "age": 34,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 37,
+      "household": 12,
+      "age": 48,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 38,
+      "household": 12,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 39,
+      "household": 13,
+      "age": 48,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 40,
+      "household": 13,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 41,
+      "household": 13,
+      "age": 8,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 42,
+      "household": 14,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": false
+    },
+    {
+      "id": 43,
+      "household": 14,
+      "age": 8,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 44,
+      "household": 14,
+      "age": 17,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 45,
+      "household": 15,
+      "age": 8,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 46,
+      "household": 15,
+      "age": 17,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 47,
+      "household": 15,
+      "age": 34,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 48,
+      "household": 16,
+      "age": 17,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 49,
+      "household": 16,
+      "age": 34,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": false
+    },
+    {
+      "id": 50,
+      "household": 16,
+      "age": 48,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 51,
+      "household": 17,
+      "age": 34,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 52,
+      "household": 17,
+      "age": 48,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 53,
+      "household": 17,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 54,
+      "household": 18,
+      "age": 48,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 55,
+      "household": 18,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 56,
+      "household": 18,
+      "age": 8,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": false
+    },
+    {
+      "id": 57,
+      "household": 19,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 58,
+      "household": 19,
+      "age": 8,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 59,
+      "household": 19,
+      "age": 17,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 60,
+      "household": 20,
+      "age": 8,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 61,
+      "household": 20,
+      "age": 17,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 62,
+      "household": 20,
+      "age": 34,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 63,
+      "household": 21,
+      "age": 17,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": false
+    },
+    {
+      "id": 64,
+      "household": 21,
+      "age": 34,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 65,
+      "household": 21,
+      "age": 48,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 66,
+      "household": 22,
+      "age": 34,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 67,
+      "household": 22,
+      "age": 48,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 68,
+      "household": 22,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 69,
+      "household": 23,
+      "age": 48,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 70,
+      "household": 23,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": false
+    },
+    {
+      "id": 71,
+      "household": 23,
+      "age": 8,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 72,
+      "household": 24,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 73,
+      "household": 24,
+      "age": 8,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 74,
+      "household": 24,
+      "age": 17,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 75,
+      "household": 25,
+      "age": 8,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 76,
+      "household": 25,
+      "age": 17,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 77,
+      "household": 25,
+      "age": 34,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": false
+    },
+    {
+      "id": 78,
+      "household": 26,
+      "age": 17,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 79,
+      "household": 26,
+      "age": 34,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 80,
+      "household": 26,
+      "age": 48,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 81,
+      "household": 27,
+      "age": 34,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 82,
+      "household": 27,
+      "age": 48,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 83,
+      "household": 27,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 84,
+      "household": 28,
+      "age": 48,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": false
+    },
+    {
+      "id": 85,
+      "household": 28,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 86,
+      "household": 28,
+      "age": 8,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 87,
+      "household": 29,
+      "age": 72,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": true
+    },
+    {
+      "id": 88,
+      "household": 29,
+      "age": 8,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 89,
+      "household": 29,
+      "age": 17,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    }
+  ]
+}

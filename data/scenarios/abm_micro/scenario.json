@@ -1,0 +1,63 @@
+{
+  "id": "abm_micro",
+  "name": "ABM Lab: One Street",
+  "description": "Inspect individual people, households, vehicle choice, preparation and departure.",
+  "location": "Synthetic ABM laboratory",
+  "country": "Synthetic",
+  "coordinates": [
+    0.0,
+    0.0
+  ],
+  "utm_zone": 0,
+  "world_size_m": [
+    1600.0,
+    1600.0
+  ],
+  "fire_grid_size": [
+    64,
+    64
+  ],
+  "buildings_count": 3,
+  "households_count": 3,
+  "people_count": 8,
+  "scenario_type": "synthetic",
+  "creation_date": "2026-07-31",
+  "version": "2.0.0",
+  "tags": [
+    "dev",
+    "abm-lab",
+    "one_street",
+    "fire-moderate",
+    "hand_authored"
+  ],
+  "is_dev": true,
+  "vr_palette": {
+    "void": [
+      0.02,
+      0.03,
+      0.08
+    ],
+    "grid": [
+      0.0,
+      0.85,
+      1.0
+    ],
+    "accent": [
+      0.9,
+      0.95,
+      1.0
+    ]
+  },
+  "development": {
+    "focus": "Inspect individual people, households, vehicle choice, preparation and departure.",
+    "fire_profile": "moderate",
+    "road_profile": "one_street",
+    "population_profile": "hand_authored",
+    "suggested_runs": [
+      "no evacuation order",
+      "early general order",
+      "late/zoned order",
+      "suppression before evacuation"
+    ]
+  }
+}

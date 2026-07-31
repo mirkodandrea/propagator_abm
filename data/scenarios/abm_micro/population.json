@@ -1,0 +1,211 @@
+{
+  "synthetic": true,
+  "seed": 11,
+  "dwellings": [
+    {
+      "osm_id": 1,
+      "kind": "residential",
+      "pos": [
+        543.0285616221536,
+        639.9942228995209
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        38,
+        21
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 2,
+      "kind": "residential",
+      "pos": [
+        786.8119868609868,
+        636.2295120669755
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        38,
+        31
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    },
+    {
+      "osm_id": 3,
+      "kind": "residential",
+      "pos": [
+        1023.1834086766196,
+        643.425688183683
+      ],
+      "area_m2": 140.0,
+      "levels": 2,
+      "units": 1,
+      "cell": [
+        38,
+        40
+      ],
+      "dist_to_fuel_m": 25.0,
+      "fuel_at_site": 0
+    }
+  ],
+  "households": [
+    {
+      "id": 0,
+      "building": 1,
+      "pos": [
+        543.0285616221536,
+        639.9942228995209
+      ],
+      "cell": [
+        38,
+        21
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 0,
+      "risk_perception": 0.85,
+      "prior_fire_experience": true,
+      "warning_channel": "mobile_alert",
+      "trust_authority": 0.85,
+      "intent": "leave_early",
+      "prep_time_min": 4.0,
+      "defensible_space": 0.35,
+      "has_pets_livestock": true,
+      "status": "normal",
+      "members": [
+        0,
+        1,
+        2
+      ]
+    },
+    {
+      "id": 1,
+      "building": 2,
+      "pos": [
+        786.8119868609868,
+        636.2295120669755
+      ],
+      "cell": [
+        38,
+        31
+      ],
+      "size": 3,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.55,
+      "prior_fire_experience": false,
+      "warning_channel": "siren",
+      "trust_authority": 0.7,
+      "intent": "wait_and_see",
+      "prep_time_min": 14.0,
+      "defensible_space": 0.25,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "id": 2,
+      "building": 3,
+      "pos": [
+        1023.1834086766196,
+        643.425688183683
+      ],
+      "cell": [
+        38,
+        40
+      ],
+      "size": 2,
+      "dist_to_fuel_m": 25.0,
+      "vehicles": 1,
+      "risk_perception": 0.7,
+      "prior_fire_experience": false,
+      "warning_channel": "self_observed",
+      "trust_authority": 0.45,
+      "intent": "stay_defend",
+      "prep_time_min": 24.0,
+      "defensible_space": 0.65,
+      "has_pets_livestock": false,
+      "status": "normal",
+      "members": [
+        6,
+        7
+      ]
+    }
+  ],
+  "people": [
+    {
+      "id": 0,
+      "household": 0,
+      "age": 8,
+      "walk_speed": 0.85,
+      "needs_assistance": true,
+      "at_home": false
+    },
+    {
+      "id": 1,
+      "household": 0,
+      "age": 17,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 2,
+      "household": 0,
+      "age": 34,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 3,
+      "household": 1,
+      "age": 17,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 4,
+      "household": 1,
+      "age": 34,
+      "walk_speed": 1.35,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 5,
+      "household": 1,
+      "age": 48,
+      "walk_speed": 1.4300000000000002,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 6,
+      "household": 2,
+      "age": 34,
+      "walk_speed": 1.51,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "id": 7,
+      "household": 2,
+      "age": 48,
+      "walk_speed": 1.59,
+      "needs_assistance": false,
+      "at_home": false
+    }
+  ]
+}

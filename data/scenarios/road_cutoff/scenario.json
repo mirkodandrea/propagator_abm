@@ -1,0 +1,63 @@
+{
+  "id": "road_cutoff",
+  "name": "ABM Lab: Cut Road and Rerouting",
+  "description": "Put one exit through the fire corridor, retain a long vehicle detour and a foot-only escape.",
+  "location": "Synthetic ABM laboratory",
+  "country": "Synthetic",
+  "coordinates": [
+    0.0,
+    0.0
+  ],
+  "utm_zone": 0,
+  "world_size_m": [
+    3200.0,
+    3200.0
+  ],
+  "fire_grid_size": [
+    128,
+    128
+  ],
+  "buildings_count": 30,
+  "households_count": 30,
+  "people_count": 90,
+  "scenario_type": "synthetic",
+  "creation_date": "2026-07-31",
+  "version": "2.0.0",
+  "tags": [
+    "dev",
+    "abm-lab",
+    "cutoff",
+    "fire-severe",
+    "mixed"
+  ],
+  "is_dev": true,
+  "vr_palette": {
+    "void": [
+      0.02,
+      0.03,
+      0.08
+    ],
+    "grid": [
+      0.0,
+      0.85,
+      1.0
+    ],
+    "accent": [
+      0.9,
+      0.95,
+      1.0
+    ]
+  },
+  "development": {
+    "focus": "Put one exit through the fire corridor, retain a long vehicle detour and a foot-only escape.",
+    "fire_profile": "severe",
+    "road_profile": "cutoff",
+    "population_profile": "mixed",
+    "suggested_runs": [
+      "no evacuation order",
+      "early general order",
+      "late/zoned order",
+      "suppression before evacuation"
+    ]
+  }
+}

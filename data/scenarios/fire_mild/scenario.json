@@ -1,0 +1,63 @@
+{
+  "id": "fire_mild",
+  "name": "ABM Lab: Mild Fire",
+  "description": "Controlled severity comparison: patchy low-susceptibility grass, gentle terrain.",
+  "location": "Synthetic ABM laboratory",
+  "country": "Synthetic",
+  "coordinates": [
+    0.0,
+    0.0
+  ],
+  "utm_zone": 0,
+  "world_size_m": [
+    3200.0,
+    3200.0
+  ],
+  "fire_grid_size": [
+    128,
+    128
+  ],
+  "buildings_count": 40,
+  "households_count": 40,
+  "people_count": 120,
+  "scenario_type": "synthetic",
+  "creation_date": "2026-07-31",
+  "version": "2.0.0",
+  "tags": [
+    "dev",
+    "abm-lab",
+    "severity",
+    "fire-mild",
+    "mixed"
+  ],
+  "is_dev": true,
+  "vr_palette": {
+    "void": [
+      0.02,
+      0.03,
+      0.08
+    ],
+    "grid": [
+      0.0,
+      0.85,
+      1.0
+    ],
+    "accent": [
+      0.9,
+      0.95,
+      1.0
+    ]
+  },
+  "development": {
+    "focus": "Controlled severity comparison: patchy low-susceptibility grass, gentle terrain.",
+    "fire_profile": "mild",
+    "road_profile": "severity",
+    "population_profile": "mixed",
+    "suggested_runs": [
+      "no evacuation order",
+      "early general order",
+      "late/zoned order",
+      "suppression before evacuation"
+    ]
+  }
+}

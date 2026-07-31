@@ -37,6 +37,8 @@ asking.
 | Deferred | Web/wasm build, record/replay debrief |
 | Engine | Bevy **0.14** + `bevy_egui` **0.28**, matching igad so its UI ports directly |
 | Scenarios | **Multi-scenario support** — load different scenarios for ABM testing and validation |
+| Civilian behaviour | Authorable in-game as a node graph (`crates/behavior`), **opt-in**: the hand-written layer in `abm::decide` stays the default |
+| Agent subtypes | Composition and flat parameter overrides. **No inheritance** — see the note in `crates/behavior/src/subtype.rs` |
 
 ---
 
@@ -45,16 +47,19 @@ asking.
 ```
 crates/scenario/   baked assets + coordinate frames   (no Bevy, no fire core)
 crates/fire/       PROPAGATOR integration, exposure, threat, interventions
+crates/behavior/   authored agent behaviour: node registry, graphs, subtypes
 crates/abm/        civilians: perception, decision, road network, evacuation
 crates/game/       Bevy app
 scripts/           offline asset baking (Python) — never runs at game time
-data/              the baked scenario
+data/              the baked scenario, and the behaviour library
 ```
 
-The dependency direction is strict: `scenario` knows nothing about Bevy or the
-fire core; `fire` depends on `scenario`; `abm` depends on both; `game` depends
-on all three. Keep it that way — it is what makes the headless tests fast and
-the model testable without a window.
+The dependency direction is strict: `scenario` and `behavior` are both leaves,
+knowing nothing about Bevy, the fire core, or each other; `fire` depends on
+`scenario`; `abm` depends on all three; `game` depends on everything. Keep it
+that way — it is what makes the headless tests fast and the model testable
+without a window. In particular `behavior` restates `Intent` rather than
+importing it, so the editor and its tests run with no scenario loaded at all.
 
 ### Coordinate frames — read this before touching rendering
 
@@ -303,6 +308,17 @@ the inner mesh's edge. The outer boundary is trimmed to a **disc**, not the box
 the lattice is built on: a horizon the same distance away in every direction
 cannot resolve into a ruled line.
 
+**24. A node graph editor's ids are the editor's, not the file's.** `egui_snarl`
+hands out its own `NodeId` on insert and there is no way to ask it to keep the
+ones a file carried. Subtype overrides are keyed `<node id>.<param>`, so the
+first version loaded a graph, got a fresh set of ids, and every override in
+every profile silently stopped matching anything — the graph ran, the profiles
+compiled, and all four behaved identically. `Composer::load_graph` builds the
+old-id → snarl-id map as it inserts and remaps the overrides through it before
+anything else touches them. The general shape: **an override keyed on an
+identity the editor is free to reassign has to be remapped at the moment of
+reassignment**, because every later opportunity looks like a valid graph.
+
 ---
 
 ## Current state
@@ -404,6 +420,53 @@ ignition at cell (153, 246), r=250 m):
  120 min   49.0 ha   front 200   FLI 66,596        threatened 137
 ```
 
+**Agent Behaviour Composer** (`crates/behavior`, `crates/game/src/composer/`):
+a node editor for the civilian decision layer, so the behavioural assumptions
+can be changed without writing Rust. `b` opens it.
+
+The developer-facing surface is one macro. A `behavior_node!` invocation
+anywhere in any linked crate is collected by `inventory` at link time and the
+node is in the palette, the validator, the inspector and the test bench with no
+further edit — there is no central list, which means there is no way to add a
+node the editor does not know about. 53 ship: one per field of
+`behavior::Observation`, plus arithmetic, comparison, boolean algebra, the two
+shaping curves, the action proposals and three sinks.
+
+The scientist-facing surface is a graph. Four port types (`number`, `bool`,
+`intent`, `action`), and a wire is **refused while being dragged** rather than
+reported afterwards — `viewer::connect` asks `behavior` the same question the
+validator does, so the canvas cannot disagree with the report under it.
+Validation is live and every issue names its node; clicking one selects it.
+
+An **agent subtype** is a graph plus a flat map of parameter overrides plus
+some starting traits — no inheritance, deliberately, so "why did this household
+do that" is answered by reading one file. Four ship, all on the one graph,
+differing only in numbers, which is the pattern the whole thing is for. The
+inspector edits the *override* when a profile is selected and says so, because
+a scientist who moves a threshold and finds they moved it for everyone has been
+badly served.
+
+The **test bench** puts a made-up household in a situation and reads back the
+answer node by node, plus a sweep that varies one field across its range and
+reports where the decision actually changes — a threshold here is never a
+single number, so the alternative is guessing.
+
+`Apply and restart` rebuilds the agent model and replays the ignition list, so
+"same fire, different behaviour" is a controlled comparison. Measured through
+the self-test, 15 minutes after a general order on an identical fire:
+
+```
+  shipped hand-written model   576 households departed
+  shipped behaviour library    473          (longer baked prep times per profile)
+```
+
+The composer replaces exactly one block — the departure decision in
+`abm::decide`. Perception, preparation, movement, congestion and lethality are
+untouched, which is why a graph a scientist wrote can be run without review. It
+is also **off by default**: `Sim::behaviour` is `None` until the composer applies
+something, so every measurement in `crates/fire/tests` still describes the model
+it was taken on.
+
 **Not built yet:** no debrief. No wasm. No reunification behaviour — people who
 are out do not go home for family. No dozers (the only line-cutting resource is a
 hand crew, which is why line production is the binding constraint). Units are
@@ -438,11 +501,21 @@ SPOTORNO_SHOT_YAW=270 SPOTORNO_SHOT_PITCH=-14 ...  # orbit angle, degrees --
        # the only way to review something that is wrong from one direction
        # (a seam on the horizon), which the default three-quarter view misses
 SPOTORNO_PLACE=1 ...   # open with the ignition tool armed, so the rings show
+
+# the behaviour composer, opened with the scenario -- the value picks the
+# right-hand tab, which is the only way to screenshot the bench unattended.
+SPOTORNO_COMPOSER=1 cargo run --release -p game          # inspector
+SPOTORNO_COMPOSER=subtypes ...                           # profiles and compare
+SPOTORNO_COMPOSER=test ...                               # the test bench
+
+# regenerate data/behaviours/ after editing crates/behavior/src/defaults.rs
+cargo test -p behavior --release -- --ignored write_shipped_library
 ```
 
 Controls: `space` play/pause · `[` `]` speed · `1`–`4` fire layer · `e` general
 evacuation order · `i` arm the ignition tool (then left-click the map) · `esc`
-disarm · `r` restart · drag orbit · right-drag pan · scroll zoom.
+disarm · `r` restart · `b` the Agent Behaviour Composer · drag orbit ·
+right-drag pan · scroll zoom.
 
 Suppression: `tab` next unit · `a` attack here · `l` cut line (two clicks) ·
 `d` drop here · `x` stand down · `c` request air support. Units are selected in
@@ -475,6 +548,14 @@ view is never stuck.
   continuous fuel, not at the WUI edge.
 - Keep the model testable without a window. The headless tests in
   `crates/fire/tests/` run a full 2 h simulation in well under a second.
+- Exposing a new thing an agent can know is a field on `behavior::Observation`
+  plus one `obs_number!`/`obs_bool!` line. Exposing a new thing it can *do* is
+  harder on purpose: the action set is closed, and adding to it means teaching
+  `abm::behaviour::outcome_of` what the movement layer should do about it.
+- An authored graph must not be able to break determinism or step-size
+  invariance. There is no random node and no state between calls; per-agent
+  variation is `Observation::jitter`, hashed from the household id. Pinned by
+  `authored_behaviour_is_step_size_invariant`.
 
 ## Open questions
 
@@ -513,3 +594,20 @@ view is never stuck.
 - The engine's four-cell work footprint is what makes its tank matter (see
   `reachable_targets`), but it is a tuning constant chosen to put one tank just
   past moisture of extinction. It has not been swept.
+- The composer's action set is the four the movement layer already understood.
+  A graph cannot express "drive to a relative's house", "go back for someone",
+  or "shelter at the beach rather than in the house" — all of which are real
+  behaviours, and all of which need movement-layer work before a node for them
+  would mean anything.
+- Applying a behaviour restarts the incident. That is the right default and it
+  is what makes the comparison controlled, but it also means a scientist cannot
+  watch a threshold change take effect on the run in front of them. A "what
+  would this household do under the other profile" readout in the inspector
+  would give most of the value without the hot-swap.
+- Subtype shares assign households by a hash of the id, so a profile is spread
+  uniformly across the town. Real behavioural profiles correlate with
+  neighbourhood, tenure and age; nothing in the composer can express that yet.
+- The behaviour graph is evaluated per household per decision tick. At 750
+  households and ~40 nodes it does not show up next to the routing refresh, but
+  it has not been profiled at the top of the population range (2,000), and the
+  evaluator allocates a `Vec` per input slot per node.

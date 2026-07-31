@@ -1,12 +1,14 @@
 # How the agent models work
 
 Scope: `crates/abm` — two populations of agents and both of the commander's
-levers over them.
+levers over them — and `crates/behavior`, which lets the civilian decision
+layer be authored rather than written.
 
 | Part | Agents | The commander's lever |
 |---|---|---|
 | **Civilians** (`lib.rs`, `network.rs`, `refuge.rs`) | households, people, vehicles | *when and where to order an evacuation* |
 | **Suppression** (`suppression.rs`) | hand crews, engines, air tankers | *which unit works where, and when to call for aircraft* |
+| **Authored behaviour** (`crates/behavior`) | — | not a lever: the scientist's tool for changing what the civilians' decision stage *is* |
 
 They share the road network, the threat field, and every invariant below; they
 are otherwise independent models, and the split is worth keeping in mind because
@@ -115,6 +117,10 @@ from the smoke alone, order or not.
 ---
 
 ## Stage 2 — Decision: the three intents
+
+This is the one stage the Agent Behaviour Composer can replace — see [Part 3
+](#part-3--authored-behaviour-the-agent-behaviour-composer). What follows is
+the hand-written model, which is what runs unless a behaviour has been applied.
 
 `Intent` is a baked household trait, and it's the main behavioural policy
 knob:
@@ -486,6 +492,137 @@ walking from an arbitrary point at T+0 and would just measure the map).
 useful thing the model knows about the map, and the reason it is a field rather
 than a log line.
 
+# Part 3 — Authored behaviour (the Agent Behaviour Composer)
+
+Everything in Part 1 is hand-written Rust, and it is the default. This part is
+the alternative: the **decision** stage — and only that stage — can instead be a
+graph a scientist builds in the game, with `b`.
+
+## What it replaces, and what it cannot
+
+It replaces the `depart` / `Defending` block in `Abm::decide` and nothing else.
+Perception still produces the `cue` the same way; preparation still runs off
+`prep_time_min`; movement, congestion, rerouting and the lethality model are
+untouched. The graph's whole output is one of five actions plus two numbers:
+
+| Action | What the movement layer does |
+|---|---|
+| `Stay` | nothing this tick |
+| `Prepare` | enter `Preparing` with the usual jittered milling time |
+| `EvacuateNow` | enter `Preparing` with 60 s — the packing is abandoned, but getting out of a house still takes a minute |
+| `Defend` | enter `Defending` |
+| `Shelter` | stay put; the trapped-at-home path above takes over |
+
+Plus `prep_scale` (a multiplier on milling time) and `urgency` (a readout with
+no mechanical effect, for watching an intermediate quantity during a run).
+
+That closed set is the point. A graph cannot reach the fire model, the road
+network, or another household — it sees a `behavior::Observation` and returns
+an action — which is why an authored behaviour can be run in a real scenario
+without anyone reviewing it first.
+
+## The read surface
+
+`behavior::Observation` is the entire contract, one node per field: the
+incident (`threat`, `radiant`, `ember`, `fire_distance_m`, `structure_alight`,
+`cue`, `time_min`), the commander (`order_issued`, `warning_received`,
+`minutes_since_order`), the household (`intent`, `risk_perception`,
+`trust_authority`, `prep_time_min`, `defensible_space`, `household_size`,
+`has_vehicle`, `needs_assistance`) and where they are in the process
+(`is_preparing`, `is_moving`, `is_defending`, `route_blocked`,
+`refuge_distance_m`).
+
+Every one of these is already computed for the hand-written path, so running a
+behaviour costs a struct copy rather than any extra model work.
+
+## Two invariants an authored graph cannot break
+
+**Step-size invariance.** A graph maps one observation to one decision and
+accumulates nothing across calls, so the decision layer answers the same at a
+2 s step and a 60 s step. Pinned by
+`abm/tests/authored_behaviour.rs::authored_behaviour_is_step_size_invariant`.
+
+**Per-agent determinism.** There is no random node. Variation comes from
+`Observation::jitter`, which `abm` hashes from the household id — the same
+draw the hand-written layer uses — so an authored behaviour cannot become
+order-dependent, step-dependent, or irreproducible across a restart.
+
+## Proposals, not branches
+
+Every action node takes a condition and emits a *proposal* carrying a priority;
+they all arrive at one `Decision` sink, which picks the strongest. A branch
+whose condition is false still emits its proposal marked withheld, so the test
+bench can show it was considered and lost.
+
+The indirection is what makes a graph editable by someone who did not write it:
+adding a branch cannot silently reorder the branches already there. It either
+outbids them or it does not. In the shipped graph:
+
+```
+  Shelter in place  4.0   route cut and the fire on the property
+  Evacuate now      3.0   not survivable outside, or the house is alight
+  Prepare to leave  1.0   alarm past the intent's threshold, or a trusted order
+  Defend property   0.5   planned to stay, and not departing yet
+```
+
+## Subtypes
+
+An **agent subtype** is a named profile: one graph, a flat map of parameter
+overrides keyed `<node id>.<param>`, optional starting traits, two capability
+flags, and a share of the population. There is **no inheritance** — no parent,
+no resolution order — so what a profile does to an agent is one file, which is
+the form the question "why did this household do that" actually takes.
+
+Variation without duplication comes from several profiles pointing at the same
+graph. The four shipped ones all do, and differ only in numbers. Shares are
+relative and normalised, and subtype assignment is hashed from the household id
+so it survives a restart.
+
+## Adding a node
+
+One `behavior_node!` invocation, anywhere in any linked crate. `inventory`
+collects it at link time, so there is no central list to update and no way to
+add a node the editor does not know about:
+
+```rust
+behavior_node! {
+    id: "obs.wind_at_house",
+    name: "Wind at the house",
+    category: Observation,
+    doc: "Wind speed at the property, km/h.",
+    keywords: ["gust", "weather"],
+    inputs: [],
+    outputs: [(number "value", "km/h")],
+    params: [],
+    eval: |ctx, _p, _i, out| out.push(Value::Number(ctx.obs.wind_kmh)),
+}
+```
+
+A new observation is that plus a field on `Observation` and a line in
+`Abm::observe`. A new *action* is deliberately harder: the action set is closed,
+and adding to it means teaching `abm::behaviour::outcome_of` what the movement
+layer should do about it.
+
+## Applying one
+
+`Apply and restart` rebuilds the agent model and replays the ignition list, so
+the fire, the weather, the seed and the ignition times are unchanged and the
+only difference is the decision layer. It is a restart rather than a hot swap
+because households are mid-decision — milling, on the road, committed to
+defending — and a new decision layer would be answering about a state the old
+one produced.
+
+Measured through the self-test, 15 minutes after a general order on an
+identical fire:
+
+```
+  shipped hand-written model   576 households departed
+  shipped behaviour library    473
+```
+
+The difference is the profiles' own preparation times (25 min for wait-and-see,
+35 for needs-assistance), not a disagreement about who should go.
+
 # Where the numbers live
 
 All the tunable constants above are `const`s at the top of
@@ -505,6 +642,9 @@ cargo test --release -p abm -- --ignored --nocapture     # evacuation timeline,
                                                          # routing cost, and the
                                                          # suppression comparison
 cargo test --release -p fire -- --ignored --nocapture     # fire-side calibration
+cargo test --release -p behavior                          # the composer's data
+                                                          # model: registry,
+                                                          # validation, subtypes
 SPOTORNO_SELFTEST=1 cargo run --release -p game           # the Bevy-only half:
                                                          # orders, resets, restart
 SPOTORNO_ATTACK_AT=300 cargo run --release -p game        # unattended initial attack
@@ -514,4 +654,5 @@ The one thing the headless tests *cannot* cover is the wiring: resources, events
 and the reset systems that a restart depends on. That is what `SPOTORNO_SELFTEST`
 is for, and it asserts the silent failures specifically — a restart that leaves
 the previous run's water on the fire, or its cut fuel, or a unit still under
-orders.
+orders — and, for the composer, an editor whose projection of its own canvas
+disagrees with what the model would run.
