@@ -1,0 +1,19 @@
+{
+  "id": "test_medium",
+  "name": "Test: Medium",
+  "description": "Small test scenario: 3-5 buildings, 15 people for multi-agent evacuation testing.",
+  "location": "Test Environment",
+  "country": "Synthetic",
+  "coordinates": [0.0, 0.0],
+  "utm_zone": 0,
+  "world_size_m": [5120.0, 5120.0],
+  "fire_grid_size": [256, 256],
+  "buildings_count": 4,
+  "households_count": 4,
+  "people_count": 15,
+  "scenario_type": "synthetic",
+  "creation_date": "2026-07-31",
+  "version": "1.0.0",
+  "tags": ["dev", "test", "multi-agent", "evacuation"],
+  "is_dev": true
+}

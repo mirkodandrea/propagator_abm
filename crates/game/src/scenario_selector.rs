@@ -97,6 +97,11 @@ pub fn show_selector_ui(
                         ui.label(format!("📍 {}", location));
                         ui.label(description.as_str());
                         ui.label(format!("Grid: {}×{} cells (20 m)", grid_size[0], grid_size[1]));
+
+                        // Show dev badge for test scenarios
+                        if id.starts_with("test_") {
+                            ui.colored_label(egui::Color32::YELLOW, "🔧 DEV SCENARIO");
+                        }
                     }
                 }
 

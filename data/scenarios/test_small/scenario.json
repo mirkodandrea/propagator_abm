@@ -1,0 +1,19 @@
+{
+  "id": "test_small",
+  "name": "Test: Small",
+  "description": "Minimal test scenario: 1 agent. Single building, 5 people for basic ABM testing.",
+  "location": "Test Environment",
+  "country": "Synthetic",
+  "coordinates": [0.0, 0.0],
+  "utm_zone": 0,
+  "world_size_m": [5120.0, 5120.0],
+  "fire_grid_size": [256, 256],
+  "buildings_count": 8,
+  "households_count": 3,
+  "people_count": 5,
+  "scenario_type": "synthetic",
+  "creation_date": "2026-07-31",
+  "version": "1.0.0",
+  "tags": ["dev", "test", "single-agent", "minimal"],
+  "is_dev": true
+}

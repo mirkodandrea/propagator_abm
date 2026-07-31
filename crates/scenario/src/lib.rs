@@ -101,6 +101,13 @@ pub struct Scenario {
 }
 
 impl Scenario {
+    /// Returns true if this is a development/test scenario
+    pub fn is_dev(&self) -> bool {
+        self.metadata.is_dev
+    }
+}
+
+impl Scenario {
     /// Load scenario by ID from the scenarios directory.
     /// Example: load_by_id("data", "spotorno") loads from "data/scenarios/spotorno/"
     #[cfg(not(target_arch = "wasm32"))]
@@ -195,6 +202,7 @@ impl Scenario {
                     creation_date: String::new(),
                     version: String::new(),
                     tags: vec![],
+                    is_dev: false,
                 },
                 world,
                 terrain,
@@ -245,6 +253,7 @@ impl Scenario {
             creation_date: String::new(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             tags: vec!["web".to_string()],
+            is_dev: false,
         };
 
         Ok(Scenario {

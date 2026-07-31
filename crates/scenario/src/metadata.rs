@@ -33,6 +33,9 @@ pub struct ScenarioMetadata {
     pub version: String,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Mark as development/test scenario for ABM testing
+    #[serde(default)]
+    pub is_dev: bool,
 }
 
 /// Registry of available scenarios discovered from the data directory.

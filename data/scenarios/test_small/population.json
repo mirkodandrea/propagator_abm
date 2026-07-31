@@ -1,0 +1,113 @@
+{
+  "synthetic": true,
+  "seed": 42,
+  "dwellings": [
+    {
+      "building_id": 1,
+      "people": 2
+    },
+    {
+      "building_id": 2,
+      "people": 3
+    },
+    {
+      "building_id": 3,
+      "people": 1
+    },
+    {
+      "building_id": 4,
+      "people": 1
+    },
+    {
+      "building_id": 5,
+      "people": 1
+    },
+    {
+      "building_id": 6,
+      "people": 1
+    },
+    {
+      "building_id": 7,
+      "people": 1
+    },
+    {
+      "building_id": 8,
+      "people": 1
+    }
+  ],
+  "households": [
+    {
+      "dwelling_id": 0,
+      "size": 5,
+      "vehicles": 0,
+      "intent": "leave_early",
+      "risk_perception": 0.5972033859704564,
+      "trust_authority": 0.5755374688863355,
+      "prep_time_min": 6.064110255104603,
+      "warning_channel": "none",
+      "at_home": true,
+      "needs_assistance": false
+    },
+    {
+      "dwelling_id": 1,
+      "size": 0,
+      "vehicles": 1,
+      "intent": "stay_defend",
+      "risk_perception": 0.6421665045280494,
+      "trust_authority": 0.6434445120355097,
+      "prep_time_min": 25.136030377970393,
+      "warning_channel": "self_observed",
+      "at_home": true,
+      "needs_assistance": false
+    },
+    {
+      "dwelling_id": 2,
+      "size": 0,
+      "vehicles": 1,
+      "intent": "stay_defend",
+      "risk_perception": 0.7271843662682972,
+      "trust_authority": 0.3781046052919052,
+      "prep_time_min": 21.19340962919029,
+      "warning_channel": "self_observed",
+      "at_home": true,
+      "needs_assistance": false
+    }
+  ],
+  "people": [
+    {
+      "household_id": 0,
+      "name": "P1",
+      "age": 66,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "household_id": 0,
+      "name": "P2",
+      "age": 83,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "household_id": 0,
+      "name": "P3",
+      "age": 55,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "household_id": 0,
+      "name": "P4",
+      "age": 70,
+      "needs_assistance": false,
+      "at_home": true
+    },
+    {
+      "household_id": 0,
+      "name": "P5",
+      "age": 40,
+      "needs_assistance": false,
+      "at_home": true
+    }
+  ]
+}

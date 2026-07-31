@@ -160,6 +160,7 @@ fn main() -> anyhow::Result<()> {
             (
                 scenario_selector::show_selector_ui,
                 ui::panel,
+                ui::dev_hud,
                 ui::help_panel,
                 ui::wildfire_panel,
                 browser::panel,

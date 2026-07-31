@@ -48,6 +48,30 @@ pub enum HelpLanguage {
     Italian,
 }
 
+/// Dev mode HUD for displaying debug info
+pub fn dev_hud(
+    mut contexts: EguiContexts,
+    sim: Res<Sim>,
+) {
+    if !sim.scenario.is_dev() {
+        return;
+    }
+
+    let ctx = contexts.ctx_mut();
+    egui::Window::new("🔧 DEV MODE")
+        .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 10.0))
+        .auto_sized()
+        .show(ctx, |ui| {
+            ui.label(format!("Scenario: {}", sim.scenario.metadata.id));
+            ui.label(format!("People: {}", sim.agents.people.len()));
+            ui.label(format!("Households: {}", sim.agents.households.len()));
+            ui.label(format!("Buildings: {}", sim.scenario.vectors.buildings.len()));
+            ui.separator();
+            ui.label(format!("Fire grid: {}×{}", sim.scenario.world.fire_rows, sim.scenario.world.fire_cols));
+            ui.label(format!("World: {:.0} × {:.0} m", sim.scenario.world.width_m, sim.scenario.world.height_m));
+        });
+}
+
 impl Default for HelpUi {
     fn default() -> Self {
         Self {
@@ -177,6 +201,17 @@ pub fn panel(
                     }
                 }
             });
+
+            // Show scenario name and dev mode indicator
+            if open {
+                ui.horizontal(|ui| {
+                    ui.label(format!("Scenario: {}", sim.scenario.metadata.name));
+                    if sim.scenario.is_dev() {
+                        ui.colored_label(egui::Color32::YELLOW, "🔧 DEV");
+                    }
+                });
+            }
+
             if !open {
                 return;
             }
