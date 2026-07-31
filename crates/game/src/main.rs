@@ -82,6 +82,9 @@ fn main() -> anyhow::Result<()> {
 
     let window_title = format!("{} — wildfire incident command", sim.scenario.metadata.name);
 
+    // Store data path for scenario selector initialization
+    let data_path = scenario_selector::DataPath(std::path::PathBuf::from(&data));
+
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -123,12 +126,15 @@ fn main() -> anyhow::Result<()> {
     .init_resource::<camera::CameraMode>()
     .init_resource::<camera::FirstPersonLook>()
     .init_resource::<buildings::HoveredHousehold>()
+    .init_resource::<scenario_selector::ScenarioSelector>()
     .init_resource::<ui::PanelState>()
     .add_event::<sim::SimRestarted>()
     .insert_resource(sim)
+    .insert_resource(data_path)
     .add_systems(
         Startup,
         (
+            scenario_selector::init_selector.before(setup_scene),
             setup_scene,
             fire_view::setup,
             ignition_edit::setup,
@@ -152,6 +158,7 @@ fn main() -> anyhow::Result<()> {
         Update,
         (
             (
+                scenario_selector::show_selector_ui,
                 ui::panel,
                 ui::help_panel,
                 ui::wildfire_panel,

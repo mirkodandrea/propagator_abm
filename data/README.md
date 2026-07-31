@@ -26,12 +26,21 @@ data/
 ### Loading scenarios
 
 **Desktop build:**
-- Default: loads the scenario specified in `scenarios.json` as `default`
-- Override: `SPOTORNO_SCENARIO=scenario_id cargo run --release -p game`
+- Default: shows **in-game scenario selector panel** at startup (lists all available scenarios with metadata)
+- Skip selector: `SPOTORNO_SCENARIO=scenario_id cargo run --release -p game`
 
 **Web build:**
-- Default: loads spotorno
+- Default: loads spotorno (no selector in web version)
 - Override: `SPOTORNO_WEB_SCENARIO=scenario_id cargo build --release --target wasm32-unknown-unknown -p game`
+
+### Scenario selector UI
+
+When you run the game without setting `SPOTORNO_SCENARIO`, you'll see the scenario selector window on startup:
+- Lists all scenarios from `scenarios.json`
+- Shows metadata: buildings count, households, people, location
+- Shows grid dimensions
+- Select a scenario and click "Launch" to start the game
+- Close without selecting to use the default scenario
 
 ---
 

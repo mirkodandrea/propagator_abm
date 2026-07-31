@@ -3,13 +3,38 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use scenario::ScenarioRegistry;
+use std::path::PathBuf;
+
+/// Wrapper for data directory path
+#[derive(Resource, Clone)]
+pub struct DataPath(pub PathBuf);
 
 /// State for the scenario selector
 #[derive(Resource)]
 pub struct ScenarioSelector {
-    pub registry: ScenarioRegistry,
+    pub registry: Option<ScenarioRegistry>,
     pub selected: Option<String>,
     pub confirmed: bool,
+}
+
+impl Default for ScenarioSelector {
+    fn default() -> Self {
+        Self {
+            registry: None,
+            selected: None,
+            confirmed: false,
+        }
+    }
+}
+
+/// Initialize the scenario selector with the registry.
+pub fn init_selector(
+    data_path: Res<DataPath>,
+    mut selector: ResMut<ScenarioSelector>,
+) {
+    if let Ok(registry) = scenario::ScenarioRegistry::discover(&data_path.0) {
+        selector.registry = Some(registry);
+    }
 }
 
 /// Show the scenario selector window and handle selection.
@@ -17,13 +42,17 @@ pub fn show_selector_ui(
     mut contexts: EguiContexts,
     mut selector: ResMut<ScenarioSelector>,
 ) {
-    if selector.confirmed {
+    if selector.confirmed || selector.registry.is_none() {
         return;
     }
 
+    let registry = match &selector.registry {
+        Some(r) => r,
+        None => return,
+    };
+
     // Prepare data to avoid borrow conflicts
-    let scenarios_data: Vec<(String, String, usize, usize, usize, String, String, [usize; 2])> = selector
-        .registry
+    let scenarios_data: Vec<(String, String, usize, usize, usize, String, String, [usize; 2])> = registry
         .list()
         .iter()
         .map(|s| {
@@ -40,7 +69,7 @@ pub fn show_selector_ui(
         })
         .collect();
 
-    let default_id = selector.registry.default_id().to_string();
+    let default_id = registry.default_id().to_string();
 
     let mut open = true;
     egui::Window::new("Select Scenario")

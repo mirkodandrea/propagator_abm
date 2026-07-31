@@ -414,7 +414,8 @@ left-click and a fourth needs a rule, not a patch.
 ### Commands
 
 ```bash
-cargo run --release -p game              # play
+cargo run --release -p game              # play (shows scenario selector)
+SPOTORNO_SCENARIO=spotorno cargo run --release -p game    # skip selector, load scenario directly
 SPOTORNO_AUTOPLAY=1 cargo run --release -p game   # start running immediately
 SPOTORNO_ORDER_AT=600 cargo run --release -p game  # auto-order evacuation at T+10 min
 SPOTORNO_ATTACK_AT=300 cargo run --release -p game # commit every unit to the head at T+5 min
