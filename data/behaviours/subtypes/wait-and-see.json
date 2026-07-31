@@ -1,0 +1,17 @@
+{
+  "id": "wait-and-see",
+  "name": "Wait and see",
+  "description": "The dangerous majority. Needs a direct cue or an order they trust, and then takes a long time to actually get out of the door.",
+  "author": "shipped",
+  "tags": [
+    "baseline",
+    "majority"
+  ],
+  "graph": "default-evacuation",
+  "overrides": {},
+  "traits": {
+    "prep_time_min": 25.0
+  },
+  "capabilities": {},
+  "share": 0.45
+}

@@ -1,0 +1,32 @@
+{
+  "id": "needs-assistance",
+  "name": "Needs assistance",
+  "description": "Cannot leave unaided and has no vehicle. Reacts early, because reacting late is not survivable at walking pace — and this is the profile that shows whether a warning timing works for the people it has to work for.",
+  "author": "shipped",
+  "tags": [
+    "vulnerable"
+  ],
+  "graph": "default-evacuation",
+  "overrides": {
+    "15.threshold": {
+      "t": "number",
+      "v": 0.2
+    },
+    "25.priority": {
+      "t": "number",
+      "v": 1.0
+    },
+    "9.wait_and_see": {
+      "t": "number",
+      "v": 0.08
+    }
+  },
+  "traits": {
+    "prep_time_min": 35.0
+  },
+  "capabilities": {
+    "vehicle": false,
+    "needs_assistance": true
+  },
+  "share": 0.1
+}

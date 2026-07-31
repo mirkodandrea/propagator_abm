@@ -1,0 +1,24 @@
+[package]
+name = "behavior"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Author-able agent behaviour graphs: node registry, evaluator, subtypes"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+# Distributed registration: a `behavior_node!` invocation anywhere in any
+# linked crate lands in the registry, so a new node needs no edit to a central
+# list and appears in the editor palette by itself.
+inventory = "0.3"
+
+# Optional so the model crates stay Bevy-free (see the dependency direction in
+# CLAUDE.md). `game` turns it on to put the value types in Bevy's type
+# registry.
+bevy_reflect = { version = "0.14", optional = true }
+
+[features]
+default = []
+reflect = ["dep:bevy_reflect"]

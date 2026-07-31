@@ -1,0 +1,28 @@
+{
+  "id": "prepared-resident",
+  "name": "Prepared resident",
+  "description": "Has a plan and has rehearsed it. Goes on the first credible signal, and the packing is already done.",
+  "author": "shipped",
+  "tags": [
+    "baseline",
+    "prepared"
+  ],
+  "graph": "default-evacuation",
+  "overrides": {
+    "9.leave_early": {
+      "t": "number",
+      "v": 0.02
+    },
+    "9.wait_and_see": {
+      "t": "number",
+      "v": 0.1
+    }
+  },
+  "traits": {
+    "risk_perception": 0.8,
+    "prep_time_min": 8.0,
+    "defensible_space": 0.7
+  },
+  "capabilities": {},
+  "share": 0.25
+}

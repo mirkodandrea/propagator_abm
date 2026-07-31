@@ -1,0 +1,26 @@
+{
+  "id": "committed-defender",
+  "name": "Committed defender",
+  "description": "Intends to stay with the property and will not move on an order. Leaves only when the fire is on the house, which is far too late to drive out.",
+  "author": "shipped",
+  "tags": [
+    "defend"
+  ],
+  "graph": "default-evacuation",
+  "overrides": {
+    "21.value": {
+      "t": "number",
+      "v": 0.55
+    },
+    "9.stay_defend": {
+      "t": "number",
+      "v": 0.75
+    }
+  },
+  "traits": {
+    "trust_authority": 0.2,
+    "defensible_space": 0.85
+  },
+  "capabilities": {},
+  "share": 0.2
+}
