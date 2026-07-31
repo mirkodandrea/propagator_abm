@@ -57,7 +57,7 @@ pub struct FarTerrainPlugin;
 
 impl Plugin for FarTerrainPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (spawn_skirt, spawn_props));
+        app.add_systems(OnEnter(crate::AppState::Playing), (spawn_skirt, spawn_props));
     }
 }
 

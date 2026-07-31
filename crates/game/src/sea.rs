@@ -204,8 +204,8 @@ impl Plugin for SeaPlugin {
             Shader::from_wgsl
         );
         app.add_plugins(MaterialPlugin::<WaterMaterial>::default())
-            .add_systems(Startup, spawn_sea)
-            .add_systems(Update, update_water);
+            .add_systems(OnEnter(crate::AppState::Playing), spawn_sea)
+            .add_systems(Update, update_water.run_if(bevy::prelude::in_state(crate::AppState::Playing)));
     }
 }
 
