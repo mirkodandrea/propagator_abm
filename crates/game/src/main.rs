@@ -4,6 +4,15 @@
 //! from the Bevy loop — no external process, no Python at runtime. Python is
 //! used only offline, to bake the scenario assets under `data/`.
 
+use bevy::prelude::*;
+
+#[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum AppState {
+    #[default]
+    SelectingScenario,
+    Playing,
+}
+
 mod agents;
 mod browser;
 mod buildings;
@@ -36,59 +45,18 @@ use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::pbr::{CascadeShadowConfigBuilder, FogSettings};
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
-use fire::Weather;
-use std::path::Path;
 
 use crate::camera::OrbitCamera;
 use crate::sim::Sim;
 
 fn main() -> anyhow::Result<()> {
     let data = std::env::var("SPOTORNO_DATA").unwrap_or_else(|_| "data".to_string());
-    let data_path = Path::new(&data);
-
-    // Load scenario registry to discover available scenarios
-    #[cfg(not(target_arch = "wasm32"))]
-    let registry = scenario::ScenarioRegistry::discover(data_path)
-        .ok();
-
-    // Determine which scenario to load
-    let scenario_id = if let Ok(id) = std::env::var("SPOTORNO_SCENARIO") {
-        id
-    } else if let Some(reg) = &registry {
-        reg.default_id().to_string()
-    } else {
-        "spotorno".to_string()
-    };
-
-    // Load the selected scenario
-    #[cfg(not(target_arch = "wasm32"))]
-    let scn = scenario::Scenario::load_by_id(data_path, &scenario_id)
-        .map_err(|e| anyhow::anyhow!("loading scenario '{scenario_id}': {e:#}"))?;
-
-    #[cfg(target_arch = "wasm32")]
-    let scn = Scenario::load(&data)
-        .map_err(|e| anyhow::anyhow!("loading scenario from {data}: {e:#}"))?;
-
-    println!(
-        "scenario: {:.1} x {:.1} km, {} fire cells, {} buildings, {} households",
-        scn.world.width_m / 1000.0,
-        scn.world.height_m / 1000.0,
-        scn.world.fire_rows * scn.world.fire_cols,
-        scn.vectors.buildings.len(),
-        scn.population.households.len(),
-    );
-
-    let sim = Sim::new(scn, Weather::default(), 42)?;
-
-    let window_title = format!("{} — wildfire incident command", sim.scenario.metadata.name);
-
-    // Store data path for scenario selector initialization
-    let data_path = scenario_selector::DataPath(std::path::PathBuf::from(&data));
+    let data_path_resource = scenario_selector::DataPath(std::path::PathBuf::from(&data));
 
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: window_title.into(),
+            title: "Spotorno — select scenario".into(),
             #[cfg(target_arch = "wasm32")]
             canvas: Some("#spotorno".into()),
             #[cfg(target_arch = "wasm32")]
@@ -116,6 +84,7 @@ fn main() -> anyhow::Result<()> {
     .add_plugins(sky::SkyPlugin)
     .add_plugins(sea::SeaPlugin)
     .add_plugins(far_terrain::FarTerrainPlugin)
+    .init_state::<AppState>()
     .init_resource::<ui::UiFocus>()
     .init_resource::<ui::HelpUi>()
     .init_resource::<ignition_edit::IgnitionTool>()
@@ -129,17 +98,21 @@ fn main() -> anyhow::Result<()> {
     .init_resource::<scenario_selector::ScenarioSelector>()
     .init_resource::<ui::PanelState>()
     .add_event::<sim::SimRestarted>()
-    .insert_resource(sim)
-    .insert_resource(data_path)
+    .insert_resource(data_path_resource)
     .add_systems(
         Startup,
         (
-            scenario_selector::init_selector.before(setup_scene),
-            setup_scene,
+            scenario_selector::init_selector,
             fire_view::setup,
             ignition_edit::setup,
             inspect::setup,
             command::setup,
+        ),
+    )
+    .add_systems(
+        OnEnter(AppState::Playing),
+        (
+            setup_scene,
             vegetation::spawn,
             buildings::spawn,
             agents::spawn,
@@ -157,8 +130,11 @@ fn main() -> anyhow::Result<()> {
     .add_systems(
         Update,
         (
+            scenario_selector::handle_launch_selection
+                .run_if(in_state(AppState::SelectingScenario))
+                .before(scenario_selector::show_selector_ui),
+            scenario_selector::show_selector_ui,
             (
-                scenario_selector::show_selector_ui,
                 ui::panel,
                 ui::dev_hud,
                 ui::help_panel,
@@ -168,7 +144,8 @@ fn main() -> anyhow::Result<()> {
                 inspect::panel,
                 ui::sync_viewport,
             )
-                .chain(),
+                .chain()
+                .run_if(in_state(AppState::Playing)),
             (
                 camera::validate_mode,
                 camera::controls,
@@ -180,17 +157,21 @@ fn main() -> anyhow::Result<()> {
                 buildings::hover,
             )
                 .chain()
-                .after(inspect::panel),
+                .after(inspect::panel)
+                .run_if(in_state(AppState::Playing)),
         ),
     )
     .add_systems(
         Update,
         (
-            controls,
-            browser::toggle,
-            fire_view::layer_controls,
-            command::controls.before(command::hover),
-            sim::step_fire.after(ui::wildfire_panel),
+            (
+                controls,
+                browser::toggle,
+                fire_view::layer_controls,
+                command::controls.before(command::hover),
+                sim::step_fire.after(ui::wildfire_panel),
+            )
+                .run_if(in_state(AppState::Playing)),
             (
                 fire_view::reset,
                 buildings::reset,
@@ -200,7 +181,8 @@ fn main() -> anyhow::Result<()> {
                 command::reset,
                 camera::reset,
             )
-                .after(ui::wildfire_panel),
+                .after(ui::wildfire_panel)
+                .run_if(in_state(AppState::Playing)),
             (
                 fire_view::update_overlay,
                 fire_view::update_flames,
@@ -223,8 +205,9 @@ fn main() -> anyhow::Result<()> {
                 .after(people::reset)
                 .after(inspect::reset)
                 .after(units::reset)
-                .after(command::reset),
-            capture::manual,
+                .after(command::reset)
+                .run_if(in_state(AppState::Playing)),
+            capture::manual.run_if(in_state(AppState::Playing)),
         ),
     );
 
@@ -237,7 +220,8 @@ fn main() -> anyhow::Result<()> {
                 .after(sim::step_fire)
                 .after(fire_view::reset)
                 .after(buildings::reset)
-                .after(people::reset),
+                .after(people::reset)
+                .run_if(in_state(AppState::Playing)),
         );
     }
 
@@ -246,7 +230,7 @@ fn main() -> anyhow::Result<()> {
     if let Some(capture) = capture::from_env() {
         app.insert_resource(capture)
             .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
-            .add_systems(Update, capture::scripted.after(fire_view::update_flames));
+            .add_systems(Update, capture::scripted.after(fire_view::update_flames).run_if(in_state(AppState::Playing)));
     }
 
     app.run();

@@ -4,6 +4,9 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use scenario::ScenarioRegistry;
 use std::path::PathBuf;
+use fire::Weather;
+use crate::sim::Sim;
+use crate::AppState;
 
 /// Wrapper for data directory path
 #[derive(Resource, Clone)]
@@ -33,7 +36,65 @@ pub fn init_selector(
     mut selector: ResMut<ScenarioSelector>,
 ) {
     if let Ok(registry) = scenario::ScenarioRegistry::discover(&data_path.0) {
+        // Auto-select default or env var if present
+        if let Ok(id) = std::env::var("SPOTORNO_SCENARIO") {
+            selector.selected = Some(id);
+            selector.confirmed = true; // Fast path: skip UI for env var
+        } else {
+            selector.selected = Some(registry.default_id().to_string());
+        }
         selector.registry = Some(registry);
+    }
+}
+
+/// Handle launching the selected scenario.
+pub fn handle_launch_selection(
+    data_path: Res<DataPath>,
+    selector: Res<ScenarioSelector>,
+    mut next_state: ResMut<NextState<AppState>>,
+    mut commands: Commands,
+    mut window: Query<&mut Window>,
+) {
+    if !selector.confirmed || selector.selected.is_none() {
+        return;
+    }
+
+    let scenario_id = selector.selected.as_ref().unwrap();
+
+    // Load scenario
+    match scenario::Scenario::load_by_id(&data_path.0, scenario_id) {
+        Ok(scenario) => {
+            println!(
+                "scenario: {:.1} x {:.1} km, {} fire cells, {} buildings, {} households",
+                scenario.world.width_m / 1000.0,
+                scenario.world.height_m / 1000.0,
+                scenario.world.fire_rows * scenario.world.fire_cols,
+                scenario.vectors.buildings.len(),
+                scenario.population.households.len(),
+            );
+
+            // Create Sim
+            match Sim::new(scenario, Weather::default(), 42) {
+                Ok(sim) => {
+                    // Update window title
+                    if let Ok(mut win) = window.get_single_mut() {
+                        win.title = format!("{} — wildfire incident command", sim.scenario.metadata.name);
+                    }
+
+                    // Insert Sim resource
+                    commands.insert_resource(sim);
+
+                    // Transition to Playing state
+                    next_state.set(AppState::Playing);
+                }
+                Err(e) => {
+                    eprintln!("Failed to create Sim: {e:#}");
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to load scenario '{scenario_id}': {e:#}");
+        }
     }
 }
 
