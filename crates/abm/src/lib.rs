@@ -43,6 +43,7 @@ use rand_chacha::ChaCha8Rng;
 use scenario::population::{Intent, Status, WarningChannel};
 use scenario::{Pos, Scenario};
 
+pub mod behaviour;
 pub mod network;
 pub mod refuge;
 pub mod suppression;
@@ -50,6 +51,7 @@ pub mod suppression;
 use network::{NodeId, RoadNetwork, RouteField, NO_NODE};
 use refuge::Refuge;
 
+pub use behaviour::{BehaviorRuntime, Outcome};
 pub use suppression::{Suppression, SuppressionStats, Task, Unit, UnitKind, UnitState};
 
 /// How often the household decision layer runs, in simulated seconds. People
@@ -229,6 +231,17 @@ pub struct Abm {
     fd_rows: usize,
     /// Vehicles currently on each link, from the previous step.
     occupancy: Vec<u16>,
+    /// Authored behaviour, when the scenario is running one. `None` runs the
+    /// hand-written decision layer below, which stays the default: a composer
+    /// that silently replaced the shipped model would make every existing
+    /// measurement in `crates/fire/tests` un-reproducible.
+    behavior: Option<BehaviorRuntime>,
+    /// Which subtype each household belongs to. Parallel to `households`, and
+    /// empty when no behaviour is loaded.
+    subtype: Vec<u16>,
+    /// The last decision each household's graph produced, for the inspector.
+    /// Parallel to `households`.
+    last_decision: Vec<behavior::Decision>,
     time_s: f32,
     next_decision_s: f32,
     next_route_s: f32,
@@ -243,6 +256,20 @@ const SEE_RANGE_M: f32 = 2500.0;
 
 impl Abm {
     pub fn new(scn: &Scenario, seed: u64) -> Result<Abm> {
+        Abm::with_behavior(scn, seed, None)
+    }
+
+    /// Build the agent model, optionally running an authored behaviour.
+    ///
+    /// The runtime has to arrive here rather than being attached afterwards: a
+    /// subtype can set starting traits, and a trait applied after the
+    /// households were constructed would be a trait that did not affect the
+    /// preparation time drawn from it.
+    pub fn with_behavior(
+        scn: &Scenario,
+        seed: u64,
+        behavior: Option<BehaviorRuntime>,
+    ) -> Result<Abm> {
         let net = RoadNetwork::build(scn);
         anyhow::ensure!(!net.is_empty(), "road network is empty");
         let refuges = refuge::choose(scn, &net, 12);
@@ -257,10 +284,32 @@ impl Abm {
         let mut entry_foot = Vec::with_capacity(households.capacity());
         let mut entry_car = Vec::with_capacity(households.capacity());
 
+        let mut subtype = Vec::with_capacity(households.capacity());
         for h in &scn.population.households {
             let home = Pos { x: h.pos[0], y: h.pos[1] };
             entry_foot.push(net.nearest(home, false).unwrap_or(NO_NODE));
             entry_car.push(net.nearest(home, true).unwrap_or(NO_NODE));
+
+            // A subtype's traits and capabilities replace what the population
+            // bake drew; anything the subtype does not mention stays as baked,
+            // which is what keeps a profile a small, readable file rather than
+            // a full population spec.
+            let st = behavior.as_ref().map(|b| b.assign(h.id));
+            let force = |key: behaviour::TraitKey, baked: f32| {
+                st.and_then(|s| behaviour::trait_override(behavior.as_ref().unwrap(), s, key))
+                    .unwrap_or(baked)
+            };
+            let cap = |key: behaviour::Capability, baked: bool| {
+                st.and_then(|s| behaviour::capability_override(behavior.as_ref().unwrap(), s, key))
+                    .unwrap_or(baked)
+            };
+            let vehicles = if cap(behaviour::Capability::Vehicle, h.vehicles > 0) {
+                h.vehicles.max(1)
+            } else {
+                0
+            };
+
+            subtype.push(st.unwrap_or(0) as u16);
             households.push(HouseholdAgent {
                 id: h.id,
                 home,
@@ -272,12 +321,15 @@ impl Abm {
                 prep_remaining_s: f32::INFINITY,
                 traveller: None,
                 intent: h.intent,
-                risk_perception: h.risk_perception,
-                trust_authority: h.trust_authority,
+                risk_perception: force(behaviour::TraitKey::RiskPerception, h.risk_perception),
+                trust_authority: force(behaviour::TraitKey::TrustAuthority, h.trust_authority),
                 channel: h.warning_channel,
-                vehicles: h.vehicles,
-                defensible_space: h.defensible_space,
-                prep_time_min: h.prep_time_min,
+                vehicles,
+                defensible_space: force(
+                    behaviour::TraitKey::DefensibleSpace,
+                    h.defensible_space,
+                ),
+                prep_time_min: force(behaviour::TraitKey::PrepTimeMin, h.prep_time_min),
                 shelter_s: 0.0,
                 members: h.members.clone(),
                 ordered_at_s: f32::INFINITY,
@@ -304,12 +356,22 @@ impl Abm {
                 let cand = clamp_to_world(cand, scn);
                 net.nearest(cand, false).map(|n| net.pos(n)).unwrap_or(home)
             };
+            // The assistance capability is a property of a person, but it is
+            // the *household* that has a subtype, so it lands here.
+            let needs_assistance = behavior
+                .as_ref()
+                .and_then(|b| {
+                    let s = *subtype.get(p.household)? as usize;
+                    behaviour::capability_override(b, s, behaviour::Capability::NeedsAssistance)
+                })
+                .unwrap_or(p.needs_assistance);
+
             people.push(PersonAgent {
                 id: p.id,
                 household: p.household,
                 age: p.age,
                 walk_speed: p.walk_speed,
-                needs_assistance: p.needs_assistance,
+                needs_assistance,
                 pos,
                 status: Status::Normal,
                 traveller: None,
@@ -321,6 +383,7 @@ impl Abm {
         let fd_cols = (scn.world.width_m / FD_M).ceil() as usize + 1;
         let fd_rows = (scn.world.height_m / FD_M).ceil() as usize + 1;
 
+        let last_decision = vec![behavior::Decision::default(); households.len()];
         let mut abm = Abm {
             households,
             people,
@@ -335,6 +398,9 @@ impl Abm {
             fd_cols,
             fd_rows,
             occupancy: Vec::new(),
+            behavior,
+            subtype,
+            last_decision,
             time_s: 0.0,
             next_decision_s: 0.0,
             next_route_s: 0.0,
@@ -528,6 +594,99 @@ impl Abm {
         self.fire_dist[gy * self.fd_cols + gx]
     }
 
+    /// Assemble what household `i` can know, for an authored behaviour.
+    ///
+    /// This is the whole read surface a graph gets. Everything in it is
+    /// already computed for the hand-written path, so running a behaviour
+    /// costs a struct copy rather than any extra model work.
+    fn observe(
+        &self,
+        i: usize,
+        jitter: f32,
+        danger: f32,
+        ex: &fire::exposure::ExposureField,
+    ) -> behavior::Observation {
+        let h = &self.households[i];
+        // The route the household would actually take: their car if they have
+        // one and it is reachable, otherwise on foot.
+        let (field, entry) = if h.vehicles > 0 && self.entry_car[i] != NO_NODE {
+            (&self.routes_car, self.entry_car[i])
+        } else {
+            (&self.routes_foot, self.entry_foot[i])
+        };
+        let refuge_distance_m = if entry == NO_NODE {
+            f32::INFINITY
+        } else {
+            field.cost.get(entry as usize).copied().unwrap_or(f32::INFINITY)
+        };
+
+        let needs_assistance = h.members.iter().any(|p| self.people[*p].needs_assistance);
+
+        behavior::Observation {
+            time_min: self.time_s / 60.0,
+            threat: danger,
+            radiant: ex.radiant,
+            ember: ex.ember,
+            structure_alight: ex.alight,
+            fire_distance_m: self.fire_distance(h.home).min(SEE_RANGE_M),
+            cue: h.cue,
+            order_issued: h.ordered,
+            warning_received: h.warning_received,
+            minutes_since_order: if h.ordered_at_s.is_finite() {
+                (self.time_s - h.ordered_at_s) / 60.0
+            } else {
+                f32::MAX
+            },
+            intent: behaviour::intent_of(h.intent),
+            risk_perception: h.risk_perception,
+            trust_authority: h.trust_authority,
+            prep_time_min: h.prep_time_min,
+            defensible_space: h.defensible_space,
+            household_size: h.members.len() as f32,
+            has_vehicle: h.vehicles > 0,
+            needs_assistance,
+            is_preparing: h.status == Status::Preparing,
+            is_moving: h.traveller.is_some(),
+            is_defending: h.status == Status::Defending,
+            route_blocked: !refuge_distance_m.is_finite(),
+            refuge_distance_m,
+            jitter,
+        }
+    }
+
+    /// Which subtype a household is running, and the last decision its graph
+    /// produced. `None` when no authored behaviour is loaded.
+    pub fn behaviour_of(&self, household: usize) -> Option<(&str, &str, behavior::Decision)> {
+        let rt = self.behavior.as_ref()?;
+        let s = rt.subtype(*self.subtype.get(household)? as usize)?;
+        Some((&s.id, &s.name, self.last_decision[household]))
+    }
+
+    /// Re-run one household's behaviour with a full trace, for the inspector.
+    ///
+    /// Deliberately not cached: it is called for the single household the
+    /// player has selected, at UI rate, and the answer has to be the one the
+    /// current fire state produces rather than the one from whenever the
+    /// decision layer last ran.
+    pub fn explain(
+        &self,
+        household: usize,
+        fire: &FireSim,
+    ) -> Option<(behavior::Decision, behavior::Trace)> {
+        let rt = self.behavior.as_ref()?;
+        let h = self.households.get(household)?;
+        let ex = fire.exposure().get(h.id);
+        let danger = fire.threat().at(h.home);
+        let jitter = hash01(h.id as u64, 0x51);
+        let obs = self.observe(household, jitter, danger, &ex);
+        rt.explain(*self.subtype.get(household)? as usize, &obs)
+    }
+
+    /// The authored behaviour in force, if any.
+    pub fn behavior(&self) -> Option<&BehaviorRuntime> {
+        self.behavior.as_ref()
+    }
+
     /// Perception and decision, run every [`DECISION_S`].
     fn decide(&mut self, dt: f32, fire: &FireSim, _scn: &Scenario) {
         let threat = fire.threat();
@@ -578,31 +737,39 @@ impl Abm {
             }
 
             // --- decision ----------------------------------------------------
-            let credible_order = h.warning_received && h.trust_authority > 0.35;
-            let depart = match h.intent {
-                // Leaves on the first credible signal, order or not.
-                Intent::LeaveEarly => h.status != Status::Normal,
-                // The dangerous majority: needs a direct cue, or an order it
-                // trusts.
-                Intent::WaitAndSee => {
-                    credible_order || h.cue > 0.22 + 0.15 * (1.0 - h.risk_perception)
+            // Either the hand-written rules below, or an authored graph. This
+            // is the *only* place the composer takes over: everything above is
+            // perception and everything after is consequence.
+            let (depart, run_now, prep_scale, defend) = if self.behavior.is_some() {
+                let obs = self.observe(i, jitter, danger, &ex);
+                let st = self.subtype[i] as usize;
+                let d = self.behavior.as_mut().expect("checked").decide(st, &obs);
+                self.last_decision[i] = d;
+                match behaviour::outcome_of(d.action) {
+                    behaviour::Outcome::Hold => (false, false, 1.0, false),
+                    behaviour::Outcome::Prepare => (true, false, d.prep_scale, false),
+                    behaviour::Outcome::Go => (true, true, d.prep_scale, false),
+                    behaviour::Outcome::Defend => (false, false, 1.0, true),
+                    // Sheltering is not a departure. The household stays where
+                    // it is and the survival model below takes over, which is
+                    // the same path a household that never left would take.
+                    behaviour::Outcome::Shelter => (false, false, 1.0, false),
                 }
-                // Stays to defend, and leaves late or not at all -- which is
-                // exactly the population that dies in the road.
-                Intent::StayDefend => h.cue > 0.55 + 0.25 * jitter || ex.alight,
-            };
-
-            if h.intent == Intent::StayDefend
-                && h.status == Status::Warned
-                && !depart
-            {
-                h.status = Status::Defending;
-            }
-
-            if depart
-                && matches!(h.status, Status::Warned | Status::Defending)
-                && h.traveller.is_none()
-            {
+            } else {
+                let h = &self.households[i];
+                let credible_order = h.warning_received && h.trust_authority > 0.35;
+                let depart = match h.intent {
+                    // Leaves on the first credible signal, order or not.
+                    Intent::LeaveEarly => h.status != Status::Normal,
+                    // The dangerous majority: needs a direct cue, or an order
+                    // it trusts.
+                    Intent::WaitAndSee => {
+                        credible_order || h.cue > 0.22 + 0.15 * (1.0 - h.risk_perception)
+                    }
+                    // Stays to defend, and leaves late or not at all -- which
+                    // is exactly the population that dies in the road.
+                    Intent::StayDefend => h.cue > 0.55 + 0.25 * jitter || ex.alight,
+                };
                 let scale = match h.intent {
                     Intent::LeaveEarly => 0.8,
                     Intent::WaitAndSee => 1.0,
@@ -610,8 +777,32 @@ impl Abm {
                     // they left it far too late to matter.
                     Intent::StayDefend => 0.5,
                 };
-                h.prep_remaining_s = prep_seconds(h.id, h.prep_time_min, scale);
+                (depart, false, scale, h.intent == Intent::StayDefend && !depart)
+            };
+
+            let h = &mut self.households[i];
+            if defend && h.status == Status::Warned {
+                h.status = Status::Defending;
+            }
+
+            if depart
+                && matches!(h.status, Status::Warned | Status::Defending)
+                && h.traveller.is_none()
+            {
+                // "Evacuate now" means the packing is abandoned, not that the
+                // household teleports: the minimum in `prep_seconds` still
+                // applies, because getting out of a house takes a minute even
+                // when you take nothing.
+                h.prep_remaining_s = if run_now {
+                    60.0
+                } else {
+                    prep_seconds(h.id, h.prep_time_min, prep_scale)
+                };
                 h.status = Status::Preparing;
+            } else if run_now && h.status == Status::Preparing {
+                // A household already milling that the graph has now told to
+                // run drops what it is doing.
+                h.prep_remaining_s = h.prep_remaining_s.min(60.0);
             }
 
             if h.status == Status::Preparing {
@@ -1029,7 +1220,7 @@ fn prep_seconds(id: usize, prep_time_min: f32, scale: f32) -> f32 {
 }
 
 /// Deterministic 0-1 noise from an id and a salt.
-fn hash01(id: u64, salt: u64) -> f32 {
+pub(crate) fn hash01(id: u64, salt: u64) -> f32 {
     let mut h = id.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ salt.wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
     h ^= h >> 29;
     h = h.wrapping_mul(0xBF58_476D_1CE4_E5B9);

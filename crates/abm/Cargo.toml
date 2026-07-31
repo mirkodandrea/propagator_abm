@@ -8,6 +8,7 @@ description = "Civilian agent model: perception, decision, evacuation on the rea
 [dependencies]
 scenario.workspace = true
 fire.workspace = true
+behavior.workspace = true
 anyhow.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
