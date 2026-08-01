@@ -31,6 +31,13 @@ use crate::sim::Sim;
 /// actually drawn at, rather than duplicating the constant and drifting.
 pub(crate) const FIGURE_SCALE: f32 = 3.0;
 
+pub(crate) fn figure_scale(vr: bool) -> f32 {
+    // A person is an operational map symbol in a lab scenario. At the fitted
+    // stage view the realistic scale is sub-pixel, so exaggerate it enough to
+    // preserve the status colour without approaching the size of a building.
+    FIGURE_SCALE * if vr { 2.4 } else { 1.0 }
+}
+
 #[derive(Component)]
 pub struct PersonView {
     pub id: usize,
@@ -70,6 +77,7 @@ pub fn setup(
     // these scenarios exist for actually cares about), only the shading
     // model changes.
     let vr = sim.scenario.vr_palette().is_some();
+    let scale = figure_scale(vr);
     let mut add = |base: StandardMaterial| materials.add(retro::material(base, vr));
     let status: Vec<Handle<RetroMaterial>> = [
         Status::Normal,
@@ -119,7 +127,7 @@ pub fn setup(
                 mesh: person.clone(),
                 material: status[Status::Evacuating as usize].clone(),
                 transform: Transform::from_translation(frame::to_bevy(p.pos, ground))
-                    .with_scale(Vec3::splat(FIGURE_SCALE)),
+                    .with_scale(Vec3::splat(scale)),
                 visibility: Visibility::Hidden,
                 ..default()
             },
@@ -173,12 +181,13 @@ pub fn spawn_vehicles(mut commands: Commands, sim: Res<Sim>, mut assets: ResMut<
             continue;
         }
         let ground = sim.scenario.terrain.height_at(t.pos);
+        let scale = figure_scale(sim.scenario.vr_palette().is_some());
         commands.spawn((
             MaterialMeshBundle::<RetroMaterial> {
                 mesh: assets.car.clone(),
                 material: assets.car_normal.clone(),
                 transform: Transform::from_translation(frame::to_bevy(t.pos, ground + 1.0))
-                    .with_scale(Vec3::splat(FIGURE_SCALE * 0.8)),
+                    .with_scale(Vec3::splat(scale * 0.8)),
                 ..default()
             },
             VehicleView { traveller: i },
@@ -225,7 +234,8 @@ pub fn update_people(
         }
 
         let ground = sim.scenario.terrain.height_at(p.pos);
-        tf.translation = frame::to_bevy(p.pos, ground + 1.0 * FIGURE_SCALE * 0.5);
+        let scale = figure_scale(sim.scenario.vr_palette().is_some());
+        tf.translation = frame::to_bevy(p.pos, ground + scale * 0.5);
         let m = &assets.status[p.status as usize];
         if *mat != *m {
             *mat = m.clone();
@@ -268,7 +278,8 @@ pub fn update_vehicles(
         }
 
         let ground = sim.scenario.terrain.height_at(t.pos);
-        tf.translation = frame::to_bevy(t.pos, ground + 1.2 * FIGURE_SCALE * 0.5);
+        let scale = figure_scale(sim.scenario.vr_palette().is_some());
+        tf.translation = frame::to_bevy(t.pos, ground + scale * 0.6);
         // World-frame bearing to a Bevy yaw: north is -Z, and the mesh's long
         // axis is +Z, so a heading of 0 (due east) is a quarter turn.
         tf.rotation = Quat::from_rotation_y(t.heading - std::f32::consts::FRAC_PI_2);

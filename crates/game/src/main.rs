@@ -352,8 +352,27 @@ fn setup_scene(
         sky::Sun,
     ));
 
-    // Start the camera looking at the ignition point.
-    let (p, h) = terrain_mesh::cell_ground(&sim.scenario, sim.ignition.centre);
+    // Real incidents open on the ignition. A synthetic lab instead opens on
+    // the whole finite stage: its road topology and the relative placement of
+    // agents, refuges and fire are the experiment, and centring one of those
+    // parts can put the defining route outside the initial viewport.
+    let (p, h, distance) = if sim.scenario.is_dev() {
+        let p = scenario::Pos {
+            x: sim.scenario.world.width_m * 0.5,
+            y: sim.scenario.world.height_m * 0.5,
+        };
+        let h = sim.scenario.terrain.height_at(p);
+        let distance = sim
+            .scenario
+            .world
+            .width_m
+            .max(sim.scenario.world.height_m)
+            * 1.15;
+        (p, h, distance.max(1400.0))
+    } else {
+        let (p, h) = terrain_mesh::cell_ground(&sim.scenario, sim.ignition.centre);
+        (p, h, 2600.0)
+    };
     let focus = frame::to_bevy(p, h);
     commands.spawn((
         Camera3dBundle {
@@ -365,7 +384,11 @@ fn setup_scene(
                 ..default()
             },
             tonemapping: Tonemapping::TonyMcMapface,
-            transform: Transform::from_xyz(focus.x, focus.y + 2000.0, focus.z + 2000.0),
+            transform: Transform::from_xyz(
+                focus.x,
+                focus.y + distance * 0.77,
+                focus.z + distance * 0.77,
+            ),
             projection: PerspectiveProjection {
                 far: 40_000.0,
                 ..default()
@@ -374,7 +397,10 @@ fn setup_scene(
             ..default()
         },
         BloomSettings {
-            intensity: 0.20,
+            // Fire uses HDR values and still blooms in the lab, but the cyan
+            // stage must not: a lower dev intensity keeps road junctions and
+            // grid intersections crisp instead of merging into white flares.
+            intensity: if sim.scenario.is_dev() { 0.055 } else { 0.20 },
             ..BloomSettings::NATURAL
         },
         // Atmospheric haze, coloured to match the sky every frame by
@@ -383,7 +409,7 @@ fn setup_scene(
         FogSettings::default(),
         OrbitCamera {
             focus,
-            distance: 2600.0,
+            distance,
             ..default()
         },
     ));
