@@ -60,6 +60,23 @@ behavior_node! {
 }
 
 behavior_node! {
+    id: "out.person_decision",
+    name: "Person decision",
+    category: Output,
+    domain: Person,
+    doc: "The behaviour's answer for one separated person. Wire every action \
+          proposal into this — it takes as many as you like and picks the \
+          strongest. With nothing wired in, or nothing firing, they carry on \
+          doing what they were doing, which for almost everyone in this domain \
+          means walking out.",
+    keywords: ["output", "result", "sink", "answer", "person"],
+    inputs: [(actions "proposals", "Every action proposal, in any order")],
+    outputs: [(action "chosen", "The winning proposal")],
+    params: [],
+    eval: |_c, _p, i, out| out.push(strongest!(i, ActionKind::Remain)),
+}
+
+behavior_node! {
     id: "out.prep_scale",
     name: "Preparation multiplier",
     category: Output,

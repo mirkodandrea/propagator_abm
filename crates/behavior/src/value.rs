@@ -133,10 +133,25 @@ pub enum ActionKind {
     /// Go back to staging and await orders. Unlike `Withdraw` this is not a
     /// safety action and does not carry the withdrawal note.
     ReturnToBase,
+
+    // --- separated people ---------------------------------------------------
+    /// Carry on doing whatever they were doing. What a separated person's graph
+    /// produces when nothing fires, and — since the model already has them
+    /// walking out — usually means "keep walking".
+    Remain,
+    /// Make for the nearest refuge on foot. The guidance answer, and what the
+    /// model has always done for people who were out when it started.
+    WalkOut,
+    /// Stop and shelter where they are. For someone whose way out is worse than
+    /// standing still, which on a cut road it often is.
+    TakeShelter,
+    /// Walk back to the household's home. The behaviour every evacuation study
+    /// finds and no evacuation plan wants, and the reason this domain exists.
+    HeadHome,
 }
 
 impl ActionKind {
-    pub const ALL: [ActionKind; 10] = [
+    pub const ALL: [ActionKind; 14] = [
         ActionKind::Stay,
         ActionKind::Prepare,
         ActionKind::EvacuateNow,
@@ -147,6 +162,10 @@ impl ActionKind {
         ActionKind::Refill,
         ActionKind::HoldPosition,
         ActionKind::ReturnToBase,
+        ActionKind::Remain,
+        ActionKind::WalkOut,
+        ActionKind::TakeShelter,
+        ActionKind::HeadHome,
     ];
 
     pub fn key(self) -> &'static str {
@@ -161,6 +180,10 @@ impl ActionKind {
             ActionKind::Refill => "refill",
             ActionKind::HoldPosition => "hold_position",
             ActionKind::ReturnToBase => "return_to_base",
+            ActionKind::Remain => "remain",
+            ActionKind::WalkOut => "walk_out",
+            ActionKind::TakeShelter => "take_shelter",
+            ActionKind::HeadHome => "head_home",
         }
     }
 
@@ -176,6 +199,10 @@ impl ActionKind {
             ActionKind::Refill => "Break off for water",
             ActionKind::HoldPosition => "Hold position",
             ActionKind::ReturnToBase => "Return to staging",
+            ActionKind::Remain => "Carry on",
+            ActionKind::WalkOut => "Walk out",
+            ActionKind::TakeShelter => "Shelter where they are",
+            ActionKind::HeadHome => "Head home",
         }
     }
 
@@ -187,6 +214,10 @@ impl ActionKind {
             | ActionKind::EvacuateNow
             | ActionKind::Defend
             | ActionKind::Shelter => Domain::Household,
+            ActionKind::Remain
+            | ActionKind::WalkOut
+            | ActionKind::TakeShelter
+            | ActionKind::HeadHome => Domain::Person,
             _ => Domain::SuppressionUnit,
         }
     }

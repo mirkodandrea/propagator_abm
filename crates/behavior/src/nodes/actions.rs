@@ -217,3 +217,84 @@ behavior_node! {
         });
     },
 }
+
+// --- separated people --------------------------------------------------------
+//
+// Four actions, and the priorities encode the ordering the model insists on:
+// sheltering outbids walking, because on a cut road the walking is what kills
+// them, and going home outbids walking out only because a person who has decided
+// to go back has decided against the refuge.
+
+action_node!(
+    "action.person_walk_out",
+    "Walk out",
+    Person,
+    "Make for the nearest refuge on foot. What the model has always done with \
+     people who were out when it started, and what the guidance says. A person \
+     already walking out carries on: this proposal is idempotent.",
+    ["refuge", "leave", "evacuate", "foot", "safety"],
+    WalkOut,
+    1.0
+);
+
+action_node!(
+    "action.person_shelter",
+    "Shelter where they are",
+    Person,
+    "Stop walking and take what cover there is. The right call when there is no \
+     route left, because a road that ends in the fire is worse than standing \
+     still — give this the highest priority in the graph.",
+    ["stop", "trapped", "cover", "cut off", "last resort"],
+    TakeShelter,
+    4.0
+);
+
+action_node!(
+    "action.person_head_home",
+    "Head home",
+    Person,
+    "Turn round and walk back to the household's house. Wire this from \"Going \
+     back for the family\" rather than from a bare condition — the block is \
+     where the assumption lives, and it ships switched off.",
+    ["family", "reunification", "back", "return", "house"],
+    HeadHome,
+    2.0
+);
+
+action_node!(
+    "action.person_remain",
+    "Carry on",
+    Person,
+    "Keep doing whatever they were doing. This is already what happens when \
+     nothing fires, so a node for it is only worth placing when you want to \
+     *outbid* something else.",
+    ["nothing", "stay", "continue", "hold"],
+    Remain,
+    0.0
+);
+
+behavior_node! {
+    id: "action.person_propose",
+    name: "Propose person action",
+    category: Action,
+    domain: Person,
+    doc: "Any action a separated person can take, with the kind chosen as a \
+          parameter. Use this when a profile needs to change *which* action a \
+          branch proposes rather than only how strongly.",
+    keywords: ["custom", "generic", "any", "decide"],
+    inputs: [(bool "when", "Propose while the condition holds", false)],
+    outputs: [(action "proposal", "The proposal, for the Person decision output")],
+    params: [
+        (choice "action", "Action", "What to propose.", "walk_out",
+            ["remain", "walk_out", "take_shelter", "head_home"]),
+        (number "priority", "Priority", "Strongest proposal wins.", 1.0, 0.0, 10.0, "")
+    ],
+    eval: |_c, p, i, out| {
+        let kind = p.action(0);
+        out.push(if i.boolean(0) {
+            Value::Action(ActionProposal { kind, priority: p.num(1), fired: true })
+        } else {
+            withheld(kind)
+        });
+    },
+}

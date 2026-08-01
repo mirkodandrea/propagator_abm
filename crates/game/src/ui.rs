@@ -493,6 +493,10 @@ fn help_english(ui: &mut egui::Ui) {
     ui.label("Incident, on the left, shows fire size, intensity, risk, structure losses and evacuation progress.");
     ui.label("The dock on the right has three tabs. Fire changes wind, moisture and ignitions, and restarts from T+0. Units is where you select crews and assign direct attack, a fire line or a water drop — request air support early, it takes 25 minutes to arrive. Entities finds any household, person, vehicle or unit.");
     ui.label("Click something on the map or in a list and the Inspector opens along the bottom with everything the model knows about it.");
+    ui.add_space(8.0);
+    ui.heading("Why did they do that?");
+    ui.label("Households, people caught away from home, and suppression units each decide for themselves, and every one of those decision models can be read and rewritten. Press G for the Agent Behaviour Composer: it holds the decision graph for each kind of agent, a test bench, and its own help.");
+    ui.label("Select an agent first and the composer's Live tab shows their behaviour running — every value on every box, with the path that produced the decision picked out. Press . to step one decision at a time, paused or not.");
     controls_guide(
         ui,
         [
@@ -500,7 +504,7 @@ fn help_english(ui: &mut egui::Ui) {
                 "Move the view",
                 "left-drag orbit · right-drag pan · scroll zoom · arrow keys pan",
             ),
-            ("Run time", "Space play/pause · [ and ] change speed"),
+            ("Run time", "Space play/pause · . one decision · [ and ] change speed"),
             ("Evacuate", "E orders everyone out"),
             ("Fire layers", "1–4 switch the map overlay"),
             ("Ignition", "I, then click the map · R restarts"),
@@ -533,6 +537,10 @@ fn help_italian(ui: &mut egui::Ui) {
     ui.label("Incident, a sinistra, mostra estensione e intensità dell'incendio, rischio, strutture perse e avanzamento dell'evacuazione.");
     ui.label("Il pannello a destra ha tre schede. Fire cambia vento, umidità e inneschi e riparte da T+0. Units serve a selezionare le squadre e assegnare attacco diretto, linea tagliafuoco o lancio d'acqua — richiedi presto il supporto aereo, servono 25 minuti. Entities trova qualsiasi famiglia, persona, veicolo o squadra.");
     ui.label("Clicca un elemento sulla mappa o in un elenco e l'Inspector si apre in basso con tutto ciò che il modello sa su di esso.");
+    ui.add_space(8.0);
+    ui.heading("Perché si comportano così?");
+    ui.label("Famiglie, persone sorprese fuori casa e squadre di intervento decidono ciascuna per conto proprio, e ognuno di questi modelli decisionali si può leggere e riscrivere. Premi G per l'Agent Behaviour Composer: contiene il grafo decisionale di ogni tipo di agente, un banco di prova e la propria guida.");
+    ui.label("Seleziona prima un agente e la scheda Live del composer mostra il suo comportamento in funzione — ogni valore su ogni nodo, con evidenziato il percorso che ha prodotto la decisione. Premi . per avanzare di una decisione alla volta, anche in pausa.");
     controls_guide(
         ui,
         [
@@ -540,7 +548,7 @@ fn help_italian(ui: &mut egui::Ui) {
                 "Muovere la visuale",
                 "trascina a sinistra per ruotare · a destra per spostare · rotella per zoom · frecce per scorrere",
             ),
-            ("Tempo", "Spazio avvia/pausa · [ e ] cambiano velocità"),
+            ("Tempo", "Spazio avvia/pausa · . un passo decisionale · [ e ] cambiano velocità"),
             ("Evacuazione", "E ordina l'evacuazione generale"),
             (
                 "Livelli incendio",

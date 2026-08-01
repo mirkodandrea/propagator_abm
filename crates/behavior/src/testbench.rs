@@ -15,7 +15,7 @@
 
 use crate::domain::Domain;
 use crate::eval::{CompiledGraph, Decision, Trace};
-use crate::observation::{HouseholdObs, Observation, UnitObs};
+use crate::observation::{HouseholdObs, Observation, PersonObs, UnitObs};
 use crate::value::{ActionKind, IntentValue, UnitKindKey};
 
 /// A named starting situation.
@@ -31,6 +31,7 @@ pub fn situations_for(domain: Domain) -> Vec<Situation> {
     match domain {
         Domain::Household => situations(),
         Domain::SuppressionUnit => unit_situations(),
+        Domain::Person => person_situations(),
     }
 }
 
@@ -296,6 +297,145 @@ pub fn unit_situations() -> Vec<Situation> {
     ]
 }
 
+/// The situations worth checking a separated person's behaviour against.
+///
+/// Eight, and every one of them is a moment the model previously had no answer
+/// for at all: before this domain existed, someone who was out walked to a
+/// refuge and nothing they saw on the way changed that.
+pub fn person_situations() -> Vec<Situation> {
+    let base = PersonObs::default();
+
+    let out_and_about = PersonObs { time_min: 0.0, is_moving: false, ..base };
+
+    let walking = PersonObs {
+        time_min: 8.0,
+        fire_distance_m: 1600.0,
+        cue: 0.15,
+        refuge_distance_m: 500.0,
+        home_distance_m: 900.0,
+        ..base
+    };
+
+    let nearly_home = PersonObs {
+        time_min: 10.0,
+        fire_distance_m: 1300.0,
+        cue: 0.22,
+        home_distance_m: 200.0,
+        refuge_distance_m: 800.0,
+        ..base
+    };
+
+    let family_gone = PersonObs {
+        time_min: 35.0,
+        fire_distance_m: 800.0,
+        cue: 0.4,
+        home_distance_m: 300.0,
+        refuge_distance_m: 700.0,
+        household_at_home: false,
+        household_safe: true,
+        ..base
+    };
+
+    let house_burning = PersonObs {
+        time_min: 55.0,
+        fire_distance_m: 200.0,
+        cue: 0.7,
+        threat: 0.2,
+        home_distance_m: 400.0,
+        home_alight: true,
+        ..base
+    };
+
+    let smoke_across_the_road = PersonObs {
+        time_min: 45.0,
+        fire_distance_m: 150.0,
+        cue: 0.6,
+        threat: 0.45,
+        heat_fraction: 0.2,
+        refuge_distance_m: 1200.0,
+        ..base
+    };
+
+    let cut_off = PersonObs {
+        time_min: 62.0,
+        fire_distance_m: 60.0,
+        cue: 0.9,
+        threat: 0.75,
+        heat_fraction: 0.4,
+        refuge_distance_m: f32::INFINITY,
+        home_distance_m: f32::INFINITY,
+        route_blocked: true,
+        ..base
+    };
+
+    let slow_and_alone = PersonObs {
+        time_min: 25.0,
+        fire_distance_m: 900.0,
+        cue: 0.35,
+        age: 81.0,
+        walk_speed: 0.6,
+        needs_assistance: true,
+        refuge_distance_m: 1400.0,
+        home_distance_m: 350.0,
+        ..base
+    };
+
+    vec![
+        Situation {
+            name: "Out and about",
+            note: "Away from home, has not started moving, and nothing has happened yet. \
+                   The first tick: whatever this produces is what everyone who was out \
+                   does at T+0.",
+            obs: out_and_about.into(),
+        },
+        Situation {
+            name: "Walking out",
+            note: "On the way to a refuge with the fire well away. The common case, and \
+                   the one where a behaviour should be doing nothing.",
+            obs: walking.into(),
+        },
+        Situation {
+            name: "Nearly home",
+            note: "Home is 200 m away and the refuge is 800 m. If reunification is ever \
+                   going to fire, it fires here — and this is the case where it is \
+                   arguably the right call.",
+            obs: nearly_home.into(),
+        },
+        Situation {
+            name: "Family already out",
+            note: "Home is close and the house is empty: the family left without them. \
+                   Going back now buys nothing at all, and whether the behaviour knows \
+                   that is the whole question.",
+            obs: family_gone.into(),
+        },
+        Situation {
+            name: "House alight",
+            note: "There is nothing to go home to. A branch that still sends them is \
+                   modelling someone who does not know, which is realistic and lethal.",
+            obs: house_burning.into(),
+        },
+        Situation {
+            name: "Smoke across the road",
+            note: "Threat 0.45: unpleasant, survivable, and a long way still to walk. \
+                   Where the survivability limit sits decides whether they push through.",
+            obs: smoke_across_the_road.into(),
+        },
+        Situation {
+            name: "Cut off",
+            note: "Nowhere left to walk, in the open, with heat accumulating. Shelter has \
+                   to win here or the behaviour walks them into the fire.",
+            obs: cut_off.into(),
+        },
+        Situation {
+            name: "Slow and alone",
+            note: "Eighty-one, needs help, 1.4 km from the refuge at 0.6 m/s: over half an \
+                   hour of walking. The profile that shows whether a warning timing works \
+                   for the people it has to work for.",
+            obs: slow_and_alone.into(),
+        },
+    ]
+}
+
 /// Which observation field a sweep varies.
 ///
 /// A closed set rather than a string, so the editor can only ever offer a
@@ -320,6 +460,15 @@ pub enum SweepField {
     UnitMinutesOnTask,
     UnitLineProgress,
     UnitJitter,
+    // separated people
+    PersonThreat,
+    PersonHeat,
+    PersonCue,
+    PersonFireDistance,
+    PersonRefugeDistance,
+    PersonHomeDistance,
+    PersonAge,
+    PersonJitter,
 }
 
 impl SweepField {
@@ -345,18 +494,32 @@ impl SweepField {
         SweepField::UnitJitter,
     ];
 
+    const PERSON: [SweepField; 8] = [
+        SweepField::PersonThreat,
+        SweepField::PersonHeat,
+        SweepField::PersonCue,
+        SweepField::PersonFireDistance,
+        SweepField::PersonRefugeDistance,
+        SweepField::PersonHomeDistance,
+        SweepField::PersonAge,
+        SweepField::PersonJitter,
+    ];
+
     /// The fields a graph of `domain` can be swept over. Offering the others
     /// would offer a sweep that provably does nothing.
     pub fn for_domain(d: Domain) -> &'static [SweepField] {
         match d {
             Domain::Household => &SweepField::HOUSEHOLD,
             Domain::SuppressionUnit => &SweepField::UNIT,
+            Domain::Person => &SweepField::PERSON,
         }
     }
 
     pub fn domain(self) -> Domain {
         if SweepField::UNIT.contains(&self) {
             Domain::SuppressionUnit
+        } else if SweepField::PERSON.contains(&self) {
+            Domain::Person
         } else {
             Domain::Household
         }
@@ -380,6 +543,14 @@ impl SweepField {
             SweepField::UnitMinutesOnTask => "Minutes on this order",
             SweepField::UnitLineProgress => "Line cut so far",
             SweepField::UnitJitter => "Individual variation",
+            SweepField::PersonThreat => "Threat where they stand",
+            SweepField::PersonHeat => "Accumulated heat",
+            SweepField::PersonCue => "Perceived alarm",
+            SweepField::PersonFireDistance => "Distance to fire (m)",
+            SweepField::PersonRefugeDistance => "Distance to refuge (m)",
+            SweepField::PersonHomeDistance => "Distance home (m)",
+            SweepField::PersonAge => "Age",
+            SweepField::PersonJitter => "Individual variation",
         }
     }
 
@@ -392,6 +563,10 @@ impl SweepField {
             SweepField::UnitDistanceToFire => (0.0, 2000.0),
             SweepField::UnitDistanceToTask => (0.0, 3000.0),
             SweepField::UnitMinutesOnTask => (0.0, 120.0),
+            SweepField::PersonFireDistance => (0.0, 2500.0),
+            SweepField::PersonRefugeDistance => (0.0, 3000.0),
+            SweepField::PersonHomeDistance => (0.0, 3000.0),
+            SweepField::PersonAge => (0.0, 100.0),
             _ => (0.0, 1.0),
         }
     }
@@ -419,11 +594,19 @@ impl SweepField {
             SweepField::UnitMinutesOnTask => with_u(obs, |u| u.minutes_on_task = v),
             SweepField::UnitLineProgress => with_u(obs, |u| u.line_progress = v),
             SweepField::UnitJitter => with_u(obs, |u| u.jitter = v),
+            SweepField::PersonThreat => with_p(obs, |p| p.threat = v),
+            SweepField::PersonHeat => with_p(obs, |p| p.heat_fraction = v),
+            SweepField::PersonCue => with_p(obs, |p| p.cue = v),
+            SweepField::PersonFireDistance => with_p(obs, |p| p.fire_distance_m = v),
+            SweepField::PersonRefugeDistance => with_p(obs, |p| p.refuge_distance_m = v),
+            SweepField::PersonHomeDistance => with_p(obs, |p| p.home_distance_m = v),
+            SweepField::PersonAge => with_p(obs, |p| p.age = v),
+            SweepField::PersonJitter => with_p(obs, |p| p.jitter = v),
         }
     }
 
     pub fn get(self, obs: &Observation) -> f32 {
-        let (h, u) = (obs.household(), obs.unit());
+        let (h, u, p) = (obs.household(), obs.unit(), obs.person());
         match self {
             SweepField::TimeMin => h.time_min,
             SweepField::Threat => h.threat,
@@ -441,6 +624,14 @@ impl SweepField {
             SweepField::UnitMinutesOnTask => u.minutes_on_task,
             SweepField::UnitLineProgress => u.line_progress,
             SweepField::UnitJitter => u.jitter,
+            SweepField::PersonThreat => p.threat,
+            SweepField::PersonHeat => p.heat_fraction,
+            SweepField::PersonCue => p.cue,
+            SweepField::PersonFireDistance => p.fire_distance_m,
+            SweepField::PersonRefugeDistance => p.refuge_distance_m,
+            SweepField::PersonHomeDistance => p.home_distance_m,
+            SweepField::PersonAge => p.age,
+            SweepField::PersonJitter => p.jitter,
         }
     }
 }
@@ -454,6 +645,12 @@ fn with_h(obs: &mut Observation, f: impl FnOnce(&mut HouseholdObs)) {
 fn with_u(obs: &mut Observation, f: impl FnOnce(&mut UnitObs)) {
     if let Some(u) = obs.unit_mut() {
         f(u);
+    }
+}
+
+fn with_p(obs: &mut Observation, f: impl FnOnce(&mut PersonObs)) {
+    if let Some(p) = obs.person_mut() {
+        f(p);
     }
 }
 

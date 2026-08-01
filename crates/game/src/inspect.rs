@@ -50,7 +50,42 @@ pub enum Target {
 }
 
 #[derive(Resource, Default)]
-pub struct Selected(pub Option<Target>);
+pub struct Selected {
+    pub target: Option<Target>,
+    /// A selection asked for on the command line, restored after a restart.
+    ///
+    /// Only ever set by `SPOTORNO_WATCH`. In play a restart clears the
+    /// selection and should; an unattended run that asked to watch one agent
+    /// asked to watch it for the whole run, and applying a behaviour restarts.
+    pinned: Option<Target>,
+}
+
+impl Selected {
+    /// `SPOTORNO_WATCH=household:12`, and the same for `person:` and `unit:`.
+    ///
+    /// Selecting an agent is a click on the 3D view, so it is the one input the
+    /// composer's live execution view needs and the one an unattended run
+    /// cannot produce — exactly the reason `SPOTORNO_COMPOSER` picks a tab and
+    /// `SPOTORNO_TAB` picks a dock tab. Without it the live view can only ever
+    /// be screenshotted empty.
+    pub fn from_env() -> Selected {
+        let Ok(spec) = std::env::var("SPOTORNO_WATCH") else {
+            return Selected::default();
+        };
+        let (kind, id) = spec.split_once(':').unwrap_or((spec.as_str(), "0"));
+        let id: usize = id.trim().parse().unwrap_or(0);
+        let target = match kind.trim() {
+            "household" | "hh" => Some(Target::Household(id)),
+            "person" => Some(Target::Person(id)),
+            "unit" => Some(Target::Unit(id)),
+            other => {
+                eprintln!("SPOTORNO_WATCH: no such agent kind {other:?}");
+                None
+            }
+        };
+        Selected { target, pinned: target }
+    }
+}
 
 #[derive(Resource, Default)]
 pub struct ClickTracker {
@@ -93,7 +128,7 @@ pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut selected:
         return;
     }
     restarted.clear();
-    selected.0 = None;
+    selected.target = selected.pinned;
 }
 
 /// Turn a click into a selection. Screen-space nearest-candidate, gated on a
@@ -212,7 +247,7 @@ pub fn pick_click(
 
     // A click that hit nothing deselects, same as clicking empty ground in
     // any RTS.
-    selected.0 = best.map(|(_, t)| t);
+    selected.target = best.map(|(_, t)| t);
 }
 
 /// Where a target actually is right now, in world space. Shared by the
@@ -251,7 +286,7 @@ pub fn update_ring(
     let Ok((mut tf, mut vis)) = query.get_single_mut() else {
         return;
     };
-    let Some(target) = selected.0 else {
+    let Some(target) = selected.target else {
         if *vis != Visibility::Hidden {
             *vis = Visibility::Hidden;
         }
@@ -288,16 +323,19 @@ pub fn panel(
     mut focus: ResMut<crate::ui::UiFocus>,
     mut mode: ResMut<crate::camera::CameraMode>,
     mut panels: ResMut<crate::ui::PanelState>,
+    mut composer: ResMut<crate::composer::Composer>,
     sim: Res<Sim>,
     buildings: Res<Buildings>,
 ) {
-    let Some(target) = selected.0 else {
+    let Some(target) = selected.target else {
         return;
     };
     let ctx = contexts.ctx_mut();
     let mut open = panels.inspector;
     let mut close = false;
     let mut jump_to: Option<Target> = None;
+    // Set by the behaviour section's one button.
+    let mut open_composer = false;
 
     egui::TopBottomPanel::bottom("inspector_dock")
         .resizable(open)
@@ -322,20 +360,29 @@ pub fn panel(
 
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
-                .show(ui, |ui| match target {
-                    Target::Household(id) => {
-                        household_panel(ui, &sim, &buildings, id, &mut jump_to)
+                .show(ui, |ui| {
+                    match target {
+                        Target::Household(id) => {
+                            household_panel(ui, &sim, &buildings, id, &mut jump_to)
+                        }
+                        Target::Person(id) => person_panel(ui, &sim, id, &mut jump_to),
+                        Target::Traveller(i) => {
+                            traveller_panel(ui, &sim, i, &mut jump_to, &mut mode)
+                        }
+                        Target::Unit(id) => unit_panel(ui, &sim, id, &mut mode),
                     }
-                    Target::Person(id) => person_panel(ui, &sim, id, &mut jump_to),
-                    Target::Traveller(i) => traveller_panel(ui, &sim, i, &mut jump_to, &mut mode),
-                    Target::Unit(id) => unit_panel(ui, &sim, id, &mut mode),
+                    behaviour_panel(ui, &sim, &mut open_composer, target);
                 });
         });
 
     if close {
-        selected.0 = None;
+        selected.target = None;
     } else if let Some(t) = jump_to {
-        selected.0 = Some(t);
+        selected.target = Some(t);
+    }
+    if open_composer {
+        composer.open = true;
+        composer.right = crate::composer::RightTab::Live;
     }
     panels.inspector = open;
     focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
@@ -460,45 +507,84 @@ fn household_panel(
             *jump_to = Some(Target::Traveller(ti));
         }
     }
-
-    behaviour_panel(ui, sim, id);
 }
 
-/// Why this household is doing what it is doing, when it is running an
-/// authored behaviour.
+/// Why this agent is doing what it is doing, when it is running an authored
+/// behaviour.
 ///
-/// Absent entirely under the shipped hand-written model, rather than showing an
-/// empty section: there is no graph to explain, and a panel that always
+/// Absent entirely under the shipped hand-written models, rather than showing
+/// an empty section: there is no graph to explain, and a panel that always
 /// appeared would imply there was.
-fn behaviour_panel(ui: &mut egui::Ui, sim: &Sim, id: usize) {
-    let Some((subtype_id, subtype_name, decision)) = sim.agents.behaviour_of(id) else {
+///
+/// One function for all three kinds of agent, because the answer has the same
+/// shape in each: a profile, a decision, and the branches that produced it. The
+/// only per-kind part is which of the model's `explain` calls to make, and that
+/// is three lines at the top.
+fn behaviour_panel(ui: &mut egui::Ui, sim: &Sim, open: &mut bool, target: Target) {
+    let found = match target {
+        Target::Household(id) => sim.agents.behaviour_of(id),
+        Target::Person(id) => sim.agents.person_behaviour_of(id),
+        // A unit's roster does not cache the last decision the way the civilian
+        // ones do, so the profile comes from the roster and the decision from
+        // the trace below.
+        Target::Unit(id) => sim
+            .crews
+            .policy_of(id)
+            .map(|(sid, name)| (sid, name, behavior::Decision::default())),
+        Target::Traveller(_) => None,
+    };
+    let Some((subtype_id, subtype_name, decision)) = found else {
         return;
     };
+    let (subtype_id, subtype_name) = (subtype_id.to_string(), subtype_name.to_string());
+
+    // Re-evaluated against the current fire rather than cached from the last
+    // decision tick, so what it shows is what the agent would decide right now.
+    // It is one graph on one agent at UI rate.
+    let explained = match target {
+        Target::Household(id) => sim.agents.explain(id, &sim.fire),
+        Target::Person(id) => sim.agents.explain_person(id, &sim.fire),
+        Target::Unit(id) => sim.crews.explain(id, &sim.agents.network, &sim.fire, &sim.scenario),
+        Target::Traveller(_) => None,
+    };
+    let decision = explained.as_ref().map(|(d, _)| *d).unwrap_or(decision);
+
     ui.separator();
     ui.horizontal(|ui| {
         ui.strong("Behaviour");
-        ui.label(subtype_name).on_hover_text(subtype_id);
+        ui.label(&subtype_name).on_hover_text(&subtype_id);
+        // The one door from the map into the editor. Everything else about
+        // watching a behaviour run is in there; without this the feature is
+        // reachable only by someone who already knows it exists.
+        if ui
+            .small_button("Open in the composer")
+            .on_hover_text(
+                "Open the Agent Behaviour Composer on this agent's graph and watch it decide.",
+            )
+            .clicked()
+        {
+            *open = true;
+        }
     });
     ui.label(format!(
-        "{}  ·  priority {:.2}  ·  prep ×{:.2}",
+        "{}  ·  priority {:.2}",
         decision.action.label(),
-        decision.priority,
-        decision.prep_scale
+        decision.priority
     ));
+    if decision.prep_scale != 1.0 {
+        ui.small(format!("preparation ×{:.2}", decision.prep_scale));
+    }
     if decision.urgency > 0.0 {
         ui.small(format!("urgency readout {:.2}", decision.urgency));
     }
 
-    // Re-evaluated against the current fire rather than cached from the last
-    // decision tick, so what it shows is what the household would decide right
-    // now. It is one graph on one household at UI rate.
     egui::CollapsingHeader::new("Why").default_open(false).show(ui, |ui| {
-        let Some((_, trace)) = sim.agents.explain(id, &sim.fire) else {
+        let Some((_, trace)) = &explained else {
             ui.small("(no explanation available)");
             return;
         };
         if trace.proposals.is_empty() {
-            ui.small("No branch of the behaviour fired: the household stays put.");
+            ui.small("No branch of the behaviour fired: the agent is doing its default.");
         } else {
             for (i, (node, kind, prio)) in trace.proposals.iter().enumerate() {
                 ui.small(format!(
@@ -509,20 +595,22 @@ fn behaviour_panel(ui: &mut egui::Ui, sim: &Sim, id: usize) {
             }
         }
         ui.separator();
+        // Which boxes actually produced the answer, rather than all of them.
+        // The full list is in the composer's Live tab; here it is the short
+        // version, and the short version is the slice.
+        let active = trace.active();
         for n in &trace.nodes {
             // Observations are already on the panel above; what is worth
             // reading here is what the behaviour *made* of them.
-            let is_obs = behavior::registry()
-                .get(n.type_id)
-                .map(|s| s.category == behavior::Category::Observation)
-                .unwrap_or(false);
-            if is_obs {
+            if n.category == behavior::Category::Observation {
                 continue;
             }
             let values =
                 n.outputs.iter().map(behavior::Value::display).collect::<Vec<_>>().join(", ");
-            ui.small(format!("{} = {values}", n.name));
+            let mark = if active.contains(&n.node) { "▸" } else { " " };
+            ui.small(format!("{mark} {} = {values}", n.name));
         }
+        ui.small("▸ marks the boxes that fed the decision that was taken.");
     });
 }
 
@@ -545,6 +633,28 @@ fn person_panel(ui: &mut egui::Ui, sim: &Sim, id: usize, jump_to: &mut Option<Ta
         ui.label("Needs assistance");
         ui.label(if p.needs_assistance { "yes" } else { "no" });
         ui.end_row();
+
+        // The one thing that decides whether this person is an agent at all.
+        // Everyone else leaves with the family, and the household is what
+        // decides; only someone away from it has choices of their own.
+        ui.label("With the household");
+        ui.label(if p.away { "no — away from home" } else { "yes" });
+        ui.end_row();
+
+        if p.away {
+            ui.label("Own alarm");
+            ui.label(format!("{:.0}%", p.cue * 100.0));
+            ui.end_row();
+
+            if let Some(t) = p.traveller.and_then(|ti| sim.agents.travellers.get(ti)) {
+                ui.label("Heading");
+                ui.label(match t.goal {
+                    abm::Goal::Refuge => "out, to the nearest refuge",
+                    abm::Goal::Home => "back to the house",
+                });
+                ui.end_row();
+            }
+        }
     });
 
     ui.separator();
@@ -782,6 +892,7 @@ pub(crate) fn travel_state_text(s: TravelState) -> &'static str {
         TravelState::OnNetwork => "on the network",
         TravelState::Safe => "at a refuge / off the map",
         TravelState::Cutoff => "cut off — no route out",
+        TravelState::Arrived => "reached home",
         TravelState::Dead => "casualty",
     }
 }

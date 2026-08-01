@@ -11,6 +11,8 @@ mod logic;
 mod observations;
 mod outputs;
 mod params;
+mod person_blocks;
+mod person_observations;
 mod unit_blocks;
 mod unit_observations;
 
@@ -23,5 +25,7 @@ mod unit_observations;
 pub const DECISION_OUTPUT: &str = "out.decision";
 /// The same, for a suppression unit.
 pub const UNIT_DECISION_OUTPUT: &str = "out.unit_decision";
+/// The same, for one person who is away from their household.
+pub const PERSON_DECISION_OUTPUT: &str = "out.person_decision";
 pub const PREP_SCALE_OUTPUT: &str = "out.prep_scale";
 pub const URGENCY_OUTPUT: &str = "out.urgency";

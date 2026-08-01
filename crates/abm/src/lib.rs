@@ -51,13 +51,15 @@ pub mod suppression;
 use network::{NodeId, RoadNetwork, RouteField, NO_NODE};
 use refuge::Refuge;
 
-pub use behaviour::{BehaviorRuntime, Outcome, UnitOutcome, UnitRuntime};
+pub use behaviour::{
+    BehaviorRuntime, Outcome, PersonOutcome, PersonRuntime, UnitOutcome, UnitRuntime,
+};
 pub use suppression::{Suppression, SuppressionStats, Task, Unit, UnitKind, UnitState};
 
 /// How often the household decision layer runs, in simulated seconds. People
 /// do not re-evaluate continuously, and this keeps the cost off the movement
 /// path.
-const DECISION_S: f32 = 5.0;
+pub const DECISION_S: f32 = 5.0;
 
 /// How often the evacuation routing is re-solved against the fire.
 const ROUTE_REFRESH_S: f32 = 60.0;
@@ -109,7 +111,27 @@ pub enum TravelState {
     Safe,
     /// No route out: cut off, sheltering where they stand.
     Cutoff,
+    /// Reached a destination that is not safety — the only one being a
+    /// household's own home, walked back to by a separated person. The person
+    /// is put back into the household and this record retires; it is kept
+    /// rather than removed because `travellers` is append-only and every view
+    /// indexes into it.
+    Arrived,
     Dead,
+}
+
+/// Where a traveller is trying to get to.
+///
+/// Almost everyone wants the same thing — the nearest refuge — which is why
+/// routing is a field rather than a search (see `network::solve`). The one
+/// exception is a person who has decided to go back for their family, and they
+/// want somewhere nobody else does, so they carry a path of their own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Goal {
+    /// Follow the multi-source route field to the nearest refuge.
+    Refuge,
+    /// Follow a pre-planned path back to the household's home.
+    Home,
 }
 
 /// A moving group: one household in its car or on foot, or a single person
@@ -141,6 +163,11 @@ pub struct Traveller {
     pub departed_s: f32,
     /// A single person who was away from home, rather than a household.
     pub solo: bool,
+    /// What this traveller is trying to reach.
+    pub goal: Goal,
+    /// Remaining nodes of a [`Goal::Home`] path, nearest first. Empty for
+    /// anything following the route field, which is everyone else.
+    home_path: Vec<NodeId>,
 }
 
 /// One person. Individually inspectable, which is the point: the scenario is
@@ -156,6 +183,18 @@ pub struct PersonAgent {
     pub status: Status,
     /// Traveller this person is riding with, if moving.
     pub traveller: Option<usize>,
+    /// Not with their household: out when it started, or separated since.
+    ///
+    /// The flag that decides whether this person makes decisions of their own.
+    /// Everyone else evacuates with the family, and the household is the agent.
+    pub away: bool,
+    /// This person's own accumulated alarm, 0-1. Only maintained while `away` —
+    /// a person at home reads the household's.
+    pub cue: f32,
+    /// Which authored profile this person runs, when one is loaded.
+    pub subtype: u16,
+    /// The last decision this person's graph produced, for the inspector.
+    pub last_decision: behavior::Decision,
     /// Small fixed offset so a group does not render as one point.
     offset: [f32; 2],
 }
@@ -236,12 +275,20 @@ pub struct Abm {
     /// that silently replaced the shipped model would make every existing
     /// measurement in `crates/fire/tests` un-reproducible.
     behavior: Option<BehaviorRuntime>,
+    /// Authored behaviour for the people who are not with their household.
+    /// `None` leaves them doing what they have always done: walking to the
+    /// nearest refuge and nothing else.
+    person_behavior: Option<PersonRuntime>,
     /// Which subtype each household belongs to. Parallel to `households`, and
     /// empty when no behaviour is loaded.
     subtype: Vec<u16>,
     /// The last decision each household's graph produced, for the inspector.
     /// Parallel to `households`.
     last_decision: Vec<behavior::Decision>,
+    /// Simulated time the first evacuation order was issued to anyone, or
+    /// infinity. What a person out in the street hears, as opposed to what
+    /// arrives at their own front door over their household's channel.
+    order_at_s: f32,
     time_s: f32,
     next_decision_s: f32,
     next_route_s: f32,
@@ -269,6 +316,21 @@ impl Abm {
         scn: &Scenario,
         seed: u64,
         behavior: Option<BehaviorRuntime>,
+    ) -> Result<Abm> {
+        Abm::with_behaviours(scn, seed, behavior, None)
+    }
+
+    /// Build the agent model with both civilian runtimes.
+    ///
+    /// Two, because households and separated people are different agents in
+    /// different domains: a scenario can run an authored household behaviour
+    /// with the shipped person one, or the other way round, and the composer
+    /// applies whichever the library actually assigns.
+    pub fn with_behaviours(
+        scn: &Scenario,
+        seed: u64,
+        behavior: Option<BehaviorRuntime>,
+        person_behavior: Option<PersonRuntime>,
     ) -> Result<Abm> {
         let net = RoadNetwork::build(scn);
         anyhow::ensure!(!net.is_empty(), "road network is empty");
@@ -375,6 +437,13 @@ impl Abm {
                 pos,
                 status: Status::Normal,
                 traveller: None,
+                away: !p.at_home,
+                cue: 0.0,
+                subtype: person_behavior
+                    .as_ref()
+                    .map(|b: &PersonRuntime| b.assign(p.id))
+                    .unwrap_or(0) as u16,
+                last_decision: behavior::Decision::default(),
                 offset: [rng.gen_range(-3.0..3.0), rng.gen_range(-3.0..3.0)],
             });
         }
@@ -399,8 +468,10 @@ impl Abm {
             fd_rows,
             occupancy: Vec::new(),
             behavior,
+            person_behavior,
             subtype,
             last_decision,
+            order_at_s: f32::INFINITY,
             time_s: 0.0,
             next_decision_s: 0.0,
             next_route_s: 0.0,
@@ -410,40 +481,84 @@ impl Abm {
 
         // People who are away start moving immediately: they are already out,
         // and the model has them make their own way to a refuge on foot.
-        let away: Vec<usize> = scn
-            .population
-            .people
-            .iter()
-            .filter(|p| !p.at_home)
-            .map(|p| p.id)
-            .collect();
+        //
+        // This stays here, at T+0, rather than falling out of the person
+        // decision layer's first tick. Moving it would shift every one of these
+        // departures by one decision interval and quietly invalidate every
+        // evacuation figure measured before the layer existed — and it is what
+        // the shipped person behaviour transcribes anyway.
+        let away: Vec<usize> = abm.people.iter().filter(|p| p.away).map(|p| p.id).collect();
         for id in away {
-            let p = &abm.people[id];
-            let (pos, hh, speed) = (p.pos, p.household, p.walk_speed);
-            let at = abm.network.nearest(pos, false).unwrap_or(NO_NODE);
-            let t = Traveller {
-                household: hh,
-                members: vec![id],
-                pos,
-                heading: 0.0,
-                mode: Mode::Foot,
-                free_speed: speed,
-                state: TravelState::Approaching,
-                target: at,
-                at_node: NO_NODE,
-                edge: u32::MAX,
-                heat_s: 0.0,
-                distance_m: 0.0,
-                departed_s: 0.0,
-                solo: true,
-            };
-            abm.travellers.push(t);
-            let ti = abm.travellers.len() - 1;
-            abm.people[id].traveller = Some(ti);
-            abm.people[id].status = Status::Evacuating;
+            abm.walk_out(id);
         }
 
         Ok(abm)
+    }
+
+    /// Put one separated person on the road toward the nearest refuge.
+    ///
+    /// Idempotent for someone already walking out, which matters: the shipped
+    /// person behaviour proposes this on every tick, and re-launching them each
+    /// time would reset their progress.
+    fn walk_out(&mut self, id: usize) {
+        if let Some(ti) = self.people[id].traveller {
+            let t = &mut self.travellers[ti];
+            // Already on their way out: nothing to do. `Cutoff` is deliberately
+            // not in that set — someone who stopped because the road was gone
+            // has to be able to set off again when the routing says it is back,
+            // and treating "has a traveller heading for a refuge" as "is
+            // walking" would strand them for the rest of the incident.
+            let walking = matches!(
+                t.state,
+                TravelState::Approaching | TravelState::OnNetwork
+            );
+            if t.goal == Goal::Refuge && walking {
+                return;
+            }
+            if matches!(t.state, TravelState::Safe | TravelState::Dead) {
+                return;
+            }
+            // Turning round: back onto the route field from wherever they are.
+            t.goal = Goal::Refuge;
+            t.home_path.clear();
+            t.state = TravelState::Approaching;
+            t.target = self.network.nearest(t.pos, false).unwrap_or(NO_NODE);
+            t.edge = u32::MAX;
+            self.people[id].status = Status::Evacuating;
+            return;
+        }
+        if matches!(self.people[id].status, Status::Evacuated | Status::Casualty) {
+            return;
+        }
+        let p = &self.people[id];
+        // Their bare walking speed, with none of the adjustments `launch`
+        // applies to a household group: no assistance penalty and no 2 m/s cap.
+        // That is what the model has always done with a solo walker and it is
+        // left alone here, because changing it would move every evacuation
+        // figure taken before this layer existed. Worth revisiting on purpose.
+        let (pos, hh, speed) = (p.pos, p.household, p.walk_speed);
+        let at = self.network.nearest(pos, false).unwrap_or(NO_NODE);
+        self.travellers.push(Traveller {
+            household: hh,
+            members: vec![id],
+            pos,
+            heading: 0.0,
+            mode: Mode::Foot,
+            free_speed: speed,
+            state: TravelState::Approaching,
+            target: at,
+            at_node: NO_NODE,
+            edge: u32::MAX,
+            heat_s: 0.0,
+            distance_m: 0.0,
+            departed_s: self.time_s,
+            solo: true,
+            goal: Goal::Refuge,
+            home_path: Vec::new(),
+        });
+        let ti = self.travellers.len() - 1;
+        self.people[id].traveller = Some(ti);
+        self.people[id].status = Status::Evacuating;
     }
 
     pub fn time_s(&self) -> f32 {
@@ -469,6 +584,9 @@ impl Abm {
                 n += 1;
             }
         }
+        if n > 0 {
+            self.order_at_s = self.order_at_s.min(now);
+        }
         self.generation += 1;
         n
     }
@@ -483,6 +601,9 @@ impl Abm {
                 h.ordered_at_s = now;
                 n += 1;
             }
+        }
+        if n > 0 {
+            self.order_at_s = self.order_at_s.min(now);
         }
         self.generation += 1;
         n
@@ -509,6 +630,7 @@ impl Abm {
             // get a slower evacuation than a fine one.
             let elapsed = DECISION_S.max(dt_s);
             self.decide(elapsed, fire, scn);
+            self.decide_people(elapsed, fire);
             self.next_decision_s = self.time_s + DECISION_S;
         }
 
@@ -846,6 +968,254 @@ impl Abm {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Separated people
+    // -----------------------------------------------------------------------
+
+    /// Assemble what one person away from their household can know.
+    ///
+    /// The whole read surface a person graph gets, and much narrower than the
+    /// household's: this agent is out in the street with no more information
+    /// than their own eyes give them.
+    fn observe_person(&self, id: usize, danger: f32, home_alight: bool) -> behavior::Observation {
+        let p = &self.people[id];
+        let home = self.households.get(p.household).map(|h| h.home).unwrap_or(p.pos);
+        let hh = self.households.get(p.household);
+
+        let travelling = p.traveller.map(|ti| &self.travellers[ti]);
+        let heat_fraction =
+            travelling.map(|t| (t.heat_s / LETHAL_EXPOSURE_S).min(1.0)).unwrap_or(0.0);
+        let is_moving = travelling
+            .map(|t| matches!(t.state, TravelState::Approaching | TravelState::OnNetwork))
+            .unwrap_or(false);
+        let is_heading_home = travelling.map(|t| t.goal == Goal::Home).unwrap_or(false);
+        let is_sheltering = travelling.map(|t| t.state == TravelState::Cutoff).unwrap_or(false)
+            || p.status == Status::Trapped;
+
+        // Straight-line to both, so the two are on one scale and "is home
+        // nearer than safety" means what it says. Whether the road survives is
+        // `route_blocked`, which does come off the network.
+        let refuge_distance_m = self
+            .refuges
+            .iter()
+            .map(|r| dist(p.pos, r.pos))
+            .fold(f32::INFINITY, f32::min);
+        let entry = self.network.nearest(p.pos, false).unwrap_or(NO_NODE);
+        let route_blocked = entry == NO_NODE || !self.routes_foot.reachable(entry);
+
+        behavior::PersonObs {
+            time_min: self.time_s / 60.0,
+            threat: danger,
+            heat_fraction,
+            fire_distance_m: self.fire_distance(p.pos).min(SEE_RANGE_M),
+            cue: p.cue,
+            order_issued: self.order_at_s.is_finite(),
+            minutes_since_order: if self.order_at_s.is_finite() {
+                (self.time_s - self.order_at_s) / 60.0
+            } else {
+                f32::MAX
+            },
+            age: p.age as f32,
+            walk_speed: p.walk_speed,
+            needs_assistance: p.needs_assistance,
+            home_distance_m: dist(p.pos, home),
+            household_at_home: hh
+                .map(|h| {
+                    h.traveller.is_none()
+                        && !matches!(h.status, Status::Evacuated | Status::Casualty)
+                })
+                .unwrap_or(false),
+            household_safe: hh.map(|h| h.status == Status::Evacuated).unwrap_or(false),
+            home_alight,
+            refuge_distance_m,
+            route_blocked,
+            is_moving,
+            is_heading_home,
+            is_sheltering,
+            jitter: hash01(p.id as u64, 0xA37),
+        }
+        .into()
+    }
+
+    /// Which profile a separated person is running, and the last decision their
+    /// graph produced. `None` when no authored person behaviour is loaded.
+    pub fn person_behaviour_of(&self, person: usize) -> Option<(&str, &str, behavior::Decision)> {
+        let rt = self.person_behavior.as_ref()?;
+        let p = self.people.get(person)?;
+        let s = rt.subtype(p.subtype as usize)?;
+        Some((&s.id, &s.name, p.last_decision))
+    }
+
+    /// Re-run one person's behaviour with a full trace, for the inspector.
+    ///
+    /// Not cached, for the same reason [`Abm::explain`] is not: the answer has
+    /// to be the one the current fire produces, not the one from whenever the
+    /// decision layer last ran.
+    pub fn explain_person(
+        &self,
+        person: usize,
+        fire: &FireSim,
+    ) -> Option<(behavior::Decision, behavior::Trace)> {
+        let rt = self.person_behavior.as_ref()?;
+        let p = self.people.get(person)?;
+        let danger = fire.threat().at(p.pos);
+        let alight = fire.exposure().get(p.household).alight;
+        let obs = self.observe_person(person, danger, alight);
+        rt.explain(p.subtype as usize, &obs)
+    }
+
+    /// The authored person behaviour in force, if any.
+    pub fn person_behavior(&self) -> Option<&PersonRuntime> {
+        self.person_behavior.as_ref()
+    }
+
+    /// Perception and decision for everyone who is not with their household.
+    ///
+    /// Runs only when a person behaviour is loaded. With none, people who were
+    /// out walk to a refuge and never reconsider, which is what the model has
+    /// always done — and running an empty decision layer over 1,500 people to
+    /// reach the same answer would be cost with no meaning.
+    fn decide_people(&mut self, dt: f32, fire: &FireSim) {
+        if self.person_behavior.is_none() {
+            return;
+        }
+        let threat = fire.threat();
+        let exposure = fire.exposure();
+
+        for i in 0..self.people.len() {
+            let p = &self.people[i];
+            if !p.away || matches!(p.status, Status::Evacuated | Status::Casualty) {
+                continue;
+            }
+            let (pos, household) = (p.pos, p.household);
+
+            // --- perception -------------------------------------------------
+            // The same shape as the household's, read from where the person is
+            // standing rather than from the house, and without the attention
+            // term: that is a household trait and a person out in the street
+            // does not carry one.
+            let danger = threat.at(pos);
+            let seen = {
+                let d = self.fire_distance(pos);
+                (1.0 - (d / SEE_RANGE_M)).clamp(0.0, 1.0)
+            };
+            let raw = danger.max(0.75 * seen * seen).min(1.0);
+            let p = &mut self.people[i];
+            p.cue = if raw > p.cue { raw } else { p.cue * 0.98 + raw * 0.02 };
+
+            // --- decision ---------------------------------------------------
+            let alight = exposure.get(household).alight;
+            let obs = self.observe_person(i, danger, alight);
+            let st = self.people[i].subtype as usize;
+            let d = self.person_behavior.as_mut().expect("checked").decide(st, &obs);
+            self.people[i].last_decision = d;
+
+            match behaviour::person_outcome_of(d.action) {
+                behaviour::PersonOutcome::Carry => {}
+                behaviour::PersonOutcome::WalkOut => self.walk_out(i),
+                behaviour::PersonOutcome::Shelter => self.shelter_in_place(i),
+                behaviour::PersonOutcome::HeadHome => self.head_home(i, fire),
+            }
+        }
+        // Every branch above is a change of destination, never a change of
+        // pace: `dt` is the model's, not the graph's, which is what keeps an
+        // authored person behaviour step-size invariant.
+        let _ = dt;
+    }
+
+    /// Stop this person where they are and let them take what cover there is.
+    fn shelter_in_place(&mut self, id: usize) {
+        let Some(ti) = self.people[id].traveller else {
+            self.people[id].status = Status::Trapped;
+            return;
+        };
+        let t = &mut self.travellers[ti];
+        if matches!(t.state, TravelState::Safe | TravelState::Dead | TravelState::Arrived) {
+            return;
+        }
+        t.state = TravelState::Cutoff;
+        t.target = NO_NODE;
+        t.edge = u32::MAX;
+        t.home_path.clear();
+        self.people[id].status = Status::Trapped;
+    }
+
+    /// Turn this person round and walk them back to the household's home.
+    ///
+    /// The one place the civilian model runs a per-agent search rather than
+    /// reading the route field, and it is the case the field cannot answer:
+    /// every other civilian wants the nearest refuge and this one wants a
+    /// specific house. Planned once, on the tick they decide, and not
+    /// re-planned — an A* per person per tick is the mistake the suppression
+    /// layer already made once.
+    fn head_home(&mut self, id: usize, fire: &FireSim) {
+        if self.people[id].traveller.map(|ti| self.travellers[ti].goal) == Some(Goal::Home) {
+            return;
+        }
+        let home = match self.households.get(self.people[id].household) {
+            Some(h) => h.home,
+            None => return,
+        };
+        let from = self.network.nearest(self.people[id].pos, false).unwrap_or(NO_NODE);
+        let to = self.network.nearest(home, false).unwrap_or(NO_NODE);
+        let Some(mut path) = network::route(&self.network, from, to, fire.threat(), false) else {
+            // No way back through the fire. They keep walking out, which is the
+            // answer the model would have given anyway.
+            self.walk_out(id);
+            return;
+        };
+        path.push(to);
+
+        if self.people[id].traveller.is_none() {
+            self.walk_out(id);
+        }
+        let Some(ti) = self.people[id].traveller else { return };
+        let t = &mut self.travellers[ti];
+        t.goal = Goal::Home;
+        t.state = TravelState::Approaching;
+        t.target = from;
+        t.edge = u32::MAX;
+        t.home_path = path;
+        self.people[id].status = Status::Evacuating;
+    }
+
+    /// This person has walked back to the house and is part of the household
+    /// again — which is what makes reunification a behaviour rather than a
+    /// detour: the family's own decision layer now covers them.
+    fn arrive_home(&mut self, ti: usize) {
+        let (members, hh) = {
+            let t = &mut self.travellers[ti];
+            t.state = TravelState::Arrived;
+            t.target = NO_NODE;
+            t.edge = u32::MAX;
+            t.home_path.clear();
+            (std::mem::take(&mut t.members), t.household)
+        };
+        let home = self.households.get(hh).map(|h| h.home);
+        for p in members {
+            let person = &mut self.people[p];
+            person.traveller = None;
+            person.away = false;
+            person.status = Status::Normal;
+            if let Some(home) = home {
+                person.pos = home;
+            }
+        }
+        // A household that had already left is not there to be rejoined, and a
+        // person who walks into an empty house is on their own again — which is
+        // the outcome the reunification profile exists to make visible.
+        if let Some(h) = self.households.get(hh) {
+            if matches!(h.status, Status::Evacuated | Status::Casualty) || h.traveller.is_some() {
+                for p in &self.households[hh].members.clone() {
+                    if self.people[*p].away || self.people[*p].traveller.is_some() {
+                        continue;
+                    }
+                    self.people[*p].away = true;
+                }
+            }
+        }
+    }
+
     /// Put a household on the road.
     fn launch(&mut self, i: usize) {
         let (home, vehicles, members) = {
@@ -853,10 +1223,14 @@ impl Abm {
             (h.home, h.vehicles, h.members.clone())
         };
         // Only members who are actually at home leave with the household.
+        // `away` is the explicit half of that: someone out in the street has no
+        // traveller of their own only in the moment between arriving home and
+        // being folded back into the family, and they should not be swept up
+        // from the far side of town.
         let riding: Vec<usize> = members
             .iter()
             .copied()
-            .filter(|p| self.people[*p].traveller.is_none())
+            .filter(|p| self.people[*p].traveller.is_none() && !self.people[*p].away)
             .filter(|p| {
                 !matches!(self.people[*p].status, Status::Evacuated | Status::Casualty)
             })
@@ -912,6 +1286,8 @@ impl Abm {
             distance_m: 0.0,
             departed_s: self.time_s,
             solo: false,
+            goal: Goal::Refuge,
+            home_path: Vec::new(),
         };
         self.travellers.push(t);
         let ti = self.travellers.len() - 1;
@@ -933,7 +1309,7 @@ impl Abm {
 
         for ti in 0..self.travellers.len() {
             let t = &self.travellers[ti];
-            if matches!(t.state, TravelState::Safe | TravelState::Dead) {
+            if matches!(t.state, TravelState::Safe | TravelState::Dead | TravelState::Arrived) {
                 continue;
             }
 
@@ -1006,7 +1382,7 @@ impl Abm {
                     self.pick_next_hop(ti);
                     if matches!(
                         self.travellers[ti].state,
-                        TravelState::Safe | TravelState::Cutoff
+                        TravelState::Safe | TravelState::Cutoff | TravelState::Arrived
                     ) {
                         break;
                     }
@@ -1018,8 +1394,12 @@ impl Abm {
 
             // OSM ways run a little past the window edge, and the A10 and
             // the Aurelia both leave it. Driving off the map is leaving the
-            // incident, so it ends the same way reaching a refuge does.
-            if !scn.world.contains(self.travellers[ti].pos) {
+            // incident, so it ends the same way reaching a refuge does — but
+            // only for someone who was heading out. A person walking back to a
+            // house inside the window has not left anything.
+            if self.travellers[ti].goal == Goal::Refuge
+                && !scn.world.contains(self.travellers[ti].pos)
+            {
                 self.mark_safe(ti);
                 continue;
             }
@@ -1054,11 +1434,36 @@ impl Abm {
 
     /// Follow the route field one hop, or conclude there is nowhere to go.
     fn pick_next_hop(&mut self, ti: usize) {
-        let (mode, at) = {
+        let (mode, at, goal) = {
             let t = &self.travellers[ti];
-            (t.mode, t.at_node)
+            (t.mode, t.at_node, t.goal)
         };
         if at == NO_NODE {
+            return;
+        }
+        if goal == Goal::Home {
+            // A planned path rather than a field: walk it off the front, and
+            // when it runs out they are standing at the house.
+            let t = &mut self.travellers[ti];
+            while t.home_path.first() == Some(&at) {
+                t.home_path.remove(0);
+            }
+            match t.home_path.first().copied() {
+                Some(next) => {
+                    let edge = self
+                        .network
+                        .neighbours(at)
+                        .iter()
+                        .find(|e| e.to == next)
+                        .map(|e| e.id)
+                        .unwrap_or(u32::MAX);
+                    let t = &mut self.travellers[ti];
+                    t.target = next;
+                    t.edge = edge;
+                    t.state = TravelState::OnNetwork;
+                }
+                None => self.arrive_home(ti),
+            }
             return;
         }
         let routes = match mode {

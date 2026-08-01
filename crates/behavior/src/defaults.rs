@@ -32,6 +32,7 @@ use crate::value::UnitKindKey;
 
 pub const DEFAULT_GRAPH_ID: &str = "default-evacuation";
 pub const DEFAULT_UNIT_GRAPH_ID: &str = "default-unit-policy";
+pub const DEFAULT_PERSON_GRAPH_ID: &str = "default-separated-person";
 
 /// Small builder so the graphs below read as the models they are, rather than
 /// as forty lines of index arithmetic.
@@ -223,6 +224,127 @@ pub fn default_unit_graph() -> BehaviorGraph {
     b.g
 }
 
+// ---------------------------------------------------------------------------
+// Separated people
+// ---------------------------------------------------------------------------
+
+/// What one person away from their household does, as the model already did it.
+///
+/// Five nodes. The shipped answer has always been "walk to the nearest refuge
+/// and keep walking", and that is what the top two branches say. The third —
+/// going back for the family — is wired in but switched off at the block, which
+/// is the honest way to ship a behaviour that would change every casualty figure
+/// the game has printed: it is on the canvas where an author can see it, and it
+/// does nothing until someone turns it on.
+pub fn default_person_graph() -> BehaviorGraph {
+    let mut b = Build {
+        g: BehaviorGraph {
+            id: DEFAULT_PERSON_GRAPH_ID.to_string(),
+            name: "Walk out".to_string(),
+            domain: Domain::Person,
+            description:
+                "What someone who was away from home when it started does. They make for \
+                 the nearest refuge on foot straight away, and stop and shelter if the \
+                 way out is cut. Going back for the family is on the canvas and switched \
+                 off — turn it on in \"Going back for the family\" and watch the \
+                 casualty count."
+                    .to_string(),
+            nodes: Vec::new(),
+            wires: Vec::new(),
+        },
+    };
+
+    // --- column 1: the three assumptions ----------------------------------
+    let walk = b.add("block.person_walk_out", 0.0, 0.0);
+    // Zero, inclusive, so this fires on the first tick: the shipped behaviour.
+    b.num(walk, "alarm_needed", 0.0);
+    b.boolean(walk, "order_is_enough", true);
+    b.num(walk, "spread", 0.0);
+
+    let exposure = b.add("block.person_exposure", 0.0, 250.0);
+    b.num(exposure, "threat_limit", 0.55);
+    // 1.0 disables the heat trigger, which is what the movement layer did on its
+    // own: it only ever stopped someone who had nowhere left to walk.
+    b.num(exposure, "heat_limit", 1.0);
+
+    let reunite = b.add("block.person_reunite", 0.0, 520.0);
+    b.boolean(reunite, "enabled", false);
+    b.boolean(reunite, "only_if_family_home", true);
+    b.num(reunite, "max_home_distance_m", 1200.0);
+    b.num(reunite, "max_detour", 1.5);
+    b.num(reunite, "max_threat", 0.30);
+
+    // --- column 2: the proposals --------------------------------------------
+    let out_now = b.add("action.person_walk_out", 340.0, 20.0);
+    b.num(out_now, "priority", 1.0);
+    b.wire(walk, 0, out_now, 0);
+
+    // Sheltering outbids everything: with no route left, walking is what kills
+    // them, and it is the same ordering the household graph uses.
+    let shelter = b.add("action.person_shelter", 340.0, 280.0);
+    b.num(shelter, "priority", 4.0);
+    b.wire(exposure, 1, shelter, 0);
+
+    let home = b.add("action.person_head_home", 340.0, 540.0);
+    b.num(home, "priority", 2.0);
+    b.wire(reunite, 0, home, 0);
+
+    // --- column 3: the sink --------------------------------------------------
+    let decision = b.add("out.person_decision", 640.0, 250.0);
+    b.wire(out_now, 0, decision, 0);
+    b.wire(shelter, 0, decision, 0);
+    b.wire(home, 0, decision, 0);
+
+    // How far past survivable it is where they are standing. Nothing else in the
+    // interface says this for a person on foot.
+    let urgency = b.add("out.urgency", 640.0, 460.0);
+    b.wire(exposure, 2, urgency, 0);
+
+    b.g
+}
+
+/// Two person profiles, and the second is the point of the domain.
+///
+/// `walk-out` is the shipped model written down; `family-first` is the same
+/// graph with reunification switched on. Ships at share 0 — turning it on is a
+/// deliberate act, because it changes what the model says about who dies.
+pub fn default_person_subtypes() -> Vec<AgentSubtype> {
+    let g = default_person_graph();
+    let reunite = |param: &str| key(&g, "block.person_reunite", 0, param);
+    let walk = |param: &str| key(&g, "block.person_walk_out", 0, param);
+
+    let mut out = AgentSubtype::new("walk-out", "Walks out", DEFAULT_PERSON_GRAPH_ID);
+    out.description =
+        "Makes for the nearest refuge and keeps going. What the model has always done \
+         with people who were out when it started, and what the guidance tells them to \
+         do."
+            .to_string();
+    out.author = "shipped".to_string();
+    out.tags = vec!["baseline".into()];
+    out.share = 1.0;
+
+    let mut family = AgentSubtype::new("family-first", "Goes back for family", DEFAULT_PERSON_GRAPH_ID);
+    family.description =
+        "Turns round for the house while there is still someone in it and the way back \
+         is not already burning. The behaviour every post-fire study finds and no \
+         evacuation plan assumes. Ships at zero share: give it one and the casualty \
+         figures stop being comparable with anything measured before, which is exactly \
+         the comparison worth running."
+            .to_string();
+    family.author = "shipped".to_string();
+    family.tags = vec!["reunification".into(), "family".into()];
+    family.share = 0.0;
+    family.overrides.insert(reunite("enabled"), ParamValue::Bool(true));
+    // Someone who has not heard the family already left is the lethal case, and
+    // it is the one the interviews describe.
+    family.overrides.insert(reunite("only_if_family_home"), ParamValue::Bool(false));
+    family.overrides.insert(reunite("max_home_distance_m"), ParamValue::Number(2000.0));
+    family.overrides.insert(reunite("max_detour"), ParamValue::Number(3.0));
+    family.overrides.insert(walk("spread"), ParamValue::Number(0.1));
+
+    vec![out, family]
+}
+
 /// Override keys into a built graph, resolved by walking it rather than
 /// hard-coded, so a reordering of the builders cannot silently point a subtype
 /// at the wrong node.
@@ -366,7 +488,12 @@ pub fn default_library() -> crate::library::Library {
     let mut lib = crate::library::Library::default();
     lib.graphs.insert(DEFAULT_GRAPH_ID.to_string(), default_graph());
     lib.graphs.insert(DEFAULT_UNIT_GRAPH_ID.to_string(), default_unit_graph());
-    for s in default_subtypes().into_iter().chain(default_unit_subtypes()) {
+    lib.graphs.insert(DEFAULT_PERSON_GRAPH_ID.to_string(), default_person_graph());
+    for s in default_subtypes()
+        .into_iter()
+        .chain(default_unit_subtypes())
+        .chain(default_person_subtypes())
+    {
         lib.subtypes.insert(s.id.clone(), s);
     }
     lib

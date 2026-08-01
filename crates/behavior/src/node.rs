@@ -20,7 +20,7 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::Domain;
-use crate::observation::{HouseholdObs, Observation, UnitObs};
+use crate::observation::{HouseholdObs, Observation, PersonObs, UnitObs};
 use crate::value::{ActionKind, ActionProposal, IntentValue, UnitKindKey, Value, ValueType};
 
 #[cfg(feature = "reflect")]
@@ -259,11 +259,11 @@ impl<'a> Inputs<'a> {
 
 /// Everything a node may read that is not on a wire.
 ///
-/// The two accessors are how a domain-tagged node reaches its own observation.
-/// Neither can fail: the validator has already refused a graph containing a
-/// node of a domain other than its own, so a `Household` node only ever runs
-/// against a household. See [`Observation::household`] for why that is a
-/// default rather than a panic.
+/// The accessors are how a domain-tagged node reaches its own observation.
+/// None can fail: the validator has already refused a graph containing a node
+/// of a domain other than its own, so a `Household` node only ever runs against
+/// a household. See [`Observation::household`] for why that is a default rather
+/// than a panic.
 pub struct EvalCtx<'a> {
     pub obs: &'a Observation,
 }
@@ -274,6 +274,9 @@ impl<'a> EvalCtx<'a> {
     }
     pub fn unit(&self) -> UnitObs {
         self.obs.unit()
+    }
+    pub fn person(&self) -> PersonObs {
+        self.obs.person()
     }
     pub fn domain(&self) -> Domain {
         self.obs.domain()

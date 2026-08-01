@@ -38,8 +38,10 @@ use behavior::{
     BehaviorGraph, Domain, Library, Observation, ParamValue, Report, Wire,
 };
 
-mod bench;
+pub mod bench;
+mod help;
 mod inspector;
+pub mod live;
 mod palette;
 mod subtypes;
 mod viewer;
@@ -53,6 +55,47 @@ pub enum RightTab {
     Inspector,
     Subtypes,
     Bench,
+    /// What the selected agent's behaviour is doing right now.
+    Live,
+    Help,
+}
+
+impl RightTab {
+    pub const ALL: [RightTab; 5] = [
+        RightTab::Inspector,
+        RightTab::Subtypes,
+        RightTab::Bench,
+        RightTab::Live,
+        RightTab::Help,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            RightTab::Inspector => "Node",
+            RightTab::Subtypes => "Profiles",
+            RightTab::Bench => "Bench",
+            RightTab::Live => "Live",
+            RightTab::Help => "Help",
+        }
+    }
+
+    pub fn doc(self) -> &'static str {
+        match self {
+            RightTab::Inspector => {
+                "The selected node: what it does, and the numbers it turns on."
+            }
+            RightTab::Subtypes => {
+                "Named profiles over this behaviour, and which agents run them."
+            }
+            RightTab::Bench => {
+                "Put a made-up agent in a situation and read the answer back node by node."
+            }
+            RightTab::Live => {
+                "Watch the agent selected on the map decide, tick by tick, on this canvas."
+            }
+            RightTab::Help => "How to build, run, debug and share a behaviour.",
+        }
+    }
 }
 
 /// The composer's whole state.
@@ -94,6 +137,17 @@ pub struct Composer {
     pub compare_with: Option<String>,
 
     pub bench: bench::Bench,
+    /// Watching one agent's behaviour run. See [`live`].
+    pub live: live::Live,
+
+    /// What the last read of the library directory found, file by file.
+    ///
+    /// Kept so the Help tab can list what is on disk *and what would not load*.
+    /// A malformed file that is silently skipped is the worst of both: the
+    /// author's edit is gone and nothing says where.
+    pub load_report: Vec<behavior::FileReport>,
+    /// Path typed into the import/export field.
+    pub transfer_path: String,
 
     /// One line under the toolbar: what just happened.
     pub status: String,
@@ -106,10 +160,28 @@ pub struct Composer {
 #[derive(Event)]
 pub struct ApplyBehaviour;
 
+/// `SPOTORNO_BEHAVIOUR=1`: run the library from the first frame.
+///
+/// Applying is a button click, so an unattended run cannot reach it — and the
+/// live execution view has nothing to show under the hand-written model, which
+/// is the state a screenshot would otherwise always catch it in. The same
+/// reason `SPOTORNO_WATCH` exists.
+#[derive(Resource)]
+struct ApplyOnStart(bool);
+
+fn apply_on_start(mut once: ResMut<ApplyOnStart>, mut apply: EventWriter<ApplyBehaviour>) {
+    if std::mem::take(&mut once.0) {
+        apply.send(ApplyBehaviour);
+    }
+}
+
 impl Composer {
     fn new(root: PathBuf) -> Composer {
-        let lib = Library::load_or_default(&root);
-        // Open on a civilian behaviour when there is one: it is the domain the
+        // The reported form, so the Help tab can show which files loaded and
+        // which did not. `load_or_default` does the same read; doing it here
+        // means the report and the library came from one pass over the disk.
+        let (lib, load_report) = read_library(&root);
+        // Open on a household behaviour when there is one: it is the domain the
         // composer is mostly used for, and opening on whichever id sorts first
         // would make that a property of the alphabet.
         let graph_id = lib
@@ -136,6 +208,8 @@ impl Composer {
             right: match std::env::var("SPOTORNO_COMPOSER").as_deref() {
                 Ok("subtypes") => RightTab::Subtypes,
                 Ok("test") => RightTab::Bench,
+                Ok("live") => RightTab::Live,
+                Ok("help") => RightTab::Help,
                 _ => RightTab::Inspector,
             },
             palette_query: String::new(),
@@ -144,6 +218,9 @@ impl Composer {
             subtype: None,
             compare_with: None,
             bench: bench::Bench::default(),
+            live: live::Live::following(),
+            load_report,
+            transfer_path: String::new(),
             status: String::new(),
             status_is_error: false,
             dirty: false,
@@ -157,7 +234,8 @@ impl Composer {
         if let Ok(key) = std::env::var("SPOTORNO_COMPOSER_DOMAIN") {
             match Domain::from_key(&key).or(match key.as_str() {
                 "units" | "unit" | "suppression" => Some(Domain::SuppressionUnit),
-                "civilians" | "people" => Some(Domain::Household),
+                "civilians" | "households" => Some(Domain::Household),
+                "people" | "persons" | "separated" => Some(Domain::Person),
                 _ => None,
             }) {
                 Some(d) => c.switch_domain(d),
@@ -165,6 +243,15 @@ impl Composer {
             }
         }
         c
+    }
+
+    /// The snarl handle for a node the model, the validator or a trace names.
+    ///
+    /// Those all speak [`behavior::NodeId`]; snarl speaks its own. The two used
+    /// to be the same number, which is exactly what made them impossible to keep
+    /// in step — see [`EditorNode`].
+    pub fn snarl_id_of(&self, id: behavior::NodeId) -> Option<egui_snarl::NodeId> {
+        self.snarl.node_ids().find(|(_, n)| n.id == id).map(|(sid, _)| sid)
     }
 
     /// Pull a graph out of the library and into the canvas.
@@ -179,17 +266,18 @@ impl Composer {
         self.graph_domain = g.domain;
         self.snarl = Snarl::new();
         self.selected = None;
+        self.live.frame = None;
 
-        // Snarl hands out its own ids on insert, so the graph's ids are
-        // translated rather than preserved. That is fine going in; coming back
-        // out, `to_graph` uses snarl's ids, which is what subtype overrides are
-        // then keyed on. The two agree because a load is immediately followed
-        // by a `sync`, and `prune_overrides` remaps anything that moved.
+        // The file's node ids are carried onto the canvas and back out again,
+        // so a subtype override — keyed `<node id>.<param>` — keeps pointing at
+        // the same box across a load, a save and a rebuild. Snarl's own handles
+        // are an editing detail and never leave this file.
         let mut map: BTreeMap<behavior::NodeId, egui_snarl::NodeId> = BTreeMap::new();
         for n in &g.nodes {
             let sid = self.snarl.insert_node(
                 egui::pos2(n.pos[0], n.pos[1]),
                 EditorNode {
+                    id: n.id,
                     type_id: n.type_id.clone(),
                     params: n.params.clone(),
                     comment: n.comment.clone(),
@@ -207,29 +295,7 @@ impl Composer {
             );
         }
 
-        // Overrides were keyed on the *file's* node ids; after the translation
-        // they have to be keyed on snarl's. Doing it here rather than lazily
-        // means a subtype never silently stops overriding anything.
-        self.remap_overrides(id, &map);
         self.sync();
-    }
-
-    fn remap_overrides(&mut self, graph_id: &str, map: &BTreeMap<behavior::NodeId, egui_snarl::NodeId>) {
-        for s in self.lib.subtypes.values_mut() {
-            if s.graph != graph_id {
-                continue;
-            }
-            let remapped = s
-                .overrides
-                .iter()
-                .filter_map(|(k, v)| {
-                    let (node, param) = behavior::subtype::split_key(k)?;
-                    let sid = map.get(&node)?;
-                    Some((BehaviorGraph::override_key(sid.0 as u32, param), v.clone()))
-                })
-                .collect();
-            s.overrides = remapped;
-        }
     }
 
     /// Project the canvas back into a [`BehaviorGraph`] and revalidate.
@@ -241,9 +307,9 @@ impl Composer {
     pub fn to_graph(&self) -> BehaviorGraph {
         let mut g = BehaviorGraph::new_in(self.graph_domain, &self.graph_id, &self.graph_name);
         g.description = self.graph_description.clone();
-        for (id, pos, node) in self.snarl.nodes_pos_ids() {
+        for (_, pos, node) in self.snarl.nodes_pos_ids() {
             g.nodes.push(behavior::GraphNode {
-                id: id.0 as behavior::NodeId,
+                id: node.id,
                 type_id: node.type_id.clone(),
                 pos: [pos.x, pos.y],
                 params: node.params.clone(),
@@ -251,11 +317,15 @@ impl Composer {
             });
         }
         g.nodes.sort_by_key(|n| n.id);
+        let id_of = |sid: egui_snarl::NodeId| self.snarl.get_node(sid).map(|n| n.id);
         for (out, inp) in self.snarl.wires() {
+            let (Some(from_node), Some(to_node)) = (id_of(out.node), id_of(inp.node)) else {
+                continue;
+            };
             g.wires.push(Wire {
-                from_node: out.node.0 as behavior::NodeId,
+                from_node,
                 from_port: out.output as u16,
-                to_node: inp.node.0 as behavior::NodeId,
+                to_node,
                 to_port: inp.input as u16,
             });
         }
@@ -272,21 +342,136 @@ impl Composer {
     pub fn save(&mut self) {
         self.commit();
         match self.lib.save_dir(&self.root) {
-            Ok(()) => self.set_status(format!("saved to {}", self.root.display())),
+            Ok(()) => {
+                let (graphs, subtypes) = (self.lib.graphs.len(), self.lib.subtypes.len());
+                self.set_status(format!(
+                    "saved {graphs} behaviour(s) and {subtypes} profile(s) to {}",
+                    self.root.display()
+                ));
+                // The listing the Help tab shows is now out of date by exactly
+                // the files just written.
+                self.refresh_load_report();
+            }
             Err(e) => self.set_error(format!("{e:#}")),
         }
     }
 
     pub fn reload(&mut self) {
-        match Library::load_dir(&self.root) {
-            Ok(lib) if !lib.graphs.is_empty() => {
-                self.lib = lib;
-                let id = self.graph_id.clone();
-                let first = self.lib.graphs.keys().next().cloned().unwrap_or_default();
-                self.load_graph(if self.lib.graphs.contains_key(&id) { &id } else { &first });
-                self.set_status("reloaded from disk".into());
+        let (lib, report) = read_library(&self.root);
+        self.load_report = report;
+        if lib.graphs.is_empty() {
+            self.set_error("nothing saved there yet".into());
+            return;
+        }
+        self.lib = lib;
+        let id = self.graph_id.clone();
+        let first = self.lib.graphs.keys().next().cloned().unwrap_or_default();
+        self.load_graph(if self.lib.graphs.contains_key(&id) { &id } else { &first });
+        self.dirty = true;
+
+        let bad = self.load_report.iter().filter(|f| !f.ok()).count();
+        if bad == 0 {
+            self.set_status(format!(
+                "reloaded {} behaviour(s) and {} profile(s)",
+                self.lib.graphs.len(),
+                self.lib.subtypes.len()
+            ));
+        } else {
+            // Loud, and it names a count rather than a file: the Help tab lists
+            // each one with its parse error, and repeating the first here would
+            // suggest it was the only one.
+            self.set_error(format!(
+                "reloaded, but {bad} file(s) would not load — see Help ▸ Files on disk"
+            ));
+        }
+    }
+
+    fn refresh_load_report(&mut self) {
+        self.load_report = read_library(&self.root).1;
+    }
+
+    /// Read one behaviour or profile from an arbitrary path into the library.
+    ///
+    /// Does not overwrite: an id already in the library gets a free one, and the
+    /// status says so. Silently replacing a graph someone is editing with one
+    /// from a file they were only looking at is the kind of thing an editor gets
+    /// exactly one chance to do.
+    pub fn import(&mut self, path: &str) {
+        let path = std::path::Path::new(path.trim());
+        if path.as_os_str().is_empty() {
+            self.set_error("give a path to a .json file".into());
+            return;
+        }
+        match Library::import_file(path) {
+            Ok(behavior::Imported::Graph(mut g)) => {
+                let wanted = g.id.clone();
+                let id = self.lib.free_id(&g.id, true);
+                let renamed = id != wanted;
+                g.id = id.clone();
+                let domain = g.domain;
+                self.lib.graphs.insert(id.clone(), g);
+                self.commit();
+                self.graph_domain = domain;
+                self.load_graph(&id);
+                self.subtype = self.first_subtype_in(domain);
+                self.dirty = true;
+                self.set_status(if renamed {
+                    format!("imported behaviour as \"{id}\" — \"{wanted}\" was taken")
+                } else {
+                    format!("imported behaviour \"{id}\"")
+                });
             }
-            Ok(_) => self.set_error("nothing saved there yet".into()),
+            Ok(behavior::Imported::Subtype(mut s)) => {
+                let wanted = s.id.clone();
+                let id = self.lib.free_id(&s.id, false);
+                let renamed = id != wanted;
+                s.id = id.clone();
+                let missing = !self.lib.graphs.contains_key(&s.graph);
+                let graph = s.graph.clone();
+                self.lib.subtypes.insert(id.clone(), s);
+                self.subtype = Some(id.clone());
+                self.right = RightTab::Subtypes;
+                self.dirty = true;
+                if missing {
+                    // It loaded; it just cannot run. Reported rather than
+                    // refused, because importing the profile and then its graph
+                    // is a perfectly ordinary order to do it in.
+                    self.set_error(format!(
+                        "imported profile \"{id}\", but its behaviour \"{graph}\" is not loaded"
+                    ));
+                } else {
+                    self.set_status(if renamed {
+                        format!("imported profile as \"{id}\" — \"{wanted}\" was taken")
+                    } else {
+                        format!("imported profile \"{id}\"")
+                    });
+                }
+            }
+            Err(e) => self.set_error(format!("{e:#}")),
+        }
+    }
+
+    /// Write the open behaviour, or the selected profile, to an arbitrary path.
+    pub fn export(&mut self, path: &str, graph: bool) {
+        let path = std::path::Path::new(path.trim());
+        if path.as_os_str().is_empty() {
+            self.set_error("give a path to write to".into());
+            return;
+        }
+        let r = if graph {
+            self.commit();
+            Library::export_graph(&self.graph, path)
+        } else {
+            match self.subtype.as_ref().and_then(|id| self.lib.subtypes.get(id)) {
+                Some(s) => Library::export_subtype(s, path),
+                None => {
+                    self.set_error("no profile selected".into());
+                    return;
+                }
+            }
+        };
+        match r {
+            Ok(()) => self.set_status(format!("wrote {}", path.display())),
             Err(e) => self.set_error(format!("{e:#}")),
         }
     }
@@ -348,6 +533,7 @@ impl Composer {
             match domain {
                 Domain::Household => "new-behaviour",
                 Domain::SuppressionUnit => "new-unit-policy",
+                Domain::Person => "new-person-behaviour",
             },
             true,
         );
@@ -376,7 +562,7 @@ impl Composer {
                 .filter(move |s| self.lib.domain_of(s) == Some(domain))
         };
         let live = |s: &&behavior::AgentSubtype| match domain {
-            Domain::Household => s.share > 0.0,
+            Domain::Household | Domain::Person => s.share > 0.0,
             Domain::SuppressionUnit => s.enabled,
         };
         mine()
@@ -394,6 +580,19 @@ impl Composer {
             .filter(|s| s.graph == self.graph_id)
             .map(|s| s.overrides.clone())
             .unwrap_or_default()
+    }
+}
+
+/// Read the library directory, keeping the per-file report.
+///
+/// Lenient about individual files by design: one graph with a stray comma costs
+/// that graph and not the other nine, and the report is what turns a skipped
+/// file from a silent loss into a line in the Help tab.
+fn read_library(root: &PathBuf) -> (Library, Vec<behavior::FileReport>) {
+    match Library::load_dir_reported(root) {
+        Ok(r) if !r.library.graphs.is_empty() => (r.library, r.files),
+        Ok(r) => (behavior::defaults::default_library(), r.files),
+        Err(_) => (behavior::defaults::default_library(), Vec::new()),
     }
 }
 
@@ -423,6 +622,7 @@ impl Plugin for ComposerPlugin {
             .join(behavior::library::DEFAULT_DIR);
 
         app.insert_resource(Composer::new(root))
+            .insert_resource(ApplyOnStart(std::env::var("SPOTORNO_BEHAVIOUR").is_ok()))
             .add_event::<ApplyBehaviour>()
             // Bevy's reflection registry, so the composer's value types are
             // visible to anything that walks the type registry — the entity
@@ -438,7 +638,11 @@ impl Plugin for ComposerPlugin {
             .register_type::<Observation>()
             .add_systems(
                 Update,
-                (toggle, window)
+                // `capture` runs first so the canvas draws the state the last
+                // step produced; `transport_requests` runs last so a play or a
+                // step asked for in the panel lands before the next frame's
+                // `step_fire`.
+                (apply_on_start, live::capture, toggle, window, live::transport_requests)
                     .chain()
                     .run_if(in_state(crate::AppState::Playing)),
             );
@@ -503,16 +707,29 @@ fn window(
                 .resizable(true)
                 .default_width(360.0)
                 .show_inside(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut c.right, RightTab::Inspector, "Inspector");
-                        ui.selectable_value(&mut c.right, RightTab::Subtypes, "Subtypes");
-                        ui.selectable_value(&mut c.right, RightTab::Bench, "Test");
+                    ui.horizontal_wrapped(|ui| {
+                        for tab in RightTab::ALL {
+                            // The Live tab announces itself when there is
+                            // something to watch: a scientist who has just
+                            // clicked a household on the map should not have to
+                            // discover that a tab over here filled up.
+                            let watching = tab == RightTab::Live && c.live.watching();
+                            let label = if watching {
+                                format!("● {}", tab.label())
+                            } else {
+                                tab.label().to_string()
+                            };
+                            ui.selectable_value(&mut c.right, tab, label)
+                                .on_hover_text(tab.doc());
+                        }
                     });
                     ui.separator();
                     egui::ScrollArea::vertical().show(ui, |ui| match c.right {
                         RightTab::Inspector => inspector::panel(ui, c),
                         RightTab::Subtypes => subtypes::panel(ui, c),
                         RightTab::Bench => bench::panel(ui, c),
+                        RightTab::Live => live::panel(ui, c),
+                        RightTab::Help => help::panel(ui, c),
                     });
                 });
             egui::TopBottomPanel::bottom("composer-issues")
@@ -666,7 +883,7 @@ fn issues(ui: &mut egui::Ui, c: &mut Composer) {
                 let r = ui.label(&issue.message);
                 if let Some(n) = issue.node {
                     if r.interact(egui::Sense::click()).clicked() {
-                        c.selected = Some(egui_snarl::NodeId(n as usize));
+                        c.selected = c.snarl_id_of(n);
                         c.right = RightTab::Inspector;
                     }
                 }

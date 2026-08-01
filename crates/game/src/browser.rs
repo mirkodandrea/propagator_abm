@@ -107,7 +107,7 @@ pub fn entities_body(
         .auto_shrink([false, false])
         .show_rows(ui, row_h, rows.len(), |ui, range| {
             for &t in &rows[range] {
-                let is_selected = selected.0 == Some(t);
+                let is_selected = selected.target == Some(t);
                 let label = row_label(sim, t);
                 let resp = ui.selectable_label(is_selected, label);
                 if resp.clicked() {
@@ -117,7 +117,7 @@ pub fn entities_body(
         });
 
     if let Some(t) = jump_to {
-        selected.0 = Some(t);
+        selected.target = Some(t);
         if let (Some(pos), Ok(mut orbit)) = (target_pos(sim, t), camera.get_single_mut()) {
             let ground = sim.scenario.terrain.height_at(pos);
             orbit.focus = frame::to_bevy(pos, ground);

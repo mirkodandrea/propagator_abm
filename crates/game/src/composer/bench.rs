@@ -144,6 +144,7 @@ fn situation_picker(ui: &mut egui::Ui, c: &mut Composer) {
             match domain {
                 Domain::Household => household_inputs(ui, &mut c.bench.obs),
                 Domain::SuppressionUnit => unit_inputs(ui, &mut c.bench.obs),
+                Domain::Person => person_inputs(ui, &mut c.bench.obs),
             }
         });
         // Editing anything makes this a situation of the author's own, and
@@ -260,6 +261,37 @@ fn unit_inputs(ui: &mut egui::Ui, obs: &mut Observation) {
     );
 }
 
+fn person_inputs(ui: &mut egui::Ui, obs: &mut Observation) {
+    let Some(o) = obs.person_mut() else { return };
+
+    slider(ui, "Time (min)", &mut o.time_min, 0.0, 180.0);
+    slider(ui, "Threat where they stand", &mut o.threat, 0.0, 1.0);
+    slider(ui, "Accumulated heat", &mut o.heat_fraction, 0.0, 1.0);
+    slider(ui, "Distance to fire (m)", &mut o.fire_distance_m, 0.0, 2500.0);
+    slider(ui, "Perceived alarm", &mut o.cue, 0.0, 1.0);
+    slider(ui, "Minutes since order", &mut o.minutes_since_order, 0.0, 180.0);
+    slider(ui, "Age", &mut o.age, 0.0, 100.0);
+    slider(ui, "Walking speed (m/s)", &mut o.walk_speed, 0.2, 2.0);
+    slider(ui, "Distance home (m)", &mut o.home_distance_m, 0.0, 3000.0);
+    slider(ui, "Distance to refuge (m)", &mut o.refuge_distance_m, 0.0, 3000.0);
+    slider(ui, "Individual variation", &mut o.jitter, 0.0, 1.0);
+
+    flags(
+        ui,
+        &mut [
+            ("Order issued", &mut o.order_issued),
+            ("Needs assistance", &mut o.needs_assistance),
+            ("Family still at home", &mut o.household_at_home),
+            ("Family already safe", &mut o.household_safe),
+            ("Home is alight", &mut o.home_alight),
+            ("Route blocked", &mut o.route_blocked),
+            ("Already walking", &mut o.is_moving),
+            ("Already heading home", &mut o.is_heading_home),
+            ("Already sheltering", &mut o.is_sheltering),
+        ],
+    );
+}
+
 /// Compile the canvas with the selected profile's overrides applied — the same
 /// thing the model would run.
 fn compiled(c: &Composer) -> Option<CompiledGraph> {
@@ -301,6 +333,10 @@ fn evaluate(ui: &mut egui::Ui, c: &mut Composer) {
             Domain::SuppressionUnit => {
                 "Nothing fired — the unit gets on with the order it was given, which is \
                  the common case."
+            }
+            Domain::Person => {
+                "Nothing fired — they carry on doing whatever they were doing, which for \
+                 almost everyone in this domain means walking out."
             }
         });
     } else {
@@ -344,12 +380,13 @@ fn trace_list(ui: &mut egui::Ui, c: &mut Composer, trace: &Trace) {
                 .map(behavior::Value::display)
                 .collect::<Vec<_>>()
                 .join(", ");
+            let here = c.selected.and_then(|s| c.snarl.get_node(s)).map(|e| e.id);
             let r = ui.selectable_label(
-                c.selected.map(|s| s.0 as u32) == Some(n.node),
+                here == Some(n.node),
                 format!("{}  =  {values}", n.name),
             );
             if r.clicked() {
-                select = Some(egui_snarl::NodeId(n.node as usize));
+                select = c.snarl_id_of(n.node);
             }
         }
     });
@@ -498,21 +535,29 @@ fn profiles(ui: &mut egui::Ui, c: &mut Composer) {
 /// One colour per action, shared by the proposal list, the trace and the sweep
 /// strip.
 ///
-/// The two domains reuse the same five hues on purpose, matched by what the
+/// The three domains reuse the same five hues on purpose, matched by what the
 /// action *means* rather than by position: grey is "nothing changed", amber is
 /// "getting ready to move", blue is "moving", green is "committing to the job",
 /// red is "this is the dangerous one". Only one domain's actions are ever on
 /// screen at a time, so there is nothing to tell apart.
-fn action_colour(a: ActionKind) -> egui::Color32 {
+pub fn action_colour(a: ActionKind) -> egui::Color32 {
     match a {
-        ActionKind::Stay | ActionKind::Continue => egui::Color32::from_rgb(0x5a, 0x60, 0x68),
+        ActionKind::Stay | ActionKind::Continue | ActionKind::Remain => {
+            egui::Color32::from_rgb(0x5a, 0x60, 0x68)
+        }
         ActionKind::Prepare | ActionKind::HoldPosition => {
             egui::Color32::from_rgb(0xd8, 0xa6, 0x4b)
         }
-        ActionKind::EvacuateNow | ActionKind::ReturnToBase => {
+        ActionKind::EvacuateNow | ActionKind::ReturnToBase | ActionKind::WalkOut => {
             egui::Color32::from_rgb(0x6f, 0xb1, 0xe8)
         }
-        ActionKind::Defend | ActionKind::Refill => egui::Color32::from_rgb(0x7a, 0xb2, 0x8a),
-        ActionKind::Shelter | ActionKind::Withdraw => egui::Color32::from_rgb(0xe0, 0x6c, 0x5f),
+        // Going home is a commitment to a destination, the same shape of choice
+        // defending and refilling are.
+        ActionKind::Defend | ActionKind::Refill | ActionKind::HeadHome => {
+            egui::Color32::from_rgb(0x7a, 0xb2, 0x8a)
+        }
+        ActionKind::Shelter | ActionKind::Withdraw | ActionKind::TakeShelter => {
+            egui::Color32::from_rgb(0xe0, 0x6c, 0x5f)
+        }
     }
 }

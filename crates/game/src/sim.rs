@@ -80,6 +80,13 @@ pub struct Sim {
     pub playing: bool,
     /// Simulated seconds per wall-clock second.
     pub speed: f32,
+    /// Decision ticks the player has asked for one at a time, and which run
+    /// whether or not the sim is playing.
+    ///
+    /// A counter rather than a flag so holding the key down queues steps instead
+    /// of dropping all but the last, and so a step asked for on a frame that
+    /// already stepped is not silently lost.
+    pub step_requests: u32,
     accumulator: f32,
     /// Bumped whenever the fire state changes, so views rebuild only then.
     ///
@@ -195,6 +202,7 @@ impl Sim {
             // and for headless timing runs.
             playing: std::env::var("SPOTORNO_AUTOPLAY").is_ok(),
             speed: 8.0,
+            step_requests: 0,
             accumulator: 0.0,
             generation: 0,
             ignitions: vec![Ignition {
@@ -230,12 +238,21 @@ impl Sim {
         }
     }
 
+    /// The same, for the people who are away from their household.
+    fn person_runtime(&self) -> anyhow::Result<Option<abm::PersonRuntime>> {
+        match &self.behaviour {
+            None => Ok(None),
+            Some(lib) => abm::PersonRuntime::build(lib)
+                .map_err(|e| anyhow::anyhow!("authored person behaviour: {e}")),
+        }
+    }
+
     /// The same, for the suppression half of the library.
     ///
     /// Separate from [`Sim::runtime`] rather than one call returning both,
     /// because they are independent: a library may author the civilians, the
-    /// units, both or neither, and each half falls back to its own hand-written
-    /// model on its own.
+    /// separated people, the units, any combination or none, and each falls back
+    /// to its own hand-written model on its own.
     fn unit_runtime(&self) -> anyhow::Result<Option<abm::UnitRuntime>> {
         match &self.behaviour {
             None => Ok(None),
@@ -291,7 +308,12 @@ impl Sim {
             }
         }
 
-        self.agents = Abm::with_behavior(&self.scenario, self.seed, self.runtime()?)?;
+        self.agents = Abm::with_behaviours(
+            &self.scenario,
+            self.seed,
+            self.runtime()?,
+            self.person_runtime()?,
+        )?;
         // Rebuilt, not reset: a restart has to discard every order the player
         // gave, every litre spent and every metre of line cut, or comparing two
         // plans compares nothing. The roster is deterministic, so unit ids are
@@ -410,78 +432,109 @@ impl Sim {
         let t = self.fire.time_s();
         format!("{:02}:{:02}:{:02}", t / 3600, (t / 60) % 60, t % 60)
     }
+
+    /// Ask for one decision tick, to be run on the next frame whether or not
+    /// the sim is playing.
+    ///
+    /// This is the granularity a behaviour is *authored* at: the fire's own
+    /// quantum is 2 s and almost every one of those shows no behavioural change
+    /// at all, so stepping by it would mean pressing the key three times to see
+    /// anything and having no way to know which press did it.
+    pub fn request_step(&mut self) {
+        self.step_requests = self.step_requests.saturating_add(1);
+    }
+
+    /// Advance the whole incident by exactly `seconds` of simulated time.
+    ///
+    /// Extracted from the frame loop so a step and a play frame are the same
+    /// code: a single-step facility that took a different path through the
+    /// scheduled ignitions or the auto-order would step something other than
+    /// what plays.
+    pub fn advance(&mut self, seconds: i64) -> anyhow::Result<()> {
+        if seconds <= 0 {
+            return Ok(());
+        }
+
+        if let Some(at) = self.auto_order_s {
+            if self.time_s() >= at {
+                let n = self.agents.order_evacuation_all();
+                info!("scheduled general evacuation at T+{at}s: {n} households");
+                self.auto_order_s = None;
+            }
+        }
+
+        if let Some(at) = self.auto_attack_s {
+            if self.time_s() >= at {
+                self.auto_attack_s = None;
+                let n = self.commit_all_to_head();
+                info!("scheduled initial attack at T+{at}s: {n} units committed");
+            }
+        }
+
+        // Replayed mid-run ignitions, lit as the clock reaches them. Only ever
+        // non-empty after a restart: see `Sim::restart`.
+        if !self.pending_ignitions.is_empty() {
+            let now = self.time_s();
+            let due: Vec<Ignition> = self
+                .pending_ignitions
+                .iter()
+                .copied()
+                .filter(|i| i.at_s <= now)
+                .collect();
+            self.pending_ignitions.retain(|i| i.at_s > now);
+            for ig in due {
+                let Sim { fire, scenario, .. } = self;
+                if let Err(e) = fire.ignite_patch(ig.centre, ig.radius_m, scenario) {
+                    warn!("replayed ignition at T+{}s failed: {e:#}", ig.at_s);
+                }
+            }
+        }
+
+        self.fire.advance(seconds)?;
+        let Sim { fire, agents, crews, scenario, .. } = self;
+        agents.step(seconds as f32, fire, scenario);
+        // The units read the fire, then the fire is handed what they did.
+        // Queued rather than applied, so it lands as one merged boundary
+        // condition on the next advance: see `Suppression::step`.
+        for action in crews.step(seconds as f32, &agents.network, fire, scenario) {
+            fire.queue(action);
+        }
+        self.generation += 1;
+        Ok(())
+    }
 }
 
+/// Simulated seconds one requested step covers.
+///
+/// One household decision interval, rounded up to the fire's own quantum so the
+/// step lands on a boundary the core can actually advance to. Every agent in
+/// every domain gets exactly one decision out of it.
+pub const STEP_S: i64 =
+    ((abm::DECISION_S as i64 + STEP_QUANTUM_S - 1) / STEP_QUANTUM_S) * STEP_QUANTUM_S;
+
 pub fn step_fire(mut sim: ResMut<Sim>, time: Res<Time>) {
-    if !sim.playing {
+    // A requested step runs whether or not the clock is running, and takes
+    // precedence: someone who has paused to read a behaviour and pressed the
+    // step key wants that step, not a frame of free running.
+    let advance = if sim.step_requests > 0 {
+        sim.step_requests -= 1;
+        STEP_S
+    } else if sim.playing {
+        let dt = time.delta_seconds().min(0.25) * sim.speed;
+        sim.accumulator = (sim.accumulator + dt).min(MAX_STEP_PER_FRAME_S);
+        let whole = sim.accumulator as i64;
+        if whole < STEP_QUANTUM_S {
+            return;
+        }
+        let advance = (whole / STEP_QUANTUM_S) * STEP_QUANTUM_S;
+        sim.accumulator -= advance as f32;
+        advance
+    } else {
         return;
-    }
-    let dt = time.delta_seconds().min(0.25) * sim.speed;
-    sim.accumulator = (sim.accumulator + dt).min(MAX_STEP_PER_FRAME_S);
+    };
 
-    let whole = sim.accumulator as i64;
-    if whole < STEP_QUANTUM_S {
-        return;
-    }
-    let advance = (whole / STEP_QUANTUM_S) * STEP_QUANTUM_S;
-    sim.accumulator -= advance as f32;
-
-    if let Some(at) = sim.auto_order_s {
-        if sim.time_s() >= at {
-            let n = sim.agents.order_evacuation_all();
-            info!("scheduled general evacuation at T+{at}s: {n} households");
-            sim.auto_order_s = None;
-        }
-    }
-
-    if let Some(at) = sim.auto_attack_s {
-        if sim.time_s() >= at {
-            sim.auto_attack_s = None;
-            let n = sim.commit_all_to_head();
-            info!("scheduled initial attack at T+{at}s: {n} units committed");
-        }
-    }
-
-    // Replayed mid-run ignitions, lit as the clock reaches them. Only ever
-    // non-empty after a restart: see `Sim::restart`.
-    if !sim.pending_ignitions.is_empty() {
-        let now = sim.time_s();
-        let due: Vec<Ignition> = sim
-            .pending_ignitions
-            .iter()
-            .copied()
-            .filter(|i| i.at_s <= now)
-            .collect();
-        sim.pending_ignitions.retain(|i| i.at_s > now);
-        for ig in due {
-            let Sim { fire, scenario, .. } = &mut *sim;
-            if let Err(e) = fire.ignite_patch(ig.centre, ig.radius_m, scenario) {
-                warn!("replayed ignition at T+{}s failed: {e:#}", ig.at_s);
-            }
-        }
-    }
-
-    match sim.fire.advance(advance) {
-        Ok(_) => {
-            let Sim {
-                fire,
-                agents,
-                crews,
-                scenario,
-                ..
-            } = &mut *sim;
-            agents.step(advance as f32, fire, scenario);
-            // The units read the fire, then the fire is handed what they did.
-            // Queued rather than applied, so it lands as one merged boundary
-            // condition on the next advance: see `Suppression::step`.
-            for action in crews.step(advance as f32, &agents.network, fire, scenario) {
-                fire.queue(action);
-            }
-            sim.generation += 1;
-        }
-        Err(e) => {
-            error!("fire core failed: {e:#}");
-            sim.playing = false;
-        }
+    if let Err(e) = sim.advance(advance) {
+        error!("fire core failed: {e:#}");
+        sim.playing = false;
     }
 }

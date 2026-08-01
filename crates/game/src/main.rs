@@ -92,7 +92,7 @@ fn main() -> anyhow::Result<()> {
     .init_resource::<ui::UiFocus>()
     .init_resource::<ui::HelpUi>()
     .init_resource::<ignition_edit::IgnitionTool>()
-    .init_resource::<inspect::Selected>()
+    .insert_resource(inspect::Selected::from_env())
     .init_resource::<inspect::ClickTracker>()
     .init_resource::<command::OrderTool>()
     .init_resource::<browser::BrowserUi>()
@@ -269,12 +269,29 @@ fn apply_behaviour(
     }
     events.clear();
 
-    // No profile carries a share: that is a deliberate "run the shipped
+    // Nothing assigned in any domain: that is a deliberate "run the shipped
     // model", not an empty library, and it has to say so rather than looking
     // like a failed apply.
-    let lib = (!composer.lib.assignment().is_empty()).then(|| composer.lib.clone());
+    //
+    // Any domain's assignment counts. Checking only the households — which is
+    // what this did — silently discarded a library whose one live profile was a
+    // unit policy or a separated-person behaviour, and the symptom was an Apply
+    // that reported success and changed nothing.
+    let lib = composer.lib.has_assignment().then(|| composer.lib.clone());
     let described = match &lib {
-        Some(l) => format!("{} profile(s)", l.assignment().len()),
+        Some(l) => {
+            let mut parts = Vec::new();
+            for (n, what) in [
+                (l.assignment().len(), "household"),
+                (l.person_assignment().len(), "person"),
+                (l.unit_assignment().len(), "unit"),
+            ] {
+                if n > 0 {
+                    parts.push(format!("{n} {what} profile(s)"));
+                }
+            }
+            parts.join(", ")
+        }
         None => "the shipped model".to_string(),
     };
 
@@ -401,6 +418,14 @@ fn controls(
 
     if keys.just_pressed(KeyCode::Space) {
         sim.playing = !sim.playing;
+    }
+    // `.` steps one decision interval, running or not. Chosen because it sits
+    // next to the speed keys on every layout and because nothing else in the
+    // game wants it — see the note on shortcut collisions in CLAUDE.md, which
+    // is the reason a new binding gets checked against the table rather than
+    // simply added.
+    if keys.just_pressed(KeyCode::Period) {
+        sim.request_step();
     }
     if keys.just_pressed(KeyCode::BracketRight) {
         sim.speed = (sim.speed * 2.0).min(ui::MAX_SPEED);

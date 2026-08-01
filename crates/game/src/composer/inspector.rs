@@ -37,12 +37,31 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
         return;
     };
 
+    let node_key = node.id;
     ui.horizontal(|ui| {
         ui.heading(spec.name);
-        ui.small(format!("#{}", node_id.0));
+        ui.small(format!("#{node_key}"));
     });
     ui.label(spec.doc);
     ui.small(spec.id);
+
+    // What this node is doing in the incident right now, when an agent is being
+    // watched. Answered here as well as on the canvas because this is where a
+    // scientist is when they are changing the number the branch turns on, and
+    // "did that branch fire" is the question they are about to ask.
+    if let Some(f) = c.live.frame.as_ref().filter(|f| f.graph_id == c.graph_id) {
+        let role = f.role(node_key);
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.colored_label(role.colour(), "●");
+            ui.small(format!("{}  ·  {}", f.agent, role.label()));
+        });
+        if let Some(values) = f.values.get(&node_key) {
+            for (port, v) in spec.outputs.iter().zip(values) {
+                ui.small(format!("{} = {}", port.name, v.display()));
+            }
+        }
+    }
     ui.separator();
 
     // Which of the two things the sliders below are writing to.
@@ -71,7 +90,7 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
     }
 
     for param in spec.params {
-        let key = BehaviorGraph::override_key(node_id.0 as behavior::NodeId, param.name);
+        let key = BehaviorGraph::override_key(node_key, param.name);
         let graph_value = c
             .snarl
             .get_node(node_id)
@@ -146,7 +165,7 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
 
     let issues: Vec<String> = c
         .report
-        .for_node(node_id.0 as behavior::NodeId)
+        .for_node(node_key)
         .map(|i| format!("{:?}: {}", i.severity, i.message))
         .collect();
     if !issues.is_empty() {

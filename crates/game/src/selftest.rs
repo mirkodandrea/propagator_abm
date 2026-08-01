@@ -44,6 +44,9 @@ pub struct SelfTest {
     /// Person figures on screen before the scenario reload — the count the
     /// rebuilt scene has to match exactly.
     figures_before: usize,
+    /// The clock when a single step was asked for, to check it advanced by
+    /// exactly one decision interval and not by a frame of free running.
+    clock_before_step: i64,
     failures: Vec<String>,
 }
 
@@ -61,6 +64,8 @@ enum Stage {
     Verify,
     ShippedLeg,
     BehaviourRun,
+    StepOnce,
+    StepDone,
     ReloadScenario,
     Reloaded,
     Done,
@@ -84,8 +89,12 @@ pub fn run(
     figures: Query<(), With<PersonView>>,
     mut exit: EventWriter<AppExit>,
 ) {
-    // Always running, always as fast as the step cap allows.
-    sim.playing = true;
+    // Always running, always as fast as the step cap allows — except across the
+    // two stages that are *about* being paused, which this would otherwise
+    // undo every frame and turn into a check that always passes.
+    if !matches!(test.stage, Stage::StepOnce | Stage::StepDone) {
+        sim.playing = true;
+    }
     sim.speed = 512.0;
 
     let burnt = burnt_ha(&sim);
@@ -485,8 +494,51 @@ pub fn run(
                     sim.crews.units.len()
                 ),
             );
+            // The third domain. Nobody at home runs it, so the check is that
+            // the people who are *away* do — a person profile that reached
+            // nobody would look exactly like one that agreed with the shipped
+            // behaviour, which is the always-negative this whole family of
+            // checks exists for.
+            let person_profiles = composer.lib.person_assignment().len();
+            check(
+                &mut test,
+                person_profiles > 0,
+                "the shipped behaviour library has no person profile in play",
+            );
+            let away = sim.agents.people.iter().filter(|p| p.away).count();
+            let running = (0..sim.agents.people.len())
+                .filter(|i| sim.agents.people[*i].away)
+                .filter(|i| sim.agents.person_behaviour_of(*i).is_some())
+                .count();
+            check(&mut test, away > 0, "no one is away from home to run a person behaviour");
+            check(
+                &mut test,
+                running == away,
+                &format!("{running} of {away} separated people are running an authored behaviour"),
+            );
+
+            // The whole point of giving editor nodes an identity of their own:
+            // a trace's node ids have to name boxes the canvas can find. When
+            // they did not, every override and every highlight silently pointed
+            // at nothing while the graph carried on validating.
+            if let Some(lib) = sim.behaviour.as_ref() {
+                if let Some(g) = lib.graphs.get(&composer.graph_id) {
+                    let missing = g
+                        .nodes
+                        .iter()
+                        .filter(|n| composer.snarl_id_of(n.id).is_none())
+                        .count();
+                    check(
+                        &mut test,
+                        missing == 0,
+                        &format!("{missing} running node(s) have no box on the canvas"),
+                    );
+                }
+            }
+
             println!(
                 "[selftest] behaviour applied: {profiles} household profile(s), \
+                 {person_profiles} person profile(s) over {away} separated people, \
                  {unit_profiles} unit profile(s) governing {governed} units"
             );
             sim.agents.order_evacuation_all();
@@ -530,6 +582,63 @@ pub fn run(
                 }
                 None => check(&mut test, false, "no explanation for a unit under an authored policy"),
             }
+
+            // The same for a separated person, whose observation is the third
+            // one and the only one that reads across to another agent — the
+            // household they are away from. A dangling household index there
+            // would panic rather than mislead, which is why it is checked in
+            // the assembled app and not only on the bench.
+            match sim.agents.people.iter().find(|p| p.away).map(|p| p.id) {
+                Some(id) => match sim.agents.explain_person(id, &sim.fire) {
+                    Some((_, trace)) => {
+                        check(&mut test, !trace.nodes.is_empty(), "the person trace is empty");
+                        // And the slice the live view draws bright: the sink is
+                        // always on it, and every wire in it joins two nodes
+                        // that are themselves on it.
+                        let active = trace.active();
+                        check(
+                            &mut test,
+                            trace.sink.map(|s| active.contains(&s)).unwrap_or(false),
+                            "the decision sink is not on the active path",
+                        );
+                        let sound = trace
+                            .active_wires()
+                            .iter()
+                            .all(|(f, _, t, _)| active.contains(f) && active.contains(t));
+                        check(&mut test, sound, "an active wire leaves the active path");
+                    }
+                    None => check(&mut test, false, "no explanation for a separated person"),
+                },
+                None => check(&mut test, false, "nobody is away from home"),
+            }
+
+            // The step facility, which is the transport the live view is read
+            // through. Paused, so a step that quietly did nothing cannot be
+            // mistaken for the clock running.
+            sim.playing = false;
+            test.clock_before_step = sim.time_s();
+            sim.request_step();
+            test.stage = Stage::StepOnce;
+        }
+
+        // One frame later: exactly one decision interval, and no more.
+        Stage::StepOnce => {
+            let moved = sim.time_s() - test.clock_before_step;
+            check(
+                &mut test,
+                moved == crate::sim::STEP_S,
+                &format!("a step advanced {moved} s, wanted {}", crate::sim::STEP_S),
+            );
+            println!("[selftest] step while paused advanced {moved} s");
+            test.clock_before_step = sim.time_s();
+            test.stage = Stage::StepDone;
+        }
+
+        // And a frame with nothing asked for advances nothing at all, or the
+        // pause is not a pause and stepping is meaningless.
+        Stage::StepDone => {
+            let still = sim.time_s() == test.clock_before_step;
+            check(&mut test, still, "the clock ran on while paused");
 
             // And back off it again: the shipped model has to still be one call
             // away, because every measurement in `crates/fire/tests` was taken

@@ -27,23 +27,41 @@ use super::Composer;
 
 /// A node as the editor holds it.
 ///
-/// Only what the author can change: the type, the parameter values, and their
-/// note. Ports, docs and evaluation all come from the registry, so a node
-/// cannot get out of step with the code that runs it.
+/// Only what the author can change: the identity, the type, the parameter
+/// values, and their note. Ports, docs and evaluation all come from the
+/// registry, so a node cannot get out of step with the code that runs it.
+///
+/// ### Why the id lives here
+///
+/// [`egui_snarl`] hands out its own `NodeId` on insert and cannot be asked to
+/// keep the one a file carried. The first version of this editor used snarl's
+/// id as the graph's id, which meant every load renumbered the graph — and
+/// subtype overrides, which are keyed `<node id>.<param>`, silently stopped
+/// matching anything. That was patched by remapping the overrides at load; it
+/// is now fixed instead, by giving a node an identity of its own that a load, a
+/// save and a rebuild all preserve.
+///
+/// The general shape, worth keeping in mind for anything else keyed on a node:
+/// **an identity the editor is free to reassign is not an identity.** The live
+/// execution view depends on this too — it matches trace node ids against
+/// canvas nodes, and could not if the two renumbered independently.
 #[derive(Debug, Clone)]
 pub struct EditorNode {
+    /// Stable across load, save and rebuild. What override keys, validator
+    /// issues and execution traces all refer to.
+    pub id: behavior::NodeId,
     pub type_id: String,
     pub params: BTreeMap<String, ParamValue>,
     pub comment: String,
 }
 
 impl EditorNode {
-    pub fn new(type_id: &str) -> EditorNode {
+    pub fn new(id: behavior::NodeId, type_id: &str) -> EditorNode {
         let params = registry()
             .get(type_id)
             .map(|s| s.params.iter().map(|p| (p.name.to_string(), p.default_value())).collect())
             .unwrap_or_default();
-        EditorNode { type_id: type_id.to_string(), params, comment: String::new() }
+        EditorNode { id, type_id: type_id.to_string(), params, comment: String::new() }
     }
 
     pub fn spec(&self) -> Option<&'static NodeSpec> {
@@ -72,15 +90,69 @@ fn pin_for(ty: ValueType) -> PinInfo {
 pub struct Viewer<'a> {
     /// Nodes the validator has something to say about, and what.
     pub issues: &'a behavior::Report,
-    /// Which kind of agent the open graph is about. The two add-node menus
-    /// filter on it for the same reason the palette does: a node from the other
-    /// domain cannot be placed, so offering it offers an error.
+    /// Which kind of agent the open graph is about. The add-node menus filter
+    /// on it for the same reason the palette does: a node from another domain
+    /// cannot be placed, so offering it offers an error.
     pub domain: Domain,
+    /// What the agent being watched is actually doing, when one is. `None`
+    /// leaves the canvas as a plain editor.
+    pub live: Option<&'a super::live::Frame>,
     /// Filled in by the canvas when the author asks for something the
     /// `Composer` has to act on — snarl owns `&mut Snarl` for the duration of
     /// `show`, so the composer cannot be borrowed at the same time.
     pub selected: Option<NodeId>,
     pub added: bool,
+}
+
+/// How a node relates to the decision the watched agent just took.
+///
+/// Four states, and they are not shades of one thing — a node that ran and said
+/// "no" is a completely different report from a node nothing reached, and
+/// drawing them the same way is the failure mode this whole view exists to
+/// avoid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiveRole {
+    /// Fed the decision that was taken.
+    Active,
+    /// Ran and declined: a rule that was checked and did not apply.
+    Withheld,
+    /// Was on the path in a recent tick, but not this one.
+    Recent,
+    /// Ran, as every node does, but has never been on the path.
+    Cold,
+}
+
+impl LiveRole {
+    /// Tint for the node's header swatch, its pins and the panel's legend. One
+    /// palette, so the legend cannot come to describe something else.
+    pub fn colour(self) -> Color32 {
+        match self {
+            LiveRole::Active => Color32::from_rgb(0x7f, 0xd4, 0x92),
+            LiveRole::Withheld => Color32::from_rgb(0x8a, 0x6a, 0x5c),
+            LiveRole::Recent => Color32::from_rgb(0x54, 0x7c, 0x6a),
+            LiveRole::Cold => Color32::from_rgb(0x55, 0x5a, 0x62),
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            LiveRole::Active => "on the path taken",
+            LiveRole::Withheld => "checked, did not apply",
+            LiveRole::Recent => "was on the path recently",
+            LiveRole::Cold => "not on the path",
+        }
+    }
+
+    /// How strongly the node reads. The whole point of the view is that the
+    /// live path is the thing your eye lands on.
+    fn dim(self) -> f32 {
+        match self {
+            LiveRole::Active => 1.0,
+            LiveRole::Withheld => 0.75,
+            LiveRole::Recent => 0.65,
+            LiveRole::Cold => 0.45,
+        }
+    }
 }
 
 impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
@@ -109,12 +181,21 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
         let spec = n.spec();
         let title = spec.map(|s| s.name).unwrap_or("unknown node");
         let cat = spec.map(|s| s.category).unwrap_or(Category::Logic);
+        let id = n.id;
+        let role = self.live.map(|l| l.role(id));
 
         ui.horizontal(|ui| {
             // The category tint sits on a swatch rather than on the text, so
-            // the label keeps the theme's contrast.
+            // the label keeps the theme's contrast. While an agent is being
+            // watched the swatch carries the execution role instead: colour
+            // means one thing at a time, and in that mode the thing it means is
+            // "did this box produce the answer".
             let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 14.0), egui::Sense::hover());
-            ui.painter().rect_filled(rect, 2.0, colour(cat.colour()));
+            let swatch = match role {
+                Some(r) => r.colour(),
+                None => colour(cat.colour()),
+            };
+            ui.painter().rect_filled(rect, 2.0, swatch);
 
             // A parameter node's own label is what the author named it; that
             // is far more use on the canvas than "Number".
@@ -124,12 +205,21 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
                 .map(ParamValue::display)
                 .filter(|s| !s.is_empty() && cat == Category::Parameter)
                 .unwrap_or_else(|| title.to_string());
-            let r = ui.label(egui::RichText::new(label).strong());
+            let mut text = egui::RichText::new(label).strong();
+            if let Some(r) = role {
+                text = text.color(
+                    ui.visuals().text_color().gamma_multiply(r.dim()),
+                );
+            }
+            let r = ui.label(text);
             if let Some(s) = spec {
-                r.on_hover_text(s.doc);
+                let hover = match role {
+                    Some(role) => format!("{}\n\n▸ {}", s.doc, role.label()),
+                    None => s.doc.to_string(),
+                };
+                r.on_hover_text(hover);
             }
 
-            let id = node.0 as behavior::NodeId;
             let worst = self
                 .issues
                 .for_node(id)
@@ -146,10 +236,36 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
                 }
                 None => {}
             }
+
+            // The winning proposal, marked on the box that made it. Without
+            // this the slice tells you which branches contributed and not which
+            // one of them was the answer.
+            if self.live.map(|l| l.winner == Some(id)).unwrap_or(false) {
+                ui.colored_label(LiveRole::Active.colour(), "▶").on_hover_text(
+                    "This proposal won: it is what the agent is doing.",
+                );
+            }
         });
 
         if !snarl[node].comment.is_empty() {
             ui.small(snarl[node].comment.clone());
+        }
+
+        // What this node actually produced on the tick being watched, on the
+        // box rather than in a list off to one side. Reading a graph and
+        // reading its values in two places is most of why a dataflow graph is
+        // hard to debug.
+        if let Some(l) = self.live {
+            if let Some(values) = l.values.get(&id) {
+                let text = values.iter().map(behavior::Value::display).collect::<Vec<_>>().join("  ·  ");
+                if !text.is_empty() {
+                    ui.small(
+                        egui::RichText::new(text)
+                            .monospace()
+                            .color(l.role(id).colour()),
+                    );
+                }
+            }
         }
     }
 
@@ -168,14 +284,38 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
             ui.label("?");
             return PinInfo::circle();
         };
-        let r = ui.label(port.name);
+        // What is arriving on this port right now, next to its name. On an
+        // input this is the value the node actually consumed, including the
+        // port default when nothing is wired in — which is the case a reader
+        // most often gets wrong.
+        let live_text = self.live.and_then(|l| {
+            let id = snarl[pin.id.node].id;
+            l.inputs.get(&(id, pin.id.input as u16)).map(|v| {
+                v.iter().map(behavior::Value::display).collect::<Vec<_>>().join(", ")
+            })
+        });
+        let r = match &live_text {
+            Some(v) if !v.is_empty() => {
+                ui.label(format!("{}  {v}", port.name))
+            }
+            _ => ui.label(port.name),
+        };
         r.on_hover_text(format!("{} ({})", port.doc, port.ty.label()));
+
         // An unconnected port that has a default is drawn hollow: the node
         // still evaluates, and the author should be able to tell at a glance
         // which inputs are actually carrying something.
-        let info = pin_for(port.ty);
+        //
+        // The shape always carries the type; only the fill is repurposed while
+        // an agent is being watched, and that is the whole reason the shapes
+        // exist rather than being a token gesture.
+        let base = self
+            .live
+            .map(|l| l.role(snarl[pin.id.node].id).colour())
+            .unwrap_or_else(|| colour(port.ty.colour()));
+        let info = pin_for(port.ty).with_fill(base);
         if pin.remotes.is_empty() && port.default.is_some() {
-            info.with_fill(colour(port.ty.colour()).gamma_multiply(0.35))
+            info.with_fill(base.gamma_multiply(0.35))
         } else {
             info
         }
@@ -197,7 +337,14 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
             return PinInfo::circle();
         };
         ui.label(port.name).on_hover_text(format!("{} ({})", port.doc, port.ty.label()));
-        pin_for(port.ty)
+        // A wire's colour is the mix of its two pins' fills, so colouring the
+        // pins by their nodes' roles colours every wire by the pair it joins:
+        // active to active is bright, and a live value arriving somewhere that
+        // did not matter is visibly half of one.
+        match self.live {
+            Some(l) => pin_for(port.ty).with_fill(l.role(snarl[pin.id.node].id).colour()),
+            None => pin_for(port.ty),
+        }
     }
 
     /// The rule that makes the canvas trustworthy.
@@ -273,7 +420,11 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
             ui.close_menu();
         }
         if ui.button("Duplicate").clicked() {
-            let copy = snarl[node].clone();
+            let mut copy = snarl[node].clone();
+            // A fresh identity, not the original's: two nodes sharing an id
+            // would share every subtype override keyed on it, and the copy
+            // would look like a second knob that moved the first one.
+            copy.id = free_id(snarl);
             let pos = snarl
                 .get_node_info(node)
                 .map(|i| i.pos + egui::vec2(30.0, 30.0))
@@ -305,10 +456,31 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
         snarl: &mut Snarl<EditorNode>,
     ) {
         let Some(spec) = snarl[node].spec() else { return };
+        let id = snarl[node].id;
         ui.set_max_width(320.0);
         ui.strong(spec.name);
         ui.label(spec.doc);
-        ui.small(format!("{}  ·  #{}", spec.id, node.0));
+        ui.small(format!("{}  ·  #{id}", spec.id));
+
+        // While an agent is being watched, the popup is where the whole of what
+        // this node just did lives: what came in, what went out, and whether it
+        // mattered. The canvas can only afford a summary line.
+        let Some(l) = self.live else { return };
+        ui.separator();
+        ui.colored_label(l.role(id).colour(), l.role(id).label());
+        for (i, port) in spec.inputs.iter().enumerate() {
+            let v = l
+                .inputs
+                .get(&(id, i as u16))
+                .map(|v| v.iter().map(behavior::Value::display).collect::<Vec<_>>().join(", "))
+                .unwrap_or_default();
+            ui.small(format!("in  {} = {}", port.name, if v.is_empty() { "—" } else { &v }));
+        }
+        if let Some(values) = l.values.get(&id) {
+            for (port, v) in spec.outputs.iter().zip(values) {
+                ui.small(format!("out {} = {}", port.name, v.display()));
+            }
+        }
     }
 
     fn has_graph_menu(&mut self, _pos: egui::Pos2, _snarl: &mut Snarl<EditorNode>) -> bool {
@@ -328,7 +500,8 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
             ui.menu_button(cat.label(), |ui| {
                 for spec in registry().in_category_and_domain(cat, self.domain) {
                     if ui.button(spec.name).on_hover_text(spec.doc).clicked() {
-                        let id = snarl.insert_node(pos, EditorNode::new(spec.id));
+                        let node = EditorNode::new(free_id(snarl), spec.id);
+                        let id = snarl.insert_node(pos, node);
                         self.selected = Some(id);
                         self.added = true;
                         ui.close_menu();
@@ -371,7 +544,8 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
             let ports = if from_output { spec.inputs } else { spec.outputs };
             let Some(port) = ports.iter().position(|p| p.ty == want) else { continue };
             if ui.button(spec.name).on_hover_text(spec.doc).clicked() {
-                let new = snarl.insert_node(pos, EditorNode::new(spec.id));
+                let node = EditorNode::new(free_id(snarl), spec.id);
+                let new = snarl.insert_node(pos, node);
                 match src_pins {
                     AnyPins::Out(pins) => {
                         for p in pins {
@@ -404,17 +578,33 @@ fn node_issues(report: &behavior::Report, node: behavior::NodeId) -> String {
     report.for_node(node).map(|i| i.message.clone()).collect::<Vec<_>>().join("\n")
 }
 
+/// The next unused node identity on this canvas.
+///
+/// Linear over the nodes, which is nothing at the scale these graphs are, and
+/// correct after a delete: reusing the id of a node that was removed would hand
+/// the new node every subtype override the old one had.
+pub fn free_id(snarl: &Snarl<EditorNode>) -> behavior::NodeId {
+    snarl.nodes().map(|n| n.id).max().map_or(1, |m| m.saturating_add(1))
+}
+
 /// Draw the canvas and fold whatever it did back into the composer.
 pub fn canvas(ui: &mut egui::Ui, c: &mut Composer) {
-    // The viewer borrows the report, so the projection has to be taken out of
-    // the composer before snarl takes `&mut`.
+    // The viewer borrows the report and the live frame, so both have to be
+    // taken out of the composer before snarl takes `&mut`.
     let report = std::mem::take(&mut c.report);
-    let mut viewer =
-        Viewer { issues: &report, domain: c.domain(), selected: None, added: false };
+    let frame = c.live.frame.take();
+    let mut viewer = Viewer {
+        issues: &report,
+        domain: c.domain(),
+        live: frame.as_ref().filter(|f| f.graph_id == c.graph_id),
+        selected: None,
+        added: false,
+    };
     let style = super::editor_style();
     c.snarl.show(&mut viewer, &style, "behaviour-canvas", ui);
     let (selected, added) = (viewer.selected, viewer.added);
     c.report = report;
+    c.live.frame = frame;
 
     if let Some(n) = selected {
         c.selected = Some(n);

@@ -8,7 +8,8 @@
 use std::collections::BTreeMap;
 
 use behavior::defaults::{
-    default_graph, default_subtypes, default_unit_graph, default_unit_subtypes, DEFAULT_GRAPH_ID,
+    default_graph, default_person_graph, default_person_subtypes, default_subtypes,
+    default_unit_graph, default_unit_subtypes, DEFAULT_GRAPH_ID, DEFAULT_PERSON_GRAPH_ID,
     DEFAULT_UNIT_GRAPH_ID,
 };
 use behavior::eval::Overrides;
@@ -16,7 +17,7 @@ use behavior::graph::Wire;
 use behavior::testbench::{self, SweepField};
 use behavior::{
     registry, ActionKind, BehaviorGraph, Category, CompiledGraph, Domain, HouseholdObs,
-    IntentValue, Observation, ParamValue, Severity, UnitObs,
+    IntentValue, Observation, ParamValue, PersonObs, Severity, UnitObs,
 };
 
 // --- the registry ----------------------------------------------------------
@@ -59,8 +60,14 @@ fn every_node_declares_itself_coherently() {
         // Multi-connection inputs are for combining an unknown number of
         // things. Anywhere else they would silently drop all but the first.
         for p in spec.inputs {
-            let combiner =
-                matches!(spec.id, "out.decision" | "out.unit_decision" | "logic.any" | "logic.all");
+            let combiner = matches!(
+                spec.id,
+                "out.decision"
+                    | "out.unit_decision"
+                    | "out.person_decision"
+                    | "logic.any"
+                    | "logic.all"
+            );
             assert!(!p.multi || combiner, "{}.{} is multi-connection", spec.id, p.name);
         }
     }
@@ -220,7 +227,9 @@ fn subtypes_share_one_graph_and_differ_only_in_numbers() {
         // One graph per domain, not one graph per profile. Variation without
         // duplication is the whole pattern.
         assert!(
-            s.graph == DEFAULT_GRAPH_ID || s.graph == DEFAULT_UNIT_GRAPH_ID,
+            s.graph == DEFAULT_GRAPH_ID
+                || s.graph == DEFAULT_UNIT_GRAPH_ID
+                || s.graph == DEFAULT_PERSON_GRAPH_ID,
             "{} has its own graph",
             s.id
         );
@@ -513,7 +522,7 @@ fn a_node_from_the_other_domain_smuggled_into_a_file_is_reported() {
     let mut g = default_graph();
     g.domain = Domain::SuppressionUnit;
     let msg = first_error(&g);
-    assert!(msg.contains("civilians") && msg.contains("suppression"), "{msg}");
+    assert!(msg.contains("households") && msg.contains("suppression"), "{msg}");
 }
 
 /// The household sink is not a unit sink, so swapping the domain over cannot
@@ -686,6 +695,202 @@ fn sweep_fields_are_scoped_to_the_domain() {
     assert_eq!(obs, Observation::empty(Domain::SuppressionUnit));
 }
 
+// --- separated people ------------------------------------------------------
+
+#[test]
+fn the_shipped_person_behaviour_validates_and_walks_them_out() {
+    let g = default_person_graph();
+    let r = behavior::validate(&g);
+    assert!(r.ok(), "{:?}", r.errors().map(|e| &e.message).collect::<Vec<_>>());
+
+    let c = CompiledGraph::compile(&g, &Overrides::new()).unwrap();
+    // The first tick, for someone who was out when it started. This is the
+    // behaviour the hand-written model had, and it has to survive being
+    // written down.
+    let first = testbench::person_situations()
+        .into_iter()
+        .find(|s| s.name == "Out and about")
+        .unwrap();
+    assert_eq!(c.eval(&first.obs).action, ActionKind::WalkOut);
+}
+
+/// Sheltering has to outbid walking when there is nowhere left to walk, or the
+/// behaviour marches people into the fire — the same ordering the household
+/// graph turns on, and the same reason.
+#[test]
+fn a_person_with_no_route_shelters_rather_than_walking() {
+    let c = CompiledGraph::compile(&default_person_graph(), &Overrides::new()).unwrap();
+    let cut = testbench::person_situations()
+        .into_iter()
+        .find(|s| s.name == "Cut off")
+        .unwrap();
+    assert_eq!(c.eval(&cut.obs).action, ActionKind::TakeShelter);
+}
+
+/// The whole point of the reunification block is that it does nothing until
+/// someone turns it on. A branch that shipped silently live would have changed
+/// every casualty figure the model has printed.
+#[test]
+fn going_home_is_off_in_the_shipped_behaviour_and_on_in_the_profile() {
+    let g = default_person_graph();
+    let shipped = CompiledGraph::compile(&g, &Overrides::new()).unwrap();
+    let nearly_home = testbench::person_situations()
+        .into_iter()
+        .find(|s| s.name == "Nearly home")
+        .unwrap();
+    assert_eq!(shipped.eval(&nearly_home.obs).action, ActionKind::WalkOut);
+
+    let family = default_person_subtypes()
+        .into_iter()
+        .find(|s| s.id == "family-first")
+        .unwrap();
+    let on = CompiledGraph::compile(&g, &family.overrides).unwrap();
+    assert_eq!(on.eval(&nearly_home.obs).action, ActionKind::HeadHome);
+}
+
+/// Going home has to stop being an option when there is nothing to go back to,
+/// even for the profile that is built to do it. This is the branch that decides
+/// whether the model is describing a plausible mistake or an absurd one.
+#[test]
+fn nobody_walks_back_into_a_house_that_is_already_burning() {
+    let family = default_person_subtypes()
+        .into_iter()
+        .find(|s| s.id == "family-first")
+        .unwrap();
+    let on = CompiledGraph::compile(&default_person_graph(), &family.overrides).unwrap();
+    for name in ["House alight", "Cut off"] {
+        let s = testbench::person_situations().into_iter().find(|s| s.name == name).unwrap();
+        assert_ne!(on.eval(&s.obs).action, ActionKind::HeadHome, "{name}");
+    }
+}
+
+/// A person node in a household graph, and the other way round. The same rule
+/// the two original domains hold to, extended to the third — and worth pinning
+/// separately, because the person observation is the one whose field names most
+/// resemble the household's.
+#[test]
+fn the_person_domain_is_partitioned_like_the_others() {
+    let mut people = default_person_graph();
+    assert!(people.add("obs.cue", [0.0, 0.0]).is_none(), "a household cue went into a person");
+    assert!(people.add("unit.water_fraction", [0.0, 0.0]).is_none());
+    assert!(people.add("math.add", [0.0, 0.0]).is_some());
+
+    let mut households = default_graph();
+    assert!(households.add("person.home_distance_m", [0.0, 0.0]).is_none());
+
+    // And the sinks are not interchangeable.
+    let mut g = BehaviorGraph::new_in(Domain::Person, "p", "P");
+    g.add("out.decision", [0.0, 0.0]);
+    assert!(!behavior::validate(&g).ok());
+}
+
+#[test]
+fn a_person_behaviour_round_trips_through_json() {
+    let g = default_person_graph();
+    let back = BehaviorGraph::from_json(&g.to_json().unwrap()).unwrap();
+    assert_eq!(back, g);
+    assert_eq!(back.domain, Domain::Person);
+}
+
+#[test]
+fn person_profiles_are_assigned_by_share() {
+    let lib = behavior::defaults::default_library();
+    let a = lib.person_assignment();
+    assert_eq!(a.len(), 1, "only the baseline ships with a share: {a:?}");
+    assert_eq!(a[0].0, "walk-out");
+    // Everything the model can run is assigned somewhere, which is what
+    // `has_assignment` is for — checking only the households used to discard a
+    // library whose one live profile was a unit policy.
+    assert!(lib.has_assignment());
+}
+
+/// The person observation has to be inert in another domain's graph, the same
+/// way the household and unit ones are.
+#[test]
+fn a_person_sweep_does_nothing_to_a_household() {
+    let mut obs = Observation::empty(Domain::Household);
+    SweepField::PersonHomeDistance.set(&mut obs, 50.0);
+    assert_eq!(obs, Observation::empty(Domain::Household));
+    assert_eq!(SweepField::PersonHomeDistance.domain(), Domain::Person);
+    let base = PersonObs::default();
+    assert!(base.home_distance_m > 0.0);
+}
+
+// --- the execution slice ---------------------------------------------------
+
+/// What the live inspector draws bright. Every node in the slice contributed a
+/// value to the decision that was taken, and every node outside it did not —
+/// which is the only claim a highlight is allowed to make.
+#[test]
+fn the_active_slice_is_what_produced_the_decision() {
+    let g = CompiledGraph::compile(&default_graph(), &Overrides::new()).unwrap();
+    let cut = testbench::situations().into_iter().find(|s| s.name == "Cut off").unwrap();
+    let (d, trace) = g.eval_traced(&cut.obs);
+    assert_eq!(d.action, ActionKind::Shelter);
+
+    let active = trace.active();
+    let winner = trace.winner().expect("something fired");
+    assert!(active.contains(&winner));
+    assert!(active.contains(&trace.sink.unwrap()), "the sink is always on the path");
+
+    // The winner here is fed by "Fire on the property", so that block is on the
+    // path; "Response to the order" fed the branch that lost, and is not.
+    let node_of = |ty: &str| trace.nodes.iter().find(|n| n.type_id == ty).unwrap().node;
+    assert!(active.contains(&node_of("block.fire_at_the_door")));
+    assert!(
+        !active.contains(&node_of("block.order_response")),
+        "a losing branch is on the path"
+    );
+    assert!(!active.contains(&node_of("logic.any")), "a losing branch is on the path");
+
+    // Every proposal is wired into the decision sink, so a slice that expanded
+    // it would reach every branch there is. That the losing ones are absent is
+    // the check that it does not.
+    assert!(!active.contains(&node_of("action.prepare")));
+
+    // The alarm threshold *is* on the path, and not through the action it fed:
+    // its third output drives the urgency readout, which the model reads back.
+    // A sink is a sink whether or not it changes anything mechanically.
+    assert!(active.contains(&node_of("block.alarm")));
+    assert!(active.contains(&node_of("out.urgency")));
+    assert!(active.contains(&node_of("block.preparation")), "the milling multiplier is a lever");
+
+    // Every wire drawn bright joins two nodes that are themselves bright.
+    for (from, _, to, _) in trace.active_wires() {
+        assert!(active.contains(&from) && active.contains(&to));
+    }
+}
+
+/// Nothing fired is a real answer, not a missing one: the agent is doing its
+/// domain's default and no branch of the graph asked for it. The slice has to
+/// say so rather than lighting up something arbitrary.
+#[test]
+fn a_graph_with_nothing_firing_has_no_action_on_the_path() {
+    let g = CompiledGraph::compile(&default_person_graph(), &Overrides::new()).unwrap();
+    let mut obs = PersonObs::default();
+    // Nothing to react to, and the walk-out block held off.
+    obs.cue = -1.0;
+    obs.order_issued = false;
+    let (d, trace) = g.eval_traced(&obs.into());
+    assert_eq!(d.action, ActionKind::Remain);
+    assert!(trace.winner().is_none());
+
+    // No proposal is on the path, because none of them was taken. What remains
+    // is the sinks and whatever feeds the readouts, which is honest: those
+    // values *were* handed back to the model.
+    let active = trace.active();
+    assert!(active.contains(&trace.sink.unwrap()));
+    for n in &trace.nodes {
+        if n.category == Category::Action {
+            assert!(!active.contains(&n.node), "{} is on the path", n.name);
+        }
+    }
+
+    // But the branches that declined are named, which is the thing a reader
+    // most wants told apart from a node nothing reaches.
+    assert!(!trace.withheld().is_empty());
+}
+
 // --- the library -----------------------------------------------------------
 
 #[test]
@@ -727,4 +932,20 @@ fn write_shipped_library() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/behaviours");
     behavior::defaults::default_library().save_dir(&root).unwrap();
     println!("wrote {}", root.display());
+}
+
+/// Print what the palette actually offers, per domain.
+///
+/// Ignored, because it is a report rather than a check: the numbers go in
+/// `CLAUDE.md`, and a test that asserted them would fail every time somebody
+/// added a node, which is the opposite of what should happen.
+#[test]
+#[ignore]
+fn palette_report() {
+    println!("{} nodes registered", registry().len());
+    for d in Domain::ALL {
+        println!("  {:20} {}", d.label(), registry().in_domain(d).count());
+    }
+    let shared = registry().all().filter(|s| s.domain.is_none()).count();
+    println!("  {:20} {shared}", "domain-free");
 }

@@ -38,7 +38,11 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
         format!("{total} nodes for {}", domain.agent_label())
     } else {
         format!("{matching} of {total}")
-    });
+    })
+    .on_hover_text(
+        "Click a node to drop it on the canvas, or right-click the canvas to place one \
+         where you clicked. Hover any entry for what it does and what it connects to.",
+    );
     ui.separator();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
@@ -78,7 +82,8 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
                             // over the palette, not over the canvas.
                             let at = c.drop_at;
                             c.drop_at += egui::vec2(24.0, 24.0);
-                            let id = c.snarl.insert_node(at, EditorNode::new(spec.id));
+                            let node = EditorNode::new(super::viewer::free_id(&c.snarl), spec.id);
+                            let id = c.snarl.insert_node(at, node);
                             c.selected = Some(id);
                             c.right = super::RightTab::Inspector;
                             c.dirty = true;

@@ -17,10 +17,18 @@
 //!
 //! ### What the domains do *not* share
 //!
-//! Nothing but the arithmetic. The two observations have no field in common
-//! beyond the clock and the jitter, the action sets are disjoint, and each has
-//! its own decision sink. What they share is the machinery: one registry, one
-//! validator, one evaluator, one editor.
+//! Nothing but the arithmetic. The three observations have almost no field in
+//! common beyond the clock and the jitter, the action sets are disjoint, and
+//! each has its own decision sink. What they share is the machinery: one
+//! registry, one validator, one evaluator, one editor.
+//!
+//! ### Why a person is not a household
+//!
+//! [`Domain::Person`] exists for the one case a household cannot answer: a
+//! person who is not with their household. Everyone else evacuates as a family,
+//! at the pace of the slowest member, and giving each of them a graph would be
+//! a per-person assumption written as a per-family one — the exact confusion
+//! [`Domain::agent_label`] is worded to avoid.
 
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +49,15 @@ pub enum Domain {
     /// Hand crews, engines and air tankers: the commander's suppression
     /// resources.
     SuppressionUnit,
+    /// One person who is not with their household — someone who was out when it
+    /// started, or who has become separated from the family since.
+    ///
+    /// Deliberately narrow. A person who is at home is *part of* a household and
+    /// has no decisions of their own to make in this model: the family leaves
+    /// together, at the pace of its slowest member. What a separated person
+    /// decides is the one thing the household cannot decide for them — whether
+    /// to keep walking out, stop where they are, or go back for the others.
+    Person,
 }
 
 impl Default for Domain {
@@ -50,20 +67,22 @@ impl Default for Domain {
 }
 
 impl Domain {
-    pub const ALL: [Domain; 2] = [Domain::Household, Domain::SuppressionUnit];
+    pub const ALL: [Domain; 3] = [Domain::Household, Domain::Person, Domain::SuppressionUnit];
 
     /// Stable key, used in the saved graph and in a subtype's file.
     pub fn key(self) -> &'static str {
         match self {
             Domain::Household => "household",
             Domain::SuppressionUnit => "suppression_unit",
+            Domain::Person => "person",
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            Domain::Household => "Civilians",
+            Domain::Household => "Households",
             Domain::SuppressionUnit => "Suppression units",
+            Domain::Person => "Separated people",
         }
     }
 
@@ -75,6 +94,7 @@ impl Domain {
         match self {
             Domain::Household => "one household",
             Domain::SuppressionUnit => "one unit",
+            Domain::Person => "one separated person",
         }
     }
 
@@ -91,6 +111,12 @@ impl Domain {
                  to staging. Where it is sent stays the commander's decision — a graph \
                  cannot produce a map position."
             }
+            Domain::Person => {
+                "One person who is away from their household, deciding whether to keep \
+                 walking out, stop and shelter, or go back for the family. People at \
+                 home do not run this — they leave with the household, which is the \
+                 unit the evacuation model is built on."
+            }
         }
     }
 
@@ -99,6 +125,7 @@ impl Domain {
         match self {
             Domain::Household => crate::nodes::DECISION_OUTPUT,
             Domain::SuppressionUnit => crate::nodes::UNIT_DECISION_OUTPUT,
+            Domain::Person => crate::nodes::PERSON_DECISION_OUTPUT,
         }
     }
 
@@ -112,6 +139,9 @@ impl Domain {
         match self {
             Domain::Household => ActionKind::Stay,
             Domain::SuppressionUnit => ActionKind::Continue,
+            // Same shape as a unit's: someone already walking out with nothing
+            // firing keeps walking. Stopping them would need a branch to say so.
+            Domain::Person => ActionKind::Remain,
         }
     }
 

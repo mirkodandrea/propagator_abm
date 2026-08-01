@@ -228,6 +228,120 @@ impl Default for UnitObs {
     }
 }
 
+/// One separated person's view of their own situation at one decision tick.
+///
+/// Narrower than the household's on purpose. A person walking out alone is not
+/// deciding whether the family evacuates — that decision has already been taken
+/// without them, and they may not even know what it was. What they can weigh is
+/// what is in front of them: how bad it is where they stand, how far the refuge
+/// is against how far home is, and whether the people they would be going back
+/// for are still there.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "reflect", derive(Reflect))]
+#[serde(default)]
+pub struct PersonObs {
+    /// Simulated minutes since the incident started.
+    pub time_min: f32,
+
+    // --- the fire, from where they are standing ---------------------------
+    /// Survivability where the person is, 0–1, from `fire::ThreatField`. The
+    /// same field and the same scale the household and the units read.
+    pub threat: f32,
+    /// Accumulated flame exposure as a fraction of what a person survives.
+    /// Reaching 1.0 is fatal and is not something a graph can author away.
+    pub heat_fraction: f32,
+    /// Metres to the nearest burning cell, as coarsely as someone standing here
+    /// could judge it. Saturates at 2500 m.
+    pub fire_distance_m: f32,
+    /// Their own accumulated alarm, 0–1. Rises fast and decays slowly, like the
+    /// household's, but driven by what is around *them* rather than around the
+    /// house.
+    pub cue: f32,
+
+    // --- the commander ------------------------------------------------------
+    /// A public evacuation order is out. Someone in the street hears the sirens
+    /// and the broadcast whether or not their own household was reached, so
+    /// there is no per-channel delay here.
+    pub order_issued: bool,
+    /// Minutes since the order was issued, or a large number if none has been.
+    pub minutes_since_order: f32,
+
+    // --- the person ---------------------------------------------------------
+    /// Years. Drives walking speed in the model, and is here because "who is
+    /// too slow to walk out" is a question a behaviour should be able to ask.
+    pub age: f32,
+    /// Metres per second on the flat, before slope and smoke.
+    pub walk_speed: f32,
+    /// They cannot move unaided.
+    pub needs_assistance: bool,
+
+    // --- the family they are away from --------------------------------------
+    /// Straight-line metres back to their household's home.
+    ///
+    /// Straight-line rather than along the network, and deliberately so: this
+    /// number exists to be compared against `refuge_distance_m`, which is
+    /// measured the same way, and a person weighing "is home nearer than
+    /// safety" is judging exactly that — how far away the two things look from
+    /// where they are standing, not what the road does.
+    pub home_distance_m: f32,
+    /// Someone in the household is still at the house — the thing a person
+    /// heading home would be going back *for*. False once the family has left,
+    /// which is what makes going home pointless as well as dangerous.
+    pub household_at_home: bool,
+    /// The household has already reached safety.
+    pub household_safe: bool,
+    /// The household's house has ignited.
+    pub home_alight: bool,
+
+    // --- their way out ------------------------------------------------------
+    /// Straight-line metres to the nearest refuge, on the same scale as
+    /// `home_distance_m` so the two can be compared.
+    ///
+    /// Note this is *not* the household's `refuge_distance_m`, which is a
+    /// network travel cost. Whether the route survives is `route_blocked`,
+    /// which does come off the network.
+    pub refuge_distance_m: f32,
+    /// No route to any refuge survives the fire.
+    pub route_blocked: bool,
+    /// Already walking somewhere.
+    pub is_moving: bool,
+    /// Already heading back to the house rather than out.
+    pub is_heading_home: bool,
+    /// Already stopped and sheltering.
+    pub is_sheltering: bool,
+
+    /// Per-agent deterministic jitter, 0–1, stable for the life of the run.
+    /// Hashed from the person id, for the same reason the household's is.
+    pub jitter: f32,
+}
+
+impl Default for PersonObs {
+    fn default() -> Self {
+        PersonObs {
+            time_min: 0.0,
+            threat: 0.0,
+            heat_fraction: 0.0,
+            fire_distance_m: 2500.0,
+            cue: 0.0,
+            order_issued: false,
+            minutes_since_order: 1.0e6,
+            age: 38.0,
+            walk_speed: 1.3,
+            needs_assistance: false,
+            home_distance_m: 900.0,
+            household_at_home: true,
+            household_safe: false,
+            home_alight: false,
+            refuge_distance_m: 600.0,
+            route_blocked: false,
+            is_moving: true,
+            is_heading_home: false,
+            is_sheltering: false,
+            jitter: 0.5,
+        }
+    }
+}
+
 /// What one agent knows, whichever kind of agent it is.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "reflect", derive(Reflect))]
@@ -235,6 +349,7 @@ impl Default for UnitObs {
 pub enum Observation {
     Household(HouseholdObs),
     SuppressionUnit(UnitObs),
+    Person(PersonObs),
 }
 
 impl Default for Observation {
@@ -248,6 +363,7 @@ impl Observation {
         match self {
             Observation::Household(_) => Domain::Household,
             Observation::SuppressionUnit(_) => Domain::SuppressionUnit,
+            Observation::Person(_) => Domain::Person,
         }
     }
 
@@ -257,6 +373,7 @@ impl Observation {
         match domain {
             Domain::Household => Observation::Household(HouseholdObs::default()),
             Domain::SuppressionUnit => Observation::SuppressionUnit(UnitObs::default()),
+            Domain::Person => Observation::Person(PersonObs::default()),
         }
     }
 
@@ -282,6 +399,13 @@ impl Observation {
         }
     }
 
+    pub fn person(&self) -> PersonObs {
+        match self {
+            Observation::Person(p) => *p,
+            _ => PersonObs::default(),
+        }
+    }
+
     pub fn household_mut(&mut self) -> Option<&mut HouseholdObs> {
         match self {
             Observation::Household(h) => Some(h),
@@ -292,6 +416,13 @@ impl Observation {
     pub fn unit_mut(&mut self) -> Option<&mut UnitObs> {
         match self {
             Observation::SuppressionUnit(u) => Some(u),
+            _ => None,
+        }
+    }
+
+    pub fn person_mut(&mut self) -> Option<&mut PersonObs> {
+        match self {
+            Observation::Person(p) => Some(p),
             _ => None,
         }
     }
@@ -306,5 +437,11 @@ impl From<HouseholdObs> for Observation {
 impl From<UnitObs> for Observation {
     fn from(u: UnitObs) -> Observation {
         Observation::SuppressionUnit(u)
+    }
+}
+
+impl From<PersonObs> for Observation {
+    fn from(p: PersonObs) -> Observation {
+        Observation::Person(p)
     }
 }

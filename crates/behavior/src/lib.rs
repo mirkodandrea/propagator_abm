@@ -22,14 +22,15 @@
 //! | [`CompiledGraph`] | a graph resolved against the registry with a subtype's overrides baked in |
 //! | [`AgentSubtype`] | a named profile: one graph, its overrides, starting traits |
 //!
-//! ### Two kinds of agent, one editor
+//! ### Three kinds of agent, one editor
 //!
-//! Households and suppression units are both authorable, and they share
-//! nothing but the arithmetic: separate observations, disjoint action sets,
-//! separate decision sinks. A graph declares its [`Domain`] and the editor
-//! works on one at a time, so a scientist is never looking at a palette half of
-//! which does not apply. See [`domain`] for why that is a hard partition rather
-//! than a filter.
+//! Households, separated people and suppression units are all authorable, and
+//! they share nothing but the arithmetic: separate observations, disjoint action
+//! sets, separate decision sinks. A graph declares its [`Domain`] and the editor
+//! works on one at a time, so a scientist is never looking at a palette two
+//! thirds of which does not apply. See [`domain`] for why that is a hard
+//! partition rather than a filter — and for why a person who is *at home* is not
+//! an agent in this sense at all.
 //!
 //! ### Blocks before primitives
 //!
@@ -82,12 +83,12 @@ pub use inventory;
 pub use domain::Domain;
 pub use eval::{CompiledGraph, Decision, NodeTrace, Overrides, Scratch, Trace};
 pub use graph::{BehaviorGraph, GraphNode, NodeId, Wire};
-pub use library::{CompileError, Library};
+pub use library::{CompileError, FileReport, Imported, Library, LoadReport};
 pub use node::{
     registry, Category, EvalCtx, EvalFn, Inputs, NodeSpec, ParamKind, ParamSpec, ParamValue,
     Params, PortSpec, Registry,
 };
-pub use observation::{HouseholdObs, Observation, UnitObs};
+pub use observation::{HouseholdObs, Observation, PersonObs, UnitObs};
 pub use subtype::{AgentSubtype, Capability, Difference, TraitKey};
 pub use validate::{validate, Issue, Report, Severity};
 pub use value::{ActionKind, ActionProposal, IntentValue, UnitKindKey, Value, ValueType};

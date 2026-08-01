@@ -1,0 +1,15 @@
+{
+  "id": "walk-out",
+  "name": "Walks out",
+  "description": "Makes for the nearest refuge and keeps going. What the model has always done with people who were out when it started, and what the guidance tells them to do.",
+  "author": "shipped",
+  "tags": [
+    "baseline"
+  ],
+  "graph": "default-separated-person",
+  "overrides": {},
+  "traits": {},
+  "capabilities": {},
+  "share": 1.0,
+  "enabled": true
+}

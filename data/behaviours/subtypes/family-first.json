@@ -1,0 +1,37 @@
+{
+  "id": "family-first",
+  "name": "Goes back for family",
+  "description": "Turns round for the house while there is still someone in it and the way back is not already burning. The behaviour every post-fire study finds and no evacuation plan assumes. Ships at zero share: give it one and the casualty figures stop being comparable with anything measured before, which is exactly the comparison worth running.",
+  "author": "shipped",
+  "tags": [
+    "reunification",
+    "family"
+  ],
+  "graph": "default-separated-person",
+  "overrides": {
+    "0.spread": {
+      "t": "number",
+      "v": 0.1
+    },
+    "2.enabled": {
+      "t": "bool",
+      "v": true
+    },
+    "2.max_detour": {
+      "t": "number",
+      "v": 3.0
+    },
+    "2.max_home_distance_m": {
+      "t": "number",
+      "v": 2000.0
+    },
+    "2.only_if_family_home": {
+      "t": "bool",
+      "v": false
+    }
+  },
+  "traits": {},
+  "capabilities": {},
+  "share": 0.0,
+  "enabled": true
+}

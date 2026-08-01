@@ -35,6 +35,7 @@ use crate::AppState;
 #[derive(Clone, Copy, PartialEq)]
 enum Action {
     TogglePlay,
+    Step,
     Speed(f32),
     Layer(FireLayer),
     Restart,
@@ -121,6 +122,17 @@ pub fn menubar(
             ui.menu_button("Simulation", |ui| {
                 if item(ui, if playing { "Pause" } else { "Play" }, "Space").clicked() {
                     a(Action::TogglePlay, &mut act);
+                    ui.close_menu();
+                }
+                if item(ui, "Step one decision", ".")
+                    .on_hover_text(
+                        "Advance far enough for every agent to decide exactly once, whether \
+                         or not the clock is running. The granularity a behaviour is \
+                         authored at.",
+                    )
+                    .clicked()
+                {
+                    a(Action::Step, &mut act);
                     ui.close_menu();
                 }
                 ui.separator();
@@ -258,7 +270,11 @@ pub fn menubar(
                 }
                 ui.separator();
                 if item(ui, "Agent Behaviour Composer", "G")
-                    .on_hover_text("Edit the civilian decision model as a node graph.")
+                    .on_hover_text(
+                        "Author the decision model for households, separated people or \
+                         suppression units as a node graph — and watch the selected agent \
+                         run it.",
+                    )
                     .clicked()
                 {
                     a(Action::Composer, &mut act);
@@ -296,6 +312,16 @@ pub fn menubar(
                     a(Action::Speed(next_preset(speed)), &mut act);
                 }
                 if ui
+                    .button("⏭")
+                    .on_hover_text(
+                        "Step one decision (.) — every agent decides exactly once, paused \
+                         or not",
+                    )
+                    .clicked()
+                {
+                    a(Action::Step, &mut act);
+                }
+                if ui
                     .button(if playing { "⏸" } else { "▶" })
                     .on_hover_text(if playing { "Pause (Space)" } else { "Play (Space)" })
                     .clicked()
@@ -324,6 +350,7 @@ pub fn menubar(
     if let Some(action) = act {
         match action {
             Action::TogglePlay => sim.playing = !sim.playing,
+            Action::Step => sim.request_step(),
             Action::Speed(v) => sim.speed = v.clamp(MIN_SPEED, MAX_SPEED),
             Action::Layer(l) => *layer = l,
             Action::Restart => match sim.restart() {
@@ -485,6 +512,7 @@ fn shortcut_table(ui: &mut egui::Ui) {
         .show(ui, |ui| {
             for (key, what) in [
                 ("Space", "play / pause"),
+                (".", "step one decision"),
                 ("[  ]", "slower / faster"),
                 ("1 – 4", "fire layer"),
                 ("Arrows", "pan the camera"),

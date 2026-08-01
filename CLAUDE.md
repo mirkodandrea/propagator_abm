@@ -37,7 +37,8 @@ asking.
 | Deferred | Web/wasm build, record/replay debrief |
 | Engine | Bevy **0.14** + `bevy_egui` **0.28**, matching igad so its UI ports directly |
 | Scenarios | **Multi-scenario support** — load different scenarios for ABM testing and validation |
-| Agent behaviour | Authorable in-game as a node graph (`crates/behavior`) for **both** civilians and suppression units, **opt-in**: the hand-written layers in `abm::decide` and `abm::suppression` stay the default. One graph, one kind of agent; the editor works on one at a time |
+| Agent behaviour | Authorable in-game as a node graph (`crates/behavior`) for **three** kinds of agent — households, separated people, suppression units — **opt-in**: the hand-written layers stay the default. One graph, one kind of agent; the editor works on one at a time |
+| Separated people | A person who is **not with their household** is an agent in their own right (`Domain::Person`). Everyone else evacuates as a family, and the household is the decision-making unit — see `crates/behavior/src/domain.rs` |
 | Agent subtypes | Composition and flat parameter overrides. **No inheritance** — see the note in `crates/behavior/src/subtype.rs` |
 
 ---
@@ -315,11 +316,20 @@ hands out its own `NodeId` on insert and there is no way to ask it to keep the
 ones a file carried. Subtype overrides are keyed `<node id>.<param>`, so the
 first version loaded a graph, got a fresh set of ids, and every override in
 every profile silently stopped matching anything — the graph ran, the profiles
-compiled, and all four behaved identically. `Composer::load_graph` builds the
-old-id → snarl-id map as it inserts and remaps the overrides through it before
-anything else touches them. The general shape: **an override keyed on an
-identity the editor is free to reassign has to be remapped at the moment of
-reassignment**, because every later opportunity looks like a valid graph.
+compiled, and all four behaved identically. The first fix remapped the overrides
+at load; the general shape it taught is **an override keyed on an identity the
+editor is free to reassign has to be remapped at the moment of reassignment**,
+because every later opportunity looks like a valid graph.
+
+It is now fixed rather than patched, and the reason is the second thing that
+wanted the same identity. `EditorNode` carries a `behavior::NodeId` of its own
+and `to_graph` writes *that*; snarl's handles never leave `composer/`. Remapping
+was correct for overrides and could not extend to the live execution view, which
+matches a trace's node ids against the canvas: a trace comes from the *running*
+library, the canvas from the edited one, and no single remap exists between two
+things that renumber independently. The lesson underneath the lesson: **an
+identity the editor is free to reassign is not an identity**, and the second
+thing that needs it is what makes that obvious.
 
 **25. A keyboard shortcut collides silently, and the loser is whichever system
 happens to read the key second — or neither, because both run.** Three of these
@@ -367,6 +377,40 @@ projection and cannot be its input. **Anything a projection does not explicitly
 carry is reset to a default on every rebuild, and a default that validates is
 worse than one that does not.**
 
+**28. A dataflow graph has no active node, and drawing one anyway is a lie
+that reads as a feature.** The obvious way to visualise a behaviour running is a
+token moving through it, and there is nothing for the token to be: a
+`BehaviorGraph` evaluates *every* node on *every* decision tick, in topological
+order, between two instants of simulated time. Nothing is ever "reached" and
+nothing is ever "skipped". The honest quantity is a **backward slice** — from
+the winning proposal, and from every output sink, to the observations that
+produced them (`Trace::active`) — and the difference matters because the failure
+it replaces is not "no picture" but "a confident wrong picture": the same
+highlight, drawn from a guess, is indistinguishable on screen from one drawn
+from the trace.
+
+Two things fell out of building it that would not have been guessed. **The
+decision sink must be on the slice and never expanded**: every proposal in the
+graph wires into it, so one backward step from it reaches every branch there is
+and lights the whole canvas — the answer that looks most complete and says
+least. And **the other sinks must be seeded**: a `Decision` is four numbers, only
+one of them is the action, and leaving `out.prep_scale` out of the slice drew
+`block.preparation` — the largest single lever in the evacuation model — as a
+box that had never mattered. The general rule: **the slice is everything that
+fed something the model reads back, and the sink everything converges on is a
+junction rather than a cause.**
+
+**29. Four states in one hue is three states.** "On the path", "checked and
+declined", "was on the path recently" and "never on the path" are not degrees of
+one thing — a rule that ran and said no is a completely different report from a
+box nothing reached — and the first version drew them as four brightnesses of
+green, which reads as one continuum with a bright end. They are four hues now
+(`viewer::LiveRole`), and the legend lives next to the canvas rather than in a
+doc comment, because a colour whose meaning is written down somewhere else is a
+colour nobody reads. The same reason the pin *shapes* carry the port type: in
+live mode the fill is repurposed for the role, and without the shapes the type
+would simply have vanished.
+
 ---
 
 ## Current state
@@ -393,7 +437,10 @@ regions, and nothing else.
   everything inspectable). `ui::DockTab`; `PanelState::focus_tab` is what makes
   a shortcut or a menu item bring its tab forward rather than select it behind
   a closed chevron.
-- **Inspector**, bottom — only when something is selected.
+- **Inspector**, bottom — only when something is selected. Ends with a
+  **Behaviour** section for any agent running an authored one — household,
+  person or unit, one function for all three — carrying the decision, the
+  branches that produced it, and the one door from the map into the composer.
 
 This replaced five independent docks (two left/right side panels, two bottom
 panels, plus a floating dev window), which between them left the 3D view a
@@ -434,10 +481,21 @@ structure exposure and a coarse 200 m distance-to-fire field (what they can
 congestion, slope, rerouting and abandonment of vehicles on a cut road. The
 commander's order is a lever, not a teleport: it still arrives over each
 household's own channel (90 s mobile alert → 20 min for no channel at all).
-People who were away from home start their own walk out. Rendered as one
-capsule per person plus one vehicle per driving household, drawn at 3× life
-size (`people::FIGURE_SCALE`) because at command altitude a person is
+Rendered as one capsule per person plus one vehicle per driving household, drawn
+at 3× life size (`people::FIGURE_SCALE`) because at command altitude a person is
 sub-pixel.
+
+**People away from home are their own agents.** ~400 of 1,577 start out and
+`PersonAgent::away` marks them; they launch their own walk out at T+0, from the
+constructor, which is the shipped behaviour and stays there rather than falling
+out of the decision layer's first tick — moving it would shift every one of
+those departures by an interval. `Abm::decide_people` runs only when a person
+behaviour is loaded, and every branch of it changes a *destination* rather than
+a pace, which is what keeps an authored person behaviour step-size invariant.
+`Traveller::goal` is `Refuge` for everyone except someone walking home, who
+carries a planned path instead — the one place the civilian model runs a
+per-agent A* rather than reading the route field, because it is the one case the
+field cannot answer.
 
 A representative run — general order at T+5 min, 2 h incident:
 
@@ -495,14 +553,15 @@ ignition at cell (153, 246), r=250 m):
 a node editor for the agent decision layers, so the behavioural assumptions can
 be changed without writing Rust. `g` opens it.
 
-It covers **two kinds of agent**, and works on one at a time. The domain
+It covers **three kinds of agent**, and works on one at a time. The domain
 selector at the top of the window scopes everything below it — the graph list,
-the palette, the profiles, the test bench — because the two share nothing but
-the arithmetic:
+the palette, the profiles, the test bench, the live view — because the three
+share nothing but the arithmetic:
 
 | | Replaces | Action set |
 |---|---|---|
-| **Civilians** (a household) | the departure decision in `abm::decide` | prepare · evacuate now · defend · shelter |
+| **Households** (a family) | the departure decision in `Abm::decide` | prepare · evacuate now · defend · shelter |
+| **Separated people** (one person away from home) | the T+0 bootstrap in `Abm::with_behaviours` | walk out · shelter where they are · head home |
 | **Suppression units** (a crew, engine or aircraft) | the safety and resupply policy in `abm::suppression` | withdraw · break off for water · hold · return to staging |
 
 A unit policy decides **when a unit stops**, not where it goes: pull back
@@ -511,6 +570,24 @@ go home because the order was a bad one. Where a unit is sent stays the
 commander's job — a graph cannot produce a map position, exactly as a household
 graph cannot choose a destination.
 
+A **person** is the one domain that is about a destination, and it is why it is
+narrow: a household decides *when* to go and a separated person decides *where
+to*. Only people who are not with their household run it — everyone else leaves
+with the family, at the pace of the slowest member, and giving each of them a
+graph would be a per-person assumption written as a per-family one.
+`PersonAgent::away` is the flag that decides which they are.
+
+**Reunification is now expressible, and ships off.** `block.person_reunite` is
+on the shipped person graph with `enabled = false`, and the `family-first`
+profile at share 0 turns it on. Going home is the behaviour every post-fire
+study finds and no evacuation plan assumes; turning it on changes the casualty
+figures, so every measurement in `crates/fire/tests` was taken with it off and
+saying so is the whole reason it ships that way. A person who makes it home
+rejoins the household and stops being an agent (`Abm::arrive_home`), which is
+what makes it reunification rather than a detour — and if the family has already
+left, they are on their own again, which is the outcome the profile exists to
+make visible.
+
 The developer-facing surface is one macro. A `behavior_node!` invocation
 anywhere in any linked crate is collected by `inventory` at link time and the
 node is in the palette, the validator, the inspector and the test bench with no
@@ -518,8 +595,11 @@ further edit — there is no central list, which means there is no way to add a
 node the editor does not know about. A node declares `domain:` or is
 domain-free; `anything_that_reads_the_world_declares_a_domain` is what stops a
 node reading a default observation in the wrong graph and looking like a branch
-that never fires. 88 ship — 60 offered to a civilian graph, 49 to a unit one,
-and the 21 in both are the arithmetic.
+that never fires. 117 ship — 60 offered to a household graph, 50 to a person
+one, 49 to a unit one, and the 21 in all three are the arithmetic. The counts
+come from `palette_report` (`cargo test -p behavior --release -- --ignored
+palette_report --nocapture`), which is a report rather than an assertion: a test
+that pinned them would fail every time somebody added a node.
 
 **Blocks, not arithmetic.** The node set is two tiers, and the top one is where
 authoring is meant to happen. A `Category::Block` is one whole behavioural
@@ -541,27 +621,90 @@ Validation is live and every issue names its node; clicking one selects it.
 An **agent subtype** is a graph plus a flat map of parameter overrides plus some
 starting traits — no inheritance, deliberately, so "why did this agent do that"
 is answered by reading one file. How a profile is *assigned* is the one place
-the two domains differ, and it follows from what is being assigned to:
+the domains differ, and it follows from what is being assigned to:
 
-- **Civilians** carry a relative **share**, hashed onto 750 anonymous families.
+- **Households** and **separated people** carry a relative **share**, hashed
+  onto 750 anonymous families and ~400 anonymous individuals. Different hash
+  salts, so a person and their household do not correlate — sharing one would
+  put every member of a low-hash family in the same person profile, which looks
+  like a finding and is an artefact.
 - **Units** carry a list of **kinds** and an on/off switch. There are eight of
   them and they are named individuals; a hash would make "why did Autobotte 2
   do that" a question about arithmetic rather than about a file.
 
-Six profiles ship: four civilian, on the one graph, differing only in numbers —
-which is the pattern the whole thing is for — plus `standing-orders` (the
-shipped unit policy, written down) and `cautious-engines` (off by default). The
-inspector edits the *override* when a profile is selected and says so, because a
-scientist who moves a threshold and finds they moved it for everyone has been
-badly served.
+Eight profiles ship: four household, on the one graph, differing only in
+numbers — which is the pattern the whole thing is for — plus `walk-out` and
+`family-first` (the latter at share 0), plus `standing-orders` (the shipped unit
+policy, written down) and `cautious-engines` (off by default). The inspector
+edits the *override* when a profile is selected and says so, because a scientist
+who moves a threshold and finds they moved it for everyone has been badly
+served.
+
+**A node's identity is the file's, and the editor preserves it.** `egui_snarl`
+hands out its own `NodeId` on insert; `EditorNode` carries a `behavior::NodeId`
+of its own and `to_graph` writes *that*, so a load, a save and a rebuild all
+name the same boxes. Override keys therefore need no remapping, and the live
+execution view can match a trace's node ids against the canvas — which it could
+not if the two renumbered independently. See finding 24, which this replaces
+with a fix.
 
 The **test bench** puts a made-up agent in a situation and reads back the answer
 node by node, plus a sweep that varies one field across its range and reports
 where the decision actually changes — a threshold here is never a single number,
 so the alternative is guessing. Situations, editable fields and sweep fields all
-follow the open graph's domain; eight civilian situations ship and nine unit
-ones, each chosen because it is a moment the hand-written layer either handled
-or visibly did not.
+follow the open graph's domain; eight household situations ship, eight person
+ones and nine unit ones, each chosen because it is a moment the hand-written
+layer either handled or visibly did not.
+
+The **Live tab** is the other half of debugging, and it is the one that works on
+the real incident rather than a made-up one. Click an agent on the map — a
+household, a person, a unit — and the canvas starts showing what their behaviour
+is doing: every node's outputs on the box, every input value on its pin, and the
+nodes coloured by how they relate to the decision that was taken.
+
+**The graph is dataflow, not a flowchart, and the view says so.** Every node runs
+on every decision tick, so "the currently executing node" has no referent. What
+does is `Trace::active` — the backward slice from the winning proposal, and from
+every output sink, to the observations that produced them. Four states, and they
+are not shades of one thing:
+
+| | |
+|---|---|
+| **on the path taken** | fed a value into the decision that won |
+| **checked, did not apply** | an action node that ran and withheld its proposal |
+| **was on the path recently** | in the slice on one of the last 60 ticks |
+| **not on the path** | ran, as everything does, and has never mattered |
+
+Two details in the slice are load-bearing. The **decision sink is on it but
+never expanded** — every proposal in the graph wires into it, so walking back
+through its inputs would light the whole canvas, which is the useless answer. And
+the **other sinks are seeded**: a `Decision` is four numbers and only one is the
+action, so `block.preparation` — the largest single lever in the evacuation
+model — is on the path even when the branch it feeds is not.
+
+It does **not** guess which arm of an `Or` mattered. That needs per-node
+semantics the registry does not carry, and a highlight that guesses is worse
+than one that includes an extra box. It also says out loud when the canvas has
+edits the incident has not been given, because a bright node the model has never
+seen is otherwise indistinguishable from one it ignored.
+
+`.` steps one decision interval (`sim::STEP_S` = 6 s: `DECISION_S` rounded up to
+the fire's own quantum), running or paused, so a decision can be walked forward
+one tick at a time. `Sim::advance` is the shared body, extracted so a step and a
+play frame take the same path through the scheduled ignitions and the auto-order
+— a single-step facility that took a different one would step something other
+than what plays. History is per subject and dropped the moment the selection
+changes, so one agent's traversed path is never shown over another's graph.
+
+The **Help tab** is the editor's own documentation, next to the thing it is
+about: what a graph *is* (the dataflow point, first and open by default), adding
+and wiring nodes, conditions and priorities, profiles, running and debugging,
+and the file list — which names every `.json` in `data/behaviours/` **and the
+ones that would not load, with their parse errors**. `Library::load_dir_reported`
+is lenient per file, so one graph with a stray comma costs that graph and not
+the other nine; the report is what turns a skipped file from a silent loss into
+a line someone can act on. Import and export of a single behaviour or profile
+live there too.
 
 `Apply and restart` rebuilds both agent models and replays the ignition list, so
 "same fire, different behaviour" is a controlled comparison. Measured through
@@ -586,16 +729,21 @@ longer than six minutes of pumping, so past about a third the engine spends the
 incident shuttling. That number has not been swept properly, and it is the
 question `block.unit_resupply` exists to let someone answer.
 
-Both halves are **off by default**: `Sim::behaviour` is `None` until the
-composer applies something, and a library with no profile in play leaves each
-model on its own hand-written layer — so every measurement in
-`crates/fire/tests` still describes the model it was taken on. The shipped
-graphs are transcriptions of those layers and are pinned to reproduce them
-exactly (`the_shipped_policy_reproduces_the_hand_written_one`).
+All three are **off by default**: `Sim::behaviour` is `None` until the composer
+applies something, and a library with no profile in play leaves each model on
+its own hand-written layer — so every measurement in `crates/fire/tests` still
+describes the model it was taken on. The shipped graphs are transcriptions of
+those layers and are pinned to reproduce them exactly
+(`the_shipped_policy_reproduces_the_hand_written_one`,
+`the_shipped_person_behaviour_reproduces_the_hand_written_one`). Whether a
+library is worth applying is `Library::has_assignment`, which asks all three:
+checking only the households — which is what it used to do — silently discarded
+a library whose one live profile was a unit policy, and the symptom was an Apply
+that reported success and changed nothing.
 
-**Not built yet:** no debrief. No wasm. No reunification behaviour — people who
-are out do not go home for family. No dozers (the only line-cutting resource is a
-hand crew, which is why line production is the binding constraint). Units are
+**Not built yet:** no debrief. No wasm. No dozers (the only line-cutting
+resource is a hand crew, which is why line production is the binding
+constraint). Units are
 selected from the Resources panel, not by clicking them on the map — the
 screen-space picker in `inspect` would do it, but three tools already contend for
 left-click and a fourth needs a rule, not a patch.
@@ -632,23 +780,35 @@ SPOTORNO_TAB=fire ...  # open on a chosen dock tab: fire | units | entities --
        # the only way to screenshot one of them unattended
 
 # the behaviour composer, opened with the scenario -- the value picks the
-# right-hand tab, which is the only way to screenshot the bench unattended.
-SPOTORNO_COMPOSER=1 cargo run --release -p game          # inspector
+# right-hand tab, which is the only way to screenshot a tab unattended.
+SPOTORNO_COMPOSER=1 cargo run --release -p game          # node inspector
 SPOTORNO_COMPOSER=subtypes ...                           # profiles and compare
 SPOTORNO_COMPOSER=test ...                               # the test bench
-SPOTORNO_COMPOSER_DOMAIN=units ...   # open on the suppression side rather than
-       # the civilian one -- the editor shows one kind of agent at a time, so
-       # this is the only way to screenshot the other one unattended
+SPOTORNO_COMPOSER=live ...                               # the live execution view
+SPOTORNO_COMPOSER=help ...                               # the help tab
+SPOTORNO_COMPOSER_DOMAIN=units ...   # open on another kind of agent:
+       # households | people | units -- the editor shows one at a time, so this
+       # is the only way to screenshot the others unattended
+
+# the three inputs the live execution view needs and an unattended run cannot
+# produce: an applied library, a selected agent, and a running clock. Without
+# the first two the Live tab can only ever be screenshotted empty.
+SPOTORNO_BEHAVIOUR=1 ...             # apply the library on the first frame
+SPOTORNO_WATCH=household:0 ...       # select an agent: household | person | unit
+       # survives the restart an Apply causes, unlike a click
 
 # regenerate data/behaviours/ after editing crates/behavior/src/defaults.rs
 cargo test -p behavior --release -- --ignored write_shipped_library
+
+# what the palette offers per domain, for the counts quoted above
+cargo test -p behavior --release -- --ignored palette_report --nocapture
 ```
 
-Controls: `space` play/pause · `[` `]` speed · `1`–`4` fire layer · `e` general
-evacuation order · `i` arm the ignition tool (then left-click the map) · `esc`
-disarm · `r` restart · `b` the Entities tab · `g` the Agent Behaviour Composer ·
-`f1` help · `f12` screenshot · drag orbit · right-drag pan · scroll zoom ·
-**arrow keys** pan.
+Controls: `space` play/pause · `.` step one decision (paused or not) · `[` `]`
+speed · `1`–`4` fire layer · `e` general evacuation order · `i` arm the ignition
+tool (then left-click the map) · `esc` disarm · `r` restart · `b` the Entities
+tab · `g` the Agent Behaviour Composer · `f1` help · `f12` screenshot · drag
+orbit · right-drag pan · scroll zoom · **arrow keys** pan.
 
 Suppression: `tab` next unit · `a` attack here · `l` cut line (two clicks) ·
 `d` drop here · `x` stand down · `c` request air support. Units are selected in
@@ -691,11 +851,18 @@ because it is what gets you *out* of a state.
   continuous fuel, not at the WUI edge.
 - Keep the model testable without a window. The headless tests in
   `crates/fire/tests/` run a full 2 h simulation in well under a second.
-- Exposing a new thing an agent can know is a field on `behavior::HouseholdObs`
-  or `UnitObs` plus one `obs_number!`/`unit_bool!` line. Exposing a new thing it
-  can *do* is harder on purpose: each domain's action set is closed, and adding
-  to it means teaching `abm::behaviour::outcome_of` or `unit_outcome_of` what
+- Exposing a new thing an agent can know is a field on `behavior::HouseholdObs`,
+  `PersonObs` or `UnitObs` plus one `obs_number!` / `person_bool!` /
+  `unit_bool!` line. Exposing a new thing it can *do* is harder on purpose: each
+  domain's action set is closed, and adding to it means teaching
+  `abm::behaviour::outcome_of`, `person_outcome_of` or `unit_outcome_of` what
   the movement or suppression layer should do about it.
+- Adding a **domain** touches more than it looks: the enum, an observation, a
+  decision sink, an action set, a runtime and a call site in `abm`, plus every
+  `match` on `Domain` in `crates/game/src/composer/`. The compiler finds all of
+  them except the last two, which are behavioural. `Library::has_assignment` and
+  `Sim::restart` are the ones that fail *silently* when a domain is forgotten —
+  the model runs, reports success, and ignores the new agents entirely.
 - **Prefer a block to a cluster of primitives.** A new behavioural assumption
   should arrive as one `Category::Block` node with its numbers as parameters,
   not as six `Logic` nodes a scientist has to wire in the right order. If it
@@ -748,11 +915,25 @@ because it is what gets you *out* of a state.
 - The engine's four-cell work footprint is what makes its tank matter (see
   `reachable_targets`), but it is a tuning constant chosen to put one tank just
   past moisture of extinction. It has not been swept.
-- The composer's action set is the four the movement layer already understood.
-  A graph cannot express "drive to a relative's house", "go back for someone",
-  or "shelter at the beach rather than in the house" — all of which are real
-  behaviours, and all of which need movement-layer work before a node for them
-  would mean anything.
+- The household action set is still the four the movement layer understood. A
+  household graph cannot express "drive to a relative's house" or "shelter at
+  the beach rather than in the house" — both real behaviours, both needing
+  movement-layer work before a node for them would mean anything. "Go back for
+  someone" is now expressible, but only for a person who is *already* away:
+  a household cannot send one member back.
+- **Reunification is unmeasured beyond "it changes the outcome".** The
+  `family-first` profile ships at share 0 and the tests pin that it fires, that
+  it respects its own limits, and that someone who gets home rejoins the
+  household. What share of a real population does this, and what it costs in
+  casualties at that share, is exactly the question the profile exists to let
+  someone answer and nobody has.
+- A person heading home plans one A* and never re-plans. If the fire cuts that
+  path behind them they walk into it — which is arguably realistic and is
+  certainly not modelled on purpose. The re-plan trigger the suppression layer
+  learned to use (finding 18) is the shape of the fix.
+- Separated people are ~400 of 1,577 and their behaviour runs per person per
+  decision tick. That is half again the household load and has not been profiled
+  at the top of the population range.
 - Applying a behaviour restarts the incident. That is the right default and it
   is what makes the comparison controlled, but it also means a scientist cannot
   watch a threshold change take effect on the run in front of them. A "what
@@ -786,7 +967,19 @@ because it is what gets you *out* of a state.
 - Nothing an authored policy does is visible on the map beyond the unit's note.
   A crew that pulled itself back because a graph said so looks identical to one
   that was ordered back, which is the wrong way round for a tool whose point is
-  making assumptions legible.
+  making assumptions legible. The Live tab answers it for the *selected* agent
+  and only there; the map itself still says nothing.
+- The live view explains one agent at a time. "Why did these forty households
+  all leave at once" is the question a scientist actually has, and it needs an
+  aggregate — which branch fired for how many, over time — not a slice.
+- The active slice does not say which arm of an `Or` mattered, deliberately
+  (finding 28). Per-node contribution semantics would let it, at the cost of
+  every node author having to declare them, and it is not obvious the extra
+  precision is worth a second thing every `behavior_node!` has to get right.
+- Stepping is one decision interval, which is right for behaviour and wrong for
+  the fire: at `STEP_S` = 6 s the front barely moves, so "step until something
+  happens" is a lot of presses. A "step until this agent's decision changes"
+  would be the useful one and needs the loop to know what it is watching.
 - `block.unit_futile` ships but nothing in the default policy uses it: the
   shipped model's answer to a stranded unit is a note in the panel, and changing
   that would change the shipped measurements. It is there for an author to wire

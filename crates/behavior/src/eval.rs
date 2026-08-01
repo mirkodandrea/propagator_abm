@@ -11,7 +11,9 @@
 //! Tracing is a separate entry point rather than a flag, so the hot path
 //! carries no branch for it and the test bench gets the full picture.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::Serialize;
 
 use crate::domain::Domain;
 use crate::graph::{BehaviorGraph, NodeId};
@@ -49,7 +51,7 @@ pub struct CompiledGraph {
 }
 
 /// What the model reads back out of one evaluation.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Decision {
     pub action: ActionKind,
     /// Priority of the winning proposal. Surfaced so the inspector can say
@@ -69,28 +71,155 @@ impl Default for Decision {
 }
 
 /// One node's values from a traced evaluation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct NodeTrace {
     pub node: NodeId,
     pub type_id: &'static str,
     pub name: &'static str,
+    pub category: crate::node::Category,
     pub inputs: Vec<Vec<Value>>,
     pub outputs: Vec<Value>,
+    /// Per input port, the `(node id, output port)` pairs feeding it.
+    ///
+    /// Carried on the trace rather than looked up in the graph so a slice can be
+    /// computed from the trace alone. The panel that draws the execution path
+    /// holds a trace and an editor canvas whose node ids match; making it hold
+    /// the compiled graph as well would be a third copy of the same wiring, and
+    /// the one most likely to go stale.
+    pub sources: Vec<Vec<(NodeId, u16)>>,
 }
 
-/// A full record of one evaluation, for the test bench.
-#[derive(Debug, Clone, Default)]
+impl NodeTrace {
+    /// Whether this node produced anything a downstream node would act on.
+    ///
+    /// A bool output that is false, or an action proposal that was withheld, is
+    /// a branch that ran and declined. Used to tell "off" apart from "not
+    /// reached" in the editor, which are the same colour if you are not careful
+    /// and mean completely different things.
+    pub fn fired(&self) -> bool {
+        match self.outputs.first() {
+            Some(Value::Bool(b)) => *b,
+            Some(Value::Action(a)) => a.fired,
+            _ => true,
+        }
+    }
+}
+
+/// A full record of one evaluation, for the test bench and the live inspector.
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct Trace {
     /// In evaluation order, which is also the order to read them in.
     pub nodes: Vec<NodeTrace>,
     /// Every action proposal that fired, strongest first.
     pub proposals: Vec<(NodeId, ActionKind, f32)>,
+    /// The node the model actually reads its answer from.
+    pub sink: Option<NodeId>,
     pub decision: Decision,
 }
 
 impl Trace {
     pub fn node(&self, id: NodeId) -> Option<&NodeTrace> {
         self.nodes.iter().find(|n| n.node == id)
+    }
+
+    /// The action node whose proposal won, if any fired.
+    pub fn winner(&self) -> Option<NodeId> {
+        self.proposals.first().map(|p| p.0)
+    }
+
+    /// Every node that fed something the model reads back out.
+    ///
+    /// The backward closure from the winning proposal, and from every `Output`
+    /// sink, to the observations that produced them. This is the honest reading
+    /// of "the active path" in a graph that has no execution cursor: every node
+    /// here contributed a value to the answer, and every node outside it did
+    /// not.
+    ///
+    /// The other sinks are seeded as well as the winner, because a
+    /// [`Decision`] is four numbers and only one of them is the action. The
+    /// preparation multiplier decides *when* a household actually gets out of
+    /// the door — the largest single lever in the evacuation model — and
+    /// leaving it out drew it as a branch that had never mattered.
+    ///
+    /// The **decision sink itself is on the slice but never expanded**, and that
+    /// is the load-bearing detail. Every proposal in the graph is wired into it,
+    /// so walking back through its inputs would reach every branch there is and
+    /// light the whole canvas — which is precisely the useless answer this is
+    /// for avoiding. The winner is seeded directly instead.
+    ///
+    /// It does not try to work out which arm of an `Or` was the one that
+    /// mattered. That would need per-node semantics the registry does not carry,
+    /// and a highlight that guesses is worse than one that includes an extra
+    /// box — the whole point of drawing it is that it can be trusted.
+    ///
+    /// With nothing fired the slice is the sinks and whatever feeds them, which
+    /// is correct: the agent is doing its domain's default and no branch of the
+    /// graph asked for it.
+    pub fn active(&self) -> BTreeSet<NodeId> {
+        let mut seen = BTreeSet::new();
+        let mut stack: Vec<NodeId> = self
+            .nodes
+            .iter()
+            .filter(|n| n.category == crate::node::Category::Output)
+            .map(|n| n.node)
+            .collect();
+        if let Some(sink) = self.sink {
+            seen.insert(sink);
+        }
+        if let Some(w) = self.winner() {
+            stack.push(w);
+        }
+        while let Some(id) = stack.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(n) = self.node(id) else { continue };
+            for slot in &n.sources {
+                for (from, _) in slot {
+                    if !seen.contains(from) {
+                        stack.push(*from);
+                    }
+                }
+            }
+        }
+        seen
+    }
+
+    /// The wires of [`Trace::active`], as `(from node, from port, to node, to
+    /// port)`.
+    ///
+    /// The wire into the sink from the losing proposals is deliberately absent:
+    /// those proposals were considered, and the whole point of the slice is
+    /// which one was taken.
+    pub fn active_wires(&self) -> BTreeSet<(NodeId, u16, NodeId, u16)> {
+        let active = self.active();
+        let mut out = BTreeSet::new();
+        for n in &self.nodes {
+            if !active.contains(&n.node) {
+                continue;
+            }
+            for (port, slot) in n.sources.iter().enumerate() {
+                for (from, from_port) in slot {
+                    if active.contains(from) {
+                        out.insert((*from, *from_port, n.node, port as u16));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Action nodes that ran and declined to propose anything.
+    ///
+    /// These are the branches a reader most wants told apart from the rest: a
+    /// withheld proposal is a rule that was checked and did not apply, which is
+    /// a completely different thing from a node nothing reaches.
+    pub fn withheld(&self) -> BTreeSet<NodeId> {
+        self.nodes
+            .iter()
+            .filter(|n| n.category == crate::node::Category::Action && !n.fired())
+            .map(|n| n.node)
+            .collect()
     }
 }
 
@@ -184,6 +313,7 @@ impl CompiledGraph {
         let mut trace = Trace::default();
         let d = self.run(obs, &mut scratch, Some(&mut trace));
         trace.decision = d;
+        trace.sink = self.nodes.get(self.decision).map(|n| n.id);
         trace.proposals.sort_by(|a, b| b.2.total_cmp(&a.2));
         (d, trace)
     }
@@ -231,8 +361,21 @@ impl CompiledGraph {
                     node: n.id,
                     type_id: n.spec.id,
                     name: n.spec.name,
+                    category: n.spec.category,
                     inputs: s.slots.clone(),
                     outputs: out.clone(),
+                    // Compiled indices back to graph node ids: the trace is read
+                    // against the editor's canvas, which knows nothing about
+                    // topological order.
+                    sources: n
+                        .sources
+                        .iter()
+                        .map(|slot| {
+                            slot.iter()
+                                .map(|(from, port)| (self.nodes[*from as usize].id, *port))
+                                .collect()
+                        })
+                        .collect(),
                 });
             }
         }

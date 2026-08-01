@@ -1,11 +1,12 @@
 //! Running an authored behaviour instead of the hand-written decision layers.
 //!
-//! Two of them, one per [`behavior::Domain`], and each replaces exactly one
+//! Three of them, one per [`behavior::Domain`], and each replaces exactly one
 //! block:
 //!
 //! | | Replaces | Leaves alone |
 //! |---|---|---|
 //! | Households | the departure decision in [`Abm::decide`](crate::Abm) | perception, milling, movement, congestion, lethality |
+//! | Separated people | where one person who is not with their household is trying to get to | how fast they walk, what the smoke does to them, whether they make it |
 //! | Suppression units | the self-preservation and resupply policy in [`Suppression::step`](crate::Suppression) | where units are sent, how fast they move, what their work does to the fire |
 //!
 //! An authored graph changes *when* an agent acts, not what acting costs it.
@@ -32,7 +33,7 @@ use std::collections::BTreeMap;
 
 pub use behavior::subtype::{Capability, TraitKey};
 use behavior::{
-    ActionKind, CompiledGraph, Decision, Library, Observation, Scratch, UnitKindKey,
+    ActionKind, CompiledGraph, Decision, Domain, Library, Observation, Scratch, UnitKindKey,
 };
 use scenario::population::Intent;
 
@@ -79,7 +80,19 @@ impl BehaviorRuntime {
     /// experiment, and finding that out from the household counts is not
     /// finding it out.
     pub fn build(lib: &Library) -> Result<Option<BehaviorRuntime>, RuntimeErrors> {
-        let assignment = lib.assignment();
+        BehaviorRuntime::build_for(lib, Domain::Household)
+    }
+
+    /// The same, for any domain whose profiles are assigned by share.
+    ///
+    /// Households and separated people both are, because both are populations
+    /// of anonymous agents; suppression units are not, and [`UnitRuntime`] says
+    /// why.
+    pub fn build_for(
+        lib: &Library,
+        domain: Domain,
+    ) -> Result<Option<BehaviorRuntime>, RuntimeErrors> {
+        let assignment = lib.share_assignment(domain);
         if assignment.is_empty() {
             return Ok(None);
         }
@@ -145,7 +158,17 @@ impl BehaviorRuntime {
     /// survive a restart, a different step size, and any change to the order
     /// households are built in.
     pub fn assign(&self, household_id: usize) -> usize {
-        let r = crate::hash01(household_id as u64, 0x5B7A);
+        self.assign_with(household_id, 0x5B7A)
+    }
+
+    /// The same, with the caller's own salt.
+    ///
+    /// A person and their household are different agents in different domains,
+    /// and sharing a salt would correlate their profiles: every member of a
+    /// household with a low hash would land in the same person profile, which
+    /// looks like a finding and is an artefact.
+    pub fn assign_with(&self, id: usize, salt: u64) -> usize {
+        let r = crate::hash01(id as u64, salt);
         self.cumulative.iter().position(|c| r < *c).unwrap_or(self.subtypes.len() - 1)
     }
 
@@ -215,6 +238,87 @@ pub fn outcome_of(a: ActionKind) -> Outcome {
         // `Stay`, plus the suppression half of the enum, which a validated
         // household graph cannot produce.
         _ => Outcome::Hold,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Separated people
+// ---------------------------------------------------------------------------
+
+/// Everything the agent model needs to run authored behaviour for the people
+/// who are not with their household.
+///
+/// A thin newtype over [`BehaviorRuntime`] rather than a copy of it: the
+/// assignment mechanism is identical — hundreds of anonymous agents, profiles
+/// with shares — and the only reason it is a distinct type is that handing a
+/// person runtime to the household decision layer must not compile.
+pub struct PersonRuntime(BehaviorRuntime);
+
+impl PersonRuntime {
+    pub fn build(lib: &Library) -> Result<Option<PersonRuntime>, RuntimeErrors> {
+        Ok(BehaviorRuntime::build_for(lib, Domain::Person)?.map(PersonRuntime))
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn subtype(&self, i: usize) -> Option<&SubtypeRuntime> {
+        self.0.subtype(i)
+    }
+
+    pub fn names(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.0.names()
+    }
+
+    /// Which profile a person runs, hashed from the person id.
+    pub fn assign(&self, person_id: usize) -> usize {
+        self.0.assign_with(person_id, 0x2C91)
+    }
+
+    pub fn decide(&mut self, subtype: usize, obs: &Observation) -> Decision {
+        self.0.decide(subtype, obs)
+    }
+
+    pub fn explain(
+        &self,
+        subtype: usize,
+        obs: &Observation,
+    ) -> Option<(Decision, behavior::Trace)> {
+        self.0.explain(subtype, obs)
+    }
+}
+
+/// What the movement layer does with each separated-person action.
+///
+/// Narrower than the household's, and every one of these is about a
+/// *destination* rather than about timing. That is the difference between the
+/// two civilian domains: a household decides when to go, and a person who is
+/// already out decides where to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PersonOutcome {
+    /// Carry on doing whatever they were doing.
+    Carry,
+    /// Make for the nearest refuge on foot.
+    WalkOut,
+    /// Stop moving and shelter where they are.
+    Shelter,
+    /// Turn round and walk back to the household's home.
+    HeadHome,
+}
+
+pub fn person_outcome_of(a: ActionKind) -> PersonOutcome {
+    match a {
+        ActionKind::WalkOut => PersonOutcome::WalkOut,
+        ActionKind::TakeShelter => PersonOutcome::Shelter,
+        ActionKind::HeadHome => PersonOutcome::HeadHome,
+        // `Remain`, plus the other two domains' halves of the enum, which a
+        // validated person graph cannot produce.
+        _ => PersonOutcome::Carry,
     }
 }
 

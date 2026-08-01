@@ -94,7 +94,9 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
     });
 
     match domain {
-        Domain::Household => {
+        // Both civilian domains are populations of anonymous agents, so both
+        // are assigned by share. A unit is a named individual and is not.
+        Domain::Household | Domain::Person => {
             ui.horizontal(|ui| {
                 ui.label("Share").on_hover_text(
                     "Relative weight in the population. These are normalised, so 3 and 1 means \
@@ -340,7 +342,7 @@ fn roster(ui: &mut egui::Ui, c: &mut Composer) {
         .collect();
     let total: f32 = rows.iter().map(|r| r.2.max(0.0)).sum();
     let inert = match domain {
-        Domain::Household => total <= 0.0,
+        Domain::Household | Domain::Person => total <= 0.0,
         Domain::SuppressionUnit => !rows.iter().any(|r| r.4),
     };
 
@@ -352,13 +354,13 @@ fn roster(ui: &mut egui::Ui, c: &mut Composer) {
                     c.subtype = Some(id.clone());
                 }
                 match domain {
-                    Domain::Household if share <= 0.0 => {
+                    Domain::Household | Domain::Person if share <= 0.0 => {
                         ui.small("—");
                     }
-                    Domain::Household if total > 0.0 => {
+                    Domain::Household | Domain::Person if total > 0.0 => {
                         ui.small(format!("{:.0}%", 100.0 * share / total));
                     }
-                    Domain::Household => {}
+                    Domain::Household | Domain::Person => {}
                     Domain::SuppressionUnit => {
                         ui.small(if enabled { "on" } else { "off" });
                     }
@@ -375,6 +377,11 @@ fn roster(ui: &mut egui::Ui, c: &mut Composer) {
             match domain {
                 Domain::Household => {
                     "No profile has a share, so applying this would run the shipped model."
+                }
+                Domain::Person => {
+                    "No profile has a share, so people who are away from home would walk to \
+                     the nearest refuge and never reconsider, which is what the model has \
+                     always done."
                 }
                 Domain::SuppressionUnit => {
                     "No profile is in play, so the units would run the hand-written policy."
