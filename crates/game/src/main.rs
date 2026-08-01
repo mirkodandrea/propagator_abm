@@ -33,8 +33,8 @@ mod inspect;
 mod menu;
 mod people;
 mod pick;
-mod roads;
 mod retro;
+mod roads;
 mod scenario_selector;
 mod sea;
 mod selftest;
@@ -85,8 +85,8 @@ fn main() -> anyhow::Result<()> {
         brightness: 130.0,
     })
     .add_plugins(EguiPlugin)
-.add_plugins(fire_shader::FireShaderPlugin)
-.add_plugins(retro::RetroShaderPlugin)
+    .add_plugins(fire_shader::FireShaderPlugin)
+    .add_plugins(retro::RetroShaderPlugin)
     .add_plugins(sky::SkyPlugin)
     .add_plugins(sea::SeaPlugin)
     .add_plugins(far_terrain::FarTerrainPlugin)
@@ -97,6 +97,7 @@ fn main() -> anyhow::Result<()> {
     .init_resource::<ignition_edit::IgnitionTool>()
     .insert_resource(inspect::Selected::from_env())
     .init_resource::<inspect::ClickTracker>()
+    .init_resource::<inspect::HoveredTarget>()
     .init_resource::<command::OrderTool>()
     .init_resource::<browser::BrowserUi>()
     .init_resource::<camera::CameraMode>()
@@ -106,7 +107,7 @@ fn main() -> anyhow::Result<()> {
     .init_resource::<ui::PanelState>()
     .add_event::<sim::SimRestarted>()
     .insert_resource(data_path_resource)
-    .add_systems(Startup, scenario_selector::init_selector)
+    .add_systems(Startup, (scenario_selector::init_selector, ui::setup_style))
     // Everything that spawns a scene entity or caches a per-scenario handle
     // builds on entry and is torn down on exit, so "Load scenario…" is a
     // genuine round trip rather than a second scene laid on top of the first.
@@ -148,8 +149,10 @@ fn main() -> anyhow::Result<()> {
                 menu::menubar,
                 ui::panel,
                 ui::help_panel,
+                ui::shortcuts_panel,
                 ui::dock,
                 inspect::panel,
+                ui::debug_panel,
                 ui::sync_viewport,
             )
                 .chain()
@@ -161,6 +164,8 @@ fn main() -> anyhow::Result<()> {
                 ignition_edit::place,
                 command::hover,
                 command::place,
+                inspect::hover_map,
+                ui::map_hud,
                 inspect::pick_click,
                 buildings::hover,
             )
@@ -246,7 +251,12 @@ fn main() -> anyhow::Result<()> {
     if let Some(capture) = capture::from_env() {
         app.insert_resource(capture)
             .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
-            .add_systems(Update, capture::scripted.after(fire_view::update_flames).run_if(in_state(AppState::Playing)));
+            .add_systems(
+                Update,
+                capture::scripted
+                    .after(fire_view::update_flames)
+                    .run_if(in_state(AppState::Playing)),
+            );
     }
 
     // The local control/inspection API: a background thread accepting plain
@@ -378,12 +388,7 @@ fn setup_scene(
             y: sim.scenario.world.height_m * 0.5,
         };
         let h = sim.scenario.terrain.height_at(p);
-        let distance = sim
-            .scenario
-            .world
-            .width_m
-            .max(sim.scenario.world.height_m)
-            * 1.15;
+        let distance = sim.scenario.world.width_m.max(sim.scenario.world.height_m) * 1.15;
         (p, h, distance.max(1400.0))
     } else {
         let (p, h) = terrain_mesh::cell_ground(&sim.scenario, sim.ignition.centre);
@@ -443,7 +448,10 @@ fn controls(
     focus: Res<ui::UiFocus>,
     mut sim: ResMut<Sim>,
     mut tool: ResMut<ignition_edit::IgnitionTool>,
+    mut order: ResMut<command::OrderTool>,
     mut cam_mode: ResMut<camera::CameraMode>,
+    mut orbit: Query<&mut camera::OrbitCamera>,
+    mut selected: ResMut<inspect::Selected>,
     mut help: ResMut<ui::HelpUi>,
     mut panels: ResMut<ui::PanelState>,
     mut restarted: EventWriter<sim::SimRestarted>,
@@ -451,8 +459,15 @@ fn controls(
     // Escape is the exception: it is what gets you *out* of a state, so it has
     // to work even while a widget has focus.
     if keys.just_pressed(KeyCode::Escape) {
+        let cancelling = tool.mode != ignition_edit::EditMode::Off
+            || order.is_armed()
+            || *cam_mode != camera::CameraMode::Free;
         tool.mode = ignition_edit::EditMode::Off;
+        order.disarm();
         *cam_mode = camera::CameraMode::Free;
+        if !cancelling {
+            selected.target = None;
+        }
     }
     if focus.typing() {
         return;
@@ -475,7 +490,13 @@ fn controls(
     if keys.just_pressed(KeyCode::BracketLeft) {
         sim.speed = (sim.speed / 2.0).max(ui::MIN_SPEED);
     }
-    if keys.just_pressed(KeyCode::KeyE) {
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    let primary = keys.pressed(KeyCode::ControlLeft)
+        || keys.pressed(KeyCode::ControlRight)
+        || keys.pressed(KeyCode::SuperLeft)
+        || keys.pressed(KeyCode::SuperRight);
+
+    if shift && keys.just_pressed(KeyCode::KeyE) {
         let n = sim.agents.order_evacuation_all();
         info!("general evacuation ordered: {n} households");
     }
@@ -491,7 +512,41 @@ fn controls(
     if keys.just_pressed(KeyCode::F1) {
         help.open = !help.open;
     }
-    if keys.just_pressed(KeyCode::KeyR) {
+    if keys.just_pressed(KeyCode::F2) {
+        panels.debug = !panels.debug;
+    }
+    if shift && keys.just_pressed(KeyCode::Slash) {
+        help.shortcuts_open = !help.shortcuts_open;
+    }
+    if keys.just_pressed(KeyCode::Home) {
+        if let Ok(mut orbit) = orbit.get_single_mut() {
+            let w = &sim.scenario.world;
+            let p = scenario::Pos {
+                x: w.width_m * 0.5,
+                y: w.height_m * 0.5,
+            };
+            orbit.focus = frame::to_bevy(p, sim.scenario.terrain.height_at(p));
+            orbit.distance = w.width_m.max(w.height_m) * 1.1;
+        }
+    }
+    if keys.just_pressed(KeyCode::KeyF) {
+        if let Ok(mut orbit) = orbit.get_single_mut() {
+            let target = if shift {
+                None
+            } else {
+                selected.target.and_then(|t| inspect::target_pos(&sim, t))
+            };
+            if let Some(p) = target {
+                orbit.focus = frame::to_bevy(p, sim.scenario.terrain.height_at(p));
+                orbit.distance = orbit.distance.clamp(120.0, 650.0);
+            } else {
+                let (p, h) = terrain_mesh::cell_ground(&sim.scenario, sim.ignition.centre);
+                orbit.focus = frame::to_bevy(p, h);
+                orbit.distance = 1400.0;
+            }
+        }
+    }
+    if primary && keys.just_pressed(KeyCode::KeyR) {
         match sim.restart() {
             Ok(()) => {
                 restarted.send(sim::SimRestarted);
@@ -514,7 +569,10 @@ fn controls(
 /// Per-scenario resources are not cleared here: each one is re-inserted by its
 /// `OnEnter(Playing)` setup, which is the only place that knows what the new
 /// scenario's version of it should be.
-fn teardown_scene(mut commands: Commands, roots: Query<Entity, (With<Transform>, Without<Parent>)>) {
+fn teardown_scene(
+    mut commands: Commands,
+    roots: Query<Entity, (With<Transform>, Without<Parent>)>,
+) {
     let mut n = 0;
     for e in &roots {
         commands.entity(e).despawn_recursive();

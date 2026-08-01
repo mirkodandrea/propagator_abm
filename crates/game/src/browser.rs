@@ -24,6 +24,7 @@ const ZOOM_DISTANCE_M: f32 = 220.0;
 #[derive(Resource)]
 pub struct BrowserUi {
     pub search: String,
+    pub focus_search: bool,
     pub show_households: bool,
     /// Off by default: 1,577 people is most of the roster, and the household
     /// they belong to is usually the more useful unit to browse.
@@ -36,6 +37,7 @@ impl Default for BrowserUi {
     fn default() -> Self {
         Self {
             search: String::new(),
+            focus_search: false,
             show_households: true,
             show_people: false,
             show_travellers: true,
@@ -51,16 +53,23 @@ pub fn toggle(
     keys: Res<ButtonInput<KeyCode>>,
     focus: Res<crate::ui::UiFocus>,
     mut panels: ResMut<crate::ui::PanelState>,
+    mut browser: ResMut<BrowserUi>,
 ) {
     if focus.typing() {
         return;
     }
     if keys.just_pressed(KeyCode::KeyB) {
-        if panels.tab == crate::ui::DockTab::Entities && panels.dock {
-            panels.dock = false;
+        if panels.tab == crate::ui::DockTab::Entities && panels.dock.visible() {
+            panels.dock = crate::ui::PanelPlacement::Hidden;
         } else {
             panels.focus_tab(crate::ui::DockTab::Entities);
+            browser.focus_search = true;
         }
+    }
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    if keys.just_pressed(KeyCode::Slash) && !shift {
+        panels.focus_tab(crate::ui::DockTab::Entities);
+        browser.focus_search = true;
     }
 }
 
@@ -74,18 +83,22 @@ pub fn entities_body(
     selected: &mut Selected,
     sim: &Sim,
     camera: &mut Query<&mut OrbitCamera>,
-) {
+) -> bool {
     let mut jump_to: Option<Target> = None;
 
     ui.horizontal(|ui| {
         ui.label("🔍");
         // Takes the width it can get: this is the control the tab exists for,
         // and a search box you have to aim at is one you stop using.
-        ui.add(
+        let search = ui.add(
             egui::TextEdit::singleline(&mut browser.search)
                 .hint_text("id, status, callsign…")
                 .desired_width(ui.available_width() - 28.0),
         );
+        if browser.focus_search {
+            search.request_focus();
+            browser.focus_search = false;
+        }
         if ui.small_button("×").on_hover_text("Clear search").clicked() {
             browser.search.clear();
         }
@@ -123,6 +136,9 @@ pub fn entities_body(
             orbit.focus = frame::to_bevy(pos, ground);
             orbit.distance = orbit.distance.clamp(ZOOM_DISTANCE_M * 0.5, ZOOM_DISTANCE_M);
         }
+        true
+    } else {
+        false
     }
 }
 

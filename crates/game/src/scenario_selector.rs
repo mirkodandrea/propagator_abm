@@ -1,12 +1,12 @@
 //! Scenario selector UI panel shown at startup.
 
-use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
-use scenario::ScenarioRegistry;
-use std::path::PathBuf;
-use fire::Weather;
 use crate::sim::Sim;
 use crate::AppState;
+use bevy::prelude::*;
+use bevy_egui::{egui, EguiContexts};
+use fire::Weather;
+use scenario::ScenarioRegistry;
+use std::path::PathBuf;
 
 /// Wrapper for data directory path
 #[derive(Resource, Clone)]
@@ -41,10 +41,7 @@ pub fn init_selector(mut selector: ResMut<ScenarioSelector>) {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn init_selector(
-    data_path: Res<DataPath>,
-    mut selector: ResMut<ScenarioSelector>,
-) {
+pub fn init_selector(data_path: Res<DataPath>, mut selector: ResMut<ScenarioSelector>) {
     if let Ok(registry) = scenario::ScenarioRegistry::discover(&data_path.0) {
         // Auto-select default or env var if present
         if let Ok(id) = std::env::var("SPOTORNO_SCENARIO") {
@@ -103,7 +100,8 @@ pub fn handle_launch_selection(
                 Ok(sim) => {
                     // Update window title
                     if let Ok(mut win) = window.get_single_mut() {
-                        win.title = format!("{} — wildfire incident command", sim.scenario.metadata.name);
+                        win.title =
+                            format!("{} — wildfire incident command", sim.scenario.metadata.name);
                     }
 
                     // Insert Sim resource
@@ -132,6 +130,7 @@ pub fn handle_launch_selection(
 pub fn show_selector_ui(
     mut contexts: EguiContexts,
     mut selector: ResMut<ScenarioSelector>,
+    keys: Res<ButtonInput<KeyCode>>,
 ) {
     if selector.confirmed || selector.registry.is_none() {
         return;
@@ -143,7 +142,16 @@ pub fn show_selector_ui(
     };
 
     // Prepare data to avoid borrow conflicts
-    let scenarios_data: Vec<(String, String, usize, usize, usize, String, String, [usize; 2])> = registry
+    let scenarios_data: Vec<(
+        String,
+        String,
+        usize,
+        usize,
+        usize,
+        String,
+        String,
+        [usize; 2],
+    )> = registry
         .list()
         .iter()
         .map(|s| {
@@ -162,6 +170,25 @@ pub fn show_selector_ui(
 
     let default_id = registry.default_id().to_string();
     let mut launch = false;
+    let ids: Vec<&str> = scenarios_data.iter().map(|row| row.0.as_str()).collect();
+    let current = selector
+        .selected
+        .as_deref()
+        .and_then(|id| ids.iter().position(|candidate| *candidate == id))
+        .unwrap_or(0);
+    if !ids.is_empty()
+        && (keys.just_pressed(KeyCode::ArrowDown) || keys.just_pressed(KeyCode::ArrowUp))
+    {
+        let next = if keys.just_pressed(KeyCode::ArrowDown) {
+            (current + 1) % ids.len()
+        } else {
+            (current + ids.len() - 1) % ids.len()
+        };
+        selector.selected = Some(ids[next].to_string());
+    }
+    if keys.just_pressed(KeyCode::Enter) && selector.selected.is_some() {
+        launch = true;
+    }
 
     // Not closable: this is a screen, not a dialogue. It is also reachable
     // again mid-game from Scenario ▸ Load scenario…, so it has to stand on its
@@ -170,10 +197,7 @@ pub fn show_selector_ui(
         ui.add_space(ui.available_height() * 0.12);
         ui.vertical_centered(|ui| {
             ui.heading("Wildfire incident command");
-            ui.label(
-                egui::RichText::new("Choose a scenario to command")
-                    .weak(),
-            );
+            ui.label(egui::RichText::new("Choose a scenario to command").weak());
         });
         ui.add_space(16.0);
 
@@ -184,7 +208,17 @@ pub fn show_selector_ui(
                     .max_height(ui.available_height() - 70.0)
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        for (id, name, buildings, households, people, location, description, grid_size) in scenarios_data {
+                        for (
+                            id,
+                            name,
+                            buildings,
+                            households,
+                            people,
+                            location,
+                            description,
+                            grid_size,
+                        ) in scenarios_data
+                        {
                             let is_selected = selector.selected.as_ref() == Some(&id);
                             let is_test = id.starts_with("test_");
 
@@ -259,6 +293,9 @@ pub fn show_selector_ui(
                 {
                     launch = true;
                 }
+                ui.vertical_centered(|ui| {
+                    ui.weak("↑ ↓ choose · Enter launch · double-click a card to launch");
+                });
             });
         });
     });

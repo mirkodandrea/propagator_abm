@@ -23,9 +23,12 @@ use crate::command::{OrderKind, OrderTool};
 use crate::composer::Composer;
 use crate::fire_view::FireLayer;
 use crate::ignition_edit::{EditMode, IgnitionTool};
+use crate::inspect::Selected;
 use crate::scenario_selector::ScenarioSelector;
 use crate::sim::{Sim, SimRestarted};
-use crate::ui::{DockTab, HelpUi, PanelState, UiFocus, MAX_SPEED, MIN_SPEED, PRESETS};
+use crate::ui::{
+    DockTab, HelpUi, PanelPlacement, PanelState, UiFocus, MAX_SPEED, MIN_SPEED, PRESETS,
+};
 use crate::AppState;
 
 /// What a menu item asked for. Collected rather than applied inline: the menu
@@ -52,6 +55,9 @@ enum Action {
     Composer,
     Tab(DockTab),
     Help,
+    Shortcuts,
+    Debug,
+    FocusSelection,
     CentreOnFire,
     Overview,
 }
@@ -72,6 +78,7 @@ pub fn menubar(
     mut ignition: ResMut<IgnitionTool>,
     mut order: ResMut<OrderTool>,
     mut composer: ResMut<Composer>,
+    selected: Res<Selected>,
     mut restarted: EventWriter<SimRestarted>,
     mut next_state: ResMut<NextState<AppState>>,
     mut selector: ResMut<ScenarioSelector>,
@@ -89,7 +96,9 @@ pub fn menubar(
     let armed_order = order.armed;
     let placing = ignition.mode == EditMode::Place;
     let selected_unit = order.selected;
-    let unit_kind = selected_unit.and_then(|id| sim.crews.units.get(id)).map(|u| u.kind);
+    let unit_kind = selected_unit
+        .and_then(|id| sim.crews.units.get(id))
+        .map(|u| u.kind);
 
     egui::TopBottomPanel::top("menubar").show(ctx, |ui| {
         egui::menu::bar(ui, |ui| {
@@ -99,10 +108,8 @@ pub fn menubar(
                     ui.close_menu();
                 }
                 ui.separator();
-                if item(ui, "Restart incident", "R")
-                    .on_hover_text(
-                        "Relight at T+0 with the current weather, seed and ignitions.",
-                    )
+                if item(ui, "Restart incident", "Ctrl/⌘+R")
+                    .on_hover_text("Relight at T+0 with the current weather, seed and ignitions.")
                     .clicked()
                 {
                     a(Action::Restart, &mut act);
@@ -157,13 +164,13 @@ pub fn menubar(
                 }
             });
 
-            ui.menu_button("Orders", |ui| {
+            ui.menu_button("Operations", |ui| {
                 ui.label(egui::RichText::new("CIVILIANS").small().weak());
                 if item(ui, "Evacuate 2 km around the fire", "").clicked() {
                     a(Action::EvacuateNear, &mut act);
                     ui.close_menu();
                 }
-                if item(ui, "Evacuate everyone", "E").clicked() {
+                if item(ui, "Evacuate everyone", "Shift+E").clicked() {
                     a(Action::EvacuateAll, &mut act);
                     ui.close_menu();
                 }
@@ -218,6 +225,20 @@ pub fn menubar(
                     ui.close_menu();
                 }
                 ui.separator();
+                let r = ui.add(shortcut_button(
+                    if placing {
+                        "▶ Place ignition"
+                    } else {
+                        "Place ignition"
+                    },
+                    "I",
+                ));
+                if r.on_hover_text("Then click the map to light a patch.")
+                    .clicked()
+                {
+                    a(Action::ArmIgnition, &mut act);
+                    ui.close_menu();
+                }
                 if item(ui, "Cancel active tool", "Esc").clicked() {
                     a(Action::Cancel, &mut act);
                     ui.close_menu();
@@ -237,38 +258,64 @@ pub fn menubar(
                     }
                 }
                 ui.separator();
-                ui.label(egui::RichText::new("PANELS").small().weak());
-                ui.checkbox(&mut panels.incident, "Incident");
-                ui.checkbox(&mut panels.dock, "Right dock");
-                ui.checkbox(&mut panels.inspector, "Inspector");
+                ui.label(egui::RichText::new("WORKSPACE").small().weak());
+                placement_menu(ui, "Incident", &mut panels.incident, "Dock left");
+                placement_menu(ui, "Operations", &mut panels.dock, "Dock right");
+                placement_menu(ui, "Inspector", &mut panels.inspector, "Dock bottom");
+                ui.menu_button("Operations tab", |ui| {
+                    for tab in DockTab::ALL {
+                        if ui
+                            .selectable_label(panels.tab == tab, tab.label())
+                            .clicked()
+                        {
+                            a(Action::Tab(tab), &mut act);
+                            ui.close_menu();
+                        }
+                    }
+                });
+                if item(ui, "Reset panel layout", "").clicked() {
+                    panels.reset_layout();
+                    ui.close_menu();
+                }
                 ui.separator();
-                ui.label(egui::RichText::new("CAMERA").small().weak());
-                if item(ui, "Centre on the fire", "").clicked() {
+                ui.label(egui::RichText::new("NAVIGATION").small().weak());
+                if ui
+                    .add_enabled(
+                        selected.target.is_some(),
+                        shortcut_button("Focus selection", "F"),
+                    )
+                    .clicked()
+                {
+                    a(Action::FocusSelection, &mut act);
+                    ui.close_menu();
+                }
+                if item(ui, "Centre on the fire", "Shift+F").clicked() {
                     a(Action::CentreOnFire, &mut act);
                     ui.close_menu();
                 }
-                if item(ui, "Whole scenario", "").clicked() {
+                if item(ui, "Whole scenario", "Home").clicked() {
                     a(Action::Overview, &mut act);
                     ui.close_menu();
                 }
                 ui.separator();
-                ui.small("Arrow keys pan · drag orbits · right-drag pans · scroll zooms");
+                ui.small("Drag orbit · Shift/right-drag pan · scroll zoom · arrows pan");
             });
 
-            ui.menu_button("Tools", |ui| {
-                let r = ui.add(shortcut_button(
-                    if placing {
-                        "▶ Place ignition"
+            ui.menu_button("Debug", |ui| {
+                if item(
+                    ui,
+                    if panels.debug {
+                        "Hide developer diagnostics"
                     } else {
-                        "Place ignition"
+                        "Developer diagnostics"
                     },
-                    "I",
-                ));
-                if r.on_hover_text("Then click the map to light a patch.").clicked() {
-                    a(Action::ArmIgnition, &mut act);
+                    "F2",
+                )
+                .clicked()
+                {
+                    a(Action::Debug, &mut act);
                     ui.close_menu();
                 }
-                ui.separator();
                 if item(ui, "Agent Behaviour Composer", "G")
                     .on_hover_text(
                         "Author the decision model for households, separated people or \
@@ -281,12 +328,10 @@ pub fn menubar(
                     ui.close_menu();
                 }
                 ui.separator();
-                for tab in DockTab::ALL {
-                    if item(ui, tab.label(), "").on_hover_text(tab.hint()).clicked() {
-                        a(Action::Tab(tab), &mut act);
-                        ui.close_menu();
-                    }
-                }
+                ui.label("F12 saves the current frame as a PNG.");
+                ui.small(
+                    "Diagnostics are read-only; simulation editing stays in Fire and Composer.",
+                );
             });
 
             ui.menu_button("Help", |ui| {
@@ -294,8 +339,10 @@ pub fn menubar(
                     a(Action::Help, &mut act);
                     ui.close_menu();
                 }
-                ui.separator();
-                shortcut_table(ui);
+                if item(ui, "Keyboard shortcuts", "?").clicked() {
+                    a(Action::Shortcuts, &mut act);
+                    ui.close_menu();
+                }
             });
 
             // The status strip: the clock, the transport, and the speed, in the
@@ -323,7 +370,11 @@ pub fn menubar(
                 }
                 if ui
                     .button(if playing { "⏸" } else { "▶" })
-                    .on_hover_text(if playing { "Pause (Space)" } else { "Play (Space)" })
+                    .on_hover_text(if playing {
+                        "Pause (Space)"
+                    } else {
+                        "Play (Space)"
+                    })
                     .clicked()
                 {
                     a(Action::TogglePlay, &mut act);
@@ -342,6 +393,48 @@ pub fn menubar(
                     ui.colored_label(egui::Color32::from_rgb(255, 180, 70), hint)
                         .on_hover_text("Esc cancels");
                 }
+            });
+        });
+
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("MAP").small().weak());
+            for (i, map_layer) in FireLayer::ALL.iter().enumerate() {
+                if ui
+                    .selectable_label(
+                        current_layer == *map_layer,
+                        format!("{}  {}", i + 1, map_layer.label()),
+                    )
+                    .on_hover_text(map_layer.legend())
+                    .clicked()
+                {
+                    a(Action::Layer(*map_layer), &mut act);
+                }
+            }
+            ui.separator();
+            if ui
+                .add_enabled(selected.target.is_some(), egui::Button::new("⌖ Selection"))
+                .on_hover_text("Focus the selected entity (F)")
+                .clicked()
+            {
+                a(Action::FocusSelection, &mut act);
+            }
+            if ui
+                .button("🔥 Fire")
+                .on_hover_text("Centre on the opening fire (Shift+F)")
+                .clicked()
+            {
+                a(Action::CentreOnFire, &mut act);
+            }
+            if ui
+                .button("Overview")
+                .on_hover_text("Show the whole scenario (Home)")
+                .clicked()
+            {
+                a(Action::Overview, &mut act);
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.weak("/ find entity · ? shortcuts");
             });
         });
     });
@@ -417,9 +510,21 @@ pub fn menubar(
             Action::Composer => composer.open = !composer.open,
             Action::Tab(tab) => panels.focus_tab(tab),
             Action::Help => help.open = true,
+            Action::Shortcuts => help.shortcuts_open = !help.shortcuts_open,
+            Action::Debug => panels.debug = !panels.debug,
+            Action::FocusSelection => {
+                if let (Some(target), Ok(mut orbit)) = (selected.target, camera.get_single_mut()) {
+                    if let Some(p) = crate::inspect::target_pos(&sim, target) {
+                        let h = sim.scenario.terrain.height_at(p);
+                        orbit.focus = crate::frame::to_bevy(p, h);
+                        orbit.distance = orbit.distance.clamp(120.0, 650.0);
+                    }
+                }
+            }
             Action::CentreOnFire => {
                 if let Ok(mut orbit) = camera.get_single_mut() {
-                    let (p, h) = crate::terrain_mesh::cell_ground(&sim.scenario, sim.ignition.centre);
+                    let (p, h) =
+                        crate::terrain_mesh::cell_ground(&sim.scenario, sim.ignition.centre);
                     orbit.focus = crate::frame::to_bevy(p, h);
                     orbit.distance = 1400.0;
                 }
@@ -467,6 +572,24 @@ fn shortcut_button<'a>(label: &'a str, key: &'a str) -> impl egui::Widget + 'a {
     }
 }
 
+fn placement_menu(
+    ui: &mut egui::Ui,
+    title: &str,
+    placement: &mut PanelPlacement,
+    dock_label: &str,
+) {
+    let state = match *placement {
+        PanelPlacement::Docked => "docked",
+        PanelPlacement::Floating => "floating",
+        PanelPlacement::Hidden => "hidden",
+    };
+    ui.menu_button(format!("{title}  · {state}"), |ui| {
+        ui.radio_value(placement, PanelPlacement::Docked, dock_label);
+        ui.radio_value(placement, PanelPlacement::Floating, "Float");
+        ui.radio_value(placement, PanelPlacement::Hidden, "Hide");
+    });
+}
+
 fn near(a: f32, b: f32) -> bool {
     (a - b).abs() < 0.5
 }
@@ -489,7 +612,11 @@ fn next_preset(speed: f32) -> f32 {
 }
 
 /// What an armed left-click will do, for the status strip.
-fn armed_hint(placing: bool, order: Option<OrderKind>, line_started: bool) -> Option<String> {
+pub(crate) fn armed_hint(
+    placing: bool,
+    order: Option<OrderKind>,
+    line_started: bool,
+) -> Option<String> {
     if placing {
         return Some("▶ click to light a fire".into());
     }
@@ -499,39 +626,4 @@ fn armed_hint(placing: bool, order: Option<OrderKind>, line_started: bool) -> Op
         Some(k) => Some(format!("▶ click to order: {}", k.label().to_lowercase())),
         None => None,
     }
-}
-
-/// The whole keyboard, in the menu that is meant to answer "what can I press".
-/// Kept here rather than only in the help window because the help window is
-/// modal and this is a glance.
-fn shortcut_table(ui: &mut egui::Ui) {
-    ui.label(egui::RichText::new("KEYBOARD").small().weak());
-    egui::Grid::new("menu_shortcuts")
-        .num_columns(2)
-        .spacing([16.0, 2.0])
-        .show(ui, |ui| {
-            for (key, what) in [
-                ("Space", "play / pause"),
-                (".", "step one decision"),
-                ("[  ]", "slower / faster"),
-                ("1 – 4", "fire layer"),
-                ("Arrows", "pan the camera"),
-                ("E", "evacuate everyone"),
-                ("I", "place an ignition"),
-                ("R", "restart the incident"),
-                ("Tab", "next unit"),
-                ("A / L / D", "attack / line / drop"),
-                ("X", "stand down"),
-                ("C", "request air support"),
-                ("B", "entities"),
-                ("G", "behaviour composer"),
-                ("F1", "help"),
-                ("F12", "screenshot"),
-                ("Esc", "cancel the active tool"),
-            ] {
-                ui.label(egui::RichText::new(key).monospace());
-                ui.label(what);
-                ui.end_row();
-            }
-        });
 }

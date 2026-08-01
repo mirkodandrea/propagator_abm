@@ -118,20 +118,20 @@ pub struct CursorAssets {
 /// engine's is its hose reach, so the ring *is* the area it can work.
 const CURSOR_R_M: f32 = 60.0;
 
-pub fn setup(
-    mut commands: Commands,
-    mut materials: ResMut<Assets<RetroMaterial>>,
-) {
+pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<RetroMaterial>>) {
     let mut ring = |r: f32, g: f32, b: f32, a: f32| {
-        materials.add(retro::material(StandardMaterial {
-            base_color: Color::srgba(r, g, b, a),
-            emissive: LinearRgba::rgb(r * 1.6, g * 1.6, b * 1.6),
-            unlit: true,
-            alpha_mode: AlphaMode::Blend,
-            double_sided: true,
-            cull_mode: None,
-            ..default()
-        }, true))
+        materials.add(retro::material(
+            StandardMaterial {
+                base_color: Color::srgba(r, g, b, a),
+                emissive: LinearRgba::rgb(r * 1.6, g * 1.6, b * 1.6),
+                unlit: true,
+                alpha_mode: AlphaMode::Blend,
+                double_sided: true,
+                cull_mode: None,
+                ..default()
+            },
+            true,
+        ))
     };
     commands.insert_resource(CursorAssets {
         ok: ring(0.35, 0.95, 1.00, 0.80),
@@ -420,13 +420,16 @@ pub fn units_body(
     sim: &mut Sim,
     tool: &mut OrderTool,
     ignition: &mut IgnitionTool,
-) {
+    selected_entity: &mut crate::inspect::Selected,
+    camera: &mut Query<&mut crate::camera::OrbitCamera>,
+) -> bool {
     let stats = sim.crews.stats();
     let air_eta = sim.crews.air_eta_s();
     let mut select: Option<usize> = tool.selected;
     let mut arm: Option<OrderKind> = None;
     let mut request_air = false;
     let mut recall: Option<usize> = None;
+    let mut show_inspector = false;
 
     crate::ui::section(ui, "Effort");
     egui::Grid::new("supp").num_columns(2).show(ui, |ui| {
@@ -434,7 +437,11 @@ pub fn units_body(
         ui.label(format!("{} of {}", stats.working, sim.crews.units.len()));
         ui.end_row();
         ui.label("Water used");
-        ui.label(format!("{:.1} kL · {} drops", stats.water_l / 1000.0, stats.drops));
+        ui.label(format!(
+            "{:.1} kL · {} drops",
+            stats.water_l / 1000.0,
+            stats.drops
+        ));
         ui.end_row();
         ui.label("Line cut");
         ui.label(format!("{:.0} m", stats.line_m));
@@ -460,18 +467,24 @@ pub fn units_body(
             (srgb.green * 255.0) as u8,
             (srgb.blue * 255.0) as u8,
         );
-        let mut text = egui::RichText::new(format!(
-            "{}  —  {}",
-            u.callsign,
-            status_line(&sim, u.id)
-        ))
-        .color(colour);
+        let mut text =
+            egui::RichText::new(format!("{}  —  {}", u.callsign, status_line(&sim, u.id)))
+                .color(colour);
         if selected {
             text = text.strong();
         }
         let row = ui.selectable_label(selected, text);
         if row.clicked() {
             select = Some(u.id);
+        }
+        if row.double_clicked() {
+            selected_entity.target = Some(crate::inspect::Target::Unit(u.id));
+            if let Ok(mut orbit) = camera.get_single_mut() {
+                let ground = sim.scenario.terrain.height_at(u.pos);
+                orbit.focus = crate::frame::to_bevy(u.pos, ground);
+                orbit.distance = orbit.distance.clamp(110.0, 220.0);
+            }
+            show_inspector = true;
         }
         // Everything the unit knows about itself, on hover: the numbers
         // that explain why it is or is not achieving anything.
@@ -499,7 +512,9 @@ pub fn units_body(
                 abm::suppression::SCOOP_S,
             ),
         };
-        row.on_hover_text(detail);
+        row.on_hover_text(format!(
+            "{detail}\n\nDouble-click to locate and inspect this unit."
+        ));
         if !u.note.is_empty() {
             ui.small(
                 egui::RichText::new(format!("    {}", u.note))
@@ -527,10 +542,7 @@ pub fn units_body(
                     } else {
                         kind.label().to_string()
                     };
-                    let b = ui.add_enabled(
-                        allowed,
-                        egui::SelectableLabel::new(armed, label),
-                    );
+                    let b = ui.add_enabled(allowed, egui::SelectableLabel::new(armed, label));
                     let b = match kind {
                         OrderKind::Attack => b.on_hover_text(
                             "Click the ground. An engine wets the fuel within \
@@ -614,6 +626,7 @@ pub fn units_body(
         let n = sim.crews.request_air();
         info!("air support requested: {n} aircraft");
     }
+    show_inspector
 }
 
 /// Text for the panel: what this unit is doing, in one line.

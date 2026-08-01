@@ -24,9 +24,9 @@ use scenario::population::Status;
 use crate::buildings::Buildings;
 use crate::camera::OrbitCamera;
 use crate::frame;
+use crate::ignition_edit::EditMode;
 use crate::retro;
 use crate::retro::RetroMaterial;
-use crate::ignition_edit::EditMode;
 use crate::sim::Sim;
 
 /// Screen-space pick radius, logical pixels. Generous: these are small
@@ -83,7 +83,10 @@ impl Selected {
                 None
             }
         };
-        Selected { target, pinned: target }
+        Selected {
+            target,
+            pinned: target,
+        }
     }
 }
 
@@ -91,6 +94,11 @@ impl Selected {
 pub struct ClickTracker {
     down_at: Option<Vec2>,
 }
+
+/// Nearest inspectable thing under the map cursor. Kept separately from the
+/// selection so hover can explain what a click will do without opening UI.
+#[derive(Resource, Default)]
+pub struct HoveredTarget(pub Option<Target>);
 
 #[derive(Component)]
 pub struct SelectionRing;
@@ -101,13 +109,16 @@ pub fn setup(
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
     let mesh = meshes.add(Cylinder::new(1.0, 0.4));
-    let material = materials.add(retro::material(StandardMaterial {
-        base_color: Color::srgba(1.0, 1.0, 1.0, 0.55),
-        emissive: LinearRgba::rgb(2.2, 2.2, 2.4),
-        unlit: true,
-        alpha_mode: AlphaMode::Blend,
-        ..default()
-    }, true));
+    let material = materials.add(retro::material(
+        StandardMaterial {
+            base_color: Color::srgba(1.0, 1.0, 1.0, 0.55),
+            emissive: LinearRgba::rgb(2.2, 2.2, 2.4),
+            unlit: true,
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        },
+        true,
+    ));
     commands.spawn((
         MaterialMeshBundle::<RetroMaterial> {
             mesh,
@@ -136,6 +147,7 @@ pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut selected:
 /// placement, both of which already own left-click.
 pub fn pick_click(
     mut selected: ResMut<Selected>,
+    mut panels: ResMut<crate::ui::PanelState>,
     mut tracker: ResMut<ClickTracker>,
     ui_focus: Res<crate::ui::UiFocus>,
     tool: Res<crate::ignition_edit::IgnitionTool>,
@@ -170,20 +182,55 @@ pub fn pick_click(
         return;
     }
 
+    // A click that hit nothing deselects, same as clicking empty ground in
+    // any RTS.
+    selected.target = closest_target(&sim, camera, cam_tf, cur);
+    if selected.target.is_some() {
+        panels.show_inspector();
+    }
+}
+
+/// Update map hover independently from click selection. This also covers
+/// people, moving vehicles and units; building recolouring remains in
+/// `buildings::hover`, which uses the same household pick radius.
+pub fn hover_map(
+    mut hovered: ResMut<HoveredTarget>,
+    ui_focus: Res<crate::ui::UiFocus>,
+    tool: Res<crate::ignition_edit::IgnitionTool>,
+    order: Res<crate::command::OrderTool>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    camera: Query<(&Camera, &GlobalTransform), With<OrbitCamera>>,
+    sim: Res<Sim>,
+) {
+    if ui_focus.pointer || tool.mode != EditMode::Off || order.is_armed() {
+        hovered.0 = None;
+        return;
+    }
+    hovered.0 = match (windows.get_single(), camera.get_single()) {
+        (Ok(window), Ok((camera, cam_tf))) => window
+            .cursor_position()
+            .and_then(|cursor| closest_target(&sim, camera, cam_tf, cursor)),
+        _ => None,
+    };
+}
+
+fn closest_target(
+    sim: &Sim,
+    camera: &Camera,
+    cam_tf: &GlobalTransform,
+    cursor: Vec2,
+) -> Option<Target> {
     let mut best: Option<(f32, Target)> = None;
     let mut try_pick = |world: Vec3, target: Target| {
         let Some(screen) = camera.world_to_viewport(cam_tf, world) else {
             return;
         };
-        let d = screen.distance(cur);
+        let d = screen.distance(cursor);
         if d < PICK_PX && best.map_or(true, |(bd, _)| d < bd) {
             best = Some((d, target));
         }
     };
 
-    // Households are picked at the building itself now, not a floating
-    // marker — mid-wall height reads as "click the house", and an evacuated
-    // household's building has nobody left to select for.
     for h in &sim.agents.households {
         if h.status == Status::Evacuated {
             continue;
@@ -194,9 +241,6 @@ pub fn pick_click(
             Target::Household(h.id),
         );
     }
-
-    // People currently drawn as their own figure — indoors, or riding a car,
-    // they're picked as the household or the vehicle instead.
     for p in &sim.agents.people {
         let in_vehicle = p
             .traveller
@@ -204,36 +248,27 @@ pub fn pick_click(
             .map(|t| t.mode == Mode::Car && t.state != TravelState::Cutoff)
             .unwrap_or(false);
         let outside = matches!(p.status, Status::Evacuating | Status::Trapped) && !in_vehicle;
-        if !outside {
-            continue;
+        if outside {
+            let ground = sim.scenario.terrain.height_at(p.pos);
+            let scale = crate::people::figure_scale(sim.scenario.vr_palette().is_some());
+            try_pick(
+                frame::to_bevy(p.pos, ground + scale * 0.5),
+                Target::Person(p.id),
+            );
         }
-        let ground = sim.scenario.terrain.height_at(p.pos);
-        let scale = crate::people::figure_scale(sim.scenario.vr_palette().is_some());
-        try_pick(
-            frame::to_bevy(p.pos, ground + scale * 0.5),
-            Target::Person(p.id),
-        );
     }
-
-    // Cars actually on the move — see `people::update_vehicles`'s visibility
-    // rule, matched here so the pick target is exactly what's drawn.
     for (i, t) in sim.agents.travellers.iter().enumerate() {
         let driving = matches!(t.state, TravelState::Approaching | TravelState::OnNetwork)
             && t.mode == Mode::Car;
-        if !driving {
-            continue;
+        if driving {
+            let ground = sim.scenario.terrain.height_at(t.pos);
+            let scale = crate::people::figure_scale(sim.scenario.vr_palette().is_some());
+            try_pick(
+                frame::to_bevy(t.pos, ground + scale * 0.6),
+                Target::Traveller(i),
+            );
         }
-        let ground = sim.scenario.terrain.height_at(t.pos);
-        let scale = crate::people::figure_scale(sim.scenario.vr_palette().is_some());
-        try_pick(
-            frame::to_bevy(t.pos, ground + scale * 0.6),
-            Target::Traveller(i),
-        );
     }
-
-    // Suppression units, at the altitude they're actually drawn at — see
-    // `units::update_units`'s visibility rule, matched here so the pick
-    // target is exactly what's drawn.
     for u in &sim.crews.units {
         if !(u.on_scene() || u.state == abm::suppression::UnitState::Lost) {
             continue;
@@ -246,10 +281,7 @@ pub fn pick_click(
         };
         try_pick(frame::to_bevy(u.pos, ground + lift), Target::Unit(u.id));
     }
-
-    // A click that hit nothing deselects, same as clicking empty ground in
-    // any RTS.
-    selected.target = best.map(|(_, t)| t);
+    best.map(|(_, target)| target)
 }
 
 /// Where a target actually is right now, in world space. Shared by the
@@ -333,50 +365,90 @@ pub fn panel(
         return;
     };
     let ctx = contexts.ctx_mut();
-    let mut open = panels.inspector;
+    let mut placement = panels.inspector;
+    if placement == crate::ui::PanelPlacement::Hidden {
+        return;
+    }
     let mut close = false;
     let mut jump_to: Option<Target> = None;
     // Set by the behaviour section's one button.
     let mut open_composer = false;
-
-    egui::TopBottomPanel::bottom("inspector_dock")
-        .resizable(open)
-        .default_height(240.0)
-        .height_range(if open { 140.0..=420.0 } else { 26.0..=26.0 })
-        .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                open = crate::ui::collapse_button(ui, open, "⏷", "⏶");
-                if open {
-                    ui.heading(title(target));
+    let mut contents = |ui: &mut egui::Ui| {
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                match target {
+                    Target::Household(id) => {
+                        household_panel(ui, &sim, &buildings, id, &mut jump_to)
+                    }
+                    Target::Person(id) => person_panel(ui, &sim, id, &mut jump_to),
+                    Target::Traveller(i) => traveller_panel(ui, &sim, i, &mut jump_to, &mut mode),
+                    Target::Unit(id) => unit_panel(ui, &sim, id, &mut mode),
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("✕").on_hover_text("Deselect").clicked() {
-                        close = true;
-                    }
-                });
+                behaviour_panel(ui, &sim, &mut open_composer, target);
+                history_panel(ui, &sim, target);
             });
-            if !open {
-                return;
-            }
-            ui.separator();
+    };
 
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    match target {
-                        Target::Household(id) => {
-                            household_panel(ui, &sim, &buildings, id, &mut jump_to)
-                        }
-                        Target::Person(id) => person_panel(ui, &sim, id, &mut jump_to),
-                        Target::Traveller(i) => {
-                            traveller_panel(ui, &sim, i, &mut jump_to, &mut mode)
-                        }
-                        Target::Unit(id) => unit_panel(ui, &sim, id, &mut mode),
-                    }
-                    behaviour_panel(ui, &sim, &mut open_composer, target);
-                    history_panel(ui, &sim, target);
+    match placement {
+        crate::ui::PanelPlacement::Docked => {
+            egui::TopBottomPanel::bottom("inspector_dock")
+                .resizable(true)
+                .default_height(220.0)
+                .height_range(150.0..=430.0)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.heading(title(target));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.small_button("×").on_hover_text("Deselect").clicked() {
+                                close = true;
+                            }
+                            if ui
+                                .small_button("—")
+                                .on_hover_text("Hide inspector")
+                                .clicked()
+                            {
+                                placement = crate::ui::PanelPlacement::Hidden;
+                            }
+                            if ui
+                                .small_button("↗")
+                                .on_hover_text("Float inspector")
+                                .clicked()
+                            {
+                                placement = crate::ui::PanelPlacement::Floating;
+                            }
+                        });
+                    });
+                    ui.separator();
+                    contents(ui);
                 });
-        });
+        }
+        crate::ui::PanelPlacement::Floating => {
+            let mut visible = true;
+            egui::Window::new(title(target))
+                .id(egui::Id::new("inspector_float"))
+                .open(&mut visible)
+                .default_pos(egui::pos2(360.0, 560.0))
+                .default_size(egui::vec2(650.0, 280.0))
+                .resizable(true)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button("Dock bottom").clicked() {
+                            placement = crate::ui::PanelPlacement::Docked;
+                        }
+                        if ui.button("Deselect").clicked() {
+                            close = true;
+                        }
+                    });
+                    ui.separator();
+                    contents(ui);
+                });
+            if !visible {
+                placement = crate::ui::PanelPlacement::Hidden;
+            }
+        }
+        crate::ui::PanelPlacement::Hidden => {}
+    }
 
     if close {
         selected.target = None;
@@ -387,7 +459,7 @@ pub fn panel(
         composer.open = true;
         composer.right = crate::composer::RightTab::Live;
     }
-    panels.inspector = open;
+    panels.inspector = placement;
     focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
 
@@ -397,6 +469,34 @@ fn title(target: Target) -> String {
         Target::Person(id) => format!("Person #{id}"),
         Target::Traveller(_) => "On the move".to_string(),
         Target::Unit(id) => format!("Unit #{id}"),
+    }
+}
+
+/// Compact identity for hover feedback, lists and the map status chip.
+pub(crate) fn target_label(sim: &Sim, target: Target) -> String {
+    match target {
+        Target::Household(id) => sim.agents.households.get(id).map_or_else(
+            || format!("Household #{id}"),
+            |h| format!("Household #{id} · {}", status_text(h.status)),
+        ),
+        Target::Person(id) => sim.agents.people.get(id).map_or_else(
+            || format!("Person #{id}"),
+            |p| format!("Person #{id} · {}", status_text(p.status)),
+        ),
+        Target::Traveller(i) => sim.agents.travellers.get(i).map_or_else(
+            || format!("Traveller #{i}"),
+            |t| {
+                format!(
+                    "Household #{} on the move · {}",
+                    t.household,
+                    travel_state_text(t.state)
+                )
+            },
+        ),
+        Target::Unit(id) => sim.crews.units.get(id).map_or_else(
+            || format!("Unit #{id}"),
+            |u| format!("{} · {}", u.callsign, crate::command::status_line(sim, id)),
+        ),
     }
 }
 
@@ -547,7 +647,9 @@ fn behaviour_panel(ui: &mut egui::Ui, sim: &Sim, open: &mut bool, target: Target
     let explained = match target {
         Target::Household(id) => sim.agents.explain(id, &sim.fire),
         Target::Person(id) => sim.agents.explain_person(id, &sim.fire),
-        Target::Unit(id) => sim.crews.explain(id, &sim.agents.network, &sim.fire, &sim.scenario),
+        Target::Unit(id) => sim
+            .crews
+            .explain(id, &sim.agents.network, &sim.fire, &sim.scenario),
         Target::Traveller(_) => None,
     };
     let decision = explained.as_ref().map(|(d, _)| *d).unwrap_or(decision);
@@ -581,40 +683,46 @@ fn behaviour_panel(ui: &mut egui::Ui, sim: &Sim, open: &mut bool, target: Target
         ui.small(format!("urgency readout {:.2}", decision.urgency));
     }
 
-    egui::CollapsingHeader::new("Why").default_open(false).show(ui, |ui| {
-        let Some((_, trace)) = &explained else {
-            ui.small("(no explanation available)");
-            return;
-        };
-        if trace.proposals.is_empty() {
-            ui.small("No branch of the behaviour fired: the agent is doing its default.");
-        } else {
-            for (i, (node, kind, prio)) in trace.proposals.iter().enumerate() {
-                ui.small(format!(
-                    "{} {} @ {prio:.2} (node #{node})",
-                    if i == 0 { "▶" } else { " " },
-                    kind.label()
-                ));
+    egui::CollapsingHeader::new("Why")
+        .default_open(false)
+        .show(ui, |ui| {
+            let Some((_, trace)) = &explained else {
+                ui.small("(no explanation available)");
+                return;
+            };
+            if trace.proposals.is_empty() {
+                ui.small("No branch of the behaviour fired: the agent is doing its default.");
+            } else {
+                for (i, (node, kind, prio)) in trace.proposals.iter().enumerate() {
+                    ui.small(format!(
+                        "{} {} @ {prio:.2} (node #{node})",
+                        if i == 0 { "▶" } else { " " },
+                        kind.label()
+                    ));
+                }
             }
-        }
-        ui.separator();
-        // Which boxes actually produced the answer, rather than all of them.
-        // The full list is in the composer's Live tab; here it is the short
-        // version, and the short version is the slice.
-        let active = trace.active();
-        for n in &trace.nodes {
-            // Observations are already on the panel above; what is worth
-            // reading here is what the behaviour *made* of them.
-            if n.category == behavior::Category::Observation {
-                continue;
+            ui.separator();
+            // Which boxes actually produced the answer, rather than all of them.
+            // The full list is in the composer's Live tab; here it is the short
+            // version, and the short version is the slice.
+            let active = trace.active();
+            for n in &trace.nodes {
+                // Observations are already on the panel above; what is worth
+                // reading here is what the behaviour *made* of them.
+                if n.category == behavior::Category::Observation {
+                    continue;
+                }
+                let values = n
+                    .outputs
+                    .iter()
+                    .map(behavior::Value::display)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let mark = if active.contains(&n.node) { "▸" } else { " " };
+                ui.small(format!("{mark} {} = {values}", n.name));
             }
-            let values =
-                n.outputs.iter().map(behavior::Value::display).collect::<Vec<_>>().join(", ");
-            let mark = if active.contains(&n.node) { "▸" } else { " " };
-            ui.small(format!("{mark} {} = {values}", n.name));
-        }
-        ui.small("▸ marks the boxes that fed the decision that was taken.");
-    });
+            ui.small("▸ marks the boxes that fed the decision that was taken.");
+        });
 }
 
 /// What this agent's own row in the run's [`crate::history::History`] says
@@ -672,7 +780,11 @@ fn person_panel(ui: &mut egui::Ui, sim: &Sim, id: usize, jump_to: &mut Option<Ta
         // Everyone else leaves with the family, and the household is what
         // decides; only someone away from it has choices of their own.
         ui.label("With the household");
-        ui.label(if p.away { "no — away from home" } else { "yes" });
+        ui.label(if p.away {
+            "no — away from home"
+        } else {
+            "yes"
+        });
         ui.end_row();
 
         if p.away {
