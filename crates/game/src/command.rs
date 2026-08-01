@@ -411,10 +411,8 @@ pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut tool: Res
 
 /// The **Units** tab: the roster, the selection, and the orders.
 ///
-/// A tab of the right-hand dock rather than a dock of its own, because it is
-/// mutually exclusive in practice with the other two — and because it is read
-/// while pointing at the map, so it must never be the panel sitting on top of
-/// the ground an order is about.
+/// Embedded under Intervention in the left command panel, where it remains
+/// visible while an order is placed on the map.
 pub fn units_body(
     ui: &mut egui::Ui,
     sim: &mut Sim,

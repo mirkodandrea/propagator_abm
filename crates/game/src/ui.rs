@@ -1,19 +1,13 @@
-//! The screen furniture: the incident readout on the left, the working dock on
-//! the right, and the help window.
+//! The screen furniture: controls on the left, entities on the right, the
+//! incident workbench along the bottom, and the help window.
 //!
 //! The layout is deliberately three regions and no more. Everything the player
-//! *reads while watching the fire* is the left dock; everything they *do* is
-//! either the menu bar (`crate::menu`) or one tab of the right dock; whatever is
-//! selected explains itself along the bottom. Before this there were five
-//! independent docks competing for the same screen and the 3D view was the
-//! narrow strip left over — a panel per feature is a rational way to *build* a
-//! UI and a poor way to use one.
-//!
-//! The right dock is tabbed rather than stacked because its three jobs are
-//! mutually exclusive in practice: you are rewriting the scenario (**Fire**),
-//! directing units (**Units**), or looking something up (**Entities**). Only one
-//! of those is ever the current task, so only one of them should be costing
-//! screen space.
+//! *acts on the incident with* is in the left dock; the right dock is a stable entity
+//! navigator with the selected entity directly below it; and the bottom dock
+//! holds the incident readout, conversations and developer work. The right
+//! edge deliberately has no resize handle: entity rows and detail fields need
+//! a predictable width, and resizing that dock used to produce a one-frame
+//! camera viewport outside the render target.
 
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
@@ -23,6 +17,7 @@ use scenario::Pos;
 use crate::fire_view::FireLayer;
 use crate::ignition_edit::{clamp_radius, EditMode, IgnitionTool};
 use crate::sim::{Sim, SimRestarted, MAX_IGNITION_RADIUS_M, MIN_IGNITION_RADIUS_M};
+use crate::sky::DayClock;
 
 /// Speed presets, in simulated seconds per wall-clock second. An initial
 /// attack runs for hours of simulated time, so the useful range spans three
@@ -93,7 +88,7 @@ impl Default for HelpUi {
     }
 }
 
-/// The three jobs the right-hand dock does, one at a time.
+/// Operational destinations used by shortcuts and menu commands.
 #[derive(Resource, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DockTab {
     /// Weather, ignitions, seed, restart — rewriting the scenario.
@@ -104,35 +99,40 @@ pub enum DockTab {
     Entities,
 }
 
-impl DockTab {
-    pub const ALL: [DockTab; 3] = [DockTab::Fire, DockTab::Units, DockTab::Entities];
+/// The work surfaces that share the bottom of the screen.
+#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BottomTab {
+    Incident,
+    Chat,
+    Debug,
+    Behaviour,
+}
+
+impl BottomTab {
+    pub const ALL: [BottomTab; 4] = [
+        BottomTab::Incident,
+        BottomTab::Chat,
+        BottomTab::Debug,
+        BottomTab::Behaviour,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
-            DockTab::Fire => "🔥 Fire",
-            DockTab::Units => "🚒 Units",
-            DockTab::Entities => "🔍 Entities",
-        }
-    }
-
-    pub fn hint(self) -> &'static str {
-        match self {
-            DockTab::Fire => "Wind, moisture, ignitions, seed and restart.",
-            DockTab::Units => "Crews, engines and aircraft, and the orders you give them.",
-            DockTab::Entities => "Find any household, person, vehicle or unit.",
+            BottomTab::Incident => "Incident view",
+            BottomTab::Chat => "Chat",
+            BottomTab::Debug => "Debug",
+            BottomTab::Behaviour => "Behavior editor",
         }
     }
 }
 
 /// Where a workspace panel lives.
 ///
-/// A hidden panel gives the map every pixel back; a floating panel keeps the
-/// map full-width and is useful on a second monitor; a docked panel reserves a
+/// A hidden panel gives the map every pixel back; a docked panel reserves a
 /// stable strip and keeps map picking exact through [`sync_viewport`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PanelPlacement {
     Docked,
-    Floating,
     Hidden,
 }
 
@@ -146,139 +146,153 @@ impl PanelPlacement {
 /// diagnostics window.
 #[derive(Resource)]
 pub struct PanelState {
+    /// Bottom incident/chat/developer workbench.
     pub incident: PanelPlacement,
+    /// Left execution/fire/intervention controls.
     pub dock: PanelPlacement,
-    pub tab: DockTab,
+    /// Fixed-width right entity navigator and detail.
     pub inspector: PanelPlacement,
-    pub debug: bool,
+    pub bottom_tab: BottomTab,
 }
 
 impl Default for PanelState {
     fn default() -> Self {
-        // Useful for unattended visual review and for people who always work
-        // with multiple monitors. Interactive placement changes remain in the
-        // View menu and panel headers.
-        let placement = if std::env::var("SPOTORNO_LAYOUT").as_deref() == Ok("floating") {
-            PanelPlacement::Floating
-        } else {
-            PanelPlacement::Docked
-        };
         PanelState {
-            incident: placement,
-            dock: placement,
-            // `SPOTORNO_TAB=fire` opens on a chosen tab, which is the only way
-            // to screenshot one unattended — the same reason `SPOTORNO_COMPOSER`
-            // takes the composer's tab name rather than just a flag.
-            tab: match std::env::var("SPOTORNO_TAB").as_deref() {
-                Ok("fire") => DockTab::Fire,
-                Ok("entities") => DockTab::Entities,
-                _ => DockTab::Units,
+            incident: PanelPlacement::Docked,
+            dock: PanelPlacement::Docked,
+            inspector: PanelPlacement::Docked,
+            bottom_tab: if std::env::var("SPOTORNO_COMPOSER").is_ok() {
+                BottomTab::Behaviour
+            } else if std::env::var("SPOTORNO_DEBUG").is_ok() {
+                BottomTab::Debug
+            } else {
+                BottomTab::Incident
             },
-            inspector: placement,
-            debug: std::env::var("SPOTORNO_DEBUG").is_ok(),
         }
     }
 }
 
 impl PanelState {
-    /// Bring a tab to the front, expanding the dock if it was collapsed —
-    /// "show me the units" from a menu or a shortcut has to actually show them,
-    /// not silently select a tab behind a closed chevron.
+    /// Bring the surface that owns an operational destination back on screen.
     pub fn focus_tab(&mut self, tab: DockTab) {
-        self.tab = tab;
-        if self.dock == PanelPlacement::Hidden {
-            self.dock = PanelPlacement::Docked;
+        match tab {
+            DockTab::Fire | DockTab::Units => self.dock = PanelPlacement::Docked,
+            DockTab::Entities => self.inspector = PanelPlacement::Docked,
         }
     }
 
     pub fn show_inspector(&mut self) {
-        if self.inspector == PanelPlacement::Hidden {
-            self.inspector = PanelPlacement::Docked;
-        }
+        self.inspector = PanelPlacement::Docked;
+    }
+
+    pub fn focus_bottom(&mut self, tab: BottomTab) {
+        self.bottom_tab = tab;
+        self.incident = PanelPlacement::Docked;
     }
 
     pub fn reset_layout(&mut self) {
         self.incident = PanelPlacement::Docked;
         self.dock = PanelPlacement::Docked;
         self.inspector = PanelPlacement::Docked;
-        self.debug = false;
+        self.bottom_tab = BottomTab::Incident;
     }
 }
 
-/// The **Incident** dock: what the commander reads. No controls beyond the two
-/// evacuation orders, because those are the only decisions that are made *from*
-/// this information rather than from the map.
+/// The bottom workbench: incident view, chat, diagnostics and behavior editor.
+///
+/// Its height is fixed per tab. In particular, it does not inherit a previous
+/// tab's dragged size, which made switching from the large behavior canvas back
+/// to the incident readout consume most of the map.
+#[allow(clippy::too_many_arguments)]
 pub fn panel(
     mut contexts: EguiContexts,
     mut sim: ResMut<Sim>,
     layer: Res<FireLayer>,
     mut focus: ResMut<UiFocus>,
     mut panels: ResMut<PanelState>,
+    selected: Res<crate::inspect::Selected>,
+    mut interview: ResMut<crate::interview::Interview>,
+    mut composer: ResMut<crate::composer::Composer>,
+    mut apply: EventWriter<crate::composer::ApplyBehaviour>,
+    orbit: Query<&crate::camera::OrbitCamera>,
+    mode: Res<crate::camera::CameraMode>,
+    time: Res<Time>,
 ) {
     let ctx = contexts.ctx_mut();
-    let mut placement = panels.incident;
-    if placement == PanelPlacement::Hidden {
+    if panels.incident == PanelPlacement::Hidden {
         return;
     }
     let scenario_name = sim.scenario.metadata.name.clone();
     let is_dev = sim.scenario.is_dev();
     let mut order = None;
+    let tab = panels.bottom_tab;
+    let available = ctx.available_rect().height();
+    let height = match tab {
+        BottomTab::Incident => 260.0,
+        BottomTab::Chat => 340.0,
+        BottomTab::Debug => 300.0,
+        BottomTab::Behaviour => (available * 0.68).clamp(520.0, 720.0),
+    };
 
-    match placement {
-        PanelPlacement::Docked => {
-            egui::SidePanel::left("incident_dock")
-                .resizable(true)
-                .default_width(300.0)
-                .width_range(270.0..=500.0)
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.heading("Incident");
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("×").on_hover_text("Hide panel").clicked() {
-                                placement = PanelPlacement::Hidden;
-                            }
-                            if ui.small_button("↗").on_hover_text("Float panel").clicked() {
-                                placement = PanelPlacement::Floating;
-                            }
-                            incident_identity(ui, &scenario_name, is_dev);
-                        });
-                    });
-                    ui.separator();
-                    order = incident_body(ui, &sim, *layer);
+    egui::TopBottomPanel::bottom("bottom_workbench")
+        .resizable(false)
+        .exact_height(height.min((available - 120.0).max(180.0)))
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                for candidate in BottomTab::ALL {
+                    if ui
+                        .selectable_label(panels.bottom_tab == candidate, candidate.label())
+                        .clicked()
+                    {
+                        panels.bottom_tab = candidate;
+                        composer.open = candidate == BottomTab::Behaviour;
+                        interview.open =
+                            candidate == BottomTab::Chat && interview.subject.is_some();
+                    }
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .small_button("×")
+                        .on_hover_text("Hide bottom workbench")
+                        .clicked()
+                    {
+                        panels.incident = PanelPlacement::Hidden;
+                        composer.open = false;
+                        interview.open = false;
+                    }
+                    incident_identity(ui, &scenario_name, is_dev);
                 });
-        }
-        PanelPlacement::Floating => {
-            let mut visible = true;
-            egui::Window::new(format!("Incident — {scenario_name}"))
-                .id(egui::Id::new("incident_float"))
-                .open(&mut visible)
-                .default_pos(egui::pos2(18.0, 82.0))
-                .default_width(330.0)
-                .min_width(270.0)
-                .resizable(true)
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        if ui.button("Dock left").clicked() {
-                            placement = PanelPlacement::Docked;
-                        }
-                        incident_identity(ui, &scenario_name, is_dev);
-                    });
-                    ui.separator();
+            });
+            ui.separator();
+
+            match tab {
+                BottomTab::Incident => {
                     order = incident_body(ui, &sim, *layer);
-                });
-            if !visible {
-                placement = PanelPlacement::Hidden;
+                }
+                BottomTab::Chat => {
+                    crate::interview::panel_body(
+                        ui,
+                        ctx,
+                        &mut interview,
+                        &mut sim,
+                        selected.target,
+                    );
+                }
+                BottomTab::Debug => {
+                    debug_body(ui, &sim, &orbit, *mode, selected.target, &time);
+                }
+                BottomTab::Behaviour => {
+                    crate::composer::panel_body(ui, &mut composer, &mut apply);
+                }
             }
-        }
-        PanelPlacement::Hidden => {}
-    }
+        });
 
     if let Some((centre, radius)) = order {
         let n = sim.agents.order_evacuation(centre, radius);
         info!("evacuation order issued to {n} households within {radius:.0} m");
     }
-    panels.incident = placement;
     focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+    focus.keyboard |= ctx.wants_keyboard_input();
 }
 
 fn incident_identity(ui: &mut egui::Ui, scenario_name: &str, is_dev: bool) {
@@ -326,16 +340,14 @@ fn incident_body(ui: &mut egui::Ui, sim: &Sim, layer: FireLayer) -> Option<(Pos,
     let ignition_pos = sim.scenario.world.centre_of(sim.ignition.centre);
     let mut order = None;
 
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
+    ui.columns(3, |columns| {
+        columns[0].vertical(|ui| {
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(format!("Map: {}", layer.label())).strong());
                 ui.label(egui::RichText::new(layer.legend()).small().weak());
             });
 
             if threatened > 0 || lost > 0 || evac.cutoff > 0 || evac.casualties > 0 {
-                ui.add_space(6.0);
                 egui::Frame::group(ui.style())
                     .fill(egui::Color32::from_rgb(62, 31, 26))
                     .show(ui, |ui| {
@@ -349,7 +361,6 @@ fn incident_body(ui: &mut egui::Ui, sim: &Sim, layer: FireLayer) -> Option<(Pos,
                     });
             }
 
-            ui.add_space(8.0);
             section(ui, "Fire");
             egui::Grid::new("stats").num_columns(2).show(ui, |ui| {
                 ui.label("Burnt");
@@ -371,8 +382,9 @@ fn incident_body(ui: &mut egui::Ui, sim: &Sim, layer: FireLayer) -> Option<(Pos,
                 ui.label(format!("{threatened} / {lost}"));
                 ui.end_row();
             });
+        });
 
-            ui.add_space(8.0);
+        columns[1].vertical(|ui| {
             section(ui, "Evacuation");
             let done = evac.safe as f32 / households.max(1) as f32;
             ui.horizontal(|ui| {
@@ -412,8 +424,9 @@ fn incident_body(ui: &mut egui::Ui, sim: &Sim, layer: FireLayer) -> Option<(Pos,
                     ui.end_row();
                 }
             });
+        });
 
-            ui.add_space(8.0);
+        columns[2].vertical(|ui| {
             section(ui, "Evacuation order");
             ui.horizontal_wrapped(|ui| {
                 if ui
@@ -458,8 +471,8 @@ fn incident_body(ui: &mut egui::Ui, sim: &Sim, layer: FireLayer) -> Option<(Pos,
                     });
                 });
             }
-            ui.add_space(6.0);
         });
+    });
 
     order
 }
@@ -566,10 +579,7 @@ pub fn shortcuts_panel(
                     ("A / L / D", "attack / line / drop"),
                     ("X", "stand down selected unit"),
                     ("C", "request air support"),
-                    (
-                        "Esc",
-                        "cancel tool · leave follow/first-person view · close an interview",
-                    ),
+                    ("Esc", "cancel tool · leave follow/first-person view"),
                 ],
             );
             shortcuts_group(
@@ -578,11 +588,10 @@ pub fn shortcuts_panel(
                 &[
                     ("/", "open Entities and focus search"),
                     ("B", "show / hide Entities"),
-                    ("G", "Agent Behaviour Composer"),
+                    ("G", "open the Behavior editor bottom tab"),
                     (
                         "T",
-                        "interview the selected agent — pauses the incident, and takes the \
-                         keyboard until you close it",
+                        "open Chat for the selected agent — pauses the incident",
                     ),
                     ("F2", "developer diagnostics"),
                     ("?", "this shortcut window"),
@@ -620,16 +629,15 @@ fn help_english(ui: &mut egui::Ui) {
         "1. Look at the fire, and try the four map layers under View ▸ Fire layer (or press 1–4).",
     );
     ui.label("2. Order an evacuation when people may be at risk.");
-    ui.label("3. Select a unit in the Units tab, choose an order, then click the map to place it.");
+    ui.label("3. Select a unit under Intervention on the left, choose an order, then click the map to place it.");
     ui.label("4. Press Play and adjust time acceleration as the incident develops.");
     ui.small("There is no score: use the information in the panels to see the consequences of each decision.");
     ui.add_space(8.0);
     ui.heading("Reading the panels");
     ui.label("The menu bar along the top reaches everything, and the clock, play button and speed sit at its right-hand end.");
-    ui.label("Incident, on the left, shows fire size, intensity, risk, structure losses and evacuation progress.");
-    ui.label("The Operations workspace has three tabs. Fire changes wind, moisture and ignitions, and restarts from T+0. Units is where you select crews and assign direct attack, a fire line or a water drop — request air support early, it takes 25 minutes to arrive. Entities finds any household, person, vehicle or unit.");
-    ui.label("Incident, Operations and Inspector can be docked, floated or hidden from View. Their header buttons provide the same controls.");
-    ui.label("Click something on the map or in a list and the Inspector opens along the bottom with everything the model knows about it.");
+    ui.label("The left Command panel contains execution controls, compact wind and moisture parameters, ignition settings, and crew intervention.");
+    ui.label("The fixed-width right panel finds any household, person, vehicle or unit. Selecting a row or map symbol shows that entity's detail directly below the navigator.");
+    ui.label("The bottom workbench switches between the incident view, agent chat, diagnostics, and the behavior editor.");
     ui.add_space(8.0);
     ui.heading("Why did they do that?");
     ui.label("Households, people caught away from home, and suppression units each decide for themselves, and every one of those decision models can be read and rewritten. Press G for the Agent Behaviour Composer: it holds the decision graph for each kind of agent, a test bench, and its own help.");
@@ -668,16 +676,17 @@ fn help_italian(ui: &mut egui::Ui) {
     ui.heading("Una prima simulazione semplice");
     ui.label("1. Osserva l'incendio e prova i quattro livelli in View ▸ Fire layer (o premi 1–4).");
     ui.label("2. Ordina l'evacuazione quando le persone potrebbero essere in pericolo.");
-    ui.label("3. Seleziona una squadra nella scheda Units, scegli un ordine e poi clicca sulla mappa per assegnarlo.");
+    ui.label("3. Seleziona una squadra in Intervento a sinistra, scegli un ordine e poi clicca sulla mappa per assegnarlo.");
     ui.label("4. Premi Play e regola l'accelerazione del tempo mentre l'emergenza evolve.");
     ui.small("Non c'è un punteggio: usa le informazioni nei pannelli per capire le conseguenze delle decisioni.");
     ui.add_space(8.0);
     ui.heading("Come leggere i pannelli");
     ui.label("La barra dei menu in alto raggiunge ogni funzione; orologio, play e velocità stanno alla sua destra.");
-    ui.label("Incident, a sinistra, mostra estensione e intensità dell'incendio, rischio, strutture perse e avanzamento dell'evacuazione.");
-    ui.label("L'area Operazioni ha tre schede. Fire cambia vento, umidità e inneschi e riparte da T+0. Units serve a selezionare le squadre e assegnare attacco diretto, linea tagliafuoco o lancio d'acqua — richiedi presto il supporto aereo, servono 25 minuti. Entities trova qualsiasi famiglia, persona, veicolo o squadra.");
-    ui.label("Incident, Operazioni e Inspector si possono agganciare, rendere mobili o nascondere dal menu View e dai pulsanti nell'intestazione.");
-    ui.label("Clicca un elemento sulla mappa o in un elenco e l'Inspector si apre in basso con tutto ciò che il modello sa su di esso.");
+    ui.label("Il pannello Comando a sinistra contiene esecuzione, parametri compatti per vento e umidità, inneschi e intervento delle squadre.");
+    ui.label("Il pannello a larghezza fissa sulla destra trova famiglie, persone, veicoli e squadre; il dettaglio dell'entità selezionata appare subito sotto l'elenco.");
+    ui.label(
+        "L'area in basso passa tra vista incidente, chat, diagnostica ed editor dei comportamenti.",
+    );
     ui.add_space(8.0);
     ui.heading("Perché si comportano così?");
     ui.label("Famiglie, persone sorprese fuori casa e squadre di intervento decidono ciascuna per conto proprio, e ognuno di questi modelli decisionali si può leggere e riscrivere. Premi G per l'Agent Behaviour Composer: contiene il grafo decisionale di ogni tipo di agente, un banco di prova e la propria guida.");
@@ -724,50 +733,36 @@ fn controls_guide(ui: &mut egui::Ui, rows: [(&str, &str); 8]) {
         });
 }
 
-/// Live developer information in one deliberate surface instead of small
-/// diagnostic fragments scattered through operational panels.
-pub fn debug_panel(
-    mut contexts: EguiContexts,
-    mut panels: ResMut<PanelState>,
-    sim: Res<Sim>,
-    orbit: Query<&crate::camera::OrbitCamera>,
-    mode: Res<crate::camera::CameraMode>,
-    selected: Res<crate::inspect::Selected>,
-    time: Res<Time>,
-    mut focus: ResMut<UiFocus>,
+/// Live developer information embedded in the bottom Debug tab.
+fn debug_body(
+    ui: &mut egui::Ui,
+    sim: &Sim,
+    orbit: &Query<&crate::camera::OrbitCamera>,
+    mode: crate::camera::CameraMode,
+    selected: Option<crate::inspect::Target>,
+    time: &Time,
 ) {
-    if !panels.debug {
-        return;
-    }
-    let ctx = contexts.ctx_mut();
-    let mut open = true;
     let fps = if time.delta_seconds() > 0.0 {
         1.0 / time.delta_seconds()
     } else {
         0.0
     };
-    egui::Window::new("Developer diagnostics")
-        .open(&mut open)
-        .default_pos(egui::pos2(430.0, 95.0))
-        .default_width(430.0)
-        .min_width(360.0)
-        .resizable(true)
-        .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.colored_label(
-                    if fps >= 45.0 {
-                        egui::Color32::from_rgb(110, 210, 145)
-                    } else {
-                        egui::Color32::from_rgb(245, 170, 80)
-                    },
-                    format!("{fps:.0} fps · {:.1} ms", time.delta_seconds() * 1000.0),
-                );
-                ui.separator();
-                ui.label(format!("generation {}", sim.generation));
-                ui.label(format!("{} events", sim.history.log.len()));
-            });
+    ui.horizontal(|ui| {
+        ui.colored_label(
+            if fps >= 45.0 {
+                egui::Color32::from_rgb(110, 210, 145)
+            } else {
+                egui::Color32::from_rgb(245, 170, 80)
+            },
+            format!("{fps:.0} fps · {:.1} ms", time.delta_seconds() * 1000.0),
+        );
+        ui.separator();
+        ui.label(format!("generation {}", sim.generation));
+        ui.label(format!("{} events", sim.history.log.len()));
+    });
 
-            ui.add_space(6.0);
+    ui.columns(3, |columns| {
+        columns[0].vertical(|ui| {
             section(ui, "Simulation");
             egui::Grid::new("debug_sim").num_columns(2).show(ui, |ui| {
                 for (label, value) in [
@@ -810,21 +805,23 @@ pub fn debug_panel(
                     ui.end_row();
                 }
             });
-
-            ui.add_space(8.0);
+        });
+        columns[1].vertical(|ui| {
             section(ui, "View & selection");
             if let Ok(orbit) = orbit.get_single() {
                 ui.label(format!(
                     "camera {:?} · focus [{:.0}, {:.0}] · {:.0} m away",
-                    *mode, orbit.focus.x, -orbit.focus.z, orbit.distance
+                    mode, orbit.focus.x, -orbit.focus.z, orbit.distance
                 ));
             }
-            ui.label(match selected.target {
+            ui.label(match selected {
                 Some(t) => format!("selected: {:?}", t),
                 None => "selected: none".to_string(),
             });
-
             ui.add_space(8.0);
+            ui.weak("F12 saves a screenshot");
+        });
+        columns[2].vertical(|ui| {
             section(ui, "Recent event log");
             let events = sim.history.log.recent(10);
             if events.is_empty() {
@@ -846,17 +843,8 @@ pub fn debug_panel(
                     });
                 }
             }
-
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                if ui.button("Reset panel layout").clicked() {
-                    panels.reset_layout();
-                }
-                ui.weak("F12 saves a screenshot");
-            });
         });
-    panels.debug = open && panels.debug;
-    focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+    });
 }
 
 /// Lightweight feedback over the map. It is deliberately non-interactive so
@@ -942,11 +930,7 @@ pub fn setup_style(mut contexts: EguiContexts) {
     ctx.set_style(style);
 }
 
-/// The right-hand dock: one panel, three tabs, one of them showing.
-///
-/// All three used to be their own `SidePanel`, which is why the 3D view was a
-/// letterbox. Sharing one dock also means they share one width the player sets
-/// once, rather than three they have to negotiate every time one is opened.
+/// The left command column: execution, fire parameters and intervention.
 #[allow(clippy::too_many_arguments)]
 pub fn dock(
     mut contexts: EguiContexts,
@@ -955,143 +939,134 @@ pub fn dock(
     mut focus: ResMut<UiFocus>,
     mut tool: ResMut<IgnitionTool>,
     mut order: ResMut<crate::command::OrderTool>,
-    mut browser: ResMut<crate::browser::BrowserUi>,
     mut selected: ResMut<crate::inspect::Selected>,
     mut restarted: EventWriter<SimRestarted>,
     mut camera: Query<&mut crate::camera::OrbitCamera>,
+    mut day: ResMut<DayClock>,
 ) {
     let ctx = contexts.ctx_mut();
-    let mut placement = panels.dock;
-    let mut tab = panels.tab;
-    if placement == PanelPlacement::Hidden {
+    if panels.dock == PanelPlacement::Hidden {
         return;
     }
     let mut show_inspector = false;
 
-    match placement {
-        PanelPlacement::Docked => {
-            egui::SidePanel::right("work_dock")
-                .resizable(true)
-                .default_width(320.0)
-                .width_range(290.0..=540.0)
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        workspace_tabs(ui, &mut tab);
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui
-                                .small_button("×")
-                                .on_hover_text("Hide workspace")
-                                .clicked()
-                            {
-                                placement = PanelPlacement::Hidden;
-                            }
-                            if ui
-                                .small_button("↗")
-                                .on_hover_text("Float workspace")
-                                .clicked()
-                            {
-                                placement = PanelPlacement::Floating;
-                            }
-                        });
-                    });
-                    ui.separator();
-                    show_inspector = workspace_body(
+    egui::SidePanel::left("control_dock")
+        .resizable(true)
+        .default_width(330.0)
+        .width_range(300.0..=430.0)
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.heading("Command");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .small_button("×")
+                        .on_hover_text("Hide command panel")
+                        .clicked()
+                    {
+                        panels.dock = PanelPlacement::Hidden;
+                    }
+                });
+            });
+            ui.separator();
+            egui::ScrollArea::vertical()
+                .id_source("command_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    execution_body(ui, &mut sim, &mut restarted);
+                    ui.add_space(12.0);
+                    wildfire_body(ui, &mut sim, &mut tool, &mut restarted, &mut day);
+                    ui.add_space(12.0);
+                    section(ui, "Intervention");
+                    show_inspector = crate::command::units_body(
                         ui,
-                        tab,
                         &mut sim,
-                        &mut tool,
                         &mut order,
-                        &mut browser,
+                        &mut tool,
                         &mut selected,
-                        &mut restarted,
                         &mut camera,
                     );
                 });
-        }
-        PanelPlacement::Floating => {
-            let mut visible = true;
-            egui::Window::new("Operations workspace")
-                .id(egui::Id::new("work_float"))
-                .open(&mut visible)
-                .default_pos(egui::pos2(1030.0, 82.0))
-                .default_width(360.0)
-                .min_width(290.0)
-                .resizable(true)
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        if ui.button("Dock right").clicked() {
-                            placement = PanelPlacement::Docked;
-                        }
-                        workspace_tabs(ui, &mut tab);
-                    });
-                    ui.separator();
-                    show_inspector = workspace_body(
-                        ui,
-                        tab,
-                        &mut sim,
-                        &mut tool,
-                        &mut order,
-                        &mut browser,
-                        &mut selected,
-                        &mut restarted,
-                        &mut camera,
-                    );
-                });
-            if !visible {
-                placement = PanelPlacement::Hidden;
-            }
-        }
-        PanelPlacement::Hidden => {}
-    }
+        });
 
-    panels.dock = placement;
-    panels.tab = tab;
     if show_inspector {
         panels.show_inspector();
     }
     focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
 
-fn workspace_tabs(ui: &mut egui::Ui, tab: &mut DockTab) {
-    for t in DockTab::ALL {
+fn execution_body(ui: &mut egui::Ui, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+    section(ui, "Execution control");
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(format!("T+{}", sim.clock()))
+                .monospace()
+                .strong(),
+        );
         if ui
-            .selectable_label(*tab == t, t.label())
-            .on_hover_text(t.hint())
+            .button(if sim.playing { "⏸ Pause" } else { "▶ Play" })
             .clicked()
         {
-            *tab = t;
+            sim.playing = !sim.playing;
+        }
+        if ui
+            .button("⏭ Step")
+            .on_hover_text("Advance one agent decision interval")
+            .clicked()
+        {
+            sim.request_step();
+        }
+    });
+
+    ui.horizontal_wrapped(|ui| {
+        for (speed, label) in PRESETS {
+            if ui
+                .selectable_label((sim.speed - speed).abs() < 0.5, label)
+                .clicked()
+            {
+                sim.speed = speed;
+            }
+        }
+    });
+    ui.add(
+        egui::Slider::new(&mut sim.speed, MIN_SPEED..=MAX_SPEED)
+            .logarithmic(true)
+            .text("speed")
+            .custom_formatter(|value, _| speed_text(value as f32)),
+    );
+
+    let mut seed = sim.seed;
+    ui.horizontal(|ui| {
+        ui.label("Seed");
+        ui.add(egui::DragValue::new(&mut seed).speed(1.0));
+    });
+    sim.seed = seed;
+    if ui
+        .add_sized(
+            [ui.available_width(), 28.0],
+            egui::Button::new("⟲ Restart incident  (Ctrl/⌘+R)")
+                .fill(egui::Color32::from_rgb(120, 40, 32)),
+        )
+        .on_hover_text("Restart at T+0 with the current weather, seed and ignitions")
+        .clicked()
+    {
+        match sim.restart() {
+            Ok(()) => {
+                restarted.send(SimRestarted);
+            }
+            Err(error) => error!("restart failed: {error:#}"),
         }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn workspace_body(
-    ui: &mut egui::Ui,
-    tab: DockTab,
-    sim: &mut Sim,
-    tool: &mut IgnitionTool,
-    order: &mut crate::command::OrderTool,
-    browser: &mut crate::browser::BrowserUi,
-    selected: &mut crate::inspect::Selected,
-    restarted: &mut EventWriter<SimRestarted>,
-    camera: &mut Query<&mut crate::camera::OrbitCamera>,
-) -> bool {
-    let mut show_inspector = false;
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
-        .show(ui, |ui| match tab {
-            DockTab::Fire => wildfire_body(ui, sim, tool, restarted),
-            DockTab::Units => {
-                show_inspector = crate::command::units_body(ui, sim, order, tool, selected, camera);
-            }
-            DockTab::Entities => {
-                show_inspector = crate::browser::entities_body(ui, browser, selected, sim, camera);
-            }
-        });
-    show_inspector
+fn speed_text(speed: f32) -> String {
+    if speed >= 60.0 {
+        format!("{:.1} min/s", speed / 60.0)
+    } else {
+        format!("{speed:.0}x")
+    }
 }
 
-/// The wildfire controls: weather, ignitions, restart.
+/// Compact wildfire parameters and ignition controls.
 ///
 /// Weather is staged rather than applied per-pixel-of-drag. Every change is a
 /// scheduled boundary condition in the core, so applying on each frame of a
@@ -1103,58 +1078,88 @@ pub fn wildfire_body(
     sim: &mut Sim,
     tool: &mut IgnitionTool,
     restarted: &mut EventWriter<SimRestarted>,
+    day: &mut DayClock,
 ) {
     let mut weather = sim.weather;
     let mut commit_weather = false;
-    let mut do_restart;
+    let mut do_restart = false;
     let mut replan = false;
     let mut clear_extra = false;
     let mut mode = tool.mode;
     let mut radius = tool.radius_m;
-    let mut seed = sim.seed;
-    let live = sim.fire.weather();
     let dirty = sim.weather_dirty();
     let opening = sim.ignitions.iter().filter(|i| i.at_s == 0).count();
     let added = sim.ignitions.len() - opening;
-    let running = sim.time_s();
 
-    section(ui, "Wind");
+    section(ui, "Time of day");
+    let linked_hour = (day.start_hour + sim.time_s() as f32 / 3600.0).rem_euclid(24.0);
+    let mut linked = day.linked();
+    let shown = day.manual_hour.unwrap_or(linked_hour).rem_euclid(24.0);
     ui.horizontal(|ui| {
-        compass(ui, live.wind_dir_deg as f32, weather.wind_dir_deg as f32);
-        ui.vertical(|ui| {
-            // Both directions spelled out, always. `w_dir` is the
-            // bearing the wind blows *from*, the kernel reads it in a
-            // way that looks like the opposite convention, and a bare
-            // number here is the single easiest thing in this UI to
-            // misread by 180 degrees.
-            let from = weather.wind_dir_deg as f32;
-            ui.label(format!("from {} ({:.0}°)", cardinal(from), from));
-            ui.label(
-                egui::RichText::new(format!("drives fire {}", cardinal((from + 180.0) % 360.0)))
-                    .strong(),
-            );
-        });
+        ui.label("Clock");
+        ui.strong(format!(
+            "{:02}:{:02}",
+            shown as u32,
+            (shown.fract() * 60.0) as u32
+        ));
+        if linked {
+            ui.small("(sim time)");
+        }
+    });
+    if ui
+        .checkbox(&mut linked, "linked to sim clock")
+        .on_hover_text(
+            "Unlink to scrub the sun and moon to any hour without \
+             touching the incident clock — for lighting a shot or \
+             checking how a scene reads at night.",
+        )
+        .changed()
+    {
+        day.manual_hour = if linked { None } else { Some(linked_hour) };
+    }
+    let mut manual = day.manual_hour.unwrap_or(linked_hour);
+    let r = ui.add_enabled(
+        !linked,
+        egui::Slider::new(&mut manual, 0.0..=24.0)
+            .custom_formatter(|v, _| format!("{:02}:{:02}", v as i64, (v.fract() * 60.0) as i64))
+            .text("hour"),
+    );
+    if !linked && r.changed() {
+        day.manual_hour = Some(manual);
+    }
+
+    ui.add_space(8.0);
+    section(ui, "Fire parameters");
+    let from = weather.wind_dir_deg as f32;
+    ui.horizontal(|ui| {
+        ui.label("Wind");
+        ui.strong(format!(
+            "from {} · pushes {}",
+            cardinal(from),
+            cardinal((from + 180.0) % 360.0)
+        ));
+        if dirty {
+            ui.colored_label(egui::Color32::from_rgb(240, 180, 60), "● pending");
+        }
     });
     let r = ui.add(
         egui::Slider::new(&mut weather.wind_dir_deg, 0.0..=359.0)
             .step_by(5.0)
             .custom_formatter(|v, _| format!("{v:.0}° from {}", cardinal(v as f32)))
-            .text("direction"),
+            .text("from"),
     );
     commit_weather |= r.drag_stopped() || r.lost_focus();
     let r = ui.add(
         egui::Slider::new(&mut weather.wind_speed_kmh, 0.0..=90.0)
             .suffix(" km/h")
-            .text("speed"),
+            .text("wind speed"),
     );
     commit_weather |= r.drag_stopped() || r.lost_focus();
 
-    ui.add_space(8.0);
-    section(ui, "Fuel moisture");
     let r = ui.add(
         egui::Slider::new(&mut weather.moisture_pct, 2.0..=40.0)
             .suffix(" %")
-            .text("dead fine fuel"),
+            .text("fuel moisture"),
     );
     commit_weather |= r.drag_stopped() || r.lost_focus();
     ui.small(match weather.moisture_pct {
@@ -1164,7 +1169,6 @@ pub fn wildfire_body(
         _ => "wet — most fuels will not carry fire",
     });
 
-    ui.add_space(4.0);
     ui.horizontal(|ui| {
         let apply = ui
             .add_enabled(dirty, egui::Button::new("Apply weather"))
@@ -1174,9 +1178,6 @@ pub fn wildfire_body(
          different scenario.",
             );
         commit_weather |= apply.clicked();
-        if dirty {
-            ui.colored_label(egui::Color32::from_rgb(240, 180, 60), "● pending");
-        }
     });
 
     ui.add_space(8.0);
@@ -1246,31 +1247,6 @@ pub fn wildfire_body(
         }
     });
 
-    ui.add_space(8.0);
-    section(ui, "Run");
-    ui.horizontal(|ui| {
-        ui.label("Seed");
-        ui.add(egui::DragValue::new(&mut seed).speed(1.0));
-    });
-    let restart = ui
-        .add_sized(
-            [ui.available_width(), 28.0],
-            egui::Button::new("⟲  Restart incident  (Ctrl/⌘+R)")
-                .fill(egui::Color32::from_rgb(120, 40, 32)),
-        )
-        .on_hover_text(
-            "Relights the scenario at T+0 with the current weather, \
-     seed and ignitions. The terrain, buildings and population \
-     are kept; the fire and every household's decision are not.",
-        );
-    do_restart = restart.clicked();
-    if running > 0 {
-        ui.small(format!(
-            "{} of simulated time will be discarded.",
-            hhmm(running)
-        ));
-    }
-
     // Radius and mode are pure view state, so they go back immediately.
     if radius != tool.radius_m {
         tool.radius_m = clamp_radius(radius);
@@ -1279,9 +1255,6 @@ pub fn wildfire_body(
         tool.mode = mode;
     }
 
-    if seed != sim.seed {
-        sim.seed = seed;
-    }
     if weather.wind_dir_deg != sim.weather.wind_dir_deg
         || weather.wind_speed_kmh != sim.weather.wind_speed_kmh
         || weather.moisture_pct != sim.weather.moisture_pct
@@ -1322,67 +1295,6 @@ pub fn wildfire_body(
     }
 }
 
-/// A wind rose. `live` is what the fire is running on, `staged` what the
-/// sliders currently say; they differ only while a change is pending.
-///
-/// Draws the arrow pointing the way the wind *pushes* — down-wind — because
-/// that is the direction the player is reasoning about, with a tick on the rim
-/// for the meteorological bearing the number reports.
-fn compass(ui: &mut egui::Ui, live: f32, staged: f32) {
-    let size = 64.0;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
-    let p = ui.painter();
-    let c = rect.center();
-    let r = size * 0.44;
-
-    p.circle_stroke(c, r, egui::Stroke::new(1.0, egui::Color32::from_gray(90)));
-    for (label, ang) in [("N", 0.0f32), ("E", 90.0), ("S", 180.0), ("W", 270.0)] {
-        let v = bearing_vec(ang) * (r + 7.0);
-        p.text(
-            c + v,
-            egui::Align2::CENTER_CENTER,
-            label,
-            egui::FontId::proportional(9.0),
-            egui::Color32::from_gray(140),
-        );
-    }
-
-    // Arrow along the down-wind direction.
-    let draw = |ang: f32, color: egui::Color32, width: f32| {
-        let down = bearing_vec((ang + 180.0) % 360.0);
-        let tail = c - down * r * 0.85;
-        let head = c + down * r * 0.85;
-        p.line_segment([tail, head], egui::Stroke::new(width, color));
-        // Head, as two barbs rather than a filled triangle: at 64 px a filled
-        // head is a blob.
-        let side = egui::vec2(-down.y, down.x);
-        for s in [-1.0, 1.0] {
-            p.line_segment(
-                [head, head - down * (r * 0.34) + side * s * (r * 0.22)],
-                egui::Stroke::new(width, color),
-            );
-        }
-        // Rim tick at the bearing the wind comes from.
-        let from = bearing_vec(ang);
-        p.line_segment(
-            [c + from * r * 0.86, c + from * r],
-            egui::Stroke::new(width, color),
-        );
-    };
-
-    if (live - staged).abs() > 0.5 {
-        draw(live, egui::Color32::from_gray(90), 1.0);
-    }
-    draw(staged, egui::Color32::from_rgb(255, 170, 60), 2.0);
-}
-
-/// Unit screen vector for a compass bearing: north up, east right, clockwise.
-/// Screen y grows downward, hence the negated cosine.
-fn bearing_vec(deg: f32) -> egui::Vec2 {
-    let a = deg.to_radians();
-    egui::vec2(a.sin(), -a.cos())
-}
-
 /// Nearest 16-point compass name for a bearing.
 fn cardinal(deg: f32) -> &'static str {
     const NAMES: [&str; 16] = [
@@ -1391,10 +1303,6 @@ fn cardinal(deg: f32) -> &'static str {
     ];
     let i = (((deg.rem_euclid(360.0)) / 22.5).round() as usize) % 16;
     NAMES[i]
-}
-
-fn hhmm(s: i64) -> String {
-    format!("{}h {:02}m", s / 3600, (s / 60) % 60)
 }
 
 /// Point the 3D camera's own viewport at whatever screen area the docked

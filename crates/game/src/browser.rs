@@ -46,7 +46,7 @@ impl Default for BrowserUi {
     }
 }
 
-/// `B` brings the Entities tab forward. It used to *also* open the behaviour
+/// `B` brings the fixed Entities panel forward. It used to *also* open the behaviour
 /// composer, which shared the binding — both fired, so the composer opened over
 /// a browser that had just changed state underneath it. The composer is now `G`.
 pub fn toggle(
@@ -59,8 +59,8 @@ pub fn toggle(
         return;
     }
     if keys.just_pressed(KeyCode::KeyB) {
-        if panels.tab == crate::ui::DockTab::Entities && panels.dock.visible() {
-            panels.dock = crate::ui::PanelPlacement::Hidden;
+        if panels.inspector.visible() {
+            panels.inspector = crate::ui::PanelPlacement::Hidden;
         } else {
             panels.focus_tab(crate::ui::DockTab::Entities);
             browser.focus_search = true;

@@ -467,14 +467,12 @@ Three fixes, and the order matters. The field is **never disabled** — you can
 type the next question while they answer, and focus is never taken away to give
 back. Focus is **handed back explicitly** after a send, because Enter releases
 it (that is how `lost_focus()` fires at all) and the box would otherwise be dead
-for exactly the person who just used it. And, structurally, **an open interview
+for exactly the person who just used it. And, structurally, **an active Chat tab
 owns the keyboard outright**: `menu::menubar` sets `focus.keyboard |=
 interview.open`, so no single-key shortcut can fire while a conversation is up,
 whether or not egui currently reports a focused widget. That last one is finding
 25 with a text field in front of it, and the same answer — one system decides
-ownership. Taking the keyboard then costs you the way out, so Esc closes the
-window: once out of the box (the first press), the second press closes it, which
-is the behaviour Esc already has everywhere else here.
+ownership. Switching bottom tabs releases it.
 
 ---
 
@@ -493,19 +491,14 @@ regions, and nothing else.
   View, Tools, Help. Its right-hand end is the status strip: the clock, the
   play button, the speed, and — in orange — what the next left-click will do
   when a map tool is armed.
-- **Incident**, left — what the commander *reads*: the map legend, the fire
-  numbers, the evacuation breakdown behind a progress bar, and the two
-  evacuation orders. No transport, no layer buttons: those moved to the menu.
-- **The dock**, right — one panel, three tabs, because its three jobs are
-  mutually exclusive in practice: **Fire** (wind, moisture, ignition, seed,
-  restart), **Units** (roster, orders, air support), **Entities** (search
-  everything inspectable). `ui::DockTab`; `PanelState::focus_tab` is what makes
-  a shortcut or a menu item bring its tab forward rather than select it behind
-  a closed chevron.
-- **Inspector**, bottom — only when something is selected. Ends with a
-  **Behaviour** section for any agent running an authored one — household,
-  person or unit, one function for all three — carrying the decision, the
-  branches that produced it, and the one door from the map into the composer.
+- **Command**, left — execution control, time of day, compact wind/moisture and
+  ignition parameters, followed by the intervention roster and unit orders.
+- **Entities**, right — a fixed-width searchable navigator. When something is
+  selected, its full detail appears directly under the roster. The side panel
+  is deliberately not resizable; selection never changes the camera viewport.
+- **Bottom workbench** — tabs for the horizontal **Incident view**, embedded
+  agent **Chat**, **Debug** diagnostics, and the large **Behavior editor**.
+  Each tab has a stable height suited to its contents.
 
 This replaced five independent docks (two left/right side panels, two bottom
 panels, plus a floating dev window), which between them left the 3D view a
@@ -518,9 +511,9 @@ mitred at the joints, in 234 chunks / 656 k triangles. Asphalt dark, tracks
 pale dirt — the split is also the drive/walk distinction the ABM routes on.
 
 **Wildfire controls** (`crates/game/src/ui.rs` `wildfire_body`,
-`ignition_edit.rs`, `pick.rs`): the dock's **Fire** tab. Wind direction (with a
-compass that spells out *both* the from-bearing and the direction the fire is
-driven), wind speed, fuel moisture — staged and applied on release as a
+`ignition_edit.rs`, `pick.rs`): the left command panel. Wind direction spells
+out both the from-bearing and the direction the fire is driven; wind speed and
+fuel moisture sit immediately below it. They are staged and applied on release as a
 boundary condition, so a shift changes what the front does next without
 rewriting the scar. Click-to-place ignitions with a draped cursor ring that
 turns red where there is no burnable fuel, radius 60–600 m. Restart, which
@@ -850,7 +843,7 @@ what comes back.
 **Not built yet:** no debrief. No wasm. No dozers (the only line-cutting
 resource is a hand crew, which is why line production is the binding
 constraint). Units are
-selected from the Resources panel, not by clicking them on the map — the
+selected under Intervention in the left Command panel, not by clicking them on the map — the
 screen-space picker in `inspect` would do it, but three tools already contend for
 left-click and a fourth needs a rule, not a patch.
 
@@ -882,11 +875,8 @@ SPOTORNO_SHOT_YAW=270 SPOTORNO_SHOT_PITCH=-14 ...  # orbit angle, degrees --
        # the only way to review something that is wrong from one direction
        # (a seam on the horizon), which the default three-quarter view misses
 SPOTORNO_PLACE=1 ...   # open with the ignition tool armed, so the rings show
-SPOTORNO_TAB=fire ...  # open on a chosen dock tab: fire | units | entities --
-       # the only way to screenshot one of them unattended
-
-# the behaviour composer, opened with the scenario -- the value picks the
-# right-hand tab, which is the only way to screenshot a tab unattended.
+# the behavior editor, opened in the large bottom tab -- the value picks its
+# right-hand inspector tab, which is the only way to screenshot one unattended.
 SPOTORNO_COMPOSER=1 cargo run --release -p game          # node inspector
 SPOTORNO_COMPOSER=subtypes ...                           # profiles and compare
 SPOTORNO_COMPOSER=test ...                               # the test bench

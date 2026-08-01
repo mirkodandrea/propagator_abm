@@ -352,27 +352,30 @@ pub fn update_ring(
     tf.scale = Vec3::new(radius, 1.0, radius);
 }
 
-/// The inspector panel: everything the model knows about whatever is
-/// selected. Only shown when something is.
+/// The fixed-width right panel: entity navigation first, selected detail below.
+///
+/// It intentionally has no resize handle. The old resizable inspector could
+/// report a transient width beyond the render target while dragging, and the
+/// entity list never benefits from being an arbitrary width in the first place.
+#[allow(clippy::too_many_arguments)]
 pub fn panel(
     mut contexts: EguiContexts,
     mut selected: ResMut<Selected>,
+    mut browser: ResMut<crate::browser::BrowserUi>,
     mut focus: ResMut<crate::ui::UiFocus>,
     mut mode: ResMut<crate::camera::CameraMode>,
     mut panels: ResMut<crate::ui::PanelState>,
     mut composer: ResMut<crate::composer::Composer>,
     mut interview: ResMut<crate::interview::Interview>,
+    mut camera: Query<&mut crate::camera::OrbitCamera>,
     sim: Res<Sim>,
     buildings: Res<Buildings>,
 ) {
-    let Some(target) = selected.target else {
-        return;
-    };
     let ctx = contexts.ctx_mut();
-    let mut placement = panels.inspector;
-    if placement == crate::ui::PanelPlacement::Hidden {
+    if panels.inspector == crate::ui::PanelPlacement::Hidden {
         return;
     }
+    let target = selected.target;
     let mut close = false;
     let mut jump_to: Option<Target> = None;
     // Set by the behaviour section's one button.
@@ -380,8 +383,9 @@ pub fn panel(
     // Set by the interview button — the second door out of this panel, and the
     // only one that leads to the agent rather than to the model behind it.
     let mut open_interview = false;
-    let mut contents = |ui: &mut egui::Ui| {
+    let mut detail = |ui: &mut egui::Ui, target: Target| {
         egui::ScrollArea::vertical()
+            .id_source("entity_detail_scroll")
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 match target {
@@ -398,65 +402,49 @@ pub fn panel(
             });
     };
 
-    match placement {
-        crate::ui::PanelPlacement::Docked => {
-            egui::TopBottomPanel::bottom("inspector_dock")
-                .resizable(true)
-                .default_height(220.0)
-                .height_range(150.0..=430.0)
-                .show(ctx, |ui| {
+    egui::SidePanel::right("entities_and_detail")
+        .resizable(false)
+        .exact_width(370.0)
+        .show(ctx, |ui| {
+            if let Some(target) = target {
+                egui::TopBottomPanel::top("entity_navigation")
+                    .resizable(false)
+                    .exact_height(250.0)
+                    .show_inside(ui, |ui| {
+                        entity_navigation_header(ui, &mut panels);
+                        ui.separator();
+                        crate::browser::entities_body(
+                            ui,
+                            &mut browser,
+                            &mut selected,
+                            &sim,
+                            &mut camera,
+                        );
+                    });
+                egui::CentralPanel::default().show_inside(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.heading(title(target));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("×").on_hover_text("Deselect").clicked() {
+                            if ui
+                                .small_button("×")
+                                .on_hover_text("Deselect entity")
+                                .clicked()
+                            {
                                 close = true;
-                            }
-                            if ui
-                                .small_button("—")
-                                .on_hover_text("Hide inspector")
-                                .clicked()
-                            {
-                                placement = crate::ui::PanelPlacement::Hidden;
-                            }
-                            if ui
-                                .small_button("↗")
-                                .on_hover_text("Float inspector")
-                                .clicked()
-                            {
-                                placement = crate::ui::PanelPlacement::Floating;
                             }
                         });
                     });
                     ui.separator();
-                    contents(ui);
+                    detail(ui, target);
                 });
-        }
-        crate::ui::PanelPlacement::Floating => {
-            let mut visible = true;
-            egui::Window::new(title(target))
-                .id(egui::Id::new("inspector_float"))
-                .open(&mut visible)
-                .default_pos(egui::pos2(360.0, 560.0))
-                .default_size(egui::vec2(650.0, 280.0))
-                .resizable(true)
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        if ui.button("Dock bottom").clicked() {
-                            placement = crate::ui::PanelPlacement::Docked;
-                        }
-                        if ui.button("Deselect").clicked() {
-                            close = true;
-                        }
-                    });
-                    ui.separator();
-                    contents(ui);
-                });
-            if !visible {
-                placement = crate::ui::PanelPlacement::Hidden;
+            } else {
+                entity_navigation_header(ui, &mut panels);
+                ui.separator();
+                crate::browser::entities_body(ui, &mut browser, &mut selected, &sim, &mut camera);
+                ui.add_space(8.0);
+                ui.weak("Select an entity to show its detail here.");
             }
-        }
-        crate::ui::PanelPlacement::Hidden => {}
-    }
+        });
 
     if close {
         selected.target = None;
@@ -466,14 +454,33 @@ pub fn panel(
     if open_composer {
         composer.open = true;
         composer.right = crate::composer::RightTab::Live;
+        panels.focus_bottom(crate::ui::BottomTab::Behaviour);
     }
     if open_interview {
-        if let Some(subject) = crate::interview::subject_of(&sim, target) {
-            interview.open_for(subject);
+        if let Some(target) = target {
+            if let Some(subject) = crate::interview::subject_of(&sim, target) {
+                interview.open_for(subject);
+                panels.focus_bottom(crate::ui::BottomTab::Chat);
+            }
         }
     }
-    panels.inspector = placement;
     focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+}
+
+fn entity_navigation_header(ui: &mut egui::Ui, panels: &mut crate::ui::PanelState) {
+    ui.horizontal(|ui| {
+        ui.heading("Entities");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .small_button("×")
+                .on_hover_text("Hide entity panel")
+                .clicked()
+            {
+                panels.inspector = crate::ui::PanelPlacement::Hidden;
+            }
+            ui.weak("fixed width");
+        });
+    });
 }
 
 fn title(target: Target) -> String {

@@ -119,7 +119,9 @@ impl Default for Interview {
             subject: None,
             input: String::new(),
             config,
-            status: error.map(|e| format!("LLM settings: {e}")).unwrap_or_default(),
+            status: error
+                .map(|e| format!("LLM settings: {e}"))
+                .unwrap_or_default(),
             settings_status: String::new(),
             personas: HashMap::new(),
             pending: None,
@@ -169,7 +171,9 @@ pub fn subject_of(sim: &Sim, target: Target) -> Option<SubjectRef> {
         Target::Traveller(i) => {
             let t = sim.agents.travellers.get(i)?;
             if t.solo {
-                t.members.first().map(|&p| SubjectRef::new(SubjectKind::Person, p as i64))
+                t.members
+                    .first()
+                    .map(|&p| SubjectRef::new(SubjectKind::Person, p as i64))
             } else {
                 Some(SubjectRef::new(SubjectKind::Household, t.household as i64))
             }
@@ -261,7 +265,11 @@ fn household_dossier(sim: &Sim, id: usize) -> Option<(Vec<Fact>, Vec<String>)> {
         format!(
             "{} of you{}{}",
             h.members.len(),
-            if ages.is_empty() { String::new() } else { format!(" (ages {})", ages.join(", ")) },
+            if ages.is_empty() {
+                String::new()
+            } else {
+                format!(" (ages {})", ages.join(", "))
+            },
             match h.vehicles {
                 0 => ", and no car".to_string(),
                 1 => ", one car".to_string(),
@@ -286,7 +294,10 @@ fn household_dossier(sim: &Sim, id: usize) -> Option<(Vec<Fact>, Vec<String>)> {
             facts.push(Fact::new("Animals", "you have animals to think about"));
         }
         if b.prior_fire_experience {
-            facts.push(Fact::new("Before", "you have been through a fire near here before"));
+            facts.push(Fact::new(
+                "Before",
+                "you have been through a fire near here before",
+            ));
         }
         facts.push(Fact::new(
             "Where you live",
@@ -303,7 +314,9 @@ fn household_dossier(sim: &Sim, id: usize) -> Option<(Vec<Fact>, Vec<String>)> {
     facts.push(Fact::new(
         "What you always said you would do",
         match h.intent {
-            Intent::LeaveEarly => "go at the first credible warning, without waiting to be told twice",
+            Intent::LeaveEarly => {
+                "go at the first credible warning, without waiting to be told twice"
+            }
             Intent::WaitAndSee => "wait and see how it develops before doing anything drastic",
             Intent::StayDefend => "stay and defend the property",
         },
@@ -341,7 +354,11 @@ fn household_dossier(sim: &Sim, id: usize) -> Option<(Vec<Fact>, Vec<String>)> {
         format!(
             "about {:.0} minutes of things you would have to do first{}",
             h.prep_time_min,
-            if h.prep_time_min > 30.0 { " — you are slow to get moving" } else { "" }
+            if h.prep_time_min > 30.0 {
+                " — you are slow to get moving"
+            } else {
+                ""
+            }
         ),
     ));
     facts.push(Fact::new(
@@ -357,7 +374,10 @@ fn household_dossier(sim: &Sim, id: usize) -> Option<(Vec<Fact>, Vec<String>)> {
     if h.status == Status::Preparing && h.prep_remaining_s > 0.0 {
         facts.push(Fact::new(
             "Still to do",
-            format!("about {:.0} more minutes of getting ready", h.prep_remaining_s / 60.0),
+            format!(
+                "about {:.0} more minutes of getting ready",
+                h.prep_remaining_s / 60.0
+            ),
         ));
     }
     if h.ordered && !h.warning_received {
@@ -481,7 +501,10 @@ fn unit_dossier(sim: &Sim, id: usize) -> Option<(Vec<Fact>, Vec<String>, String)
         ));
     }
     if u.line_cut_m > 0.0 {
-        facts.push(Fact::new("Line cut so far", format!("{:.0} metres", u.line_cut_m)));
+        facts.push(Fact::new(
+            "Line cut so far",
+            format!("{:.0} metres", u.line_cut_m),
+        ));
     }
     if u.drops > 0 {
         facts.push(Fact::new("Drops made", format!("{}", u.drops)));
@@ -510,16 +533,26 @@ fn senses(sim: &Sim, p: Pos) -> Vec<String> {
     let d = sim.agents.fire_distance(p);
     let bearing = nearest_fire(sim, p).map(|f| {
         let up = sim.scenario.terrain.height_at(f) > sim.scenario.terrain.height_at(p) + 20.0;
-        format!("{}{}", compass(f.x - p.x, f.y - p.y), if up { ", up the slope" } else { "" })
+        format!(
+            "{}{}",
+            compass(f.x - p.x, f.y - p.y),
+            if up { ", up the slope" } else { "" }
+        )
     });
     let where_ = bearing.map(|b| format!(" to the {b}")).unwrap_or_default();
 
     if d < 100.0 {
-        out.push(format!("The fire is right there{where_} — you can hear it."));
+        out.push(format!(
+            "The fire is right there{where_} — you can hear it."
+        ));
     } else if d < 400.0 {
-        out.push(format!("The fire is a few hundred metres away{where_}. You can see flame."));
+        out.push(format!(
+            "The fire is a few hundred metres away{where_}. You can see flame."
+        ));
     } else if d < 1200.0 {
-        out.push(format!("There is a column of smoke perhaps a kilometre off{where_}."));
+        out.push(format!(
+            "There is a column of smoke perhaps a kilometre off{where_}."
+        ));
     } else if d < 4000.0 {
         out.push(format!("You can see smoke in the distance{where_}."));
     } else {
@@ -543,7 +576,10 @@ fn senses(sim: &Sim, p: Pos) -> Vec<String> {
             compass_from_bearing(w.wind_dir_deg as f32)
         ));
     } else if w.wind_speed_kmh > 10.0 {
-        out.push(format!("A steady wind from the {}.", compass_from_bearing(w.wind_dir_deg as f32)));
+        out.push(format!(
+            "A steady wind from the {}.",
+            compass_from_bearing(w.wind_dir_deg as f32)
+        ));
     }
     out
 }
@@ -570,7 +606,14 @@ fn compass(dx: f32, dy: f32) -> &'static str {
 /// it blows *from* — the meteorological convention the whole model uses.
 fn compass_from_bearing(deg: f32) -> &'static str {
     const POINTS: [&str; 8] = [
-        "north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west",
+        "north",
+        "north-east",
+        "east",
+        "south-east",
+        "south",
+        "south-west",
+        "west",
+        "north-west",
     ];
     let i = ((deg.rem_euclid(360.0) + 22.5) / 45.0) as usize % 8;
     POINTS[i]
@@ -627,14 +670,21 @@ fn recollection(kind: SubjectKind, event: &str, detail: &serde_json::Value) -> O
         // the timeline is the exact god-view leak this module exists to avoid.
         "order_issued" => return None,
         "separation" => {
-            if detail.get("away").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if detail
+                .get("away")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 "you found yourself away from the others".to_string()
             } else {
                 "you got back to your family".to_string()
             }
         }
         "departed" => {
-            let mode = detail.get("mode").and_then(|v| v.as_str()).unwrap_or("foot");
+            let mode = detail
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("foot");
             match (mode, n("members")) {
                 ("car", 1) => "you got in the car and went".to_string(),
                 ("car", m) => format!("all {m} of you got in the car and went"),
@@ -659,16 +709,22 @@ fn recollection(kind: SubjectKind, event: &str, detail: &serde_json::Value) -> O
                 "inbound" => "you were called in and started the run",
                 _ => return None,
             };
-            if note.is_empty() { base.to_string() } else { format!("{base} — {note}") }
+            if note.is_empty() {
+                base.to_string()
+            } else {
+                format!("{base} — {note}")
+            }
         }
-        "unit_task" if kind == SubjectKind::Unit => match detail.get("task").and_then(|v| v.as_str()) {
-            Some("attack") => "you were ordered onto the fire edge".to_string(),
-            Some("line") => "you were ordered to cut a line".to_string(),
-            Some("drop") => "you were given a drop to make".to_string(),
-            Some("return") => "you were ordered back to staging".to_string(),
-            Some("hold") => "you were told to stand by".to_string(),
-            _ => return None,
-        },
+        "unit_task" if kind == SubjectKind::Unit => {
+            match detail.get("task").and_then(|v| v.as_str()) {
+                Some("attack") => "you were ordered onto the fire edge".to_string(),
+                Some("line") => "you were ordered to cut a line".to_string(),
+                Some("drop") => "you were given a drop to make".to_string(),
+                Some("return") => "you were ordered back to staging".to_string(),
+                Some("hold") => "you were told to stand by".to_string(),
+                _ => return None,
+            }
+        }
         "drop_completed" if kind == SubjectKind::Unit => "you put a load down".to_string(),
         // A decision is the authored graph's own answer, not something that
         // happened to the agent. It reads as a memory only when a behaviour is
@@ -704,7 +760,9 @@ fn spawn(config: LlmConfig, messages: Vec<Message>) -> mpsc::Receiver<Note> {
         });
     if let Err(e) = spawned {
         let (tx, rx) = mpsc::channel();
-        let _ = tx.send(Note::Failed(format!("could not start a worker thread: {e}")));
+        let _ = tx.send(Note::Failed(format!(
+            "could not start a worker thread: {e}"
+        )));
         return rx;
     }
     rx
@@ -777,7 +835,9 @@ pub fn poll(mut interview: ResMut<Interview>, sim: ResMut<Sim>) {
     }
     pending.partial.push_str(&deltas);
 
-    let Some((job, subject, result)) = finished else { return };
+    let Some((job, subject, result)) = finished else {
+        return;
+    };
     interview.pending = None;
     let scenario = sim.scenario.id.clone();
     match (job, result) {
@@ -806,7 +866,9 @@ pub fn poll(mut interview: ResMut<Interview>, sim: ResMut<Sim>) {
         }
         (Job::Reply, Ok(text)) => {
             let t = sim.time_s();
-            sim.history.log.record_message(t, telemetry_subject(subject), "assistant", &text);
+            sim.history
+                .log
+                .record_message(t, telemetry_subject(subject), "assistant", &text);
             interview.status.clear();
         }
         (Job::Reply, Err(e)) => interview.status = e,
@@ -866,6 +928,7 @@ pub fn open_from_env(
     sim: Option<Res<Sim>>,
     selected: Res<Selected>,
     mut interview: ResMut<Interview>,
+    mut panels: ResMut<crate::ui::PanelState>,
 ) {
     let Ok(spec) = std::env::var("SPOTORNO_INTERVIEW") else {
         return;
@@ -876,7 +939,10 @@ pub fn open_from_env(
     }
     let Some(sim) = sim else { return };
     match selected.target.and_then(|t| subject_of(&sim, t)) {
-        Some(subject) => interview.open_for(subject),
+        Some(subject) => {
+            interview.open_for(subject);
+            panels.focus_bottom(crate::ui::BottomTab::Chat);
+        }
         None => eprintln!("SPOTORNO_INTERVIEW: nothing selected — set SPOTORNO_WATCH too"),
     }
     interview.selftest = spec == "selftest";
@@ -889,12 +955,16 @@ pub fn shortcut(
     selected: Res<Selected>,
     sim: Res<Sim>,
     mut interview: ResMut<Interview>,
+    mut panels: ResMut<crate::ui::PanelState>,
 ) {
     if focus.typing() || !keys.just_pressed(KeyCode::KeyT) {
         return;
     }
     match selected.target.and_then(|t| subject_of(&sim, t)) {
-        Some(subject) => interview.open_for(subject),
+        Some(subject) => {
+            interview.open_for(subject);
+            panels.focus_bottom(crate::ui::BottomTab::Chat);
+        }
         None => interview.status = "select an agent on the map first".to_string(),
     }
 }
@@ -911,7 +981,200 @@ fn input_id() -> egui::Id {
     egui::Id::new("interview-question")
 }
 
+/// Conversation surface embedded in the application's bottom workbench.
+///
+/// `Interview::open` means that the current subject owns the chat tab; the
+/// transcript itself remains in the run log when another bottom tab is shown.
+/// Keeping the chat inside the dock gives it the same stable map boundary as
+/// the incident and developer views instead of stacking another floating
+/// window over the entity the player is discussing.
+pub fn panel_body(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    interview: &mut Interview,
+    sim: &mut Sim,
+    selected: Option<Target>,
+) {
+    let selected_subject = selected.and_then(|target| subject_of(sim, target));
+    if interview.subject.is_none() {
+        ui.vertical_centered(|ui| {
+            ui.add_space(28.0);
+            ui.heading("Chat with an entity");
+            ui.label("Select a household, person or unit in the right panel first.");
+            if let Some(subject) = selected_subject {
+                if ui
+                    .button(format!("Start chat with {}", label(sim, subject)))
+                    .clicked()
+                {
+                    interview.open_for(subject);
+                }
+            }
+        });
+        return;
+    }
+
+    let subject = interview.subject.expect("checked above");
+    if interview.pause_on_open {
+        interview.pause_on_open = false;
+        sim.playing = false;
+    }
+    interview.open = true;
+
+    let scenario = sim.scenario.id.clone();
+    let has_persona = interview
+        .personas
+        .contains_key(&(scenario.clone(), subject));
+    let mut ask: Option<String> = None;
+    let mut make_persona = false;
+    let mut clear = false;
+    let mut switch_to = None;
+
+    ui.horizontal(|ui| {
+        let title = match interview.persona_for(&scenario, subject) {
+            Some(p) if !p.is_anonymous() => format!("{} — {}", p.name, label(sim, subject)),
+            _ => label(sim, subject),
+        };
+        ui.heading(title);
+        if let Some(candidate) = selected_subject.filter(|candidate| *candidate != subject) {
+            if ui
+                .button(format!("Chat with selected: {}", label(sim, candidate)))
+                .clicked()
+            {
+                switch_to = Some(candidate);
+            }
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.small_button("⚙").on_hover_text("LLM settings").clicked() {
+                interview.settings_open = true;
+            }
+            if ui
+                .small_button("🗑")
+                .on_hover_text("Discard this transcript")
+                .clicked()
+            {
+                clear = true;
+            }
+            ui.small(format!(
+                "T+{} · {}",
+                sim.clock(),
+                if sim.playing { "running" } else { "paused" }
+            ));
+        });
+    });
+    if let Some(persona) = interview.persona_for(&scenario, subject) {
+        if !persona.is_anonymous() {
+            ui.small(&persona.background);
+        }
+    }
+    ui.separator();
+
+    let messages = sim.history.log.messages_for(telemetry_subject(subject));
+    let streaming = interview
+        .pending
+        .as_ref()
+        .filter(|pending| pending.job == Job::Reply && pending.subject == subject)
+        .map(|pending| pending.partial.clone());
+
+    egui::TopBottomPanel::bottom("interview-dock-input")
+        .resizable(false)
+        .show_inside(ui, |ui| {
+            if !interview.status.is_empty() {
+                ui.colored_label(egui::Color32::from_rgb(235, 150, 80), &interview.status);
+            }
+            if let Err(why) = interview.config.readiness() {
+                ui.horizontal(|ui| {
+                    ui.colored_label(egui::Color32::from_rgb(235, 150, 80), why);
+                    if ui.button("LLM settings…").clicked() {
+                        interview.settings_open = true;
+                    }
+                });
+                return;
+            }
+            if !has_persona {
+                if interview.busy() {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label("Working out who this is…");
+                    });
+                } else if ui.button("Meet this agent").clicked() {
+                    make_persona = true;
+                }
+                return;
+            }
+
+            ui.horizontal(|ui| {
+                let busy = interview.busy();
+                let hint = if busy {
+                    "Waiting for their answer…"
+                } else if messages.is_empty() {
+                    chat::prompt::opening_question(subject.kind)
+                } else {
+                    "Ask something…"
+                };
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut interview.input)
+                        .id(input_id())
+                        .desired_width(ui.available_width() - 64.0)
+                        .hint_text(hint),
+                );
+                let ready = !busy && !interview.input.trim().is_empty();
+                let entered = ready
+                    && response.lost_focus()
+                    && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                if ui.add_enabled(ready, egui::Button::new("Ask")).clicked() || entered {
+                    ask = Some(interview.input.trim().to_string());
+                }
+                if busy {
+                    ui.spinner();
+                }
+            });
+        });
+
+    egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::ScrollArea::vertical()
+            .id_source("interview-dock-messages")
+            .auto_shrink([false, false])
+            .stick_to_bottom(true)
+            .show(ui, |ui| {
+                if messages.is_empty() && streaming.is_none() {
+                    ui.weak(
+                        "Nothing said yet. Ask where they are, what they can see, or why they have not left.",
+                    );
+                }
+                for message in &messages {
+                    bubble(ui, &message.role, &message.content, message.sim_time_s);
+                }
+                if let Some(partial) = &streaming {
+                    if partial.is_empty() {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.weak("thinking…");
+                        });
+                    } else {
+                        bubble(ui, "assistant", partial, sim.time_s());
+                    }
+                }
+            });
+    });
+
+    if clear {
+        sim.history.log.clear_messages(telemetry_subject(subject));
+        interview.status.clear();
+    }
+    if make_persona {
+        start_persona(interview, sim, subject);
+    }
+    if let Some(question) = ask {
+        start_reply(interview, sim, subject, &question);
+        ctx.memory_mut(|memory| memory.request_focus(input_id()));
+    }
+    if let Some(candidate) = switch_to {
+        interview.open_for(candidate);
+    }
+}
+
 /// The floating interview window.
+#[allow(dead_code)]
 pub fn window(
     mut contexts: EguiContexts,
     mut interview: ResMut<Interview>,
@@ -943,7 +1206,9 @@ pub fn window(
     }
 
     let scenario = sim.scenario.id.clone();
-    let has_persona = interview.personas.contains_key(&(scenario.clone(), subject));
+    let has_persona = interview
+        .personas
+        .contains_key(&(scenario.clone(), subject));
     let mut ask: Option<String> = None;
     let mut make_persona = false;
     let mut clear = false;
@@ -1021,10 +1286,7 @@ pub fn window(
                 .show_inside(ui, |ui| {
                     ui.add_space(4.0);
                     if !interview.status.is_empty() {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(235, 150, 80),
-                            &interview.status,
-                        );
+                        ui.colored_label(egui::Color32::from_rgb(235, 150, 80), &interview.status);
                     }
                     if let Err(why) = interview.config.readiness() {
                         ui.colored_label(egui::Color32::from_rgb(235, 150, 80), why);
@@ -1077,9 +1339,7 @@ pub fn window(
                         let entered = ready
                             && r.lost_focus()
                             && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        let clicked = ui
-                            .add_enabled(ready, egui::Button::new("Ask"))
-                            .clicked();
+                        let clicked = ui.add_enabled(ready, egui::Button::new("Ask")).clicked();
                         if entered || clicked {
                             ask = Some(interview.input.trim().to_string());
                         }
@@ -1164,7 +1424,9 @@ fn start_persona(interview: &mut Interview, sim: &Sim, subject: SubjectRef) {
     if interview.busy() {
         return;
     }
-    let Some(d) = dossier(sim, subject) else { return };
+    let Some(d) = dossier(sim, subject) else {
+        return;
+    };
     let rx = spawn(interview.config.clone(), chat::persona::request(&d));
     interview.pending = Some(Pending {
         job: Job::Persona,
@@ -1188,7 +1450,9 @@ fn start_reply(interview: &mut Interview, sim: &mut Sim, subject: SubjectRef, qu
     // Recorded before the reply is asked for, so a question that fails is still
     // in the transcript: what was asked is as much a part of the record as what
     // came back.
-    sim.history.log.record_message(t, telemetry_subject(subject), "user", question);
+    sim.history
+        .log
+        .record_message(t, telemetry_subject(subject), "user", question);
     interview.input.clear();
     let rx = spawn(interview.config.clone(), messages);
     interview.pending = Some(Pending {
@@ -1271,6 +1535,7 @@ pub fn selftest(
 }
 
 /// Simulated seconds as a span, for "said 12 min ago".
+#[allow(dead_code)]
 fn elapsed(s: i64) -> String {
     if s < 90 {
         format!("{s} s")
@@ -1317,7 +1582,11 @@ pub fn settings_window(
 
             for p in chat::Provider::ALL {
                 let selected = interview.config.provider == p;
-                if ui.radio(selected, p.label()).on_hover_text(p.hint()).clicked() {
+                if ui
+                    .radio(selected, p.label())
+                    .on_hover_text(p.hint())
+                    .clicked()
+                {
                     interview.config.provider = p;
                 }
             }
@@ -1380,7 +1649,10 @@ pub fn settings_window(
             ui.separator();
             ui.horizontal(|ui| {
                 ui.label("Temperature");
-                ui.add(egui::Slider::new(&mut interview.config.temperature, 0.0..=1.5));
+                ui.add(egui::Slider::new(
+                    &mut interview.config.temperature,
+                    0.0..=1.5,
+                ));
             });
             ui.horizontal(|ui| {
                 ui.label("Reply cap");
@@ -1412,7 +1684,10 @@ pub fn settings_window(
                 ui.add(egui::Label::new(&interview.settings_status).wrap());
             }
             ui.add_space(4.0);
-            ui.small(format!("Saved to {}", chat::config::config_path().display()));
+            ui.small(format!(
+                "Saved to {}",
+                chat::config::config_path().display()
+            ));
             ui.small("Never written into the repository, and readable only by you.");
         });
 

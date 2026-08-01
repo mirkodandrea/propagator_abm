@@ -34,9 +34,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use egui_snarl::{ui::SnarlStyle, Snarl};
 
-use behavior::{
-    BehaviorGraph, Domain, Library, Observation, ParamValue, Report, Wire,
-};
+use behavior::{BehaviorGraph, Domain, Library, Observation, ParamValue, Report, Wire};
 
 pub mod bench;
 mod help;
@@ -81,12 +79,8 @@ impl RightTab {
 
     pub fn doc(self) -> &'static str {
         match self {
-            RightTab::Inspector => {
-                "The selected node: what it does, and the numbers it turns on."
-            }
-            RightTab::Subtypes => {
-                "Named profiles over this behaviour, and which agents run them."
-            }
+            RightTab::Inspector => "The selected node: what it does, and the numbers it turns on.",
+            RightTab::Subtypes => "Named profiles over this behaviour, and which agents run them.",
             RightTab::Bench => {
                 "Put a made-up agent in a situation and read the answer back node by node."
             }
@@ -251,7 +245,10 @@ impl Composer {
     /// to be the same number, which is exactly what made them impossible to keep
     /// in step — see [`EditorNode`].
     pub fn snarl_id_of(&self, id: behavior::NodeId) -> Option<egui_snarl::NodeId> {
-        self.snarl.node_ids().find(|(_, n)| n.id == id).map(|(sid, _)| sid)
+        self.snarl
+            .node_ids()
+            .find(|(_, n)| n.id == id)
+            .map(|(sid, _)| sid)
     }
 
     /// Pull a graph out of the library and into the canvas.
@@ -290,8 +287,14 @@ impl Composer {
                 continue;
             };
             self.snarl.connect(
-                egui_snarl::OutPinId { node: from, output: w.from_port as usize },
-                egui_snarl::InPinId { node: to, input: w.to_port as usize },
+                egui_snarl::OutPinId {
+                    node: from,
+                    output: w.from_port as usize,
+                },
+                egui_snarl::InPinId {
+                    node: to,
+                    input: w.to_port as usize,
+                },
             );
         }
 
@@ -335,7 +338,9 @@ impl Composer {
     /// Write the canvas into the library. Does not touch disk.
     pub fn commit(&mut self) {
         self.sync();
-        self.lib.graphs.insert(self.graph_id.clone(), self.graph.clone());
+        self.lib
+            .graphs
+            .insert(self.graph_id.clone(), self.graph.clone());
         self.dirty = true;
     }
 
@@ -366,7 +371,11 @@ impl Composer {
         self.lib = lib;
         let id = self.graph_id.clone();
         let first = self.lib.graphs.keys().next().cloned().unwrap_or_default();
-        self.load_graph(if self.lib.graphs.contains_key(&id) { &id } else { &first });
+        self.load_graph(if self.lib.graphs.contains_key(&id) {
+            &id
+        } else {
+            &first
+        });
         self.dirty = true;
 
         let bad = self.load_report.iter().filter(|f| !f.ok()).count();
@@ -462,7 +471,11 @@ impl Composer {
             self.commit();
             Library::export_graph(&self.graph, path)
         } else {
-            match self.subtype.as_ref().and_then(|id| self.lib.subtypes.get(id)) {
+            match self
+                .subtype
+                .as_ref()
+                .and_then(|id| self.lib.subtypes.get(id))
+            {
                 Some(s) => Library::export_subtype(s, path),
                 None => {
                     self.set_error("no profile selected".into());
@@ -571,7 +584,6 @@ impl Composer {
             .map(|s| s.id.clone())
     }
 
-
     /// The subtype currently selected, if it is on this graph.
     pub fn active_overrides(&self) -> behavior::Overrides {
         self.subtype
@@ -642,7 +654,12 @@ impl Plugin for ComposerPlugin {
                 // step produced; `transport_requests` runs last so a play or a
                 // step asked for in the panel lands before the next frame's
                 // `step_fire`.
-                (apply_on_start, live::capture, toggle, window, live::transport_requests)
+                (
+                    apply_on_start,
+                    live::capture,
+                    toggle,
+                    live::transport_requests,
+                )
                     .chain()
                     .run_if(in_state(crate::AppState::Playing)),
             );
@@ -665,16 +682,24 @@ impl Plugin for ComposerPlugin {
 fn toggle(
     keys: Res<ButtonInput<KeyCode>>,
     mut composer: ResMut<Composer>,
+    mut panels: ResMut<crate::ui::PanelState>,
     focus: Res<crate::ui::UiFocus>,
 ) {
     if focus.typing() {
         return;
     }
     if keys.just_pressed(KeyCode::KeyG) {
-        composer.open = !composer.open;
+        if composer.open && panels.bottom_tab == crate::ui::BottomTab::Behaviour {
+            composer.open = false;
+            panels.focus_bottom(crate::ui::BottomTab::Incident);
+        } else {
+            composer.open = true;
+            panels.focus_bottom(crate::ui::BottomTab::Behaviour);
+        }
     }
 }
 
+#[allow(dead_code)]
 fn window(
     mut contexts: EguiContexts,
     mut composer: ResMut<Composer>,
@@ -697,45 +722,7 @@ fn window(
         .min_size([1040.0, 640.0])
         .vscroll(false)
         .show(ctx, |ui| {
-            toolbar(ui, c, &mut apply);
-            ui.separator();
-            egui::SidePanel::left("composer-palette")
-                .resizable(true)
-                .default_width(260.0)
-                .show_inside(ui, |ui| palette::panel(ui, c));
-            egui::SidePanel::right("composer-inspector")
-                .resizable(true)
-                .default_width(360.0)
-                .show_inside(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        for tab in RightTab::ALL {
-                            // The Live tab announces itself when there is
-                            // something to watch: a scientist who has just
-                            // clicked a household on the map should not have to
-                            // discover that a tab over here filled up.
-                            let watching = tab == RightTab::Live && c.live.watching();
-                            let label = if watching {
-                                format!("● {}", tab.label())
-                            } else {
-                                tab.label().to_string()
-                            };
-                            ui.selectable_value(&mut c.right, tab, label)
-                                .on_hover_text(tab.doc());
-                        }
-                    });
-                    ui.separator();
-                    egui::ScrollArea::vertical().show(ui, |ui| match c.right {
-                        RightTab::Inspector => inspector::panel(ui, c),
-                        RightTab::Subtypes => subtypes::panel(ui, c),
-                        RightTab::Bench => bench::panel(ui, c),
-                        RightTab::Live => live::panel(ui, c),
-                        RightTab::Help => help::panel(ui, c),
-                    });
-                });
-            egui::TopBottomPanel::bottom("composer-issues")
-                .resizable(false)
-                .show_inside(ui, |ui| issues(ui, c));
-            egui::CentralPanel::default().show_inside(ui, |ui| viewer::canvas(ui, c));
+            panel_body(ui, c, &mut apply);
         });
 
     // The canvas eats drags and the text fields eat keys; without this the
@@ -743,6 +730,47 @@ fn window(
     focus.pointer |= ctx.is_pointer_over_area() || ctx.wants_keyboard_input();
 
     composer.open &= open;
+}
+
+/// The complete behavior workbench, usable inside either a window or a dock.
+/// The application embeds this in its large bottom tab; retaining a plain body
+/// keeps the editor independent of where that work surface is hosted.
+pub fn panel_body(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBehaviour>) {
+    toolbar(ui, c, apply);
+    ui.separator();
+    egui::SidePanel::left("composer-palette")
+        .resizable(true)
+        .default_width(260.0)
+        .show_inside(ui, |ui| palette::panel(ui, c));
+    egui::SidePanel::right("composer-inspector")
+        .resizable(true)
+        .default_width(360.0)
+        .show_inside(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                for tab in RightTab::ALL {
+                    let watching = tab == RightTab::Live && c.live.watching();
+                    let label = if watching {
+                        format!("● {}", tab.label())
+                    } else {
+                        tab.label().to_string()
+                    };
+                    ui.selectable_value(&mut c.right, tab, label)
+                        .on_hover_text(tab.doc());
+                }
+            });
+            ui.separator();
+            egui::ScrollArea::vertical().show(ui, |ui| match c.right {
+                RightTab::Inspector => inspector::panel(ui, c),
+                RightTab::Subtypes => subtypes::panel(ui, c),
+                RightTab::Bench => bench::panel(ui, c),
+                RightTab::Live => live::panel(ui, c),
+                RightTab::Help => help::panel(ui, c),
+            });
+        });
+    egui::TopBottomPanel::bottom("composer-issues")
+        .resizable(false)
+        .show_inside(ui, |ui| issues(ui, c));
+    egui::CentralPanel::default().show_inside(ui, |ui| viewer::canvas(ui, c));
 }
 
 fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBehaviour>) {
@@ -785,7 +813,11 @@ fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBeh
                 }
             });
 
-        if ui.button("New").on_hover_text("Start an empty behaviour").clicked() {
+        if ui
+            .button("New")
+            .on_hover_text("Start an empty behaviour")
+            .clicked()
+        {
             c.commit();
             c.new_graph(domain);
         }
@@ -805,13 +837,21 @@ fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBeh
         if ui.button("Save").clicked() {
             c.save();
         }
-        if ui.button("Reload").on_hover_text("Discard edits and re-read the files").clicked() {
+        if ui
+            .button("Reload")
+            .on_hover_text("Discard edits and re-read the files")
+            .clicked()
+        {
             c.reload();
         }
 
         ui.separator();
         let runnable = c.runnable();
-        let btn = egui::Button::new(if c.dirty { "Apply and restart *" } else { "Apply and restart" });
+        let btn = egui::Button::new(if c.dirty {
+            "Apply and restart *"
+        } else {
+            "Apply and restart"
+        });
         let resp = ui.add_enabled(runnable, btn).on_hover_text(
             "Rebuild the agent model on this library and replay the incident from the start. \
              The fire, the weather and the ignition list are unchanged, so this is a like-for-like \
@@ -870,26 +910,28 @@ fn issues(ui: &mut egui::Ui, c: &mut Composer) {
     if errors + warnings == 0 {
         return;
     }
-    egui::ScrollArea::vertical().max_height(110.0).show(ui, |ui| {
-        let mut issues: Vec<behavior::Issue> = c.report.issues.clone();
-        issues.sort_by_key(|i| i.severity);
-        for issue in issues {
-            let (glyph, colour) = match issue.severity {
-                behavior::Severity::Error => ("✖", egui::Color32::from_rgb(0xe0, 0x6c, 0x5f)),
-                behavior::Severity::Warning => ("⚠", egui::Color32::from_rgb(0xd8, 0xa6, 0x4b)),
-            };
-            ui.horizontal(|ui| {
-                ui.colored_label(colour, glyph);
-                let r = ui.label(&issue.message);
-                if let Some(n) = issue.node {
-                    if r.interact(egui::Sense::click()).clicked() {
-                        c.selected = c.snarl_id_of(n);
-                        c.right = RightTab::Inspector;
+    egui::ScrollArea::vertical()
+        .max_height(110.0)
+        .show(ui, |ui| {
+            let mut issues: Vec<behavior::Issue> = c.report.issues.clone();
+            issues.sort_by_key(|i| i.severity);
+            for issue in issues {
+                let (glyph, colour) = match issue.severity {
+                    behavior::Severity::Error => ("✖", egui::Color32::from_rgb(0xe0, 0x6c, 0x5f)),
+                    behavior::Severity::Warning => ("⚠", egui::Color32::from_rgb(0xd8, 0xa6, 0x4b)),
+                };
+                ui.horizontal(|ui| {
+                    ui.colored_label(colour, glyph);
+                    let r = ui.label(&issue.message);
+                    if let Some(n) = issue.node {
+                        if r.interact(egui::Sense::click()).clicked() {
+                            c.selected = c.snarl_id_of(n);
+                            c.right = RightTab::Inspector;
+                        }
                     }
-                }
-            });
-        }
-    });
+                });
+            }
+        });
 }
 
 /// Render a parameter, returning whether it changed. Shared by the node
@@ -909,9 +951,11 @@ pub(crate) fn param_widget(
                 // whose declared range is huge gets a drag value instead.
                 let wide = (max - min) > 1000.0;
                 changed |= if wide {
-                    ui.add(egui::DragValue::new(n).speed(0.5).suffix(unit)).changed()
+                    ui.add(egui::DragValue::new(n).speed(0.5).suffix(unit))
+                        .changed()
                 } else {
-                    ui.add(egui::Slider::new(n, min..=max).suffix(unit)).changed()
+                    ui.add(egui::Slider::new(n, min..=max).suffix(unit))
+                        .changed()
                 };
             }
             (behavior::ParamKind::Bool { .. }, ParamValue::Bool(b)) => {

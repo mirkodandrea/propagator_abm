@@ -164,13 +164,7 @@ fn main() -> anyhow::Result<()> {
                 ui::shortcuts_panel,
                 ui::dock,
                 inspect::panel,
-                // Both are floating windows over the map, so they only have to
-                // land before `sync_viewport` reads what is left for the
-                // camera — and after `inspect::panel`, which is where the door
-                // into an interview is.
-                interview::window,
                 interview::settings_window,
-                ui::debug_panel,
                 ui::sync_viewport,
             )
                 .chain()
@@ -211,7 +205,7 @@ fn main() -> anyhow::Result<()> {
             // lands after the panel was closed is still filed against the
             // transcript rather than lost.
             interview::poll
-                .before(interview::window)
+                .before(ui::panel)
                 .run_if(in_state(AppState::Playing)),
             // Inert unless `SPOTORNO_INTERVIEW=selftest` asked for it, and
             // after `poll` so it reads a transcript the worker has already
@@ -546,7 +540,11 @@ fn controls(
         help.open = !help.open;
     }
     if keys.just_pressed(KeyCode::F2) {
-        panels.debug = !panels.debug;
+        if panels.bottom_tab == ui::BottomTab::Debug && panels.incident.visible() {
+            panels.incident = ui::PanelPlacement::Hidden;
+        } else {
+            panels.focus_bottom(ui::BottomTab::Debug);
+        }
     }
     if shift && keys.just_pressed(KeyCode::Slash) {
         help.shortcuts_open = !help.shortcuts_open;

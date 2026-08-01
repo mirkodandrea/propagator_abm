@@ -27,7 +27,7 @@ use crate::inspect::Selected;
 use crate::scenario_selector::ScenarioSelector;
 use crate::sim::{Sim, SimRestarted};
 use crate::ui::{
-    DockTab, HelpUi, PanelPlacement, PanelState, UiFocus, MAX_SPEED, MIN_SPEED, PRESETS,
+    BottomTab, DockTab, HelpUi, PanelPlacement, PanelState, UiFocus, MAX_SPEED, MIN_SPEED, PRESETS,
 };
 use crate::AppState;
 
@@ -56,6 +56,7 @@ enum Action {
     Interview,
     LlmSettings,
     Tab(DockTab),
+    Bottom(BottomTab),
     Help,
     Shortcuts,
     Debug,
@@ -262,22 +263,24 @@ pub fn menubar(
                 }
                 ui.separator();
                 ui.label(egui::RichText::new("WORKSPACE").small().weak());
-                placement_menu(ui, "Incident", &mut panels.incident, "Dock left");
-                placement_menu(ui, "Operations", &mut panels.dock, "Dock right");
-                placement_menu(ui, "Inspector", &mut panels.inspector, "Dock bottom");
-                ui.menu_button("Operations tab", |ui| {
-                    for tab in DockTab::ALL {
+                placement_menu(ui, "Command controls", &mut panels.dock);
+                placement_menu(ui, "Entities & detail", &mut panels.inspector);
+                placement_menu(ui, "Bottom workbench", &mut panels.incident);
+                ui.menu_button("Bottom tab", |ui| {
+                    for tab in BottomTab::ALL {
                         if ui
-                            .selectable_label(panels.tab == tab, tab.label())
+                            .selectable_label(panels.bottom_tab == tab, tab.label())
                             .clicked()
                         {
-                            a(Action::Tab(tab), &mut act);
+                            a(Action::Bottom(tab), &mut act);
                             ui.close_menu();
                         }
                     }
                 });
                 if item(ui, "Reset panel layout", "").clicked() {
                     panels.reset_layout();
+                    composer.open = false;
+                    interview.open = false;
                     ui.close_menu();
                 }
                 ui.separator();
@@ -307,7 +310,7 @@ pub fn menubar(
             ui.menu_button("Debug", |ui| {
                 if item(
                     ui,
-                    if panels.debug {
+                    if panels.bottom_tab == BottomTab::Debug && panels.incident.visible() {
                         "Hide developer diagnostics"
                     } else {
                         "Developer diagnostics"
@@ -537,18 +540,43 @@ pub fn menubar(
                     panels.focus_tab(DockTab::Fire);
                 }
             }
-            Action::Composer => composer.open = !composer.open,
+            Action::Composer => {
+                if composer.open && panels.bottom_tab == BottomTab::Behaviour {
+                    composer.open = false;
+                    panels.focus_bottom(BottomTab::Incident);
+                } else {
+                    composer.open = true;
+                    panels.focus_bottom(BottomTab::Behaviour);
+                }
+            }
             Action::Interview => {
-                match selected.target.and_then(|t| crate::interview::subject_of(&sim, t)) {
-                    Some(subject) => interview.open_for(subject),
+                match selected
+                    .target
+                    .and_then(|t| crate::interview::subject_of(&sim, t))
+                {
+                    Some(subject) => {
+                        interview.open_for(subject);
+                        panels.focus_bottom(BottomTab::Chat);
+                    }
                     None => interview.status = "select an agent on the map first".to_string(),
                 }
             }
             Action::LlmSettings => interview.settings_open = true,
             Action::Tab(tab) => panels.focus_tab(tab),
+            Action::Bottom(tab) => {
+                panels.focus_bottom(tab);
+                composer.open = tab == BottomTab::Behaviour;
+                interview.open = tab == BottomTab::Chat && interview.subject.is_some();
+            }
             Action::Help => help.open = true,
             Action::Shortcuts => help.shortcuts_open = !help.shortcuts_open,
-            Action::Debug => panels.debug = !panels.debug,
+            Action::Debug => {
+                if panels.bottom_tab == BottomTab::Debug && panels.incident.visible() {
+                    panels.incident = PanelPlacement::Hidden;
+                } else {
+                    panels.focus_bottom(BottomTab::Debug);
+                }
+            }
             Action::FocusSelection => {
                 if let (Some(target), Ok(mut orbit)) = (selected.target, camera.get_single_mut()) {
                     if let Some(p) = crate::inspect::target_pos(&sim, target) {
@@ -619,20 +647,13 @@ fn shortcut_button<'a>(label: &'a str, key: &'a str) -> impl egui::Widget + 'a {
     }
 }
 
-fn placement_menu(
-    ui: &mut egui::Ui,
-    title: &str,
-    placement: &mut PanelPlacement,
-    dock_label: &str,
-) {
+fn placement_menu(ui: &mut egui::Ui, title: &str, placement: &mut PanelPlacement) {
     let state = match *placement {
-        PanelPlacement::Docked => "docked",
-        PanelPlacement::Floating => "floating",
+        PanelPlacement::Docked => "shown",
         PanelPlacement::Hidden => "hidden",
     };
     ui.menu_button(format!("{title}  · {state}"), |ui| {
-        ui.radio_value(placement, PanelPlacement::Docked, dock_label);
-        ui.radio_value(placement, PanelPlacement::Floating, "Float");
+        ui.radio_value(placement, PanelPlacement::Docked, "Show");
         ui.radio_value(placement, PanelPlacement::Hidden, "Hide");
     });
 }
