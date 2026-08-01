@@ -53,6 +53,8 @@ enum Action {
     Cancel,
     ArmIgnition,
     Composer,
+    Interview,
+    LlmSettings,
     Tab(DockTab),
     Help,
     Shortcuts,
@@ -78,6 +80,7 @@ pub fn menubar(
     mut ignition: ResMut<IgnitionTool>,
     mut order: ResMut<OrderTool>,
     mut composer: ResMut<Composer>,
+    mut interview: ResMut<crate::interview::Interview>,
     selected: Res<Selected>,
     mut restarted: EventWriter<SimRestarted>,
     mut next_state: ResMut<NextState<AppState>>,
@@ -328,6 +331,33 @@ pub fn menubar(
                     ui.close_menu();
                 }
                 ui.separator();
+                ui.label(egui::RichText::new("INTERVIEW").small().weak());
+                if ui
+                    .add_enabled(
+                        selected.target.is_some(),
+                        shortcut_button("💬 Talk to the selected agent", "T"),
+                    )
+                    .on_hover_text(
+                        "Ask this household, person or crew what they are doing and why, in \
+                         their own words. Pauses the incident. They know only their own day.",
+                    )
+                    .on_disabled_hover_text("Select an agent on the map first.")
+                    .clicked()
+                {
+                    a(Action::Interview, &mut act);
+                    ui.close_menu();
+                }
+                if item(ui, "LLM settings…", "")
+                    .on_hover_text(
+                        "Which model answers an interview: OpenRouter with a key, or a local \
+                         Ollama.",
+                    )
+                    .clicked()
+                {
+                    a(Action::LlmSettings, &mut act);
+                    ui.close_menu();
+                }
+                ui.separator();
                 ui.label("F12 saves the current frame as a PNG.");
                 ui.small(
                     "Diagnostics are read-only; simulation editing stays in Fire and Composer.",
@@ -508,6 +538,13 @@ pub fn menubar(
                 }
             }
             Action::Composer => composer.open = !composer.open,
+            Action::Interview => {
+                match selected.target.and_then(|t| crate::interview::subject_of(&sim, t)) {
+                    Some(subject) => interview.open_for(subject),
+                    None => interview.status = "select an agent on the map first".to_string(),
+                }
+            }
+            Action::LlmSettings => interview.settings_open = true,
             Action::Tab(tab) => panels.focus_tab(tab),
             Action::Help => help.open = true,
             Action::Shortcuts => help.shortcuts_open = !help.shortcuts_open,
@@ -550,7 +587,17 @@ pub fn menubar(
     // keystrokes", which is the only reliable one — it covers text fields,
     // drag values and the node editor's inline edits alike.
     focus.pointer = ctx.wants_pointer_input() || ctx.is_pointer_over_area();
-    focus.keyboard = ctx.wants_keyboard_input();
+    // An open interview owns the keyboard outright, whether or not the question
+    // box currently holds egui's focus. `wants_keyboard_input` alone is not
+    // enough here: the moment focus slips off that box — clicking the play
+    // button, pressing Enter, a frame where the widget was disabled — every
+    // letter of the next question becomes a map shortcut, so typing "we need to
+    // evacuate" silently orders a general evacuation, restarts the incident and
+    // arms two tools. That is finding 25 with a text field in front of it, and
+    // the fix is the same: one system decides ownership, and a conversation is
+    // not a moment for single-key commands. Esc is unaffected — it is what gets
+    // you out — and the menu bar's own buttons still work with the mouse.
+    focus.keyboard = ctx.wants_keyboard_input() || interview.open;
 }
 
 /// A menu row with its shortcut right-aligned in grey — the shape every desktop

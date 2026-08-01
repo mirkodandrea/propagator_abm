@@ -30,6 +30,7 @@ mod frame;
 mod history;
 mod ignition_edit;
 mod inspect;
+mod interview;
 mod menu;
 mod people;
 mod pick;
@@ -55,6 +56,15 @@ use crate::camera::OrbitCamera;
 use crate::sim::Sim;
 
 fn main() -> anyhow::Result<()> {
+    // Before anything reads an environment variable, and before
+    // `Interview`'s resource is built from one: Cargo does not load `.env`, so
+    // a key sitting in one that nothing reads is indistinguishable from a key
+    // the game ignored. Existing variables still win — see
+    // `chat::config::load_dotenv`.
+    if let Some(path) = chat::config::load_dotenv() {
+        println!("loaded environment from {}", path.display());
+    }
+
     let data = std::env::var("SPOTORNO_DATA").unwrap_or_else(|_| "data".to_string());
     let data_path_resource = scenario_selector::DataPath(std::path::PathBuf::from(&data));
 
@@ -105,6 +115,7 @@ fn main() -> anyhow::Result<()> {
     .init_resource::<buildings::HoveredHousehold>()
     .init_resource::<scenario_selector::ScenarioSelector>()
     .init_resource::<ui::PanelState>()
+    .init_resource::<interview::Interview>()
     .add_event::<sim::SimRestarted>()
     .insert_resource(data_path_resource)
     .add_systems(Startup, (scenario_selector::init_selector, ui::setup_style))
@@ -129,6 +140,7 @@ fn main() -> anyhow::Result<()> {
             people::setup,
             people::mark_refuges,
             units::setup,
+            interview::open_from_env,
         ),
     )
     .add_systems(OnExit(AppState::Playing), teardown_scene)
@@ -152,6 +164,12 @@ fn main() -> anyhow::Result<()> {
                 ui::shortcuts_panel,
                 ui::dock,
                 inspect::panel,
+                // Both are floating windows over the map, so they only have to
+                // land before `sync_viewport` reads what is left for the
+                // camera — and after `inspect::panel`, which is where the door
+                // into an interview is.
+                interview::window,
+                interview::settings_window,
                 ui::debug_panel,
                 ui::sync_viewport,
             )
@@ -184,8 +202,22 @@ fn main() -> anyhow::Result<()> {
                 browser::toggle,
                 fire_view::layer_controls,
                 command::controls.before(command::hover),
+                interview::shortcut,
             )
                 .after(menu::menubar)
+                .run_if(in_state(AppState::Playing)),
+            // Draining the worker's channel is not a shortcut and not a panel:
+            // it runs whether or not the window is open, so an answer that
+            // lands after the panel was closed is still filed against the
+            // transcript rather than lost.
+            interview::poll
+                .before(interview::window)
+                .run_if(in_state(AppState::Playing)),
+            // Inert unless `SPOTORNO_INTERVIEW=selftest` asked for it, and
+            // after `poll` so it reads a transcript the worker has already
+            // been drained into.
+            interview::selftest
+                .after(interview::poll)
                 .run_if(in_state(AppState::Playing)),
             sim::step_fire
                 .after(ui::dock)
@@ -198,6 +230,7 @@ fn main() -> anyhow::Result<()> {
                 units::reset,
                 command::reset,
                 camera::reset,
+                interview::reset,
             )
                 .after(ui::dock)
                 .run_if(in_state(AppState::Playing)),

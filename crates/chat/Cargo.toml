@@ -1,0 +1,19 @@
+[package]
+name = "chat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Interviewing a simulated agent through an LLM: personas, prompts, providers and a durable transcript store"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+
+# Native-only for the same reason `telemetry`'s SQLite is: `ureq` is a
+# blocking socket client, and wasm32-unknown-unknown has neither the threads
+# nor the sockets. Keeping it target-specific means `game` needs no `cfg` at
+# any call site — every type here exists on every target, and on web
+# `Client::complete` is a stub that says why.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ureq = { version = "2.12", features = ["json"] }

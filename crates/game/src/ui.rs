@@ -566,7 +566,10 @@ pub fn shortcuts_panel(
                     ("A / L / D", "attack / line / drop"),
                     ("X", "stand down selected unit"),
                     ("C", "request air support"),
-                    ("Esc", "cancel tool or leave follow/first-person view"),
+                    (
+                        "Esc",
+                        "cancel tool · leave follow/first-person view · close an interview",
+                    ),
                 ],
             );
             shortcuts_group(
@@ -576,6 +579,11 @@ pub fn shortcuts_panel(
                     ("/", "open Entities and focus search"),
                     ("B", "show / hide Entities"),
                     ("G", "Agent Behaviour Composer"),
+                    (
+                        "T",
+                        "interview the selected agent — pauses the incident, and takes the \
+                         keyboard until you close it",
+                    ),
                     ("F2", "developer diagnostics"),
                     ("?", "this shortcut window"),
                     ("F1", "quick start"),

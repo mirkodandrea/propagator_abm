@@ -361,6 +361,7 @@ pub fn panel(
     mut mode: ResMut<crate::camera::CameraMode>,
     mut panels: ResMut<crate::ui::PanelState>,
     mut composer: ResMut<crate::composer::Composer>,
+    mut interview: ResMut<crate::interview::Interview>,
     sim: Res<Sim>,
     buildings: Res<Buildings>,
 ) {
@@ -376,6 +377,9 @@ pub fn panel(
     let mut jump_to: Option<Target> = None;
     // Set by the behaviour section's one button.
     let mut open_composer = false;
+    // Set by the interview button — the second door out of this panel, and the
+    // only one that leads to the agent rather than to the model behind it.
+    let mut open_interview = false;
     let mut contents = |ui: &mut egui::Ui| {
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
@@ -388,6 +392,7 @@ pub fn panel(
                     Target::Traveller(i) => traveller_panel(ui, &sim, i, &mut jump_to, &mut mode),
                     Target::Unit(id) => unit_panel(ui, &sim, id, &mut mode),
                 }
+                interview_row(ui, &sim, target, &mut open_interview);
                 behaviour_panel(ui, &sim, &mut open_composer, target);
                 history_panel(ui, &sim, target);
             });
@@ -461,6 +466,11 @@ pub fn panel(
     if open_composer {
         composer.open = true;
         composer.right = crate::composer::RightTab::Live;
+    }
+    if open_interview {
+        if let Some(subject) = crate::interview::subject_of(&sim, target) {
+            interview.open_for(subject);
+        }
     }
     panels.inspector = placement;
     focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
@@ -613,6 +623,37 @@ fn household_panel(
             *jump_to = Some(Target::Traveller(ti));
         }
     }
+}
+
+/// The door into an interview with this agent.
+///
+/// Above the Behaviour section rather than below it, because the two answer
+/// the same question at opposite ends: the composer explains the decision as
+/// the *model* made it, this asks the agent. A traveller is a vehicle and so
+/// has no voice of its own — the button reaches whoever is inside it, which is
+/// what [`crate::interview::subject_of`] resolves.
+fn interview_row(ui: &mut egui::Ui, sim: &Sim, target: Target, open: &mut bool) {
+    let Some(subject) = crate::interview::subject_of(sim, target) else {
+        return;
+    };
+    ui.separator();
+    ui.horizontal(|ui| {
+        ui.strong("Interview");
+        if ui
+            .button("💬 Talk to them")
+            .on_hover_text(
+                "Ask this agent what they are doing and why, in their own words (T). \
+                 Pauses the incident. They know only their own traits, what they can see \
+                 from where they are, and what has happened to them.",
+            )
+            .clicked()
+        {
+            *open = true;
+        }
+        if matches!(target, Target::Traveller(_)) {
+            ui.small(format!("→ {}", crate::interview::label(sim, subject)));
+        }
+    });
 }
 
 /// Why this agent is doing what it is doing, when it is running an authored

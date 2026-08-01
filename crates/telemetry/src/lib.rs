@@ -101,6 +101,22 @@ pub struct Event {
     pub detail: Value,
 }
 
+/// One turn of an interview with a simulated agent, as read back.
+///
+/// A transcript is not an [`Event`]: an event is something the model did and
+/// the diffing layer noticed, a message is something a person or an LLM wrote.
+/// Mixing them would put chat turns in the incident activity feed and in the
+/// `/history/*` responses the control API serves, which is a different claim
+/// about what happened.
+#[derive(Debug, Clone)]
+pub struct ChatMessage {
+    pub sim_time_s: i64,
+    /// `"user"` or `"assistant"`, as free text — see
+    /// [`Recorder::record_message`].
+    pub role: String,
+    pub content: String,
+}
+
 const SCHEMA: &str = "
 CREATE TABLE events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,6 +128,16 @@ CREATE TABLE events (
 );
 CREATE INDEX events_subject ON events(subject_kind, subject_id);
 CREATE INDEX events_time ON events(sim_time_s);
+
+CREATE TABLE chat_messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    sim_time_s  INTEGER NOT NULL,
+    subject_kind TEXT NOT NULL,
+    subject_id  INTEGER,
+    role        TEXT NOT NULL,
+    content     TEXT NOT NULL
+);
+CREATE INDEX chat_subject ON chat_messages(subject_kind, subject_id);
 ";
 
 pub struct Recorder {
@@ -158,6 +184,83 @@ impl Recorder {
         let sql = "SELECT sim_time_s, subject_kind, subject_id, kind, detail FROM events \
                     ORDER BY id DESC LIMIT ?1";
         self.query(sql, rusqlite::params![limit as i64])
+    }
+
+    /// Append one turn of an interview with `subject`.
+    ///
+    /// Transcripts live here, in the run's own log, rather than in a file of
+    /// their own: an interview is an account of *this* run, drawn entirely
+    /// from the rows above it, and a restart discards the history behind every
+    /// answer in it. Keeping the transcript would leave the agent claiming a
+    /// past the simulation had thrown away — the same misattribution the log
+    /// itself refuses to make (see the module docs). It is the same
+    /// best-effort write as [`Recorder::record`] for the same reason: a
+    /// storage failure must not be the thing that takes the interview down.
+    ///
+    /// `role` is free text (`"user"`, `"assistant"`) on the same principle as
+    /// [`Event::kind`]: this crate does not know what a chat message is any
+    /// better than it knows what a household is, and pinning an enum here
+    /// would make `chat` and `telemetry` depend on each other when both are
+    /// leaves.
+    pub fn record_message(&self, sim_time_s: i64, subject: Subject, role: &str, content: &str) {
+        let Ok(conn) = self.conn.lock() else { return };
+        let _ = conn.execute(
+            "INSERT INTO chat_messages (sim_time_s, subject_kind, subject_id, role, content) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![sim_time_s, subject.kind(), subject.id(), role, content],
+        );
+    }
+
+    /// The whole interview with one subject, oldest first.
+    pub fn messages_for(&self, subject: Subject) -> Vec<ChatMessage> {
+        let Ok(conn) = self.conn.lock() else { return Vec::new() };
+        let sql = "SELECT sim_time_s, role, content FROM chat_messages \
+                    WHERE subject_kind = ?1 AND subject_id IS ?2 ORDER BY id";
+        let mut stmt = match conn.prepare(sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(rusqlite::params![subject.kind(), subject.id()], |r| {
+            Ok(ChatMessage {
+                sim_time_s: r.get(0)?,
+                role: r.get(1)?,
+                content: r.get(2)?,
+            })
+        });
+        let Ok(rows) = rows else { return Vec::new() };
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
+    /// Every subject an interview has been held with this run, in the order
+    /// they were first spoken to — so a panel can offer to reopen one without
+    /// the caller keeping its own list.
+    pub fn interviewed(&self) -> Vec<Subject> {
+        let Ok(conn) = self.conn.lock() else { return Vec::new() };
+        let sql = "SELECT subject_kind, subject_id FROM chat_messages \
+                    GROUP BY subject_kind, subject_id ORDER BY MIN(id)";
+        let mut stmt = match conn.prepare(sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?))
+        });
+        let Ok(rows) = rows else { return Vec::new() };
+        rows.filter_map(|r| {
+            let (kind, id) = r.ok()?;
+            Subject::from_parts(&kind, id)
+        })
+        .collect()
+    }
+
+    /// Discard one interview. Exposed because a transcript is the user's own
+    /// writing: they get to throw it away without throwing away the run.
+    pub fn clear_messages(&self, subject: Subject) {
+        let Ok(conn) = self.conn.lock() else { return };
+        let _ = conn.execute(
+            "DELETE FROM chat_messages WHERE subject_kind = ?1 AND subject_id IS ?2",
+            rusqlite::params![subject.kind(), subject.id()],
+        );
     }
 
     pub fn len(&self) -> usize {
@@ -208,6 +311,18 @@ impl Recorder {
         Vec::new()
     }
 
+    pub fn record_message(&self, _t: i64, _subject: Subject, _role: &str, _content: &str) {}
+
+    pub fn messages_for(&self, _subject: Subject) -> Vec<ChatMessage> {
+        Vec::new()
+    }
+
+    pub fn interviewed(&self) -> Vec<Subject> {
+        Vec::new()
+    }
+
+    pub fn clear_messages(&self, _subject: Subject) {}
+
     pub fn len(&self) -> usize {
         0
     }
@@ -252,6 +367,43 @@ mod tests {
         let events = log.events_for(Subject::Command);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].subject, Subject::Command);
+    }
+
+    #[test]
+    fn an_interview_round_trips_per_subject() {
+        let log = Recorder::new();
+        log.record_message(120, Subject::Household(3), "user", "Are you leaving?");
+        log.record_message(120, Subject::Household(3), "assistant", "Not yet.");
+        log.record_message(300, Subject::Unit(1), "user", "Report.");
+
+        let msgs = log.messages_for(Subject::Household(3));
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].role, "user");
+        assert_eq!(msgs[1].content, "Not yet.");
+        assert_eq!(msgs[1].sim_time_s, 120);
+        assert_eq!(log.messages_for(Subject::Household(9)).len(), 0);
+        assert_eq!(log.interviewed().len(), 2);
+    }
+
+    #[test]
+    fn a_transcript_is_not_an_event() {
+        // Two separate tables on purpose: a chat turn in the incident activity
+        // feed would be the log claiming the model did something it did not.
+        let log = Recorder::new();
+        log.record_message(0, Subject::Household(3), "user", "hello");
+        assert_eq!(log.len(), 0);
+        assert!(log.recent(10).is_empty());
+        assert!(log.events_for(Subject::Household(3)).is_empty());
+    }
+
+    #[test]
+    fn clearing_one_interview_leaves_the_others() {
+        let log = Recorder::new();
+        log.record_message(0, Subject::Household(3), "user", "hello");
+        log.record_message(0, Subject::Unit(1), "user", "report");
+        log.clear_messages(Subject::Household(3));
+        assert!(log.messages_for(Subject::Household(3)).is_empty());
+        assert_eq!(log.messages_for(Subject::Unit(1)).len(), 1);
     }
 
     #[test]

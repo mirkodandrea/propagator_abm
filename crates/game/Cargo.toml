@@ -11,6 +11,7 @@ fire.workspace = true
 abm.workspace = true
 behavior = { workspace = true, features = ["reflect"] }
 telemetry.workspace = true
+chat.workspace = true
 anyhow.workspace = true
 uuid.workspace = true
 getrandom.workspace = true

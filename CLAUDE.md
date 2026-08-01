@@ -40,6 +40,8 @@ asking.
 | Agent behaviour | Authorable in-game as a node graph (`crates/behavior`) for **three** kinds of agent — households, separated people, suppression units — **opt-in**: the hand-written layers stay the default. One graph, one kind of agent; the editor works on one at a time |
 | Separated people | A person who is **not with their household** is an agent in their own right (`Domain::Person`). Everyone else evacuates as a family, and the household is the decision-making unit — see `crates/behavior/src/domain.rs` |
 | Agent subtypes | Composition and flat parameter overrides. **No inheritance** — see the note in `crates/behavior/src/subtype.rs` |
+| Interviewing an agent | An LLM answers **in character only**: the agent's own traits, senses and event-log history, never the incident-wide view. Providers are **OpenRouter** (key) and **Ollama** (local). Starting one **pauses** the incident |
+| Interview transcripts | In the **run's own event log**, so they die with the run exactly as the events do. Personas are cached in memory for the process, because baked traits do not change on restart |
 
 ---
 
@@ -50,6 +52,8 @@ crates/scenario/   baked assets + coordinate frames   (no Bevy, no fire core)
 crates/fire/       PROPAGATOR integration, exposure, threat, interventions
 crates/behavior/   authored agent behaviour: domains, node registry, graphs, subtypes
 crates/abm/        civilians: perception, decision, road network, evacuation
+crates/telemetry/  per-run SQLite event log, and the interview transcripts
+crates/chat/       interviewing an agent through an LLM: personas, prompts, providers
 crates/game/       Bevy app
 scripts/           offline asset baking (Python) — never runs at game time
 data/              the baked scenario, and the behaviour library
@@ -411,6 +415,67 @@ colour nobody reads. The same reason the pin *shapes* carry the port type: in
 live mode the fill is repurposed for the role, and without the shapes the type
 would simply have vanished.
 
+**30. An agent that answers from the god view gives a *better* answer, and
+that is what makes it dangerous.** The interview feature hands one agent's
+data to an LLM and lets you talk to it. Everything a caller has in scope at
+that moment is tempting: `Sim` knows how many households are safe, where the
+front is, what every other family decided — and a resident who says "about two
+hundred of us got out, the fire's running for the ridge" reads as a *richer*
+simulation than one who says "I don't know, I can't see past the trees". It is
+the opposite: it is the telemetry wearing a name, and nothing on screen tells
+the two apart. The enforcement is a type — `chat::Dossier` has no field an
+aggregate would fit in, so the leak cannot be written by accident — plus the
+system prompt saying it again in words, because a fact that arrives borderline
+still has to be refused.
+
+Two smaller versions of the same thing came out of building it. **A
+commander's order is not a memory until it arrives**: the log records
+`order_issued` when the household is *included* in an order and
+`warning_received` when somebody actually reaches them, and putting the first
+in the agent's timeline tells them something only the command post knows —
+`interview::recollection` returns `None` for it, and the test that pins that is
+the one worth keeping. And **log vocabulary is not memory vocabulary**: handed
+`status: normal -> preparing` a model repeats the jargon back in quotation
+marks, so every event kind has an in-character reading ("you started getting
+ready to leave") and every trait a phrase ("you always said you would go at the
+first sign") rather than `intent = leave_early`. An agent that says "my risk
+perception is 0.31" has told you exactly what the panel above it already did.
+
+**31. Cargo does not load `.env`, and a key nothing reads looks identical to a
+key that was ignored.** The obvious failure is the loud one — no key, no
+answer. The quiet one is a `.env` sitting in the repository root with
+`OPENROUTER_API_KEY` in it, a settings dialog reporting "needs an API key", and
+no way to tell from inside the game that the file was never opened.
+`chat::config::load_dotenv` runs first thing in `main` and prints the path it
+loaded, existing environment variables still win, and `OPENROUTER_MODEL` is
+honoured the same way the key is — with the settings dialog showing an
+env-imposed model as a *label* rather than an editable field, because a field
+whose edits the next request will silently ignore is worse than no field.
+
+**32. A text field that greys out hands the keyboard back to the map, and the
+map has a key for "evacuate everyone".** The interview's question box was
+`add_enabled(!busy, …)` so it dimmed while the answer streamed — which reads as
+obviously correct and is the bug. egui drops focus from a disabled widget and
+does not return it, so the moment the reply landed the box was live again and
+*unfocused*, and the next question typed into it went to the map one letter at
+a time: `e` a general evacuation, `r` a restart, `a`/`d`/`i` three armed tools,
+and nothing at all in the box. The symptom reported was "I couldn't write in the
+chat", which is the mildest possible description of what was actually
+happening.
+
+Three fixes, and the order matters. The field is **never disabled** — you can
+type the next question while they answer, and focus is never taken away to give
+back. Focus is **handed back explicitly** after a send, because Enter releases
+it (that is how `lost_focus()` fires at all) and the box would otherwise be dead
+for exactly the person who just used it. And, structurally, **an open interview
+owns the keyboard outright**: `menu::menubar` sets `focus.keyboard |=
+interview.open`, so no single-key shortcut can fire while a conversation is up,
+whether or not egui currently reports a focused widget. That last one is finding
+25 with a text field in front of it, and the same answer — one system decides
+ownership. Taking the keyboard then costs you the way out, so Esc closes the
+window: once out of the box (the first press), the second press closes it, which
+is the behaviour Esc already has everywhere else here.
+
 ---
 
 ## Current state
@@ -741,6 +806,47 @@ checking only the households — which is what it used to do — silently discar
 a library whose one live profile was a unit policy, and the symptom was an Apply
 that reported success and changed nothing.
 
+**Interviewing an agent** (`crates/chat`, `crates/game/src/interview.rs`):
+select a household, a person, a car or a crew and press `t` — or the
+**💬 Talk to them** button the Inspector now carries above the Behaviour
+section — and you can ask them what they are doing and why. The Inspector
+answers that in numbers; this answers it in their own words, off the same data.
+
+The agent is told exactly three things, and there is no fourth: the traits the
+population bake gave them, what they can perceive from where they are standing
+(`interview::senses` — distance and compass bearing to the nearest burning
+cell, the threat field where they are, the wind, and for a household its own
+structure exposure), and their own row of the run's event log. **Not** the
+roster, the counts, the map, or what anyone else decided — see finding 30, which
+is the whole design and also the reason `chat::Dossier` is shaped the way it is.
+Starting an interview **pauses the incident**: the agent answers as of one
+instant, and letting the fire run under the conversation dates every answer
+before it is read. Pausing happens *on open* only — you can play on, and the
+header then marks the last answer "said 12 min ago" rather than the window
+silently swallowing the play button. While it is open the interview **owns the
+keyboard** (finding 32): no single-key shortcut fires, the question box stays
+editable while an answer streams, and `esc` closes the window.
+
+A **persona** is generated once per agent by the model itself, from the same
+dossier — a name, an age, an occupation and a voice consistent with the traits
+that actually drive the agent, so a household with `stay_defend` and a cleared
+garden comes back as someone with a reason to think they can hold it. Personas
+are cached in memory for the life of the process rather than regenerated on
+restart, because baked traits do not change. **Transcripts live in the run's own
+event log** (`telemetry`, a second table — a chat turn is not an `Event` and
+must not appear in the activity feed or the `/history/*` responses), so a
+restart discards a conversation exactly as it discards the events every answer
+was drawn from.
+
+Two providers, in **Debug ▸ LLM settings…**: **OpenRouter** (model, API key) and
+**Ollama** (server URL, model, no key). Both stream, on a worker thread with an
+mpsc reply channel — the same shape `crate::api` uses, so the main thread never
+blocks on a socket. A key can be typed into the dialog (saved to
+`~/.config/spotorno/llm.json`, mode 0600, never the repository) or put in a
+`.env` at the repository root, which the game loads itself; the environment wins
+either way and the dialog says so. `Test` sends one short message and prints
+what comes back.
+
 **Not built yet:** no debrief. No wasm. No dozers (the only line-cutting
 resource is a hand crew, which is why line production is the binding
 constraint). Units are
@@ -797,6 +903,24 @@ SPOTORNO_BEHAVIOUR=1 ...             # apply the library on the first frame
 SPOTORNO_WATCH=household:0 ...       # select an agent: household | person | unit
        # survives the restart an Apply causes, unlike a click
 
+# interviewing an agent. The provider is read from ~/.config/spotorno/llm.json
+# or from a .env at the repository root (OPENROUTER_API_KEY, OPENROUTER_MODEL,
+# OLLAMA_HOST, OLLAMA_MODEL) -- the game loads that file itself, see finding 31.
+SPOTORNO_WATCH=household:412 SPOTORNO_INTERVIEW=1 cargo run --release -p game
+       # open the interview on one agent; needs SPOTORNO_WATCH, because
+       # selecting is a click and an unattended run cannot produce one
+SPOTORNO_INTERVIEW=settings ...      # open the LLM settings dialog instead
+SPOTORNO_WATCH=household:412 SPOTORNO_INTERVIEW=selftest ...
+       # the whole round trip with no keyboard: meet the agent, ask the opening
+       # question, print both, exit non-zero on failure. NOT part of
+       # SPOTORNO_SELFTEST: it spends real credit on a real provider.
+       # Note the incident is paused while an interview is open, so combining
+       # this with SPOTORNO_SHOT_AT > 0 waits forever.
+
+# the provider itself, against whatever .env / config is in force. Ignored by
+# default for the same reason: it costs money and it fails on a train.
+cargo test -p chat --release -- --ignored --nocapture
+
 # regenerate data/behaviours/ after editing crates/behavior/src/defaults.rs
 cargo test -p behavior --release -- --ignored write_shipped_library
 
@@ -807,8 +931,9 @@ cargo test -p behavior --release -- --ignored palette_report --nocapture
 Controls: `space` play/pause · `.` step one decision (paused or not) · `[` `]`
 speed · `1`–`4` fire layer · `e` general evacuation order · `i` arm the ignition
 tool (then left-click the map) · `esc` disarm · `r` restart · `b` the Entities
-tab · `g` the Agent Behaviour Composer · `f1` help · `f12` screenshot · drag
-orbit · right-drag pan · scroll zoom · **arrow keys** pan.
+tab · `g` the Agent Behaviour Composer · `t` interview the selected agent
+(pauses the incident) · `f1` help · `f12` screenshot · drag orbit · right-drag
+pan · scroll zoom · **arrow keys** pan.
 
 Suppression: `tab` next unit · `a` attack here · `l` cut line (two clicks) ·
 `d` drop here · `x` stand down · `c` request air support. Units are selected in
@@ -863,6 +988,13 @@ because it is what gets you *out* of a state.
   them except the last two, which are behavioural. `Library::has_assignment` and
   `Sim::restart` are the ones that fail *silently* when a domain is forgotten —
   the model runs, reports success, and ignores the new agents entirely.
+- Giving an interviewed agent something new to say is a `Fact` or a perception
+  in `interview::household_dossier` / `person_dossier` / `unit_dossier` /
+  `senses`, phrased as the agent would say it. Everything in there has to be
+  something *that agent* could know: the moment a caller reaches for
+  `sim.agents.stats()` or the roster, stop — see finding 30. `chat::Dossier`
+  has no field for an aggregate, and adding one is the decision, not the
+  detail.
 - **Prefer a block to a cluster of primitives.** A new behavioural assumption
   should arrive as one `Category::Block` node with its numbers as parameters,
   not as six `Logic` nodes a scientist has to wire in the right order. If it
@@ -984,3 +1116,31 @@ because it is what gets you *out* of a state.
   shipped model's answer to a stranded unit is a note in the panel, and changing
   that would change the shipped measurements. It is there for an author to wire
   up, and until someone does, "what *should* a stranded engine do" is unanswered.
+- **Nothing checks that an interview answer is consistent with the model.** The
+  dossier is assembled from the agent's real state, and the persona is asked to
+  be consistent with it, but a model that says "we left an hour ago" while the
+  household is still `preparing` produces no warning anywhere — and a plausible
+  wrong answer is the failure mode this whole feature has. Comparing the answer
+  against the status it was generated from is a second model call, or a small
+  set of assertions on the obvious ones (departed, safe, defending), and neither
+  has been tried.
+- An interview is one agent at a time, and one agent at a time is not the
+  question. "Why did these forty households all leave at once" wants a
+  *composite* — the same slice problem the composer's Live tab has (see above),
+  and probably the same answer: an aggregate rather than a better interview.
+- The agent does not know which of the three towns they live in. The prompt
+  offers Spotorno, Bergeggi and Noli and lets the model pick, so household 412
+  can introduce itself as living in Noli when its footprint is in Spotorno. The
+  fix is a place name per building, which the OSM bake could carry and does not.
+- Nothing shows what an interview costs. Tokens, calls and money are all
+  invisible, which is fine for a few questions and wrong for anyone who leaves
+  it open. The provider returns usage on the final SSE frame and it is currently
+  dropped.
+- Transcripts are write-only: nothing reads them back. They are not in the
+  debrief (there is no debrief), not summarised anywhere, and not available to
+  the control API or the MCP server — which would be the natural place, since
+  `/history/*` already serves the events beside them.
+- Only households, separated people and units can be interviewed. The
+  incident-wide `command` row of the log has no voice, and the most obvious
+  missing one is the *commander's own* after-action account, which is the thing
+  a debrief would actually be built around.
