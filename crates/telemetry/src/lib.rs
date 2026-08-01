@@ -48,7 +48,11 @@ pub enum Subject {
 }
 
 impl Subject {
-    fn kind(self) -> &'static str {
+    /// The stored kind tag (`"household"`, `"unit"`, ...) — public so a
+    /// caller outside this crate can serialize a `Subject` back out (the
+    /// local control API does, for `/agents/*` and `/history/*`) without
+    /// duplicating the mapping.
+    pub fn kind(self) -> &'static str {
         match self {
             Subject::Household(_) => "household",
             Subject::Person(_) => "person",
@@ -58,7 +62,7 @@ impl Subject {
         }
     }
 
-    fn id(self) -> Option<i64> {
+    pub fn id(self) -> Option<i64> {
         match self {
             Subject::Household(i) | Subject::Person(i) | Subject::Traveller(i) | Subject::Unit(i) => {
                 Some(i as i64)
@@ -67,7 +71,10 @@ impl Subject {
         }
     }
 
-    fn from_parts(kind: &str, id: Option<i64>) -> Option<Subject> {
+    /// The inverse of `kind()`/`id()` — builds a `Subject` back from its
+    /// stored parts. Used both when reading rows back out of SQLite and by
+    /// the control API, which takes the same two query parameters.
+    pub fn from_parts(kind: &str, id: Option<i64>) -> Option<Subject> {
         let i = || id.map(|v| v as usize);
         match kind {
             "household" => Some(Subject::Household(i()?)),

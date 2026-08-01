@@ -13,3 +13,4 @@ data/spotorno_render_terrain.tif
 .DS_Store
 *.pyc
 __pycache__/
+tools/mcp/.venv/

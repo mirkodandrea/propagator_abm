@@ -14,6 +14,8 @@ pub enum AppState {
 }
 
 mod agents;
+#[cfg(not(target_arch = "wasm32"))]
+mod api;
 mod browser;
 mod buildings;
 mod camera;
@@ -245,6 +247,19 @@ fn main() -> anyhow::Result<()> {
         app.insert_resource(capture)
             .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
             .add_systems(Update, capture::scripted.after(fire_view::update_flames).run_if(in_state(AppState::Playing)));
+    }
+
+    // The local control/inspection API: a background thread accepting plain
+    // HTTP on localhost, for `tools/mcp` or a `curl` prompt to read the agent
+    // history and drive the incident. `api::setup` starts the listener before
+    // any scenario is loaded, and `api::serve` — unconditional on `AppState`,
+    // unlike almost every other system here — answers each queued request
+    // whether or not one is loaded yet. See `crate::api` for why this does
+    // not exist on the wasm32 build.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        app.add_systems(Startup, api::setup);
+        app.add_systems(Update, api::serve);
     }
 
     app.run();

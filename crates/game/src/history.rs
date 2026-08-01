@@ -353,6 +353,19 @@ impl History {
     }
 }
 
+/// The bare tag for a task, with no position — what `/agents/units` in
+/// `crate::api` wants, where `task_detail` below carries more than a roster
+/// listing needs.
+pub(crate) fn task_kind(t: abm::Task) -> &'static str {
+    match t {
+        abm::Task::Hold => "hold",
+        abm::Task::Return => "return",
+        abm::Task::Attack { .. } => "attack",
+        abm::Task::Drop { .. } => "drop",
+        abm::Task::Line { .. } => "line",
+    }
+}
+
 fn task_detail(t: abm::Task) -> serde_json::Value {
     match t {
         abm::Task::Hold => serde_json::json!({"task": "hold"}),

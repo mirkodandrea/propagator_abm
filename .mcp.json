@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "spotorno": {
+      "command": "/Users/mirko/dev/experiments/propagator_abm/tools/mcp/.venv/bin/python",
+      "args": ["/Users/mirko/dev/experiments/propagator_abm/tools/mcp/server.py"]
+    }
+  }
+}

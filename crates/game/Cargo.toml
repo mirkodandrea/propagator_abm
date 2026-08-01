@@ -21,3 +21,10 @@ bevy = { version = "0.14", default-features = true }
 # `Navigator::clipboard()` signature. Nothing here needs OS clipboard access.
 bevy_egui = { version = "0.28", default-features = false, features = ["open_url", "default_fonts", "render"] }
 egui-snarl = { version = "0.4.4", features = ["serde"] }
+
+# The local control/inspection API (`crate::api`) is a background OS thread
+# accepting TCP connections, which wasm32-unknown-unknown has neither -- kept
+# target-specific so `game` still builds for web without a `cfg` at every
+# call site.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tiny_http = "0.12"
