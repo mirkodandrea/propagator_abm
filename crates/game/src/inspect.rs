@@ -220,6 +220,9 @@ fn closest_target(
     cam_tf: &GlobalTransform,
     cursor: Vec2,
 ) -> Option<Target> {
+    // Window events are target-relative; Bevy's projection result is
+    // viewport-relative. Subtract the dock/menu offset before comparing them.
+    let cursor = crate::pick::window_to_viewport(camera, cursor)?;
     let mut best: Option<(f32, Target)> = None;
     let mut try_pick = |world: Vec3, target: Target| {
         let Some(screen) = camera.world_to_viewport(cam_tf, world) else {

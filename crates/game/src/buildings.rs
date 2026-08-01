@@ -918,7 +918,7 @@ pub fn hover(
     let mut new_hover = None;
     if !ui_focus.pointer && !armed {
         if let (Ok(window), Ok((camera, cam_tf))) = (windows.get_single(), camera.get_single()) {
-            if let Some(cursor) = window.cursor_position() {
+            if let Some(cursor) = crate::pick::cursor_position(camera, window) {
                 let mut best: Option<(f32, usize)> = None;
                 for h in &sim.agents.households {
                     if h.status == Status::Evacuated {
