@@ -1,0 +1,15 @@
+[package]
+name = "telemetry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Per-run SQLite log of ABM simulation events, for agent-history inspection"
+
+[dependencies]
+serde_json.workspace = true
+
+# rusqlite's `bundled` feature compiles SQLite from C via `cc`, which has no
+# wasm32-unknown-unknown target. Keeping it native-only means `game` needs no
+# `cfg` of its own: `Recorder` exists on every target, and is a no-op on web.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite = { version = "0.31", features = ["bundled"] }

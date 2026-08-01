@@ -25,6 +25,7 @@ mod field;
 mod fire_shader;
 mod fire_view;
 mod frame;
+mod history;
 mod ignition_edit;
 mod inspect;
 mod menu;

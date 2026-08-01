@@ -10,9 +10,11 @@ scenario.workspace = true
 fire.workspace = true
 abm.workspace = true
 behavior = { workspace = true, features = ["reflect"] }
+telemetry.workspace = true
 anyhow.workspace = true
 uuid.workspace = true
 getrandom.workspace = true
+serde_json.workspace = true
 bevy = { version = "0.14", default-features = true }
 # `manage_clipboard` (a default feature) is dropped for the same reason as in
 # igad-to-rust: bevy_egui 0.28's wasm clipboard code targets an older web-sys

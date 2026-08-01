@@ -374,6 +374,7 @@ pub fn panel(
                         Target::Unit(id) => unit_panel(ui, &sim, id, &mut mode),
                     }
                     behaviour_panel(ui, &sim, &mut open_composer, target);
+                    history_panel(ui, &sim, target);
                 });
         });
 
@@ -614,6 +615,37 @@ fn behaviour_panel(ui: &mut egui::Ui, sim: &Sim, open: &mut bool, target: Target
         }
         ui.small("▸ marks the boxes that fed the decision that was taken.");
     });
+}
+
+/// What this agent's own row in the run's [`crate::history::History`] says
+/// happened to it, oldest first. Always shown, unlike the Behaviour section
+/// above: it has something to say for hand-written agents too, and it is the
+/// same log an "interview an agent" feature would read from later.
+fn history_panel(ui: &mut egui::Ui, sim: &Sim, target: Target) {
+    let subject = crate::history::subject_of(target);
+    let events = sim.history.log.events_for(subject);
+
+    ui.separator();
+    egui::CollapsingHeader::new(format!("History ({})", events.len()))
+        .default_open(false)
+        .show(ui, |ui| {
+            if events.is_empty() {
+                ui.small("Nothing recorded yet.");
+                return;
+            }
+            const SHOWN: usize = 40;
+            let skip = events.len().saturating_sub(SHOWN);
+            if skip > 0 {
+                ui.small(format!("… {skip} earlier"));
+            }
+            for e in &events[skip..] {
+                ui.small(format!(
+                    "{}  {}",
+                    mmss(e.sim_time_s as f32),
+                    crate::history::summarize(&e.kind, &e.detail)
+                ));
+            }
+        });
 }
 
 fn person_panel(ui: &mut egui::Ui, sim: &Sim, id: usize, jump_to: &mut Option<Target>) {

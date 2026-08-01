@@ -77,6 +77,11 @@ pub struct Sim {
     ///
     /// `None` runs the hand-written decision layer, which stays the default.
     pub behaviour: Option<behavior::Library>,
+    /// Per-run log of what happened to each agent, for the Inspector's
+    /// History section and (later) an LLM "interview an agent" feature.
+    /// Rebuilt from scratch alongside `agents`/`crews` on every restart —
+    /// see `crate::history` for why it does not outlive one run.
+    pub history: crate::history::History,
     pub playing: bool,
     /// Simulated seconds per wall-clock second.
     pub speed: f32,
@@ -192,12 +197,17 @@ impl Sim {
             .ok()
             .and_then(|v| v.parse().ok());
 
+        let history = crate::history::History::new(&agents, &crews);
+        history.record_run_started(seed, weather);
+        history.record_ignition(0, ignition.centre.row, ignition.centre.col, ignition.radius_m);
+
         Ok(Sim {
             fire,
             agents,
             crews,
             scenario,
             behaviour: None,
+            history,
             // SPOTORNO_AUTOPLAY=1 starts running immediately, for screenshots
             // and for headless timing runs.
             playing: std::env::var("SPOTORNO_AUTOPLAY").is_ok(),
@@ -328,6 +338,16 @@ impl Sim {
         self.ignitions = ignitions;
         self.pending_ignitions = pending;
         self.accumulator = 0.0;
+        // Fresh log, not a reset one: a restart discards every household's
+        // decision history exactly as it discards `agents` itself, or a
+        // household's "why" would answer for a run that no longer exists.
+        self.history = crate::history::History::new(&self.agents, &self.crews);
+        self.history.record_run_started(self.seed, self.weather);
+        for ig in &self.ignitions {
+            if ig.at_s <= 0 {
+                self.history.record_ignition(ig.at_s, ig.centre.row, ig.centre.col, ig.radius_m);
+            }
+        }
         self.auto_order_s = self.auto_order_env_s;
         self.auto_attack_s = self.auto_attack_env_s;
         // Not reset: `generation` (a staleness token -- see the field) and
@@ -358,6 +378,7 @@ impl Sim {
             radius_m,
             at_s,
         });
+        self.history.record_ignition(at_s, centre.row, centre.col, radius_m);
         self.generation += 1;
         info!(
             "ignition added at ({}, {}) r={radius_m:.0} m, T+{at_s} s",
@@ -374,6 +395,7 @@ impl Sim {
     /// real incident.
     pub fn apply_weather(&mut self) -> anyhow::Result<()> {
         self.fire.set_weather(self.weather)?;
+        self.history.record_weather(self.time_s(), self.weather);
         self.generation += 1;
         Ok(())
     }
@@ -483,9 +505,15 @@ impl Sim {
                 .collect();
             self.pending_ignitions.retain(|i| i.at_s > now);
             for ig in due {
-                let Sim { fire, scenario, .. } = self;
-                if let Err(e) = fire.ignite_patch(ig.centre, ig.radius_m, scenario) {
-                    warn!("replayed ignition at T+{}s failed: {e:#}", ig.at_s);
+                let lit = {
+                    let Sim { fire, scenario, .. } = self;
+                    fire.ignite_patch(ig.centre, ig.radius_m, scenario)
+                };
+                match lit {
+                    Err(e) => warn!("replayed ignition at T+{}s failed: {e:#}", ig.at_s),
+                    Ok(()) => {
+                        self.history.record_ignition(ig.at_s, ig.centre.row, ig.centre.col, ig.radius_m)
+                    }
                 }
             }
         }
@@ -500,6 +528,7 @@ impl Sim {
             fire.queue(action);
         }
         self.generation += 1;
+        self.history.observe(self.time_s(), &self.agents, &self.crews);
         Ok(())
     }
 }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/scenario", "crates/fire", "crates/abm", "crates/game", "crates/propagator-core", "crates/behavior"]
+members = ["crates/scenario", "crates/fire", "crates/abm", "crates/game", "crates/propagator-core", "crates/behavior", "crates/telemetry"]
 
 [workspace.package]
 version = "0.1.0"
@@ -17,6 +17,7 @@ scenario = { path = "crates/scenario" }
 fire = { path = "crates/fire" }
 abm = { path = "crates/abm" }
 behavior = { path = "crates/behavior" }
+telemetry = { path = "crates/telemetry" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
