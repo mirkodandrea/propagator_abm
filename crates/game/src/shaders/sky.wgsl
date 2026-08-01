@@ -11,6 +11,8 @@ struct SkyUniform {
     sun_color: vec4<f32>,
     zenith_color: vec4<f32>,
     horizon_color: vec4<f32>,
+    moon_dir: vec4<f32>,     // xyz: direction to the moon. w: how high it is, 0..1.
+    moon_color: vec4<f32>,
 };
 @group(2) @binding(0) var<uniform> sky: SkyUniform;
 
@@ -34,6 +36,16 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let disc = smoothstep(0.9994, 0.9999, sun_amt);
     let glow = pow(sun_amt, 200.0) * 0.6 + pow(sun_amt, 8.0) * 0.18;
     col += sky.sun_color.rgb * (disc * 8.0 + glow) * (0.15 + 0.85 * sky.sun_dir.w);
+
+    // The moon: always full (see `crate::sky` for why), so a plain disc plus
+    // a soft glow is enough — no terminator, no phase shading. Gated purely
+    // by how high it is, unlike the sun's floor, so it is not a ghost in the
+    // daytime sky when it sits opposite a sun that is still up.
+    let moon_dir = normalize(sky.moon_dir.xyz);
+    let moon_amt = max(dot(dir, moon_dir), 0.0);
+    let moon_disc = smoothstep(0.9985, 0.9996, moon_amt);
+    let moon_glow = pow(moon_amt, 400.0) * 0.4 + pow(moon_amt, 6.0) * 0.05;
+    col += sky.moon_color.rgb * (moon_disc * 3.0 + moon_glow) * sky.moon_dir.w;
 
     return vec4<f32>(col, 1.0);
 }

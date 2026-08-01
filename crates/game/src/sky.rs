@@ -55,6 +55,26 @@ pub const SKY_RADIUS: f32 = 30_000.0;
 #[derive(Resource)]
 pub struct DayClock {
     pub start_hour: f32,
+    /// The dock's time-of-day slider, when it has been unlinked from the
+    /// simulated clock: `Some(hour)` pins the sun (and moon) to that hour
+    /// regardless of `Sim::time_s`, for lighting a screenshot or scrubbing
+    /// through a day without running the incident. `None` is the default —
+    /// linked — and is what makes `hour()` reduce to `start_hour +
+    /// elapsed`, exactly the behaviour before this field existed.
+    pub manual_hour: Option<f32>,
+}
+
+impl DayClock {
+    /// Hour of day `update_sky` should light the scene for: the manual
+    /// override if the slider is unlinked, otherwise the simulated clock.
+    pub fn hour(&self, sim_time_s: f32) -> f32 {
+        self.manual_hour
+            .unwrap_or(self.start_hour + sim_time_s / 3600.0)
+    }
+
+    pub fn linked(&self) -> bool {
+        self.manual_hour.is_none()
+    }
 }
 
 impl Default for DayClock {
@@ -65,6 +85,7 @@ impl Default for DayClock {
             .unwrap_or(16.5);
         DayClock {
             start_hour: start_hour.rem_euclid(24.0),
+            manual_hour: None,
         }
     }
 }
@@ -118,6 +139,8 @@ pub struct SkyUniform {
     pub sun_color: Vec4,
     pub zenith_color: Vec4,
     pub horizon_color: Vec4,
+    pub moon_dir: Vec4,
+    pub moon_color: Vec4,
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
@@ -158,7 +181,10 @@ impl Plugin for SkyPlugin {
             .init_resource::<SunState>()
             .add_plugins(MaterialPlugin::<SkyMaterial>::default())
             .add_systems(OnEnter(crate::AppState::Playing), spawn_sky)
-            .add_systems(Update, update_sky.run_if(bevy::prelude::in_state(crate::AppState::Playing)));
+            .add_systems(
+                Update,
+                update_sky.run_if(bevy::prelude::in_state(crate::AppState::Playing)),
+            );
     }
 }
 
@@ -352,6 +378,40 @@ const AMBIENT_COLOR: [(f32, [f32; 3]); 6] = [
     (60.0, [0.72, 0.78, 0.92]),
 ];
 
+/// The moon is always full: this scenario is never open long enough (1-3 h)
+/// for a phase to matter, and a full moon is the one phase that is actually
+/// opposite the sun in the sky — which is also what makes `-dir` the right
+/// direction for it, no separate ephemeris needed. `moon_direction` and
+/// `moon_direction_elevation` below are exactly that mirroring, spelled out
+/// so the "why -dir" isn't left implicit at the call site.
+///
+/// Colour warms near the horizon the same way the sun's does (Rayleigh
+/// scattering through more atmosphere), fading to a pale cool white
+/// overhead — a full moon has none of the sun's saturated orange, since it is
+/// reflected light with none of the sun's own colour temperature swing.
+const MOON_COLOR: [(f32, [f32; 3]); 3] = [
+    (0.0, [0.80, 0.62, 0.48]),
+    (20.0, [0.85, 0.87, 0.93]),
+    (90.0, [0.82, 0.87, 1.00]),
+];
+
+/// How much a full moon actually brightens a clear night — a few tens of lux
+/// at most, nothing like the sun's thousands, but well above zero: a full
+/// moon overhead casts shadows a new moon night does not. Zero below the
+/// horizon by construction (the first two stops), so this needs no separate
+/// gate.
+const MOON_ILLUMINANCE: [(f32, f32); 4] = [(-90.0, 0.0), (0.0, 0.0), (30.0, 40.0), (90.0, 60.0)];
+
+/// The ambient tint a risen full moon adds, blended into `AMBIENT_COLOR`'s
+/// night entries in proportion to how high the moon is — cooler and a touch
+/// brighter than the flat navy floor, because that floor was tuned as "no
+/// light source at all" and a full moon is very much a light source.
+const MOON_AMBIENT_TINT: [(f32, [f32; 3]); 3] = [
+    (0.0, [0.10, 0.13, 0.22]),
+    (30.0, [0.16, 0.20, 0.34]),
+    (90.0, [0.20, 0.25, 0.40]),
+];
+
 /// The VR-training look has no sun and no procedural sky: a flat void colour,
 /// a matching flat fog that fades to it quickly (the "training room" has no
 /// horizon), and the dome hidden so `ClearColor` shows through unobstructed.
@@ -405,7 +465,7 @@ pub fn update_sky(
         return;
     }
 
-    let hour = day.start_hour + sim.time_s() as f32 / 3600.0;
+    let hour = day.hour(sim.time_s() as f32);
     let (el, az) = solar_position(hour);
     let el_deg = el.to_degrees();
     let dir = sun_direction(el, az);
@@ -414,12 +474,29 @@ pub fn update_sky(
     let sun_color = ramp3(el_deg, &SUN_COLOR);
     let zenith = ramp3(el_deg, &ZENITH);
     let horizon = ramp3(el_deg, &HORIZON);
-    // A floor so night keeps a faint moonlight-like fill rather than going
-    // to literal zero, same spirit as the sun's own illuminance floor.
-    let ambient_brightness = (illuminance / AMBIENT_FILL_RATIO).max(4.0);
-    let ambient_color = ramp3(el_deg, &AMBIENT_COLOR);
     let day_gate = el.sin().clamp(0.0, 1.0);
     let brightness = (illuminance / ILLUMINANCE[ILLUMINANCE.len() - 1].1).clamp(0.0, 1.0);
+
+    // The moon sits exactly opposite the sun (see `MOON_COLOR`'s doc), so its
+    // elevation is the sun's negated and its direction is simply `-dir`.
+    let moon_el_deg = -el_deg;
+    let moon_gate = (-el).sin().clamp(0.0, 1.0);
+    let moon_dir = -dir;
+    let moon_color = ramp3(moon_el_deg, &MOON_COLOR);
+    let moon_illuminance = ramp1(moon_el_deg, &MOON_ILLUMINANCE);
+
+    // A floor so night keeps a faint moonlight-like fill rather than going to
+    // literal zero, same spirit as the sun's own illuminance floor — plus the
+    // *actual* moon's contribution on top, so a full moon overhead reads as
+    // brighter than one that has just set.
+    let ambient_brightness = (illuminance / AMBIENT_FILL_RATIO).max(4.0) + moon_illuminance;
+    let base_ambient_color = ramp3(el_deg, &AMBIENT_COLOR);
+    let moon_tint = ramp3(moon_el_deg, &MOON_AMBIENT_TINT);
+    let ambient_color = [
+        base_ambient_color[0] + (moon_tint[0] - base_ambient_color[0]) * moon_gate,
+        base_ambient_color[1] + (moon_tint[1] - base_ambient_color[1]) * moon_gate,
+        base_ambient_color[2] + (moon_tint[2] - base_ambient_color[2]) * moon_gate,
+    ];
 
     *sun_state = SunState {
         direction: dir,
@@ -445,6 +522,8 @@ pub fn update_sky(
                 sun_color: Vec3::from(sun_color).extend(1.0),
                 zenith_color: Vec3::from(zenith).extend(1.0),
                 horizon_color: Vec3::from(horizon).extend(1.0),
+                moon_dir: moon_dir.extend(moon_gate),
+                moon_color: Vec3::from(moon_color).extend(1.0),
             };
         }
     }
