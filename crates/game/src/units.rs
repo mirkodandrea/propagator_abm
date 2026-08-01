@@ -37,6 +37,10 @@ use crate::sim::Sim;
 /// How far above life size units are drawn.
 pub(crate) const SYMBOL_SCALE: f32 = 5.0;
 
+pub(crate) fn symbol_scale(vr: bool) -> f32 {
+    SYMBOL_SCALE * if vr { 1.45 } else { 1.0 }
+}
+
 /// Altitude an air tanker is drawn at, metres above the ground beneath it. A
 /// Canadair on a drop run is at 30-45 m; drawn there it is lost in the canopy
 /// and the smoke, so it flies as a symbol well above both.
@@ -103,6 +107,7 @@ pub fn setup(
     let tanker = meshes.add(tanker_mesh());
 
     let vr = sim.scenario.vr_palette().is_some();
+    let symbol_scale = symbol_scale(vr);
     let mut mat = |c: Color, emissive: f32| {
         materials.add(retro::material(StandardMaterial {
             base_color: c,
@@ -117,9 +122,9 @@ pub fn setup(
 
     for u in &sim.crews.units {
         let (mesh, scale) = match u.kind {
-            UnitKind::Engine => (engine.clone(), SYMBOL_SCALE),
-            UnitKind::HandCrew => (crew.clone(), SYMBOL_SCALE),
-            UnitKind::AirTanker => (tanker.clone(), SYMBOL_SCALE * 1.6),
+            UnitKind::Engine => (engine.clone(), symbol_scale),
+            UnitKind::HandCrew => (crew.clone(), symbol_scale),
+            UnitKind::AirTanker => (tanker.clone(), symbol_scale * 1.6),
         };
         let ground = sim.scenario.terrain.height_at(u.pos);
         commands.spawn((
@@ -228,7 +233,7 @@ pub fn update_units(
         let lift = if u.kind.is_air() {
             AIR_ALTITUDE_M
         } else {
-            SYMBOL_SCALE * 1.3
+            symbol_scale(sim.scenario.vr_palette().is_some()) * 1.3
         };
         tf.translation = frame::to_bevy(u.pos, ground + lift);
         // World bearing to Bevy yaw: north is -Z and the meshes' long axis is

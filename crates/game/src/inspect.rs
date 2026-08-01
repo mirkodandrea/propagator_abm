@@ -173,8 +173,9 @@ pub fn pick_click(
             continue;
         }
         let ground = sim.scenario.terrain.height_at(p.pos);
+        let scale = crate::people::figure_scale(sim.scenario.vr_palette().is_some());
         try_pick(
-            frame::to_bevy(p.pos, ground + 1.0 * crate::people::FIGURE_SCALE * 0.5),
+            frame::to_bevy(p.pos, ground + scale * 0.5),
             Target::Person(p.id),
         );
     }
@@ -188,8 +189,9 @@ pub fn pick_click(
             continue;
         }
         let ground = sim.scenario.terrain.height_at(t.pos);
+        let scale = crate::people::figure_scale(sim.scenario.vr_palette().is_some());
         try_pick(
-            frame::to_bevy(t.pos, ground + 1.2 * crate::people::FIGURE_SCALE * 0.5),
+            frame::to_bevy(t.pos, ground + scale * 0.6),
             Target::Traveller(i),
         );
     }
@@ -205,7 +207,7 @@ pub fn pick_click(
         let lift = if u.kind.is_air() {
             crate::units::AIR_ALTITUDE_M
         } else {
-            crate::units::SYMBOL_SCALE * 1.3
+            crate::units::symbol_scale(sim.scenario.vr_palette().is_some()) * 1.3
         };
         try_pick(frame::to_bevy(u.pos, ground + lift), Target::Unit(u.id));
     }
