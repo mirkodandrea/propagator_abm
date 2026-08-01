@@ -71,7 +71,9 @@ pub fn build(
     materials: &mut Assets<RetroMaterial>,
 ) {
     let dev = scn.vr_palette().is_some();
-    let mut add = |base: StandardMaterial| materials.add(retro::material(base, dev));
+    let mut add = |base: StandardMaterial| {
+        materials.add(retro::material_with_style(base, dev, retro::RetroStyle::ROUTE))
+    };
     // Asphalt, and the darker shoulder under it. Rough and unlit-ish: a road
     // that specularly flares in the low sun draws the eye away from the fire.
     //
@@ -81,25 +83,37 @@ pub fn build(
     // of asphalt-vs-dirt.
     let (drivable_mat, drivable_casing, track_mat, track_casing) = match scn.vr_palette() {
         Some(pal) => {
-            let dim = |c: [f32; 3], k: f32| Color::srgb(c[0] * k, c[1] * k, c[2] * k);
+            let tint = |t: f32| Color::srgb(
+                pal.void[0] + (pal.grid[0] - pal.void[0]) * t,
+                pal.void[1] + (pal.grid[1] - pal.void[1]) * t,
+                pal.void[2] + (pal.grid[2] - pal.void[2]) * t,
+            );
+            let route = Color::srgb(
+                pal.grid[0] * 0.35 + pal.accent[0] * 0.65,
+                pal.grid[1] * 0.35 + pal.accent[1] * 0.65,
+                pal.grid[2] * 0.35 + pal.accent[2] * 0.65,
+            );
             (
                 add(StandardMaterial {
-                    base_color: dim(pal.accent, 1.0),
+                    // A pale blue-white distinct from the cyan coordinate
+                    // grid. Width alone collapses to one pixel at overview
+                    // distance, so hue/luma carry the road-vs-grid distinction.
+                    base_color: route,
                     unlit: true,
                     ..default()
                 }),
                 add(StandardMaterial {
-                    base_color: dim(pal.grid, 0.6),
+                    base_color: tint(0.20),
                     unlit: true,
                     ..default()
                 }),
                 add(StandardMaterial {
-                    base_color: dim(pal.accent, 0.55),
+                    base_color: tint(0.43),
                     unlit: true,
                     ..default()
                 }),
                 add(StandardMaterial {
-                    base_color: dim(pal.grid, 0.35),
+                    base_color: tint(0.12),
                     unlit: true,
                     ..default()
                 }),

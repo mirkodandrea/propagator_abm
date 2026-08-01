@@ -142,7 +142,7 @@ pub fn spawn(
         residents.entry(h.building).or_default().push(h.id as u32);
     }
 
-    let material = materials.add(retro::material(StandardMaterial {
+    let material = materials.add(retro::material_with_style(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 0.75,
         metallic: 0.0,
@@ -155,7 +155,7 @@ pub fn spawn(
         // plaster.
         unlit: scn.vr_palette().is_some(),
         ..default()
-    }, scn.vr_palette().is_some()));
+    }, scn.vr_palette().is_some(), retro::RetroStyle::STRUCTURE));
 
     let cols = (scn.world.width_m / CHUNK_M).ceil() as usize + 1;
     let rows = (scn.world.height_m / CHUNK_M).ceil() as usize + 1;
@@ -394,10 +394,17 @@ fn emit_building(
 
     let centroid = centroid(&ring);
     let (wall, roof) = match scn.vr_palette() {
-        // VR-training look: every building is the same two flat tones —
-        // walls in the palette's accent, roofs in its grid colour — so the
-        // silhouette reads as training-ground blocks, not real construction.
-        Some(pal) => (pal.accent, pal.grid),
+        // VR-training look: dark solid walls and a restrained cyan roof. White
+        // is reserved for selection and interactive markers; using it for
+        // every wall made small houses look like goal pillars from altitude.
+        Some(pal) => {
+            let tint = |t: f32| [
+                pal.void[0] + (pal.grid[0] - pal.void[0]) * t,
+                pal.void[1] + (pal.grid[1] - pal.void[1]) * t,
+                pal.void[2] + (pal.grid[2] - pal.void[2]) * t,
+            ];
+            (tint(0.18), tint(0.52))
+        }
         None => (
             match kind {
                 Kind::Industrial => palette::INDUSTRIAL_WALL,

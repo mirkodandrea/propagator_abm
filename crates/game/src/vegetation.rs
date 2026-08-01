@@ -167,20 +167,33 @@ pub fn spawn(
     #[cfg(target_arch = "wasm32")]
     let density: f32 = 0.12;
     #[cfg(not(target_arch = "wasm32"))]
-    let density: f32 = std::env::var("SPOTORNO_VEG_DENSITY")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1.0);
+    let density: f32 = {
+        // Dev scenarios are analytical stages, not landscape showcases. At
+        // full density the shared cyan palette turns a hundred thousand plant
+        // silhouettes into the highest-frequency signal in the view and hides
+        // the roads, agents and unit markers the stage exists to exercise.
+        let default_density = if scn.vr_palette().is_some() { 0.16 } else { 1.0 };
+        std::env::var("SPOTORNO_VEG_DENSITY")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default_density)
+    };
 
     // VR-training dev scenarios tint every plant toward the palette's grid
     // colour instead of leaving it white — vertex colour still carries the
     // per-species shape, but the hue reads as training-ground foliage, not
     // real macchia.
     let base_color = match scn.vr_palette() {
-        Some(pal) => Color::srgb(pal.grid[0] * 0.5, pal.grid[1] * 0.5, pal.grid[2] * 0.5),
+        // A dark, matte mass: enough cyan to identify fuel cover, never enough
+        // to compete with a route, a burning front or an operational marker.
+        Some(pal) => Color::srgb(
+            pal.void[0] * 0.65 + pal.grid[0] * 0.35,
+            pal.void[1] * 0.65 + pal.grid[1] * 0.35,
+            pal.void[2] * 0.65 + pal.grid[2] * 0.35,
+        ),
         None => Color::WHITE,
     };
-    let material = materials.add(retro::material(StandardMaterial {
+    let material = materials.add(retro::material_with_style(StandardMaterial {
         base_color,
         perceptual_roughness: 0.92,
         metallic: 0.0,
@@ -194,7 +207,7 @@ pub fn spawn(
         cull_mode: None,
         unlit: scn.vr_palette().is_some(),
         ..default()
-    }, scn.vr_palette().is_some()));
+    }, scn.vr_palette().is_some(), retro::RetroStyle::BACKGROUND));
 
     let (rows, cols) = (scn.world.fire_rows, scn.world.fire_cols);
     let chunks_y = rows.div_ceil(CHUNK_CELLS);
