@@ -569,3 +569,24 @@ pub fn step_fire(mut sim: ResMut<Sim>, time: Res<Time>) {
         sim.playing = false;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Sim;
+    use fire::Weather;
+    use scenario::{Scenario, ScenarioRegistry};
+
+    #[test]
+    fn every_registered_scenario_starts_a_simulation() -> anyhow::Result<()> {
+        let data_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let registry = ScenarioRegistry::discover(&data_dir)?;
+
+        for metadata in registry.list() {
+            let scenario = Scenario::load_by_id(&data_dir, &metadata.id)?;
+            Sim::new(scenario, Weather::default(), 42)
+                .map_err(|error| anyhow::anyhow!("{}: {error:#}", metadata.id))?;
+        }
+
+        Ok(())
+    }
+}
