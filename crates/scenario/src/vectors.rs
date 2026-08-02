@@ -64,8 +64,8 @@ impl Vectors {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn load_web() -> Result<Vectors> {
-        Ok(serde_json::from_slice(include_bytes!("../../../data/spotorno_osm.json"))?)
+    pub fn load_web(bytes: &[u8]) -> Result<Vectors> {
+        Ok(serde_json::from_slice(bytes)?)
     }
 
     pub fn drivable_roads(&self) -> impl Iterator<Item = &Road> {

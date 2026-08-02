@@ -32,12 +32,17 @@ impl Default for ScenarioSelector {
 
 /// Initialize the scenario selector with the registry.
 ///
-/// Web builds embed exactly one scenario at compile time (see
-/// `crates/scenario/build.rs`) and have no filesystem to discover a registry
-/// from, so there is nothing to choose between: skip the UI outright.
+/// Web builds use the registry embedded by `crates/scenario/build.rs`; native
+/// builds discover the same registry on disk.
 #[cfg(target_arch = "wasm32")]
 pub fn init_selector(mut selector: ResMut<ScenarioSelector>) {
-    selector.confirmed = true;
+    match scenario::ScenarioRegistry::load_web() {
+        Ok(registry) => {
+            selector.selected = Some(registry.default_id().to_string());
+            selector.registry = Some(registry);
+        }
+        Err(error) => eprintln!("Failed to load embedded scenario registry: {error:#}"),
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -65,23 +70,11 @@ pub fn handle_launch_selection(
     if !selector.confirmed {
         return;
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    if selector.selected.is_none() {
+    let Some(scenario_id) = selector.selected.clone() else {
         return;
-    }
+    };
 
-    // Web builds embed a single scenario at compile time and never populate
-    // `selected` (there is nothing to choose); `Scenario::load` on wasm32
-    // reads that embedded scenario directly, ignoring the id.
-    let scenario_id = selector
-        .selected
-        .clone()
-        .unwrap_or_else(|| "web".to_string());
-
-    #[cfg(not(target_arch = "wasm32"))]
     let result = scenario::Scenario::load_by_id(&data_path.0, &scenario_id);
-    #[cfg(target_arch = "wasm32")]
-    let result = scenario::Scenario::load(&data_path.0);
 
     // Load scenario
     match result {

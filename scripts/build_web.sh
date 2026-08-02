@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Produces a self-contained static site in dist/.  Scenario assets are embedded
-# in game.wasm, so GitHub Pages only needs these three output files.
+# Produces a self-contained static site in dist/. All registered scenario
+# assets are embedded in game.wasm, so GitHub Pages needs no data directory.
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 

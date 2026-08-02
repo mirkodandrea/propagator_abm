@@ -55,22 +55,20 @@ impl Terrain {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn load_web() -> Result<Terrain> {
-        // Generated from every fourth 5 m source sample in build.rs.
-        const ROWS: usize = 512;
-        const COLS: usize = 512;
-        let elev = read_raw_bytes::<f32>(
-            include_bytes!(concat!(env!("OUT_DIR"), "/web_terrain.f32")),
-            ROWS * COLS,
-        )?;
+    pub fn load_web(metadata: &[u8], terrain: &[u8]) -> Result<Terrain> {
+        let meta: TerrainMeta = serde_json::from_slice(metadata)?;
+        let step = meta.rows.div_ceil(512).max(meta.cols.div_ceil(512)).max(1);
+        let rows = meta.rows.div_ceil(step);
+        let cols = meta.cols.div_ceil(step);
+        let elev = read_raw_bytes::<f32>(terrain, rows * cols)?;
         Ok(Terrain {
-            rows: ROWS,
-            cols: COLS,
-            posting: 20.0,
-            width_m: 10_240.0,
-            height_m: 10_240.0,
-            elev_min: -1.0,
-            elev_max: 1_300.0,
+            rows,
+            cols,
+            posting: meta.posting_m * step as f32,
+            width_m: meta.world_size_m[0],
+            height_m: meta.world_size_m[1],
+            elev_min: meta.elev_min,
+            elev_max: meta.elev_max,
             elev,
         })
     }

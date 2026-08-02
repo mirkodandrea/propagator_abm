@@ -108,7 +108,7 @@ impl Population {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn load_web() -> Result<Population> {
-        Ok(serde_json::from_slice(include_bytes!(concat!(env!("OUT_DIR"), "/web_population.json")))?)
+    pub fn load_web(bytes: &[u8]) -> Result<Population> {
+        Ok(serde_json::from_slice(bytes)?)
     }
 }

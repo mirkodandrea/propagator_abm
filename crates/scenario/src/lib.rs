@@ -23,6 +23,11 @@ pub mod population;
 pub mod terrain;
 pub mod vectors;
 
+#[cfg(target_arch = "wasm32")]
+mod web_assets {
+    include!(concat!(env!("OUT_DIR"), "/web_scenarios.rs"));
+}
+
 pub use fuels::FuelDefRaw;
 pub use metadata::{ScenarioMetadata, ScenarioRegistry, VrPalette};
 pub use population::{Dwelling, Household, Person, Population};
@@ -162,6 +167,59 @@ impl Scenario {
         })
     }
 
+    /// Load one of the scenarios compiled into the WebAssembly bundle.
+    #[cfg(target_arch = "wasm32")]
+    pub fn load_by_id(_data_dir: impl AsRef<Path>, id: impl AsRef<str>) -> Result<Scenario> {
+        let id = id.as_ref();
+        let assets = web_assets::scenario(id)
+            .with_context(|| format!("scenario {id:?} is not embedded in this web build"))?;
+        let metadata: ScenarioMetadata = serde_json::from_slice(assets.metadata)
+            .context("parsing embedded scenario.json")?;
+        anyhow::ensure!(
+            metadata.id == id,
+            "embedded scenario metadata id {:?} does not match requested id {id:?}",
+            metadata.id
+        );
+
+        let terrain = Terrain::load_web(assets.terrain_metadata, assets.terrain)
+            .context("embedded render terrain")?;
+        let vectors = Vectors::load_web(assets.vectors).context("embedded osm vectors")?;
+        let population =
+            Population::load_web(assets.population).context("embedded population")?;
+        let world = World {
+            width_m: vectors.world_size_m[0],
+            height_m: vectors.world_size_m[1],
+            fire_rows: vectors.fire_grid.rows,
+            fire_cols: vectors.fire_grid.cols,
+            cellsize: vectors.fire_grid.cellsize,
+        };
+        let fuel = read_raw_bytes::<i32>(assets.fuel, world.fire_rows * world.fire_cols)
+            .context("embedded fuel.i32")?;
+        let dem = read_raw_bytes::<f64>(assets.dem, world.fire_rows * world.fire_cols)
+            .context("embedded dem.f64")?;
+        let fuel_defs = fuels::load_web().context("embedded fuel table")?;
+
+        anyhow::ensure!(
+            metadata.fire_grid_size == [world.fire_rows, world.fire_cols],
+            "scenario metadata grid {:?} does not match vectors grid [{}, {}]",
+            metadata.fire_grid_size,
+            world.fire_rows,
+            world.fire_cols
+        );
+
+        Ok(Scenario {
+            id: id.to_string(),
+            metadata,
+            world,
+            terrain,
+            vectors,
+            population,
+            fuel,
+            dem,
+            fuel_defs,
+        })
+    }
+
     /// Load the baked assets from a data directory.
     /// For backward compatibility: if data directory contains "scenarios" subdir, loads default scenario.
     /// Otherwise, tries to load from directory directly (legacy mode).
@@ -226,58 +284,14 @@ impl Scenario {
     }
 
     /// Web builds are self-contained: GitHub Pages has no filesystem for the
-    /// game to read, so the needed baked assets are compiled into the wasm.
-    /// The terrain is deliberately reduced to 20 m posting by `build.rs`.
+    /// game to read, so every registered scenario is compiled into the wasm.
+    /// Large render terrains are reduced to at most 512 samples per edge by
+    /// `build.rs`.
     #[cfg(target_arch = "wasm32")]
-    pub fn load(_dir: impl AsRef<Path>) -> Result<Scenario> {
-        let terrain = Terrain::load_web().context("embedded render terrain")?;
-        let vectors = Vectors::load_web().context("embedded osm vectors")?;
-        let population = Population::load_web().context("embedded population")?;
-
-        let world = World {
-            width_m: vectors.world_size_m[0],
-            height_m: vectors.world_size_m[1],
-            fire_rows: vectors.fire_grid.rows,
-            fire_cols: vectors.fire_grid.cols,
-            cellsize: vectors.fire_grid.cellsize,
-        };
-        let fuel = read_raw_bytes::<i32>(include_bytes!(concat!(env!("OUT_DIR"), "/web_fuel.i32")), world.fire_rows * world.fire_cols)?;
-        let dem = read_raw_bytes::<f64>(include_bytes!(concat!(env!("OUT_DIR"), "/web_dem.f64")), world.fire_rows * world.fire_cols)?;
-        let fuel_defs = fuels::load_web().context("embedded fuel table")?;
-
-        // Create metadata for web build (not loaded from file)
-        let metadata = ScenarioMetadata {
-            id: env!("SPOTORNO_SCENARIO_ID").to_string(),
-            name: "Spotorno, Liguria".to_string(),
-            description: "Web build scenario".to_string(),
-            location: "Spotorno, Italy".to_string(),
-            country: "Italy".to_string(),
-            coordinates: [44.2265, 8.4176],
-            utm_zone: 32,
-            world_size_m: [world.width_m, world.height_m],
-            fire_grid_size: [world.fire_rows, world.fire_cols],
-            buildings_count: vectors.buildings.len(),
-            households_count: population.households.len(),
-            people_count: population.people.len(),
-            scenario_type: metadata::ScenarioType::Real,
-            creation_date: String::new(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            tags: vec!["web".to_string()],
-            is_dev: false,
-            vr_palette: None,
-        };
-
-        Ok(Scenario {
-            id: env!("SPOTORNO_SCENARIO_ID").to_string(),
-            metadata,
-            world,
-            terrain,
-            vectors,
-            population,
-            fuel,
-            dem,
-            fuel_defs,
-        })
+    pub fn load(dir: impl AsRef<Path>) -> Result<Scenario> {
+        let registry = ScenarioRegistry::load_web()?;
+        let default_id = registry.default_id().to_string();
+        Self::load_by_id(dir, default_id)
     }
 
     pub fn fuel_at(&self, c: Cell) -> i32 {

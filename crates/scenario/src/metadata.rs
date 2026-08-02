@@ -1,6 +1,7 @@
 //! Scenario metadata and registry for discovering and loading scenarios.
 
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -64,6 +65,12 @@ pub struct ScenarioMetadata {
     pub vr_palette: Option<VrPalette>,
 }
 
+#[derive(Deserialize)]
+struct RegistryFile {
+    default: String,
+    scenarios: Vec<ScenarioMetadata>,
+}
+
 /// Registry of available scenarios discovered from the data directory.
 pub struct ScenarioRegistry {
     scenarios: HashMap<String, ScenarioMetadata>,
@@ -72,24 +79,39 @@ pub struct ScenarioRegistry {
 
 impl ScenarioRegistry {
     /// Discover all available scenarios by scanning the scenarios.json registry file.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn discover(data_dir: &Path) -> Result<Self> {
         let registry_path = data_dir.join("scenarios.json");
         let bytes = std::fs::read(&registry_path)
             .with_context(|| format!("reading {}", registry_path.display()))?;
 
-        #[derive(Deserialize)]
-        struct RegistryFile {
-            default: String,
-            scenarios: Vec<ScenarioMetadata>,
-        }
+        Self::from_bytes(&bytes).context("parsing scenarios.json")
+    }
 
-        let reg: RegistryFile = serde_json::from_slice(&bytes)
-            .context("parsing scenarios.json")?;
+    /// Load the registry compiled into a browser build.
+    #[cfg(target_arch = "wasm32")]
+    pub fn load_web() -> Result<Self> {
+        Self::from_bytes(crate::web_assets::REGISTRY).context("parsing embedded scenarios.json")
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let reg: RegistryFile = serde_json::from_slice(bytes)?;
 
         let mut scenarios = HashMap::new();
         for scenario in reg.scenarios {
-            scenarios.insert(scenario.id.clone(), scenario);
+            let id = scenario.id.clone();
+            anyhow::ensure!(
+                scenarios.insert(id.clone(), scenario).is_none(),
+                "duplicate scenario id {id:?}"
+            );
         }
+
+        anyhow::ensure!(!scenarios.is_empty(), "scenario registry is empty");
+        anyhow::ensure!(
+            scenarios.contains_key(&reg.default),
+            "default scenario {:?} is not registered",
+            reg.default
+        );
 
         Ok(ScenarioRegistry {
             scenarios,

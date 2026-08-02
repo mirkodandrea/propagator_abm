@@ -1,8 +1,11 @@
 # Browser build and GitHub Pages
 
-The browser build is self-contained: scenario inputs are compiled into the
-WASM rather than fetched at run time. Its terrain is sampled at 20 m instead
-of the desktop build's 5 m, and vegetation is capped at 12% density.
+The browser build is self-contained: every entry in `data/scenarios.json` and
+its scenario inputs are compiled into the WASM rather than fetched at run
+time. The startup chooser therefore exposes the same scenarios as the desktop
+app. Render terrains larger than 512 samples on an edge are reduced for the
+browser (Spotorno goes from 5 m to 20 m posting), and vegetation is capped at
+12% density.
 
 Build it locally with:
 
