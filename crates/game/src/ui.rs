@@ -488,11 +488,13 @@ pub fn help_panel(
     mut contexts: EguiContexts,
     mut help: ResMut<HelpUi>,
     mut focus: ResMut<UiFocus>,
+    sim: Res<Sim>,
 ) {
     if !help.open {
         return;
     }
 
+    let location = &sim.scenario.metadata.location;
     let ctx = contexts.ctx_mut();
     let mut open = help.open;
     let mut language = help.language;
@@ -510,8 +512,8 @@ pub fn help_panel(
             });
             ui.separator();
             match language {
-                HelpLanguage::English => help_english(ui),
-                HelpLanguage::Italian => help_italian(ui),
+                HelpLanguage::English => help_english(ui, location),
+                HelpLanguage::Italian => help_italian(ui, location),
             }
         });
 
@@ -616,9 +618,9 @@ fn shortcuts_group(ui: &mut egui::Ui, title: &str, rows: &[(&str, &str)]) {
     ui.add_space(8.0);
 }
 
-fn help_english(ui: &mut egui::Ui) {
+fn help_english(ui: &mut egui::Ui, location: &str) {
     ui.heading("What is this?");
-    ui.label("You are the incident commander for a wildfire near Spotorno. The fire, weather, roads, households and response crews are simulated in real time. Your job is to watch the situation, protect people, and use the available crews where they can make a difference.");
+    ui.label(format!("You are the incident commander for a wildfire near {location}. The fire, weather, roads, households and response crews are simulated in real time. Your job is to watch the situation, protect people, and use the available crews where they can make a difference."));
     ui.add_space(8.0);
     ui.heading("A simple first run");
     ui.label(
@@ -665,9 +667,9 @@ fn help_english(ui: &mut egui::Ui) {
     );
 }
 
-fn help_italian(ui: &mut egui::Ui) {
+fn help_italian(ui: &mut egui::Ui, location: &str) {
     ui.heading("Che cos'è?");
-    ui.label("Sei il responsabile delle operazioni per un incendio boschivo vicino a Spotorno. Incendio, meteo, strade, famiglie e squadre di intervento sono simulati in tempo reale. Il tuo compito è osservare la situazione, proteggere le persone e usare le squadre dove possono fare la differenza.");
+    ui.label(format!("Sei il responsabile delle operazioni per un incendio boschivo vicino a {location}. Incendio, meteo, strade, famiglie e squadre di intervento sono simulati in tempo reale. Il tuo compito è osservare la situazione, proteggere le persone e usare le squadre dove possono fare la differenza."));
     ui.add_space(8.0);
     ui.heading("Una prima simulazione semplice");
     ui.label("1. Osserva l'incendio e prova i quattro livelli in View ▸ Fire layer (o premi 1–4).");

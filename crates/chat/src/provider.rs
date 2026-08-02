@@ -124,7 +124,7 @@ impl Client {
             // account's activity page. Being identifiable there is the polite
             // thing for a client that spends someone's credit.
             .set("HTTP-Referer", "https://github.com/mirkodandrea/propagator_abm")
-            .set("X-Title", "Spotorno wildfire incident")
+            .set("X-Title", "Wildfire incident commander")
             .timeout(std::time::Duration::from_secs(120))
             .send_json(body)
             .map_err(describe)?;

@@ -65,6 +65,14 @@ pub struct Household {
     pub size: u8,
     pub vehicles: u8,
     pub dist_to_fuel_m: f32,
+    /// Street address, carried straight from the building this household is
+    /// in (`scripts/fetch_osm.py::assign_addresses`). Genuinely sparse.
+    #[serde(default)]
+    pub address: Option<String>,
+    /// The named place this household lives in. `None` only for a scenario
+    /// whose window had no address-tagged buildings to assign one from.
+    #[serde(default)]
+    pub locality: Option<String>,
 
     pub risk_perception: f32,
     pub prior_fire_experience: bool,

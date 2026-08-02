@@ -27,8 +27,21 @@ DATA = ROOT / "data"
 SEA_LEVEL = 0.5  # m; below this the DEM is sea, kept dead flat
 
 
-def load_dem() -> tuple[np.ndarray, rasterio.Affine, rasterio.crs.CRS, object]:
-    with rasterio.open(DATA / "spotorno_dem.tif") as src:
+def source_dem_tif(scenario_dir: Path, scenario_id: str) -> Path:
+    """`<scenario_dir>/dem.tif`, falling back to Spotorno's original flat
+    layout (`data/spotorno_dem.tif`) so the shipped scenario re-bakes without
+    needing a fresh COG clip."""
+    local = scenario_dir / "dem.tif"
+    if local.exists():
+        return local
+    legacy = DATA / f"{scenario_id}_dem.tif"
+    if scenario_id == "spotorno" and legacy.exists():
+        return legacy
+    raise SystemExit(f"missing {local} (run scripts/clip_cogs.py first)")
+
+
+def load_dem(scenario_dir: Path, scenario_id: str) -> tuple[np.ndarray, rasterio.Affine, rasterio.crs.CRS, object]:
+    with rasterio.open(source_dem_tif(scenario_dir, scenario_id)) as src:
         dem = src.read(1).astype(np.float64)
         return dem, src.transform, src.crs, src.bounds
 
@@ -74,6 +87,7 @@ def build(dem: np.ndarray, factor: int, smooth: float) -> np.ndarray:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--scenario", default="spotorno", help="scenario id under data/scenarios/")
     ap.add_argument(
         "--factor", type=int, default=2,
         help="upsample factor over the 20 m sim grid (2 -> 10 m posting)",
@@ -84,14 +98,17 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    dem, transform, crs, bounds = load_dem()
+    scenario_dir = DATA / "scenarios" / args.scenario
+    scenario_dir.mkdir(parents=True, exist_ok=True)
+
+    dem, transform, crs, bounds = load_dem(scenario_dir, args.scenario)
     dem = np.where(dem == -9999, 0.0, dem)
     fine = build(dem, args.factor, args.smooth)
 
     posting = 20.0 / args.factor
     rows, cols = fine.shape
 
-    raw = DATA / "spotorno_render_terrain.f32"
+    raw = scenario_dir / "render_terrain.f32"
     fine.tofile(raw)
 
     meta = {
@@ -109,7 +126,7 @@ def main() -> None:
         "elev_min": float(fine.min()),
         "elev_max": float(fine.max()),
     }
-    (DATA / "spotorno_render_terrain.json").write_text(json.dumps(meta, indent=2))
+    (scenario_dir / "render_terrain.json").write_text(json.dumps(meta, indent=2))
 
     prof = {
         "driver": "GTiff", "height": rows, "width": cols, "count": 1,
@@ -118,7 +135,7 @@ def main() -> None:
             posting, 0, bounds.left, 0, -posting, bounds.top
         ),
     }
-    with rasterio.open(DATA / "spotorno_render_terrain.tif", "w", **prof) as dst:
+    with rasterio.open(scenario_dir / "render_terrain.tif", "w", **prof) as dst:
         dst.write(fine, 1)
 
     # How much of the stair-stepping did we actually remove? Compare the

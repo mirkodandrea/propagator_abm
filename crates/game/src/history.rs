@@ -120,6 +120,26 @@ impl History {
         );
     }
 
+    /// One-off, at t=0: which household is in which town, for whoever the
+    /// OSM bake could place — a scenario with no address data at all records
+    /// nothing here, rather than every household getting an identical empty
+    /// event. Mirrors `record_run_started`/`record_ignition`: provenance for
+    /// the run, not a thing that changed during it, so it is not diffed by
+    /// [`History::observe`].
+    pub fn record_locations(&self, population: &scenario::Population) {
+        for h in &population.households {
+            if h.locality.is_none() && h.address.is_none() {
+                continue;
+            }
+            self.log.record(
+                0,
+                Subject::Household(h.id),
+                "address",
+                serde_json::json!({"locality": h.locality, "address": h.address}),
+            );
+        }
+    }
+
     pub fn record_ignition(&self, time_s: i64, row: usize, col: usize, radius_m: f32) {
         self.log.record(
             time_s,

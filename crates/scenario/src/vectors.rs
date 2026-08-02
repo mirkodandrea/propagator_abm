@@ -24,6 +24,15 @@ pub struct Building {
     pub centroid: [f32; 2],
     /// Footprint outline, world metres.
     pub ring: Vec<[f32; 2]>,
+    /// Street address, where OSM carries `addr:street`/`addr:housenumber`.
+    /// Genuinely sparse -- see `scripts/fetch_osm.py::assign_addresses`.
+    #[serde(default)]
+    pub address: Option<String>,
+    /// The named place this building falls in, either from `addr:city`
+    /// directly or assigned to the nearest one the bake found. `None` only
+    /// when the window had no address-tagged buildings to seed from at all.
+    #[serde(default)]
+    pub locality: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

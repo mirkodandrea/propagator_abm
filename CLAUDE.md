@@ -100,25 +100,47 @@ Real: fuel (`eu_fuel12` 12-class), DEM, OSM buildings/roads/hydrants.
 Synthetic: the people, and the weather.
 
 Window: 512×512 @ 20 m = 10.24 × 10.24 km, EPSG:32632, SW corner UTM
-`(448360, 4892080)`. Covers Spotorno, Bergeggi, Noli and the ridges behind.
+`(448360, 4892080)`. Covers Spotorno, Bergeggi, Noli, Vado Ligure and the
+ridges behind — four named places, not the three originally assumed (finding
+33).
 
 **7,629 buildings · 1,793 drivable roads · 1,863 tracks/paths · 102 hydrants ·
 13 open water bodies · 750 households · 1,577 people.**
 
 Full provenance table and per-file inventory: **`data/README.md`**.
 
-### Regenerating
+### Adding a real scenario
+
+Every real-data script is scenario-parameterised: `--scenario <id>` (default
+`spotorno`), reading the place's identity from one place, `scripts/places.py`
+— name, UTM zone, window corner, and the narrative text (`nationality`,
+`region`, a demonym) an interview prompt needs. Adding a second real place is:
+add an entry to `places.py`, then run the pipeline below against its id. There
+is exactly one shipped real scenario today; the capability is built, nothing
+has been baked against it yet.
 
 ```bash
 export AWS_PROFILE=return          # the COG bucket needs this specific profile
-python scripts/fetch_osm.py                                   # cached; rm data/osm_raw.json to refetch
-python scripts/build_render_terrain.py --factor 4 --smooth 1.0 # 5 m render heightfield
-python scripts/generate_population.py --people 1500 --seed 42
-python scripts/bake_fire_rasters.py                           # GeoTIFF -> raw arrays for Rust
-python scripts/bake_fuels.py                                  # eu12 fuel table -> JSON
+PY=/Users/mirko/dev/fire/propagator/propagator_sim/.venv/bin/python
+ID=spotorno
+
+$PY scripts/clip_cogs.py --scenario $ID              # windowed read straight off the COGs -> fuel.tif/dem.tif
+$PY scripts/fetch_osm.py --scenario $ID               # cached per scenario; rm osm_raw.json to refetch
+$PY scripts/build_render_terrain.py --scenario $ID --factor 4 --smooth 1.0
+$PY scripts/generate_population.py --scenario $ID --people 1500 --seed 42
+$PY scripts/bake_fire_rasters.py --scenario $ID       # GeoTIFF -> raw arrays for Rust
+$PY scripts/write_scenario_json.py --scenario $ID     # scenario.json + data/scenarios.json, from the actual bake
+$PY scripts/bake_fuels.py                             # eu12 fuel table -> JSON (shared, run once)
 ```
 
-Use `propagator_sim`'s venv: `/Users/mirko/dev/fire/propagator/propagator_sim/.venv/bin/python`.
+For Spotorno, every step after `clip_cogs.py` reruns from the committed flat
+`data/spotorno_fuel.tif`/`spotorno_dem.tif` and the cached `data/osm_raw.json`
+with **no network call** — each script falls back to that legacy layout when
+a scenario has no assets of its own yet. `write_scenario_json.py` derives
+`localities` and the three counts from what the bake actually produced rather
+than having them hand-typed, which is how the fourth locality (Vado Ligure)
+surfaced: nobody had looked at the data closely enough to notice the original
+three-town list was incomplete.
 
 The COG URLs are **not** in the propagator_sim repo — its docs redact them.
 They are recorded in `data/README.md`. Bucket is `cima-propagator-return`,
@@ -473,6 +495,37 @@ interview.open`, so no single-key shortcut can fire while a conversation is up,
 whether or not egui currently reports a focused widget. That last one is finding
 25 with a text field in front of it, and the same answer — one system decides
 ownership. Switching bottom tabs releases it.
+
+**33. A hand-authored list of "the towns in the scenario" was already wrong,
+and nothing would have caught it.** The interview prompt offered a resident
+"Spotorno, Bergeggi or Noli" as the only places they could be from — three
+names typed once, by hand, when the window was chosen. The OSM bake covers a
+fourth: Vado Ligure, which turns out to hold more addressed buildings than
+Spotorno itself. The three-name version validated, read as complete, and
+would have stayed wrong indefinitely, because nothing about typing a plausible
+list of nearby towns is a mistake you can see from the code — it looks exactly
+like a correct one right up until it is compared against the data. It surfaced
+only because `scripts/fetch_osm.py::assign_addresses` now derives locality
+seeds from the `addr:city` values buildings actually carry (grouped and
+centroided, not geocoded) and `write_scenario_json.py` writes
+`ScenarioMetadata::localities` from *that* rather than from anyone's memory of
+which towns are in the window. The general shape is the same as finding 9's
+refuge placement and finding 17's road components: a plausible-sounding
+authored fact about the world is a claim, and the only thing that checks a
+claim against the window it describes is deriving it from the window's own
+data.
+
+The same derivation is what makes an interview answer specific instead of a
+multiple-choice: 750 of 750 households in the shipped scenario now carry their
+own `locality` (nearest-seed from a real addressed building, not a guess), so
+`chat::Dossier::locality` lets `prompt::system` say "a resident of Spotorno"
+directly, and only falls back to offering the scenario's whole `localities`
+list when a specific agent's own town is genuinely unknown
+(`crates/chat/src/prompt.rs::place_phrase`). Real street addresses are
+separate and much sparser — under 0.2% of buildings in the shipped window
+carry `addr:housenumber`/`addr:street` — so `Dossier::address` is `Some` for
+almost nobody and the prompt has to read naturally either way, not lean on it
+being there.
 
 ---
 
@@ -1122,10 +1175,6 @@ because it is what gets you *out* of a state.
   question. "Why did these forty households all leave at once" wants a
   *composite* — the same slice problem the composer's Live tab has (see above),
   and probably the same answer: an aggregate rather than a better interview.
-- The agent does not know which of the three towns they live in. The prompt
-  offers Spotorno, Bergeggi and Noli and lets the model pick, so household 412
-  can introduce itself as living in Noli when its footprint is in Spotorno. The
-  fix is a place name per building, which the OSM bake could carry and does not.
 - Nothing shows what an interview costs. Tokens, calls and money are all
   invisible, which is fine for a few questions and wrong for anyone who leaves
   it open. The provider returns usage on the final SSE frame and it is currently
@@ -1138,3 +1187,13 @@ because it is what gets you *out* of a state.
   incident-wide `command` row of the log has no voice, and the most obvious
   missing one is the *commander's own* after-action account, which is the thing
   a debrief would actually be built around.
+- **The real-scenario pipeline is generalised but only ever run against
+  Spotorno.** `scripts/places.py`, `clip_cogs.py` and the `--scenario` flags
+  (finding 33) make a second real place a config entry and a re-run rather
+  than a rewrite, but nobody has actually pointed `clip_cogs.py` at a second
+  window — the untested part is whatever assumption about the data turns out
+  not to travel (a place with no `addr:city` tags at all leaves every
+  `locality` unset, which degrades gracefully in the prompt but has never been
+  seen in practice). Address/locality data reaches the interview prompt and
+  the event log (`History::record_locations`) and nowhere else — not the
+  Entities search, not a map label, not the inspector.

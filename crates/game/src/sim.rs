@@ -200,6 +200,7 @@ impl Sim {
         let history = crate::history::History::new(&agents, &crews);
         history.record_run_started(seed, weather);
         history.record_ignition(0, ignition.centre.row, ignition.centre.col, ignition.radius_m);
+        history.record_locations(&scenario.population);
 
         Ok(Sim {
             fire,
@@ -343,6 +344,7 @@ impl Sim {
         // household's "why" would answer for a run that no longer exists.
         self.history = crate::history::History::new(&self.agents, &self.crews);
         self.history.record_run_started(self.seed, self.weather);
+        self.history.record_locations(&self.scenario.population);
         for ig in &self.ignitions {
             if ig.at_s <= 0 {
                 self.history.record_ignition(ig.at_s, ig.centre.row, ig.centre.col, ig.radius_m);

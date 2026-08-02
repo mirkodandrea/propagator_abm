@@ -587,10 +587,11 @@ pub fn units_body(
         let none_left = stats.unrequested == 0;
         if ui
             .add_enabled(!none_left, egui::Button::new("✈ Request air support  (C)"))
-            .on_hover_text(
-                "Aircraft come from the national fleet, not from Spotorno. \
+            .on_hover_text(format!(
+                "Aircraft come from the national fleet, not from {}. \
                  Ask early: they are 25 minutes out.",
-            )
+                sim.scenario.metadata.location,
+            ))
             .clicked()
         {
             request_air = true;

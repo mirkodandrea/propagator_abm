@@ -136,8 +136,8 @@ use identical row/col indexing. Access needs `AWS_PROFILE=return`.
 | `render_terrain.f32` | 2048² float32 heightfield @ 5 m — **read by the game** | `scenarios/spotorno/` |
 | `render_terrain.json` | Metadata for render terrain (rows, cols, posting, bounds) | `scenarios/spotorno/` |
 | `render_terrain.tif` | same, as GeoTIFF for inspection | `scenarios/spotorno/` |
-| `osm.json` | buildings, roads, water, in world metres | `scenarios/spotorno/` |
-| `population.json` | dwellings, households, people | `scenarios/spotorno/` |
+| `osm.json` | buildings, roads, water, in world metres — each building carries `address`/`locality` where the OSM bake could tell (`scripts/fetch_osm.py::assign_addresses`) | `scenarios/spotorno/` |
+| `population.json` | dwellings, households, people — each household carries the `address`/`locality` of the building it is in | `scenarios/spotorno/` |
 | `fuels_eu12.json` | the 12-class fuel table — **read by all scenarios** | `data/` (top level) |
 | `osm_raw.json` | raw Overpass response (cache; delete to refetch) | `data/` (top level) |
 
@@ -160,27 +160,30 @@ Access needs `AWS_PROFILE=return`, which lives in `~/.aws/credentials` (not
 `~/.aws/config`, so grepping config alone finds nothing). The machine's
 `[default]` profile is a different account and gets 403 on this bucket.
 
-## Regenerating Spotorno
+## Regenerating a real scenario, or adding a new one
 
-To regenerate Spotorno scenario assets in `scenarios/spotorno/`:
+Every real-data script takes `--scenario <id>` (default `spotorno`) and reads
+the place's identity — name, UTM zone, window corner, narrative text — from
+one place, `scripts/places.py`. Adding a **new** real scenario is: add an
+entry there, then run the same five steps against its id.
 
 ```bash
 export AWS_PROFILE=return
 PY=/Users/mirko/dev/fire/propagator/propagator_sim/.venv/bin/python
+ID=spotorno   # or a new id registered in scripts/places.py
 
-# 1. rasters: 512x512 window centred on Spotorno (grid col 22674, row 153140)
-gdal_translate -srcwin 22418 152884 512 512 \
-  /vsis3/cima-propagator-return/cogs/eu/eu_fuel12_utm_32.tif data/scenarios/spotorno/fuel.tif
-gdal_translate -srcwin 22418 152884 512 512 \
-  /vsis3/cima-propagator-return/cogs/eu/eu_dem_utm_32.tif  data/scenarios/spotorno/dem.tif
+# 1. clip the fuel/DEM window straight out of the EU COGs (windowed read, not
+#    a download of the whole tile) -- this is the step that used to be a
+#    one-off gdal_translate session with no script behind it
+$PY scripts/clip_cogs.py --scenario $ID
 
 # 2. everything downstream
-$PY scripts/fetch_osm.py              # cached; delete osm_raw.json to refetch
-$PY scripts/build_render_terrain.py --factor 4 --smooth 1.0
-$PY scripts/generate_population.py --people 1500 --seed 42
-$PY scripts/bake_fire_rasters.py      # GeoTIFF -> raw arrays the Rust game reads
-$PY scripts/bake_fuels.py             # eu12 fuel table -> fuels_eu12.json
-$PY scripts/run_spotorno.py           # optional: Python-side fire model check
+$PY scripts/fetch_osm.py --scenario $ID              # cached per scenario; delete osm_raw.json to refetch
+$PY scripts/build_render_terrain.py --scenario $ID --factor 4 --smooth 1.0
+$PY scripts/generate_population.py --scenario $ID --people 1500 --seed 42
+$PY scripts/bake_fire_rasters.py --scenario $ID       # GeoTIFF -> raw arrays the Rust game reads
+$PY scripts/write_scenario_json.py --scenario $ID     # scenario.json + data/scenarios.json, from the actual bake
+$PY scripts/bake_fuels.py                             # eu12 fuel table -> fuels_eu12.json (shared, run once)
 ```
 
 `bake_fire_rasters.py` and `bake_fuels.py` are **required** — the game loads
@@ -188,8 +191,15 @@ $PY scripts/run_spotorno.py           # optional: Python-side fire model check
 decoder into the Rust build just to read two fixed-size grids is not worth
 the dependency.
 
-Scripts are designed to output to `data/scenarios/spotorno/` by default (note the
-new path). Adjust them if creating a different scenario.
+For Spotorno specifically, steps 2–5 re-run from the already-committed
+`data/spotorno_fuel.tif` / `spotorno_dem.tif` and the cached
+`data/osm_raw.json` with **no network call** — every script falls back to
+that flat legacy layout when a scenario has no `fuel.tif`/`dem.tif`/
+`osm_raw.json` of its own yet. `write_scenario_json.py` derives
+`localities` (named places the OSM bake actually found, most-populated
+first) and `buildings_count`/`households_count`/`people_count` from the bake
+itself rather than having them hand-typed, so they cannot drift from what a
+regeneration actually produced.
 
 ## Current population (seed 42)
 

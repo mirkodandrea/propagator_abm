@@ -1,14 +1,18 @@
-"""Fetch the real OSM layers for the Spotorno scenario window and bake them
-into a single JSON asset in a metric local world frame (UTM 32N derived).
+"""Fetch the real OSM layers for a scenario window and bake them into a
+single JSON asset in a metric local world frame (UTM zone from `places.py`).
 
 Layers: building footprints, the road network (classified by whether an engine
-can drive it), and water sources engines can refill from.
+can drive it), and water sources engines can refill from. Buildings also carry
+an address and a locality (nearest named place) where the data supports it --
+see `assign_addresses` below.
 
 Vector geometry is kept in metres at full precision -- the 20 m fuel/DEM
 spacing constrains the fire model only, not rendering or agent movement.
 """
 
+import argparse
 import json
+import math
 import ssl
 import time
 import urllib.error
@@ -23,13 +27,12 @@ try:  # this interpreter's default trust store does not resolve Let's Encrypt
 except ImportError:
     SSL_CTX = ssl.create_default_context()
 
-import rasterio
 from pyproj import Transformer
+
+import places
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
-CACHE = DATA / "osm_raw.json"
-OUT = DATA / "spotorno_osm.json"
 
 OVERPASS = "https://overpass-api.de/api/interpreter"
 
@@ -61,10 +64,10 @@ out geom;
 """
 
 
-def fetch(query: str) -> dict:
-    if CACHE.exists():
-        print(f"using cached {CACHE}")
-        return json.loads(CACHE.read_text())
+def fetch(query: str, cache: Path) -> dict:
+    if cache.exists():
+        print(f"using cached {cache}")
+        return json.loads(cache.read_text())
     data = urllib.parse.urlencode({"data": query}).encode()
     for attempt in range(3):
         try:
@@ -74,8 +77,9 @@ def fetch(query: str) -> dict:
             )
             with urllib.request.urlopen(req, timeout=240, context=SSL_CTX) as resp:
                 raw = json.loads(resp.read())
-            CACHE.write_text(json.dumps(raw))
-            print(f"cached {len(raw.get('elements', []))} elements -> {CACHE}")
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_text(json.dumps(raw))
+            print(f"cached {len(raw.get('elements', []))} elements -> {cache}")
             return raw
         except (urllib.error.URLError, TimeoutError) as exc:
             print(f"  failed: {exc}")
@@ -84,19 +88,71 @@ def fetch(query: str) -> dict:
     raise SystemExit("Overpass unreachable after 3 attempts")
 
 
+def assign_addresses(buildings: list[dict]) -> dict[str, int]:
+    """Fill in `address` and `locality` on every building, in place.
+
+    `address` is exact where OSM carries `addr:street`/`addr:housenumber` --
+    that is real but sparse (well under 1% of buildings in the shipped
+    window). `locality` is filled two ways: exactly, from `addr:city` where
+    present; otherwise by nearest-seed, where a seed is the centroid of every
+    building tagged with a given `addr:city` in *this same fetch* -- real
+    positions, not geocoded guesses, so a window with no address tags at all
+    simply leaves every `locality` unset rather than inventing one.
+    """
+    seeds: dict[str, list[tuple[float, float]]] = {}
+    for b in buildings:
+        city = b.pop("_addr_city", None)
+        if city:
+            seeds.setdefault(city, []).append(tuple(b["centroid"]))
+    centres = {city: (
+        sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+    ) for city, pts in seeds.items()}
+
+    counts: dict[str, int] = {}
+    for b in buildings:
+        if b.get("locality") is None and centres:
+            cx, cy = b["centroid"]
+            nearest = min(
+                centres, key=lambda name: math.hypot(cx - centres[name][0], cy - centres[name][1])
+            )
+            b["locality"] = nearest
+        if b.get("locality"):
+            counts[b["locality"]] = counts.get(b["locality"], 0) + 1
+    return counts
+
+
 def main() -> None:
-    with rasterio.open(DATA / "spotorno_fuel.tif") as src:
-        bounds, transform, crs = src.bounds, src.transform, src.crs
-        rows, cols = src.shape
-    width_m = bounds.right - bounds.left
-    height_m = bounds.top - bounds.bottom
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--scenario", default="spotorno", help="place id from scripts/places.py")
+    args = ap.parse_args()
+    place = places.get(args.scenario)
+
+    scenario_dir = DATA / "scenarios" / place.id
+    scenario_dir.mkdir(parents=True, exist_ok=True)
+    out_path = scenario_dir / "osm.json"
+
+    cell = place.fire_cellsize_m
+    width_m, height_m = place.world_size_m
+    rows, cols = round(height_m / cell), round(width_m / cell)
+    left, bottom = place.utm_corner
+    right, top = left + width_m, bottom + height_m
+    crs = f"EPSG:326{place.utm_zone:02d}"  # WGS84 / UTM zone N, northern hemisphere
+    transform = [cell, 0.0, left, 0.0, -cell, top]  # affine, north-up, matches rasterio's convention
 
     to_wgs = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
     to_utm = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
-    west, south = to_wgs.transform(bounds.left, bounds.bottom)
-    east, north = to_wgs.transform(bounds.right, bounds.top)
+    west, south = to_wgs.transform(left, bottom)
+    east, north = to_wgs.transform(right, top)
 
-    raw = fetch(overpass_query(south, west, north, east))
+    # Cache: a scenario-specific file going forward; Spotorno's original fetch
+    # cached to the flat top-level path, and reusing it here means this
+    # regenerates from the exact same Overpass snapshot with no network call.
+    cache = scenario_dir / "osm_raw.json"
+    if not cache.exists() and place.id == "spotorno":
+        legacy = DATA / "osm_raw.json"
+        if legacy.exists():
+            cache = legacy
+    raw = fetch(overpass_query(south, west, north, east), cache)
 
     def to_grid(lon: float, lat: float) -> tuple[float, float]:
         """lon/lat -> local world metres, origin at the window's SW corner,
@@ -108,7 +164,7 @@ def main() -> None:
         `grid.cellsize`, done only where the fire core is actually addressed.
         """
         x, y = to_utm.transform(lon, lat)
-        return round(x - bounds.left, 2), round(y - bounds.bottom, 2)
+        return round(x - left, 2), round(y - bottom, 2)
 
     buildings, roads, water = [], [], []
     for el in raw.get("elements", []):
@@ -123,6 +179,10 @@ def main() -> None:
             cy = sum(p[1] for p in ring) / len(ring)
             if not (0 <= cx < width_m and 0 <= cy < height_m):
                 continue
+            street = tags.get("addr:street")
+            housenumber = tags.get("addr:housenumber")
+            address = f"{street} {housenumber}" if street and housenumber else street
+            city = tags.get("addr:city")
             buildings.append(
                 {
                     "id": el["id"],
@@ -131,6 +191,9 @@ def main() -> None:
                     "name": tags.get("name"),
                     "centroid": [round(cx, 2), round(cy, 2)],
                     "ring": ring,
+                    "address": address,
+                    "locality": city,
+                    "_addr_city": city,
                 }
             )
 
@@ -178,25 +241,31 @@ def main() -> None:
             )
             water.append({"id": el["id"], "kind": kind, "pos": [round(cx, 2), round(cy, 2)]})
 
+    locality_counts = assign_addresses(buildings)
+
     out = {
-        "crs": str(crs),
+        "crs": crs,
         "units": "metres, origin at SW corner of the window, +x east +y north",
         "world_size_m": [width_m, height_m],
-        "utm_origin": [bounds.left, bounds.bottom],
-        "fire_grid": {"rows": rows, "cols": cols, "cellsize": 20.0},
-        "transform": list(transform)[:6],
+        "utm_origin": [left, bottom],
+        "fire_grid": {"rows": rows, "cols": cols, "cellsize": cell},
+        "transform": transform,
         "bbox_wgs84": {"south": south, "west": west, "north": north, "east": east},
         "buildings": buildings,
         "roads": roads,
         "water": water,
     }
-    OUT.write_text(json.dumps(out))
+    out_path.write_text(json.dumps(out))
 
     drivable = sum(1 for r in roads if r["drivable"])
+    addressed = sum(1 for b in buildings if b["address"])
+    localised = sum(1 for b in buildings if b["locality"])
     print(f"\nbuildings : {len(buildings)}")
     print(f"roads     : {len(roads)}  ({drivable} drivable, {len(roads) - drivable} track/path)")
     print(f"water     : {len(water)}  " + str({k: sum(1 for w in water if w['kind'] == k) for k in {w['kind'] for w in water}}))
-    print(f"\nwrote {OUT} ({OUT.stat().st_size / 1e6:.1f} MB)")
+    print(f"addresses : {addressed} buildings with a street address")
+    print(f"localities: {localised} buildings assigned a place name -- {locality_counts}")
+    print(f"\nwrote {out_path} ({out_path.stat().st_size / 1e6:.1f} MB)")
 
 
 if __name__ == "__main__":

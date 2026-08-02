@@ -51,15 +51,30 @@ def polygon_area(ring: list) -> float:
     return abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1))) / 2.0
 
 
+def source_fuel_tif(scenario_dir: Path, scenario_id: str) -> Path:
+    """`<scenario_dir>/fuel.tif`, falling back to Spotorno's original flat
+    layout (`data/spotorno_fuel.tif`) so the shipped scenario re-bakes
+    without needing a fresh COG clip."""
+    local = scenario_dir / "fuel.tif"
+    if local.exists():
+        return local
+    legacy = DATA / f"{scenario_id}_fuel.tif"
+    if scenario_id == "spotorno" and legacy.exists():
+        return legacy
+    raise SystemExit(f"missing {local} (run scripts/clip_cogs.py first)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--scenario", default="spotorno", help="scenario id under data/scenarios/")
     ap.add_argument("--people", type=int, default=1500, help="target population")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
     rng = np.random.default_rng(args.seed)
 
-    osm = json.loads((DATA / "spotorno_osm.json").read_text())
-    with rasterio.open(DATA / "spotorno_fuel.tif") as src:
+    scenario_dir = DATA / "scenarios" / args.scenario
+    osm = json.loads((scenario_dir / "osm.json").read_text())
+    with rasterio.open(source_fuel_tif(scenario_dir, args.scenario)) as src:
         fuel = src.read(1)
     cell = osm["fire_grid"]["cellsize"]
     rows, cols = fuel.shape
@@ -109,6 +124,11 @@ def main() -> None:
                 "cell": [r, c],
                 "dist_to_fuel_m": round(float(dist_to_fuel[r, c]), 1),
                 "fuel_at_site": int(fuel[r, c]),
+                # carried straight from the OSM bake -- see fetch_osm.py's
+                # `assign_addresses`. Not randomised, so this cannot shift the
+                # RNG stream that drives everything below.
+                "address": b.get("address"),
+                "locality": b.get("locality"),
             }
         )
 
@@ -188,6 +208,8 @@ def main() -> None:
                 "size": size,
                 "vehicles": vehicles,
                 "dist_to_fuel_m": d["dist_to_fuel_m"],
+                "address": d["address"],
+                "locality": d["locality"],
                 # --- wildfire-specific behavioural state ---
                 # baseline risk perception, raised by cues (smoke, embers)
                 "risk_perception": round(float(rng.beta(2, 4)), 3),
@@ -241,7 +263,7 @@ def main() -> None:
         "households": households,
         "people": people,
     }
-    path = DATA / "spotorno_population.json"
+    path = scenario_dir / "population.json"
     path.write_text(json.dumps(out))
 
     print(f"households         : {len(households)}")

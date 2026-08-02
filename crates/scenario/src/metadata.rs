@@ -55,6 +55,24 @@ pub struct ScenarioMetadata {
     pub version: String,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// The demonym for whoever lives here ("Italian"). Used to address a
+    /// suppression unit in an interview ("an Italian firefighter..."). Empty
+    /// for a scenario that has not authored one -- `chat` falls back to a
+    /// nationality-free phrasing rather than guessing.
+    #[serde(default)]
+    pub nationality: String,
+    /// A short narrative phrase for interview prompts, e.g. "the Ligurian
+    /// coast of Italy" -- reads naturally after "a resident of ...". Empty
+    /// falls back to [`ScenarioMetadata::location`].
+    #[serde(default)]
+    pub region: String,
+    /// Named places inside the scenario window, most-populated first, as
+    /// discovered from OSM address tags at bake time
+    /// (`scripts/fetch_osm.py::assign_addresses`) -- not hand-authored, so it
+    /// cannot drift from what the data actually contains. Used as a fallback
+    /// when a specific household's own `locality` is unknown.
+    #[serde(default)]
+    pub localities: Vec<String>,
     /// Mark as development/test scenario for ABM testing
     #[serde(default)]
     pub is_dev: bool,

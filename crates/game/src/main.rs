@@ -71,7 +71,7 @@ fn main() -> anyhow::Result<()> {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: "Spotorno — select scenario".into(),
+            title: "Wildfire incident — select scenario".into(),
             #[cfg(target_arch = "wasm32")]
             canvas: Some("#spotorno".into()),
             #[cfg(target_arch = "wasm32")]

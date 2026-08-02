@@ -125,5 +125,10 @@ fn fixture() -> Dossier {
             TimelineEntry { sim_time_s: 900, line: "you realised something was going on".into() },
             TimelineEntry { sim_time_s: 1_800, line: "the evacuation order reached you".into() },
         ],
+        nationality: "Italian".into(),
+        region: "the Ligurian coast of Italy".into(),
+        localities: vec!["Spotorno".into(), "Bergeggi".into(), "Noli".into(), "Vado Ligure".into()],
+        locality: Some("Spotorno".into()),
+        address: None,
     }
 }

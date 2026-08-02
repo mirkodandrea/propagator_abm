@@ -70,6 +70,25 @@ pub struct Dossier {
     pub perceptions: Vec<String>,
     /// Their own row of the run's event log, oldest first.
     pub timeline: Vec<TimelineEntry>,
+    /// The demonym for whoever lives in this scenario ("Italian"), from
+    /// `scenario::ScenarioMetadata::nationality`. Empty when the scenario has
+    /// not authored one.
+    pub nationality: String,
+    /// A short narrative phrase for where this is ("the Ligurian coast of
+    /// Italy"), from `scenario::ScenarioMetadata::region`. Empty when unset.
+    pub region: String,
+    /// Named places in the scenario window, most-populated first — the
+    /// fallback used when this specific agent's own [`Dossier::locality`] is
+    /// unknown. From `scenario::ScenarioMetadata::localities`.
+    pub localities: Vec<String>,
+    /// This agent's own town, if the building bake could tell — see
+    /// `scenario::Household::locality`. Known for almost every household in
+    /// the shipped scenario; `None` for a unit, or a scenario with no
+    /// address data at all.
+    pub locality: Option<String>,
+    /// This agent's own street address, where OSM had one. Genuinely sparse
+    /// — most agents will not have this even when `locality` is known.
+    pub address: Option<String>,
 }
 
 impl Dossier {
@@ -81,18 +100,65 @@ impl Dossier {
     }
 }
 
+/// "an Italian" vs "a French" — the only piece of English grammar this module
+/// needs to get right, since [`Dossier::nationality`] is scenario-authored
+/// free text rather than a closed set.
+fn a_or_an(word: &str) -> &'static str {
+    match word.chars().next() {
+        Some(c) if "aeiouAEIOU".contains(c) => "an",
+        _ => "a",
+    }
+}
+
+/// Where an agent is from, in a sentence fragment: the specific town when the
+/// building bake knew it, the scenario's own list of named places as a
+/// fallback, and a bare narrative region if even that is unset. Never
+/// invents a place a scenario has not actually supplied.
+pub(crate) fn place_phrase(dossier: &Dossier) -> String {
+    if let Some(town) = &dossier.locality {
+        return match dossier.region.is_empty() {
+            true => town.clone(),
+            false => format!("{town}, on {}", dossier.region),
+        };
+    }
+    if !dossier.localities.is_empty() {
+        let towns = match dossier.localities.as_slice() {
+            [one] => one.clone(),
+            [rest @ .., last] => format!("{} or {last}", rest.join(", ")),
+            [] => unreachable!(),
+        };
+        return match dossier.region.is_empty() {
+            true => format!("a small town — {towns}"),
+            false => format!("a small town on {} — {towns}", dossier.region),
+        };
+    }
+    if !dossier.region.is_empty() {
+        return dossier.region.clone();
+    }
+    "the area".to_string()
+}
+
 /// The system prompt for an interview: who they are, what they know, and the
 /// rules about what they may not.
 pub fn system(persona: &Persona, dossier: &Dossier) -> String {
     let mut s = String::new();
 
+    let place = place_phrase(dossier);
     let who = match dossier.kind {
-        SubjectKind::Household => "a resident of a small town on the Ligurian coast of Italy \
-             — Spotorno, Bergeggi or Noli — speaking for your household",
-        SubjectKind::Person => "a resident of a small town on the Ligurian coast of Italy \
-             — Spotorno, Bergeggi or Noli — who is away from home and not with your family",
-        SubjectKind::Unit => "an Italian firefighter working a wildfire on the Ligurian coast, \
-             speaking for your crew",
+        SubjectKind::Household => {
+            format!("a resident of {place}, speaking for your household")
+        }
+        SubjectKind::Person => {
+            format!("a resident of {place}, who is away from home and not with your family")
+        }
+        SubjectKind::Unit if dossier.nationality.is_empty() => {
+            format!("a firefighter working a wildfire near {place}, speaking for your crew")
+        }
+        SubjectKind::Unit => format!(
+            "{art} {nat} firefighter working a wildfire near {place}, speaking for your crew",
+            art = a_or_an(&dossier.nationality),
+            nat = dossier.nationality,
+        ),
     };
 
     s.push_str(&format!("You are {who}. A wildfire is burning.\n\n"));
@@ -218,6 +284,11 @@ mod tests {
             facts: vec![Fact::new("Household", "four of you, two cars")],
             perceptions: vec!["Smoke over the ridge behind the house.".into()],
             timeline: vec![TimelineEntry { sim_time_s: 600, line: "you noticed smoke".into() }],
+            nationality: "Italian".into(),
+            region: "the Ligurian coast of Italy".into(),
+            localities: vec!["Spotorno".into(), "Bergeggi".into(), "Noli".into()],
+            locality: Some("Spotorno".into()),
+            address: None,
         }
     }
 
@@ -281,5 +352,35 @@ mod tests {
     fn the_stamp_drops_seconds() {
         assert_eq!(Dossier::stamp(0), "T+00:00");
         assert_eq!(Dossier::stamp(3_930), "T+01:05");
+    }
+
+    #[test]
+    fn a_known_locality_is_named_directly_rather_than_offered_as_a_choice() {
+        // The building bake knows this household's own town, so it should
+        // not be handed the whole scenario's town list to pick from.
+        let s = system(&persona(), &dossier());
+        assert!(s.contains("a resident of Spotorno, on the Ligurian coast of Italy"));
+        assert!(!s.contains("Bergeggi"));
+    }
+
+    #[test]
+    fn an_unknown_locality_falls_back_to_the_scenario_list() {
+        let mut d = dossier();
+        d.locality = None;
+        let s = system(&persona(), &d);
+        assert!(s.contains("Spotorno, Bergeggi or Noli"));
+    }
+
+    #[test]
+    fn a_scenario_with_no_narrative_context_still_reads() {
+        // A synthetic ABM-lab scenario authors none of this -- the prompt
+        // must still be a coherent sentence, not a blank or a panic.
+        let mut d = dossier();
+        d.locality = None;
+        d.localities = vec![];
+        d.region = String::new();
+        d.nationality = String::new();
+        let s = system(&persona(), &d);
+        assert!(s.contains("a resident of the area"));
     }
 }

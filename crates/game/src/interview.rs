@@ -237,6 +237,24 @@ pub fn dossier(sim: &Sim, subject: SubjectRef) -> Option<Dossier> {
         })
         .collect();
 
+    let (locality, address) = match subject.kind {
+        SubjectKind::Household => sim
+            .scenario
+            .population
+            .households
+            .get(subject.id as usize)
+            .map(|h| (h.locality.clone(), h.address.clone()))
+            .unwrap_or_default(),
+        SubjectKind::Person => sim
+            .agents
+            .people
+            .get(subject.id as usize)
+            .and_then(|p| sim.scenario.population.households.get(p.household))
+            .map(|h| (h.locality.clone(), h.address.clone()))
+            .unwrap_or_default(),
+        SubjectKind::Unit => (None, None),
+    };
+
     Some(Dossier {
         kind: subject.kind,
         id: subject.id,
@@ -246,6 +264,11 @@ pub fn dossier(sim: &Sim, subject: SubjectRef) -> Option<Dossier> {
         facts,
         perceptions,
         timeline,
+        nationality: sim.scenario.metadata.nationality.clone(),
+        region: sim.scenario.metadata.region.clone(),
+        localities: sim.scenario.metadata.localities.clone(),
+        locality,
+        address,
     })
 }
 
@@ -290,6 +313,15 @@ fn household_dossier(sim: &Sim, id: usize) -> Option<(Vec<Fact>, Vec<String>)> {
     }
 
     if let Some(b) = baked {
+        if let Some(locality) = &b.locality {
+            facts.push(Fact::new(
+                "Home",
+                match &b.address {
+                    Some(addr) => format!("{addr}, {locality}"),
+                    None => locality.clone(),
+                },
+            ));
+        }
         if b.has_pets_livestock {
             facts.push(Fact::new("Animals", "you have animals to think about"));
         }
@@ -417,6 +449,16 @@ fn household_dossier(sim: &Sim, id: usize) -> Option<(Vec<Fact>, Vec<String>)> {
 fn person_dossier(sim: &Sim, id: usize) -> Option<(Vec<Fact>, Vec<String>)> {
     let p = sim.agents.people.get(id)?;
     let mut facts = vec![Fact::new("You", format!("{} years old", p.age))];
+
+    if let Some(locality) = sim
+        .scenario
+        .population
+        .households
+        .get(p.household)
+        .and_then(|h| h.locality.as_ref())
+    {
+        facts.push(Fact::new("Home", format!("your family lives in {locality}")));
+    }
 
     if p.needs_assistance {
         facts.push(Fact::new("Moving", "you cannot get far on your own"));
@@ -892,6 +934,11 @@ fn blank_dossier(subject: SubjectRef) -> Dossier {
         facts: Vec::new(),
         perceptions: Vec::new(),
         timeline: Vec::new(),
+        nationality: String::new(),
+        region: String::new(),
+        localities: Vec::new(),
+        locality: None,
+        address: None,
     }
 }
 

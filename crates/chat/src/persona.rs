@@ -92,20 +92,35 @@ pub use crate::subject::SubjectKind;
 /// different output: this one is asked for JSON and nothing else, and its
 /// answer is stored rather than shown.
 pub fn request(dossier: &Dossier) -> Vec<Message> {
+    let place = crate::prompt::place_phrase(dossier);
     let who = match dossier.kind {
         SubjectKind::Household => {
-            "one adult who speaks for a household in a small town on the Ligurian coast \
-             (Spotorno, Bergeggi, Noli) during a wildfire"
+            format!("one adult who speaks for a household in {place} during a wildfire")
         }
         SubjectKind::Person => {
-            "one person who is out of the house, away from their family, in a small town \
-             on the Ligurian coast during a wildfire"
+            format!(
+                "one person who is out of the house, away from their family, in {place} \
+                 during a wildfire"
+            )
         }
-        SubjectKind::Unit => {
-            "one Italian firefighter speaking for their crew — a hand crew (squadra), \
-             a water tender (autobotte) or an air tanker — working a wildfire on the \
-             Ligurian coast"
-        }
+        SubjectKind::Unit if dossier.nationality.is_empty() => format!(
+            "one firefighter speaking for their crew — a hand crew (squadra), a water \
+             tender (autobotte) or an air tanker — working a wildfire near {place}"
+        ),
+        SubjectKind::Unit => format!(
+            "one {nat} firefighter speaking for their crew — a hand crew (squadra), a water \
+             tender (autobotte) or an air tanker — working a wildfire near {place}",
+            nat = dossier.nationality,
+        ),
+    };
+    let names = if dossier.nationality.is_empty() {
+        "Names and a life that fit the place and time.".to_string()
+    } else {
+        format!(
+            "{nat} names, and a life that fits {place} — the kind of work and history a few \
+             thousand people living there would actually have.",
+            nat = dossier.nationality,
+        )
     };
     let system = format!(
         "You invent a single plausible person from a simulation's own data, for a wildfire \
@@ -113,10 +128,9 @@ pub fn request(dossier: &Dossier) -> Vec<Message> {
          The facts below come from the simulation and are fixed. Everything you invent must be \
          consistent with them: a household that intends to defend its property is someone with a \
          reason to believe they can; a household with a long preparation time is someone with a \
-         reason to be slow. Italian names, and a life that fits a coastal Ligurian town of a few \
-         thousand people — fishing, tourism, olives, retirees, commuters to Savona.\n\n\
+         reason to be slow. {names}\n\n\
          Reply with a single JSON object and nothing else. No prose, no code fence. Keys:\n\
-         - name (string, an Italian full name)\n\
+         - name (string, a full name fitting the place)\n\
          - age (integer, consistent with any age given in the facts)\n\
          - occupation (string, a few words)\n\
          - role (string, their place in the household or on the crew, a few words)\n\
