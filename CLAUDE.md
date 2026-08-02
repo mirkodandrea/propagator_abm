@@ -497,8 +497,8 @@ regions, and nothing else.
   selected, its full detail appears directly under the roster. The side panel
   is deliberately not resizable; selection never changes the camera viewport.
 - **Bottom workbench** — tabs for the horizontal **Incident view**, embedded
-  agent **Chat**, **Debug** diagnostics, and the large **Behavior editor**.
-  Each tab has a stable height suited to its contents.
+  agent **Chat**, the selected agent's **Live debugger**, and the large
+  **Behavior editor**. Each tab has a stable height suited to its contents.
 
 This replaced five independent docks (two left/right side panels, two bottom
 panels, plus a floating dev window), which between them left the 3D view a
@@ -719,6 +719,10 @@ the real incident rather than a made-up one. Click an agent on the map — a
 household, a person, a unit — and the canvas starts showing what their behaviour
 is doing: every node's outputs on the box, every input value on its pin, and the
 nodes coloured by how they relate to the decision that was taken.
+
+The bottom **Live debugger** is the focused version of that view: current
+decision, proposals, every node's value and role, transport controls, and recent
+decision changes without opening the full authoring canvas. F2 toggles it.
 
 **The graph is dataflow, not a flowchart, and the view says so.** Every node runs
 on every decision tick, so "the currently executing node" has no referent. What

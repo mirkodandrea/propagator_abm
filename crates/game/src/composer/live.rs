@@ -366,13 +366,28 @@ pub fn capture(sim: Res<Sim>, selected: Res<Selected>, mut composer: ResMut<Comp
 // ---------------------------------------------------------------------------
 
 pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
+    panel_impl(ui, c, true);
+}
+
+/// Focused live trace for the application's bottom debugger. Unlike the
+/// editor's Live tab, this does not depend on which graph the canvas happens
+/// to have open: selection alone determines what is shown.
+pub fn debugger_panel(ui: &mut egui::Ui, c: &mut Composer) {
+    panel_impl(ui, c, false);
+}
+
+fn panel_impl(ui: &mut egui::Ui, c: &mut Composer, editor_context: bool) {
     ui.horizontal(|ui| {
-        ui.heading("Live");
-        ui.checkbox(&mut c.live.follow, "follow selection").on_hover_text(
-            "Switch the canvas to whatever the selected agent is running. Off keeps the \
-             behaviour you are editing on screen while the highlight follows the agent — \
-             which shows nothing at all unless they happen to be the same graph.",
-        );
+        ui.heading(if editor_context { "Live" } else { "Live behavior debugger" });
+        if editor_context {
+            ui.checkbox(&mut c.live.follow, "follow selection").on_hover_text(
+                "Switch the canvas to whatever the selected agent is running. Off keeps the \
+                 behaviour you are editing on screen while the highlight follows the agent — \
+                 which shows nothing at all unless they happen to be the same graph.",
+            );
+        } else {
+            ui.weak("selected agent · real incident");
+        }
     });
 
     let Some(subject) = c.live.subject else {
@@ -410,7 +425,7 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
         ui.small(&frame.subtype_name).on_hover_text(&frame.subtype_id);
     });
 
-    if frame.graph_id != c.graph_id {
+    if editor_context && frame.graph_id != c.graph_id {
         ui.colored_label(
             egui::Color32::from_rgb(0xd8, 0xa6, 0x4b),
             "The canvas is showing a different behaviour.",
@@ -541,10 +556,12 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
             }
         });
 
-    if let Some(node) = jump {
-        if let Some(sid) = c.snarl_id_of(node) {
-            c.selected = Some(sid);
-            c.right = RightTab::Inspector;
+    if editor_context {
+        if let Some(node) = jump {
+            if let Some(sid) = c.snarl_id_of(node) {
+                c.selected = Some(sid);
+                c.right = RightTab::Inspector;
+            }
         }
     }
     c.live.frame = Some(frame);

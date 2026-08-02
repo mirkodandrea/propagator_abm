@@ -378,7 +378,8 @@ pub fn panel(
     let target = selected.target;
     let mut close = false;
     let mut jump_to: Option<Target> = None;
-    // Set by the behaviour section's one button.
+    // Set by the behaviour section's two doors into live inspection and editing.
+    let mut open_debugger = false;
     let mut open_composer = false;
     // Set by the interview button — the second door out of this panel, and the
     // only one that leads to the agent rather than to the model behind it.
@@ -397,7 +398,7 @@ pub fn panel(
                     Target::Unit(id) => unit_panel(ui, &sim, id, &mut mode),
                 }
                 interview_row(ui, &sim, target, &mut open_interview);
-                behaviour_panel(ui, &sim, &mut open_composer, target);
+                behaviour_panel(ui, &sim, &mut open_debugger, &mut open_composer, target);
                 history_panel(ui, &sim, target);
             });
     };
@@ -450,6 +451,10 @@ pub fn panel(
         selected.target = None;
     } else if let Some(t) = jump_to {
         selected.target = Some(t);
+    }
+    if open_debugger {
+        composer.open = false;
+        panels.focus_bottom(crate::ui::BottomTab::Debug);
     }
     if open_composer {
         composer.open = true;
@@ -674,7 +679,13 @@ fn interview_row(ui: &mut egui::Ui, sim: &Sim, target: Target, open: &mut bool) 
 /// shape in each: a profile, a decision, and the branches that produced it. The
 /// only per-kind part is which of the model's `explain` calls to make, and that
 /// is three lines at the top.
-fn behaviour_panel(ui: &mut egui::Ui, sim: &Sim, open: &mut bool, target: Target) {
+fn behaviour_panel(
+    ui: &mut egui::Ui,
+    sim: &Sim,
+    debug: &mut bool,
+    edit: &mut bool,
+    target: Target,
+) {
     let found = match target {
         Target::Household(id) => sim.agents.behaviour_of(id),
         Target::Person(id) => sim.agents.person_behaviour_of(id),
@@ -709,17 +720,19 @@ fn behaviour_panel(ui: &mut egui::Ui, sim: &Sim, open: &mut bool, target: Target
     ui.horizontal(|ui| {
         ui.strong("Behaviour");
         ui.label(&subtype_name).on_hover_text(&subtype_id);
-        // The one door from the map into the editor. Everything else about
-        // watching a behaviour run is in there; without this the feature is
-        // reachable only by someone who already knows it exists.
         if ui
-            .small_button("Open in the composer")
-            .on_hover_text(
-                "Open the Agent Behaviour Composer on this agent's graph and watch it decide.",
-            )
+            .small_button("Live debug")
+            .on_hover_text("Inspect this agent's current decision trace in the bottom debugger.")
             .clicked()
         {
-            *open = true;
+            *debug = true;
+        }
+        if ui
+            .small_button("Edit graph")
+            .on_hover_text("Open the full Behavior editor on this agent's graph.")
+            .clicked()
+        {
+            *edit = true;
         }
     });
     ui.label(format!(

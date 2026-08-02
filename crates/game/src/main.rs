@@ -481,6 +481,7 @@ fn controls(
     mut selected: ResMut<inspect::Selected>,
     mut help: ResMut<ui::HelpUi>,
     mut panels: ResMut<ui::PanelState>,
+    mut composer: ResMut<composer::Composer>,
     mut restarted: EventWriter<sim::SimRestarted>,
 ) {
     // Escape is the exception: it is what gets you *out* of a state, so it has
@@ -543,6 +544,7 @@ fn controls(
         if panels.bottom_tab == ui::BottomTab::Debug && panels.incident.visible() {
             panels.incident = ui::PanelPlacement::Hidden;
         } else {
+            composer.open = false;
             panels.focus_bottom(ui::BottomTab::Debug);
         }
     }

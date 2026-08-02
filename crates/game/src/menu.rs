@@ -311,9 +311,9 @@ pub fn menubar(
                 if item(
                     ui,
                     if panels.bottom_tab == BottomTab::Debug && panels.incident.visible() {
-                        "Hide developer diagnostics"
+                        "Hide live behavior debugger"
                     } else {
-                        "Developer diagnostics"
+                        "Live behavior debugger"
                     },
                     "F2",
                 )
@@ -322,7 +322,7 @@ pub fn menubar(
                     a(Action::Debug, &mut act);
                     ui.close_menu();
                 }
-                if item(ui, "Agent Behaviour Composer", "G")
+                if item(ui, "Behavior editor", "G")
                     .on_hover_text(
                         "Author the decision model for households, separated people or \
                          suppression units as a node graph — and watch the selected agent \
@@ -362,9 +362,7 @@ pub fn menubar(
                 }
                 ui.separator();
                 ui.label("F12 saves the current frame as a PNG.");
-                ui.small(
-                    "Diagnostics are read-only; simulation editing stays in Fire and Composer.",
-                );
+                ui.small("Select an authored agent to inspect its live decision trace.");
             });
 
             ui.menu_button("Help", |ui| {
@@ -574,6 +572,8 @@ pub fn menubar(
                 if panels.bottom_tab == BottomTab::Debug && panels.incident.visible() {
                     panels.incident = PanelPlacement::Hidden;
                 } else {
+                    composer.open = false;
+                    interview.open = false;
                     panels.focus_bottom(BottomTab::Debug);
                 }
             }

@@ -773,6 +773,12 @@ pub fn panel_body(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<A
     egui::CentralPanel::default().show_inside(ui, |ui| viewer::canvas(ui, c));
 }
 
+/// The selected agent's live behavior trace, embedded in the bottom debugger
+/// without the rest of the graph-authoring workbench.
+pub fn live_debugger_body(ui: &mut egui::Ui, c: &mut Composer) {
+    live::debugger_panel(ui, c);
+}
+
 fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBehaviour>) {
     // Which kind of agent, first and on its own row: everything below it —
     // the graph list, the palette, the profiles, the bench — is scoped to this

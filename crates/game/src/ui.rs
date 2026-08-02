@@ -120,7 +120,7 @@ impl BottomTab {
         match self {
             BottomTab::Incident => "Incident view",
             BottomTab::Chat => "Chat",
-            BottomTab::Debug => "Debug",
+            BottomTab::Debug => "Live debugger",
             BottomTab::Behaviour => "Behavior editor",
         }
     }
@@ -142,11 +142,10 @@ impl PanelPlacement {
     }
 }
 
-/// Placement and navigation state for the three workspaces and the developer
-/// diagnostics window.
+/// Placement and navigation state for the three workspaces.
 #[derive(Resource)]
 pub struct PanelState {
-    /// Bottom incident/chat/developer workbench.
+    /// Bottom incident/chat/behavior workbench.
     pub incident: PanelPlacement,
     /// Left execution/fire/intervention controls.
     pub dock: PanelPlacement,
@@ -198,7 +197,7 @@ impl PanelState {
     }
 }
 
-/// The bottom workbench: incident view, chat, diagnostics and behavior editor.
+/// The bottom workbench: incident view, chat, live behavior debugger and editor.
 ///
 /// Its height is fixed per tab. In particular, it does not inherit a previous
 /// tab's dragged size, which made switching from the large behavior canvas back
@@ -214,9 +213,6 @@ pub fn panel(
     mut interview: ResMut<crate::interview::Interview>,
     mut composer: ResMut<crate::composer::Composer>,
     mut apply: EventWriter<crate::composer::ApplyBehaviour>,
-    orbit: Query<&crate::camera::OrbitCamera>,
-    mode: Res<crate::camera::CameraMode>,
-    time: Res<Time>,
 ) {
     let ctx = contexts.ctx_mut();
     if panels.incident == PanelPlacement::Hidden {
@@ -230,7 +226,7 @@ pub fn panel(
     let height = match tab {
         BottomTab::Incident => 260.0,
         BottomTab::Chat => 340.0,
-        BottomTab::Debug => 300.0,
+        BottomTab::Debug => 420.0,
         BottomTab::Behaviour => (available * 0.68).clamp(520.0, 720.0),
     };
 
@@ -279,7 +275,7 @@ pub fn panel(
                     );
                 }
                 BottomTab::Debug => {
-                    debug_body(ui, &sim, &orbit, *mode, selected.target, &time);
+                    crate::composer::live_debugger_body(ui, &mut composer);
                 }
                 BottomTab::Behaviour => {
                     crate::composer::panel_body(ui, &mut composer, &mut apply);
@@ -584,7 +580,7 @@ pub fn shortcuts_panel(
             );
             shortcuts_group(
                 ui,
-                "Find, panels & developer",
+                "Find & workspaces",
                 &[
                     ("/", "open Entities and focus search"),
                     ("B", "show / hide Entities"),
@@ -593,7 +589,7 @@ pub fn shortcuts_panel(
                         "T",
                         "open Chat for the selected agent — pauses the incident",
                     ),
-                    ("F2", "developer diagnostics"),
+                    ("F2", "live behavior debugger"),
                     ("?", "this shortcut window"),
                     ("F1", "quick start"),
                     ("Ctrl/⌘+R", "restart the incident from T+0"),
@@ -637,11 +633,11 @@ fn help_english(ui: &mut egui::Ui) {
     ui.label("The menu bar along the top reaches everything, and the clock, play button and speed sit at its right-hand end.");
     ui.label("The left Command panel contains execution controls, compact wind and moisture parameters, ignition settings, and crew intervention.");
     ui.label("The fixed-width right panel finds any household, person, vehicle or unit. Selecting a row or map symbol shows that entity's detail directly below the navigator.");
-    ui.label("The bottom workbench switches between the incident view, agent chat, diagnostics, and the behavior editor.");
+    ui.label("The bottom workbench switches between the incident view, agent chat, the selected agent's live behavior debugger, and the behavior editor.");
     ui.add_space(8.0);
     ui.heading("Why did they do that?");
-    ui.label("Households, people caught away from home, and suppression units each decide for themselves, and every one of those decision models can be read and rewritten. Press G for the Agent Behaviour Composer: it holds the decision graph for each kind of agent, a test bench, and its own help.");
-    ui.label("Select an agent first and the composer's Live tab shows their behaviour running — every value on every box, with the path that produced the decision picked out. Press . to step one decision at a time, paused or not.");
+    ui.label("Households, people caught away from home, and suppression units each decide for themselves, and every one of those decision models can be read and rewritten. Press G for the Behavior editor: it holds the decision graph for each kind of agent, a test bench, and its own help.");
+    ui.label("Select an agent and press F2 for the live behavior debugger: its current decision, proposals, node values, active path and recent history. Press . to step one decision at a time, paused or not. The editor's Live view overlays the same trace on the graph.");
     controls_guide(
         ui,
         [
@@ -662,7 +658,7 @@ fn help_english(ui: &mut egui::Ui) {
             ),
             (
                 "Panels",
-                "/ find · B Entities · G Composer · F2 diagnostics · ? shortcuts",
+                "/ find · B Entities · G editor · F2 live debugger · ? shortcuts",
             ),
             ("Cancel", "Esc cancels the active map tool"),
         ],
@@ -685,12 +681,12 @@ fn help_italian(ui: &mut egui::Ui) {
     ui.label("Il pannello Comando a sinistra contiene esecuzione, parametri compatti per vento e umidità, inneschi e intervento delle squadre.");
     ui.label("Il pannello a larghezza fissa sulla destra trova famiglie, persone, veicoli e squadre; il dettaglio dell'entità selezionata appare subito sotto l'elenco.");
     ui.label(
-        "L'area in basso passa tra vista incidente, chat, diagnostica ed editor dei comportamenti.",
+        "L'area in basso passa tra vista incidente, chat, debugger del comportamento dell'agente selezionato ed editor dei comportamenti.",
     );
     ui.add_space(8.0);
     ui.heading("Perché si comportano così?");
-    ui.label("Famiglie, persone sorprese fuori casa e squadre di intervento decidono ciascuna per conto proprio, e ognuno di questi modelli decisionali si può leggere e riscrivere. Premi G per l'Agent Behaviour Composer: contiene il grafo decisionale di ogni tipo di agente, un banco di prova e la propria guida.");
-    ui.label("Seleziona prima un agente e la scheda Live del composer mostra il suo comportamento in funzione — ogni valore su ogni nodo, con evidenziato il percorso che ha prodotto la decisione. Premi . per avanzare di una decisione alla volta, anche in pausa.");
+    ui.label("Famiglie, persone sorprese fuori casa e squadre di intervento decidono ciascuna per conto proprio, e ognuno di questi modelli decisionali si può leggere e riscrivere. Premi G per l'editor dei comportamenti: contiene il grafo decisionale di ogni tipo di agente, un banco di prova e la propria guida.");
+    ui.label("Seleziona un agente e premi F2 per il debugger live: decisione corrente, proposte, valori dei nodi, percorso attivo e cronologia recente. Premi . per avanzare di una decisione alla volta, anche in pausa. La vista Live dell'editor sovrappone la stessa traccia al grafo.");
     controls_guide(
         ui,
         [
@@ -711,7 +707,7 @@ fn help_italian(ui: &mut egui::Ui) {
             ),
             (
                 "Pannelli",
-                "/ cerca · B Entities · G Composer · F2 diagnostica · ? scorciatoie",
+                "/ cerca · B Entities · G editor · F2 debugger live · ? scorciatoie",
             ),
             ("Annulla", "Esc annulla lo strumento attivo sulla mappa"),
         ],
@@ -731,120 +727,6 @@ fn controls_guide(ui: &mut egui::Ui, rows: [(&str, &str); 8]) {
                 ui.end_row();
             }
         });
-}
-
-/// Live developer information embedded in the bottom Debug tab.
-fn debug_body(
-    ui: &mut egui::Ui,
-    sim: &Sim,
-    orbit: &Query<&crate::camera::OrbitCamera>,
-    mode: crate::camera::CameraMode,
-    selected: Option<crate::inspect::Target>,
-    time: &Time,
-) {
-    let fps = if time.delta_seconds() > 0.0 {
-        1.0 / time.delta_seconds()
-    } else {
-        0.0
-    };
-    ui.horizontal(|ui| {
-        ui.colored_label(
-            if fps >= 45.0 {
-                egui::Color32::from_rgb(110, 210, 145)
-            } else {
-                egui::Color32::from_rgb(245, 170, 80)
-            },
-            format!("{fps:.0} fps · {:.1} ms", time.delta_seconds() * 1000.0),
-        );
-        ui.separator();
-        ui.label(format!("generation {}", sim.generation));
-        ui.label(format!("{} events", sim.history.log.len()));
-    });
-
-    ui.columns(3, |columns| {
-        columns[0].vertical(|ui| {
-            section(ui, "Simulation");
-            egui::Grid::new("debug_sim").num_columns(2).show(ui, |ui| {
-                for (label, value) in [
-                    (
-                        "Scenario",
-                        format!(
-                            "{} ({})",
-                            sim.scenario.metadata.name, sim.scenario.metadata.id
-                        ),
-                    ),
-                    (
-                        "Clock / speed",
-                        format!("T+{} · {:.0}x", sim.clock(), sim.speed),
-                    ),
-                    ("Seed", sim.seed.to_string()),
-                    (
-                        "Fire",
-                        format!("{} active cells", sim.fire.active_cells().len()),
-                    ),
-                    (
-                        "Agents",
-                        format!(
-                            "{} households · {} people · {} travellers",
-                            sim.agents.households.len(),
-                            sim.agents.people.len(),
-                            sim.agents.travellers.len()
-                        ),
-                    ),
-                    (
-                        "Units",
-                        format!(
-                            "{} total · {} working",
-                            sim.crews.units.len(),
-                            sim.crews.stats().working
-                        ),
-                    ),
-                ] {
-                    ui.label(label);
-                    ui.label(value);
-                    ui.end_row();
-                }
-            });
-        });
-        columns[1].vertical(|ui| {
-            section(ui, "View & selection");
-            if let Ok(orbit) = orbit.get_single() {
-                ui.label(format!(
-                    "camera {:?} · focus [{:.0}, {:.0}] · {:.0} m away",
-                    mode, orbit.focus.x, -orbit.focus.z, orbit.distance
-                ));
-            }
-            ui.label(match selected {
-                Some(t) => format!("selected: {:?}", t),
-                None => "selected: none".to_string(),
-            });
-            ui.add_space(8.0);
-            ui.weak("F12 saves a screenshot");
-        });
-        columns[2].vertical(|ui| {
-            section(ui, "Recent event log");
-            let events = sim.history.log.recent(10);
-            if events.is_empty() {
-                ui.weak("No events yet.");
-            } else {
-                for event in events {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "T+{:02}:{:02}",
-                                event.sim_time_s / 60,
-                                event.sim_time_s % 60
-                            ))
-                            .monospace()
-                            .weak(),
-                        );
-                        ui.label(format!("{:?}", event.subject));
-                        ui.label(crate::history::summarize(&event.kind, &event.detail));
-                    });
-                }
-            }
-        });
-    });
 }
 
 /// Lightweight feedback over the map. It is deliberately non-interactive so
