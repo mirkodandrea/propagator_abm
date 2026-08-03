@@ -2079,7 +2079,9 @@ dependencies = [
  "telemetry",
  "tiny_http",
  "uuid",
+ "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

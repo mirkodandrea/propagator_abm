@@ -46,6 +46,8 @@ mod textures;
 mod ui;
 mod units;
 mod vegetation;
+#[cfg(target_arch = "wasm32")]
+mod web_clipboard;
 
 use bevy::core_pipeline::bloom::BloomSettings;
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -94,8 +96,10 @@ fn main() -> anyhow::Result<()> {
         color: Color::srgb(0.72, 0.78, 0.92),
         brightness: 130.0,
     })
-    .add_plugins(EguiPlugin)
-    .add_plugins(fire_shader::FireShaderPlugin)
+    .add_plugins(EguiPlugin);
+    #[cfg(target_arch = "wasm32")]
+    app.add_plugins(web_clipboard::WebClipboardPlugin);
+    app.add_plugins(fire_shader::FireShaderPlugin)
     .add_plugins(retro::RetroShaderPlugin)
     .add_plugins(sky::SkyPlugin)
     .add_plugins(sea::SeaPlugin)
