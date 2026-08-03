@@ -739,7 +739,7 @@ fn parameter_badge(
                     ))
                     .small(),
                 )
-                .wrap(false),
+                .extend(),
             )
             .on_hover_text(spec.doc);
         });

@@ -489,6 +489,11 @@ fn panel_impl(ui: &mut egui::Ui, c: &mut Composer, editor_context: bool) {
         );
     }
 
+    ui.small(
+        "Bright outlines mark the current decision path. Parameter rows on those nodes show only \
+         the values the node actually read this tick.",
+    );
+
     // --- what it decided ----------------------------------------------------
     ui.add_space(4.0);
     let d = frame.decision;
@@ -655,4 +660,3 @@ pub fn transport_requests(mut sim: ResMut<Sim>, mut composer: ResMut<Composer>) 
         sim.request_step();
     }
 }
-
