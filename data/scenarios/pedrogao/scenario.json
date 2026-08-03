@@ -1,0 +1,57 @@
+{
+  "id": "pedrogao",
+  "name": "Pedr\u00f3g\u00e3o Grande, Leiria",
+  "description": "Real data scenario: scattered hamlets in steep eucalyptus and pine terrain in central Portugal, modelled on the June 2017 Pedrogao Grande wildfire complex -- 66 dead, most on the N236-1 ('road of death'), overtaken by a fire front outrunning the cars fleeing on it after dark. Synthetic population and behavioural priors; not a replay of the historical fire.",
+  "location": "Pedr\u00f3g\u00e3o Grande, Portugal",
+  "country": "Portugal",
+  "nationality": "Portuguese",
+  "region": "the pine and eucalyptus hills of central Portugal",
+  "localities": [
+    "Pedr\u00f3g\u00e3o Grande"
+  ],
+  "coordinates": [
+    39.9169,
+    -8.1478
+  ],
+  "utm_zone": 29,
+  "utm_corner": [
+    567720.0,
+    4413760.0
+  ],
+  "world_size_m": [
+    10240.0,
+    10240.0
+  ],
+  "fire_grid_size": [
+    512,
+    512
+  ],
+  "fire_cellsize_m": 20.0,
+  "buildings_count": 641,
+  "households_count": 750,
+  "people_count": 1562,
+  "scenario_type": "real",
+  "data_provenance": {
+    "fuel": "s3://cima-propagator-return/cogs/eu/eu_fuel12_utm_29.tif",
+    "dem": "s3://cima-propagator-return/cogs/eu/eu_dem_utm_29.tif",
+    "buildings": "OpenStreetMap (Overpass)",
+    "roads": "OpenStreetMap",
+    "hydrants": "OpenStreetMap",
+    "population": "Synthetic, placed on real footprints"
+  },
+  "creation_date": "2026-08-03",
+  "version": "1.0.0",
+  "tags": [
+    "real-data",
+    "inland",
+    "wui",
+    "leiria",
+    "portugal",
+    "steep-terrain",
+    "eucalyptus"
+  ],
+  "authors": [
+    "Mirko D'Andrea"
+  ],
+  "license": "EUPL-1.2"
+}

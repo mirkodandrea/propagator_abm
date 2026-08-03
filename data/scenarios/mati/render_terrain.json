@@ -1,0 +1,21 @@
+{
+  "description": "rendering heightfield, independent of the 20 m fire grid",
+  "rows": 2048,
+  "cols": 2048,
+  "posting_m": 5.0,
+  "dtype": "float32",
+  "layout": "row-major, row 0 = north edge",
+  "world_size_m": [
+    10240.0,
+    10240.0
+  ],
+  "utm_origin": [
+    746560.0000000001,
+    4210399.999999999
+  ],
+  "crs": "EPSG:32634",
+  "source": "eu_dem_utm_32 @20m, cubic resample + gaussian smooth",
+  "smooth_sigma_source_cells": 1.0,
+  "elev_min": 139.91384887695312,
+  "elev_max": 1096.7196044921875
+}

@@ -1,0 +1,60 @@
+{
+  "id": "rhodes",
+  "name": "Lardos, Rhodes",
+  "description": "Real data scenario: touristic villages and beach resorts on the southeastern coast of Rhodes, modelled on the July 2023 Rhodes wildfires -- Greece's largest-ever evacuation, roughly 20,000 people moved from Lardos, Kiotari, Gennadi and nearby resorts, thousands by boat off beaches the road network could not clear in time. No deaths. Synthetic population and behavioural priors; not a replay of the historical fire.",
+  "location": "Lardos, Rhodes, Greece",
+  "country": "Greece",
+  "nationality": "Greek",
+  "region": "the southeastern coast of Rhodes",
+  "localities": [
+    "\u03a0\u03b5\u03cd\u03ba\u03bf\u03b9",
+    "Kiotari",
+    "\u039a\u03ac\u03bb\u03b1\u03b8\u03bf\u03c2",
+    "Kalathos"
+  ],
+  "coordinates": [
+    36.0933,
+    28.017
+  ],
+  "utm_zone": 35,
+  "utm_corner": [
+    586440.0,
+    3989660.0
+  ],
+  "world_size_m": [
+    10240.0,
+    10240.0
+  ],
+  "fire_grid_size": [
+    512,
+    512
+  ],
+  "fire_cellsize_m": 20.0,
+  "buildings_count": 2004,
+  "households_count": 750,
+  "people_count": 1571,
+  "scenario_type": "real",
+  "data_provenance": {
+    "fuel": "s3://cima-propagator-return/cogs/eu/eu_fuel12_utm_35.tif",
+    "dem": "s3://cima-propagator-return/cogs/eu/eu_dem_utm_35.tif",
+    "buildings": "OpenStreetMap (Overpass)",
+    "roads": "OpenStreetMap",
+    "hydrants": "OpenStreetMap",
+    "population": "Synthetic, placed on real footprints"
+  },
+  "creation_date": "2026-08-03",
+  "version": "1.0.0",
+  "tags": [
+    "real-data",
+    "coastal",
+    "wui",
+    "rhodes",
+    "greece",
+    "tourist",
+    "island"
+  ],
+  "authors": [
+    "Mirko D'Andrea"
+  ],
+  "license": "EUPL-1.2"
+}
