@@ -22,6 +22,35 @@ fn discover_scenarios() -> anyhow::Result<()> {
 }
 
 #[test]
+fn registry_separates_real_and_development_scenarios() -> anyhow::Result<()> {
+    let data_path = Path::new("../../data");
+    let registry = ScenarioRegistry::discover(data_path)?;
+    let real = registry.real_scenarios();
+    let development = registry.development_scenarios();
+
+    assert!(
+        !real.is_empty(),
+        "the catalog should contain real incidents"
+    );
+    assert!(
+        !development.is_empty(),
+        "the catalog should contain development labs"
+    );
+    assert!(real.iter().all(|scenario| !scenario.is_dev));
+    assert!(development.iter().all(|scenario| scenario.is_dev));
+    assert_eq!(real.len() + development.len(), registry.list().len());
+    assert!(
+        !registry
+            .default_scenario()
+            .expect("validated default")
+            .is_dev,
+        "the player-facing default must be a real incident"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn load_every_registered_scenario() -> anyhow::Result<()> {
     let data_path = Path::new("../../data");
     let registry = ScenarioRegistry::discover(data_path)?;

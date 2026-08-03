@@ -48,13 +48,14 @@ and two people editing different profiles do not conflict.
 - Skip selector: `SPOTORNO_SCENARIO=scenario_id cargo run --release -p game`
 
 **Web build:**
-- Default: loads spotorno (no selector in web version)
-- Override: `SPOTORNO_WEB_SCENARIO=scenario_id cargo build --release --target wasm32-unknown-unknown -p game`
+- Shows the same in-game selector and scenarios as the desktop build; all
+  registered assets and the shipped behavior library are embedded in WASM.
 
 ### Scenario selector UI
 
 When you run the game without setting `SPOTORNO_SCENARIO`, you'll see the scenario selector window on startup:
 - Lists all scenarios from `scenarios.json`
+- Separates real incidents from development laboratories
 - Shows metadata: buildings count, households, people, location
 - Shows grid dimensions
 - Dev scenarios marked with 🔧 badge

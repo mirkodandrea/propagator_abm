@@ -144,6 +144,22 @@ impl ScenarioRegistry {
         list
     }
 
+    /// List player-facing real incidents, excluding development laboratories.
+    pub fn real_scenarios(&self) -> Vec<&ScenarioMetadata> {
+        self.list()
+            .into_iter()
+            .filter(|scenario| !scenario.is_dev)
+            .collect()
+    }
+
+    /// List synthetic/development scenarios used to exercise the model.
+    pub fn development_scenarios(&self) -> Vec<&ScenarioMetadata> {
+        self.list()
+            .into_iter()
+            .filter(|scenario| scenario.is_dev)
+            .collect()
+    }
+
     /// Get metadata for a specific scenario by ID.
     pub fn get(&self, id: &str) -> Option<&ScenarioMetadata> {
         self.scenarios.get(id)

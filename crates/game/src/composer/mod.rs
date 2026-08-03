@@ -552,6 +552,7 @@ impl Composer {
 /// Lenient about individual files by design: one graph with a stray comma costs
 /// that graph and not the other nine, and the report is what turns a skipped
 /// file from a silent loss into a line in the Help tab.
+#[cfg(not(target_arch = "wasm32"))]
 fn read_library(root: &PathBuf) -> (Library, Vec<behavior::FileReport>) {
     match Library::load_dir_reported(root) {
         Ok(r) => (r.library, r.files),
@@ -560,6 +561,14 @@ fn read_library(root: &PathBuf) -> (Library, Vec<behavior::FileReport>) {
             (Library::default(), Vec::new())
         }
     }
+}
+
+/// Browser builds have no filesystem from which to discover the authored
+/// library. The built-in form is generated from the same shipped graphs and
+/// profiles and keeps the self-contained WASM bundle launchable.
+#[cfg(target_arch = "wasm32")]
+fn read_library(_root: &PathBuf) -> (Library, Vec<behavior::FileReport>) {
+    (behavior::defaults::default_library(), Vec::new())
 }
 
 /// Editor chrome. Built per frame rather than stored: `SnarlStyle` carries a

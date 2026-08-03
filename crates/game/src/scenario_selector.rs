@@ -8,6 +8,18 @@ use fire::Weather;
 use scenario::ScenarioRegistry;
 use std::path::PathBuf;
 
+struct ScenarioRow {
+    id: String,
+    name: String,
+    buildings: usize,
+    households: usize,
+    people: usize,
+    location: String,
+    description: String,
+    grid_size: [usize; 2],
+    is_dev: bool,
+}
+
 /// Wrapper for data directory path
 #[derive(Resource, Clone)]
 pub struct DataPath(pub PathBuf);
@@ -146,35 +158,26 @@ pub fn show_selector_ui(
     };
 
     // Prepare data to avoid borrow conflicts
-    let scenarios_data: Vec<(
-        String,
-        String,
-        usize,
-        usize,
-        usize,
-        String,
-        String,
-        [usize; 2],
-    )> = registry
-        .list()
-        .iter()
-        .map(|s| {
-            (
-                s.id.clone(),
-                s.name.clone(),
-                s.buildings_count,
-                s.households_count,
-                s.people_count,
-                s.location.clone(),
-                s.description.clone(),
-                s.fire_grid_size,
-            )
+    let scenarios_data: Vec<ScenarioRow> = registry
+        .real_scenarios()
+        .into_iter()
+        .chain(registry.development_scenarios())
+        .map(|s| ScenarioRow {
+            id: s.id.clone(),
+            name: s.name.clone(),
+            buildings: s.buildings_count,
+            households: s.households_count,
+            people: s.people_count,
+            location: s.location.clone(),
+            description: s.description.clone(),
+            grid_size: s.fire_grid_size,
+            is_dev: s.is_dev,
         })
         .collect();
 
     let default_id = registry.default_id().to_string();
     let mut launch = false;
-    let ids: Vec<&str> = scenarios_data.iter().map(|row| row.0.as_str()).collect();
+    let ids: Vec<&str> = scenarios_data.iter().map(|row| row.id.as_str()).collect();
     let current = selector
         .selected
         .as_deref()
@@ -212,75 +215,86 @@ pub fn show_selector_ui(
                     .max_height(ui.available_height() - 70.0)
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        for (
-                            id,
-                            name,
-                            buildings,
-                            households,
-                            people,
-                            location,
-                            description,
-                            grid_size,
-                        ) in scenarios_data
-                        {
-                            let is_selected = selector.selected.as_ref() == Some(&id);
-                            let is_test = id.starts_with("test_");
+                        for (is_dev, heading) in [
+                            (false, "Real incidents"),
+                            (true, "Development laboratories"),
+                        ] {
+                            if !scenarios_data.iter().any(|row| row.is_dev == is_dev) {
+                                continue;
+                            }
 
-                            // One frame per scenario, so the metadata belongs to
-                            // the card it describes. The old list put the detail
-                            // *below* the row, which meant selecting a different
-                            // scenario reflowed everything under the cursor.
-                            let frame = egui::Frame::group(ui.style())
-                                .fill(if is_selected {
-                                    ui.visuals().selection.bg_fill.gamma_multiply(0.35)
-                                } else {
-                                    ui.visuals().faint_bg_color
-                                })
-                                .stroke(if is_selected {
-                                    egui::Stroke::new(1.5, ui.visuals().selection.stroke.color)
-                                } else {
-                                    ui.visuals().widgets.noninteractive.bg_stroke
+                            ui.label(egui::RichText::new(heading).strong().size(16.0));
+                            ui.add_space(4.0);
+
+                            for row in scenarios_data.iter().filter(|row| row.is_dev == is_dev) {
+                                let is_selected = selector.selected.as_ref() == Some(&row.id);
+
+                                // One frame per scenario, so the metadata belongs to
+                                // the card it describes. The old list put the detail
+                                // *below* the row, which meant selecting a different
+                                // scenario reflowed everything under the cursor.
+                                let frame = egui::Frame::group(ui.style())
+                                    .fill(if is_selected {
+                                        ui.visuals().selection.bg_fill.gamma_multiply(0.35)
+                                    } else {
+                                        ui.visuals().faint_bg_color
+                                    })
+                                    .stroke(if is_selected {
+                                        egui::Stroke::new(
+                                            1.5,
+                                            ui.visuals().selection.stroke.color,
+                                        )
+                                    } else {
+                                        ui.visuals().widgets.noninteractive.bg_stroke
+                                    });
+
+                                let r = frame.show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            egui::RichText::new(&row.name).strong().size(15.0),
+                                        );
+                                        if row.is_dev {
+                                            ui.colored_label(egui::Color32::YELLOW, "🔧 DEV");
+                                        }
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                ui.small(format!("📍 {}", row.location));
+                                            },
+                                        );
+                                    });
+                                    ui.small(row.description.as_str());
+                                    ui.add_space(2.0);
+                                    ui.small(format!(
+                                        "{} buildings · {} households · {} people · {}×{} cells @ 20 m",
+                                        row.buildings,
+                                        row.households,
+                                        row.people,
+                                        row.grid_size[0],
+                                        row.grid_size[1]
+                                    ));
                                 });
 
-                            let r = frame.show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new(&name).strong().size(15.0));
-                                    if is_test {
-                                        ui.colored_label(egui::Color32::YELLOW, "🔧 DEV");
-                                    }
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            ui.small(format!("📍 {location}"));
-                                        },
-                                    );
-                                });
-                                ui.small(description.as_str());
-                                ui.add_space(2.0);
-                                ui.small(format!(
-                                    "{buildings} buildings · {households} households · \
-                                     {people} people · {}×{} cells @ 20 m",
-                                    grid_size[0], grid_size[1]
-                                ));
-                            });
+                                // The whole card is the hit target, not just its
+                                // title: a click that lands between two words of the
+                                // description and does nothing reads as a broken UI.
+                                let hit = ui.interact(
+                                    r.response.rect,
+                                    egui::Id::new(("scenario_card", &row.id)),
+                                    egui::Sense::click(),
+                                );
+                                if hit.clicked() {
+                                    selector.selected = Some(row.id.clone());
+                                }
+                                if hit.double_clicked() {
+                                    selector.selected = Some(row.id.clone());
+                                    launch = true;
+                                }
+                                ui.add_space(6.0);
+                            }
 
-                            // The whole card is the hit target, not just its
-                            // title: a click that lands between two words of the
-                            // description and does nothing reads as a broken UI.
-                            let hit = ui.interact(
-                                r.response.rect,
-                                egui::Id::new(("scenario_card", &id)),
-                                egui::Sense::click(),
-                            );
-                            if hit.clicked() {
-                                selector.selected = Some(id.clone());
-                            }
-                            if hit.double_clicked() {
-                                selector.selected = Some(id.clone());
-                                launch = true;
-                            }
-                            ui.add_space(6.0);
+                            ui.add_space(8.0);
                         }
                     });
 
