@@ -13,6 +13,7 @@
 //! behind. A file written by [`LlmConfig::save`] is created with owner-only
 //! permissions on Unix for the same reason.
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -30,7 +31,8 @@ use serde::{Deserialize, Serialize};
 /// `export KEY=value` is accepted because that is what a shell file looks like.
 /// **Existing environment variables always win**, so `OPENROUTER_API_KEY=… cargo
 /// run` still overrides the file.
-pub fn load_dotenv() -> Option<PathBuf> {
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_dotenv() -> Option<String> {
     let mut dir = std::env::current_dir().ok()?;
     for _ in 0..4 {
         let candidate = dir.join(".env");
@@ -41,7 +43,7 @@ pub fn load_dotenv() -> Option<PathBuf> {
                         std::env::set_var(&key, &value);
                     }
                 }
-                return Some(candidate);
+                return Some(candidate.display().to_string());
             }
         }
         if !dir.pop() {
@@ -50,6 +52,9 @@ pub fn load_dotenv() -> Option<PathBuf> {
     }
     None
 }
+
+#[cfg(target_arch = "wasm32")]
+pub fn load_dotenv() -> Option<String> { None }
 
 fn parse_dotenv(text: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
@@ -148,6 +153,7 @@ impl LlmConfig {
     /// A malformed file is reported rather than silently replaced: someone who
     /// hand-edited their config and made a typo should be told, not quietly
     /// switched back to a default model and billed for it.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load() -> Result<LlmConfig> {
         let path = config_path();
         if !path.exists() {
@@ -156,6 +162,18 @@ impl LlmConfig {
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
         serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn load() -> Result<LlmConfig> {
+        let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) else {
+            return Ok(LlmConfig::default());
+        };
+        let Some(text) = storage.get_item(STORAGE_KEY)
+            .map_err(|e| anyhow::anyhow!(format!("reading browser LLM settings: {e:?}")))? else {
+            return Ok(LlmConfig::default());
+        };
+        serde_json::from_str(&text).context("parsing browser LLM settings")
     }
 
     /// The same, but never fails: a broken config file must not stop the game
@@ -168,6 +186,7 @@ impl LlmConfig {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn save(&self) -> Result<()> {
         let path = config_path();
         if let Some(dir) = path.parent() {
@@ -178,6 +197,16 @@ impl LlmConfig {
         std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
         restrict_permissions(&path);
         Ok(())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn save(&self) -> Result<()> {
+        let storage = web_sys::window()
+            .and_then(|w| w.local_storage().ok().flatten())
+            .context("browser storage is unavailable")?;
+        storage
+            .set_item(STORAGE_KEY, &serde_json::to_string(self)? )
+            .map_err(|e| anyhow::anyhow!(format!("saving browser LLM settings: {e:?}")))
     }
 
     /// The key actually used for a request: the environment first, then the
@@ -249,7 +278,68 @@ impl LlmConfig {
     }
 }
 
+/// Ask the selected provider for the models it currently exposes.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn fetch_models(config: &LlmConfig) -> Result<Vec<String>> {
+    let response = match config.provider {
+        Provider::OpenRouter => ureq::get("https://openrouter.ai/api/v1/models")
+            .set("Authorization", &format!("Bearer {}", config.api_key()))
+            .call()
+            .context("requesting OpenRouter models")?,
+        Provider::Ollama => ureq::get(&format!("{}/api/tags", config.ollama_url.trim_end_matches('/')))
+            .call()
+            .context("requesting Ollama models")?,
+    };
+    let value: serde_json::Value = response.into_json().context("reading provider models")?;
+    let mut models: Vec<String> = match config.provider {
+        Provider::OpenRouter => value["data"].as_array().into_iter().flatten()
+            .filter_map(|m| m["id"].as_str().map(str::to_owned)).collect(),
+        Provider::Ollama => value["models"].as_array().into_iter().flatten()
+            .filter_map(|m| m["name"].as_str().map(str::to_owned)).collect(),
+    };
+    models.sort();
+    Ok(models)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn fetch_models(config: &LlmConfig) -> Result<Vec<String>> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+    use web_sys::{Request, RequestInit, RequestMode, Response};
+
+    let (url, key) = match config.provider {
+        Provider::OpenRouter => ("https://openrouter.ai/api/v1/models".to_string(), Some(config.api_key())),
+        Provider::Ollama => (format!("{}/api/tags", config.ollama_url.trim_end_matches('/')), None),
+    };
+    let mut init = RequestInit::new();
+    init.set_method("GET");
+    init.set_mode(RequestMode::Cors);
+    let request = Request::new_with_str_and_init(&url, &init)
+        .map_err(|e| anyhow::anyhow!(format!("creating model request: {e:?}")))?;
+    if let Some(key) = key.filter(|k| !k.trim().is_empty()) {
+        request.headers().set("Authorization", &format!("Bearer {key}"))
+            .map_err(|e| anyhow::anyhow!(format!("setting model request headers: {e:?}")))?;
+    }
+    let window = web_sys::window().context("browser window is unavailable")?;
+    let response = JsFuture::from(window.fetch_with_request(&request)).await
+        .map_err(|e| anyhow::anyhow!(format!("requesting provider models: {e:?}")))?;
+    let response: Response = response.dyn_into().map_err(|e| anyhow::anyhow!(format!("invalid model response: {e:?}")))?;
+    if !response.ok() { return Err(anyhow::anyhow!("provider returned HTTP {}", response.status())); }
+    let text = JsFuture::from(response.text().map_err(|e| anyhow::anyhow!(format!("reading provider models: {e:?}")))?).await
+        .map_err(|e| anyhow::anyhow!(format!("reading provider models: {e:?}")))?;
+    let text = text.as_string().ok_or_else(|| anyhow::anyhow!("provider returned a non-text response"))?;
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| anyhow::anyhow!(format!("parsing provider models: {e}")))?;
+    let mut models: Vec<String> = match config.provider {
+        Provider::OpenRouter => value["data"].as_array().into_iter().flatten().filter_map(|m| m["id"].as_str().map(str::to_owned)).collect(),
+        Provider::Ollama => value["models"].as_array().into_iter().flatten().filter_map(|m| m["name"].as_str().map(str::to_owned)).collect(),
+    };
+    models.sort();
+    Ok(models)
+}
+
 /// `~/.config/spotorno/llm.json`, or `SPOTORNO_LLM_CONFIG`.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn config_path() -> PathBuf {
     if let Ok(p) = std::env::var("SPOTORNO_LLM_CONFIG") {
         return PathBuf::from(p);
@@ -257,12 +347,24 @@ pub fn config_path() -> PathBuf {
     config_dir().join("llm.json")
 }
 
+#[cfg(target_arch = "wasm32")]
+const STORAGE_KEY: &str = "spotorno.llm.settings";
+
+pub fn storage_label() -> &'static str {
+    #[cfg(target_arch = "wasm32")]
+    { "this browser's local storage" }
+    #[cfg(not(target_arch = "wasm32"))]
+    { "your local config file" }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn home() -> PathBuf {
     std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."))
 }
 
 /// Hand-rolled rather than pulling in `dirs`: two paths, one platform family,
 /// and the XDG variables are the whole of the rule anyone here would expect.
+#[cfg(not(target_arch = "wasm32"))]
 fn config_dir() -> PathBuf {
     match std::env::var("XDG_CONFIG_HOME") {
         Ok(p) if !p.is_empty() => PathBuf::from(p).join("spotorno"),
@@ -270,13 +372,13 @@ fn config_dir() -> PathBuf {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(not(target_arch = "wasm32"), unix))]
 fn restrict_permissions(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
 }
 
-#[cfg(not(unix))]
+#[cfg(all(not(target_arch = "wasm32"), not(unix)))]
 fn restrict_permissions(_path: &Path) {}
 
 #[cfg(test)]

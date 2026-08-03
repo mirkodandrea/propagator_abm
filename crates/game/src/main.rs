@@ -62,7 +62,7 @@ fn main() -> anyhow::Result<()> {
     // the game ignored. Existing variables still win — see
     // `chat::config::load_dotenv`.
     if let Some(path) = chat::config::load_dotenv() {
-        println!("loaded environment from {}", path.display());
+        println!("loaded environment from {path}");
     }
 
     let data = std::env::var("SPOTORNO_DATA").unwrap_or_else(|_| "data".to_string());

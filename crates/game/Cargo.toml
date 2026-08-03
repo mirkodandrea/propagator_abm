@@ -29,3 +29,6 @@ egui-snarl = { version = "0.4.4", features = ["serde"] }
 # call site.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tiny_http = "0.12"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"

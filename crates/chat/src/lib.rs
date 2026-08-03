@@ -43,6 +43,7 @@ pub mod provider;
 pub mod subject;
 
 pub use config::{LlmConfig, Provider};
+pub use config::fetch_models;
 pub use persona::Persona;
 pub use prompt::{Dossier, Fact, TimelineEntry};
 pub use provider::{Client, Message, Role};

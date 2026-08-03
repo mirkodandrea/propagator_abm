@@ -58,6 +58,7 @@ enum Job {
     Reply,
     /// The settings dialog's "Test" button.
     Test,
+    Models,
 }
 
 /// One thing a worker thread has to say.
@@ -65,6 +66,7 @@ enum Note {
     Delta(String),
     Done(String),
     Failed(String),
+    Models(Result<Vec<String>, String>),
 }
 
 struct Pending {
@@ -87,6 +89,8 @@ pub struct Interview {
     pub subject: Option<SubjectRef>,
     pub input: String,
     pub config: LlmConfig,
+    pub models: Vec<String>,
+    pub model_status: String,
     /// A line under the transcript: the last failure, or what is happening.
     pub status: String,
     /// The settings dialog's own result line, kept apart from `status` so a
@@ -119,6 +123,8 @@ impl Default for Interview {
             subject: None,
             input: String::new(),
             config,
+            models: Vec::new(),
+            model_status: String::new(),
             status: error
                 .map(|e| format!("LLM settings: {e}"))
                 .unwrap_or_default(),
@@ -819,6 +825,26 @@ fn spawn(_config: LlmConfig, _messages: Vec<Message>) -> mpsc::Receiver<Note> {
     rx
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_models(config: LlmConfig) -> mpsc::Receiver<Note> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = chat::fetch_models(&config).map_err(|e| format!("{e:#}"));
+        let _ = tx.send(Note::Models(result));
+    });
+    rx
+}
+
+#[cfg(target_arch = "wasm32")]
+fn spawn_models(config: LlmConfig) -> mpsc::Receiver<Note> {
+    let (tx, rx) = mpsc::channel();
+    wasm_bindgen_futures::spawn_local(async move {
+        let result = chat::fetch_models(&config).await.map_err(|e| format!("{e:#}"));
+        let _ = tx.send(Note::Models(result));
+    });
+    rx
+}
+
 /// The messages one question turns into: the system prompt rebuilt against the
 /// current clock, the transcript so far, and the question.
 ///
@@ -847,6 +873,7 @@ pub fn poll(mut interview: ResMut<Interview>, sim: ResMut<Sim>) {
         return;
     };
     let mut finished: Option<(Job, SubjectRef, Result<String, String>)> = None;
+    let mut models_result = None;
     let mut deltas = String::new();
     {
         let Ok(rx) = pending.rx.lock() else { return };
@@ -859,6 +886,10 @@ pub fn poll(mut interview: ResMut<Interview>, sim: ResMut<Sim>) {
                 }
                 Ok(Note::Failed(e)) => {
                     finished = Some((pending.job, pending.subject, Err(e)));
+                    break;
+                }
+                Ok(Note::Models(result)) => {
+                    models_result = Some(result);
                     break;
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
@@ -874,6 +905,17 @@ pub fn poll(mut interview: ResMut<Interview>, sim: ResMut<Sim>) {
                 }
             }
         }
+    }
+    if let Some(result) = models_result {
+        interview.pending = None;
+        match result {
+            Ok(models) => {
+                interview.models = models;
+                interview.model_status = format!("{} models available", interview.models.len());
+            }
+            Err(e) => interview.model_status = format!("✖ {e}"),
+        }
+        return;
     }
     pending.partial.push_str(&deltas);
 
@@ -919,6 +961,7 @@ pub fn poll(mut interview: ResMut<Interview>, sim: ResMut<Sim>) {
                 format!("✔ {} answered: {}", interview.config.model(), text.trim());
         }
         (Job::Test, Err(e)) => interview.settings_status = format!("✖ {e}"),
+        (Job::Models, _) => {}
     }
 }
 
@@ -1618,6 +1661,7 @@ pub fn settings_window(
     let mut open = true;
     let mut save = false;
     let mut test = false;
+    let mut refresh_models = false;
 
     egui::Window::new("LLM settings")
         .open(&mut open)
@@ -1641,6 +1685,7 @@ pub fn settings_window(
 
             match interview.config.provider {
                 chat::Provider::OpenRouter => {
+                    let models = interview.models.clone();
                     let env_model = interview.config.model_from_env();
                     egui::Grid::new("openrouter").num_columns(2).show(ui, |ui| {
                         ui.label("Model");
@@ -1653,6 +1698,13 @@ pub fn settings_window(
                                 ui.label(m).on_hover_text("set by OPENROUTER_MODEL");
                             }
                             None => {
+                                egui::ComboBox::from_id_source("openrouter-model")
+                                    .selected_text(interview.config.openrouter_model.clone())
+                                    .show_ui(ui, |ui| {
+                                        for model in &models {
+                                            ui.selectable_value(&mut interview.config.openrouter_model, model.clone(), model);
+                                        }
+                                    });
                                 ui.text_edit_singleline(&mut interview.config.openrouter_model);
                             }
                         }
@@ -1670,6 +1722,8 @@ pub fn settings_window(
                         }
                         ui.end_row();
                     });
+                    if ui.button("Refresh models from OpenRouter").clicked() { refresh_models = true; }
+                    if !interview.model_status.is_empty() { ui.small(&interview.model_status); }
                     if interview.config.key_from_env() || env_model.is_some() {
                         ui.small(
                             "Read from the environment (a .env at the repository root counts), \
@@ -1680,15 +1734,25 @@ pub fn settings_window(
                     }
                 }
                 chat::Provider::Ollama => {
+                    let models = interview.models.clone();
                     egui::Grid::new("ollama").num_columns(2).show(ui, |ui| {
                         ui.label("Server");
                         ui.text_edit_singleline(&mut interview.config.ollama_url);
                         ui.end_row();
 
                         ui.label("Model");
+                        egui::ComboBox::from_id_source("ollama-model")
+                            .selected_text(interview.config.ollama_model.clone())
+                            .show_ui(ui, |ui| {
+                                for model in &models {
+                                    ui.selectable_value(&mut interview.config.ollama_model, model.clone(), model);
+                                }
+                            });
                         ui.text_edit_singleline(&mut interview.config.ollama_model);
                         ui.end_row();
                     });
+                    if ui.button("Refresh models from Ollama").clicked() { refresh_models = true; }
+                    if !interview.model_status.is_empty() { ui.small(&interview.model_status); }
                     ui.small("Needs `ollama serve` running, and the model already pulled.");
                 }
             }
@@ -1732,10 +1796,10 @@ pub fn settings_window(
             }
             ui.add_space(4.0);
             ui.small(format!(
-                "Saved to {}",
-                chat::config::config_path().display()
+                "Saved in {}",
+                chat::config::storage_label()
             ));
-            ui.small("Never written into the repository, and readable only by you.");
+            ui.small("The API key is stored locally and is never written into the repository.");
         });
 
     if save {
@@ -1743,6 +1807,11 @@ pub fn settings_window(
             Ok(()) => "Saved.".to_string(),
             Err(e) => format!("✖ could not save: {e:#}"),
         };
+    }
+    if refresh_models && !interview.busy() {
+        interview.model_status = "loading models…".to_string();
+        let subject = interview.subject.unwrap_or_else(|| SubjectRef::new(SubjectKind::Household, 0));
+        interview.pending = Some(Pending { job: Job::Models, subject, rx: std::sync::Mutex::new(spawn_models(interview.config.clone())), partial: String::new() });
     }
     if test && !interview.busy() {
         match interview.config.readiness() {
