@@ -1,10 +1,9 @@
 //! Scenario selector UI panel shown at startup.
 
-use crate::sim::Sim;
+use crate::sim::{opening_conditions, Sim};
 use crate::AppState;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
-use fire::Weather;
 use scenario::ScenarioRegistry;
 use std::path::PathBuf;
 
@@ -106,7 +105,8 @@ pub fn handle_launch_selection(
             );
 
             // Create Sim
-            match Sim::new(scenario, Weather::default(), 42, composer.lib.clone()) {
+            let (weather, radius_m) = opening_conditions(&scenario_id);
+            match Sim::new(scenario, weather, radius_m, 42, composer.lib.clone()) {
                 Ok(sim) => {
                     // Update window title
                     if let Ok(mut win) = window.get_single_mut() {

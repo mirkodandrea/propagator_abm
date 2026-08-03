@@ -1155,7 +1155,10 @@ pub fn wildfire_body(
     }
     if replan {
         let dir = sim.weather.wind_dir_deg;
-        let plan = fire::plan_ignition(&sim.scenario, dir, crate::sim::START_RADIUS_M);
+        // The scenario's own opening radius, not always Spotorno's: a wind
+        // replan on `mati` or `pedrogao` must not silently widen or narrow
+        // the fire back to `START_RADIUS_M`.
+        let plan = fire::plan_ignition(&sim.scenario, dir, sim.ignition.radius_m);
         info!(
             "ignition replanned for wind from {dir:.0}°: ({}, {}), {} households downwind",
             plan.centre.row, plan.centre.col, plan.households_downwind

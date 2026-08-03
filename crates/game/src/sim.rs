@@ -21,6 +21,52 @@ use scenario::{Cell, Pos, Scenario};
 /// threatens 137 while burning half as much ground as 500 m. 250 m it is.
 pub const START_RADIUS_M: f32 = 250.0;
 
+/// Opening weather and start radius for a named real scenario.
+///
+/// `Weather::default()` and `START_RADIUS_M` were tuned once, against
+/// Spotorno's tramontana alone, and every other real scenario silently
+/// inherited them — a north wind blowing toward the sea has no reason to be
+/// the right start for a hillside above the Attica coast. Swept per place in
+/// `crates/fire/tests/real_scenario_ignitions.rs` /
+/// `real_scenario_ignitions_fine.rs`: coarse over 8 wind directions and three
+/// radii, then fine over a finer radius grid at a bearing grounded in the
+/// place's own historical fire rather than whichever direction maximised
+/// threatened households.
+///
+///  - `mati`: WNW, ~293°, the reported sustained bearing for the July 2018
+///    Attica fire (32-56 km/h first two hours). 225 m: 56 households
+///    threatened at peak, 12 with accumulated damage.
+///  - `pedrogao`: ~315°, the bearing the fire rotated onto around 18:05 under
+///    convective outflow ahead of the storm that overran the N236-1. This
+///    window is extreme at every radius tried (300-480 households
+///    threatened) — the real event was one of the fastest-moving fires
+///    recorded in Europe — so the smallest radius that reliably establishes
+///    is the honest choice: 150 m still threatens 366 and damages 103.
+///  - `rhodes`: ~315°, northwesterly meltemi (the southeastern-Aegean form,
+///    not the northerly one further up the chain). 200 m: 102 households
+///    threatened, 22 damaged, without the burn area climbing past 90 ha.
+///
+/// Anything not listed — every synthetic ABM-lab scenario, and any real place
+/// added and not yet measured — falls back to Spotorno's own tuning, which is
+/// at least a real, reasoned start rather than an arbitrary one.
+pub fn opening_conditions(scenario_id: &str) -> (Weather, f32) {
+    match scenario_id {
+        "mati" => (
+            Weather { wind_dir_deg: 293.0, wind_speed_kmh: 45.0, moisture_pct: 5.0 },
+            225.0,
+        ),
+        "pedrogao" => (
+            Weather { wind_dir_deg: 315.0, wind_speed_kmh: 45.0, moisture_pct: 5.0 },
+            150.0,
+        ),
+        "rhodes" => (
+            Weather { wind_dir_deg: 315.0, wind_speed_kmh: 30.0, moisture_pct: 6.0 },
+            200.0,
+        ),
+        _ => (Weather::default(), START_RADIUS_M),
+    }
+}
+
 /// Never advance more than this much simulated time in a single frame, however
 /// far behind the accumulator has fallen.
 const MAX_STEP_PER_FRAME_S: f32 = 30.0;
@@ -158,6 +204,7 @@ impl Sim {
     pub fn new(
         scenario: Scenario,
         weather: Weather,
+        radius_m: f32,
         seed: u64,
         behaviour: behavior::Library,
     ) -> anyhow::Result<Sim> {
@@ -168,7 +215,7 @@ impl Sim {
         // A going fire at the WUI edge, not a single cell: see
         // FireSim::ignite_patch and fire::ignition for why both the size and
         // the placement matter.
-        let ignition = fire::plan_ignition(&scenario, weather.wind_dir_deg, START_RADIUS_M);
+        let ignition = fire::plan_ignition(&scenario, weather.wind_dir_deg, radius_m);
         // println, not info!: Sim::new runs before Bevy installs its logger.
         println!(
             "ignition ({}, {}) r={:.0} m: {} households downwind, corridor {:.0}% burnable",
@@ -579,7 +626,6 @@ pub fn step_fire(mut sim: ResMut<Sim>, time: Res<Time>) {
 #[cfg(test)]
 mod tests {
     use super::Sim;
-    use fire::Weather;
     use scenario::{Scenario, ScenarioRegistry};
 
     #[test]
@@ -589,9 +635,11 @@ mod tests {
 
         for metadata in registry.list() {
             let scenario = Scenario::load_by_id(&data_dir, &metadata.id)?;
+            let (weather, radius_m) = super::opening_conditions(&metadata.id);
             Sim::new(
                 scenario,
-                Weather::default(),
+                weather,
+                radius_m,
                 42,
                 behavior::defaults::default_library(),
             )

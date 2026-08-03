@@ -591,6 +591,34 @@ set against itself and record one spot per connected component, at its centroid.
 The same shape of mistake is waiting in any "count the new things" pass over a
 raster.
 
+**38. A tuned constant is scenario-specific, and a global one silently
+reapplies the wrong scenario's tuning to the next one.** `START_RADIUS_M` and
+`Weather::default()` (tramontana, 35 km/h from N, 6% moisture) were sized
+empirically against Spotorno alone (finding 4) and, once `mati`, `pedrogao`
+and `rhodes` were baked (finding 34), every one of them opened with a north
+wind blowing toward the sea and a fire radius chosen for Spotorno's own
+corridor — plausible-looking, since `fire::plan_ignition` still finds *a*
+downwind population for any wind direction on any window, so nothing errored
+and nothing looked wrong on screen. Swept per place in
+`crates/fire/tests/real_scenario_ignitions.rs`, at a wind bearing grounded in
+that place's own historical fire rather than whichever direction happens to
+maximise threatened households — WNW for `mati` (the reported sustained
+bearing of the 2018 Attica fire), ~315° for `pedrogao` (the bearing the fire
+rotated onto under convective outflow before it overran the N236-1) and ~315°
+for `rhodes` (the southeastern-Aegean form of the meltemi, northwesterly
+rather than the northerly form further up the chain). `pedrogao`'s window is
+extreme at every radius tried — 300-480 of 750 households threatened,
+matching the real fire being one of the fastest-moving on record in Europe —
+so the smallest radius that reliably establishes is the honest choice there;
+`mati` and `rhodes` behave more like Spotorno, and the radius sized as the
+same trade-off (threat against burnt area). Pinned in
+`crates/game/src/sim.rs::opening_conditions`, keyed on scenario id, with
+Spotorno's own tuning as the fallback for anything not measured yet —
+`Sim::new` now takes `radius_m` as a parameter instead of reading a single
+constant, and the in-play "replan for this wind" tool in `ui.rs` reuses the
+live ignition's own radius rather than resetting it to Spotorno's on every
+edit, which was the same bug one level closer to the player.
+
 ---
 
 ## Current state
@@ -752,6 +780,18 @@ ignition at cell (153, 246), r=250 m):
   90 min   38.7 ha   front 103   FLI 17,047        threatened  18
  105 min   42.8 ha   front 128   FLI 66,596        threatened 107
  120 min   49.0 ha   front 200   FLI 66,596        threatened 137
+```
+
+**The other three real scenarios open with their own measured conditions**
+(`crates/game/src/sim.rs::opening_conditions`, finding 38), not Spotorno's
+tramontana — wind bearing grounded in each place's own historical fire, radius
+swept per place in `crates/fire/tests/real_scenario_ignitions.rs`:
+
+```
+                     wind          speed   moisture  radius   peak threatened  alight (2h)
+  mati               293° (WNW)    45 km/h   5%        225 m       56              12
+  pedrogao           315° (NW)     45 km/h   5%        150 m      366             103
+  rhodes             315° (NW)     30 km/h   6%        200 m      102              22
 ```
 
 **Agent Behaviour Composer** (`crates/behavior`, `crates/game/src/composer/`):
@@ -1334,13 +1374,14 @@ because it is what gets you *out* of a state.
   incident-wide `command` row of the log has no voice, and the most obvious
   missing one is the *commander's own* after-action account, which is the thing
   a debrief would actually be built around.
-- **The real-scenario pipeline is generalised but only ever run against
-  Spotorno.** `scripts/places.py`, `clip_cogs.py` and the `--scenario` flags
-  (finding 33) make a second real place a config entry and a re-run rather
-  than a rewrite, but nobody has actually pointed `clip_cogs.py` at a second
-  window — the untested part is whatever assumption about the data turns out
-  not to travel (a place with no `addr:city` tags at all leaves every
-  `locality` unset, which degrades gracefully in the prompt but has never been
-  seen in practice). Address/locality data reaches the interview prompt and
-  the event log (`History::record_locations`) and nowhere else — not the
-  Entities search, not a map label, not the inspector.
+- **The real-scenario pipeline has now been run against three more windows**
+  — `mati`, `pedrogao`, `rhodes` — and each produced `addr:city` tags and a
+  non-empty `localities` list, so the thing this bullet used to flag as
+  untested travelled. What has *not* been checked against a second window:
+  whether the population bake's storey-count and household-size assumptions
+  (tuned by eye against Spotorno) still look right on Pedrógão Grande's
+  scattered hamlets or Mati's dense narrow-lot grid — nobody has looked
+  closely at any of the three the way finding 33 looked at Spotorno's
+  locality list. Address/locality data reaches the interview prompt and the
+  event log (`History::record_locations`) and nowhere else — not the Entities
+  search, not a map label, not the inspector.
