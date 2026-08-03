@@ -226,7 +226,7 @@ pub fn panel(
     let height = match tab {
         BottomTab::Incident => 260.0,
         BottomTab::Chat => 340.0,
-        BottomTab::Debug => 420.0,
+        BottomTab::Debug => (available * 0.58).clamp(480.0, 660.0),
         BottomTab::Behaviour => (available * 0.68).clamp(520.0, 720.0),
     };
 

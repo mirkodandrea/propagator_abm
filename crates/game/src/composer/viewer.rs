@@ -21,7 +21,7 @@ use egui_snarl::{
     InPin, InPinId, NodeId, OutPin, OutPinId, Snarl,
 };
 
-use behavior::{registry, Category, Domain, NodeSpec, ParamValue, ValueType};
+use behavior::{registry, BehaviorGraph, Category, Domain, NodeSpec, ParamValue, ValueType};
 
 use super::Composer;
 
@@ -102,6 +102,10 @@ pub struct Viewer<'a> {
     /// `show`, so the composer cannot be borrowed at the same time.
     pub selected: Option<NodeId>,
     pub added: bool,
+    /// Whether graph mutations are available. The Debug tab uses the same
+    /// renderer for the applied graph, but it must never edit the composer's
+    /// working copy (or even pretend that it can).
+    pub editable: bool,
 }
 
 /// How a node relates to the decision the watched agent just took.
@@ -353,6 +357,9 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
     /// validator must agree, and the only way to guarantee that is for there
     /// to be one implementation.
     fn connect(&mut self, from: &OutPin, to: &InPin, snarl: &mut Snarl<EditorNode>) {
+        if !self.editable {
+            return;
+        }
         let (Some(fs), Some(ts)) = (snarl[from.id.node].spec(), snarl[to.id.node].spec()) else {
             return;
         };
@@ -376,11 +383,30 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
         snarl.connect(from.id, to.id);
     }
 
+    fn disconnect(&mut self, from: &OutPin, to: &InPin, snarl: &mut Snarl<EditorNode>) {
+        if self.editable {
+            snarl.disconnect(from.id, to.id);
+        }
+    }
+
+    fn drop_outputs(&mut self, pin: &OutPin, snarl: &mut Snarl<EditorNode>) {
+        if self.editable {
+            snarl.drop_outputs(pin.id);
+        }
+    }
+
+    fn drop_inputs(&mut self, pin: &InPin, snarl: &mut Snarl<EditorNode>) {
+        if self.editable {
+            snarl.drop_inputs(pin.id);
+        }
+    }
+
     fn has_body(&mut self, node: &EditorNode) -> bool {
         // Only the nodes whose *whole content* is a constant get an inline
         // editor. Everything else is edited in the inspector, so a canvas of
         // forty nodes stays readable.
-        matches!(node.type_id.as_str(), "param.number" | "param.bool" | "param.intent")
+        self.editable
+            && matches!(node.type_id.as_str(), "param.number" | "param.bool" | "param.intent")
     }
 
     fn show_body(
@@ -403,7 +429,7 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
     }
 
     fn has_node_menu(&mut self, _node: &EditorNode) -> bool {
-        true
+        self.editable
     }
 
     fn show_node_menu(
@@ -462,6 +488,19 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
         ui.label(spec.doc);
         ui.small(format!("{}  ·  #{id}", spec.id));
 
+        if !spec.params.is_empty() {
+            ui.separator();
+            ui.small("Effective parameters");
+            for param in spec.params {
+                let value = snarl[node]
+                    .params
+                    .get(param.name)
+                    .cloned()
+                    .unwrap_or_else(|| param.default_value());
+                ui.small(format!("{} = {}", param.name, value.display()));
+            }
+        }
+
         // While an agent is being watched, the popup is where the whole of what
         // this node just did lives: what came in, what went out, and whether it
         // mattered. The canvas can only afford a summary line.
@@ -484,7 +523,7 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
     }
 
     fn has_graph_menu(&mut self, _pos: egui::Pos2, _snarl: &mut Snarl<EditorNode>) -> bool {
-        true
+        self.editable
     }
 
     fn show_graph_menu(
@@ -515,7 +554,7 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
     /// it. This is the fastest way to build a graph, and filtering it by type
     /// is what stops it becoming a second unfiltered palette.
     fn has_dropped_wire_menu(&mut self, _src: AnyPins, _snarl: &mut Snarl<EditorNode>) -> bool {
-        true
+        self.editable
     }
 
     fn show_dropped_wire_menu(
@@ -566,6 +605,38 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
     }
 }
 
+/// Materialise a behavior graph in the canvas representation.
+///
+/// Kept as a single conversion for both the editor and the live debugger so
+/// stable behavior node ids, positions, and wires cannot drift between the
+/// graph people author and the graph they inspect while it runs.
+pub fn snarl_from_graph(graph: &BehaviorGraph) -> Snarl<EditorNode> {
+    let mut snarl = Snarl::new();
+    let mut map: BTreeMap<behavior::NodeId, NodeId> = BTreeMap::new();
+    for node in &graph.nodes {
+        let sid = snarl.insert_node(
+            egui::pos2(node.pos[0], node.pos[1]),
+            EditorNode {
+                id: node.id,
+                type_id: node.type_id.clone(),
+                params: node.params.clone(),
+                comment: node.comment.clone(),
+            },
+        );
+        map.insert(node.id, sid);
+    }
+    for wire in &graph.wires {
+        let (Some(&from), Some(&to)) = (map.get(&wire.from_node), map.get(&wire.to_node)) else {
+            continue;
+        };
+        snarl.connect(
+            OutPinId { node: from, output: wire.from_port as usize },
+            InPinId { node: to, input: wire.to_port as usize },
+        );
+    }
+    snarl
+}
+
 fn port_type(snarl: &Snarl<EditorNode>, pin: OutPinId, _out: bool) -> Option<ValueType> {
     snarl.get_node(pin.node)?.spec()?.outputs.get(pin.output).map(|p| p.ty)
 }
@@ -599,6 +670,7 @@ pub fn canvas(ui: &mut egui::Ui, c: &mut Composer) {
         live: frame.as_ref().filter(|f| f.graph_id == c.graph_id),
         selected: None,
         added: false,
+        editable: true,
     };
     let style = super::editor_style();
     c.snarl.show(&mut viewer, &style, "behaviour-canvas", ui);
@@ -618,4 +690,40 @@ pub fn canvas(ui: &mut egui::Ui, c: &mut Composer) {
     // never a frame behind what the author just did. The graphs are tens of
     // nodes; this is microseconds.
     c.sync();
+}
+
+/// Draw the exact graph evaluated for the selected entity.
+///
+/// A fresh snarl is projected from the captured graph every frame. View state
+/// (pan/zoom/collapse) belongs to egui's persistent id, while any accidental
+/// drag is discarded immediately. Together with the disabled menus and pin
+/// editing this makes the debug canvas observational only.
+pub fn debug_canvas(ui: &mut egui::Ui, c: &mut Composer) {
+    let frame = c.live.frame.take();
+    let Some(frame) = frame else {
+        ui.centered_and_justified(|ui| {
+            ui.weak("Select a person, household, or unit to see its applied behavior graph.");
+        });
+        return;
+    };
+
+    ui.horizontal(|ui| {
+        ui.strong(format!("Applied graph: {}", frame.graph.name));
+        ui.weak("scroll to zoom · drag background to pan");
+    });
+    ui.separator();
+
+    let report = behavior::validate(&frame.graph);
+    let mut snarl = snarl_from_graph(&frame.graph);
+    let mut viewer = Viewer {
+        issues: &report,
+        domain: frame.graph.domain,
+        live: Some(&frame),
+        selected: None,
+        added: false,
+        editable: false,
+    };
+    let style = super::editor_style();
+    snarl.show(&mut viewer, &style, "live-debug-canvas", ui);
+    c.live.frame = Some(frame);
 }

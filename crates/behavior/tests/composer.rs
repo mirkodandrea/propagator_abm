@@ -913,11 +913,6 @@ fn the_library_round_trips_through_a_directory() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
-#[test]
-fn a_missing_directory_falls_back_to_the_shipped_library() {
-    let lib = behavior::Library::load_or_default(std::path::Path::new("/nonexistent/behaviours"));
-    assert!(lib.graphs.contains_key(DEFAULT_GRAPH_ID));
-}
 /// Regenerate `data/behaviours/` from the built-in defaults.
 ///
 /// Ignored, because it writes to the repository. Run it after changing

@@ -1,6 +1,6 @@
-//! Running an authored behaviour instead of the hand-written decision layers.
+//! Running the graph-backed decision layers.
 //!
-//! Three of them, one per [`behavior::Domain`], and each replaces exactly one
+//! Three of them, one per [`behavior::Domain`], and each controls exactly one
 //! block:
 //!
 //! | | Replaces | Leaves alone |
@@ -21,8 +21,8 @@
 //! 60 s step is the same. There is no way to author around this.
 //!
 //! **Per-agent determinism.** The graph's only source of variation is
-//! `Observation::jitter`, which is hashed from the household id — the same
-//! draw the hand-written layer uses. An authored behaviour cannot become
+//! `Observation::jitter`, which is hashed from the household id. A behavior
+//! graph cannot become
 //! order-dependent or step-dependent.
 //!
 //! **A closed read surface.** A graph sees a [`behavior::Observation`] and
@@ -448,9 +448,8 @@ impl UnitRuntime {
     }
 
     /// Which policy governs a unit of `kind`: the first that names it, or the
-    /// first that names none. `None` means this kind is not covered, and the
-    /// caller runs the hand-written policy for it — a partial library governs
-    /// the units it mentions and leaves the rest alone.
+    /// first that names none. `None` means this kind is not covered; simulation
+    /// construction rejects that incomplete library.
     pub fn assign(&self, kind: UnitKindKey) -> Option<usize> {
         self.policies
             .iter()

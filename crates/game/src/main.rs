@@ -322,31 +322,16 @@ fn apply_behaviour(
     }
     events.clear();
 
-    // Nothing assigned in any domain: that is a deliberate "run the shipped
-    // model", not an empty library, and it has to say so rather than looking
-    // like a failed apply.
-    //
-    // Any domain's assignment counts. Checking only the households — which is
-    // what this did — silently discarded a library whose one live profile was a
-    // unit policy or a separated-person behaviour, and the symptom was an Apply
-    // that reported success and changed nothing.
-    let lib = composer.lib.has_assignment().then(|| composer.lib.clone());
-    let described = match &lib {
-        Some(l) => {
-            let mut parts = Vec::new();
-            for (n, what) in [
-                (l.assignment().len(), "household"),
-                (l.person_assignment().len(), "person"),
-                (l.unit_assignment().len(), "unit"),
-            ] {
-                if n > 0 {
-                    parts.push(format!("{n} {what} profile(s)"));
-                }
-            }
-            parts.join(", ")
-        }
-        None => "the shipped model".to_string(),
-    };
+    let lib = composer.lib.clone();
+    let described = [
+        (lib.assignment().len(), "household"),
+        (lib.person_assignment().len(), "person"),
+        (lib.unit_assignment().len(), "unit"),
+    ]
+    .into_iter()
+    .map(|(n, what)| format!("{n} {what} profile(s)"))
+    .collect::<Vec<_>>()
+    .join(", ");
 
     match sim.apply_behaviour(lib) {
         Ok(()) => {

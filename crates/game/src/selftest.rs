@@ -397,12 +397,9 @@ pub fn run(
             println!("[selftest] T+{t}s after restart: {burnt:.1} ha burnt");
             check(&mut test, burnt > 5.0, "restarted fire never established");
 
-            // Rewind to a clean run on the shipped model. The two behaviour
-            // legs below then differ in exactly one thing -- the decision
-            // layer -- which is the only way the comparison they print means
-            // anything.
-            if let Err(e) = sim.apply_behaviour(None) {
-                check(&mut test, false, &format!("rewinding to the shipped model failed: {e:#}"));
+            // Rewind to a clean run on the currently applied graph library.
+            if let Err(e) = sim.restart() {
+                check(&mut test, false, &format!("rewinding the graph-driven model failed: {e:#}"));
             }
             restarted.send(SimRestarted);
             sim.agents.order_evacuation_all();
@@ -451,7 +448,7 @@ pub fn run(
             composer.commit();
             let lib = composer.lib.clone();
             let profiles = lib.assignment().len();
-            match sim.apply_behaviour(Some(lib)) {
+            match sim.apply_behaviour(lib) {
                 Ok(()) => {
                     restarted.send(SimRestarted);
                 }
@@ -474,9 +471,8 @@ pub fn run(
                 &format!("{} of {profiles} profile(s) reached a household", assigned.len()),
             );
             // The suppression half of the same library. Applying a behaviour
-            // rebuilds `Suppression` too, and a unit runtime that failed to
-            // build would leave the units silently on the hand-written policy —
-            // which looks exactly like a policy that agrees with it.
+            // rebuilds `Suppression` too, and incomplete unit coverage must
+            // reject the restart rather than produce a partially governed run.
             let unit_profiles = composer.lib.unit_assignment().len();
             check(
                 &mut test,
@@ -521,19 +517,17 @@ pub fn run(
             // a trace's node ids have to name boxes the canvas can find. When
             // they did not, every override and every highlight silently pointed
             // at nothing while the graph carried on validating.
-            if let Some(lib) = sim.behaviour.as_ref() {
-                if let Some(g) = lib.graphs.get(&composer.graph_id) {
-                    let missing = g
-                        .nodes
-                        .iter()
-                        .filter(|n| composer.snarl_id_of(n.id).is_none())
-                        .count();
-                    check(
-                        &mut test,
-                        missing == 0,
-                        &format!("{missing} running node(s) have no box on the canvas"),
-                    );
-                }
+            if let Some(g) = sim.behaviour.graphs.get(&composer.graph_id) {
+                let missing = g
+                    .nodes
+                    .iter()
+                    .filter(|n| composer.snarl_id_of(n.id).is_none())
+                    .count();
+                check(
+                    &mut test,
+                    missing == 0,
+                    &format!("{missing} running node(s) have no box on the canvas"),
+                );
             }
 
             println!(
@@ -640,10 +634,8 @@ pub fn run(
             let still = sim.time_s() == test.clock_before_step;
             check(&mut test, still, "the clock ran on while paused");
 
-            // And back off it again: the shipped model has to still be one call
-            // away, because every measurement in `crates/fire/tests` was taken
-            // on it.
-            match sim.apply_behaviour(None) {
+            // A plain restart must preserve the mandatory graph library.
+            match sim.restart() {
                 Ok(()) => {
                     restarted.send(SimRestarted);
                 }
@@ -651,13 +643,13 @@ pub fn run(
             }
             check(
                 &mut test,
-                sim.agents.behaviour_of(0).is_none(),
-                "reverting left the authored behaviour in place",
+                sim.agents.behaviour_of(0).is_some(),
+                "restart lost the household graph",
             );
             check(
                 &mut test,
-                sim.crews.policy().is_none(),
-                "reverting left the authored unit policy in place",
+                sim.crews.policy_of(0).is_some(),
+                "restart lost the unit graph",
             );
             test.stage = Stage::ReloadScenario;
         }

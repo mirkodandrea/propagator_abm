@@ -39,20 +39,20 @@
 //! quietly to satisfy the player. It can still be caught — [`UnitState::Lost`]
 //! is reachable — but only by the fire moving onto it, never by obedience.
 //!
-//! ## What a unit decides for itself, and what the composer can replace
+//! ## What a unit decides for itself, through the behavior graph
 //!
 //! Almost everything a unit does is the commander's decision. What is left —
 //! and it is the whole of the unit's own agency — is *when to stop*: pull back
 //! because the ground is not survivable, break off because the tank is empty,
 //! hold or go home because the order was a bad one. That block, and only that
-//! block, is what an authored policy replaces; see
+//! block, is what the applied graph controls; see
 //! [`Suppression::unit_outcome`]. Where a unit is sent, how fast it gets there
 //! and what its work does to the fire are all untouched, which is why a policy
 //! a scientist wrote can be run without review.
 //!
-//! With no policy loaded the same function returns the hand-written answer —
-//! [`WORK_LIMIT`] and a dry tank — so the shipped model is the default and
-//! every measurement in `crates/fire/tests` still describes it.
+//! A policy is mandatory. The reference graph encodes [`WORK_LIMIT`] and the
+//! dry-tank rule, while custom graphs can change them without creating a
+//! second decision path in this module.
 
 use anyhow::Result;
 use behavior::{Observation, UnitObs};
@@ -274,9 +274,9 @@ pub struct Unit {
     /// Simulated time this unit's current order was given, for
     /// `UnitObs::minutes_on_task`.
     tasked_at_s: f32,
-    /// Which authored policy governs this unit, if any. Resolved once at build
-    /// from the unit's kind; `None` runs the hand-written policy.
-    policy: Option<usize>,
+    /// Which editable policy governs this unit. Resolved once at build from its
+    /// kind; construction fails when the library leaves a kind uncovered.
+    policy: usize,
     /// Where an air tanker is heading right now: the target, or the water.
     air_leg: AirLeg,
     air_timer_s: f32,
@@ -345,10 +345,8 @@ pub struct Suppression {
     hydrants: Vec<Pos>,
     open_water: Vec<Pos>,
     time_s: f32,
-    /// Authored unit policy, when the scenario is running one. `None` runs the
-    /// hand-written policy in [`Suppression::unit_outcome`], which stays the
-    /// default for the same reason the civilians' does.
-    policy: Option<UnitRuntime>,
+    /// The editable unit policy. There is no alternate hand-written policy.
+    policy: UnitRuntime,
     /// Bumped whenever something a view would draw has changed.
     pub generation: u64,
 }
@@ -369,7 +367,11 @@ impl Suppression {
     /// same set of properties a staging area needs, and reusing them means the
     /// engines start somewhere defensible rather than somewhere authored.
     pub fn new(scn: &Scenario, bases: &[Pos]) -> Result<Suppression> {
-        Suppression::with_policy(scn, bases, None)
+        let lib = behavior::defaults::default_library();
+        let policy = UnitRuntime::build(&lib)
+            .map_err(|e| anyhow::anyhow!(e))?
+            .ok_or_else(|| anyhow::anyhow!("no active suppression-unit behaviour profiles"))?;
+        Suppression::with_policy(scn, bases, policy)
     }
 
     /// The same, running an authored unit policy.
@@ -381,7 +383,7 @@ impl Suppression {
     pub fn with_policy(
         scn: &Scenario,
         bases: &[Pos],
-        policy: Option<UnitRuntime>,
+        policy: UnitRuntime,
     ) -> Result<Suppression> {
         anyhow::ensure!(!bases.is_empty(), "no staging area for suppression units");
 
@@ -401,10 +403,11 @@ impl Suppression {
             .collect();
 
         let mut units = Vec::new();
-        let policy_for = |kind: UnitKind| {
-            policy.as_ref().and_then(|rt| rt.assign(unit_kind_of(kind)))
-        };
-        let push = |kind: UnitKind, n: usize, units: &mut Vec<Unit>| {
+        let policy_for = |kind: UnitKind| policy.assign(unit_kind_of(kind));
+        let push = |kind: UnitKind, n: usize, units: &mut Vec<Unit>| -> Result<()> {
+            let policy = policy_for(kind).ok_or_else(|| {
+                anyhow::anyhow!("no active behaviour profile covers {} units", kind.label())
+            })?;
             for i in 0..n {
                 // Round-robin the staging areas so the roster is spread across
                 // the town rather than parked in one car park.
@@ -449,15 +452,16 @@ impl Suppression {
                     route_to: None,
                     resume: None,
                     tasked_at_s: 0.0,
-                    policy: policy_for(kind),
+                    policy,
                     air_leg: AirLeg::ToTarget,
                     air_timer_s: 0.0,
                 });
             }
+            Ok(())
         };
-        push(UnitKind::Engine, DEFAULT_ENGINES, &mut units);
-        push(UnitKind::HandCrew, DEFAULT_CREWS, &mut units);
-        push(UnitKind::AirTanker, DEFAULT_TANKERS, &mut units);
+        push(UnitKind::Engine, DEFAULT_ENGINES, &mut units)?;
+        push(UnitKind::HandCrew, DEFAULT_CREWS, &mut units)?;
+        push(UnitKind::AirTanker, DEFAULT_TANKERS, &mut units)?;
 
         Ok(Suppression {
             units,
@@ -473,16 +477,14 @@ impl Suppression {
         self.time_s
     }
 
-    /// The authored unit policy in force, if any.
-    pub fn policy(&self) -> Option<&UnitRuntime> {
-        self.policy.as_ref()
+    /// The editable unit policy in force.
+    pub fn policy(&self) -> &UnitRuntime {
+        &self.policy
     }
 
-    /// Which policy governs a unit, for the inspector. `None` means it is
-    /// running the hand-written one.
+    /// Which policy governs a unit, for the inspector.
     pub fn policy_of(&self, unit: usize) -> Option<(&str, &str)> {
-        let rt = self.policy.as_ref()?;
-        let p = rt.policy(self.units.get(unit)?.policy?)?;
+        let p = self.policy.policy(self.units.get(unit)?.policy)?;
         Some((&p.id, &p.name))
     }
 
@@ -498,11 +500,10 @@ impl Suppression {
         fire: &FireSim,
         scn: &Scenario,
     ) -> Option<(behavior::Decision, behavior::Trace)> {
-        let rt = self.policy.as_ref()?;
-        let policy = self.units.get(unit)?.policy?;
+        let policy = self.units.get(unit)?.policy;
         let danger = fire.threat().at(self.units[unit].pos);
         let obs = self.observe(unit, danger, Some(net), fire, scn);
-        rt.explain(policy, &obs)
+        self.policy.explain(policy, &obs)
     }
 
     /// Give a unit an order.
@@ -769,10 +770,8 @@ impl Suppression {
 
     /// What unit `i` decides to do about its own situation.
     ///
-    /// **This is the one block an authored policy replaces.** With no policy in
-    /// force it returns the hand-written answer, which is the two rules that
-    /// used to be inline here: pull back above [`WORK_LIMIT`], and go for water
-    /// when the tank is empty. With one, it is whatever the graph says.
+    /// The graph is the only policy: it receives the unit observation and its
+    /// winning action is applied to the fixed movement and work mechanics.
     ///
     /// Only consulted for a unit that is doing something. A unit already
     /// withdrawing or refilling is mid-manoeuvre, and asking again every
@@ -792,18 +791,9 @@ impl Suppression {
         ) {
             return UnitOutcome::Carry;
         }
-        let Some(policy) = self.units[i].policy else {
-            // The shipped policy, unchanged. `Refill` is deliberately not
-            // returned here: the hand-written model only breaks off for water
-            // at the point of pumping, and `engine_attack` still does that.
-            return if danger >= WORK_LIMIT {
-                UnitOutcome::Withdraw
-            } else {
-                UnitOutcome::Carry
-            };
-        };
+        let policy = self.units[i].policy;
         let obs = self.observe(i, danger, net, fire, scn);
-        let d = self.policy.as_mut().expect("policy index implies a runtime").decide(policy, &obs);
+        let d = self.policy.decide(policy, &obs);
         unit_outcome_of(d.action)
     }
 
@@ -1310,11 +1300,9 @@ impl Suppression {
         scn: &Scenario,
         out: &mut Vec<Intervention>,
     ) {
-        // Aircraft get the same consultation ground units do. With no policy in
-        // force it is a no-op — the hand-written answer for something that is
-        // never in threat is always "carry on" — so this changes nothing about
-        // the shipped model while making "come home when the fire is out" and
-        // "scoop before you are empty" authorable.
+        // Aircraft consult their graph just as ground units do. The baseline
+        // normally answers "carry on", while other policies can author "come
+        // home when the fire is out" or "scoop before you are empty".
         let danger = fire.threat().at(self.units[i].pos);
         let outcome = self.unit_outcome(i, danger, None, fire, scn);
         if self.apply_outcome(i, outcome) {

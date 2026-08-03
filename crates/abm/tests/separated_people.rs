@@ -10,7 +10,7 @@
 //! the layer on with the shipped profile changes *nothing*, and that switching
 //! on the reunification profile changes something real.
 
-use abm::{Abm, PersonRuntime, TravelState};
+use abm::{Abm, BehaviorRuntime, PersonRuntime, TravelState};
 use behavior::{Library, ParamValue};
 use fire::{FireSim, Weather};
 use scenario::population::Status;
@@ -60,7 +60,10 @@ fn runtime(lib: &Library) -> PersonRuntime {
 }
 
 fn agents_with(scn: &Scenario, lib: Option<&Library>) -> Abm {
-    Abm::with_behaviours(scn, 42, None, lib.map(runtime)).unwrap()
+    let defaults = behavior::defaults::default_library();
+    let household = BehaviorRuntime::build(&defaults).unwrap().unwrap();
+    let person = lib.map(runtime).unwrap_or_else(|| runtime(&defaults));
+    Abm::with_behaviours(scn, 42, household, person).unwrap()
 }
 
 fn away_count(agents: &Abm) -> usize {
@@ -83,12 +86,10 @@ fn some_people_start_away_from_home() {
     }
 }
 
-/// The invariant the shipped profile exists to hold: turning the layer on with
-/// the behaviour that transcribes the old hard-coded rule has to leave the
-/// incident where it was. If this drifts, every evacuation figure measured
-/// before the domain existed stops being comparable.
+/// The convenience constructor and an explicitly compiled copy of the
+/// baseline person graph must agree.
 #[test]
-fn the_shipped_person_behaviour_reproduces_the_hand_written_one() {
+fn the_default_person_runtime_matches_the_reference_graph() {
     let scn = Scenario::load(data_dir()).unwrap();
     let lib = library(0.0);
 

@@ -18,6 +18,9 @@ pub struct ScenarioSelector {
     pub registry: Option<ScenarioRegistry>,
     pub selected: Option<String>,
     pub confirmed: bool,
+    /// Launch failures are shown on the chooser. A mandatory behavior library
+    /// must fail visibly rather than leaving the app on a blank transition.
+    pub error: Option<String>,
 }
 
 impl Default for ScenarioSelector {
@@ -26,6 +29,7 @@ impl Default for ScenarioSelector {
             registry: None,
             selected: None,
             confirmed: false,
+            error: None,
         }
     }
 }
@@ -62,7 +66,8 @@ pub fn init_selector(data_path: Res<DataPath>, mut selector: ResMut<ScenarioSele
 /// Handle launching the selected scenario.
 pub fn handle_launch_selection(
     data_path: Res<DataPath>,
-    selector: Res<ScenarioSelector>,
+    mut selector: ResMut<ScenarioSelector>,
+    composer: Res<crate::composer::Composer>,
     mut next_state: ResMut<NextState<AppState>>,
     mut commands: Commands,
     mut window: Query<&mut Window>,
@@ -89,7 +94,7 @@ pub fn handle_launch_selection(
             );
 
             // Create Sim
-            match Sim::new(scenario, Weather::default(), 42) {
+            match Sim::new(scenario, Weather::default(), 42, composer.lib.clone()) {
                 Ok(sim) => {
                     // Update window title
                     if let Ok(mut win) = window.get_single_mut() {
@@ -104,12 +109,18 @@ pub fn handle_launch_selection(
                     next_state.set(AppState::Playing);
                 }
                 Err(e) => {
-                    eprintln!("Failed to create Sim: {e:#}");
+                    let message = format!("Cannot launch: {e:#}");
+                    eprintln!("{message}");
+                    selector.error = Some(message);
+                    selector.confirmed = false;
                 }
             }
         }
         Err(e) => {
-            eprintln!("Failed to load scenario '{scenario_id}': {e:#}");
+            let message = format!("Failed to load scenario '{scenario_id}': {e:#}");
+            eprintln!("{message}");
+            selector.error = Some(message);
+            selector.confirmed = false;
         }
     }
 }
@@ -286,6 +297,9 @@ pub fn show_selector_ui(
                 {
                     launch = true;
                 }
+                if let Some(error) = &selector.error {
+                    ui.colored_label(egui::Color32::LIGHT_RED, error);
+                }
                 ui.vertical_centered(|ui| {
                     ui.weak("↑ ↓ choose · Enter launch · double-click a card to launch");
                 });
@@ -294,6 +308,7 @@ pub fn show_selector_ui(
     });
 
     if launch {
+        selector.error = None;
         selector.confirmed = true;
         if selector.selected.is_none() {
             selector.selected = Some(default_id);

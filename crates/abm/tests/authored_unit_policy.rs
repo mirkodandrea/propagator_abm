@@ -1,11 +1,10 @@
-//! Does an authored unit policy actually govern the units, and does turning it
-//! on leave the shipped model alone?
+//! Does an editable unit policy actually govern every unit?
 //!
 //! The same shape as `authored_behaviour.rs`, and the same worry. A policy layer
 //! that quietly does nothing is indistinguishable from one that works, because
 //! the units carry on doing what the commander told them either way — so most of
-//! this pins that the policy is *reached*: that the shipped graph reproduces the
-//! hand-written answer exactly, and that changing one number in it visibly
+//! this pins that the policy is *reached*: that the baseline graph is stable,
+//! and that changing one number in it visibly
 //! changes what a unit does on a real incident.
 
 use std::collections::BTreeMap;
@@ -31,7 +30,8 @@ struct World {
     ignition: scenario::Cell,
 }
 
-/// The shipped scenario, with an optional authored policy in force.
+/// The shipped scenario, using the default graph policy or an explicitly
+/// supplied graph runtime.
 fn setup(policy: Option<UnitRuntime>) -> World {
     let scn = Scenario::load(data_dir()).unwrap();
     let weather = Weather::default();
@@ -40,7 +40,10 @@ fn setup(policy: Option<UnitRuntime>) -> World {
     fire.ignite_patch(plan.centre, plan.radius_m, &scn).unwrap();
     let agents = Abm::new(&scn, 42).unwrap();
     let bases: Vec<Pos> = agents.refuges.iter().map(|r| r.pos).collect();
-    let crews = Suppression::with_policy(&scn, &bases, policy).unwrap();
+    let crews = match policy {
+        Some(policy) => Suppression::with_policy(&scn, &bases, policy).unwrap(),
+        None => Suppression::new(&scn, &bases).unwrap(),
+    };
     World { scn, fire, agents, crews, ignition: plan.centre }
 }
 
@@ -107,20 +110,20 @@ fn every_unit_kind_is_governed_by_the_shipped_profile() {
     }
 }
 
-/// With no policy the units run the hand-written one, and nothing in the
-/// suppression model knows the composer exists.
+/// Even the convenience constructor installs a graph policy; there is no
+/// alternate decision layer hidden behind it.
 #[test]
-fn no_policy_loaded_leaves_the_shipped_model_alone() {
+fn the_default_constructor_is_graph_driven() {
     let w = setup(None);
-    assert!(w.crews.policy().is_none());
-    assert!(w.crews.policy_of(0).is_none());
+    assert!(!w.crews.policy().is_empty());
+    assert!(w.crews.policy_of(0).is_some());
 }
 
 /// A profile that names one kind governs that kind and no other. This is the
 /// unit domain's whole assignment rule, and getting it wrong would silently
 /// apply an engine policy to the aircraft.
 #[test]
-fn a_profile_governs_only_the_kinds_it_names() {
+fn a_partial_unit_policy_is_rejected() {
     let g = behavior::defaults::default_unit_graph();
     let mut lib = Library::default();
     let mut s = AgentSubtype::new("engines-only", "Engines only", &g.id);
@@ -129,20 +132,22 @@ fn a_profile_governs_only_the_kinds_it_names() {
     lib.subtypes.insert(s.id.clone(), s);
     lib.graphs.insert(g.id.clone(), g);
 
-    let w = setup(UnitRuntime::build(&lib).unwrap());
-    assert!(w.crews.policy_of(w.unit(UnitKind::Engine)).is_some());
-    assert!(w.crews.policy_of(w.unit(UnitKind::HandCrew)).is_none());
-    assert!(w.crews.policy_of(w.unit(UnitKind::AirTanker)).is_none());
+    let runtime = UnitRuntime::build(&lib).unwrap().unwrap();
+    let scn = Scenario::load(data_dir()).unwrap();
+    let agents = Abm::new(&scn, 42).unwrap();
+    let bases: Vec<Pos> = agents.refuges.iter().map(|r| r.pos).collect();
+    let error = Suppression::with_policy(&scn, &bases, runtime)
+        .err()
+        .expect("uncovered unit kinds must reject the run");
+    assert!(error.to_string().contains("covers"), "{error:#}");
 }
 
-// --- it reproduces the hand-written model ------------------------------------
+// --- the default constructor uses the reference graph -----------------------
 
-/// The whole basis for turning this on at all. The shipped graph is a
-/// transcription of the two `if`s that used to be in `step_ground`, so running
-/// it has to produce the same incident — otherwise every suppression number
-/// already measured describes a model nobody is running any more.
+/// The convenience constructor and an explicitly compiled copy of the
+/// reference graph must produce the same incident.
 #[test]
-fn the_shipped_policy_reproduces_the_hand_written_one() {
+fn the_default_constructor_matches_the_reference_policy() {
     let attack = |policy: Option<UnitRuntime>| {
         let mut w = setup(policy);
         let target = w.downwind(300.0);

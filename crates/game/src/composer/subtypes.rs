@@ -194,8 +194,8 @@ fn unit_assignment(ui: &mut egui::Ui, s: &mut AgentSubtype) -> bool {
         changed |= ui
             .checkbox(&mut s.enabled, "In play")
             .on_hover_text(
-                "Off keeps the profile and leaves the units it would have governed on the \
-                 hand-written policy.",
+                "Off keeps the profile but removes it from assignment. Applying requires \
+                 another enabled profile to cover those unit kinds.",
             )
             .changed();
     });
@@ -376,15 +376,13 @@ fn roster(ui: &mut egui::Ui, c: &mut Composer) {
             egui::Color32::from_rgb(0xd8, 0xa6, 0x4b),
             match domain {
                 Domain::Household => {
-                    "No profile has a share, so applying this would run the shipped model."
+                    "No profile has a share, so this library cannot be applied."
                 }
                 Domain::Person => {
-                    "No profile has a share, so people who are away from home would walk to \
-                     the nearest refuge and never reconsider, which is what the model has \
-                     always done."
+                    "No profile has a share, so this library cannot be applied."
                 }
                 Domain::SuppressionUnit => {
-                    "No profile is in play, so the units would run the hand-written policy."
+                    "No profile is in play, so this library cannot be applied."
                 }
             },
         );

@@ -1,5 +1,5 @@
-//! Does an authored behaviour actually drive the model, and does it keep the
-//! guarantees the hand-written one has?
+//! Does an editable behavior graph actually drive the model, while preserving
+//! the simulator's determinism and step-size guarantees?
 //!
 //! The composer is only worth having if a graph a scientist edits changes the
 //! outcome of a real incident — and only worth *trusting* if it cannot break
@@ -58,7 +58,7 @@ fn the_shipped_library_runs_a_real_incident() {
     let scn = Scenario::load(data_dir()).unwrap();
     let lib = behavior::defaults::default_library();
     let mut fire = fire_for(&scn);
-    let mut agents = Abm::with_behavior(&scn, 42, Some(runtime(&lib))).unwrap();
+    let mut agents = Abm::with_behavior(&scn, 42, runtime(&lib)).unwrap();
 
     agents.order_evacuation_all();
     run(&scn, &mut fire, &mut agents, 90, 10);
@@ -86,7 +86,7 @@ fn authored_behaviour_is_step_size_invariant() {
 
     let departed = |dt: i64| {
         let mut fire = fire_for(&scn);
-        let mut agents = Abm::with_behavior(&scn, 42, Some(runtime(&lib))).unwrap();
+        let mut agents = Abm::with_behavior(&scn, 42, runtime(&lib)).unwrap();
         agents.order_evacuation_all();
         run(&scn, &mut fire, &mut agents, 60, dt);
         agents
@@ -111,7 +111,7 @@ fn subtype_assignment_survives_a_rebuild() {
     let lib = behavior::defaults::default_library();
 
     let profile_of = || {
-        let agents = Abm::with_behavior(&scn, 42, Some(runtime(&lib))).unwrap();
+        let agents = Abm::with_behavior(&scn, 42, runtime(&lib)).unwrap();
         (0..agents.households.len())
             .map(|i| agents.behaviour_of(i).map(|(id, _, _)| id.to_string()))
             .collect::<Vec<_>>()
@@ -148,7 +148,7 @@ fn lowering_the_alarm_threshold_gets_more_people_out_sooner() {
         }
         let lib = one_subtype(ov);
         let mut fire = fire_for(&scn);
-        let mut agents = Abm::with_behavior(&scn, 42, Some(runtime(&lib))).unwrap();
+        let mut agents = Abm::with_behavior(&scn, 42, runtime(&lib)).unwrap();
         // No order at all: this isolates the household's own reading of the
         // fire, which is what the threshold governs.
         run(&scn, &mut fire, &mut agents, 90, 10);
@@ -181,7 +181,7 @@ fn a_graph_that_never_fires_leaves_everyone_at_home() {
     lib.subtypes.insert("inert".into(), s);
 
     let mut fire = fire_for(&scn);
-    let mut agents = Abm::with_behavior(&scn, 42, Some(runtime(&lib))).unwrap();
+    let mut agents = Abm::with_behavior(&scn, 42, runtime(&lib)).unwrap();
     agents.order_evacuation_all();
     run(&scn, &mut fire, &mut agents, 60, 20);
 
@@ -199,7 +199,7 @@ fn the_inspector_can_explain_one_household() {
     let scn = Scenario::load(data_dir()).unwrap();
     let lib = behavior::defaults::default_library();
     let mut fire = fire_for(&scn);
-    let mut agents = Abm::with_behavior(&scn, 42, Some(runtime(&lib))).unwrap();
+    let mut agents = Abm::with_behavior(&scn, 42, runtime(&lib)).unwrap();
     agents.order_evacuation_all();
     run(&scn, &mut fire, &mut agents, 45, 20);
 
@@ -215,23 +215,11 @@ fn the_inspector_can_explain_one_household() {
 }
 
 #[test]
-fn no_behaviour_loaded_leaves_the_shipped_model_alone() {
+fn the_default_constructor_is_graph_driven() {
     let scn = Scenario::load(data_dir()).unwrap();
-
-    let safe = |behaviour: bool| {
-        let rt = behaviour.then(|| runtime(&behavior::defaults::default_library()));
-        let mut fire = fire_for(&scn);
-        let mut agents = Abm::with_behavior(&scn, 42, rt).unwrap();
-        agents.order_evacuation_all();
-        run(&scn, &mut fire, &mut agents, 60, 20);
-        agents.stats().safe
-    };
-
-    // Not asserting they match — they are different models, and that is the
-    // point. Asserting the hand-written path is still the one that runs when
-    // nothing is authored.
-    let plain = safe(false);
-    assert!(plain > 100, "the shipped model stopped working: {plain} safe");
+    let agents = Abm::new(&scn, 42).unwrap();
+    assert!(!agents.behavior().is_empty());
+    assert!(agents.behaviour_of(0).is_some());
 }
 
 #[test]
@@ -244,7 +232,7 @@ fn a_subtype_trait_reaches_the_households() {
         .traits
         .insert(behavior::TraitKey::PrepTimeMin, 3.0);
 
-    let agents = Abm::with_behavior(&scn, 42, Some(runtime(&lib))).unwrap();
+    let agents = Abm::with_behavior(&scn, 42, runtime(&lib)).unwrap();
     assert!(
         agents.households.iter().all(|h| (h.prep_time_min - 3.0).abs() < 1e-6),
         "the subtype's preparation time did not reach the households"
@@ -261,7 +249,7 @@ fn a_capability_reaches_the_households() {
         .capabilities
         .insert(behavior::Capability::Vehicle, false);
 
-    let agents = Abm::with_behavior(&scn, 42, Some(runtime(&lib))).unwrap();
+    let agents = Abm::with_behavior(&scn, 42, runtime(&lib)).unwrap();
     assert!(agents.households.iter().all(|h| h.vehicles == 0));
 }
 
@@ -285,7 +273,7 @@ fn shelter_is_not_a_departure() {
     lib.subtypes.insert("shelter".into(), s);
 
     let mut fire = fire_for(&scn);
-    let mut agents = Abm::with_behavior(&scn, 42, Some(runtime(&lib))).unwrap();
+    let mut agents = Abm::with_behavior(&scn, 42, runtime(&lib)).unwrap();
     agents.order_evacuation_all();
     run(&scn, &mut fire, &mut agents, 60, 20);
 

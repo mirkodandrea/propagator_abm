@@ -668,12 +668,7 @@ fn interview_row(ui: &mut egui::Ui, sim: &Sim, target: Target, open: &mut bool) 
     });
 }
 
-/// Why this agent is doing what it is doing, when it is running an authored
-/// behaviour.
-///
-/// Absent entirely under the shipped hand-written models, rather than showing
-/// an empty section: there is no graph to explain, and a panel that always
-/// appeared would imply there was.
+/// Why this agent is doing what it is doing according to its graph.
 ///
 /// One function for all three kinds of agent, because the answer has the same
 /// shape in each: a profile, a decision, and the branches that produced it. The
@@ -790,9 +785,9 @@ fn behaviour_panel(
 }
 
 /// What this agent's own row in the run's [`crate::history::History`] says
-/// happened to it, oldest first. Always shown, unlike the Behaviour section
-/// above: it has something to say for hand-written agents too, and it is the
-/// same log an "interview an agent" feature would read from later.
+/// happened to it, oldest first. The history records state transitions rather
+/// than only graph decisions, and it is the same log an "interview an agent"
+/// feature reads.
 fn history_panel(ui: &mut egui::Ui, sim: &Sim, target: Target) {
     let subject = crate::history::subject_of(target);
     let events = sim.history.log.events_for(subject);

@@ -53,8 +53,7 @@
 //! **An authored graph cannot break determinism.** There is no random node.
 //! Per-agent variation comes from [`Observation::jitter`], which `abm` hashes
 //! from the household id — so the same household gets the same draw whatever
-//! the step size and whoever else moved first. This is the same rule the
-//! hand-written decision layer already follows, and it is why a replay is a
+//! the step size and whoever else moved first. That is why a replay is a
 //! replay.
 //!
 //! **Evaluation is pure and stateless.** A graph maps one observation to one

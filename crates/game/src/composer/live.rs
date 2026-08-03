@@ -46,7 +46,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-use behavior::{ActionKind, Decision, NodeId, Trace, Value};
+use behavior::{ActionKind, BehaviorGraph, Decision, NodeId, Trace, Value};
 
 use super::viewer::LiveRole;
 use super::{Composer, RightTab};
@@ -91,6 +91,10 @@ pub struct Frame {
     /// when it is showing the same graph — a slice from one behaviour laid over
     /// another is exactly the class of confusion this view exists to remove.
     pub graph_id: String,
+    /// The exact graph that was compiled for this profile, with all profile
+    /// parameter overrides materialised. This deliberately comes from the
+    /// simulation's applied library, not the editor's possibly-dirty copy.
+    pub graph: BehaviorGraph,
     pub subtype_id: String,
     pub subtype_name: String,
     pub agent: String,
@@ -202,6 +206,7 @@ impl Live {
 /// One traced evaluation of whatever the selected agent is running.
 struct Capture {
     graph_id: String,
+    graph: BehaviorGraph,
     subtype_id: String,
     subtype_name: String,
     agent: String,
@@ -211,20 +216,21 @@ struct Capture {
 
 /// Ask the model to explain one agent, whichever kind it is.
 ///
-/// Returns `None` for an agent running a hand-written layer, which is not a
-/// failure: it is the default, and the panel says so rather than showing an
-/// empty graph.
+/// Returns `None` only when the target no longer exists or its required graph
+/// cannot be resolved. Every live decision layer is graph-backed.
 fn explain(sim: &Sim, target: Target) -> Option<Capture> {
-    let lib = sim.behaviour.as_ref()?;
-    let graph_of = |subtype: &str| lib.subtypes.get(subtype).map(|s| s.graph.clone());
+    let lib = &sim.behaviour;
+    let graph_of = |subtype: &str| effective_graph(lib, subtype);
 
     match target {
         Target::Household(id) => {
             let (sid, name, _) = sim.agents.behaviour_of(id)?;
             let (sid, name) = (sid.to_string(), name.to_string());
             let (decision, trace) = sim.agents.explain(id, &sim.fire)?;
+            let graph = graph_of(&sid)?;
             Some(Capture {
-                graph_id: graph_of(&sid)?,
+                graph_id: graph.id.clone(),
+                graph,
                 subtype_id: sid,
                 subtype_name: name,
                 agent: format!("Household #{id}"),
@@ -233,17 +239,22 @@ fn explain(sim: &Sim, target: Target) -> Option<Capture> {
             })
         }
         Target::Person(id) => {
+            let person = sim.agents.people.get(id)?;
+            // At home the household makes the decision for this person. Show
+            // that real governing graph instead of an empty person panel.
+            if !person.away {
+                let household = person.household;
+                let mut cap = explain(sim, Target::Household(household))?;
+                cap.agent = format!("Person #{id} · governed by Household #{household}");
+                return Some(cap);
+            }
             let (sid, name, _) = sim.agents.person_behaviour_of(id)?;
             let (sid, name) = (sid.to_string(), name.to_string());
-            // A person who is at home has no behaviour of their own — the
-            // household is the agent — and saying so is more use than an empty
-            // graph.
-            if !sim.agents.people.get(id)?.away {
-                return None;
-            }
             let (decision, trace) = sim.agents.explain_person(id, &sim.fire)?;
+            let graph = graph_of(&sid)?;
             Some(Capture {
-                graph_id: graph_of(&sid)?,
+                graph_id: graph.id.clone(),
+                graph,
                 subtype_id: sid,
                 subtype_name: name,
                 agent: format!("Person #{id}"),
@@ -257,8 +268,10 @@ fn explain(sim: &Sim, target: Target) -> Option<Capture> {
             let (decision, trace) =
                 sim.crews.explain(id, &sim.agents.network, &sim.fire, &sim.scenario)?;
             let call = sim.crews.units.get(id).map(|u| u.callsign.clone()).unwrap_or_default();
+            let graph = graph_of(&sid)?;
             Some(Capture {
-                graph_id: graph_of(&sid)?,
+                graph_id: graph.id.clone(),
+                graph,
                 subtype_id: sid,
                 subtype_name: name,
                 agent: call,
@@ -277,6 +290,28 @@ fn explain(sim: &Sim, target: Target) -> Option<Capture> {
             }
         }
     }
+}
+
+/// Resolve the graph as this profile actually runs it. Overrides are normally
+/// folded into the compiled evaluator; materialising them here lets the Debug
+/// tab show those effective values on the nodes themselves.
+fn effective_graph(lib: &behavior::Library, subtype_id: &str) -> Option<BehaviorGraph> {
+    let subtype = lib.subtypes.get(subtype_id)?;
+    let mut graph = lib.graphs.get(&subtype.graph)?.clone();
+    for (key, value) in &subtype.overrides {
+        let Some((node, param)) = behavior::subtype::split_key(key) else { continue };
+        let valid = graph
+            .node(node)
+            .and_then(|n| n.spec())
+            .and_then(|spec| spec.params.iter().find(|p| p.name == param))
+            .is_some_and(|p| value.same_kind(&p.default_value()));
+        if valid {
+            if let Some(node) = graph.node_mut(node) {
+                node.params.insert(param.to_string(), value.clone());
+            }
+        }
+    }
+    Some(graph)
 }
 
 /// Keep the composer's live view in step with the incident.
@@ -333,6 +368,7 @@ pub fn capture(sim: Res<Sim>, selected: Res<Selected>, mut composer: ResMut<Comp
     let subtype_id = cap.subtype_id.clone();
     c.live.frame = Some(Frame {
         graph_id: cap.graph_id,
+        graph: cap.graph,
         subtype_id: cap.subtype_id,
         subtype_name: cap.subtype_name,
         agent: cap.agent,
@@ -373,7 +409,14 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
 /// editor's Live tab, this does not depend on which graph the canvas happens
 /// to have open: selection alone determines what is shown.
 pub fn debugger_panel(ui: &mut egui::Ui, c: &mut Composer) {
-    panel_impl(ui, c, false);
+    egui::SidePanel::right("live-debug-details")
+        .resizable(true)
+        .default_width(360.0)
+        .width_range(280.0..=520.0)
+        .show_inside(ui, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| panel_impl(ui, c, false));
+        });
+    egui::CentralPanel::default().show_inside(ui, |ui| super::viewer::debug_canvas(ui, c));
 }
 
 fn panel_impl(ui: &mut egui::Ui, c: &mut Composer, editor_context: bool) {
@@ -390,7 +433,7 @@ fn panel_impl(ui: &mut egui::Ui, c: &mut Composer, editor_context: bool) {
         }
     });
 
-    let Some(subject) = c.live.subject else {
+    let Some(_) = c.live.subject else {
         ui.separator();
         ui.label("Nothing is selected.");
         ui.small(
@@ -407,14 +450,10 @@ fn panel_impl(ui: &mut egui::Ui, c: &mut Composer, editor_context: bool) {
     let frame = c.live.frame.take();
     let Some(frame) = frame else {
         ui.separator();
-        ui.label(match subject.target {
-            Target::Unit(_) => "This unit is running the hand-written policy.",
-            Target::Person(_) => "This person is not running an authored behaviour.",
-            _ => "This agent is running the hand-written decision layer.",
-        });
+        ui.label("No applied behavior graph is available for this selection.");
         ui.small(
-            "Give a profile a share in the Profiles tab and press \"Apply and restart\", and \
-             its graph appears here as the incident runs.",
+            "The entity may have disappeared since selection, or the applied behavior library \
+             may be invalid. Every live decision layer requires a graph.",
         );
         return;
     };

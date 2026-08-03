@@ -27,7 +27,6 @@
 //! would give households a decision layer that disagrees with the one that
 //! produced the state they are in.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use bevy::prelude::*;
@@ -154,26 +153,12 @@ pub struct Composer {
 #[derive(Event)]
 pub struct ApplyBehaviour;
 
-/// `SPOTORNO_BEHAVIOUR=1`: run the library from the first frame.
-///
-/// Applying is a button click, so an unattended run cannot reach it — and the
-/// live execution view has nothing to show under the hand-written model, which
-/// is the state a screenshot would otherwise always catch it in. The same
-/// reason `SPOTORNO_WATCH` exists.
-#[derive(Resource)]
-struct ApplyOnStart(bool);
-
-fn apply_on_start(mut once: ResMut<ApplyOnStart>, mut apply: EventWriter<ApplyBehaviour>) {
-    if std::mem::take(&mut once.0) {
-        apply.send(ApplyBehaviour);
-    }
-}
-
 impl Composer {
     fn new(root: PathBuf) -> Composer {
         // The reported form, so the Help tab can show which files loaded and
-        // which did not. `load_or_default` does the same read; doing it here
-        // means the report and the library came from one pass over the disk.
+        // which did not. The library comes only from disk: an empty or invalid
+        // directory is surfaced when the simulation tries to start, rather
+        // than silently swapping in a compiled behavior.
         let (lib, load_report) = read_library(&root);
         // Open on a household behaviour when there is one: it is the domain the
         // composer is mostly used for, and opening on whichever id sorts first
@@ -261,42 +246,9 @@ impl Composer {
         self.graph_name = g.name.clone();
         self.graph_description = g.description.clone();
         self.graph_domain = g.domain;
-        self.snarl = Snarl::new();
+        self.snarl = viewer::snarl_from_graph(&g);
         self.selected = None;
         self.live.frame = None;
-
-        // The file's node ids are carried onto the canvas and back out again,
-        // so a subtype override — keyed `<node id>.<param>` — keeps pointing at
-        // the same box across a load, a save and a rebuild. Snarl's own handles
-        // are an editing detail and never leave this file.
-        let mut map: BTreeMap<behavior::NodeId, egui_snarl::NodeId> = BTreeMap::new();
-        for n in &g.nodes {
-            let sid = self.snarl.insert_node(
-                egui::pos2(n.pos[0], n.pos[1]),
-                EditorNode {
-                    id: n.id,
-                    type_id: n.type_id.clone(),
-                    params: n.params.clone(),
-                    comment: n.comment.clone(),
-                },
-            );
-            map.insert(n.id, sid);
-        }
-        for w in &g.wires {
-            let (Some(&from), Some(&to)) = (map.get(&w.from_node), map.get(&w.to_node)) else {
-                continue;
-            };
-            self.snarl.connect(
-                egui_snarl::OutPinId {
-                    node: from,
-                    output: w.from_port as usize,
-                },
-                egui_snarl::InPinId {
-                    node: to,
-                    input: w.to_port as usize,
-                },
-            );
-        }
 
         self.sync();
     }
@@ -602,9 +554,11 @@ impl Composer {
 /// file from a silent loss into a line in the Help tab.
 fn read_library(root: &PathBuf) -> (Library, Vec<behavior::FileReport>) {
     match Library::load_dir_reported(root) {
-        Ok(r) if !r.library.graphs.is_empty() => (r.library, r.files),
-        Ok(r) => (behavior::defaults::default_library(), r.files),
-        Err(_) => (behavior::defaults::default_library(), Vec::new()),
+        Ok(r) => (r.library, r.files),
+        Err(e) => {
+            eprintln!("behaviour library: {e:#}");
+            (Library::default(), Vec::new())
+        }
     }
 }
 
@@ -634,7 +588,6 @@ impl Plugin for ComposerPlugin {
             .join(behavior::library::DEFAULT_DIR);
 
         app.insert_resource(Composer::new(root))
-            .insert_resource(ApplyOnStart(std::env::var("SPOTORNO_BEHAVIOUR").is_ok()))
             .add_event::<ApplyBehaviour>()
             // Bevy's reflection registry, so the composer's value types are
             // visible to anything that walks the type registry — the entity
@@ -654,12 +607,7 @@ impl Plugin for ComposerPlugin {
                 // step produced; `transport_requests` runs last so a play or a
                 // step asked for in the panel lands before the next frame's
                 // `step_fire`.
-                (
-                    apply_on_start,
-                    live::capture,
-                    toggle,
-                    live::transport_requests,
-                )
+                (live::capture, toggle, live::transport_requests)
                     .chain()
                     .run_if(in_state(crate::AppState::Playing)),
             );

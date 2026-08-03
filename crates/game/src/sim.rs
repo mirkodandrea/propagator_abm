@@ -67,7 +67,7 @@ pub struct Sim {
     /// are still reading the threat field off it.
     pub crews: Suppression,
     pub scenario: Scenario,
-    /// Authored agent behaviour in force, from the composer.
+    /// Editable agent behaviour in force, from the composer.
     ///
     /// Held as the *library* rather than a compiled runtime because a restart
     /// has to rebuild the runtime from scratch: a compiled graph owns
@@ -75,8 +75,9 @@ pub struct Sim {
     /// it across a rebuild would be the same class of bug as reusing the
     /// household list.
     ///
-    /// `None` runs the hand-written decision layer, which stays the default.
-    pub behaviour: Option<behavior::Library>,
+    /// Every domain must have an active profile. A missing or invalid graph is
+    /// an error; the simulator has no second decision implementation to use.
+    pub behaviour: behavior::Library,
     /// Per-run log of what happened to each agent, for the Inspector's
     /// History section and (later) an LLM "interview an agent" feature.
     /// Rebuilt from scratch alongside `agents`/`crews` on every restart —
@@ -154,7 +155,15 @@ fn staging(agents: &Abm, ignition: Pos) -> Vec<Pos> {
 pub struct SimRestarted;
 
 impl Sim {
-    pub fn new(scenario: Scenario, weather: Weather, seed: u64) -> anyhow::Result<Sim> {
+    pub fn new(
+        scenario: Scenario,
+        weather: Weather,
+        seed: u64,
+        behaviour: behavior::Library,
+    ) -> anyhow::Result<Sim> {
+        let household_runtime = Self::runtime(&behaviour)?;
+        let person_runtime = Self::person_runtime(&behaviour)?;
+        let unit_runtime = Self::unit_runtime(&behaviour)?;
         let mut fire = FireSim::new(&scenario, weather, seed)?;
         // A going fire at the WUI edge, not a single cell: see
         // FireSim::ignite_patch and fire::ignition for why both the size and
@@ -171,7 +180,7 @@ impl Sim {
         );
         fire.ignite_patch(ignition.centre, ignition.radius_m, &scenario)?;
 
-        let agents = Abm::new(&scenario, seed)?;
+        let agents = Abm::with_behaviours(&scenario, seed, household_runtime, person_runtime)?;
         println!(
             "agents: {} households, {} people, {} road nodes, {} refuges",
             agents.households.len(),
@@ -180,9 +189,10 @@ impl Sim {
             agents.refuges.len()
         );
 
-        let crews = Suppression::new(
+        let crews = Suppression::with_policy(
             &scenario,
             &staging(&agents, scenario.world.centre_of(ignition.centre)),
+            unit_runtime,
         )?;
         println!(
             "suppression: {} units staged, {} air tankers on call",
@@ -207,7 +217,7 @@ impl Sim {
             agents,
             crews,
             scenario,
-            behaviour: None,
+            behaviour,
             history,
             // SPOTORNO_AUTOPLAY=1 starts running immediately, for screenshots
             // and for headless timing runs.
@@ -236,40 +246,27 @@ impl Sim {
         self.fire.time_s()
     }
 
-    /// Compile the authored behaviour, if there is one.
-    ///
-    /// Fails loudly rather than falling back to the shipped model: a run that
-    /// silently ignored the behaviour a scientist just authored, and reported
-    /// its numbers anyway, is the worst outcome available here.
-    fn runtime(&self) -> anyhow::Result<Option<abm::BehaviorRuntime>> {
-        match &self.behaviour {
-            None => Ok(None),
-            Some(lib) => abm::BehaviorRuntime::build(lib)
-                .map_err(|e| anyhow::anyhow!("authored behaviour: {e}")),
-        }
+    /// Compile the household graph profiles and require at least one assignment.
+    fn runtime(lib: &behavior::Library) -> anyhow::Result<abm::BehaviorRuntime> {
+        abm::BehaviorRuntime::build(lib)
+            .map_err(|e| anyhow::anyhow!("household behaviour: {e}"))?
+            .ok_or_else(|| anyhow::anyhow!("household behaviour: no profile has a positive share"))
     }
 
     /// The same, for the people who are away from their household.
-    fn person_runtime(&self) -> anyhow::Result<Option<abm::PersonRuntime>> {
-        match &self.behaviour {
-            None => Ok(None),
-            Some(lib) => abm::PersonRuntime::build(lib)
-                .map_err(|e| anyhow::anyhow!("authored person behaviour: {e}")),
-        }
+    fn person_runtime(lib: &behavior::Library) -> anyhow::Result<abm::PersonRuntime> {
+        abm::PersonRuntime::build(lib)
+            .map_err(|e| anyhow::anyhow!("separated-person behaviour: {e}"))?
+            .ok_or_else(|| {
+                anyhow::anyhow!("separated-person behaviour: no profile has a positive share")
+            })
     }
 
     /// The same, for the suppression half of the library.
-    ///
-    /// Separate from [`Sim::runtime`] rather than one call returning both,
-    /// because they are independent: a library may author the civilians, the
-    /// separated people, the units, any combination or none, and each falls back
-    /// to its own hand-written model on its own.
-    fn unit_runtime(&self) -> anyhow::Result<Option<abm::UnitRuntime>> {
-        match &self.behaviour {
-            None => Ok(None),
-            Some(lib) => abm::UnitRuntime::build(lib)
-                .map_err(|e| anyhow::anyhow!("authored unit policy: {e}")),
-        }
+    fn unit_runtime(lib: &behavior::Library) -> anyhow::Result<abm::UnitRuntime> {
+        abm::UnitRuntime::build(lib)
+            .map_err(|e| anyhow::anyhow!("suppression-unit behaviour: {e}"))?
+            .ok_or_else(|| anyhow::anyhow!("suppression-unit behaviour: no profile is enabled"))
     }
 
     /// Adopt an authored behaviour library and restart onto it.
@@ -279,16 +276,14 @@ impl Sim {
     /// decision layer would be answering about a state the old one produced.
     /// The fire, the weather, the seed and the ignition list are untouched, so
     /// this *is* the controlled comparison.
-    pub fn apply_behaviour(&mut self, lib: Option<behavior::Library>) -> anyhow::Result<()> {
-        let previous = self.behaviour.take();
-        self.behaviour = lib;
+    pub fn apply_behaviour(&mut self, lib: behavior::Library) -> anyhow::Result<()> {
+        let previous = std::mem::replace(&mut self.behaviour, lib);
         match self.restart() {
             Ok(()) => Ok(()),
             Err(e) => {
-                // Leave the sim on something that runs. A composer error must
-                // not take the game down with it.
+                // `restart` is transactional, so restoring the library is
+                // enough to leave the current incident exactly as it was.
                 self.behaviour = previous;
-                let _ = self.restart();
                 Err(e)
             }
         }
@@ -304,11 +299,16 @@ impl Sim {
     /// history. That is the point: a restart has to be a genuinely clean run,
     /// or comparing two wind directions compares nothing.
     pub fn restart(&mut self) -> anyhow::Result<()> {
+        // Compile and check complete domain coverage before disturbing the live
+        // run. An invalid edit must leave the current incident intact.
+        let household_runtime = Self::runtime(&self.behaviour)?;
+        let person_runtime = Self::person_runtime(&self.behaviour)?;
+        let unit_runtime = Self::unit_runtime(&self.behaviour)?;
         let mut fire = FireSim::new(&self.scenario, self.weather, self.seed)?;
 
         // Replay in time order. Anything at t=0 is lit now; the rest is armed
         // for `step_fire` to light as the clock reaches it.
-        let mut ignitions = std::mem::take(&mut self.ignitions);
+        let mut ignitions = self.ignitions.clone();
         ignitions.sort_by_key(|i| i.at_s);
         let mut pending = Vec::new();
         for ig in &ignitions {
@@ -319,22 +319,28 @@ impl Sim {
             }
         }
 
-        self.agents = Abm::with_behaviours(
+        let agents = Abm::with_behaviours(
             &self.scenario,
             self.seed,
-            self.runtime()?,
-            self.person_runtime()?,
+            household_runtime,
+            person_runtime,
         )?;
         // Rebuilt, not reset: a restart has to discard every order the player
         // gave, every litre spent and every metre of line cut, or comparing two
         // plans compares nothing. The roster is deterministic, so unit ids are
         // stable across the rebuild and the views keyed by them survive.
         let ig = self.scenario.world.centre_of(self.ignition.centre);
-        self.crews = Suppression::with_policy(
+        let crews = Suppression::with_policy(
             &self.scenario,
-            &staging(&self.agents, ig),
-            self.unit_runtime()?,
+            &staging(&agents, ig),
+            unit_runtime,
         )?;
+
+        // Commit the rebuilt run only after every mandatory graph and model
+        // component succeeded. A rejected edit must not half-restart the live
+        // incident.
+        self.agents = agents;
+        self.crews = crews;
         self.fire = fire;
         self.ignitions = ignitions;
         self.pending_ignitions = pending;
@@ -583,7 +589,12 @@ mod tests {
 
         for metadata in registry.list() {
             let scenario = Scenario::load_by_id(&data_dir, &metadata.id)?;
-            Sim::new(scenario, Weather::default(), 42)
+            Sim::new(
+                scenario,
+                Weather::default(),
+                42,
+                behavior::defaults::default_library(),
+            )
                 .map_err(|error| anyhow::anyhow!("{}: {error:#}", metadata.id))?;
         }
 

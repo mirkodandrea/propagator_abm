@@ -1,17 +1,17 @@
-//! The behaviours the game ships with, built in code.
+//! Reference behavior fixtures and the generator for the editable files.
 //!
-//! Two graphs, one per [`Domain`]. Both are transcriptions of hand-written
-//! model code — the departure rules in `abm::decide`, and the safety and
-//! resupply policy in `abm::suppression` — with the same thresholds and the
-//! same answers. They exist for two reasons: they give a scientist something to
+//! Three graphs, one per [`Domain`]. They transcribe the model's former
+//! decision code — household departure, separated-person destination, and unit
+//! safety/resupply — with the same thresholds and answers. They exist for two
+//! reasons: they give a scientist something to
 //! *start from* rather than an empty canvas, and they are the honest
 //! demonstration that the node set is expressive enough for the model that
 //! already exists. If the composer could not reproduce the shipped behaviour,
 //! it could not replace it.
 //!
-//! They are built here rather than shipped as JSON blobs so they cannot drift
-//! out of sync with the node registry — a renamed port breaks the build, not a
-//! file someone loads in six months.
+//! The game itself loads `data/behaviours/`; it never falls back to this module.
+//! Keeping a typed builder here gives tests a compact fixture and regenerates
+//! the editable JSON without letting its ports drift from the node registry.
 //!
 //! ### Written in blocks, on purpose
 //!
@@ -449,8 +449,8 @@ pub fn default_unit_subtypes() -> Vec<AgentSubtype> {
     );
     standing.description =
         "The shipped policy, applied to every unit: disengage above 0.35 of threat, \
-         and pump the tank dry before going for water. This is what the model does \
-         with no authored behaviour at all, written down."
+         and pump the tank dry before going for water. This baseline is an editable \
+         graph like every other policy."
             .to_string();
     standing.author = "shipped".to_string();
     standing.tags = vec!["baseline".into()];
@@ -473,8 +473,7 @@ pub fn default_unit_subtypes() -> Vec<AgentSubtype> {
     cautious.tags = vec!["cautious".into(), "engines".into()];
     cautious.unit_kinds = vec![UnitKindKey::Engine];
     cautious.share = 0.0;
-    // Off by default, like every authored behaviour: the shipped measurements
-    // describe the model they were taken on.
+    // Off by default so the shipped measurements retain their baseline policy.
     cautious.enabled = false;
     cautious.overrides.insert(safety("engine_limit"), ParamValue::Number(0.25));
     cautious.overrides.insert(safety("heat_limit"), ParamValue::Number(0.4));

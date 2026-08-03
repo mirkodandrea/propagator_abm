@@ -170,37 +170,6 @@ impl Library {
         Ok(report.library)
     }
 
-    /// Load from `root`, or fall back to the shipped default library when
-    /// there is nothing there.
-    ///
-    /// Lenient about individual files: a directory with one broken graph and
-    /// nine good ones loads the nine. Falling back to the shipped defaults only
-    /// happens when there is nothing usable at all.
-    pub fn load_or_default(root: &Path) -> Library {
-        match Library::load_dir_reported(root) {
-            Ok(report) => {
-                for bad in report.failures() {
-                    eprintln!(
-                        "behaviour library: skipping {}: {}",
-                        bad.path.display(),
-                        bad.error.as_deref().unwrap_or("would not load")
-                    );
-                }
-                if report.library.graphs.is_empty() {
-                    crate::defaults::default_library()
-                } else {
-                    report.library
-                }
-            }
-            Err(e) => {
-                // Returning the defaults rather than propagating: a broken
-                // authored directory should not stop the game launching.
-                eprintln!("behaviour library: {e:#}; using the shipped default");
-                crate::defaults::default_library()
-            }
-        }
-    }
-
     /// Read one graph file from anywhere on disk.
     ///
     /// The import half of "custom behaviours can be saved to and loaded from
@@ -355,7 +324,7 @@ impl Library {
 
     /// Subtypes of one share-assigned domain with a non-zero share, and their
     /// shares normalised to sum to one. Empty when nothing has a share, which
-    /// the caller reads as "do not use authored behaviour for these at all".
+    /// makes the library incomplete for a simulation run.
     pub fn share_assignment(&self, domain: Domain) -> Vec<(String, f32)> {
         let mine: Vec<&AgentSubtype> = self
             .subtypes
@@ -402,8 +371,8 @@ impl Library {
     /// Suppression profiles that are in play, in id order.
     ///
     /// No shares and no normalisation: a unit takes the first profile in this
-    /// list that governs its kind. Empty means the units run the hand-written
-    /// policy, which stays the default for the same reason the civilians' does.
+    /// list that governs its kind. Empty makes the library incomplete for a
+    /// simulation run.
     pub fn unit_assignment(&self) -> Vec<String> {
         self.subtypes
             .values()
