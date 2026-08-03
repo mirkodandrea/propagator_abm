@@ -12,9 +12,8 @@ anyhow.workspace = true
 
 # Native-only for the same reason `telemetry`'s SQLite is: `ureq` is a
 # blocking socket client, and wasm32-unknown-unknown has neither the threads
-# nor the sockets. Keeping it target-specific means `game` needs no `cfg` at
-# any call site — every type here exists on every target, and on web
-# `Client::complete` is a stub that says why.
+# nor the sockets. The web client uses browser `fetch` instead, while keeping
+# the native HTTP dependency out of the wasm artifact.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ureq = { version = "2.12", features = ["json"] }
 

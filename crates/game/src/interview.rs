@@ -32,10 +32,9 @@
 //! should be too, and regenerating one on every restart would be a paid call
 //! to reinvent somebody the model already knew.
 //!
-//! **Native only, like the control API.** The request runs on a worker thread
-//! blocking on a socket, and the main thread polls a channel — the same shape
-//! `crate::api` uses, for the same reason. On the web build the spawn is
-//! replaced by an immediate refusal.
+//! Native requests run on a worker thread blocking on a socket. Browser
+//! requests use async `fetch`; both report through the same polled channel so
+//! rendering never waits on a model response.
 
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -90,6 +89,8 @@ pub struct Interview {
     pub input: String,
     pub config: LlmConfig,
     pub models: Vec<String>,
+    /// Text entered inside either provider's searchable model picker.
+    pub model_search: String,
     pub model_status: String,
     /// A line under the transcript: the last failure, or what is happening.
     pub status: String,
@@ -124,6 +125,7 @@ impl Default for Interview {
             input: String::new(),
             config,
             models: Vec::new(),
+            model_search: String::new(),
             model_status: String::new(),
             status: error
                 .map(|e| format!("LLM settings: {e}"))
@@ -817,11 +819,20 @@ fn spawn(config: LlmConfig, messages: Vec<Message>) -> mpsc::Receiver<Note> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn spawn(_config: LlmConfig, _messages: Vec<Message>) -> mpsc::Receiver<Note> {
+fn spawn(config: LlmConfig, messages: Vec<Message>) -> mpsc::Receiver<Note> {
     let (tx, rx) = mpsc::channel();
-    let _ = tx.send(Note::Failed(
-        "interviews need the native build: the web build has no HTTP client".to_string(),
-    ));
+    wasm_bindgen_futures::spawn_local(async move {
+        let client = Client::new(config);
+        let deltas = tx.clone();
+        let mut on_delta = |d: &str| {
+            let _ = deltas.send(Note::Delta(d.to_string()));
+        };
+        let note = match client.complete(&messages, &mut on_delta).await {
+            Ok(text) => Note::Done(text),
+            Err(e) => Note::Failed(format!("{e:#}")),
+        };
+        let _ = tx.send(note);
+    });
     rx
 }
 
@@ -1648,6 +1659,65 @@ fn bubble(ui: &mut egui::Ui, role: &str, content: &str, sim_time_s: i64) {
     ui.add_space(8.0);
 }
 
+/// A model menu that stays usable when a provider exposes hundreds of ids.
+/// The selected id remains directly editable so a newly released or private
+/// model can still be used before it appears in the refreshed list.
+fn model_picker(
+    ui: &mut egui::Ui,
+    id: &'static str,
+    selected: &mut String,
+    search: &mut String,
+    models: &[String],
+) {
+    ui.vertical(|ui| {
+        egui::ComboBox::from_id_source(id)
+            .width(310.0)
+            .selected_text(if selected.trim().is_empty() {
+                "Choose a model…"
+            } else {
+                selected.as_str()
+            })
+            .show_ui(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::singleline(search)
+                        .hint_text("Search models…")
+                        .desired_width(290.0),
+                );
+                ui.separator();
+
+                let needle = search.trim().to_lowercase();
+                let mut shown = 0;
+                egui::ScrollArea::vertical()
+                    .max_height(240.0)
+                    .show(ui, |ui| {
+                        for model in models {
+                            if !needle.is_empty() && !model.to_lowercase().contains(&needle) {
+                                continue;
+                            }
+                            shown += 1;
+                            if ui.selectable_label(selected == model, model).clicked() {
+                                selected.clone_from(model);
+                                search.clear();
+                                ui.close_menu();
+                            }
+                        }
+                        if shown == 0 {
+                            ui.weak(if models.is_empty() {
+                                "Refresh models to load choices."
+                            } else {
+                                "No matching models."
+                            });
+                        }
+                    });
+            });
+        ui.add(
+            egui::TextEdit::singleline(selected)
+                .hint_text("or enter an exact model id")
+                .desired_width(310.0),
+        );
+    });
+}
+
 /// Provider, model and key — the whole of what makes an interview possible.
 pub fn settings_window(
     mut contexts: EguiContexts,
@@ -1678,7 +1748,12 @@ pub fn settings_window(
                     .on_hover_text(p.hint())
                     .clicked()
                 {
-                    interview.config.provider = p;
+                    if interview.config.provider != p {
+                        interview.models.clear();
+                        interview.model_search.clear();
+                        interview.model_status.clear();
+                    }
+                    interview.config.select_provider(p);
                 }
             }
             ui.separator();
@@ -1698,14 +1773,14 @@ pub fn settings_window(
                                 ui.label(m).on_hover_text("set by OPENROUTER_MODEL");
                             }
                             None => {
-                                egui::ComboBox::from_id_source("openrouter-model")
-                                    .selected_text(interview.config.openrouter_model.clone())
-                                    .show_ui(ui, |ui| {
-                                        for model in &models {
-                                            ui.selectable_value(&mut interview.config.openrouter_model, model.clone(), model);
-                                        }
-                                    });
-                                ui.text_edit_singleline(&mut interview.config.openrouter_model);
+                                let state = interview.as_mut();
+                                model_picker(
+                                    ui,
+                                    "openrouter-model",
+                                    &mut state.config.openrouter_model,
+                                    &mut state.model_search,
+                                    &models,
+                                );
                             }
                         }
                         ui.end_row();
@@ -1741,14 +1816,14 @@ pub fn settings_window(
                         ui.end_row();
 
                         ui.label("Model");
-                        egui::ComboBox::from_id_source("ollama-model")
-                            .selected_text(interview.config.ollama_model.clone())
-                            .show_ui(ui, |ui| {
-                                for model in &models {
-                                    ui.selectable_value(&mut interview.config.ollama_model, model.clone(), model);
-                                }
-                            });
-                        ui.text_edit_singleline(&mut interview.config.ollama_model);
+                        let state = interview.as_mut();
+                        model_picker(
+                            ui,
+                            "ollama-model",
+                            &mut state.config.ollama_model,
+                            &mut state.model_search,
+                            &models,
+                        );
                         ui.end_row();
                     });
                     if ui.button("Refresh models from Ollama").clicked() { refresh_models = true; }

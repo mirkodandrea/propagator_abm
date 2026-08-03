@@ -1,11 +1,12 @@
-//! Talking to a model, over a blocking socket, one request at a time.
+//! Talking to a model, one request at a time.
 //!
-//! Both providers stream, and both are read the same way: a blocking `Read`
-//! over the response body, split into lines, each line turned into zero or one
-//! deltas by a small pure function. Those two functions —
+//! Native requests stream and are read the same way: a blocking `Read` over the
+//! response body, split into lines, each line turned into zero or one deltas by
+//! a small pure function. Those two functions —
 //! [`openrouter_delta`] and [`ollama_delta`] — are where every format quirk
 //! lives and are the only part of this module that can be tested without a
-//! server, so they are deliberately the only part that has any logic in it.
+//! server. Browser requests use async `fetch` and parse one completed response,
+//! because browser sockets cannot use the native blocking client.
 //!
 //! **Streaming, because an interview is a conversation.** A non-streaming call
 //! is simpler and would have been defensible, but a wildfire interview asks a
@@ -13,11 +14,10 @@
 //! exactly like the thing has hung. The delta callback is what lets the chat
 //! window fill in as the answer arrives.
 //!
-//! **Nothing here knows about Bevy or threads.** [`Client::complete`] blocks
-//! the calling thread until the model is done, and it is `game`'s worker
-//! thread that makes that acceptable — the same shape `crate::api` already
-//! uses for the control API, and for the same reason: the main thread never
-//! waits on a socket.
+//! **Nothing here knows about Bevy or threads.** On native builds,
+//! [`Client::complete`] blocks the calling thread until the model is done, and
+//! it is `game`'s worker thread that makes that acceptable. On web builds it is
+//! async, and `game` runs it with `spawn_local`.
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -99,19 +99,104 @@ impl Client {
         }
     }
 
+    /// Browser equivalent of [`Client::complete`]. Browser `fetch` is async,
+    /// so the web game runs this future on its main-thread executor. The
+    /// response is deliberately non-streaming, but the browser remains
+    /// responsive while the future is pending. The completed answer still
+    /// follows the same callback and transcript path as the native client.
     #[cfg(target_arch = "wasm32")]
-    pub fn complete(
+    pub async fn complete(
         &self,
-        _messages: &[Message],
-        _on_delta: &mut dyn FnMut(&str),
+        messages: &[Message],
+        on_delta: &mut dyn FnMut(&str),
     ) -> Result<String> {
-        Err(anyhow!("interviews need a native build: the web build has no HTTP client"))
+        use wasm_bindgen::{JsCast, JsValue};
+        use wasm_bindgen_futures::JsFuture;
+        use web_sys::{Request, RequestInit, RequestMode, Response};
+
+        self.config.readiness().map_err(|e| anyhow!(e))?;
+        let (url, body) = match self.config.provider {
+            Provider::OpenRouter => (
+                "https://openrouter.ai/api/v1/chat/completions".to_string(),
+                json!({
+                    "model": self.config.model(),
+                    "messages": wire_messages(messages),
+                    "stream": false,
+                    "temperature": self.config.temperature,
+                    "max_tokens": self.config.max_tokens,
+                }),
+            ),
+            Provider::Ollama => (
+                format!(
+                    "{}/api/chat",
+                    self.config.ollama_url.trim_end_matches('/')
+                ),
+                json!({
+                    "model": self.config.model(),
+                    "messages": wire_messages(messages),
+                    "stream": false,
+                    "options": {
+                        "temperature": self.config.temperature,
+                        "num_predict": self.config.max_tokens,
+                    },
+                }),
+            ),
+        };
+
+        let init = RequestInit::new();
+        init.set_method("POST");
+        init.set_mode(RequestMode::Cors);
+        init.set_body(&JsValue::from_str(&body.to_string()));
+        let request = Request::new_with_str_and_init(&url, &init)
+            .map_err(|e| anyhow!(format!("creating model request: {e:?}")))?;
+        request
+            .headers()
+            .set("Content-Type", "application/json")
+            .map_err(|e| anyhow!(format!("setting model request headers: {e:?}")))?;
+        if self.config.provider == Provider::OpenRouter {
+            request
+                .headers()
+                .set(
+                    "Authorization",
+                    &format!("Bearer {}", self.config.api_key()),
+                )
+                .map_err(|e| anyhow!(format!("setting model request headers: {e:?}")))?;
+            request
+                .headers()
+                .set("X-Title", "Wildfire incident commander")
+                .map_err(|e| anyhow!(format!("setting model request headers: {e:?}")))?;
+        }
+
+        let window = web_sys::window().context("browser window is unavailable")?;
+        let response = JsFuture::from(window.fetch_with_request(&request))
+            .await
+            .map_err(|e| anyhow!(format!("requesting a model reply: {e:?}")))?;
+        let response: Response = response
+            .dyn_into()
+            .map_err(|e| anyhow!(format!("invalid model response: {e:?}")))?;
+        let status = response.status();
+        let text = JsFuture::from(
+            response
+                .text()
+                .map_err(|e| anyhow!(format!("reading the model's reply: {e:?}")))?,
+        )
+        .await
+        .map_err(|e| anyhow!(format!("reading the model's reply: {e:?}")))?
+        .as_string()
+        .ok_or_else(|| anyhow!("the model returned a non-text response"))?;
+        if !response.ok() {
+            return Err(describe_status(status, &text));
+        }
+
+        let answer = completed_text(self.config.provider, &text)?;
+        on_delta(&answer);
+        Ok(answer)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     fn openrouter(&self, messages: &[Message], on_delta: &mut dyn FnMut(&str)) -> Result<String> {
         let body = json!({
-            "model": self.config.openrouter_model,
+            "model": self.config.model(),
             "messages": wire_messages(messages),
             "stream": true,
             "temperature": self.config.temperature,
@@ -135,7 +220,7 @@ impl Client {
     fn ollama(&self, messages: &[Message], on_delta: &mut dyn FnMut(&str)) -> Result<String> {
         let url = format!("{}/api/chat", self.config.ollama_url.trim_end_matches('/'));
         let body = json!({
-            "model": self.config.ollama_model,
+            "model": self.config.model(),
             "messages": wire_messages(messages),
             "stream": true,
             "options": {
@@ -171,24 +256,66 @@ fn describe(e: ureq::Error) -> anyhow::Error {
     match e {
         ureq::Error::Status(code, response) => {
             let body = response.into_string().unwrap_or_default();
-            let detail = serde_json::from_str::<Value>(&body)
-                .ok()
-                .and_then(|v| {
-                    v.get("error")
-                        .and_then(|e| e.get("message").or(Some(e)))
-                        .map(|m| m.as_str().map(str::to_string).unwrap_or_else(|| m.to_string()))
-                })
-                .unwrap_or_else(|| body.chars().take(300).collect());
-            match code {
-                401 | 403 => anyhow!("the model provider rejected the API key ({code}): {detail}"),
-                404 => anyhow!("no such model ({code}): {detail}"),
-                429 => anyhow!("rate limited by the provider ({code}): {detail}"),
-                _ => anyhow!("provider returned {code}: {detail}"),
-            }
+            describe_status(code, &body)
         }
         ureq::Error::Transport(t) => {
             anyhow!("could not reach the model provider: {t}. For Ollama, check `ollama serve` is running.")
         }
+    }
+}
+
+fn describe_status(code: u16, body: &str) -> anyhow::Error {
+    let detail = serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|v| {
+            v.get("error")
+                .and_then(|e| e.get("message").or(Some(e)))
+                .map(|m| {
+                    m.as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| m.to_string())
+                })
+        })
+        .unwrap_or_else(|| body.chars().take(300).collect());
+    match code {
+        401 | 403 => anyhow!("the model provider rejected the API key ({code}): {detail}"),
+        404 => anyhow!("no such model ({code}): {detail}"),
+        429 => anyhow!("rate limited by the provider ({code}): {detail}"),
+        _ => anyhow!("provider returned {code}: {detail}"),
+    }
+}
+
+/// Read a completed, non-streaming response. Native calls stream, but keeping
+/// this parser target-independent makes the browser wire format testable.
+#[cfg(any(target_arch = "wasm32", test))]
+fn completed_text(provider: Provider, body: &str) -> Result<String> {
+    let value: Value = serde_json::from_str(body).context("parsing the model's reply")?;
+    if let Some(error) = value.get("error") {
+        let message = error
+            .get("message")
+            .and_then(Value::as_str)
+            .or_else(|| error.as_str())
+            .unwrap_or("the provider reported an error");
+        return Err(anyhow!(message.to_string()));
+    }
+    let text = match provider {
+        Provider::OpenRouter => value
+            .get("choices")
+            .and_then(|choices| choices.get(0))
+            .and_then(|choice| choice.get("message"))
+            .and_then(|message| message.get("content"))
+            .and_then(Value::as_str),
+        Provider::Ollama => value
+            .get("message")
+            .and_then(|message| message.get("content"))
+            .and_then(Value::as_str),
+    }
+    .unwrap_or("")
+    .to_string();
+    if text.trim().is_empty() {
+        Err(anyhow!("the model returned an empty reply"))
+    } else {
+        Ok(text)
     }
 }
 
@@ -350,6 +477,36 @@ mod tests {
             ollama_delta(r#"{"message":{"role":"assistant","content":""},"done":true}"#),
             Chunk::Done
         );
+    }
+
+    #[test]
+    fn completed_browser_responses_yield_text() {
+        assert_eq!(
+            completed_text(
+                Provider::OpenRouter,
+                r#"{"choices":[{"message":{"content":"Sono qui."}}]}"#,
+            )
+            .unwrap(),
+            "Sono qui."
+        );
+        assert_eq!(
+            completed_text(
+                Provider::Ollama,
+                r#"{"message":{"role":"assistant","content":"Eccomi."}}"#,
+            )
+            .unwrap(),
+            "Eccomi."
+        );
+    }
+
+    #[test]
+    fn completed_browser_response_reports_provider_errors() {
+        let error = completed_text(
+            Provider::OpenRouter,
+            r#"{"error":{"message":"credit exhausted"}}"#,
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "credit exhausted");
     }
 
     #[test]

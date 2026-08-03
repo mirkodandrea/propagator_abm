@@ -19,6 +19,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+/// The hosted model offered before the user has chosen one of their own.
+pub const DEFAULT_OPENROUTER_MODEL: &str = "deepseek/deepseek-v4-flash";
+
 /// Read a `.env` file into the process environment, without overwriting
 /// anything already set there.
 ///
@@ -56,6 +59,7 @@ pub fn load_dotenv() -> Option<String> {
 #[cfg(target_arch = "wasm32")]
 pub fn load_dotenv() -> Option<String> { None }
 
+#[cfg(any(not(target_arch = "wasm32"), test))]
 fn parse_dotenv(text: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for line in text.lines() {
@@ -136,7 +140,7 @@ impl Default for LlmConfig {
             } else {
                 Provider::Ollama
             },
-            openrouter_model: "anthropic/claude-sonnet-4.5".to_string(),
+            openrouter_model: DEFAULT_OPENROUTER_MODEL.to_string(),
             openrouter_key: String::new(),
             ollama_url: std::env::var("OLLAMA_HOST")
                 .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string()),
@@ -161,7 +165,10 @@ impl LlmConfig {
         }
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
-        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))
+        let mut config: LlmConfig = serde_json::from_str(&text)
+            .with_context(|| format!("parsing {}", path.display()))?;
+        config.fill_missing_provider_defaults();
+        Ok(config)
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -173,7 +180,10 @@ impl LlmConfig {
             .map_err(|e| anyhow::anyhow!(format!("reading browser LLM settings: {e:?}")))? else {
             return Ok(LlmConfig::default());
         };
-        serde_json::from_str(&text).context("parsing browser LLM settings")
+        let mut config: LlmConfig =
+            serde_json::from_str(&text).context("parsing browser LLM settings")?;
+        config.fill_missing_provider_defaults();
+        Ok(config)
     }
 
     /// The same, but never fails: a broken config file must not stop the game
@@ -183,6 +193,20 @@ impl LlmConfig {
         match LlmConfig::load() {
             Ok(c) => (c, None),
             Err(e) => (LlmConfig::default(), Some(format!("{e:#}"))),
+        }
+    }
+
+    /// Select a provider without replacing a model the user chose earlier.
+    pub fn select_provider(&mut self, provider: Provider) {
+        self.provider = provider;
+        self.fill_missing_provider_defaults();
+    }
+
+    /// Supply defaults only where there is no previous provider-specific
+    /// selection. This also repairs an older saved config with an empty model.
+    fn fill_missing_provider_defaults(&mut self) {
+        if self.provider == Provider::OpenRouter && self.openrouter_model.trim().is_empty() {
+            self.openrouter_model = DEFAULT_OPENROUTER_MODEL.to_string();
         }
     }
 
@@ -311,7 +335,7 @@ pub async fn fetch_models(config: &LlmConfig) -> Result<Vec<String>> {
         Provider::OpenRouter => ("https://openrouter.ai/api/v1/models".to_string(), Some(config.api_key())),
         Provider::Ollama => (format!("{}/api/tags", config.ollama_url.trim_end_matches('/')), None),
     };
-    let mut init = RequestInit::new();
+    let init = RequestInit::new();
     init.set_method("GET");
     init.set_mode(RequestMode::Cors);
     let request = Request::new_with_str_and_init(&url, &init)
@@ -418,6 +442,31 @@ mod tests {
         let back: LlmConfig = serde_json::from_str(&text).unwrap();
         assert_eq!(back.openrouter_model, c.openrouter_model);
         assert_eq!(back.provider, c.provider);
+    }
+
+    #[test]
+    fn openrouter_starts_with_deepseek_v4_flash() {
+        assert_eq!(
+            LlmConfig::default().openrouter_model,
+            "deepseek/deepseek-v4-flash"
+        );
+    }
+
+    #[test]
+    fn selecting_openrouter_fills_only_a_missing_model() {
+        let mut missing = LlmConfig {
+            openrouter_model: "  ".into(),
+            ..LlmConfig::default()
+        };
+        missing.select_provider(Provider::OpenRouter);
+        assert_eq!(missing.openrouter_model, DEFAULT_OPENROUTER_MODEL);
+
+        let mut chosen = LlmConfig {
+            openrouter_model: "openai/gpt-5.2".into(),
+            ..LlmConfig::default()
+        };
+        chosen.select_provider(Provider::OpenRouter);
+        assert_eq!(chosen.openrouter_model, "openai/gpt-5.2");
     }
 
     #[test]
