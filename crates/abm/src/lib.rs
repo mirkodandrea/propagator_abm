@@ -51,6 +51,7 @@ pub mod orders;
 pub mod refuge;
 pub mod spot;
 pub mod suppression;
+pub mod traffic;
 
 use comms::CommsNet;
 use haven::{Haven, HavenKind};
@@ -58,6 +59,7 @@ use network::{NodeId, RoadNetwork, RouteField, NO_NODE};
 use orders::{BoatLift, Closure};
 use refuge::Refuge;
 use spot::SpotFires;
+use traffic::{Traffic, NO_LINK};
 
 pub use behaviour::{
     BehaviorRuntime, Outcome, PersonOutcome, PersonRuntime, UnitOutcome, UnitRuntime,
@@ -98,10 +100,6 @@ const APPROACH_SPEED: f32 = 1.6;
 /// A traveller within this distance of its target node has reached it.
 const ARRIVE_M: f32 = 4.0;
 
-/// How much each additional vehicle on the same road link slows everyone on
-/// it. Crude, but it reproduces the effect that matters: a late mass
-/// departure down one road is slower than the same cars leaving early.
-const CONGESTION: f32 = 0.06;
 
 /// How long the commander's order takes to reach a party staying in a hotel or
 /// a let: through whoever is running the place, over a PA or a knock on every
@@ -196,8 +194,24 @@ pub struct Traveller {
     pub target: NodeId,
     /// Node most recently reached.
     pub at_node: NodeId,
-    /// Link currently occupied, for congestion accounting.
-    edge: u32,
+    /// Directed link this vehicle is queued on, or [`NO_LINK`] when it is not
+    /// in traffic: on foot, crossing open ground, or waiting at a junction for
+    /// room on the link it wants next.
+    link: u32,
+    /// Place in that link's queue, as issued by [`Traffic::enter`].
+    ticket: u32,
+    /// Simulated time it entered the link. Its position along the link is
+    /// derived from this and from how many vehicles are ahead of it, never
+    /// accumulated — see [`traffic`] on why that is load-bearing.
+    link_entered_s: f32,
+    /// Free-flow speed on the current link, m/s, fixed when it entered:
+    /// the road class's own speed, less what the smoke and heat there take
+    /// off it.
+    link_speed: f32,
+    /// Vehicles ahead of it on that link, 0 being the one at the stop line.
+    /// Recomputed from the queue order each sub-step rather than stored
+    /// authoritatively — see [`traffic`].
+    queue_rank: u32,
     /// Accumulated flame exposure, seconds.
     pub heat_s: f32,
     /// Metres travelled, for the debrief.
@@ -215,6 +229,20 @@ pub struct Traveller {
     /// anyone in the open and 1 for anyone standing in the sea. Set on arrival
     /// at a haven and zero everywhere else.
     pub shelter_relief: f32,
+}
+
+impl Traveller {
+    /// The directed link this vehicle is queued on, if it is in traffic at all.
+    /// `None` for anyone on foot, for a car still crossing open ground from the
+    /// house, and for one waiting at a junction for room.
+    pub fn link(&self) -> Option<u32> {
+        (self.link != NO_LINK).then_some(self.link)
+    }
+
+    /// Vehicles between it and the stop line of its link.
+    pub fn queue_rank(&self) -> u32 {
+        self.queue_rank
+    }
 }
 
 /// One person. Individually inspectable, which is the point: the scenario is
@@ -357,8 +385,10 @@ pub struct Abm {
     fire_dist: Vec<f32>,
     fd_cols: usize,
     fd_rows: usize,
-    /// Vehicles currently on each link, from the previous step.
-    occupancy: Vec<u16>,
+    /// Vehicle queues on the road graph: capacity, storage and spillback.
+    /// Cars are the only travellers in it — pedestrians do not queue, and
+    /// suppression units read it for a slowdown without joining it.
+    pub traffic: Traffic,
     /// The editable household decision layer. Every household has one: there is
     /// no second, hand-written policy for a run to fall back to.
     behavior: BehaviorRuntime,
@@ -375,6 +405,9 @@ pub struct Abm {
     order_at_s: f32,
     time_s: f32,
     next_decision_s: f32,
+    /// When the decision layer last ran, so the interval it integrates over is
+    /// the one that actually elapsed rather than the one that was intended.
+    last_decision_s: f32,
     next_route_s: f32,
     /// Bumped whenever anything an observer would draw has changed.
     pub generation: u64,
@@ -578,6 +611,7 @@ impl Abm {
         let haven_at = havens.iter().map(|h| (h.node, h.kind)).collect();
         let homes: Vec<Pos> = households.iter().map(|h| h.home).collect();
         let comms = CommsNet::build(&net, &homes);
+        let traffic = Traffic::new(&net);
 
         let mut abm = Abm {
             households,
@@ -603,7 +637,7 @@ impl Abm {
             fire_dist: vec![f32::MAX; fd_rows * fd_cols],
             fd_cols,
             fd_rows,
-            occupancy: Vec::new(),
+            traffic,
             behavior,
             person_behavior,
             subtype,
@@ -611,10 +645,10 @@ impl Abm {
             order_at_s: f32::INFINITY,
             time_s: 0.0,
             next_decision_s: 0.0,
+            last_decision_s: 0.0,
             next_route_s: 0.0,
             generation: 0,
         };
-        abm.occupancy = vec![0; abm.network.edge_count];
         abm.closed_edges = vec![false; abm.network.edge_count];
 
         // People who are away start moving immediately: they are already out,
@@ -657,11 +691,14 @@ impl Abm {
                 return;
             }
             // Turning round: back onto the route field from wherever they are.
+            let nearest_walk =
+                self.network.nearest(self.travellers[ti].pos, false).unwrap_or(NO_NODE);
+            self.detach(ti);
+            let t = &mut self.travellers[ti];
             t.goal = Goal::Refuge;
             t.home_path.clear();
             t.state = TravelState::Approaching;
-            t.target = self.network.nearest(t.pos, false).unwrap_or(NO_NODE);
-            t.edge = u32::MAX;
+            t.target = nearest_walk;
             self.people[id].status = Status::Evacuating;
             return;
         }
@@ -686,7 +723,11 @@ impl Abm {
             state: TravelState::Approaching,
             target: at,
             at_node: NO_NODE,
-            edge: u32::MAX,
+            link: NO_LINK,
+            ticket: 0,
+            link_entered_s: 0.0,
+            link_speed: 0.0,
+            queue_rank: 0,
             heat_s: 0.0,
             distance_m: 0.0,
             departed_s: self.time_s,
@@ -932,19 +973,35 @@ impl Abm {
 
         if self.time_s >= self.next_decision_s {
             // Decisions are integrated over the interval that actually
-            // elapsed, not over the nominal one, so a coarse caller does not
-            // get a slower evacuation than a fine one.
-            let elapsed = DECISION_S.max(dt_s);
+            // elapsed, not over the nominal one, so neither a coarse caller nor
+            // a fine one gets a different evacuation from the same model.
+            //
+            // This was `DECISION_S.max(dt_s)`, which is right for a caller
+            // coarser than `DECISION_S` and silently wrong for a finer one: at
+            // a 2 s step the decision fires every *6* s — the first step at or
+            // past the deadline — and charged 5, so preparation ran at 83% of
+            // real time; at 4 s it fired every 8 and charged 5, and ran at 63%.
+            // The game steps at ~2 s and every batch measurement in
+            // `crates/fire/tests` uses 10 s or more, so the shipped game was
+            // preparing households slower than the numbers taken on it, and
+            // nothing anywhere reported a discrepancy. Measuring the interval
+            // rather than assuming it is the whole fix.
+            let elapsed = (self.time_s - self.last_decision_s).max(dt_s);
+            self.last_decision_s = self.time_s;
             self.decide(elapsed, fire, scn);
             self.decide_people(elapsed, fire);
             self.next_decision_s = self.time_s + DECISION_S;
         }
 
+        // Sub-steps carry the absolute clock, not just their length: the
+        // traffic queue times a link's discharge against simulated time so that
+        // the same number of vehicles gets through however the caller chops the
+        // interval up.
         let mut remaining = dt_s;
         while remaining > 0.0 {
             let sub = remaining.min(MAX_SUBSTEP_S);
-            self.move_travellers(sub, fire, scn);
             remaining -= sub;
+            self.move_travellers(sub, self.time_s - remaining, fire, scn);
         }
         self.sync_people();
         self.generation += 1;
@@ -1461,13 +1518,16 @@ impl Abm {
             self.people[id].status = Status::Trapped;
             return;
         };
-        let t = &mut self.travellers[ti];
-        if matches!(t.state, TravelState::Safe | TravelState::Dead | TravelState::Arrived) {
+        if matches!(
+            self.travellers[ti].state,
+            TravelState::Safe | TravelState::Dead | TravelState::Arrived
+        ) {
             return;
         }
+        self.detach(ti);
+        let t = &mut self.travellers[ti];
         t.state = TravelState::Cutoff;
         t.target = NO_NODE;
-        t.edge = u32::MAX;
         t.home_path.clear();
         self.people[id].status = Status::Trapped;
     }
@@ -1507,13 +1567,15 @@ impl Abm {
         {
             return;
         }
+        let here = self.travellers[ti].pos;
+        let entry = self.network.nearest(here, false).unwrap_or(NO_NODE);
+        self.detach(ti);
         let t = &mut self.travellers[ti];
         t.goal = goal;
         t.home_path.clear();
         t.state = TravelState::Approaching;
-        t.edge = u32::MAX;
         t.shelter_relief = 0.0;
-        t.target = self.network.nearest(t.pos, false).unwrap_or(NO_NODE);
+        t.target = entry;
         self.people[id].status = Status::Evacuating;
     }
 
@@ -1547,11 +1609,11 @@ impl Abm {
             self.walk_out(id);
         }
         let Some(ti) = self.people[id].traveller else { return };
+        self.detach(ti);
         let t = &mut self.travellers[ti];
         t.goal = Goal::Home;
         t.state = TravelState::Approaching;
         t.target = from;
-        t.edge = u32::MAX;
         t.home_path = path;
         self.people[id].status = Status::Evacuating;
     }
@@ -1560,11 +1622,11 @@ impl Abm {
     /// again — which is what makes reunification a behaviour rather than a
     /// detour: the family's own decision layer now covers them.
     fn arrive_home(&mut self, ti: usize) {
+        self.detach(ti);
         let (members, hh) = {
             let t = &mut self.travellers[ti];
             t.state = TravelState::Arrived;
             t.target = NO_NODE;
-            t.edge = u32::MAX;
             t.home_path.clear();
             (std::mem::take(&mut t.members), t.household)
         };
@@ -1664,7 +1726,11 @@ impl Abm {
             state: TravelState::Approaching,
             target: entry,
             at_node: NO_NODE,
-            edge: u32::MAX,
+            link: NO_LINK,
+            ticket: 0,
+            link_entered_s: 0.0,
+            link_speed: 0.0,
+            queue_rank: 0,
             heat_s: 0.0,
             distance_m: 0.0,
             departed_s: self.time_s,
@@ -1728,15 +1794,17 @@ impl Abm {
                 // wherever they are. A car is abandoned, which is what happens
                 // and is the same thing `pick_next_hop` does to a driver whose
                 // road is gone.
+                let here = self.travellers[ti].pos;
+                let entry = self.network.nearest(here, false).unwrap_or(NO_NODE);
+                self.detach(ti);
                 let t = &mut self.travellers[ti];
                 t.goal = goal;
                 t.mode = Mode::Foot;
                 t.free_speed = t.free_speed.min(1.3);
                 t.home_path.clear();
                 t.state = TravelState::Approaching;
-                t.edge = u32::MAX;
                 t.shelter_relief = 0.0;
-                t.target = self.network.nearest(t.pos, false).unwrap_or(NO_NODE);
+                t.target = entry;
             }
         }
     }
@@ -1744,10 +1812,10 @@ impl Abm {
     /// This group has reached a haven and stops there.
     fn arrive_haven(&mut self, ti: usize, node: NodeId) {
         let water = self.haven_at.get(&node).copied() == Some(HavenKind::Water);
+        self.detach(ti);
         let t = &mut self.travellers[ti];
         t.state = TravelState::Sheltering;
         t.target = NO_NODE;
-        t.edge = u32::MAX;
         t.shelter_relief = if water { WATER_RELIEF } else { OPEN_GROUND_RELIEF };
         let members = t.members.clone();
         for p in members {
@@ -1757,21 +1825,18 @@ impl Abm {
         }
     }
 
-    fn move_travellers(&mut self, dt: f32, fire: &FireSim, scn: &Scenario) {
+    /// Move everybody one sub-step. `now` is the simulated time at the *end* of
+    /// it, which the traffic queue needs as an absolute clock rather than as an
+    /// interval — see [`traffic`] on why nothing there is accumulated.
+    fn move_travellers(&mut self, dt: f32, now: f32, fire: &FireSim, scn: &Scenario) {
         let threat = fire.threat();
 
-        // Congestion is read from the previous sub-step's occupancy, then
-        // rebuilt: reading and writing the same counters inside the loop would
-        // make the result depend on agent order.
-        let mut next_occ = vec![0u16; self.network.edge_count];
-
+        // --- heat load, for everybody still travelling ------------------------
         for ti in 0..self.travellers.len() {
             let t = &self.travellers[ti];
             if matches!(t.state, TravelState::Safe | TravelState::Dead | TravelState::Arrived) {
                 continue;
             }
-
-            // --- heat load ---------------------------------------------------
             // A haven takes some of it off: all of it at the water's edge,
             // where a person can get into the sea, and rather less in a car
             // park. Nothing else in the model gives relief from flame contact,
@@ -1783,22 +1848,41 @@ impl Abm {
             } else {
                 t.heat_s = (t.heat_s - dt * HEAT_RECOVERY).max(0.0);
             }
-            if t.heat_s >= LETHAL_EXPOSURE_S {
-                t.state = TravelState::Dead;
-                let (hh, members) = (t.household, t.members.clone());
-                for p in members {
-                    self.people[p].status = Status::Casualty;
+            if t.heat_s < LETHAL_EXPOSURE_S {
+                continue;
+            }
+            // Burnt over. A vehicle that dies in a queue has to come out of it,
+            // and it can be anywhere in the line rather than at the front —
+            // which is exactly the removal the queue's rank bookkeeping is
+            // built to survive.
+            self.detach(ti);
+            let t = &mut self.travellers[ti];
+            t.state = TravelState::Dead;
+            let (hh, members) = (t.household, t.members.clone());
+            for p in members {
+                self.people[p].status = Status::Casualty;
+            }
+            if let Some(h) = self.households.get_mut(hh) {
+                if h.traveller == Some(ti) {
+                    h.status = Status::Casualty;
                 }
-                if let Some(h) = self.households.get_mut(hh) {
-                    if h.traveller == Some(ti) {
-                        h.status = Status::Casualty;
-                    }
-                }
+            }
+        }
+
+        // --- free movement ----------------------------------------------------
+        // Everyone on foot, plus any vehicle still crossing open ground between
+        // the house and the road. A vehicle that has reached the network is
+        // handed to the queue and does not appear here again.
+        for ti in 0..self.travellers.len() {
+            let t = &self.travellers[ti];
+            if matches!(t.state, TravelState::Safe | TravelState::Dead | TravelState::Arrived) {
+                continue;
+            }
+            if t.mode == Mode::Car && t.state == TravelState::OnNetwork {
                 continue;
             }
 
-            // --- speed --------------------------------------------------------
-            let t = &self.travellers[ti];
+            let danger = threat.at(t.pos) * (1.0 - t.shelter_relief).clamp(0.0, 1.0);
             let mut speed = match t.state {
                 TravelState::Approaching => t.free_speed.min(APPROACH_SPEED),
                 _ => t.free_speed,
@@ -1809,14 +1893,9 @@ impl Abm {
                 let slope = scn.terrain.slope_deg_at(t.pos);
                 speed *= (1.0 - slope / 45.0).clamp(0.35, 1.0);
             }
-            if t.mode == Mode::Car && t.edge != u32::MAX {
-                let n = self.occupancy[t.edge as usize] as f32;
-                speed *= (1.0 / (1.0 + CONGESTION * (n - 1.0).max(0.0))).max(0.15);
-            }
             // Smoke and heat slow everyone down well before they stop them.
             speed *= (1.0 - danger * 0.6).clamp(0.3, 1.0);
 
-            // --- advance -------------------------------------------------------
             let mut budget = speed * dt;
             while budget > 0.0 {
                 let t = &self.travellers[ti];
@@ -1842,10 +1921,17 @@ impl Abm {
                     t.state = TravelState::OnNetwork;
                     budget -= d;
                     self.pick_next_hop(ti);
+                    let t = &self.travellers[ti];
                     if matches!(
-                        self.travellers[ti].state,
+                        t.state,
                         TravelState::Safe | TravelState::Cutoff | TravelState::Arrived
                     ) {
+                        break;
+                    }
+                    // A car that has just reached the road joins the traffic
+                    // queue, and its remaining budget is not its to spend: how
+                    // far it gets now depends on what is in front of it.
+                    if t.mode == Mode::Car {
                         break;
                     }
                 }
@@ -1853,36 +1939,279 @@ impl Abm {
                     break;
                 }
             }
+        }
 
-            // OSM ways run a little past the window edge, and the A10 and
-            // the Aurelia both leave it. Driving off the map is leaving the
-            // incident, so it ends the same way reaching a refuge does — but
-            // only for someone who was heading out. A person walking back to a
-            // house inside the window has not left anything.
-            if self.travellers[ti].goal == Goal::Refuge
-                && !scn.world.contains(self.travellers[ti].pos)
-            {
-                self.mark_safe(ti);
+        // --- vehicles ---------------------------------------------------------
+        self.advance_vehicles(dt, now, &threat);
+
+        // --- leaving the window -----------------------------------------------
+        // OSM ways run a little past the window edge, and the A10 and the
+        // Aurelia both leave it. Driving off the map is leaving the incident, so
+        // it ends the same way reaching a refuge does — but only for someone who
+        // was heading out. A person walking back to a house inside the window
+        // has not left anything.
+        for ti in 0..self.travellers.len() {
+            let t = &self.travellers[ti];
+            if matches!(t.state, TravelState::Safe | TravelState::Dead | TravelState::Arrived) {
                 continue;
             }
+            if t.goal == Goal::Refuge && !scn.world.contains(t.pos) {
+                self.mark_safe(ti);
+            }
+        }
+    }
 
-            let t = &mut self.travellers[ti];
-            if t.mode == Mode::Car && t.edge != u32::MAX {
-                if let Some(slot) = next_occ.get_mut(t.edge as usize) {
-                    *slot = slot.saturating_add(1);
+    /// One sub-step of the traffic queue.
+    ///
+    /// Vehicles are visited in `(link, ticket)` order — the front of each
+    /// queue first — so that a link drains head-first and the car behind sees
+    /// the space the one in front freed within the same sub-step. Rank on a
+    /// link falls out of that walk rather than being stored, which is what makes
+    /// a vehicle leaving from the middle of a queue harmless.
+    fn advance_vehicles(&mut self, dt: f32, now: f32, threat: &fire::threat::ThreatField) {
+        // (link, ticket, traveller). `NO_LINK` is `u32::MAX` and so sorts last,
+        // which is what we want: a vehicle waiting at a junction should be
+        // offered the room that the vehicles already moving have just given up.
+        let mut order: Vec<(u32, u32, u32)> = Vec::new();
+        for (ti, t) in self.travellers.iter().enumerate() {
+            if t.mode == Mode::Car && t.state == TravelState::OnNetwork {
+                order.push((t.link, t.ticket, ti as u32));
+            }
+        }
+        if order.is_empty() {
+            return;
+        }
+        order.sort_unstable();
+
+        let mut k = 0;
+        while k < order.len() {
+            let link = order[k].0;
+            // Rank within this link's run. Only vehicles that are *still* on the
+            // link when we leave them consume a place, so one that gets away
+            // promotes the whole queue behind it on this same pass.
+            let mut rank = 0u32;
+            while k < order.len() && order[k].0 == link {
+                let ti = order[k].2 as usize;
+                self.travellers[ti].queue_rank = rank;
+                self.advance_vehicle(ti, dt, now, rank == 0, threat);
+                if self.travellers[ti].link == link {
+                    rank += 1;
                 }
+                k += 1;
             }
         }
 
-        self.occupancy = next_occ;
+        for &(_, _, ti) in &order {
+            self.place_vehicle(ti as usize, now);
+        }
+    }
+
+    /// Carry one vehicle as far along its route as this sub-step allows.
+    ///
+    /// Bounded rather than open-ended: on Spotorno the median link is 8 m, so a
+    /// car at road speed legitimately crosses a dozen of them in a 4 s sub-step,
+    /// and a handful of degenerate 0.1 m OSM segments could otherwise spend the
+    /// whole budget one hop at a time.
+    fn advance_vehicle(
+        &mut self,
+        ti: usize,
+        dt: f32,
+        now: f32,
+        mut at_head: bool,
+        threat: &fire::threat::ThreatField,
+    ) {
+        const MAX_LINK_HOPS: usize = 96;
+        for _ in 0..MAX_LINK_HOPS {
+            let t = &self.travellers[ti];
+            if t.mode != Mode::Car || t.state != TravelState::OnNetwork {
+                return;
+            }
+            if t.link == NO_LINK {
+                // Waiting at a junction — or newly arrived from the driveway —
+                // for room on the link it has chosen.
+                if !self.try_enter_link(ti, now, threat) {
+                    return;
+                }
+                at_head = true;
+                continue;
+            }
+            if !at_head {
+                return;
+            }
+
+            let (link, entered_s, speed) = {
+                let t = &self.travellers[ti];
+                (t.link, t.link_entered_s, t.link_speed)
+            };
+            let len = self.network.edge_len(Traffic::edge_of(link));
+            // Three gates, and it takes all three. The vehicle has to have
+            // physically covered the link, the link has to be due to discharge,
+            // and the link it wants next has to have somewhere to put it.
+            let arrive_s = entered_s + len / speed.max(0.1);
+            if now < arrive_s {
+                return;
+            }
+            let gate = self.traffic.release_gate(link);
+            if now < gate {
+                return;
+            }
+            if let Some(next) = self.peek_next_link(ti) {
+                if !self.traffic.has_room(next) {
+                    // Spillback. This is the clause the old per-car multiplier
+                    // had no way to express, and the reason a jam here has a
+                    // length rather than just a speed.
+                    return;
+                }
+            }
+
+            // Committed. The release time is the moment it *could* go, not the
+            // end of the sub-step, so the remainder carries onto the next link
+            // and a car does not lose the rest of its budget at every junction.
+            let t_rel = arrive_s.max(gate).max(now - dt);
+            self.traffic.took_slot(link, t_rel);
+            self.traffic.leave(link);
+
+            let node = {
+                let t = &mut self.travellers[ti];
+                t.link = NO_LINK;
+                t.at_node = t.target;
+                t.at_node
+            };
+            if node == NO_NODE {
+                return;
+            }
+            let np = self.network.pos(node);
+            {
+                let t = &mut self.travellers[ti];
+                t.distance_m += dist(t.pos, np);
+                t.pos = np;
+            }
+            self.pick_next_hop(ti);
+            if !self.try_enter_link(ti, t_rel, threat) {
+                return;
+            }
+            at_head = true;
+        }
+    }
+
+    /// The link this vehicle would take on out of the node it is arriving at,
+    /// or `None` if it would leave the network there — reaching a refuge,
+    /// driving off the map, being cut off, or abandoning the car for foot.
+    ///
+    /// A deliberate partial echo of [`Abm::pick_next_hop`], because spillback
+    /// has to be decided *before* the vehicle gives up its place on the link it
+    /// is on: committing first and discovering there is no room afterwards
+    /// would leave it parked in a junction with no queue to be in, and unbounded
+    /// junction storage is precisely how a spillback model stops spilling back.
+    fn peek_next_link(&self, ti: usize) -> Option<u32> {
+        let t = &self.travellers[ti];
+        let at = t.target;
+        if at == NO_NODE {
+            return None;
+        }
+        let next = if t.goal == Goal::Home {
+            *t.home_path.iter().find(|&&n| n != at)?
+        } else {
+            let routes = match (t.goal, t.mode) {
+                (Goal::Haven, _) => &self.routes_haven,
+                (Goal::Shore, _) => &self.routes_shore,
+                (_, Mode::Car) => &self.routes_car,
+                (_, Mode::Foot) => &self.routes_foot,
+            };
+            if routes.cost[at as usize] == 0.0 {
+                return None;
+            }
+            let n = routes.next[at as usize];
+            if n == NO_NODE {
+                return None;
+            }
+            n
+        };
+        let edge = self.network.edge_between(at, next)?;
+        Some(Traffic::link_id(edge, at, next))
+    }
+
+    /// Put a vehicle onto the link from `at_node` to `target`, if that link has
+    /// room. `false` means it waits where it is, which is a driveway that cannot
+    /// get out or a junction that is blocked — both real, and both previously
+    /// impossible.
+    fn try_enter_link(&mut self, ti: usize, at_s: f32, threat: &fire::threat::ThreatField) -> bool {
+        let t = &self.travellers[ti];
+        if t.mode != Mode::Car || t.state != TravelState::OnNetwork || t.link != NO_LINK {
+            return false;
+        }
+        let (at, to) = (t.at_node, t.target);
+        if at == NO_NODE || to == NO_NODE {
+            return false;
+        }
+        let Some(edge) = self.network.edge_between(at, to) else {
+            return false;
+        };
+        let link = Traffic::link_id(edge, at, to);
+        if !self.traffic.has_room(link) {
+            return false;
+        }
+        let (ticket, count) = self.traffic.enter(link);
+        // Smoke and heat cost a driver speed well before they stop them.
+        // Sampled once, as the vehicle enters, rather than integrated along the
+        // link: a speed that varied along the link could not be inverted back
+        // into a position without accumulating one, and the median link here is
+        // 8 m of road.
+        let danger = threat.at(self.network.pos(at));
+        let speed = (self.traffic.speed(link) * (1.0 - danger * 0.6).clamp(0.3, 1.0)).max(0.5);
+        let t = &mut self.travellers[ti];
+        t.link = link;
+        t.ticket = ticket;
+        t.link_entered_s = at_s;
+        t.link_speed = speed;
+        t.queue_rank = count.saturating_sub(1) as u32;
+        // Shown in the inspector, and the honest answer to "how fast is this
+        // family moving" is the speed of the road they are on.
+        t.free_speed = speed;
+        true
+    }
+
+    /// Place a vehicle on its link: as far along as free flow would have taken
+    /// it, or the back of the queue ahead of it, whichever is nearer.
+    ///
+    /// Both terms are pure functions of the clock, so this is exact at any step
+    /// size and a car that is stopped is stopped *somewhere specific* — the tail
+    /// of a queue is a place on the map, which is what makes a jam visible.
+    fn place_vehicle(&mut self, ti: usize, now: f32) {
+        let t = &self.travellers[ti];
+        let link = t.link;
+        if link == NO_LINK {
+            return;
+        }
+        let (a, b) = self.network.link_ends(link);
+        let (pa, pb) = (self.network.pos(a), self.network.pos(b));
+        let len = self.network.edge_len(Traffic::edge_of(link));
+        let x_free = (now - t.link_entered_s).max(0.0) * t.link_speed;
+        let x_slot = len - t.queue_rank as f32 * self.traffic.spacing(link);
+        let f = (x_free.min(x_slot).clamp(0.0, len)) / len.max(1e-3);
+        let np = Pos { x: pa.x + (pb.x - pa.x) * f, y: pa.y + (pb.y - pa.y) * f };
+        let t = &mut self.travellers[ti];
+        t.distance_m += dist(t.pos, np);
+        t.heading = (pb.y - pa.y).atan2(pb.x - pa.x);
+        t.pos = np;
+    }
+
+    /// Take a vehicle out of whatever queue it is in. Safe from any position in
+    /// the line, and idempotent.
+    fn detach(&mut self, ti: usize) {
+        let link = self.travellers[ti].link;
+        if link != NO_LINK {
+            self.travellers[ti].link = NO_LINK;
+            self.traffic.leave(link);
+        }
     }
 
     /// This group is out of the incident: at a refuge, or off the map.
     fn mark_safe(&mut self, ti: usize) {
+        self.detach(ti);
         let t = &mut self.travellers[ti];
         t.state = TravelState::Safe;
         t.target = NO_NODE;
-        t.edge = u32::MAX;
         let (hh, members) = (t.household, t.members.clone());
         for p in members {
             self.people[p].status = Status::Evacuated;
@@ -1912,16 +2241,8 @@ impl Abm {
             }
             match t.home_path.first().copied() {
                 Some(next) => {
-                    let edge = self
-                        .network
-                        .neighbours(at)
-                        .iter()
-                        .find(|e| e.to == next)
-                        .map(|e| e.id)
-                        .unwrap_or(u32::MAX);
                     let t = &mut self.travellers[ti];
                     t.target = next;
-                    t.edge = edge;
                     t.state = TravelState::OnNetwork;
                 }
                 None => self.arrive_home(ti),
@@ -1951,13 +2272,14 @@ impl Abm {
             // continues on foot, which is what people do and what kills them
             // when they do it too late.
             if mode == Mode::Car && self.routes_foot.reachable(at) {
+                self.detach(ti);
                 let t = &mut self.travellers[ti];
                 t.mode = Mode::Foot;
                 t.free_speed = 1.1;
-                t.edge = u32::MAX;
                 self.pick_next_hop(ti);
                 return;
             }
+            self.detach(ti);
             let t = &mut self.travellers[ti];
             t.state = TravelState::Cutoff;
             t.target = NO_NODE;
@@ -1974,16 +2296,8 @@ impl Abm {
             return;
         }
 
-        let edge = self
-            .network
-            .neighbours(at)
-            .iter()
-            .find(|e| e.to == next)
-            .map(|e| e.id)
-            .unwrap_or(u32::MAX);
         let t = &mut self.travellers[ti];
         t.target = next;
-        t.edge = edge;
         t.state = TravelState::OnNetwork;
     }
 

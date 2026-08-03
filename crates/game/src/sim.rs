@@ -579,7 +579,7 @@ impl Sim {
         // The units read the fire, then the fire is handed what they did.
         // Queued rather than applied, so it lands as one merged boundary
         // condition on the next advance: see `Suppression::step`.
-        for action in crews.step(seconds as f32, &agents.network, fire, scenario) {
+        for action in crews.step(seconds as f32, &agents.network, &agents.traffic, fire, scenario) {
             fire.queue(action);
         }
         self.generation += 1;

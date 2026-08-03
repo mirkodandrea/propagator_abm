@@ -18,6 +18,8 @@ use std::collections::BinaryHeap;
 
 use scenario::{Pos, Scenario};
 
+use crate::traffic::RoadClass;
+
 /// Snap tolerance when welding way vertices into shared nodes, in metres.
 /// OSM ways that meet at a junction share a node exactly, so this only has to
 /// absorb the two-decimal rounding in the baked file.
@@ -45,6 +47,15 @@ pub struct RoadNetwork {
     pub elev: Vec<f32>,
     adjacency: Vec<Vec<Edge>>,
     pub edge_count: usize,
+    /// The two nodes of each undirected edge, low id first, so a directed link
+    /// can be turned back into a line on the ground.
+    edge_nodes: Vec<[NodeId; 2]>,
+    edge_len: Vec<f32>,
+    /// [`RoadClass`] of each edge, as `u8`. Kept because the traffic model
+    /// needs a capacity and a free-flow speed per road, and the OSM tag that
+    /// says so was previously discarded here — every drivable way, from the A10
+    /// to a farm service track, became the same edge.
+    edge_class: Vec<u8>,
     buckets: Vec<Vec<NodeId>>,
     bcols: usize,
     brows: usize,
@@ -74,6 +85,9 @@ impl RoadNetwork {
             elev: Vec::new(),
             adjacency: Vec::new(),
             edge_count: 0,
+            edge_nodes: Vec::new(),
+            edge_len: Vec::new(),
+            edge_class: Vec::new(),
             buckets: vec![Vec::new(); brows * bcols],
             bcols,
             brows,
@@ -99,6 +113,7 @@ impl RoadNetwork {
                 continue;
             }
             let drivable = road.drivable;
+            let class = RoadClass::from_osm(&road.class, drivable);
             let mut prev: Option<NodeId> = None;
             for v in &road.line {
                 let k = key(*v);
@@ -111,7 +126,7 @@ impl RoadNetwork {
                 });
                 if let Some(a) = prev {
                     if a != id {
-                        net.add_edge(a, id, drivable);
+                        net.add_edge(a, id, drivable, class);
                     }
                 }
                 prev = Some(id);
@@ -177,14 +192,47 @@ impl RoadNetwork {
         comp.iter().copied().max().map(|m| m as usize + 1).unwrap_or(0)
     }
 
-    fn add_edge(&mut self, a: NodeId, b: NodeId, drivable: bool) {
+    fn add_edge(&mut self, a: NodeId, b: NodeId, drivable: bool, class: RoadClass) {
         let pa = self.nodes[a as usize];
         let pb = self.nodes[b as usize];
         let len = ((pb.x - pa.x).powi(2) + (pb.y - pa.y).powi(2)).sqrt().max(0.1);
         let id = self.edge_count as u32;
         self.edge_count += 1;
+        self.edge_nodes.push([a.min(b), a.max(b)]);
+        self.edge_len.push(len);
+        self.edge_class.push(class as u8);
         self.adjacency[a as usize].push(Edge { to: b, length_m: len, drivable, id });
         self.adjacency[b as usize].push(Edge { to: a, length_m: len, drivable, id });
+    }
+
+    pub fn edge_len(&self, edge: u32) -> f32 {
+        self.edge_len[edge as usize]
+    }
+
+    pub fn edge_class(&self, edge: u32) -> RoadClass {
+        RoadClass::from_u8(self.edge_class[edge as usize])
+    }
+
+    /// The two ends of a directed link (`2·edge + dir`), in the order a vehicle
+    /// on it travels them.
+    pub fn link_ends(&self, link: u32) -> (NodeId, NodeId) {
+        let [lo, hi] = self.edge_nodes[(link / 2) as usize];
+        if link % 2 == 0 {
+            (lo, hi)
+        } else {
+            (hi, lo)
+        }
+    }
+
+    /// The undirected edge joining two adjacent nodes, if they are adjacent.
+    /// Tolerates [`NO_NODE`] on either side: a unit that has not reached the
+    /// network yet has no `at_node`, and asking is more natural at the call
+    /// site than checking first.
+    pub fn edge_between(&self, a: NodeId, b: NodeId) -> Option<u32> {
+        if a == NO_NODE || b == NO_NODE {
+            return None;
+        }
+        self.adjacency[a as usize].iter().find(|e| e.to == b).map(|e| e.id)
     }
 
     pub fn len(&self) -> usize {

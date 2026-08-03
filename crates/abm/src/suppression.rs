@@ -61,6 +61,7 @@ use scenario::{Cell, Pos, Scenario};
 
 use crate::behaviour::{unit_kind_of, unit_outcome_of, UnitOutcome, UnitRuntime};
 use crate::network::{self, NodeId, RoadNetwork, NO_NODE};
+use crate::traffic::Traffic;
 
 // --- rates and capacities ---------------------------------------------------
 
@@ -631,10 +632,15 @@ impl Suppression {
     /// to do — and because it keeps this model testable without a `FireSim` to
     /// mutate. The caller queues them, and the core applies them on its next
     /// advance, which is one step of latency and is documented at the call site.
+    /// `traffic` is the civilian vehicle queue. Units are **not** in it — an
+    /// engine on blue lights uses the oncoming lane and traffic pulls over for
+    /// it — but they do not get through a solid line of cars at road speed
+    /// either, so it is read for a slowdown on whichever link they are on.
     pub fn step(
         &mut self,
         dt_s: f32,
         net: &RoadNetwork,
+        traffic: &Traffic,
         fire: &FireSim,
         scn: &Scenario,
     ) -> Vec<Intervention> {
@@ -670,7 +676,7 @@ impl Suppression {
                 if self.units[i].kind.is_air() {
                     self.step_air(i, dt, fire, scn, &mut out);
                 } else {
-                    self.step_ground(i, dt, net, fire, scn, &mut out);
+                    self.step_ground(i, dt, net, traffic, fire, scn, &mut out);
                 }
             }
         }
@@ -895,6 +901,7 @@ impl Suppression {
         i: usize,
         dt: f32,
         net: &RoadNetwork,
+        traffic: &Traffic,
         fire: &FireSim,
         scn: &Scenario,
         out: &mut Vec<Intervention>,
@@ -926,7 +933,7 @@ impl Suppression {
         match self.units[i].state {
             UnitState::Withdrawing => {
                 let base = self.units[i].base;
-                self.drive_toward(i, base, dt, net, fire, scn);
+                self.drive_toward(i, base, dt, net, traffic, fire, scn);
                 if dist(self.units[i].pos, base) < ARRIVE_M {
                     let u = &mut self.units[i];
                     u.state = UnitState::Staged;
@@ -934,7 +941,7 @@ impl Suppression {
                     u.note = "back at staging, awaiting orders";
                 }
             }
-            UnitState::Refilling => self.step_refill(i, dt, net, fire, scn),
+            UnitState::Refilling => self.step_refill(i, dt, net, traffic, fire, scn),
             UnitState::Staged => {}
             UnitState::Moving | UnitState::Working => {
                 let task = self.units[i].task;
@@ -942,7 +949,7 @@ impl Suppression {
                     Task::Hold => self.units[i].state = UnitState::Staged,
                     Task::Return => {
                         let base = self.units[i].base;
-                        self.drive_toward(i, base, dt, net, fire, scn);
+                        self.drive_toward(i, base, dt, net, traffic, fire, scn);
                         if dist(self.units[i].pos, base) < ARRIVE_M {
                             let u = &mut self.units[i];
                             u.state = UnitState::Staged;
@@ -951,7 +958,7 @@ impl Suppression {
                         }
                     }
                     Task::Attack { at } => match self.units[i].kind {
-                        UnitKind::Engine => self.engine_attack(i, at, dt, net, fire, scn, out),
+                        UnitKind::Engine => self.engine_attack(i, at, dt, net, traffic, fire, scn, out),
                         UnitKind::HandCrew => {
                             // Direct attack by a hand crew *is* cutting line at
                             // the fire's edge, so it becomes an alignment across
@@ -960,12 +967,12 @@ impl Suppression {
                             // of the same activity.
                             let line = self.crew_alignment(at, fire, scn);
                             self.units[i].task = Task::Line { from: line.0, to: line.1 };
-                            self.crew_line(i, line.0, line.1, dt, net, fire, scn, out);
+                            self.crew_line(i, line.0, line.1, dt, net, traffic, fire, scn, out);
                         }
                         UnitKind::AirTanker => unreachable!("air handled elsewhere"),
                     },
                     Task::Line { from, to } => {
-                        self.crew_line(i, from, to, dt, net, fire, scn, out)
+                        self.crew_line(i, from, to, dt, net, traffic, fire, scn, out)
                     }
                     Task::Drop { .. } => {
                         self.units[i].note = "only aircraft drop";
@@ -994,11 +1001,12 @@ impl Suppression {
         at: Pos,
         dt: f32,
         net: &RoadNetwork,
+        traffic: &Traffic,
         fire: &FireSim,
         scn: &Scenario,
         out: &mut Vec<Intervention>,
     ) {
-        self.drive_toward(i, at, dt, net, fire, scn);
+        self.drive_toward(i, at, dt, net, traffic, fire, scn);
         let pos = self.units[i].pos;
         if !self.units[i].route.is_empty() {
             self.units[i].state = UnitState::Moving;
@@ -1050,6 +1058,7 @@ impl Suppression {
         to: Pos,
         dt: f32,
         net: &RoadNetwork,
+        traffic: &Traffic,
         fire: &FireSim,
         scn: &Scenario,
         out: &mut Vec<Intervention>,
@@ -1063,7 +1072,7 @@ impl Suppression {
         // Where along the alignment the crew is working now.
         let head = lerp(from, to, (self.units[i].line_done_m / total).min(1.0));
         if dist(self.units[i].pos, head) > ARRIVE_M {
-            self.drive_toward(i, head, dt, net, fire, scn);
+            self.drive_toward(i, head, dt, net, traffic, fire, scn);
             self.units[i].state = UnitState::Moving;
             return;
         }
@@ -1164,6 +1173,7 @@ impl Suppression {
         i: usize,
         dt: f32,
         net: &RoadNetwork,
+        traffic: &Traffic,
         fire: &FireSim,
         scn: &Scenario,
     ) {
@@ -1175,7 +1185,7 @@ impl Suppression {
             return;
         };
         if dist(pos, source) > ARRIVE_M * 2.0 {
-            self.drive_toward(i, source, dt, net, fire, scn);
+            self.drive_toward(i, source, dt, net, traffic, fire, scn);
             return;
         }
         let u = &mut self.units[i];
@@ -1207,6 +1217,7 @@ impl Suppression {
         target: Pos,
         dt: f32,
         net: &RoadNetwork,
+        traffic: &Traffic,
         fire: &FireSim,
         scn: &Scenario,
     ) {
@@ -1244,6 +1255,20 @@ impl Suppression {
             UnitKind::HandCrew => CREW_SPEED,
             UnitKind::AirTanker => TANKER_SPEED,
         } * dt;
+
+        // Civilian traffic on the link ahead. A unit is never *in* the queue —
+        // it is not subject to storage, it does not take a place in the line
+        // and it cannot be spilled back into — but a jammed street still costs
+        // it time, which is the whole reason an engine dispatched into a mass
+        // departure arrives late. Sampled on the link it is about to travel,
+        // because that is the traffic it is about to be in.
+        if !self.units[i].route.is_empty() {
+            let next = self.units[i].route[0];
+            let from = self.units[i].at_node;
+            if let Some(edge) = net.edge_between(from, next) {
+                budget *= traffic.emergency_factor(Traffic::link_id(edge, from, next));
+            }
+        }
 
         // Follow the network.
         while budget > 0.0 {

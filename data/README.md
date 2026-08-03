@@ -86,7 +86,7 @@ The labs are deliberately focused rather than random miniature towns:
 | `policy_lab` | 48 | compare warning/evacuation policy timing across four cohorts |
 | `suppression_access` | 60 | engine roads, crew-only track, hydrants and open water |
 | `road_cutoff` | 90 | fire-cut short exit, vehicle detour and foot escape |
-| `congestion_funnel` | 240 | car-heavy evacuation through one collector |
+| `congestion_funnel` | 3,000 | car-heavy evacuation through one collector — sized so the exit actually saturates (see finding 39) |
 | `fire_mild` / `fire_extreme` | 120 each | controlled pair: identical population and roads, different fuel and slope |
 | `town_scale` | 1,200 | whole-ABM development at small-town scale |
 | `mass_evacuation` | 5,000 | performance and aggregate behaviour at multi-thousand scale |

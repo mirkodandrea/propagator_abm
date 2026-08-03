@@ -48,7 +48,7 @@ impl World {
             self.fire.advance(dt).unwrap();
             let actions =
                 self.crews
-                    .step(dt as f32, &self.agents.network, &self.fire, &self.scn);
+                    .step(dt as f32, &self.agents.network, &self.agents.traffic, &self.fire, &self.scn);
             for a in actions {
                 self.fire.queue(a);
             }

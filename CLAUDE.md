@@ -51,8 +51,9 @@ asking.
 crates/scenario/   baked assets + coordinate frames   (no Bevy, no fire core)
 crates/fire/       PROPAGATOR integration, exposure, threat, interventions
 crates/behavior/   authored agent behaviour: domains, node registry, graphs, subtypes
-crates/abm/        civilians: perception, decision, road network, evacuation,
-                   havens, spot fires, warning infrastructure, closures, boats
+crates/abm/        civilians: perception, decision, road network, traffic queues,
+                   evacuation, havens, spot fires, warning infrastructure,
+                   closures, boats
 crates/telemetry/  per-run SQLite event log, and the interview transcripts
 crates/chat/       interviewing an agent through an LLM: personas, prompts, providers
 crates/game/       Bevy app
@@ -619,6 +620,86 @@ constant, and the in-play "replan for this wind" tool in `ui.rs` reuses the
 live ignition's own radius rather than resetting it to Spotorno's on every
 edit, which was the same bug one level closer to the player.
 
+**39a. A script that rebuilds a registry from a hand-written list drops
+whatever was added after the list.** `generate_synthetic_scenarios.py` wrote
+`data/scenarios.json` as `[spotorno, *generated]`, which was correct while
+Spotorno was the only real place — and `mati`, `pedrogao` and `rhodes` were
+baked later, so the next run of it removed three scenarios from the selector
+and printed "preserved Spotorno" while doing so. Nothing failed:
+`Scenario::load_by_id` reads the per-scenario directory rather than the
+registry, so every model test kept passing on windows the game could no longer
+offer. It derives the real list from the directory now. Same lesson as finding
+33, one layer out.
+
+**39. A count of vehicles on a link means nothing until the link has a
+length, and a road with no capacity has infinite capacity.** The congestion
+term was `speed *= 1/(1 + 0.06·(n-1))`, floored at 0.15, with `n` the vehicles
+sharing a link — and links here are OSM polyline segments, **8 m at the median
+on Spotorno**. So three cars nose to tail on one segment, which is a
+standstill, read as an 11% slowdown, while the coefficient needed 18 cars on
+one link to halve speed and 95 to reach the floor. Measured over a full
+evacuation the peak was **3 cars on any link, factor 0.89**: inert by
+construction on the real window, and firing on empty road in the synthetic
+labs, whose links are 320–633 m. Worse, cars only scaled their own speed —
+they interpenetrated, nobody blocked anybody, and a bottleneck's discharge
+rate was unbounded, so a thousand cars on one street would have crawled
+simultaneously and cleared together. **A uniform slowdown is not a jam**, and
+no coefficient turns one into the other.
+
+`abm::traffic` is a spatial queue instead: per *directed* link (a northbound
+queue is not a southbound one) a free-flow time, a **flow capacity** in veh/s
+and a **storage capacity** in vehicles, and a car leaves a link only when it
+is at the head, has covered it, the discharge gate has come round, **and the
+link it wants next has room**. That last clause is the whole model — it is
+what makes a queue spill back through a junction instead of evaporating.
+Capacities in series do not compound, which is why applying this to 8 m
+segments is sound rather than absurd; storage on one is a single vehicle,
+which is what 8 m of a lane holds. `RoadNetwork::build` had been discarding
+the `class` the bake carries since the beginning, so every drivable edge from
+the A10 to a farm track had one speed and one capacity; it now carries
+`RoadClass`, and speed, lanes and saturation flow come off it.
+
+Three things fell out that would not have been guessed. **Rank in a queue
+cannot be a served counter**: the obvious O(1) trick is `ticket - served`, and
+it is wrong here because a car can leave from the *middle* of a line — burnt
+over in it, or turned round by a `last_resort` branch — which a departures-
+from-the-front counter cannot describe. Rank is recomputed from the FIFO order
+each sub-step. **Spillback has to be decided before the car commits**: release
+first and check for room afterwards and the car sits in a junction that has no
+storage, and unbounded junction storage is exactly how a spillback model stops
+spilling back (`peek_next_link` exists for this and for nothing else).
+And **the lab could not have shown any of it**: `congestion_funnel` shipped
+with 80 households, which is 51 cars over an 85-minute departure spread and a
+peak of 11 on the road at once. No traffic model of any kind queues with that,
+so for as long as it stood the lab could only ever report that congestion did
+not happen — the same shape as finding 9's refuges and finding 35's threshold,
+a test that cannot fail. It is 1,000 households now and its exit is one
+residential street, and `a_queue_forms_at_the_single_exit` asserts the queue
+*fires* rather than that the model runs.
+
+On Spotorno the whole change moves the shipped evacuation figures by **at most
+one household at any timestep**, measured against a worktree at the previous
+commit. That is the honest answer rather than a disappointing one: 250 cars on
+a 62,662-edge network is not a traffic problem, and a model that produced a
+jam there would be wrong.
+
+**40. `x.max(dt)` handles the coarse caller and silently mishandles the fine
+one.** The decision layer integrated over `DECISION_S.max(dt_s)` with a comment
+saying it existed so "a coarse caller does not get a slower evacuation than a
+fine one" — which it did, in one direction. `DECISION_S` is 5 s and the
+decision fires on the first step at or past the deadline, so at a 2 s step it
+ran every **6** s and charged 5, and preparation advanced at 83% of real time;
+at 4 s it ran every 8 and charged 5, and advanced at 63%. The game steps at
+~2 s and every batch measurement in `crates/fire/tests` uses 10 s or more, so
+the shipped game had been preparing households slower than every number ever
+taken on it, in the one direction nobody would check. Nothing errored, nothing
+diverged visibly, and the two populations of caller never met. Measuring the
+interval that actually elapsed rather than assuming it is the whole fix, and
+the sweep that found it (`traffic::step_size_sweep`) is the artefact worth
+keeping: 2 s through 10 s now agree exactly, where before 4 s was 47
+households behind 6 s. **A step-size invariance check has to sweep below the
+model's own internal cadence, not just above it.**
+
 ---
 
 ## Current state
@@ -681,12 +762,50 @@ decision, preparation, movement. Households perceive through the threat field,
 structure exposure and a coarse 200 m distance-to-fire field (what they can
 *see*); decide on `intent`, `risk_perception` and `trust_authority`; mill for
 `prep_time_min`; then move on the real road graph by car or on foot, with
-congestion, slope, rerouting and abandonment of vehicles on a cut road. The
+slope, rerouting and abandonment of vehicles on a cut road. The
 commander's order is a lever, not a teleport: it still arrives over each
 household's own channel (90 s mobile alert → 20 min for no channel at all).
 Rendered as one capsule per person plus one vehicle per driving household, drawn
 at 3× life size (`people::FIGURE_SCALE`) because at command altitude a person is
 sub-pixel.
+
+**Traffic** (`crates/abm/src/traffic.rs`): every car is an individual vehicle in
+a **spatial queue** on the road graph, not a speed multiplier. Each directed
+link carries a free-flow time, a flow capacity (veh/s, from the OSM road class)
+and a storage capacity (`length · lanes / 7 m`); a car drives at the road's own
+speed until it catches the back of the line, stops nose to tail at a real place
+on the map, and gets away only when it is at the head, the link is due to
+discharge, and the link it wants next has room. So a bottleneck saturates, a
+queue has a *length*, and it spills back through the junctions feeding it — see
+finding 39 for what this replaced and why none of that was expressible before.
+Suppression units are deliberately **not** in the queue: an engine on blue
+lights uses the oncoming lane and traffic pulls over, so it takes a slowdown
+scaled by how full the link is (`Traffic::emergency_factor`, down to 35% on a
+solid one) without taking a place in the line.
+
+| | Free flow | Lanes/dir | Saturation |
+|---|---|---|---|
+| motorway | 100 km/h | 2 | 1,900 veh/h/lane |
+| trunk | 80 | 2 | 1,800 |
+| primary · secondary · tertiary | 60 · 50 · 45 | 1 | 1,600 · 1,400 · 1,200 |
+| residential · unclassified | 30 · 35 | 1 | 800 |
+| service · living street | 20 · 15 | 1 | 400 · 300 |
+
+Measured, 2 h, general order at T+0 (`abm --ignored traffic_report`):
+
+```
+                    households   busiest link   queued   median edge
+  spotorno                 750       2 cars         16       8 m
+  town_scale               400       4 cars          0     633 m
+  mass_evacuation        1,667      13 cars          0     540 m
+  congestion_funnel      1,000      73 cars        118     320 m
+```
+
+`congestion_funnel`'s 73 is exactly the storage of its 512 m exit segment —
+the neck is full, and the 118 is the queue standing on it and on the collector
+behind it. Spotorno's 2 is the honest answer for 250 cars on 62,662 links:
+that window does not have a traffic problem, and a model that invented one
+there would be wrong.
 
 **People away from home are their own agents.** ~400 of 1,577 start out and
 `PersonAgent::away` marks them; they launch their own walk out at T+0, from the
@@ -700,14 +819,23 @@ carries a planned path instead — the one place the civilian model runs a
 per-agent A* rather than reading the route field, because it is the one case the
 field cannot answer.
 
-A representative run — general order at T+5 min, 2 h incident:
+A representative run — general order at T+10 min to the 325 households in
+range, 2 h incident (`abm --ignored evacuation_timeline`). Re-measured when the
+traffic queue landed; the previous table here described a T+5 order and had
+drifted from what the test actually runs, which is worth knowing about every
+number in this file:
 
 ```
         aware  prep  moving  safe  defend  cutoff  dead
- 30 min     3    66      39   166      51       0     0
- 60 min     3     2       5   264      51       0     0
-120 min     3     0       1   272      49       0     0
+ 30 min    42   146      16     70      51       0     0
+ 60 min    42     0      27    205      51       0     0
+120 min    27     8       2    240      48       0     0
 ```
+
+Median time from departure to refuge: 85 min. Identical to within one
+household at every timestep before and after the traffic model — checked
+against a worktree at the previous commit, because "it should not have changed
+much" is not a measurement.
 
 **What the incident can break, and where people go when it does**
 (`abm::spot`, `abm::comms`, `abm::haven`, `abm::orders`): five mechanisms that
@@ -977,9 +1105,14 @@ live there too.
 the self-test, 15 minutes after a general order on an identical fire:
 
 ```
-  shipped hand-written model   576 households departed
-  shipped behaviour library    473          (longer baked prep times per profile)
+  shipped hand-written model   473 households departed
+  shipped behaviour library    473          (same fire, same order, same seed)
 ```
+
+The two agree exactly, which is the transcription doing its job. This block
+read 576 against 473 for some time and both halves of that were stale: the
+self-test at the previous commit reports 473/473 as well, so nothing about the
+traffic queue moved it and the discrepancy was never real.
 
 And the unit policy's first interesting knob, measured on an engine attacking
 300 m downwind for 25 minutes (`refill_threshold_report`):
@@ -1040,15 +1173,17 @@ restart discards a conversation exactly as it discards the events every answer
 was drawn from.
 
 Two providers, in **Debug ▸ LLM settings…**: **OpenRouter** (model, API key) and
-**Ollama** (server URL, model, no key). Both stream, on a worker thread with an
-mpsc reply channel — the same shape `crate::api` uses, so the main thread never
-blocks on a socket. A key can be typed into the dialog (saved to
+**Ollama** (server URL, model, no key). Native requests stream on a worker thread
+with an mpsc reply channel — the same shape `crate::api` uses, so the main thread
+never blocks on a socket. Web requests use async browser `fetch`, return a
+completed response through that same channel, and store settings in browser
+local storage. A native key can be typed into the dialog (saved to
 `~/.config/spotorno/llm.json`, mode 0600, never the repository) or put in a
 `.env` at the repository root, which the game loads itself; the environment wins
 either way and the dialog says so. `Test` sends one short message and prints
 what comes back.
 
-**Not built yet:** no debrief. No wasm. No dozers (the only line-cutting
+**Not built yet:** no debrief. No dozers (the only line-cutting
 resource is a hand crew, which is why line production is the binding
 constraint). Units are
 selected under Intervention in the left Command panel, not by clicking them on the map — the
@@ -1074,8 +1209,10 @@ SPOTORNO_ATTACK_AT=300 cargo run --release -p game # commit every unit to the he
 cargo test --release                     # everything, ~4 s
 cargo test -p abm --release -- --ignored --nocapture     # evacuation timeline,
        # routing cost, the engine refill-threshold sweep, what the haven and
-       # mast derivations found in each window (`haven_report`), and what the
-       # incident-mechanism profiles cost (`incident_mechanism_report`)
+       # mast derivations found in each window (`haven_report`), what the
+       # incident-mechanism profiles cost (`incident_mechanism_report`), where
+       # traffic queues on each window (`traffic_report`), and the step-size
+       # sweep that has to bracket `DECISION_S` from below (`step_size_sweep`)
 cargo test -p fire --release -- --ignored --nocapture    # slow calibration sweeps
 
 # the wildfire controls, driven without a keyboard: place an ignition mid-run,
@@ -1263,9 +1400,31 @@ because it is what gets you *out* of a state.
 - 135 households intend to stay and defend and, at the current tuning, mostly
   never leave — the fire does not reach them. That is defensible, but it means
   the most interesting civilian behaviour in the model is currently inert.
-- Congestion is a per-link occupancy count with a linear slowdown. It gives the
-  right *shape* (a late mass departure is slower) but is not a traffic model;
-  gridlock on the Aurelia does not emerge from it.
+- **Traffic is a queue, not car-following.** Vehicles are individual and they
+  queue nose to tail, but they have no acceleration profile: a car joining the
+  back of a line goes from road speed to stopped within one movement sub-step
+  (4 s, so up to ~33 m of approach collapses at once), and there are no
+  stop-and-go waves, no reaction time and no lane changing. Adding those means
+  a Krauss or IDM update at a sub-second sub-step, which is 4-8× the movement
+  work and — the real cost — gives up exact step-size invariance, since every
+  car-following integration's answer depends on its own `dt`. The queue is what
+  produces the evacuation phenomena (capacity, queue length, spillback, travel
+  time); the microdynamics would only make the last 30 m of each join look
+  right.
+- **Nothing routes around a queue.** `network::solve` costs edges by length,
+  free-flow speed and fire danger, with no occupancy term, so a household drives
+  into a jam it could have avoided and never reroutes out of one. Feeding
+  experienced travel time back into the route field is the obvious fix and the
+  obvious hazard: the field is shared by every agent and refreshed once a
+  simulated minute, so naive feedback oscillates the whole town between two
+  exits.
+- **`oneway` is still discarded.** The bake carries it per way — 41 motorway
+  and 21 trunk ways in the Spotorno window are tagged one-way — and
+  `RoadNetwork::build` throws it away, so both carriageways of the A10 are
+  driven in both directions. Honouring it needs directed routing (the
+  multi-source Dijkstra currently walks an undirected graph) and risks
+  stranding households whose nearest drivable node points the wrong way, which
+  is finding 17 with a direction on it.
 - The 6.4 ms routing refresh lands in a single frame, so at 512x there is a
   visible hitch once a simulated minute. Spreading it over frames or solving on
   a task pool is the fix if it starts to matter.

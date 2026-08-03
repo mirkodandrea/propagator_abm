@@ -62,7 +62,13 @@ SPECS = (
     ScenarioSpec(
         "congestion_funnel", "ABM Lab: Single-Exit Congestion",
         "Send many household cars through one shared collector and expose queueing and mode choice.",
-        240, 80, 3200, 128, "bottleneck", "moderate", "car_heavy", 51,
+        # Sized so the exit actually saturates. The lab shipped with 80
+        # households, which is 51 cars over an 85-minute departure spread and a
+        # peak of 11 on the road at once -- no traffic model of any kind queues
+        # with that, and for as long as it stood the lab could only ever report
+        # that congestion did not happen. The exit is one residential street
+        # (800 veh/h), so binding it needs demand above ~13 veh/min sustained.
+        3000, 1000, 3200, 128, "bottleneck", "moderate", "car_heavy", 51,
     ),
     ScenarioSpec(
         "fire_mild", "ABM Lab: Mild Fire",
@@ -147,14 +153,17 @@ def network(kind: str, size: float) -> tuple[list[dict], list[tuple[float, float
 
     elif kind == "bottleneck":
         neck_x, neck_y = size * .50, size * .18
-        add("Only Exit", [(neck_x, 0), (neck_x, neck_y), (neck_x, size * .34)])
+        # One ordinary street, deliberately: the neck is the *class* of road as
+        # much as the fact that there is only one of it.
+        add("Only Exit", [(neck_x, 0), (neck_x, neck_y), (neck_x, size * .34)],
+            road_class="residential")
         xs = [size * f for f in (.30, .40, .50, .60, .70)]
         ys = [size * f for f in (.34, .44, .54)]
         for y in ys:
             add(f"Residential {y:.0f}", [(xs[0], y), *[(x, y) for x in xs[1:]]])
         for x in xs:
             add(f"Collector {x:.0f}", [(x, ys[0]), (x, ys[1]), (x, ys[2])])
-        homes = [(x, y + 18) for y in ys for x in np.linspace(xs[0], xs[-1], 27)]
+        homes = [(x, y + 18) for y in ys for x in np.linspace(xs[0], xs[-1], 60)]
 
     else:  # town and mass: connected arterials plus denser residential grids.
         n = 7 if kind == "town" else 10
@@ -356,10 +365,30 @@ def remove_old_synthetic_scenarios():
 def main():
     remove_old_synthetic_scenarios()
     generated = [create(spec) for spec in SPECS]
-    spotorno = json.loads((SCENARIOS_DIR / "spotorno" / "scenario.json").read_text())
-    registry = {"default": "spotorno", "scenarios": [spotorno, *generated]}
+
+    # Every *real* scenario on disk, not just Spotorno.  This rebuilt the
+    # registry from `[spotorno, *generated]`, which was correct exactly as long
+    # as Spotorno was the only real place -- and `mati`, `pedrogao` and
+    # `rhodes` were baked later, so running this script silently dropped three
+    # scenarios out of the selector while reporting that it had "preserved
+    # Spotorno".  Nothing failed: `Scenario::load_by_id` reads the per-scenario
+    # directory rather than the registry, so the model tests kept passing on
+    # windows the game could no longer offer.  Deriving the list from the
+    # directory is the same lesson as finding 33 -- a hand-maintained list of
+    # what exists is a claim, and the only thing that checks it is the data.
+    real = sorted(
+        p.name
+        for p in SCENARIOS_DIR.iterdir()
+        if p.is_dir() and (p / "scenario.json").exists()
+        and p.name not in {spec.id for spec in SPECS}
+    )
+    kept = [json.loads((SCENARIOS_DIR / name / "scenario.json").read_text()) for name in real]
+    registry = {"default": "spotorno", "scenarios": [*kept, *generated]}
     (ROOT / "data" / "scenarios.json").write_text(json.dumps(registry, indent=2) + "\n")
-    print(f"\nWrote {len(generated)} synthetic ABM labs; preserved Spotorno.")
+    print(
+        f"\nWrote {len(generated)} synthetic ABM labs; "
+        f"preserved {len(kept)} real scenarios ({', '.join(real)})."
+    )
 
 
 if __name__ == "__main__":

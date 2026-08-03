@@ -2,321 +2,6 @@
   "default": "spotorno",
   "scenarios": [
     {
-      "id": "abm_micro",
-      "name": "ABM Lab: One Street",
-      "description": "Inspect individual people, households, vehicle choice, preparation and departure.",
-      "location": "Synthetic ABM laboratory",
-      "country": "Synthetic",
-      "coordinates": [
-        0.0,
-        0.0
-      ],
-      "utm_zone": 0,
-      "world_size_m": [
-        1600.0,
-        1600.0
-      ],
-      "fire_grid_size": [
-        64,
-        64
-      ],
-      "buildings_count": 3,
-      "households_count": 3,
-      "people_count": 8,
-      "scenario_type": "synthetic",
-      "creation_date": "2026-07-31",
-      "version": "2.0.0",
-      "tags": [
-        "dev",
-        "abm-lab",
-        "one_street",
-        "fire-moderate",
-        "hand_authored"
-      ],
-      "is_dev": true,
-      "vr_palette": {
-        "void": [
-          0.02,
-          0.03,
-          0.08
-        ],
-        "grid": [
-          0.0,
-          0.85,
-          1.0
-        ],
-        "accent": [
-          0.9,
-          0.95,
-          1.0
-        ]
-      },
-      "development": {
-        "focus": "Inspect individual people, households, vehicle choice, preparation and departure.",
-        "fire_profile": "moderate",
-        "road_profile": "one_street",
-        "population_profile": "hand_authored",
-        "suggested_runs": [
-          "no evacuation order",
-          "early general order",
-          "late/zoned order",
-          "suppression before evacuation"
-        ]
-      }
-    },
-    {
-      "id": "congestion_funnel",
-      "name": "ABM Lab: Single-Exit Congestion",
-      "description": "Send many household cars through one shared collector and expose queueing and mode choice.",
-      "location": "Synthetic ABM laboratory",
-      "country": "Synthetic",
-      "coordinates": [
-        0.0,
-        0.0
-      ],
-      "utm_zone": 0,
-      "world_size_m": [
-        3200.0,
-        3200.0
-      ],
-      "fire_grid_size": [
-        128,
-        128
-      ],
-      "buildings_count": 80,
-      "households_count": 80,
-      "people_count": 240,
-      "scenario_type": "synthetic",
-      "creation_date": "2026-07-31",
-      "version": "2.0.0",
-      "tags": [
-        "dev",
-        "abm-lab",
-        "bottleneck",
-        "fire-moderate",
-        "car_heavy"
-      ],
-      "is_dev": true,
-      "vr_palette": {
-        "void": [
-          0.02,
-          0.03,
-          0.08
-        ],
-        "grid": [
-          0.0,
-          0.85,
-          1.0
-        ],
-        "accent": [
-          0.9,
-          0.95,
-          1.0
-        ]
-      },
-      "development": {
-        "focus": "Send many household cars through one shared collector and expose queueing and mode choice.",
-        "fire_profile": "moderate",
-        "road_profile": "bottleneck",
-        "population_profile": "car_heavy",
-        "suggested_runs": [
-          "no evacuation order",
-          "early general order",
-          "late/zoned order",
-          "suppression before evacuation"
-        ]
-      }
-    },
-    {
-      "id": "fire_extreme",
-      "name": "ABM Lab: Extreme Fire",
-      "description": "Controlled severity comparison: the same settlement with continuous high-susceptibility fuel and steep terrain.",
-      "location": "Synthetic ABM laboratory",
-      "country": "Synthetic",
-      "coordinates": [
-        0.0,
-        0.0
-      ],
-      "utm_zone": 0,
-      "world_size_m": [
-        3200.0,
-        3200.0
-      ],
-      "fire_grid_size": [
-        128,
-        128
-      ],
-      "buildings_count": 40,
-      "households_count": 40,
-      "people_count": 120,
-      "scenario_type": "synthetic",
-      "creation_date": "2026-07-31",
-      "version": "2.0.0",
-      "tags": [
-        "dev",
-        "abm-lab",
-        "severity",
-        "fire-extreme",
-        "mixed"
-      ],
-      "is_dev": true,
-      "vr_palette": {
-        "void": [
-          0.02,
-          0.03,
-          0.08
-        ],
-        "grid": [
-          0.0,
-          0.85,
-          1.0
-        ],
-        "accent": [
-          0.9,
-          0.95,
-          1.0
-        ]
-      },
-      "development": {
-        "focus": "Controlled severity comparison: the same settlement with continuous high-susceptibility fuel and steep terrain.",
-        "fire_profile": "extreme",
-        "road_profile": "severity",
-        "population_profile": "mixed",
-        "suggested_runs": [
-          "no evacuation order",
-          "early general order",
-          "late/zoned order",
-          "suppression before evacuation"
-        ]
-      }
-    },
-    {
-      "id": "fire_mild",
-      "name": "ABM Lab: Mild Fire",
-      "description": "Controlled severity comparison: patchy low-susceptibility grass, gentle terrain.",
-      "location": "Synthetic ABM laboratory",
-      "country": "Synthetic",
-      "coordinates": [
-        0.0,
-        0.0
-      ],
-      "utm_zone": 0,
-      "world_size_m": [
-        3200.0,
-        3200.0
-      ],
-      "fire_grid_size": [
-        128,
-        128
-      ],
-      "buildings_count": 40,
-      "households_count": 40,
-      "people_count": 120,
-      "scenario_type": "synthetic",
-      "creation_date": "2026-07-31",
-      "version": "2.0.0",
-      "tags": [
-        "dev",
-        "abm-lab",
-        "severity",
-        "fire-mild",
-        "mixed"
-      ],
-      "is_dev": true,
-      "vr_palette": {
-        "void": [
-          0.02,
-          0.03,
-          0.08
-        ],
-        "grid": [
-          0.0,
-          0.85,
-          1.0
-        ],
-        "accent": [
-          0.9,
-          0.95,
-          1.0
-        ]
-      },
-      "development": {
-        "focus": "Controlled severity comparison: patchy low-susceptibility grass, gentle terrain.",
-        "fire_profile": "mild",
-        "road_profile": "severity",
-        "population_profile": "mixed",
-        "suggested_runs": [
-          "no evacuation order",
-          "early general order",
-          "late/zoned order",
-          "suppression before evacuation"
-        ]
-      }
-    },
-    {
-      "id": "mass_evacuation",
-      "name": "ABM Scale: Mass Evacuation",
-      "description": "Performance and aggregate-behaviour case with five thousand people and several constrained exits.",
-      "location": "Synthetic ABM laboratory",
-      "country": "Synthetic",
-      "coordinates": [
-        0.0,
-        0.0
-      ],
-      "utm_zone": 0,
-      "world_size_m": [
-        6400.0,
-        6400.0
-      ],
-      "fire_grid_size": [
-        192,
-        192
-      ],
-      "buildings_count": 1667,
-      "households_count": 1667,
-      "people_count": 5000,
-      "scenario_type": "synthetic",
-      "creation_date": "2026-07-31",
-      "version": "2.0.0",
-      "tags": [
-        "dev",
-        "abm-lab",
-        "mass",
-        "fire-severe",
-        "mixed"
-      ],
-      "is_dev": true,
-      "vr_palette": {
-        "void": [
-          0.02,
-          0.03,
-          0.08
-        ],
-        "grid": [
-          0.0,
-          0.85,
-          1.0
-        ],
-        "accent": [
-          0.9,
-          0.95,
-          1.0
-        ]
-      },
-      "development": {
-        "focus": "Performance and aggregate-behaviour case with five thousand people and several constrained exits.",
-        "fire_profile": "severe",
-        "road_profile": "mass",
-        "population_profile": "mixed",
-        "suggested_runs": [
-          "no evacuation order",
-          "early general order",
-          "late/zoned order",
-          "suppression before evacuation"
-        ]
-      }
-    },
-    {
       "id": "mati",
       "name": "Mati, Attica",
       "description": "Real data scenario: dense pine-shaded seaside settlement on the Attica coast, modelled on the July 2018 Attica wildfires -- Greece's deadliest, 104 dead, most in vehicles gridlocked on narrow dead-end lanes between the pines and the sea, or on the shoreline itself. Synthetic population and behavioural priors; not a replay of the historical fire.",
@@ -449,6 +134,187 @@
       "license": "EUPL-1.2"
     },
     {
+      "id": "rhodes",
+      "name": "Lardos, Rhodes",
+      "description": "Real data scenario: touristic villages and beach resorts on the southeastern coast of Rhodes, modelled on the July 2023 Rhodes wildfires -- Greece's largest-ever evacuation, roughly 20,000 people moved from Lardos, Kiotari, Gennadi and nearby resorts, thousands by boat off beaches the road network could not clear in time. No deaths. Synthetic population and behavioural priors; not a replay of the historical fire.",
+      "location": "Lardos, Rhodes, Greece",
+      "country": "Greece",
+      "nationality": "Greek",
+      "region": "the southeastern coast of Rhodes",
+      "localities": [
+        "\u03a0\u03b5\u03cd\u03ba\u03bf\u03b9",
+        "Kiotari",
+        "\u039a\u03ac\u03bb\u03b1\u03b8\u03bf\u03c2",
+        "Kalathos"
+      ],
+      "coordinates": [
+        36.0933,
+        28.017
+      ],
+      "utm_zone": 35,
+      "utm_corner": [
+        586440.0,
+        3989660.0
+      ],
+      "world_size_m": [
+        10240.0,
+        10240.0
+      ],
+      "fire_grid_size": [
+        512,
+        512
+      ],
+      "fire_cellsize_m": 20.0,
+      "buildings_count": 2004,
+      "households_count": 750,
+      "people_count": 1571,
+      "scenario_type": "real",
+      "data_provenance": {
+        "fuel": "s3://cima-propagator-return/cogs/eu/eu_fuel12_utm_35.tif",
+        "dem": "s3://cima-propagator-return/cogs/eu/eu_dem_utm_35.tif",
+        "buildings": "OpenStreetMap (Overpass)",
+        "roads": "OpenStreetMap",
+        "hydrants": "OpenStreetMap",
+        "population": "Synthetic, placed on real footprints"
+      },
+      "creation_date": "2026-08-03",
+      "version": "1.0.0",
+      "tags": [
+        "real-data",
+        "coastal",
+        "wui",
+        "rhodes",
+        "greece",
+        "tourist",
+        "island"
+      ],
+      "authors": [
+        "Mirko D'Andrea"
+      ],
+      "license": "EUPL-1.2"
+    },
+    {
+      "id": "spotorno",
+      "name": "Spotorno, Liguria",
+      "description": "Real data scenario: coastal Italian town with synthetic population and behavioral priors from wildfire evacuation literature",
+      "location": "Spotorno, Italy",
+      "country": "Italy",
+      "nationality": "Italian",
+      "region": "the Ligurian coast of Italy",
+      "localities": [
+        "Noli",
+        "Spotorno",
+        "Vado Ligure",
+        "Bergeggi"
+      ],
+      "coordinates": [
+        44.2265,
+        8.4176
+      ],
+      "utm_zone": 32,
+      "utm_corner": [
+        448360.0,
+        4892080.0
+      ],
+      "world_size_m": [
+        10240.0,
+        10240.0
+      ],
+      "fire_grid_size": [
+        512,
+        512
+      ],
+      "fire_cellsize_m": 20.0,
+      "buildings_count": 7629,
+      "households_count": 750,
+      "people_count": 1577,
+      "scenario_type": "real",
+      "data_provenance": {
+        "fuel": "s3://cima-propagator-return/cogs/eu/eu_fuel12_utm_32.tif",
+        "dem": "s3://cima-propagator-return/cogs/eu/eu_dem_utm_32.tif",
+        "buildings": "OpenStreetMap (Overpass)",
+        "roads": "OpenStreetMap",
+        "hydrants": "OpenStreetMap",
+        "population": "Derived from ISTAT + synthetic"
+      },
+      "creation_date": "2026-08-02",
+      "version": "1.1.0",
+      "tags": [
+        "real-data",
+        "coastal",
+        "wui",
+        "liguria",
+        "italy"
+      ],
+      "authors": [
+        "Mirko D'Andrea"
+      ],
+      "license": "EUPL-1.2"
+    },
+    {
+      "id": "abm_micro",
+      "name": "ABM Lab: One Street",
+      "description": "Inspect individual people, households, vehicle choice, preparation and departure.",
+      "location": "Synthetic ABM laboratory",
+      "country": "Synthetic",
+      "coordinates": [
+        0.0,
+        0.0
+      ],
+      "utm_zone": 0,
+      "world_size_m": [
+        1600.0,
+        1600.0
+      ],
+      "fire_grid_size": [
+        64,
+        64
+      ],
+      "buildings_count": 3,
+      "households_count": 3,
+      "people_count": 8,
+      "scenario_type": "synthetic",
+      "creation_date": "2026-07-31",
+      "version": "2.0.0",
+      "tags": [
+        "dev",
+        "abm-lab",
+        "one_street",
+        "fire-moderate",
+        "hand_authored"
+      ],
+      "is_dev": true,
+      "vr_palette": {
+        "void": [
+          0.02,
+          0.03,
+          0.08
+        ],
+        "grid": [
+          0.0,
+          0.85,
+          1.0
+        ],
+        "accent": [
+          0.9,
+          0.95,
+          1.0
+        ]
+      },
+      "development": {
+        "focus": "Inspect individual people, households, vehicle choice, preparation and departure.",
+        "fire_profile": "moderate",
+        "road_profile": "one_street",
+        "population_profile": "hand_authored",
+        "suggested_runs": [
+          "no evacuation order",
+          "early general order",
+          "late/zoned order",
+          "suppression before evacuation"
+        ]
+      }
+    },
+    {
       "id": "policy_lab",
       "name": "ABM Lab: Warning Policies",
       "description": "Compare early/general/no-order runs across four visible behavioural cohorts.",
@@ -510,187 +376,6 @@
           "suppression before evacuation"
         ]
       }
-    },
-    {
-      "id": "rhodes",
-      "name": "Lardos, Rhodes",
-      "description": "Real data scenario: touristic villages and beach resorts on the southeastern coast of Rhodes, modelled on the July 2023 Rhodes wildfires -- Greece's largest-ever evacuation, roughly 20,000 people moved from Lardos, Kiotari, Gennadi and nearby resorts, thousands by boat off beaches the road network could not clear in time. No deaths. Synthetic population and behavioural priors; not a replay of the historical fire.",
-      "location": "Lardos, Rhodes, Greece",
-      "country": "Greece",
-      "nationality": "Greek",
-      "region": "the southeastern coast of Rhodes",
-      "localities": [
-        "\u03a0\u03b5\u03cd\u03ba\u03bf\u03b9",
-        "Kiotari",
-        "\u039a\u03ac\u03bb\u03b1\u03b8\u03bf\u03c2",
-        "Kalathos"
-      ],
-      "coordinates": [
-        36.0933,
-        28.017
-      ],
-      "utm_zone": 35,
-      "utm_corner": [
-        586440.0,
-        3989660.0
-      ],
-      "world_size_m": [
-        10240.0,
-        10240.0
-      ],
-      "fire_grid_size": [
-        512,
-        512
-      ],
-      "fire_cellsize_m": 20.0,
-      "buildings_count": 2004,
-      "households_count": 750,
-      "people_count": 1571,
-      "scenario_type": "real",
-      "data_provenance": {
-        "fuel": "s3://cima-propagator-return/cogs/eu/eu_fuel12_utm_35.tif",
-        "dem": "s3://cima-propagator-return/cogs/eu/eu_dem_utm_35.tif",
-        "buildings": "OpenStreetMap (Overpass)",
-        "roads": "OpenStreetMap",
-        "hydrants": "OpenStreetMap",
-        "population": "Synthetic, placed on real footprints"
-      },
-      "creation_date": "2026-08-03",
-      "version": "1.0.0",
-      "tags": [
-        "real-data",
-        "coastal",
-        "wui",
-        "rhodes",
-        "greece",
-        "tourist",
-        "island"
-      ],
-      "authors": [
-        "Mirko D'Andrea"
-      ],
-      "license": "EUPL-1.2"
-    },
-    {
-      "id": "road_cutoff",
-      "name": "ABM Lab: Cut Road and Rerouting",
-      "description": "Put one exit through the fire corridor, retain a long vehicle detour and a foot-only escape.",
-      "location": "Synthetic ABM laboratory",
-      "country": "Synthetic",
-      "coordinates": [
-        0.0,
-        0.0
-      ],
-      "utm_zone": 0,
-      "world_size_m": [
-        3200.0,
-        3200.0
-      ],
-      "fire_grid_size": [
-        128,
-        128
-      ],
-      "buildings_count": 30,
-      "households_count": 30,
-      "people_count": 90,
-      "scenario_type": "synthetic",
-      "creation_date": "2026-07-31",
-      "version": "2.0.0",
-      "tags": [
-        "dev",
-        "abm-lab",
-        "cutoff",
-        "fire-severe",
-        "mixed"
-      ],
-      "is_dev": true,
-      "vr_palette": {
-        "void": [
-          0.02,
-          0.03,
-          0.08
-        ],
-        "grid": [
-          0.0,
-          0.85,
-          1.0
-        ],
-        "accent": [
-          0.9,
-          0.95,
-          1.0
-        ]
-      },
-      "development": {
-        "focus": "Put one exit through the fire corridor, retain a long vehicle detour and a foot-only escape.",
-        "fire_profile": "severe",
-        "road_profile": "cutoff",
-        "population_profile": "mixed",
-        "suggested_runs": [
-          "no evacuation order",
-          "early general order",
-          "late/zoned order",
-          "suppression before evacuation"
-        ]
-      }
-    },
-    {
-      "id": "spotorno",
-      "name": "Spotorno, Liguria",
-      "description": "Real data scenario: coastal Italian town with synthetic population and behavioral priors from wildfire evacuation literature",
-      "location": "Spotorno, Italy",
-      "country": "Italy",
-      "nationality": "Italian",
-      "region": "the Ligurian coast of Italy",
-      "localities": [
-        "Noli",
-        "Spotorno",
-        "Vado Ligure",
-        "Bergeggi"
-      ],
-      "coordinates": [
-        44.2265,
-        8.4176
-      ],
-      "utm_zone": 32,
-      "utm_corner": [
-        448360.0,
-        4892080.0
-      ],
-      "world_size_m": [
-        10240.0,
-        10240.0
-      ],
-      "fire_grid_size": [
-        512,
-        512
-      ],
-      "fire_cellsize_m": 20.0,
-      "buildings_count": 7629,
-      "households_count": 750,
-      "people_count": 1577,
-      "scenario_type": "real",
-      "data_provenance": {
-        "fuel": "s3://cima-propagator-return/cogs/eu/eu_fuel12_utm_32.tif",
-        "dem": "s3://cima-propagator-return/cogs/eu/eu_dem_utm_32.tif",
-        "buildings": "OpenStreetMap (Overpass)",
-        "roads": "OpenStreetMap",
-        "hydrants": "OpenStreetMap",
-        "population": "Derived from ISTAT + synthetic"
-      },
-      "creation_date": "2026-08-02",
-      "version": "1.1.0",
-      "tags": [
-        "real-data",
-        "coastal",
-        "wui",
-        "liguria",
-        "italy"
-      ],
-      "authors": [
-        "Mirko D'Andrea"
-      ],
-      "license": "EUPL-1.2"
     },
     {
       "id": "suppression_access",
@@ -756,6 +441,258 @@
       }
     },
     {
+      "id": "road_cutoff",
+      "name": "ABM Lab: Cut Road and Rerouting",
+      "description": "Put one exit through the fire corridor, retain a long vehicle detour and a foot-only escape.",
+      "location": "Synthetic ABM laboratory",
+      "country": "Synthetic",
+      "coordinates": [
+        0.0,
+        0.0
+      ],
+      "utm_zone": 0,
+      "world_size_m": [
+        3200.0,
+        3200.0
+      ],
+      "fire_grid_size": [
+        128,
+        128
+      ],
+      "buildings_count": 30,
+      "households_count": 30,
+      "people_count": 90,
+      "scenario_type": "synthetic",
+      "creation_date": "2026-07-31",
+      "version": "2.0.0",
+      "tags": [
+        "dev",
+        "abm-lab",
+        "cutoff",
+        "fire-severe",
+        "mixed"
+      ],
+      "is_dev": true,
+      "vr_palette": {
+        "void": [
+          0.02,
+          0.03,
+          0.08
+        ],
+        "grid": [
+          0.0,
+          0.85,
+          1.0
+        ],
+        "accent": [
+          0.9,
+          0.95,
+          1.0
+        ]
+      },
+      "development": {
+        "focus": "Put one exit through the fire corridor, retain a long vehicle detour and a foot-only escape.",
+        "fire_profile": "severe",
+        "road_profile": "cutoff",
+        "population_profile": "mixed",
+        "suggested_runs": [
+          "no evacuation order",
+          "early general order",
+          "late/zoned order",
+          "suppression before evacuation"
+        ]
+      }
+    },
+    {
+      "id": "congestion_funnel",
+      "name": "ABM Lab: Single-Exit Congestion",
+      "description": "Send many household cars through one shared collector and expose queueing and mode choice.",
+      "location": "Synthetic ABM laboratory",
+      "country": "Synthetic",
+      "coordinates": [
+        0.0,
+        0.0
+      ],
+      "utm_zone": 0,
+      "world_size_m": [
+        3200.0,
+        3200.0
+      ],
+      "fire_grid_size": [
+        128,
+        128
+      ],
+      "buildings_count": 1000,
+      "households_count": 1000,
+      "people_count": 3000,
+      "scenario_type": "synthetic",
+      "creation_date": "2026-07-31",
+      "version": "2.0.0",
+      "tags": [
+        "dev",
+        "abm-lab",
+        "bottleneck",
+        "fire-moderate",
+        "car_heavy"
+      ],
+      "is_dev": true,
+      "vr_palette": {
+        "void": [
+          0.02,
+          0.03,
+          0.08
+        ],
+        "grid": [
+          0.0,
+          0.85,
+          1.0
+        ],
+        "accent": [
+          0.9,
+          0.95,
+          1.0
+        ]
+      },
+      "development": {
+        "focus": "Send many household cars through one shared collector and expose queueing and mode choice.",
+        "fire_profile": "moderate",
+        "road_profile": "bottleneck",
+        "population_profile": "car_heavy",
+        "suggested_runs": [
+          "no evacuation order",
+          "early general order",
+          "late/zoned order",
+          "suppression before evacuation"
+        ]
+      }
+    },
+    {
+      "id": "fire_mild",
+      "name": "ABM Lab: Mild Fire",
+      "description": "Controlled severity comparison: patchy low-susceptibility grass, gentle terrain.",
+      "location": "Synthetic ABM laboratory",
+      "country": "Synthetic",
+      "coordinates": [
+        0.0,
+        0.0
+      ],
+      "utm_zone": 0,
+      "world_size_m": [
+        3200.0,
+        3200.0
+      ],
+      "fire_grid_size": [
+        128,
+        128
+      ],
+      "buildings_count": 40,
+      "households_count": 40,
+      "people_count": 120,
+      "scenario_type": "synthetic",
+      "creation_date": "2026-07-31",
+      "version": "2.0.0",
+      "tags": [
+        "dev",
+        "abm-lab",
+        "severity",
+        "fire-mild",
+        "mixed"
+      ],
+      "is_dev": true,
+      "vr_palette": {
+        "void": [
+          0.02,
+          0.03,
+          0.08
+        ],
+        "grid": [
+          0.0,
+          0.85,
+          1.0
+        ],
+        "accent": [
+          0.9,
+          0.95,
+          1.0
+        ]
+      },
+      "development": {
+        "focus": "Controlled severity comparison: patchy low-susceptibility grass, gentle terrain.",
+        "fire_profile": "mild",
+        "road_profile": "severity",
+        "population_profile": "mixed",
+        "suggested_runs": [
+          "no evacuation order",
+          "early general order",
+          "late/zoned order",
+          "suppression before evacuation"
+        ]
+      }
+    },
+    {
+      "id": "fire_extreme",
+      "name": "ABM Lab: Extreme Fire",
+      "description": "Controlled severity comparison: the same settlement with continuous high-susceptibility fuel and steep terrain.",
+      "location": "Synthetic ABM laboratory",
+      "country": "Synthetic",
+      "coordinates": [
+        0.0,
+        0.0
+      ],
+      "utm_zone": 0,
+      "world_size_m": [
+        3200.0,
+        3200.0
+      ],
+      "fire_grid_size": [
+        128,
+        128
+      ],
+      "buildings_count": 40,
+      "households_count": 40,
+      "people_count": 120,
+      "scenario_type": "synthetic",
+      "creation_date": "2026-07-31",
+      "version": "2.0.0",
+      "tags": [
+        "dev",
+        "abm-lab",
+        "severity",
+        "fire-extreme",
+        "mixed"
+      ],
+      "is_dev": true,
+      "vr_palette": {
+        "void": [
+          0.02,
+          0.03,
+          0.08
+        ],
+        "grid": [
+          0.0,
+          0.85,
+          1.0
+        ],
+        "accent": [
+          0.9,
+          0.95,
+          1.0
+        ]
+      },
+      "development": {
+        "focus": "Controlled severity comparison: the same settlement with continuous high-susceptibility fuel and steep terrain.",
+        "fire_profile": "extreme",
+        "road_profile": "severity",
+        "population_profile": "mixed",
+        "suggested_runs": [
+          "no evacuation order",
+          "early general order",
+          "late/zoned order",
+          "suppression before evacuation"
+        ]
+      }
+    },
+    {
       "id": "town_scale",
       "name": "ABM Scale: Small Town",
       "description": "Exercise routing, warnings, household decisions and traffic with roughly one thousand people.",
@@ -809,6 +746,69 @@
         "focus": "Exercise routing, warnings, household decisions and traffic with roughly one thousand people.",
         "fire_profile": "mixed",
         "road_profile": "town",
+        "population_profile": "mixed",
+        "suggested_runs": [
+          "no evacuation order",
+          "early general order",
+          "late/zoned order",
+          "suppression before evacuation"
+        ]
+      }
+    },
+    {
+      "id": "mass_evacuation",
+      "name": "ABM Scale: Mass Evacuation",
+      "description": "Performance and aggregate-behaviour case with five thousand people and several constrained exits.",
+      "location": "Synthetic ABM laboratory",
+      "country": "Synthetic",
+      "coordinates": [
+        0.0,
+        0.0
+      ],
+      "utm_zone": 0,
+      "world_size_m": [
+        6400.0,
+        6400.0
+      ],
+      "fire_grid_size": [
+        192,
+        192
+      ],
+      "buildings_count": 1667,
+      "households_count": 1667,
+      "people_count": 5000,
+      "scenario_type": "synthetic",
+      "creation_date": "2026-07-31",
+      "version": "2.0.0",
+      "tags": [
+        "dev",
+        "abm-lab",
+        "mass",
+        "fire-severe",
+        "mixed"
+      ],
+      "is_dev": true,
+      "vr_palette": {
+        "void": [
+          0.02,
+          0.03,
+          0.08
+        ],
+        "grid": [
+          0.0,
+          0.85,
+          1.0
+        ],
+        "accent": [
+          0.9,
+          0.95,
+          1.0
+        ]
+      },
+      "development": {
+        "focus": "Performance and aggregate-behaviour case with five thousand people and several constrained exits.",
+        "fire_profile": "severe",
+        "road_profile": "mass",
         "population_profile": "mixed",
         "suggested_runs": [
           "no evacuation order",
