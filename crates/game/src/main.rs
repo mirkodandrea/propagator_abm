@@ -32,6 +32,8 @@ mod ignition_edit;
 mod inspect;
 mod interview;
 mod menu;
+#[cfg(not(target_arch = "wasm32"))]
+mod native_text_input;
 mod people;
 mod pick;
 mod retro;
@@ -97,6 +99,8 @@ fn main() -> anyhow::Result<()> {
         brightness: 130.0,
     })
     .add_plugins(EguiPlugin);
+    #[cfg(not(target_arch = "wasm32"))]
+    app.add_plugins(native_text_input::NativeTextInputPlugin);
     #[cfg(target_arch = "wasm32")]
     app.add_plugins(web_clipboard::WebClipboardPlugin);
     app.add_plugins(fire_shader::FireShaderPlugin)

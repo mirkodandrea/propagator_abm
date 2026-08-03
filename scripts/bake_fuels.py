@@ -3,6 +3,9 @@
 propagator-core ships only the 7-class legacy table; our rasters use the
 12-class EU system, so the definitions travel as data rather than being
 hard-coded in Rust.
+
+One deliberate divergence from upstream: see SPOTTING_OVERRIDES below. Do not
+"fix" it by re-copying the yaml.
 """
 
 import json
@@ -15,9 +18,37 @@ SRC = Path(
     "/Users/mirko/dev/fire/propagator/propagator_sim/example/pedrogao/fuels_eu12.yaml"
 )
 
+# Shrubs throw firebrands, and upstream says they do not.
+#
+# Both eu12 tables in propagator_sim (pedrogao, alexandroupolis) flag `spotting`
+# on conifers alone, so in the core's kernel only a conifer cell can *generate*
+# an ember -- while any burnable cell can receive one, since the landing test is
+# `P_C0 * (1 + prob_ign_by_embers)` and a zero there is the base probability
+# rather than a veto. That asymmetry is wrong for Mediterranean maquis, which
+# is the fuel that actually carries these fires: shrub is 706 of the 1,226 cells
+# that burn on Spotorno and 712 of 971 on `mati`, against 146 and 3 conifer.
+# So spotting was switched on at the engine level (`FireSim::new`), ran, and
+# could not fire -- `mati` and `pedrogao` produced *zero* spot fires over two
+# hours, which is the same always-negative shape as houses never burning.
+#
+# Nothing tunes the ember *range* per fuel: the kernel's landing distance is
+# wind and fireline intensity only (`d_median ~ U * I^(1/3)`), so a shrub run's
+# shorter throw already falls out of its lower intensity, and the flag is the
+# whole decision. Receiving matches conifers at 0.4 because fine dead shrub
+# litter is at least as receptive as needle cast.
+#
+# This is a fork of CIMA's table, not a bake bug. It moves every fire figure
+# measured before it -- see the sweep in crates/fire/tests/spotting.rs.
+SPOTTING_OVERRIDES = {
+    7: {"spotting": True, "prob_ign_by_embers": 0.4},
+    8: {"spotting": True, "prob_ign_by_embers": 0.4},
+    9: {"spotting": True, "prob_ign_by_embers": 0.4},
+}
+
 defs = yaml.safe_load(SRC.read_text())["fuels"]
 out = []
 for fid, f in defs.items():
+    f = {**f, **SPOTTING_OVERRIDES.get(int(fid), {})}
     out.append(
         {
             "id": int(fid),

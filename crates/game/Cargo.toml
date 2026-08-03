@@ -19,7 +19,7 @@ serde_json.workspace = true
 bevy = { version = "0.14", default-features = true }
 # `manage_clipboard` stays disabled because bevy_egui 0.28's wasm clipboard
 # code targets an older web-sys `Navigator::clipboard()` signature. The web
-# build installs its own stable paste-event bridge in `web_clipboard.rs`.
+# build installs its own browser text-edit bridge in `web_clipboard.rs`.
 bevy_egui = { version = "0.28", default-features = false, features = ["open_url", "default_fonts", "render"] }
 egui-snarl = { version = "0.4.4", features = ["serde"] }
 
@@ -29,8 +29,11 @@ egui-snarl = { version = "0.4.4", features = ["serde"] }
 # call site.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tiny_http = "0.12"
+# Native text fields use bevy_egui's arboard-backed clipboard. Keeping this
+# target-specific avoids compiling its incompatible legacy web bridge.
+bevy_egui = { version = "0.28", default-features = false, features = ["manage_clipboard"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = ["ClipboardEvent", "DataTransfer", "Document", "EventTarget", "KeyboardEvent", "Window"] }
+web-sys = { version = "0.3", features = ["Clipboard", "ClipboardEvent", "DataTransfer", "Document", "EventTarget", "KeyboardEvent", "Navigator", "Window"] }

@@ -155,13 +155,21 @@ fn the_last_resort_profile_sends_people_to_open_ground() {
             .overrides
             .insert(threat_limit.clone(), behavior::ParamValue::Number(0.05));
         let mut agents = agents_for(&scn, &lib);
-        // In the fuel, as close to the houses as burnable ground gets. The
-        // shipped ignition is deliberately inland (finding 4 sized it that way)
-        // and at that distance the threat at a house never reaches 0.05, never
-        // mind 0.35 — which is the measurement this test's own doc comment is
-        // about, and the reason it cannot use the shipped fire.
-        let home = centroid(agents.households.iter().map(|h| h.home));
-        let at = nearest_burnable(&scn, home).expect("burnable ground near the town");
+        // In the fuel, where the most houses are around it. The shipped
+        // ignition is deliberately inland (finding 4 sized it that way) and at
+        // that distance the threat at a house never reaches 0.05, never mind
+        // 0.35 — which is the measurement this test's own doc comment is about,
+        // and the reason it cannot use the shipped fire.
+        //
+        // *Most houses around it*, rather than the burnable cell nearest their
+        // centroid, because that version put one or two homes over the
+        // threshold out of 750 and the test passed on a single household. Any
+        // change to the fire's own draw then flipped it — enabling shrub
+        // spotting did, and the branch was fine. A situation this test
+        // constructs has to be constructed for a population, not a house.
+        let homes: Vec<Pos> = agents.households.iter().map(|h| h.home).collect();
+        let at = most_surrounded_burnable(&scn, &homes, 200.0)
+            .expect("burnable ground with houses around it");
         let mut fire = FireSim::new(&scn, Weather::default(), 42).unwrap();
         fire.ignite_patch(scn.world.cell_of(at), 400.0, &scn).unwrap();
         agents.order_evacuation_all();
@@ -622,6 +630,31 @@ fn centroid(ps: impl Iterator<Item = Pos>) -> Pos {
         n += 1.0;
     }
     Pos { x: x / n, y: y / n }
+}
+
+/// The burnable cell with the most of `homes` within `r` metres of it — the
+/// place to light a fire that has to reach a *population* rather than a house.
+fn most_surrounded_burnable(scn: &Scenario, homes: &[Pos], r: f32) -> Option<Pos> {
+    let w = scn.world;
+    let r2 = r * r;
+    let mut best: Option<(usize, Pos)> = None;
+    for row in (0..w.fire_rows).step_by(2) {
+        for col in (0..w.fire_cols).step_by(2) {
+            let c = Cell { row, col };
+            if !scn.is_burnable(c) {
+                continue;
+            }
+            let q = w.centre_of(c);
+            let n = homes
+                .iter()
+                .filter(|h| (h.x - q.x).powi(2) + (h.y - q.y).powi(2) <= r2)
+                .count();
+            if n > 0 && best.map(|(bn, _)| n > bn).unwrap_or(true) {
+                best = Some((n, q));
+            }
+        }
+    }
+    best.map(|(_, q)| q)
 }
 
 /// The nearest cell to `p` that will actually carry a fire.
