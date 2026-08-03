@@ -264,6 +264,99 @@ obs_number!(
     refuge_distance_m
 );
 
+// --- what the incident itself can break ------------------------------------
+//
+// These are the fields a scenario built against a real disaster asked for. Each
+// one is a thing the model could not previously say — see `docs/behavior-gaps.md`.
+
+obs_number!(
+    "obs.spot_fire_distance_m",
+    "Distance to a spot fire",
+    "Metres to the nearest fire that started somewhere not contiguous with the \
+     mapped front: an ember jump, or a second ignition. Saturates at 2500 m.\n\n\
+     Deliberately separate from \"Distance to fire\": the front is where you \
+     last saw it, and a spot fire is the one behind you, on the road you were \
+     relying on.",
+    ["ember", "spot", "jump", "firebrand", "behind", "new"],
+    spot_fire_distance_m
+);
+
+obs_number!(
+    "obs.spot_fire_age_min",
+    "Age of that spot fire",
+    "Minutes since the nearest spot fire started, or a very large number if \
+     there has been none. A spot fire an hour old is part of the landscape; \
+     one from two minutes ago is the reason to go now.",
+    ["ember", "spot", "new", "recent", "minutes"],
+    spot_fire_age_min
+);
+
+obs_bool!(
+    "obs.road_closed",
+    "Road closed to traffic",
+    "The road this household would drive out on has been closed by order. \
+     Distinct from \"Route blocked\", which is the fire closing it: this one is \
+     a decision somebody made, and it is the lever investigators found missing \
+     at Pedrogao Grande.",
+    ["closure", "police", "barricade", "traffic", "order"],
+    road_closed
+);
+
+obs_bool!(
+    "obs.comms_down",
+    "No signal",
+    "The warning network covering this house is down — the fire has taken out \
+     the mast. Their channel is now whatever they can see and whoever knocks on \
+     the door.\n\n\
+     This is a *correlated* failure: every household under the same mast loses \
+     it at once, which is what actually happens and is not what a per-household \
+     channel draw can express.",
+    ["network", "mast", "phone", "outage", "alert", "cell"],
+    comms_down
+);
+
+obs_bool!(
+    "obs.is_visitor",
+    "Visitors, not residents",
+    "Nobody here is at home: a hotel, a let, a campsite. No vehicle of their \
+     own, no knowledge of which road goes where, and a warning that arrives \
+     through whoever is running the place rather than over a resident's alert.",
+    ["tourist", "hotel", "transient", "guest", "holiday"],
+    is_visitor
+);
+
+obs_number!(
+    "obs.open_ground_distance_m",
+    "Distance to open ground",
+    "Network metres on foot to the nearest survivable open ground: a car park, \
+     a cleared field, a beach. Not a refuge — nobody is organising anything \
+     there, and it is measured the same way refuges are, off the fuel around \
+     it. Very large when there is none.",
+    ["clearing", "safety zone", "last resort", "park", "beach"],
+    open_ground_distance_m
+);
+
+obs_number!(
+    "obs.shore_distance_m",
+    "Distance to the shore",
+    "Network metres on foot to the water's edge. Very large inland — two of the \
+     four shipped real scenarios have no coast in their window at all, so a \
+     behaviour that leans on this has to read sensibly when it is absent.",
+    ["sea", "water", "beach", "coast", "shoreline"],
+    shore_distance_m
+);
+
+obs_number!(
+    "obs.boat_lift_min",
+    "Minutes to a boat lift",
+    "Minutes until a maritime pickup is on station at the shore, zero once it \
+     is, and a very large number when none has been asked for. Rhodes moved \
+     thousands of people this way when the roads could not clear the area in \
+     time.",
+    ["boat", "sea", "coastguard", "lift", "pickup", "ferry"],
+    boat_lift_min
+);
+
 obs_number!(
     "obs.jitter",
     "Individual variation",

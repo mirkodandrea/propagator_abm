@@ -559,5 +559,12 @@ pub fn action_colour(a: ActionKind) -> egui::Color32 {
         ActionKind::Shelter | ActionKind::Withdraw | ActionKind::TakeShelter => {
             egui::Color32::from_rgb(0xe0, 0x6c, 0x5f)
         }
+        // Making for open ground or the water is the same colour as sheltering
+        // and deliberately a shade off it: it is the same moment — the fire is
+        // here and the plan has failed — differing only in where they take it.
+        ActionKind::ShelterNearby
+        | ActionKind::MakeForShore
+        | ActionKind::WalkToOpenGround
+        | ActionKind::WalkToShore => egui::Color32::from_rgb(0xe0, 0x8c, 0x50),
     }
 }

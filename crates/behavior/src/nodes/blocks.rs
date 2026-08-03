@@ -199,3 +199,242 @@ behavior_node! {
         out.push(Value::Number(m));
     },
 }
+
+// ---------------------------------------------------------------------------
+// What the incident itself can break
+// ---------------------------------------------------------------------------
+//
+// Five blocks, and none of them existed until three scenarios were built against
+// real disasters and the model turned out to have nothing to say about what
+// actually killed people there. Each one names its incident in its doc, because
+// a threshold with a source is a different object from a threshold someone
+// picked: see `docs/behavior-gaps.md`.
+//
+// Three of the five carry an `enabled` switch and ship on the default canvas
+// with it off, for the reason `block.person_reunite` does: turning one on
+// changes the casualty figures, and every measurement in `crates/fire/tests` was
+// taken with them off. The two without a switch are not on the shipped canvas at
+// all, so placing one is already the decision — a block that does nothing until
+// you find a second switch is the trap finding 26 is about.
+
+behavior_node! {
+    id: "block.spot_fire",
+    name: "A fire behind you",
+    category: Block,
+    domain: Household,
+    doc: "Whether a fire has started somewhere it was not, near enough and \
+          recently enough to change what this household does.\n\n\
+          The core genuinely models spotting: embers land ahead of the front and \
+          ignite cells that are not contiguous with it. Until this block, \
+          nothing a household could read said so — their distance-to-fire is a \
+          field over the *whole* burning mask, so a new fire 400 m behind them \
+          reads exactly like the front creeping 400 m closer, and the two are \
+          not the same event at all. The Pedrogao Grande and Mati accounts are \
+          both descriptions of the second one: fire behind you that was not \
+          there when you left, on the road you were relying on.\n\n\
+          Age matters as much as distance. A spot fire twenty minutes old is \
+          part of the landscape and already in everyone's threat field; one from \
+          two minutes ago is the reason to go now.",
+    keywords: ["ember", "spot", "spotting", "firebrand", "behind", "cut off", "jump"],
+    inputs: [],
+    outputs: [
+        (bool "spotted", "A new fire, near enough and recent enough to act on"),
+        (number "distance", "Metres to it, for a readout"),
+        (number "age", "Minutes since it started, for a readout")
+    ],
+    params: [
+        (bool "enabled", "Enabled", "Whether this changes the decision at all. Off is the shipped model, and every figure in the fire tests was measured with it off.", false),
+        (number "radius_m", "Near enough", "Metres within which a new fire is this household's problem rather than the incident's.", 800.0, 0.0, 2500.0, "m"),
+        (number "recent_min", "Recent enough", "Minutes after which it stops being news. Past this it is just part of the fire.", 20.0, 0.0, 180.0, "min")
+    ],
+    eval: |ctx, p, _i, out| {
+        let h = ctx.household();
+        // Inclusive on both, because a scenario with the radius set to the
+        // saturation distance or the window to zero is a legitimate setting and
+        // a strict comparison there is a branch that never fires.
+        let spotted =
+            p.boolean(0) && h.spot_fire_distance_m <= p.num(1) && h.spot_fire_age_min <= p.num(2);
+        out.push(Value::Bool(spotted));
+        out.push(Value::Number(h.spot_fire_distance_m));
+        out.push(Value::Number(h.spot_fire_age_min.min(9999.0)));
+    },
+}
+
+behavior_node! {
+    id: "block.no_signal",
+    name: "No warning is coming",
+    category: Block,
+    domain: Household,
+    doc: "What a household does when the network that was going to warn them is \
+          down.\n\n\
+          Every household draws its own warning channel at generation time and \
+          its own delay follows from that, so in the shipped model everybody's \
+          warning is late for a private reason. Real failures are not private: \
+          reporting on Pedrogao Grande cites the fire knocking out \
+          communications as a contributing cause of the death toll — one mast, \
+          everyone under it, at the moment it mattered most.\n\n\
+          The interesting half is not the outage, it is who it hurts. A \
+          household that trusts official instructions is *waiting* for a message \
+          that will never arrive, and the more they trust it the longer they \
+          wait. \"Giving up on it\" is the moment they stop waiting and act on \
+          what they can see.",
+    keywords: ["network", "mast", "phone", "outage", "alert", "correlated", "signal"],
+    inputs: [],
+    outputs: [
+        (bool "no signal", "The network covering this house is down"),
+        (bool "giving up on it", "They stop waiting for the message and act")
+    ],
+    params: [
+        (bool "enabled", "Enabled", "Whether \"giving up on it\" ever fires. Off is the shipped model. \"No signal\" is reported either way.", false),
+        (number "patience_min", "How long they wait", "Minutes after the order was issued before a household that expected to be told acts without having been.", 10.0, 0.0, 120.0, "min"),
+        (number "min_trust", "Trust that makes them wait", "Trust in authority above which a household is waiting for an instruction rather than making its own mind up. Below this they were never waiting, so there is nothing to give up on.", 0.35, 0.0, 1.0, "")
+    ],
+    eval: |ctx, p, _i, out| {
+        let h = ctx.household();
+        let waiting = h.comms_down
+            && h.order_issued
+            && !h.warning_received
+            && h.trust_authority >= p.num(2)
+            && h.minutes_since_order >= p.num(1);
+        out.push(Value::Bool(h.comms_down));
+        out.push(Value::Bool(p.boolean(0) && waiting));
+    },
+}
+
+behavior_node! {
+    id: "block.road_closed",
+    name: "The road out is closed",
+    category: Block,
+    domain: Household,
+    doc: "What a household does when the road it would have driven out on has \
+          been closed to traffic by order.\n\n\
+          Investigators found the police failed to close the N236 in time at \
+          Pedrogao Grande, and gave it as a specific reason the toll there was \
+          as high as it was. The closure is the commander's lever and it is not \
+          free: it takes a road away from everyone on it, and a household with a \
+          car and no road is a household on foot.\n\n\
+          \"Will not walk it\" is the other half, and it is the cost of the \
+          lever: past a distance people do not set off on foot at all, they stay \
+          in the house and wait for the road to reopen. Wire it somewhere \
+          visible.",
+    keywords: ["closure", "police", "barricade", "traffic", "roadblock", "walk"],
+    inputs: [],
+    outputs: [
+        (bool "closed", "Their way out is closed to traffic"),
+        (bool "on foot instead", "They will walk it"),
+        (bool "will not walk it", "Too far to walk: they stay put")
+    ],
+    params: [
+        (number "will_walk_within", "Furthest they will walk", "Refuge distance, on the routing field's own scale, beyond which a household with no usable road stays in the house instead of setting off.", 3000.0, 0.0, 20000.0, "")
+    ],
+    eval: |ctx, p, _i, out| {
+        let h = ctx.household();
+        let stranded = h.road_closed && h.has_vehicle && !h.is_moving;
+        let within = h.refuge_distance_m <= p.num(0);
+        out.push(Value::Bool(h.road_closed));
+        out.push(Value::Bool(stranded && within));
+        out.push(Value::Bool(stranded && !within));
+    },
+}
+
+behavior_node! {
+    id: "block.visitors",
+    name: "Visitors, not residents",
+    category: Block,
+    domain: Household,
+    doc: "What a party staying in a hotel, a let or a campsite does, as opposed \
+          to a family in its own house.\n\n\
+          Rhodes was substantially a crisis about people who did not live there: \
+          no car of their own, no idea which road goes where, and a warning that \
+          arrives through whoever is running the place rather than over a \
+          resident's alert. The model represents them as households with the \
+          visitor capability set, so a profile assigns them the same way it \
+          assigns anything else — see the `holiday-let` profile, which ships at \
+          zero share.\n\n\
+          The number that matters is \"Acts on their own\": a resident reads a \
+          column of smoke over that ridge and knows what it means for this town, \
+          and a visitor does not, so their threshold for moving without being \
+          told is higher. That is the whole difference, and it is why they died \
+          in the places they did.",
+    keywords: ["tourist", "hotel", "transient", "guest", "holiday", "campsite"],
+    inputs: [],
+    outputs: [
+        (bool "visitor", "Nobody here is at home"),
+        (bool "acts on their own", "Alarmed enough to move without being told"),
+        (bool "on foot", "A visitor with no vehicle")
+    ],
+    params: [
+        (number "own_judgement_alarm", "Acts on their own above", "Alarm a visitor needs before moving without being told. Higher than a resident's threshold, because they cannot read what they are looking at.", 0.60, 0.0, 1.0, "")
+    ],
+    eval: |ctx, p, _i, out| {
+        let h = ctx.household();
+        out.push(Value::Bool(h.is_visitor));
+        out.push(Value::Bool(h.is_visitor && h.cue >= p.num(0)));
+        out.push(Value::Bool(h.is_visitor && !h.has_vehicle));
+    },
+}
+
+behavior_node! {
+    id: "block.last_resort",
+    name: "Nowhere left to drive",
+    category: Block,
+    domain: Household,
+    doc: "Where a household goes when the fire is on the property and there is \
+          no route out: their own house, or open ground.\n\n\
+          The shipped answer is the house, and it is a real answer — walls buy \
+          about ten times as long as standing outside, which is why sheltering \
+          in place is a policy and not a euphemism. It is not the only answer \
+          people actually take. Mati's fatalities include people who died in \
+          lanes trying to reach the shoreline, and the ones who reached open \
+          water lived; Rhodes moved thousands off beaches. Until this block the \
+          model had nowhere to send them: a household whose evacuation failed \
+          could shelter at home or die on the road, and the car park two streets \
+          away did not exist.\n\n\
+          \"The shore\" is deliberately gated on a lift being on the way. \
+          Standing in the sea is survivable and is not an evacuation, and a \
+          model that treats reaching the water as reaching safety says Mati was \
+          a success.\n\n\
+          This block decides **where**, not whether, which is why it takes the \
+          moment as an input rather than testing a threshold of its own. Wire \
+          \"Fire on the property\"'s *overrun* into it and the two branches \
+          cannot disagree about when the fire has arrived. A second threshold \
+          here would have been the more obvious design and it would have been \
+          wrong twice over: it duplicates a number that is already a parameter \
+          somewhere else, and — measured rather than guessed — the threat at a \
+          house on this calibration barely reaches 0.3 in a two-hour incident, \
+          so a fresh 0.35 threshold is a branch that never fires. Houses stand \
+          on non-vegetated ground, which is exactly why they never burn in the \
+          CA either.",
+    keywords: ["last resort", "open ground", "beach", "shore", "clearing", "trapped", "sea"],
+    inputs: [(bool "the fire is here", "Wire \"Fire on the property\"'s overrun output in", false)],
+    outputs: [
+        (bool "open ground", "Make for the nearest survivable clearing"),
+        (bool "the shore", "Make for the water's edge instead"),
+        (number "distance", "Metres to whichever it chose, for a readout")
+    ],
+    params: [
+        (bool "enabled", "Enabled", "Whether this fires at all. Off is the shipped model: a household with the fire on it drives out if it can and shelters in the house if it cannot.", false),
+        (number "max_walk_m", "Furthest they will walk", "Straight-line metres to open ground beyond which they do not attempt it and stay in the house.", 600.0, 0.0, 5000.0, "m"),
+        (bool "only_when_cut_off", "Only when the road is cut", "Whether this also needs every route to a refuge to be gone. Off, because on this calibration that condition essentially never occurs and requiring it is a branch that never fires.", false),
+        (bool "only_with_lift", "Shore only with a lift", "Whether the water's edge counts only when a boat pickup is coming. On is the honest setting: without one, reaching the sea is surviving, not evacuating.", true),
+        (number "lift_within_min", "Lift close enough", "Minutes until the pickup, within which making for the shore is worth it.", 30.0, 0.0, 180.0, "min")
+    ],
+    eval: |ctx, p, i, out| {
+        let h = ctx.household();
+        let trigger = p.boolean(0)
+            && i.boolean(0)
+            // Somebody already on the road has made their choice; this is about
+            // the household the fire reached at home.
+            && !h.is_moving
+            && (!p.boolean(2) || h.route_blocked);
+        let lift = !p.boolean(3) || h.boat_lift_min <= p.num(4);
+        let shore = trigger && h.shore_distance_m <= p.num(1) && lift;
+        // The shore wins when both are reachable: it is the one with a way out
+        // of the incident at the end of it.
+        let ground = trigger && h.open_ground_distance_m <= p.num(1) && !shore;
+        out.push(Value::Bool(ground));
+        out.push(Value::Bool(shore));
+        let d = if shore { h.shore_distance_m } else { h.open_ground_distance_m };
+        out.push(Value::Number(if d.is_finite() { d } else { 9999.0 }));
+    },
+}

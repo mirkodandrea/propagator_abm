@@ -51,7 +51,8 @@ asking.
 crates/scenario/   baked assets + coordinate frames   (no Bevy, no fire core)
 crates/fire/       PROPAGATOR integration, exposure, threat, interventions
 crates/behavior/   authored agent behaviour: domains, node registry, graphs, subtypes
-crates/abm/        civilians: perception, decision, road network, evacuation
+crates/abm/        civilians: perception, decision, road network, evacuation,
+                   havens, spot fires, warning infrastructure, closures, boats
 crates/telemetry/  per-run SQLite event log, and the interview transcripts
 crates/chat/       interviewing an agent through an LLM: personas, prompts, providers
 crates/game/       Bevy app
@@ -527,6 +528,69 @@ carry `addr:housenumber`/`addr:street` — so `Dossier::address` is `Some` for
 almost nobody and the prompt has to read naturally either way, not lean on it
 being there.
 
+**34. A derivation that is right on the window you developed it against can be
+badly wrong on the next one, and the failure is a moved baseline rather than an
+error.** The warning-infrastructure model (`abm::comms`) sites masts on the
+highest road nodes, which is where masts visibly are and which covers 745 of
+750 households on Spotorno. On `mati` it covered 316 and on `pedrogao` 139 — so
+two of the four real scenarios would have opened with most of the town already
+out of signal, quietly changing every evacuation figure taken on them and
+looking exactly like the model working. This is finding 33 with the sting
+moved: there the authored fact was wrong everywhere and here the *derived* one
+was right where it was written, so nothing about developing it could have shown
+it. A real operator sites for coverage, not for altitude, and the fix was to
+derive it that way — greedy maximum coverage of the households, ties on
+elevation — which reaches 750/750 on all four. **Run a new derivation against
+every window before believing it, and make the check an assertion**
+(`the_fire_takes_out_the_warning_network` pins full coverage at T+0 for exactly
+this reason).
+
+The second half is the general one. A mechanism added to a model that already
+has published numbers has to be **provably inert**, and "off by default" is not
+enough when the mechanism has a state at T+0. `CommsNet::covered` therefore
+models the *loss* of service rather than service: somewhere no mast ever
+reached is unaffected by one going down. That makes "nothing has burnt yet ⇒
+nothing has changed" a property of the code rather than of the parameters.
+
+**35. A threshold copied from a neighbouring block is an always-negative if the
+quantity never gets there, and the neighbouring block being *shipped* is not
+evidence that it does.** `block.last_resort` first tested `threat >= 0.35`,
+lifted from `block.fire_at_the_door`, which has shipped since the composer
+existed. Measured: the threat at a house peaks around **0.3** over a two-hour
+incident, **no structure ever ignites** and **no household's route is ever cut**
+— on any of the four real scenarios. Houses stand on non-vegetated ground, which
+is the same reason they never burn in the CA (finding 2), so the pedestrian
+threat field at a house is small even when the fire is at the fence. The branch
+validated, sat on the canvas wired to a live action, and could not fire; so, it
+turns out, can the shipped `evacuate_now` and `shelter` branches. The fix is
+structural rather than numeric — `block.last_resort` takes the moment as an
+*input* from the block that already owns that threshold, so the two cannot
+disagree and there is one number rather than two. **A second copy of a threshold
+is a second thing to be wrong, and the first place to look when a new branch
+never fires is whether the quantity it reads ever reaches the value it wants.**
+
+**36. A node's id is its position in the builder, so append to a shipped graph
+and never insert.** Adding the six new blocks where they belonged on the canvas
+renumbered every node after them, and subtype overrides are keyed
+`<node id>.<param>` — so `needs-assistance.json` silently changed from
+`5.priority` to `9.priority` and any profile a scientist had written against the
+shipped graph would have pointed at the wrong box while still loading, still
+validating and still running. This is finding 24 one level out: the editor
+preserves ids now, and what it cannot preserve is somebody rewriting the middle
+of `defaults.rs`. The new nodes are added at the end of `default_graph`, wired
+back to the earlier ones, with a comment saying why they are in the wrong place.
+
+**37. A new fire is a blob, not a cell.** Spot-fire detection asks whether a
+newly burning cell has anything already alight within 120 m of it. A single
+ignition patch of 200 m radius is four hundred metres across, so its far edges
+are further apart than the gap and the first version reported one new fire as
+**eleven** — and the per-cell dedupe that looked like the fix (skip a candidate
+near one already recorded this tick) cannot work, because the blob is wider than
+the radius at which two cells count as the same event. Flood-fill the detached
+set against itself and record one spot per connected component, at its centroid.
+The same shape of mistake is waiting in any "count the new things" pass over a
+raster.
+
 ---
 
 ## Current state
@@ -617,6 +681,36 @@ A representative run — general order at T+5 min, 2 h incident:
 120 min     3     0       1   272      49       0     0
 ```
 
+**What the incident can break, and where people go when it does**
+(`abm::spot`, `abm::comms`, `abm::haven`, `abm::orders`): five mechanisms that
+came out of comparing this model against the Attica, Pedrógão Grande and Rhodes
+fires — see `docs/behavior-gaps.md`, which is the sourced version of all of it.
+
+| | What it is | Reached from a graph by |
+|---|---|---|
+| **Spot fires** | a new fire not contiguous with the mapped front, with an age | `block.spot_fire` |
+| **Warning infrastructure** | masts sited for coverage, taken out by threat, correlated across everyone under them | `block.no_signal` |
+| **Havens** | somewhere to go that is not a refuge: clearings, car parks, the water's edge | `block.last_resort` |
+| **Road closures** | a commander's order that binds civilian traffic and nothing else | `block.road_closed` |
+| **A boat lift** | maritime capacity the road network does not have, arriving late | `block.person_boat_pickup` |
+
+A **haven** is measured the way a refuge is and adds the criterion a refuge does
+not have: **buildings**. Non-vegetated fuel does not distinguish a car park from
+the old town, and a lane with houses alight on both sides is not open ground. A
+haven adjacent to water is a `Water` one, derived from the fuel and DEM rasters
+(non-burnable at or below 2 m) because OSM does not carry the coastline. On the
+shipped windows: 102 havens on Spotorno of which 38 are shore, 81/42 on
+`rhodes`, 160/0 on `mati`, **18/0 on `pedrogao`** — which is the 88%-near-fuel
+figure showing up as what it means. Reaching one is `TravelState::Sheltering`,
+deliberately *not* `Safe`: nobody at a haven has left the incident, and a model
+that counted the water as safety would say Mati was a success.
+
+All of it is **off or inert**: the two blocks that would change a shipped figure
+carry an `enabled` switch and ship off, the other three are live and describe
+things nobody has ordered. `crates/abm/tests/incident_gaps.rs` pins both that
+each branch fires when a profile turns it on and that the shipped profiles
+produce the run they did.
+
 **Suppression** (`crates/abm/src/suppression.rs`, `crates/game/src/command.rs`,
 `units.rs`): crews, engines and aircraft as agents, and the commander's second
 lever. Three kinds, deliberately not interchangeable — and the three constraints
@@ -706,7 +800,7 @@ further edit — there is no central list, which means there is no way to add a
 node the editor does not know about. A node declares `domain:` or is
 domain-free; `anything_that_reads_the_world_declares_a_domain` is what stops a
 node reading a default observation in the wrong graph and looking like a branch
-that never fires. 117 ship — 60 offered to a household graph, 50 to a person
+that never fires. 143 ship — 75 offered to a household graph, 61 to a person
 one, 49 to a unit one, and the 21 in all three are the arithmetic. The counts
 come from `palette_report` (`cargo test -p behavior --release -- --ignored
 palette_report --nocapture`), which is a report rather than an assertion: a test
@@ -719,8 +813,9 @@ reading what it needs off the observation itself and exposing the numbers that
 assumption turns on as parameters. That is also exactly what a subtype
 overrides, so a profile stops being a list of node ids and becomes a list of
 named quantities. The shipped evacuation behaviour was **31 nodes** written in
-observations and arithmetic; on blocks it is **13**, and the unit policy is 6.
-The primitives are all still in the palette — a block's *structure* is fixed,
+observations and arithmetic; on blocks it is **20**, of which thirteen are the
+original model and six are the branches the real-incident scenarios asked for,
+and the unit policy is 6. The primitives are all still in the palette — a block's *structure* is fixed,
 and rebuilding one out of `Logic` nodes is the supported way to change it.
 
 The scientist-facing surface is a graph. Four port types (`number`, `bool`,
@@ -743,13 +838,24 @@ the domains differ, and it follows from what is being assigned to:
   them and they are named individuals; a hash would make "why did Autobotte 2
   do that" a question about arithmetic rather than about a file.
 
-Eight profiles ship: four household, on the one graph, differing only in
+Eleven profiles ship: four household, on the one graph, differing only in
 numbers — which is the pattern the whole thing is for — plus `walk-out` and
 `family-first` (the latter at share 0), plus `standing-orders` (the shipped unit
 policy, written down) and `cautious-engines` (off by default). The inspector
 edits the *override* when a profile is selected and says so, because a scientist
 who moves a threshold and finds they moved it for everyone has been badly
 served.
+
+Three of the eleven ship at **share 0** and are the ones worth reading first,
+because each is a claim about a real incident rather than a variation on a
+number: `holiday-let` (a visiting party — no car, told by whoever runs the
+place, and no idea what the smoke over that ridge means), `reacts-to-events`
+(the same household as `wait-and-see` with the spot-fire, no-signal and
+last-resort branches switched on) and `to-the-water` (a separated person who
+gives up on the refuge for whatever is nearest, and walks to a boat when one is
+coming). Giving any of them a share makes the run incomparable with every figure
+measured before it, which is the comparison rather than a caveat — the same way
+`family-first` ships.
 
 **A node's identity is the file's, and the editor preserves it.** `egui_snarl`
 hands out its own `NodeId` on insert; `EditorNode` carries a `behavior::NodeId`
@@ -763,9 +869,11 @@ The **test bench** puts a made-up agent in a situation and reads back the answer
 node by node, plus a sweep that varies one field across its range and reports
 where the decision actually changes — a threshold here is never a single number,
 so the alternative is guessing. Situations, editable fields and sweep fields all
-follow the open graph's domain; eight household situations ship, eight person
+follow the open graph's domain; eleven household situations ship, ten person
 ones and nine unit ones, each chosen because it is a moment the hand-written
-layer either handled or visibly did not.
+layer either handled or visibly did not — the five most recent because they are
+moments it could not describe at all, like a fire that started behind them or a
+boat pickup announced at the beach.
 
 The **Live tab** is the other half of debugging, and it is the one that works on
 the real incident rather than a made-up one. Click an agent on the map — a
@@ -902,7 +1010,14 @@ resource is a hand crew, which is why line production is the binding
 constraint). Units are
 selected under Intervention in the left Command panel, not by clicking them on the map — the
 screen-space picker in `inspect` would do it, but three tools already contend for
-left-click and a fourth needs a rule, not a patch.
+left-click and a fourth needs a rule, not a patch. **A road closure is an area
+and has no map tool for the same reason**: it is
+`POST /control/close_road {x, y, radius_m, minutes}` on the control API, which
+is enough for a scientist and no use at all to a player. A boat lift needs no
+place, so it is a row in **Operations** and is greyed out with a reason on an
+inland window. And **nothing new is drawn on the map** — a burnt mast, a closed
+road, a beach with people on it and a spot fire that has just started are all in
+`Sim` and none of them is visible.
 
 ### Commands
 
@@ -915,7 +1030,9 @@ SPOTORNO_ORDER_AT=600 cargo run --release -p game  # auto-order evacuation at T+
 SPOTORNO_ATTACK_AT=300 cargo run --release -p game # commit every unit to the head at T+5 min
 cargo test --release                     # everything, ~4 s
 cargo test -p abm --release -- --ignored --nocapture     # evacuation timeline,
-       # routing cost, and the engine refill-threshold sweep
+       # routing cost, the engine refill-threshold sweep, what the haven and
+       # mast derivations found in each window (`haven_report`), and what the
+       # incident-mechanism profiles cost (`incident_mechanism_report`)
 cargo test -p fire --release -- --ignored --nocapture    # slow calibration sweeps
 
 # the wildfire controls, driven without a keyboard: place an ignition mid-run,
@@ -1029,6 +1146,17 @@ because it is what gets you *out* of a state.
   domain's action set is closed, and adding to it means teaching
   `abm::behaviour::outcome_of`, `person_outcome_of` or `unit_outcome_of` what
   the movement or suppression layer should do about it.
+- **A new mechanism has to be provably inert, not merely off.** Every number in
+  `crates/fire/tests` and in this file was measured before it existed, so
+  "nothing has happened yet ⇒ nothing has changed" must be a property of the
+  code rather than of a default — see finding 34, and `CommsNet::covered`
+  modelling the loss of service rather than service. The evidence goes in
+  `crates/abm/tests/incident_gaps.rs`, which asserts both halves: the branch
+  fires when a profile turns it on, and the shipped profiles produce the run
+  they did.
+- **Do not insert nodes into a shipped graph in `defaults.rs`.** Ids are
+  positional and subtype overrides are keyed on them; append and wire backwards
+  (finding 36).
 - Adding a **domain** touches more than it looks: the enum, an observation, a
   decision sink, an action set, a runtime and a call site in `abm`, plus every
   `match` on `Domain` in `crates/game/src/composer/`. The compiler finds all of
@@ -1059,6 +1187,25 @@ because it is what gets you *out* of a state.
 
 ## Open questions
 
+- **Nobody is ever caught, so half the civilian model cannot be measured.**
+  Threat at a house peaks near 0.3 over two hours, no structure ever ignites and
+  no route is ever cut, on any of the four real scenarios — so every branch
+  downstream of "the fire is on the property" is nearly inert, including the
+  `evacuate_now` and `shelter` branches that have shipped for months. Whether
+  making for open ground beats sheltering in the house is therefore unmeasured
+  and the test that exercises it has to lower `block.fire_at_the_door`'s own
+  threshold to construct the situation. This is the same root as the structure
+  loss question below and it is the biggest one in the model.
+- **A boat lift currently costs six lives and saves none** on the two windows
+  that have a shore, because those people were reaching a land refuge anyway.
+  That is the honest answer for Spotorno and `rhodes` at 750 households and not
+  a general one: Rhodes' real lift mattered because 20,000 people could not clear
+  the area by road. Measuring it needs a scenario where road capacity binds.
+- **`mati` has no coast in its window** — the DEM minimum is 140 m — so the
+  scenario built around people who died trying to reach a shoreline cannot
+  express reaching it. A `places.py` edit and a pipeline re-run.
+- A haven is a point, not a capacity. Two hundred people at one car park is two
+  hundred people at one car park, and nothing says when that stops being safe.
 - Structure loss is rare at the current tuning (1 building at 250 m start, 31
   at 500 m) — the front passes too quickly to accumulate ignition. Needs
   tuning if structure loss should be live pressure rather than a rare event.

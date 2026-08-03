@@ -96,6 +96,47 @@ pub struct HouseholdObs {
     /// `route_blocked`.
     pub refuge_distance_m: f32,
 
+    // --- the incident's own failures --------------------------------------
+    //
+    // Everything below this line exists because a scenario built against a real
+    // disaster asked for it and the model could not answer. See
+    // `docs/behavior-gaps.md`.
+    /// Metres to the nearest fire that started somewhere **not contiguous with
+    /// the mapped front** — an ember jump, or a second ignition. Saturates at
+    /// 2500 m like `fire_distance_m`.
+    ///
+    /// Separate from `fire_distance_m` because the two are different
+    /// experiences: the front is where you last saw it and a spot fire is
+    /// behind you, on the road you were relying on. Pedrógão Grande and Mati
+    /// are both accounts of the second.
+    pub spot_fire_distance_m: f32,
+    /// Minutes since that fire started. Large when there has been none: a spot
+    /// fire an hour old is part of the landscape, one from two minutes ago is
+    /// the reason to go now.
+    pub spot_fire_age_min: f32,
+    /// The road this household would drive out on has been closed to traffic
+    /// by order. Distinct from `route_blocked`, which is the fire closing it.
+    pub road_closed: bool,
+    /// The warning network covering this house is down — the fire has taken out
+    /// the mast or the repeater. Their channel is now whatever they can see and
+    /// whoever knocks on the door.
+    pub comms_down: bool,
+    /// This is not their own home: visitors, in a hotel or a let, with no
+    /// vehicle of their own, no knowledge of the roads, and a warning that
+    /// arrives through whoever is running the place.
+    pub is_visitor: bool,
+    /// Network metres on foot to the nearest survivable open ground — a car
+    /// park, a beach, a cleared field. Not a refuge: nobody is organising
+    /// anything there. Infinite when there is none in the window.
+    pub open_ground_distance_m: f32,
+    /// Network metres on foot to the water's edge. Infinite inland, which is
+    /// most scenarios: `pedrogao` and `mati` have no coast in their windows at
+    /// all.
+    pub shore_distance_m: f32,
+    /// Minutes until a maritime pickup is on station, 0 once it is, large when
+    /// none has been asked for.
+    pub boat_lift_min: f32,
+
     /// Per-agent deterministic jitter, 0–1, stable for the life of the run.
     ///
     /// Exposed as an observation rather than left to a random node so an
@@ -131,6 +172,14 @@ impl Default for HouseholdObs {
             is_defending: false,
             route_blocked: false,
             refuge_distance_m: 800.0,
+            spot_fire_distance_m: 2500.0,
+            spot_fire_age_min: 1.0e6,
+            road_closed: false,
+            comms_down: false,
+            is_visitor: false,
+            open_ground_distance_m: f32::INFINITY,
+            shore_distance_m: f32::INFINITY,
+            boat_lift_min: 1.0e6,
             jitter: 0.5,
         }
     }
@@ -310,6 +359,26 @@ pub struct PersonObs {
     /// Already stopped and sheltering.
     pub is_sheltering: bool,
 
+    // --- what the road network cannot offer them ---------------------------
+    /// Metres to the nearest fire that started away from the mapped front. The
+    /// same quantity the household reads, from where this person is standing —
+    /// and for someone already out on the road it is the more dangerous of the
+    /// two, because it can appear between them and where they are walking.
+    pub spot_fire_distance_m: f32,
+    /// Minutes since that fire started.
+    pub spot_fire_age_min: f32,
+    /// A visitor rather than a resident: no vehicle, no local knowledge, and
+    /// nowhere in this window that is home.
+    pub is_visitor: bool,
+    /// Network metres on foot to the nearest survivable open ground. Not a
+    /// refuge — the shelter of last resort someone caught in the open takes.
+    pub open_ground_distance_m: f32,
+    /// Network metres on foot to the water's edge. Infinite inland.
+    pub shore_distance_m: f32,
+    /// Minutes until a maritime pickup is on station, 0 once it is, large when
+    /// none has been asked for.
+    pub boat_lift_min: f32,
+
     /// Per-agent deterministic jitter, 0–1, stable for the life of the run.
     /// Hashed from the person id, for the same reason the household's is.
     pub jitter: f32,
@@ -337,6 +406,12 @@ impl Default for PersonObs {
             is_moving: true,
             is_heading_home: false,
             is_sheltering: false,
+            spot_fire_distance_m: 2500.0,
+            spot_fire_age_min: 1.0e6,
+            is_visitor: false,
+            open_ground_distance_m: f32::INFINITY,
+            shore_distance_m: f32::INFINITY,
+            boat_lift_min: 1.0e6,
             jitter: 0.5,
         }
     }

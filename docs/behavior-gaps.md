@@ -50,6 +50,89 @@ disaster specifically should place ignition and attention at the coastal
 
 ---
 
+## Status
+
+Gaps 2–7 have been closed **on the agent side**, entirely inside the behaviour
+graph system: five mechanisms in `crates/abm`, eight new blocks, four new
+actions and fourteen new observation fields in `crates/behavior`, and three new
+profiles that ship at **zero share**. Gap 1 is a fire-calibration question and
+is untouched — it is not an ABM gap and pretending otherwise would have meant
+tuning the fire to make a behaviour look good.
+
+| Gap | Where it lives now | Ships |
+|---|---|---|
+| 2 · spot fires | `abm::spot`, `block.spot_fire`, `block.person_spot_fire` | off |
+| 3 · road closure | `Abm::close_road`, `network::solve_with`, `block.road_closed` | live, no closure ordered |
+| 4 · the sea, boats | `abm::haven`, `abm::orders::BoatLift`, `block.person_boat_pickup` | off |
+| 5 · transient population | `Capability::Transient`, `block.visitors`, profile `holiday-let` | share 0 |
+| 6 · correlated warning failure | `abm::comms`, `block.no_signal` | live, inert until a mast burns |
+| 7 · shelter of last resort | `abm::haven`, `block.last_resort`, `block.person_last_resort` | off |
+
+Everything is off or inert by construction, because every figure in
+`crates/fire/tests` and every number quoted in `CLAUDE.md` was measured before
+these existed. `crates/abm/tests/incident_gaps.rs` is the evidence for both
+halves: that each branch *fires* when a profile turns it on, and that the
+shipped profiles produce the same run they did.
+
+**What the derivations actually found** (`cargo test -p abm --release --
+--ignored haven_report`):
+
+```
+scenario      refuges   havens    shore   masts
+spotorno           12      102       38       4
+mati               12      160        0       4
+pedrogao           12       18        0       3
+rhodes             12       81       42       6
+```
+
+Two things in that table are findings rather than output. **`mati` has no coast
+in its window at all** — the DEM's minimum is 140 m — so a scenario built around
+people who died trying to reach a shoreline cannot express reaching it; the
+window covers the corridor the fire ran down and stops inland of where it
+killed people. And **`pedrogao` has 18 havens against Spotorno's 102**, which is
+the 88%-of-households-near-fuel number from above showing up as the thing it
+actually means: in that landscape there is nowhere to go.
+
+**Four measurements worth keeping** (`--ignored incident_mechanism_report`,
+2 h, general order at T+0, one profile forced across the whole population):
+
+```
+spotorno                                 safe sheltering    dead ppl safe  lifted
+wait-and-see / walk-out                   557          0       0     1228       0
+reacts-to-events / walk-out               564          0       0     1237       0
+reacts-to-events / to-the-water           564          0       0     1237       0
+reacts-to-events / to-the-water +boats    564          0       0     1231     361
+
+rhodes
+wait-and-see / walk-out                   576          0       0     1278       0
+reacts-to-events / walk-out               580          1       0     1285       0
+reacts-to-events / to-the-water           580          1       0     1285       0
+reacts-to-events / to-the-water +boats    581          0       0     1282     355
+```
+
+The boat lift moves 355–361 people and saves nobody: those people were reaching
+a land refuge anyway, and six of them are *worse* off for having walked to the
+water. That is the honest answer for these two windows, where the waterfront is
+already a refuge and the road network is not saturated, and it is exactly the
+comparison the mechanism exists to allow — Rhodes' lift mattered because 20,000
+people could not clear the area by road, and neither shipped window has that
+problem at this population. Testing it properly needs a scenario where the road
+capacity actually binds.
+
+**And one measurement that reframes the rest.** At the shipped calibration the
+threat at a house peaks around **0.3** over a two-hour incident, **no structure
+ever ignites**, and **no household's route is ever cut** — on any of the four
+real scenarios. Every branch downstream of "the fire is on the property",
+including the `action.evacuate_now` and `action.shelter` branches that shipped
+long before this work, is therefore almost entirely inert. A last-resort
+behaviour inherits that: `block.last_resort` fires exactly when
+`block.fire_at_the_door` does, which is why it takes that block's output as an
+*input* rather than testing a threshold of its own. The first version did test
+its own threshold, at the same 0.35 the shipped block uses, and it was an
+always-negative — finding 26, built fresh.
+
+---
+
 ## Gaps
 
 ### 1. Fire can outrun cars; the calibrated model can't produce that
@@ -91,6 +174,17 @@ to matter, but there is no faster or separate "spot fire just started here"
 signal a household or a commander could react to sooner than the field
 refresh.
 
+**Closed.** `abm::spot` maintains the mask needed to recognise one: a newly
+burning cell with nothing already alight within 120 m of it, flood-filled into
+one record per blob so a 400 m patch is one new fire and not eleven.
+`HouseholdObs`/`PersonObs` carry the distance and the *age*, and the age is
+half the value — a spot fire twenty minutes old is already in everyone's threat
+field, and one from two minutes ago is the reason to go now. `block.spot_fire`
+and `block.person_spot_fire` are the two assumptions. What it deliberately does
+*not* do is ask the core which cells it spotted: non-contiguity is the
+criterion, so a second ignition the player lit counts too, which is what a
+resident would see.
+
 ### 3. No lever to close a road to civilian traffic
 
 Investigators found police failed to close the N236 in time at Pedrógão
@@ -113,6 +207,17 @@ intervention roster in `crates/abm/src/suppression.rs` and
 dispatch — a link removed from the routing graph (finding 8's Dijkstra field)
 for a duration, at a cost of reduced route diversity, exactly mirroring how a
 fire cutting a road already forces rerouting.
+
+**Closed.** `Abm::close_road(centre, radius, duration)` and
+`network::solve_with`, which takes a per-link closed mask. It binds the civilian
+*car* field and nothing else: a pedestrian walks down a closed road and a
+suppression unit asking `network::route` never sees it, because a barricade is a
+traffic order. The households it strands read `road_closed` and
+`block.road_closed` is what they do about it — walk it, or decide it is too far
+and stay in the house, which is the cost of the lever and is the output worth
+wiring somewhere visible. There is **no map tool**: three already contend for
+left-click and a fourth needs a rule rather than a patch, so the order is placed
+through the control API (`POST /control/close_road`) for now.
 
 ### 4. The sea is not a place; boats are not a mode
 
@@ -138,6 +243,23 @@ capacity to the road network (Rhodes) — which, for a coastal scenario like
 Spotorno itself, is not a hypothetical: Spotorno's own shipped refuges already
 include the waterfront (finding 9), and nothing about the model currently lets
 that be a boat pickup rather than a dead-end road with a nice view.
+
+**Closed.** `abm::haven` adds a second class of destination — measured, not
+authored, exactly as refuges are — and the criterion refuges do not have is
+**buildings**: non-vegetated fuel does not distinguish a car park from the old
+town, and a lane with houses alight on both sides is not open ground. A haven
+adjacent to water is a `HavenKind::Water` one, and the water is derived from the
+two rasters the fire model already loads (non-burnable cell at or below 2 m),
+because OSM does not carry the coastline. `Goal::Haven`/`Goal::Shore` are two
+more route fields, `TravelState::Sheltering` is where somebody ends up, and it
+is deliberately *not* `Safe` — a model that counted reaching the water as
+evacuating would say Mati was a success. `abm::orders::BoatLift` is the Rhodes
+half: requested, on station after a delay, taking people off the beach at a rate
+integrated over simulated time.
+
+One thing the first version got wrong and the data caught: "within 80 m of
+water" put a haven 27 m up on the cliff the Aurelia is cut into. Near the sea
+and able to get into the sea are different predicates.
 
 ### 5. No transient population: tourists, campers, beachgoers
 
@@ -165,6 +287,20 @@ occupancy tied to tourist infrastructure, no warning channel modelled for it,
 and no reason for it to route to a boat rather than a road refuge even if one
 existed (see gap 4).
 
+**Closed, without re-baking a population.** `Capability::Transient` makes a
+visiting party a *profile* rather than a population field, which means a share
+of households — hashed, like every other profile assignment — and asking "what
+does this town look like in August" is a number in a file. What it changes is
+small and specific: no vehicle, a warning that arrives through whoever runs the
+place (`MANAGED_DELAY_S`, and not over the mobile network), and a higher
+threshold for acting without being told, because a resident reads a column of
+smoke over that ridge and a visitor cannot. `block.visitors` is the assumption
+and `holiday-let` is the profile, at share 0.
+
+The route to a boat is gap 4's, and the two compose: a visiting party with no
+car, told by the front desk, walking to a pickup at the beach is now
+expressible in three overrides.
+
 ### 6. Warning-channel failure is per-household and independent; real failures are systemic
 
 The shipped model assigns each household one of five warning channels at
@@ -187,6 +323,26 @@ the fire is closest. This is the same class of gap as gap 3: the model treats
 information flow as reliable machinery that only individual households can be
 slow on, never a shared resource the incident itself can break.
 
+**Closed.** `abm::comms` derives masts from the road network and the population,
+and a mast goes down on *threat* rather than on burning — it stands on cleared
+ground, which is non-vegetated, which never enters the fire mask (finding 2
+again). A household whose mobile alert was coming over a mast that is now down
+falls back to the no-channel delay, and every household under that mast falls
+back together, which is the correlation no per-household draw can produce.
+`block.no_signal` is what they do about it, and its interesting output is
+"giving up on it": the households that *trust* official instructions are the
+ones waiting for a message that will never arrive.
+
+Two things the data changed here. Siting the masts on the six highest road nodes
+— which is where masts visibly are — covered 745 of 750 households on Spotorno
+but only 316 on `mati` and 139 on `pedrogao`, so two scenarios would have
+started with most of the town already out of signal and silently moved the
+baseline. Real operators site for coverage, so the derivation does: greedy
+maximum coverage, ties broken on elevation, and 750/750 on every real window.
+And `covered()` models the *loss* of service rather than service — somewhere no
+mast ever reached is unaffected by one going down — which is what makes the
+whole mechanism provably inert until the fire breaks something.
+
 ### 7. "Shelter" means the household's own building; no shelter of last resort elsewhere
 
 The household action set includes `Shelter` (`crates/behavior/src/value.rs:
@@ -207,6 +363,16 @@ behaviour today; a household or separated person whose evacuation fails mid-
 route has nowhere in the model to go except the refuge they were already
 routing to (or, per gap 4, no maritime option at all).
 
+**Closed by the same machinery as gap 4.** `ActionKind::ShelterNearby` and
+`WalkToOpenGround` send a household or a person to the nearest haven on foot;
+`MakeForShore`/`WalkToShore` send them to the water. Sheltering at a haven gives
+relief from flame exposure — all of it at the water's edge, because a person in
+the sea is out of the fire's reach for as long as they can stand it, and rather
+less in a car park, because a car park in a firestorm is survivable and is not
+safe. `block.last_resort` and `block.person_last_resort` decide **where**, not
+whether, which is why both take the moment as an input from the block that
+already owns that threshold.
+
 ---
 
 ## What ships fine as-is
@@ -219,7 +385,7 @@ channel with a real delay) is the correct shape for "no organised evacuation
 order was given," which is literally what happened at Mati — the player
 simply not issuing one reproduces it, no new mechanic required.
 
-## Open question this raises
+## Open questions these raise
 
 Every civilian-model threshold shipped today (`risk_perception`,
 `prep_time_min`, the block defaults in `crates/behavior`) was tuned once,
@@ -233,3 +399,31 @@ same spirit as every other finding in `CLAUDE.md`, is running
 `SPOTORNO_SCENARIO=mati` / `pedrogao` / `rhodes` through the existing
 self-test and timeline instrumentation rather than assuming the numbers
 transfer.
+
+And the six new ones, all of them consequences of closing the gaps above:
+
+- **Nothing is ever caught, so the last-resort behaviours cannot be measured.**
+  Threat at a house peaks near 0.3, no structure ignites and no route is cut,
+  so `block.last_resort` fires only when a profile lowers
+  `block.fire_at_the_door`'s own threshold — which is what the test does, and
+  says so. Whether making for open ground beats sheltering in the house is
+  therefore *unmeasured*, and it is the question the block exists to answer.
+  It needs a calibration where the fire actually reaches people, which is gap 1.
+- **A boat lift currently costs six lives and saves none**, on the two windows
+  that have a shore. That is a real result for those windows and not a general
+  one; it needs a scenario where the road network cannot clear the population,
+  which neither shipped coastal window is at 750 households.
+- **`mati` has no coast in its window.** A scenario about people who died
+  trying to reach the shoreline cannot express reaching it. Re-baking with the
+  window pushed south is a `places.py` edit and a pipeline re-run.
+- **A road closure has no map tool.** It is an area, and placing an area needs a
+  fourth left-click tool with a rule behind it. Until then it is
+  `POST /control/close_road`, which is fine for a scientist and useless for a
+  player.
+- **Nothing on the map shows any of this.** A mast that has burnt, a road that
+  is closed, a beach with people on it and a spot fire that just started are all
+  in `Sim` and none of them is drawn — which is the same complaint the composer's
+  Live tab already has about authored policies.
+- **A haven is a point, not a capacity.** Two hundred people at one car park is
+  two hundred people at one car park, and the model has nothing to say about
+  what that is like or when it stops being safe.

@@ -143,18 +143,80 @@ pub fn default_graph() -> BehaviorGraph {
     b.wire(defend, 0, decision, 0);
     b.wire(shelter, 0, decision, 0);
 
-    let prep = b.add("block.preparation", 600.0, 620.0);
+    let prep = b.add("block.preparation", 600.0, 900.0);
     b.num(prep, "leave_early", 0.8);
     b.num(prep, "wait_and_see", 1.0);
     b.num(prep, "stay_defend", 0.5);
-    let prep_out = b.add("out.prep_scale", 860.0, 620.0);
+    let prep_out = b.add("out.prep_scale", 860.0, 900.0);
     b.wire(prep, 0, prep_out, 0);
 
     // The margin past their own threshold is a better readout than the raw
     // alarm: it says how far past the point of acting they are, which is the
     // quantity the behaviour actually turns on.
-    let urgency_out = b.add("out.urgency", 860.0, 740.0);
+    let urgency_out = b.add("out.urgency", 860.0, 1020.0);
     b.wire(alarm, 2, urgency_out, 0);
+
+    // --- what the incident itself can do to them ---------------------------
+    //
+    // Six nodes that did not exist until three scenarios were built against real
+    // disasters (`docs/behavior-gaps.md`). Two of the blocks ship switched off,
+    // because turning one on changes the casualty figures every measurement in
+    // `crates/fire/tests` was taken without. The other two need a lever nobody
+    // has pulled — a road closure, a transient population — so they are live and
+    // silent, which is not the same state as disabled and is the honest one for
+    // a branch whose condition has simply not happened.
+    //
+    // **Added at the end, and that is not a style choice.** A node's id is its
+    // position in this sequence, and a subtype's overrides are keyed on it, so
+    // inserting these where they belong on the canvas renumbered every node
+    // after them and silently pointed every override in every profile at the
+    // wrong box. That is finding 24 one level out: the ids survive the editor
+    // now, and what they do not survive is somebody rewriting the shipped graph
+    // in the middle. Append.
+    let spot = b.add("block.spot_fire", 0.0, 700.0);
+    b.boolean(spot, "enabled", false);
+    b.num(spot, "radius_m", 800.0);
+    b.num(spot, "recent_min", 20.0);
+    b.wire(spot, 0, depart, 0);
+
+    let signal = b.add("block.no_signal", 0.0, 930.0);
+    b.boolean(signal, "enabled", false);
+    b.num(signal, "patience_min", 10.0);
+    b.num(signal, "min_trust", 0.35);
+    b.wire(signal, 1, depart, 0);
+
+    let closed = b.add("block.road_closed", 0.0, 1140.0);
+    b.num(closed, "will_walk_within", 3000.0);
+    b.wire(closed, 1, depart, 0);
+
+    let visitors = b.add("block.visitors", 0.0, 1350.0);
+    b.num(visitors, "own_judgement_alarm", 0.60);
+    b.wire(visitors, 1, depart, 0);
+
+    // Somewhere to go that is not the house and not a refuge. Both proposals
+    // outbid sheltering in place, and they have to: this block fires in exactly
+    // the situation `block.fire_at_the_door` calls trapped, so at the shelter
+    // branch's own priority it would be a box that never won anything — the
+    // always-negative finding 26 is about.
+    let last = b.add("block.last_resort", 320.0, 1560.0);
+    b.boolean(last, "enabled", false);
+    b.num(last, "max_walk_m", 600.0);
+    b.boolean(last, "only_when_cut_off", false);
+    b.boolean(last, "only_with_lift", true);
+    b.num(last, "lift_within_min", 30.0);
+    // The same moment `action.shelter` and `action.evacuate_now` turn on, so
+    // the three branches cannot disagree about when the fire has arrived.
+    b.wire(arrival, 0, last, 0);
+
+    let open_ground = b.add("action.shelter_nearby", 600.0, 1500.0);
+    b.num(open_ground, "priority", 4.5);
+    b.wire(last, 0, open_ground, 0);
+    b.wire(open_ground, 0, decision, 0);
+
+    let to_shore = b.add("action.make_for_shore", 600.0, 1640.0);
+    b.num(to_shore, "priority", 4.5);
+    b.wire(last, 1, to_shore, 0);
+    b.wire(to_shore, 0, decision, 0);
 
     b.g
 }
@@ -300,6 +362,51 @@ pub fn default_person_graph() -> BehaviorGraph {
     let urgency = b.add("out.urgency", 640.0, 460.0);
     b.wire(exposure, 2, urgency, 0);
 
+    // --- somewhere nearer than the refuge -----------------------------------
+    //
+    // Appended rather than placed where they belong, for the reason the
+    // household graph's late additions are: a node's id is its position in this
+    // sequence and every profile's overrides are keyed on it.
+    //
+    // Both ship off. The first changes who dies and the second needs a lift
+    // nobody has asked for, and either way every separated-person figure the
+    // model has printed was taken without them.
+    let last = b.add("block.person_last_resort", 0.0, 780.0);
+    b.boolean(last, "enabled", false);
+    b.boolean(last, "also_when_cut_off", true);
+    b.num(last, "max_walk_m", 500.0);
+    b.boolean(last, "only_with_lift", true);
+    b.num(last, "lift_within_min", 30.0);
+    b.wire(exposure, 0, last, 0);
+
+    let pickup = b.add("block.person_boat_pickup", 0.0, 1030.0);
+    b.boolean(pickup, "enabled", false);
+    b.num(pickup, "within_min", 25.0);
+    b.num(pickup, "max_shore_distance_m", 1500.0);
+    b.boolean(pickup, "even_if_refuge_nearer", true);
+
+    // Open ground outbids sheltering where they stand, and has to for the same
+    // reason the household's does: it fires in the situation the shelter branch
+    // already covers, so at the shelter branch's priority it would be a box that
+    // never won.
+    let ground = b.add("action.person_open_ground", 340.0, 790.0);
+    b.num(ground, "priority", 4.5);
+    b.wire(last, 0, ground, 0);
+    b.wire(ground, 0, decision, 0);
+
+    // Two ways to end up walking to the water and one action: being out of
+    // options, and being told boats are coming. They are different decisions
+    // and it matters that they are separate boxes — the second is an organised
+    // evacuation and the first is Mati.
+    let shore_when = b.add("logic.any", 340.0, 1030.0);
+    b.wire(last, 1, shore_when, 0);
+    b.wire(pickup, 0, shore_when, 0);
+
+    let shore = b.add("action.person_shore", 600.0, 1030.0);
+    b.num(shore, "priority", 4.5);
+    b.wire(shore_when, 0, shore, 0);
+    b.wire(shore, 0, decision, 0);
+
     b.g
 }
 
@@ -342,7 +449,27 @@ pub fn default_person_subtypes() -> Vec<AgentSubtype> {
     family.overrides.insert(reunite("max_detour"), ParamValue::Number(3.0));
     family.overrides.insert(walk("spread"), ParamValue::Number(0.1));
 
-    vec![out, family]
+    let last = |param: &str| key(&g, "block.person_last_resort", 0, param);
+    let pickup = |param: &str| key(&g, "block.person_boat_pickup", 0, param);
+
+    let mut water = AgentSubtype::new("to-the-water", "Makes for the water", DEFAULT_PERSON_GRAPH_ID);
+    water.description =
+        "Gives up on the refuge for whatever is nearest and survivable, and walks to the \
+         shore when a boat lift is coming. The two halves of it are different decisions: \
+         the first is what the Mati accounts describe — people who reached open water \
+         lived and people who did not were the fatalities — and the second is what Rhodes \
+         turned that into by putting boats at the other end. Ships at zero share, and it \
+         is the only profile in the model that reduces casualties without anybody \
+         arriving to help, which is exactly why it is worth measuring rather than \
+         assuming."
+            .to_string();
+    water.author = "shipped".to_string();
+    water.tags = vec!["maritime".into(), "last resort".into()];
+    water.share = 0.0;
+    water.overrides.insert(last("enabled"), ParamValue::Bool(true));
+    water.overrides.insert(pickup("enabled"), ParamValue::Bool(true));
+
+    vec![out, family, water]
 }
 
 /// Override keys into a built graph, resolved by walking it rather than
@@ -427,7 +554,58 @@ pub fn default_subtypes() -> Vec<AgentSubtype> {
     assisted.capabilities.insert(Capability::Vehicle, false);
     assisted.capabilities.insert(Capability::NeedsAssistance, true);
 
-    vec![prepared, waiting, defender, assisted]
+    // --- two profiles that ship at zero share -------------------------------
+    //
+    // Both change the model rather than tune it, and both are here because a
+    // scenario built against a real disaster asked for something the model
+    // could not say. Giving either a share makes the run incomparable with
+    // every figure measured before it, which is the comparison, not a caveat.
+
+    let spot = |param: &str| key(&g, "block.spot_fire", 0, param);
+    let signal = |param: &str| key(&g, "block.no_signal", 0, param);
+    let last = |param: &str| key(&g, "block.last_resort", 0, param);
+    let visitors = |param: &str| key(&g, "block.visitors", 0, param);
+
+    let mut visiting = base(
+        "holiday-let",
+        "Visitors in a let",
+        "Nobody here lives here. No car of their own, no idea which road goes where, \
+         and a warning that arrives through whoever is running the place rather than \
+         over a resident's alert — which makes them the one population that gets *more* \
+         reliable when the fire takes the mast out. Rhodes was substantially a crisis \
+         about these people, and until this profile the model had none of them: every \
+         person in it was drawn from a dwelling.",
+    );
+    visiting.tags = vec!["transient".into(), "tourist".into()];
+    visiting.share = 0.0;
+    visiting.capabilities.insert(Capability::Transient, true);
+    visiting.capabilities.insert(Capability::Vehicle, false);
+    // They act on an instruction readily and on their own judgement late, which
+    // is the whole difference: a resident reads a column of smoke over that
+    // ridge and knows what it means for this town.
+    visiting.overrides.insert(visitors("own_judgement_alarm"), ParamValue::Number(0.55));
+    visiting.traits.insert(TraitKey::TrustAuthority, 0.75);
+    visiting.traits.insert(TraitKey::RiskPerception, 0.35);
+    visiting.traits.insert(TraitKey::PrepTimeMin, 15.0);
+    visiting.traits.insert(TraitKey::DefensibleSpace, 0.2);
+
+    let mut reactive = base(
+        "reacts-to-events",
+        "Reacts to what happens",
+        "The same household as \"Wait and see\", with the three branches the real \
+         incidents needed switched on: a fire that starts behind them moves them, a \
+         warning that never arrives eventually stops being waited for, and a fire on \
+         the property with no road left sends them to open ground instead of into the \
+         house. None of that is a different kind of person — it is the same person in \
+         an incident the model could not previously describe.",
+    );
+    reactive.tags = vec!["incident".into(), "spotting".into(), "last resort".into()];
+    reactive.share = 0.0;
+    reactive.overrides.insert(spot("enabled"), ParamValue::Bool(true));
+    reactive.overrides.insert(signal("enabled"), ParamValue::Bool(true));
+    reactive.overrides.insert(last("enabled"), ParamValue::Bool(true));
+
+    vec![prepared, waiting, defender, assisted, visiting, reactive]
 }
 
 /// Suppression profiles.

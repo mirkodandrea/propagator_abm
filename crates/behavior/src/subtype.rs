@@ -73,15 +73,28 @@ pub enum Capability {
     Vehicle,
     /// Someone cannot move unaided.
     NeedsAssistance,
+    /// Nobody in this household is at home: a hotel party, a let, a campsite.
+    ///
+    /// A capability rather than a field on the population bake, and that is the
+    /// interesting part: a transient population is *assigned* exactly the way
+    /// every other behavioural profile is — a share of households, hashed — so
+    /// asking "what does this town look like in August" is a share on a profile
+    /// rather than a re-bake. What it changes in the model is small and
+    /// specific: no vehicle of their own, a warning that arrives through
+    /// whoever is running the place instead of over a resident's channel, and
+    /// no local knowledge, which is a threshold their behaviour graph reads.
+    Transient,
 }
 
 impl Capability {
-    pub const ALL: [Capability; 2] = [Capability::Vehicle, Capability::NeedsAssistance];
+    pub const ALL: [Capability; 3] =
+        [Capability::Vehicle, Capability::NeedsAssistance, Capability::Transient];
 
     pub fn label(self) -> &'static str {
         match self {
             Capability::Vehicle => "Has a vehicle",
             Capability::NeedsAssistance => "Needs assistance",
+            Capability::Transient => "Visitors, not residents",
         }
     }
 }

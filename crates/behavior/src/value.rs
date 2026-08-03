@@ -117,6 +117,15 @@ pub enum ActionKind {
     Defend,
     /// Too late to move — take shelter where they are.
     Shelter,
+    /// Leave the house on foot for the nearest survivable open ground: a car
+    /// park, a cleared field, the beach. Not a refuge and not organised — the
+    /// shelter of last resort a household takes when the house is not
+    /// defensible and the road is not usable.
+    ShelterNearby,
+    /// Leave on foot for the water's edge. Only reachable in a coastal window,
+    /// and only a way *out* when a boat lift is coming — otherwise it is the
+    /// place people stand in the water and wait, which is what Mati was.
+    MakeForShore,
 
     // --- suppression units -------------------------------------------------
     /// Get on with the order. What a unit's graph produces when nothing fires,
@@ -148,15 +157,23 @@ pub enum ActionKind {
     /// Walk back to the household's home. The behaviour every evacuation study
     /// finds and no evacuation plan wants, and the reason this domain exists.
     HeadHome,
+    /// Make for the nearest survivable open ground rather than for a refuge.
+    /// What someone does when the way out is worse than the nearest clearing.
+    WalkToOpenGround,
+    /// Make for the water's edge. The Rhodes behaviour when a lift is coming,
+    /// and the Mati one when it is not.
+    WalkToShore,
 }
 
 impl ActionKind {
-    pub const ALL: [ActionKind; 14] = [
+    pub const ALL: [ActionKind; 18] = [
         ActionKind::Stay,
         ActionKind::Prepare,
         ActionKind::EvacuateNow,
         ActionKind::Defend,
         ActionKind::Shelter,
+        ActionKind::ShelterNearby,
+        ActionKind::MakeForShore,
         ActionKind::Continue,
         ActionKind::Withdraw,
         ActionKind::Refill,
@@ -166,6 +183,8 @@ impl ActionKind {
         ActionKind::WalkOut,
         ActionKind::TakeShelter,
         ActionKind::HeadHome,
+        ActionKind::WalkToOpenGround,
+        ActionKind::WalkToShore,
     ];
 
     pub fn key(self) -> &'static str {
@@ -175,6 +194,8 @@ impl ActionKind {
             ActionKind::EvacuateNow => "evacuate_now",
             ActionKind::Defend => "defend",
             ActionKind::Shelter => "shelter",
+            ActionKind::ShelterNearby => "shelter_nearby",
+            ActionKind::MakeForShore => "make_for_shore",
             ActionKind::Continue => "continue",
             ActionKind::Withdraw => "withdraw",
             ActionKind::Refill => "refill",
@@ -184,6 +205,8 @@ impl ActionKind {
             ActionKind::WalkOut => "walk_out",
             ActionKind::TakeShelter => "take_shelter",
             ActionKind::HeadHome => "head_home",
+            ActionKind::WalkToOpenGround => "walk_to_open_ground",
+            ActionKind::WalkToShore => "walk_to_shore",
         }
     }
 
@@ -194,6 +217,8 @@ impl ActionKind {
             ActionKind::EvacuateNow => "Evacuate now",
             ActionKind::Defend => "Defend property",
             ActionKind::Shelter => "Shelter in place",
+            ActionKind::ShelterNearby => "Make for open ground",
+            ActionKind::MakeForShore => "Make for the shore",
             ActionKind::Continue => "Carry on",
             ActionKind::Withdraw => "Withdraw",
             ActionKind::Refill => "Break off for water",
@@ -203,6 +228,8 @@ impl ActionKind {
             ActionKind::WalkOut => "Walk out",
             ActionKind::TakeShelter => "Shelter where they are",
             ActionKind::HeadHome => "Head home",
+            ActionKind::WalkToOpenGround => "Make for open ground",
+            ActionKind::WalkToShore => "Make for the shore",
         }
     }
 
@@ -213,11 +240,15 @@ impl ActionKind {
             | ActionKind::Prepare
             | ActionKind::EvacuateNow
             | ActionKind::Defend
-            | ActionKind::Shelter => Domain::Household,
+            | ActionKind::Shelter
+            | ActionKind::ShelterNearby
+            | ActionKind::MakeForShore => Domain::Household,
             ActionKind::Remain
             | ActionKind::WalkOut
             | ActionKind::TakeShelter
-            | ActionKind::HeadHome => Domain::Person,
+            | ActionKind::HeadHome
+            | ActionKind::WalkToOpenGround
+            | ActionKind::WalkToShore => Domain::Person,
             _ => Domain::SuppressionUnit,
         }
     }

@@ -134,3 +134,132 @@ behavior_node! {
         out.push(Value::Number(if detour.is_finite() { detour } else { 999.0 }));
     },
 }
+
+// ---------------------------------------------------------------------------
+// Somewhere to go that is not a refuge
+// ---------------------------------------------------------------------------
+//
+// A separated person's whole action set used to be "the refuge, the house, or
+// stand still". Both loss-of-life scenarios in `docs/behavior-gaps.md` turn on
+// the fourth thing: somewhere near that is not on the evacuation plan. The
+// people who reached open water at Mati lived and the ones who did not were the
+// fatalities, and neither outcome was expressible here.
+
+behavior_node! {
+    id: "block.person_spot_fire",
+    name: "A fire between them and where they are going",
+    category: Block,
+    domain: Person,
+    doc: "Whether a fire has started somewhere it was not, near enough and \
+          recently enough for someone already walking to change their mind.\n\n\
+          The same block the households get, and for someone out on the road it \
+          is the worse of the two: the front is where they last saw it, and an \
+          ember jump lands between them and the refuge they are walking to. \
+          Their route field will catch up within the minute — that is finding 8 \
+          working — but a person watching it start does not wait for the routing \
+          refresh, and until now the model had them do exactly that.",
+    keywords: ["ember", "spot", "spotting", "firebrand", "cut off", "ahead", "jump"],
+    inputs: [],
+    outputs: [
+        (bool "spotted", "A new fire, near enough and recent enough to act on"),
+        (number "distance", "Metres to it, for a readout")
+    ],
+    params: [
+        (number "radius_m", "Near enough", "Metres within which a new fire is this person's problem.", 600.0, 0.0, 2500.0, "m"),
+        (number "recent_min", "Recent enough", "Minutes after which it stops being news.", 15.0, 0.0, 180.0, "min")
+    ],
+    eval: |ctx, p, _i, out| {
+        let s = ctx.person();
+        let spotted =
+            s.spot_fire_distance_m <= p.num(0) && s.spot_fire_age_min <= p.num(1);
+        out.push(Value::Bool(spotted));
+        out.push(Value::Number(s.spot_fire_distance_m));
+    },
+}
+
+behavior_node! {
+    id: "block.person_last_resort",
+    name: "Somewhere nearer than the refuge",
+    category: Block,
+    domain: Person,
+    doc: "Whether this person gives up on the refuge and makes for the nearest \
+          open ground instead.\n\n\
+          A refuge is somewhere an evacuation is organised; open ground is \
+          somewhere the fire cannot reach you. They are usually not the same \
+          place and the second is usually much nearer, and the difference \
+          between them is the gap people on foot die in — a lane that ends at a \
+          beach three hundred metres away, walked past on the way to an assembly \
+          point two kilometres off.\n\n\
+          Ships off. Turning it on is the comparison worth running, because it \
+          is the one thing in this model that reduces casualties without \
+          anybody arriving to help.\n\n\
+          Takes the moment as an input for the same reason its household \
+          counterpart does: \"Caught in the open\" already owns the threshold \
+          for when being out in it stops working, and a second copy of that \
+          number here would be one to keep in step and one to get wrong.",
+    keywords: ["clearing", "open ground", "beach", "shore", "last resort", "nearer"],
+    inputs: [(bool "caught out", "Wire \"Caught in the open\"'s overrun output in", false)],
+    outputs: [
+        (bool "open ground", "Make for the nearest survivable clearing"),
+        (bool "the shore", "Make for the water's edge instead"),
+        (number "distance", "Metres to whichever it chose, for a readout")
+    ],
+    params: [
+        (bool "enabled", "Enabled", "Whether this fires at all. Off is the shipped model: someone with no route left stops where they stand.", false),
+        (bool "also_when_cut_off", "Also when the route is cut", "Whether a blocked route counts on its own, without the threat being bad yet. On: a road that ends in the fire is a reason to turn aside before it is a reason to stop.", true),
+        (number "max_walk_m", "Furthest they will walk", "Straight-line metres to open ground beyond which it is not worth turning aside for.", 500.0, 0.0, 5000.0, "m"),
+        (bool "only_with_lift", "Shore only with a lift", "Whether the water's edge counts only when a boat pickup is coming. On is the honest setting: standing in the sea is surviving, not evacuating. Note the household block's equivalent needs the same answer, and for the same reason.", true),
+        (number "lift_within_min", "Lift close enough", "Minutes until the pickup, within which making for the shore is worth it.", 30.0, 0.0, 180.0, "min")
+    ],
+    eval: |ctx, p, i, out| {
+        let s = ctx.person();
+        let trigger = p.boolean(0) && (i.boolean(0) || (p.boolean(1) && s.route_blocked));
+        let lift = !p.boolean(3) || s.boat_lift_min <= p.num(4);
+        let shore = trigger && s.shore_distance_m <= p.num(2) && lift;
+        let ground = trigger && s.open_ground_distance_m <= p.num(2) && !shore;
+        out.push(Value::Bool(ground));
+        out.push(Value::Bool(shore));
+        let d = if shore { s.shore_distance_m } else { s.open_ground_distance_m };
+        out.push(Value::Number(if d.is_finite() { d } else { 9999.0 }));
+    },
+}
+
+behavior_node! {
+    id: "block.person_boat_pickup",
+    name: "Boats are coming",
+    category: Block,
+    domain: Person,
+    doc: "Whether this person makes for the shore because there is a lift at \
+          the other end of it.\n\n\
+          The Rhodes case, and the reason it is the success story of the three: \
+          when the road network could not clear the area in time, the evacuation \
+          used a capacity that was not the road network. A person walks to the \
+          water because someone told them boats would be there, which is a \
+          different decision from walking to the water because there is nowhere \
+          else left — that one is \"Somewhere nearer than the refuge\".\n\n\
+          Unlike that block this one does not need things to be going badly. It \
+          fires on the announcement, which is what an organised maritime \
+          evacuation actually is.",
+    keywords: ["boat", "sea", "coastguard", "lift", "pickup", "ferry", "rhodes"],
+    inputs: [],
+    outputs: [
+        (bool "makes for the shore", "They walk to the pickup"),
+        (number "minutes", "Minutes until it is on station, for a readout")
+    ],
+    params: [
+        (bool "enabled", "Enabled", "Whether this fires at all. Off is the shipped model, which has no maritime evacuation in it.", false),
+        (number "within_min", "Announced within", "Minutes until the pickup, within which it is worth walking to the shore for. Larger than the crossing time, because people gather before the boat arrives.", 25.0, 0.0, 180.0, "min"),
+        (number "max_shore_distance_m", "Furthest they will walk", "Straight-line metres to the water beyond which they take the road instead.", 1500.0, 0.0, 10000.0, "m"),
+        (bool "even_if_refuge_nearer", "Even when the refuge is nearer", "Whether the pickup wins over a nearer land refuge. On is what an announced evacuation produces; off models people who only take the boat when it is the closest thing.", true)
+    ],
+    eval: |ctx, p, _i, out| {
+        let s = ctx.person();
+        let nearer = p.boolean(3) || s.shore_distance_m <= s.refuge_distance_m;
+        let go = p.boolean(0)
+            && s.boat_lift_min <= p.num(1)
+            && s.shore_distance_m <= p.num(2)
+            && nearer;
+        out.push(Value::Bool(go));
+        out.push(Value::Number(s.boat_lift_min.min(9999.0)));
+    },
+}

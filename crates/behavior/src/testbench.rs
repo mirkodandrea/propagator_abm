@@ -99,6 +99,30 @@ pub fn situations() -> Vec<Situation> {
 
     let defender = HouseholdObs { intent: IntentValue::StayDefend, defensible_space: 0.8, ..close };
 
+    // The three the real-incident scenarios asked for. Each is a moment the
+    // model could not describe at all until `docs/behavior-gaps.md`.
+    let spot_behind = HouseholdObs {
+        spot_fire_distance_m: 400.0,
+        spot_fire_age_min: 3.0,
+        cue: 0.30,
+        ..close
+    };
+
+    let no_signal = HouseholdObs {
+        comms_down: true,
+        order_issued: true,
+        warning_received: false,
+        minutes_since_order: 18.0,
+        trust_authority: 0.8,
+        ..ordered
+    };
+
+    let nowhere_to_drive = HouseholdObs {
+        open_ground_distance_m: 220.0,
+        shore_distance_m: 480.0,
+        ..cut_off
+    };
+
     let unwarned = HouseholdObs {
         trust_authority: 0.15,
         warning_received: true,
@@ -142,6 +166,24 @@ pub fn situations() -> Vec<Situation> {
             name: "Cut off",
             note: "The same, with every route to a refuge burnt. Sheltering has to win here.",
             obs: cut_off.into(),
+        },
+        Situation {
+            name: "A fire behind them",
+            note: "A new fire 400 m away that started three minutes ago, on the side they \
+                   were going to leave by. Nothing else has changed.",
+            obs: spot_behind.into(),
+        },
+        Situation {
+            name: "No signal, waiting to be told",
+            note: "The order went out eighteen minutes ago, the mast is down, and this is \
+                   a household that does what it is told. Nobody has told them anything.",
+            obs: no_signal.into(),
+        },
+        Situation {
+            name: "Nowhere left to drive",
+            note: "The fire is on the house, the road is gone, and there is a car park \
+                   220 m away and the water 480 m away. The shipped answer is the house.",
+            obs: nowhere_to_drive.into(),
         },
     ]
 }
@@ -427,6 +469,29 @@ pub fn person_situations() -> Vec<Situation> {
             obs: cut_off.into(),
         },
         Situation {
+            name: "Boats at the beach",
+            note: "A pickup on station in eight minutes and the water 300 m away. Nothing \
+                   is wrong where they are: this is an announcement, not an emergency.",
+            obs: PersonObs {
+                boat_lift_min: 8.0,
+                shore_distance_m: 300.0,
+                open_ground_distance_m: 300.0,
+                ..base
+            }
+            .into(),
+        },
+        Situation {
+            name: "The refuge is 2 km, the car park is 150 m",
+            note: "Caught in the open, with somewhere near that is not a refuge. The \
+                   shipped answer is to keep walking to the refuge.",
+            obs: PersonObs {
+                open_ground_distance_m: 150.0,
+                refuge_distance_m: 2000.0,
+                ..cut_off
+            }
+            .into(),
+        },
+        Situation {
             name: "Slow and alone",
             note: "Eighty-one, needs help, 1.4 km from the refuge at 0.6 m/s: over half an \
                    hour of walking. The profile that shows whether a warning timing works \
@@ -451,6 +516,9 @@ pub enum SweepField {
     TrustAuthority,
     MinutesSinceOrder,
     Jitter,
+    SpotFireDistanceM,
+    OpenGroundDistanceM,
+    BoatLiftMin,
     // suppression units
     UnitThreat,
     UnitHeat,
@@ -469,10 +537,13 @@ pub enum SweepField {
     PersonHomeDistance,
     PersonAge,
     PersonJitter,
+    PersonSpotFireDistance,
+    PersonShoreDistance,
+    PersonBoatLiftMin,
 }
 
 impl SweepField {
-    const HOUSEHOLD: [SweepField; 8] = [
+    const HOUSEHOLD: [SweepField; 11] = [
         SweepField::TimeMin,
         SweepField::Threat,
         SweepField::FireDistanceM,
@@ -481,6 +552,9 @@ impl SweepField {
         SweepField::TrustAuthority,
         SweepField::MinutesSinceOrder,
         SweepField::Jitter,
+        SweepField::SpotFireDistanceM,
+        SweepField::OpenGroundDistanceM,
+        SweepField::BoatLiftMin,
     ];
 
     const UNIT: [SweepField; 8] = [
@@ -494,7 +568,7 @@ impl SweepField {
         SweepField::UnitJitter,
     ];
 
-    const PERSON: [SweepField; 8] = [
+    const PERSON: [SweepField; 11] = [
         SweepField::PersonThreat,
         SweepField::PersonHeat,
         SweepField::PersonCue,
@@ -503,6 +577,9 @@ impl SweepField {
         SweepField::PersonHomeDistance,
         SweepField::PersonAge,
         SweepField::PersonJitter,
+        SweepField::PersonSpotFireDistance,
+        SweepField::PersonShoreDistance,
+        SweepField::PersonBoatLiftMin,
     ];
 
     /// The fields a graph of `domain` can be swept over. Offering the others
@@ -535,6 +612,9 @@ impl SweepField {
             SweepField::TrustAuthority => "Trust in authority",
             SweepField::MinutesSinceOrder => "Minutes since order",
             SweepField::Jitter => "Individual variation",
+            SweepField::SpotFireDistanceM => "Distance to a spot fire (m)",
+            SweepField::OpenGroundDistanceM => "Distance to open ground (m)",
+            SweepField::BoatLiftMin => "Minutes to a boat lift",
             SweepField::UnitThreat => "Threat at the unit",
             SweepField::UnitHeat => "Accumulated heat",
             SweepField::UnitWater => "Water remaining",
@@ -551,6 +631,9 @@ impl SweepField {
             SweepField::PersonHomeDistance => "Distance home (m)",
             SweepField::PersonAge => "Age",
             SweepField::PersonJitter => "Individual variation",
+            SweepField::PersonSpotFireDistance => "Distance to a spot fire (m)",
+            SweepField::PersonShoreDistance => "Distance to the shore (m)",
+            SweepField::PersonBoatLiftMin => "Minutes to a boat lift",
         }
     }
 
@@ -567,6 +650,13 @@ impl SweepField {
             SweepField::PersonRefugeDistance => (0.0, 3000.0),
             SweepField::PersonHomeDistance => (0.0, 3000.0),
             SweepField::PersonAge => (0.0, 100.0),
+            SweepField::SpotFireDistanceM => (0.0, 2500.0),
+            SweepField::OpenGroundDistanceM => (0.0, 2000.0),
+            SweepField::PersonSpotFireDistance => (0.0, 2500.0),
+            SweepField::PersonShoreDistance => (0.0, 2000.0),
+            // Zero is "they are here", and the far end is past every block's
+            // own patience: the interesting part of this sweep is the cliff.
+            SweepField::BoatLiftMin | SweepField::PersonBoatLiftMin => (0.0, 60.0),
             _ => (0.0, 1.0),
         }
     }
@@ -586,6 +676,15 @@ impl SweepField {
             SweepField::TrustAuthority => with_h(obs, |h| h.trust_authority = v),
             SweepField::MinutesSinceOrder => with_h(obs, |h| h.minutes_since_order = v),
             SweepField::Jitter => with_h(obs, |h| h.jitter = v),
+            SweepField::SpotFireDistanceM => with_h(obs, |h| {
+                h.spot_fire_distance_m = v;
+                // A distance with no age is not a spot fire, and leaving the
+                // age at its default would sweep a quantity every block reading
+                // it discards.
+                h.spot_fire_age_min = h.spot_fire_age_min.min(2.0);
+            }),
+            SweepField::OpenGroundDistanceM => with_h(obs, |h| h.open_ground_distance_m = v),
+            SweepField::BoatLiftMin => with_h(obs, |h| h.boat_lift_min = v),
             SweepField::UnitThreat => with_u(obs, |u| u.threat_here = v),
             SweepField::UnitHeat => with_u(obs, |u| u.heat_fraction = v),
             SweepField::UnitWater => with_u(obs, |u| u.water_fraction = v),
@@ -602,6 +701,12 @@ impl SweepField {
             SweepField::PersonHomeDistance => with_p(obs, |p| p.home_distance_m = v),
             SweepField::PersonAge => with_p(obs, |p| p.age = v),
             SweepField::PersonJitter => with_p(obs, |p| p.jitter = v),
+            SweepField::PersonSpotFireDistance => with_p(obs, |p| {
+                p.spot_fire_distance_m = v;
+                p.spot_fire_age_min = p.spot_fire_age_min.min(2.0);
+            }),
+            SweepField::PersonShoreDistance => with_p(obs, |p| p.shore_distance_m = v),
+            SweepField::PersonBoatLiftMin => with_p(obs, |p| p.boat_lift_min = v),
         }
     }
 
@@ -616,6 +721,9 @@ impl SweepField {
             SweepField::TrustAuthority => h.trust_authority,
             SweepField::MinutesSinceOrder => h.minutes_since_order,
             SweepField::Jitter => h.jitter,
+            SweepField::SpotFireDistanceM => h.spot_fire_distance_m,
+            SweepField::OpenGroundDistanceM => h.open_ground_distance_m,
+            SweepField::BoatLiftMin => h.boat_lift_min,
             SweepField::UnitThreat => u.threat_here,
             SweepField::UnitHeat => u.heat_fraction,
             SweepField::UnitWater => u.water_fraction,
@@ -632,6 +740,9 @@ impl SweepField {
             SweepField::PersonHomeDistance => p.home_distance_m,
             SweepField::PersonAge => p.age,
             SweepField::PersonJitter => p.jitter,
+            SweepField::PersonSpotFireDistance => p.spot_fire_distance_m,
+            SweepField::PersonShoreDistance => p.shore_distance_m,
+            SweepField::PersonBoatLiftMin => p.boat_lift_min,
         }
     }
 }

@@ -163,7 +163,7 @@
       "type": "block.preparation",
       "pos": [
         600.0,
-        620.0
+        900.0
       ],
       "params": {
         "leave_early": {
@@ -185,7 +185,7 @@
       "type": "out.prep_scale",
       "pos": [
         860.0,
-        620.0
+        900.0
       ],
       "params": {}
     },
@@ -194,9 +194,139 @@
       "type": "out.urgency",
       "pos": [
         860.0,
-        740.0
+        1020.0
       ],
       "params": {}
+    },
+    {
+      "id": 13,
+      "type": "block.spot_fire",
+      "pos": [
+        0.0,
+        700.0
+      ],
+      "params": {
+        "enabled": {
+          "t": "bool",
+          "v": false
+        },
+        "radius_m": {
+          "t": "number",
+          "v": 800.0
+        },
+        "recent_min": {
+          "t": "number",
+          "v": 20.0
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "block.no_signal",
+      "pos": [
+        0.0,
+        930.0
+      ],
+      "params": {
+        "enabled": {
+          "t": "bool",
+          "v": false
+        },
+        "min_trust": {
+          "t": "number",
+          "v": 0.35
+        },
+        "patience_min": {
+          "t": "number",
+          "v": 10.0
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "block.road_closed",
+      "pos": [
+        0.0,
+        1140.0
+      ],
+      "params": {
+        "will_walk_within": {
+          "t": "number",
+          "v": 3000.0
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "block.visitors",
+      "pos": [
+        0.0,
+        1350.0
+      ],
+      "params": {
+        "own_judgement_alarm": {
+          "t": "number",
+          "v": 0.6
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "block.last_resort",
+      "pos": [
+        320.0,
+        1560.0
+      ],
+      "params": {
+        "enabled": {
+          "t": "bool",
+          "v": false
+        },
+        "lift_within_min": {
+          "t": "number",
+          "v": 30.0
+        },
+        "max_walk_m": {
+          "t": "number",
+          "v": 600.0
+        },
+        "only_when_cut_off": {
+          "t": "bool",
+          "v": false
+        },
+        "only_with_lift": {
+          "t": "bool",
+          "v": true
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "action.shelter_nearby",
+      "pos": [
+        600.0,
+        1500.0
+      ],
+      "params": {
+        "priority": {
+          "t": "number",
+          "v": 4.5
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "action.make_for_shore",
+      "pos": [
+        600.0,
+        1640.0
+      ],
+      "params": {
+        "priority": {
+          "t": "number",
+          "v": 4.5
+        }
+      }
     }
   ],
   "wires": [
@@ -276,6 +406,60 @@
       "from_node": 0,
       "from_port": 2,
       "to_node": 12,
+      "to_port": 0
+    },
+    {
+      "from_node": 13,
+      "from_port": 0,
+      "to_node": 3,
+      "to_port": 0
+    },
+    {
+      "from_node": 14,
+      "from_port": 1,
+      "to_node": 3,
+      "to_port": 0
+    },
+    {
+      "from_node": 15,
+      "from_port": 1,
+      "to_node": 3,
+      "to_port": 0
+    },
+    {
+      "from_node": 16,
+      "from_port": 1,
+      "to_node": 3,
+      "to_port": 0
+    },
+    {
+      "from_node": 2,
+      "from_port": 0,
+      "to_node": 17,
+      "to_port": 0
+    },
+    {
+      "from_node": 17,
+      "from_port": 0,
+      "to_node": 18,
+      "to_port": 0
+    },
+    {
+      "from_node": 18,
+      "from_port": 0,
+      "to_node": 9,
+      "to_port": 0
+    },
+    {
+      "from_node": 17,
+      "from_port": 1,
+      "to_node": 19,
+      "to_port": 0
+    },
+    {
+      "from_node": 19,
+      "from_port": 0,
+      "to_node": 9,
       "to_port": 0
     }
   ]

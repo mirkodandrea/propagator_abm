@@ -1,0 +1,30 @@
+{
+  "id": "reacts-to-events",
+  "name": "Reacts to what happens",
+  "description": "The same household as \"Wait and see\", with the three branches the real incidents needed switched on: a fire that starts behind them moves them, a warning that never arrives eventually stops being waited for, and a fire on the property with no road left sends them to open ground instead of into the house. None of that is a different kind of person — it is the same person in an incident the model could not previously describe.",
+  "author": "shipped",
+  "tags": [
+    "incident",
+    "spotting",
+    "last resort"
+  ],
+  "graph": "default-evacuation",
+  "overrides": {
+    "13.enabled": {
+      "t": "bool",
+      "v": true
+    },
+    "14.enabled": {
+      "t": "bool",
+      "v": true
+    },
+    "17.enabled": {
+      "t": "bool",
+      "v": true
+    }
+  },
+  "traits": {},
+  "capabilities": {},
+  "share": 0.0,
+  "enabled": true
+}

@@ -856,6 +856,8 @@ fn person_panel(ui: &mut egui::Ui, sim: &Sim, id: usize, jump_to: &mut Option<Ta
                 ui.label(match t.goal {
                     abm::Goal::Refuge => "out, to the nearest refuge",
                     abm::Goal::Home => "back to the house",
+                    abm::Goal::Haven => "to the nearest open ground",
+                    abm::Goal::Shore => "to the water's edge",
                 });
                 ui.end_row();
             }
@@ -1098,6 +1100,7 @@ pub(crate) fn travel_state_text(s: TravelState) -> &'static str {
         TravelState::Safe => "at a refuge / off the map",
         TravelState::Cutoff => "cut off — no route out",
         TravelState::Arrived => "reached home",
+        TravelState::Sheltering => "sheltering at open ground — not evacuated",
         TravelState::Dead => "casualty",
     }
 }

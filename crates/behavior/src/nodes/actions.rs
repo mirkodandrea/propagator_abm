@@ -96,6 +96,38 @@ action_node!(
     4.0
 );
 
+action_node!(
+    "action.shelter_nearby",
+    "Make for open ground",
+    Household,
+    "Leave the house on foot for the nearest survivable open ground — a car \
+     park, a cleared field, a beach. Not a refuge and not organised: it is the \
+     shelter of last resort for a household whose house is not defensible and \
+     whose road is not usable, and it is the one thing this model could not \
+     express until scenarios built against Mati and Rhodes asked for it.\n\n\
+     Outbids \"Shelter in place\" only if you say so. Which of the two is right \
+     is the whole question: a house buys ten times as long as standing outside, \
+     and open ground buys indefinitely as long as it is genuinely open.",
+    ["last resort", "clearing", "beach", "car park", "outside", "open"],
+    ShelterNearby,
+    3.5
+);
+
+action_node!(
+    "action.make_for_shore",
+    "Make for the shore",
+    Household,
+    "Leave on foot for the water's edge. In the water a person is out of the \
+     fire's reach for as long as they can stand it, and a boat lift takes them \
+     off — which is the Rhodes outcome. With no lift coming it is the Mati one: \
+     alive at the shoreline, still in the incident.\n\n\
+     Only reachable in a coastal window. Gate it on \"Distance to the shore\" \
+     being finite, or it proposes something nobody can do.",
+    ["sea", "water", "beach", "boat", "swim", "coast"],
+    MakeForShore,
+    3.5
+);
+
 behavior_node! {
     id: "action.propose",
     name: "Propose action",
@@ -109,7 +141,8 @@ behavior_node! {
     outputs: [(action "proposal", "The proposal, for the Decision output")],
     params: [
         (choice "action", "Action", "What to propose.", "prepare",
-            ["stay", "prepare", "evacuate_now", "defend", "shelter"]),
+            ["stay", "prepare", "evacuate_now", "defend", "shelter", "shelter_nearby",
+             "make_for_shore"]),
         (number "priority", "Priority", "Strongest proposal wins.", 1.0, 0.0, 10.0, "")
     ],
     eval: |_c, p, i, out| {
@@ -273,6 +306,37 @@ action_node!(
     0.0
 );
 
+action_node!(
+    "action.person_open_ground",
+    "Make for open ground",
+    Person,
+    "Head for the nearest survivable open ground instead of for a refuge. \
+     Usually much nearer than the refuge is, and the difference between the two \
+     is exactly the gap that kills people on foot: a refuge is somewhere the \
+     evacuation is organised, and open ground is somewhere the fire cannot \
+     reach you.\n\n\
+     Give it a higher priority than \"Walk out\" and a lower one than \"Shelter \
+     where they are\", which is for the case where there is not even that.",
+    ["clearing", "last resort", "car park", "beach", "safety zone"],
+    WalkToOpenGround,
+    2.5
+);
+
+action_node!(
+    "action.person_shore",
+    "Make for the shore",
+    Person,
+    "Head for the water's edge. The behaviour the Mati accounts describe — \
+     people who reached open water lived, and people who did not reach it were \
+     the fatalities — and the one Rhodes turned into an organised evacuation by \
+     putting boats at the other end of it.\n\n\
+     Gate it on \"Distance to the shore\" being finite: inland it proposes \
+     something nobody can do.",
+    ["sea", "water", "beach", "boat", "swim", "coast"],
+    WalkToShore,
+    2.5
+);
+
 behavior_node! {
     id: "action.person_propose",
     name: "Propose person action",
@@ -286,7 +350,8 @@ behavior_node! {
     outputs: [(action "proposal", "The proposal, for the Person decision output")],
     params: [
         (choice "action", "Action", "What to propose.", "walk_out",
-            ["remain", "walk_out", "take_shelter", "head_home"]),
+            ["remain", "walk_out", "take_shelter", "head_home", "walk_to_open_ground",
+             "walk_to_shore"]),
         (number "priority", "Priority", "Strongest proposal wins.", 1.0, 0.0, 10.0, "")
     ],
     eval: |_c, p, i, out| {

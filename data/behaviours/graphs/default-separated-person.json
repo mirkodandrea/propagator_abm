@@ -133,6 +133,99 @@
         460.0
       ],
       "params": {}
+    },
+    {
+      "id": 8,
+      "type": "block.person_last_resort",
+      "pos": [
+        0.0,
+        780.0
+      ],
+      "params": {
+        "also_when_cut_off": {
+          "t": "bool",
+          "v": true
+        },
+        "enabled": {
+          "t": "bool",
+          "v": false
+        },
+        "lift_within_min": {
+          "t": "number",
+          "v": 30.0
+        },
+        "max_walk_m": {
+          "t": "number",
+          "v": 500.0
+        },
+        "only_with_lift": {
+          "t": "bool",
+          "v": true
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "block.person_boat_pickup",
+      "pos": [
+        0.0,
+        1030.0
+      ],
+      "params": {
+        "enabled": {
+          "t": "bool",
+          "v": false
+        },
+        "even_if_refuge_nearer": {
+          "t": "bool",
+          "v": true
+        },
+        "max_shore_distance_m": {
+          "t": "number",
+          "v": 1500.0
+        },
+        "within_min": {
+          "t": "number",
+          "v": 25.0
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "action.person_open_ground",
+      "pos": [
+        340.0,
+        790.0
+      ],
+      "params": {
+        "priority": {
+          "t": "number",
+          "v": 4.5
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "logic.any",
+      "pos": [
+        340.0,
+        1030.0
+      ],
+      "params": {}
+    },
+    {
+      "id": 12,
+      "type": "action.person_shore",
+      "pos": [
+        600.0,
+        1030.0
+      ],
+      "params": {
+        "priority": {
+          "t": "number",
+          "v": 4.5
+        }
+      }
     }
   ],
   "wires": [
@@ -176,6 +269,48 @@
       "from_node": 1,
       "from_port": 2,
       "to_node": 7,
+      "to_port": 0
+    },
+    {
+      "from_node": 1,
+      "from_port": 0,
+      "to_node": 8,
+      "to_port": 0
+    },
+    {
+      "from_node": 8,
+      "from_port": 0,
+      "to_node": 10,
+      "to_port": 0
+    },
+    {
+      "from_node": 10,
+      "from_port": 0,
+      "to_node": 6,
+      "to_port": 0
+    },
+    {
+      "from_node": 8,
+      "from_port": 1,
+      "to_node": 11,
+      "to_port": 0
+    },
+    {
+      "from_node": 9,
+      "from_port": 0,
+      "to_node": 11,
+      "to_port": 0
+    },
+    {
+      "from_node": 11,
+      "from_port": 0,
+      "to_node": 12,
+      "to_port": 0
+    },
+    {
+      "from_node": 12,
+      "from_port": 0,
+      "to_node": 6,
       "to_port": 0
     }
   ]

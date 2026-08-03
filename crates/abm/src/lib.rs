@@ -44,12 +44,20 @@ use scenario::population::{Intent, Status, WarningChannel};
 use scenario::{Pos, Scenario};
 
 pub mod behaviour;
+pub mod comms;
+pub mod haven;
 pub mod network;
+pub mod orders;
 pub mod refuge;
+pub mod spot;
 pub mod suppression;
 
+use comms::CommsNet;
+use haven::{Haven, HavenKind};
 use network::{NodeId, RoadNetwork, RouteField, NO_NODE};
+use orders::{BoatLift, Closure};
 use refuge::Refuge;
+use spot::SpotFires;
 
 pub use behaviour::{
     BehaviorRuntime, Outcome, PersonOutcome, PersonRuntime, UnitOutcome, UnitRuntime,
@@ -95,6 +103,24 @@ const ARRIVE_M: f32 = 4.0;
 /// departure down one road is slower than the same cars leaving early.
 const CONGESTION: f32 = 0.06;
 
+/// How long the commander's order takes to reach a party staying in a hotel or
+/// a let: through whoever is running the place, over a PA or a knock on every
+/// door. Between a mobile alert and a siren, and — the point — it does not go
+/// over the mobile network, so [`CommsNet`] taking the mast out does not touch
+/// it. A managed population is the one that gets *more* reliable when the
+/// infrastructure fails.
+const MANAGED_DELAY_S: f32 = 300.0;
+
+/// Fraction of the flame exposure a haven takes off somebody sheltering at it.
+///
+/// One at the water's edge, because a person in the sea is out of the fire's
+/// reach for as long as they can stand it, and that is what the Mati survivor
+/// accounts describe. Not one on open ground: a car park in a firestorm is
+/// survivable and is not safe, and the difference between those two is the
+/// whole reason the two kinds of haven are distinguished at all.
+const WATER_RELIEF: f32 = 1.0;
+const OPEN_GROUND_RELIEF: f32 = 0.6;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Foot,
@@ -117,6 +143,15 @@ pub enum TravelState {
     /// rather than removed because `travellers` is append-only and every view
     /// indexes into it.
     Arrived,
+    /// Stopped at a haven — a clearing, a car park, the water's edge — having
+    /// gone there on purpose.
+    ///
+    /// Deliberately not [`TravelState::Safe`]: nobody at a haven has left the
+    /// incident. They are alive, out of the house, off the road and not
+    /// counted as evacuated, which is exactly what the shoreline at Mati was.
+    /// It is also not terminal — a behaviour can send them on again once the
+    /// front has passed, and a boat lift takes them off it.
+    Sheltering,
     Dead,
 }
 
@@ -132,6 +167,14 @@ pub enum Goal {
     Refuge,
     /// Follow a pre-planned path back to the household's home.
     Home,
+    /// Follow the haven field to the nearest survivable open ground. A second
+    /// field rather than a per-agent search, for the same reason the refuge
+    /// field is one: everybody who wants this wants the *nearest* one.
+    Haven,
+    /// The same, restricted to the water's edge. A third field, and it only
+    /// exists in a window that has a coast — which two of the four shipped real
+    /// scenarios do not.
+    Shore,
 }
 
 /// A moving group: one household in its car or on foot, or a single person
@@ -168,6 +211,10 @@ pub struct Traveller {
     /// Remaining nodes of a [`Goal::Home`] path, nearest first. Empty for
     /// anything following the route field, which is everyone else.
     home_path: Vec<NodeId>,
+    /// Fraction of the flame exposure their surroundings take off them, 0 for
+    /// anyone in the open and 1 for anyone standing in the sea. Set on arrival
+    /// at a haven and zero everywhere else.
+    pub shelter_relief: f32,
 }
 
 /// One person. Individually inspectable, which is the point: the scenario is
@@ -191,6 +238,9 @@ pub struct PersonAgent {
     /// This person's own accumulated alarm, 0-1. Only maintained while `away` —
     /// a person at home reads the household's.
     pub cue: f32,
+    /// A visitor rather than a resident: inherited from the household, because
+    /// a hotel party is transient as a party.
+    pub visitor: bool,
     /// Which authored profile this person runs, when one is loaded.
     pub subtype: u16,
     /// The last decision this person's graph produced, for the inspector.
@@ -230,6 +280,11 @@ pub struct HouseholdAgent {
     pub prep_time_min: f32,
     /// Seconds spent sheltering in the house with the fire on it.
     pub shelter_s: f32,
+    /// Nobody here is at home: a hotel party, a let, a campsite. Set by the
+    /// [`Capability::Transient`](behavior::subtype::Capability::Transient)
+    /// capability on their profile, which is how a transient population is
+    /// assigned without re-baking one.
+    pub transient: bool,
     pub members: Vec<usize>,
     /// Time the order was issued to this household, or `f32::INFINITY`.
     ordered_at_s: f32,
@@ -245,6 +300,16 @@ pub struct Stats {
     pub defending: usize,
     pub cutoff: usize,
     pub casualties: usize,
+    /// Groups stopped at a haven: alive, out of the house, off the road, and
+    /// not evacuated. Counted off the travellers rather than off a household
+    /// status, because "sheltering at the beach" is a *place*, and the status
+    /// that describes it is still Evacuating — they have not finished.
+    pub sheltering: usize,
+    /// Of those, the ones at the water's edge. The only ones a boat lift can
+    /// take off.
+    pub at_the_shore: usize,
+    /// People a boat lift has taken off the beach.
+    pub lifted: usize,
     pub people_safe: usize,
     pub people_moving: usize,
     pub people_at_risk: usize,
@@ -258,11 +323,35 @@ pub struct Abm {
     pub travellers: Vec<Traveller>,
     pub network: RoadNetwork,
     pub refuges: Vec<Refuge>,
+    /// Somewhere to go that is not a refuge: clearings, car parks, the water's
+    /// edge. Much denser than the refuges and reachable on foot only.
+    pub havens: Vec<Haven>,
     /// Nearest road node to each house, by mode.
     entry_foot: Vec<NodeId>,
     entry_car: Vec<NodeId>,
     routes_foot: RouteField,
     routes_car: RouteField,
+    /// Route fields to the havens and to the water's edge, both on foot.
+    routes_haven: RouteField,
+    routes_shore: RouteField,
+    /// Straight-line metres from each house to the nearest haven and to the
+    /// nearest water haven, or infinity. Precomputed: neither moves, and this
+    /// is the quantity a household *judges* rather than the one it travels.
+    haven_dist: Vec<f32>,
+    shore_dist: Vec<f32>,
+    /// Which haven each haven node is, for the arrival that sets the relief.
+    haven_at: std::collections::HashMap<NodeId, HavenKind>,
+    /// Fires that started away from the front, and the warning infrastructure
+    /// the fire can take out. Both exist because a correlated failure is not
+    /// expressible as a per-agent draw.
+    spots: SpotFires,
+    comms: CommsNet,
+    /// Roads closed to civilian traffic by order, and the per-link mask derived
+    /// from them.
+    closures: Vec<Closure>,
+    closed_edges: Vec<bool>,
+    /// The maritime pickup, once somebody asks for one.
+    boat_lift: Option<BoatLift>,
     /// Coarse distance-to-fire field, metres, on a 200 m grid: what a person
     /// can *see*, as opposed to what is close enough to hurt them.
     fire_dist: Vec<f32>,
@@ -351,6 +440,10 @@ impl Abm {
             !refuges.is_empty(),
             "no refuge found: every drivable node is in the fuel"
         );
+        // Havens are allowed to be empty. A window with nowhere open in it is a
+        // finding about that window, not a broken scenario, and every behaviour
+        // that offers one is gated on the distance being finite.
+        let havens = haven::choose(scn, &net, haven::MAX_HAVENS);
 
         let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0x9E37_79B9);
 
@@ -383,6 +476,7 @@ impl Abm {
                 0
             };
 
+            let transient = cap(behaviour::Capability::Transient, false);
             subtype.push(st as u16);
             households.push(HouseholdAgent {
                 id: h.id,
@@ -405,6 +499,7 @@ impl Abm {
                 ),
                 prep_time_min: force(behaviour::TraitKey::PrepTimeMin, h.prep_time_min),
                 shelter_s: 0.0,
+                transient,
                 members: h.members.clone(),
                 ordered_at_s: f32::INFINITY,
             });
@@ -454,6 +549,7 @@ impl Abm {
                 traveller: None,
                 away: !p.at_home,
                 cue: 0.0,
+                visitor: households.get(p.household).map(|h| h.transient).unwrap_or(false),
                 subtype: person_behavior.assign(p.id) as u16,
                 last_decision: behavior::Decision::default(),
                 offset: [rng.gen_range(-3.0..3.0), rng.gen_range(-3.0..3.0)],
@@ -465,16 +561,45 @@ impl Abm {
         let fd_rows = (scn.world.height_m / FD_M).ceil() as usize + 1;
 
         let last_decision = vec![behavior::Decision::default(); households.len()];
+
+        // Straight-line, and the same choice `PersonObs::home_distance_m`
+        // documents: this number exists to be *compared* with how far away
+        // safety looks, and that is what somebody standing at the door judges.
+        // Whether the network gets them there is the route field's answer.
+        let nearest = |p: Pos, water_only: bool| {
+            havens
+                .iter()
+                .filter(|h| !water_only || h.is_water())
+                .map(|h| dist(p, h.pos))
+                .fold(f32::INFINITY, f32::min)
+        };
+        let haven_dist: Vec<f32> = households.iter().map(|h| nearest(h.home, false)).collect();
+        let shore_dist: Vec<f32> = households.iter().map(|h| nearest(h.home, true)).collect();
+        let haven_at = havens.iter().map(|h| (h.node, h.kind)).collect();
+        let homes: Vec<Pos> = households.iter().map(|h| h.home).collect();
+        let comms = CommsNet::build(&net, &homes);
+
         let mut abm = Abm {
             households,
             people,
             travellers: Vec::new(),
+            comms,
+            spots: SpotFires::new(scn),
             network: net,
             refuges,
+            havens,
+            haven_dist,
+            shore_dist,
+            haven_at,
+            closures: Vec::new(),
+            closed_edges: Vec::new(),
+            boat_lift: None,
             entry_foot,
             entry_car,
             routes_foot: RouteField { cost: vec![f32::INFINITY; n], next: vec![NO_NODE; n] },
             routes_car: RouteField { cost: vec![f32::INFINITY; n], next: vec![NO_NODE; n] },
+            routes_haven: RouteField { cost: vec![f32::INFINITY; n], next: vec![NO_NODE; n] },
+            routes_shore: RouteField { cost: vec![f32::INFINITY; n], next: vec![NO_NODE; n] },
             fire_dist: vec![f32::MAX; fd_rows * fd_cols],
             fd_cols,
             fd_rows,
@@ -490,6 +615,7 @@ impl Abm {
             generation: 0,
         };
         abm.occupancy = vec![0; abm.network.edge_count];
+        abm.closed_edges = vec![false; abm.network.edge_count];
 
         // People who are away start moving immediately: they are already out,
         // and the model has them make their own way to a refuge on foot.
@@ -567,6 +693,7 @@ impl Abm {
             solo: true,
             goal: Goal::Refuge,
             home_path: Vec::new(),
+            shelter_relief: 0.0,
         });
         let ti = self.travellers.len() - 1;
         self.people[id].traveller = Some(ti);
@@ -621,6 +748,153 @@ impl Abm {
         n
     }
 
+    // -----------------------------------------------------------------------
+    // The commander's other two levers
+    // -----------------------------------------------------------------------
+
+    /// Close every drivable link within `radius_m` of `centre` to civilian
+    /// traffic for `duration_s`.
+    ///
+    /// Returns the number of links closed, which is zero for a point with no
+    /// road near it — and saying so is the point, because a closure that
+    /// silently covered nothing looks exactly like one that worked.
+    ///
+    /// This is the lever investigators found missing at Pedrógão Grande, and it
+    /// is not free: it takes a road away from everyone who was going to use it,
+    /// and the households it strands are visible in `block.road_closed`. Units
+    /// and pedestrians are unaffected — a barricade stops civilian traffic, not
+    /// the engine that asked for it.
+    pub fn close_road(&mut self, centre: Pos, radius_m: f32, duration_s: f32) -> usize {
+        let c = Closure {
+            centre,
+            radius_m,
+            from_s: self.time_s,
+            until_s: if duration_s.is_finite() {
+                self.time_s + duration_s
+            } else {
+                f32::INFINITY
+            },
+        };
+        self.closures.push(c);
+        self.refresh_closures();
+        self.generation += 1;
+        self.closed_edges.iter().filter(|c| **c).count()
+    }
+
+    /// Lift every closure. What the commander does when the fire has gone past.
+    pub fn reopen_roads(&mut self) {
+        self.closures.clear();
+        self.refresh_closures();
+        self.generation += 1;
+    }
+
+    pub fn closures(&self) -> &[Closure] {
+        &self.closures
+    }
+
+    /// Rebuild the per-link closed mask from the closures still in force.
+    ///
+    /// Recomputed from the closure list rather than toggled per link, so a
+    /// closure expiring cannot leave a link closed that another closure was
+    /// also covering — the bug that shape of bookkeeping always eventually has.
+    fn refresh_closures(&mut self) {
+        let now = self.time_s;
+        self.closures.retain(|c| now < c.until_s);
+        for slot in &mut self.closed_edges {
+            *slot = false;
+        }
+        if self.closures.is_empty() {
+            return;
+        }
+        for n in 0..self.network.len() as NodeId {
+            let a = self.network.pos(n);
+            for e in self.network.neighbours(n) {
+                if !e.drivable {
+                    continue;
+                }
+                let b = self.network.pos(e.to);
+                let mid = Pos { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+                if self.closures.iter().any(|c| c.active_at(now) && c.contains(mid)) {
+                    if let Some(slot) = self.closed_edges.get_mut(e.id as usize) {
+                        *slot = true;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Ask for a maritime pickup at the shore.
+    ///
+    /// Fails when the window has no water haven in it, which is the honest
+    /// answer for an inland scenario and is a sentence in the panel rather than
+    /// a silent no-op — the same rule every suppression refusal follows.
+    /// Requesting a second one while the first is on the way replaces it.
+    pub fn request_boat_lift(
+        &mut self,
+        delay_s: f32,
+        rate_per_min: f32,
+    ) -> Result<(), &'static str> {
+        if !self.havens.iter().any(|h| h.is_water()) {
+            return Err("there is no shore in this window to lift anyone off");
+        }
+        self.boat_lift = Some(BoatLift::requested(self.time_s, delay_s, rate_per_min));
+        self.generation += 1;
+        Ok(())
+    }
+
+    pub fn boat_lift(&self) -> Option<&BoatLift> {
+        self.boat_lift.as_ref()
+    }
+
+    /// Minutes until the pickup is on station, or a very large number when none
+    /// has been asked for. The quantity the behaviours read.
+    fn boat_lift_min(&self) -> f32 {
+        self.boat_lift.map(|b| b.minutes_out(self.time_s)).unwrap_or(1.0e6)
+    }
+
+    /// Take people off the beach, oldest arrival first.
+    ///
+    /// Integrated over simulated time by [`BoatLift::capacity`], so how many
+    /// leave in an hour does not depend on how often the caller steps —
+    /// finding 5, which the first version of the structure damage model got
+    /// wrong in exactly this way.
+    fn run_boat_lift(&mut self, dt_s: f32) {
+        let Some(mut lift) = self.boat_lift else { return };
+        let mut budget = lift.capacity(self.time_s, dt_s);
+        if budget > 0 {
+            for ti in 0..self.travellers.len() {
+                if budget == 0 {
+                    break;
+                }
+                let t = &self.travellers[ti];
+                if t.state != TravelState::Sheltering || t.shelter_relief < WATER_RELIEF {
+                    continue;
+                }
+                let n = t.members.len();
+                if n > budget {
+                    // A group boards together or waits: splitting a family
+                    // across two boats is a different model and not a better
+                    // one.
+                    continue;
+                }
+                budget -= n;
+                lift.lifted += n;
+                self.mark_safe(ti);
+            }
+        }
+        self.boat_lift = Some(lift);
+    }
+
+    /// Spot fires seen so far: fires that started away from the mapped front.
+    pub fn spot_fires(&self) -> &SpotFires {
+        &self.spots
+    }
+
+    /// The warning infrastructure and what the fire has done to it.
+    pub fn comms(&self) -> &CommsNet {
+        &self.comms
+    }
+
     /// Advance the agent model by `dt_s` of simulated time against the current
     /// fire state.
     pub fn step(&mut self, dt_s: f32, fire: &FireSim, scn: &Scenario) {
@@ -631,10 +905,30 @@ impl Abm {
 
         if self.time_s >= self.next_route_s {
             self.refresh_fire_distance(fire, scn);
-            self.routes_foot = network::solve(&self.network, &self.refuge_nodes(), fire.threat(), false);
-            self.routes_car = network::solve(&self.network, &self.refuge_nodes(), fire.threat(), true);
+            self.spots.update(fire, scn, self.time_s);
+            self.comms.update(fire, self.time_s);
+            self.refresh_closures();
+            let refuges = self.refuge_nodes();
+            let threat = fire.threat();
+            self.routes_foot = network::solve(&self.network, &refuges, threat, false);
+            self.routes_car =
+                network::solve_with(&self.network, &refuges, threat, true, &self.closed_edges);
+            // Two more fields, on foot, and only where there is anything to
+            // solve for: a landlocked window has no water havens, and a shore
+            // field over no sources is 61 k nodes of infinity nobody reads.
+            let havens: Vec<NodeId> = self.havens.iter().map(|h| h.node).collect();
+            let shore: Vec<NodeId> =
+                self.havens.iter().filter(|h| h.is_water()).map(|h| h.node).collect();
+            if !havens.is_empty() {
+                self.routes_haven = network::solve(&self.network, &havens, threat, false);
+            }
+            if !shore.is_empty() {
+                self.routes_shore = network::solve(&self.network, &shore, threat, false);
+            }
             self.next_route_s = self.time_s + ROUTE_REFRESH_S;
         }
+
+        self.run_boat_lift(dt_s);
 
         if self.time_s >= self.next_decision_s {
             // Decisions are integrated over the interval that actually
@@ -755,6 +1049,17 @@ impl Abm {
         };
 
         let needs_assistance = h.members.iter().any(|p| self.people[*p].needs_assistance);
+        let (spot_m, spot_age) = self.spots.nearest(h.home, self.time_s);
+        // What the barricade looks like from the front door: their own way onto
+        // the drivable network is inside a closed area. Deliberately not "the
+        // route field got longer", which is also true and is indistinguishable
+        // from the fire having done it.
+        let road_closed = self.entry_car[i] != NO_NODE
+            && !self.closures.is_empty()
+            && self
+                .closures
+                .iter()
+                .any(|c| c.active_at(self.time_s) && c.contains(self.network.pos(self.entry_car[i])));
 
         behavior::HouseholdObs {
             time_min: self.time_s / 60.0,
@@ -784,9 +1089,30 @@ impl Abm {
             is_defending: h.status == Status::Defending,
             route_blocked: !refuge_distance_m.is_finite(),
             refuge_distance_m,
+            spot_fire_distance_m: spot_m.min(SEE_RANGE_M),
+            spot_fire_age_min: spot_age,
+            road_closed,
+            // A mast being down is not a fact about one household's channel:
+            // everybody under it knows there is no signal, whether or not they
+            // were the ones waiting for a message.
+            comms_down: !self.comms.covered(h.home),
+            is_visitor: h.transient,
+            open_ground_distance_m: self.haven_dist.get(i).copied().unwrap_or(f32::INFINITY),
+            shore_distance_m: self.shore_dist.get(i).copied().unwrap_or(f32::INFINITY),
+            boat_lift_min: self.boat_lift_min(),
             jitter,
         }
         .into()
+    }
+
+    /// Straight-line metres from `p` to the nearest haven, optionally only the
+    /// ones at the water's edge. Infinite when there are none.
+    fn haven_distance(&self, p: Pos, water_only: bool) -> f32 {
+        self.havens
+            .iter()
+            .filter(|h| !water_only || h.is_water())
+            .map(|h| dist(p, h.pos))
+            .fold(f32::INFINITY, f32::min)
     }
 
     /// Which subtype a household is running, and the last decision its graph
@@ -848,13 +1174,20 @@ impl Abm {
                 .min(1.0);
             let cue = (raw * attention).min(1.0);
 
+            // Whether the network that was going to warn them is still up. A
+            // shared piece of infrastructure, so this is *correlated* across
+            // every household under the same mast — which is what the reporting
+            // on Pedrógão Grande describes and what no per-household channel
+            // draw can produce.
+            let signal = self.comms.covered(h.home);
+
             let h = &mut self.households[i];
             // Cue rises fast and falls slowly: once alarmed, people stay
             // alarmed.
             h.cue = if cue > h.cue { cue } else { h.cue * 0.98 + cue * 0.02 };
 
             // --- the order arriving over the household's own channel --------
-            if h.ordered && !h.warning_received && now - h.ordered_at_s >= channel_delay_s(h.channel)
+            if h.ordered && !h.warning_received && now - h.ordered_at_s >= warning_delay_s(h, signal)
             {
                 h.warning_received = true;
             }
@@ -877,7 +1210,8 @@ impl Abm {
             let st = self.subtype[i] as usize;
             let d = self.behavior.decide(st, &obs);
             self.last_decision[i] = d;
-            let (depart, run_now, prep_scale, defend) = match behaviour::outcome_of(d.action) {
+            let outcome = behaviour::outcome_of(d.action);
+            let (depart, run_now, prep_scale, defend) = match outcome {
                 behaviour::Outcome::Hold => (false, false, 1.0, false),
                 behaviour::Outcome::Prepare => (true, false, d.prep_scale, false),
                 behaviour::Outcome::Go => (true, true, d.prep_scale, false),
@@ -885,7 +1219,19 @@ impl Abm {
                 // Sheltering is not a departure. The household stays where it
                 // is and the survival model below takes over.
                 behaviour::Outcome::Shelter => (false, false, 1.0, false),
+                // Nor are these: a household making for open ground leaves the
+                // house on foot immediately and has no preparation to do — the
+                // fire is on them, which is the only condition under which the
+                // block that proposes this fires at all.
+                behaviour::Outcome::OpenGround | behaviour::Outcome::Shore => {
+                    (false, false, 1.0, false)
+                }
             };
+            match outcome {
+                behaviour::Outcome::OpenGround => self.flee_to_haven(i, Goal::Haven),
+                behaviour::Outcome::Shore => self.flee_to_haven(i, Goal::Shore),
+                _ => {}
+            }
 
             let h = &mut self.households[i];
             if defend && h.status == Status::Warned {
@@ -915,7 +1261,7 @@ impl Abm {
             if h.status == Status::Preparing {
                 h.prep_remaining_s -= dt;
                 if h.prep_remaining_s <= 0.0 {
-                    self.launch(i);
+                    self.launch(i, Goal::Refuge);
                 }
             }
 
@@ -986,6 +1332,7 @@ impl Abm {
             .fold(f32::INFINITY, f32::min);
         let entry = self.network.nearest(p.pos, false).unwrap_or(NO_NODE);
         let route_blocked = entry == NO_NODE || !self.routes_foot.reachable(entry);
+        let (spot_m, spot_age) = self.spots.nearest(p.pos, self.time_s);
 
         behavior::PersonObs {
             time_min: self.time_s / 60.0,
@@ -1016,6 +1363,12 @@ impl Abm {
             is_moving,
             is_heading_home,
             is_sheltering,
+            spot_fire_distance_m: spot_m.min(SEE_RANGE_M),
+            spot_fire_age_min: spot_age,
+            is_visitor: p.visitor,
+            open_ground_distance_m: self.haven_distance(p.pos, false),
+            shore_distance_m: self.haven_distance(p.pos, true),
+            boat_lift_min: self.boat_lift_min(),
             jitter: hash01(p.id as u64, 0xA37),
         }
         .into()
@@ -1092,6 +1445,8 @@ impl Abm {
                 behaviour::PersonOutcome::WalkOut => self.walk_out(i),
                 behaviour::PersonOutcome::Shelter => self.shelter_in_place(i),
                 behaviour::PersonOutcome::HeadHome => self.head_home(i, fire),
+                behaviour::PersonOutcome::OpenGround => self.walk_to_haven(i, Goal::Haven),
+                behaviour::PersonOutcome::Shore => self.walk_to_haven(i, Goal::Shore),
             }
         }
         // Every branch above is a change of destination, never a change of
@@ -1115,6 +1470,51 @@ impl Abm {
         t.edge = u32::MAX;
         t.home_path.clear();
         self.people[id].status = Status::Trapped;
+    }
+
+    /// Send this person to the nearest haven, or to the water's edge.
+    ///
+    /// Idempotent for someone already going there, for the same reason
+    /// [`Abm::walk_out`] is: the block proposes it on every tick while the
+    /// condition holds. Someone with no reachable haven keeps doing whatever
+    /// they were doing rather than being stopped — an unreachable destination
+    /// is not a reason to stand still, and the shelter branch is what says
+    /// otherwise.
+    fn walk_to_haven(&mut self, id: usize, goal: Goal) {
+        let reachable = |net: &RoadNetwork, field: &RouteField, p: Pos| {
+            net.nearest(p, false).map(|n| field.reachable(n)).unwrap_or(false)
+        };
+        let field = match goal {
+            Goal::Shore => &self.routes_shore,
+            _ => &self.routes_haven,
+        };
+        if !reachable(&self.network, field, self.people[id].pos) {
+            return;
+        }
+        if matches!(self.people[id].status, Status::Evacuated | Status::Casualty) {
+            return;
+        }
+        // They may not be walking at all yet, so put them on the road first and
+        // then redirect: `walk_out` is the one place a traveller is created for
+        // a person, and having two would be two places to keep in step.
+        if self.people[id].traveller.is_none() {
+            self.walk_out(id);
+        }
+        let Some(ti) = self.people[id].traveller else { return };
+        let t = &self.travellers[ti];
+        if t.goal == goal
+            || matches!(t.state, TravelState::Safe | TravelState::Dead | TravelState::Arrived)
+        {
+            return;
+        }
+        let t = &mut self.travellers[ti];
+        t.goal = goal;
+        t.home_path.clear();
+        t.state = TravelState::Approaching;
+        t.edge = u32::MAX;
+        t.shelter_relief = 0.0;
+        t.target = self.network.nearest(t.pos, false).unwrap_or(NO_NODE);
+        self.people[id].status = Status::Evacuating;
     }
 
     /// Turn this person round and walk them back to the household's home.
@@ -1193,8 +1593,8 @@ impl Abm {
         }
     }
 
-    /// Put a household on the road.
-    fn launch(&mut self, i: usize) {
+    /// Put a household on the road toward `goal`.
+    fn launch(&mut self, i: usize, goal: Goal) {
         let (home, vehicles, members) = {
             let h = &self.households[i];
             (h.home, h.vehicles, h.members.clone())
@@ -1220,7 +1620,13 @@ impl Abm {
         let car_node = self.entry_car[i];
         // A car is only useful if there is a drivable node near enough to walk
         // to and a route out of it. Otherwise the household walks.
-        let car_ok = vehicles > 0
+        //
+        // A haven is on foot whatever they own. These are the places two
+        // streets away that the road does not go to, chosen for exactly that,
+        // and a household that has decided the road is not the answer does not
+        // then take it.
+        let car_ok = goal == Goal::Refuge
+            && vehicles > 0
             && car_node != NO_NODE
             && dist(self.network.pos(car_node), home) < 400.0
             && self.routes_car.reachable(car_node);
@@ -1263,8 +1669,9 @@ impl Abm {
             distance_m: 0.0,
             departed_s: self.time_s,
             solo: false,
-            goal: Goal::Refuge,
+            goal,
             home_path: Vec::new(),
+            shelter_relief: 0.0,
         };
         self.travellers.push(t);
         let ti = self.travellers.len() - 1;
@@ -1274,6 +1681,80 @@ impl Abm {
         }
         self.households[i].traveller = Some(ti);
         self.households[i].status = Status::Evacuating;
+    }
+
+    /// Send a household out of the house on foot for a haven, or turn one that
+    /// is already moving toward one.
+    ///
+    /// Idempotent, because the graph proposes this on every tick while the
+    /// condition holds and re-launching them each time would reset their
+    /// progress — the same property [`Abm::walk_out`] has and for the same
+    /// reason. A household with no reachable haven is left exactly as it was:
+    /// the block that proposed this is gated on the distance, but distance is
+    /// not reachability, and inventing a destination for them would be worse
+    /// than the shelter-in-place branch they fall back on.
+    fn flee_to_haven(&mut self, i: usize, goal: Goal) {
+        let field = match goal {
+            Goal::Shore => &self.routes_shore,
+            _ => &self.routes_haven,
+        };
+        let entry = self.entry_foot[i];
+        if entry == NO_NODE || !field.reachable(entry) {
+            return;
+        }
+        if matches!(self.households[i].status, Status::Evacuated | Status::Casualty) {
+            return;
+        }
+        match self.households[i].traveller {
+            None => {
+                self.launch(i, goal);
+                // `launch` retires a household with nobody left to ride, and
+                // that is not a state to overwrite.
+                if let Some(ti) = self.households[i].traveller {
+                    self.travellers[ti].goal = goal;
+                }
+            }
+            Some(ti) => {
+                let t = &self.travellers[ti];
+                if t.goal == goal
+                    || matches!(
+                        t.state,
+                        TravelState::Safe | TravelState::Dead | TravelState::Arrived
+                    )
+                {
+                    return;
+                }
+                // Turning round mid-route: back onto the network on foot from
+                // wherever they are. A car is abandoned, which is what happens
+                // and is the same thing `pick_next_hop` does to a driver whose
+                // road is gone.
+                let t = &mut self.travellers[ti];
+                t.goal = goal;
+                t.mode = Mode::Foot;
+                t.free_speed = t.free_speed.min(1.3);
+                t.home_path.clear();
+                t.state = TravelState::Approaching;
+                t.edge = u32::MAX;
+                t.shelter_relief = 0.0;
+                t.target = self.network.nearest(t.pos, false).unwrap_or(NO_NODE);
+            }
+        }
+    }
+
+    /// This group has reached a haven and stops there.
+    fn arrive_haven(&mut self, ti: usize, node: NodeId) {
+        let water = self.haven_at.get(&node).copied() == Some(HavenKind::Water);
+        let t = &mut self.travellers[ti];
+        t.state = TravelState::Sheltering;
+        t.target = NO_NODE;
+        t.edge = u32::MAX;
+        t.shelter_relief = if water { WATER_RELIEF } else { OPEN_GROUND_RELIEF };
+        let members = t.members.clone();
+        for p in members {
+            // Not `Evacuated`: nobody at a haven has left the incident, and a
+            // model that counted them as safe would say Mati was a success.
+            self.people[p].status = Status::Evacuating;
+        }
     }
 
     fn move_travellers(&mut self, dt: f32, fire: &FireSim, scn: &Scenario) {
@@ -1291,7 +1772,11 @@ impl Abm {
             }
 
             // --- heat load ---------------------------------------------------
-            let danger = threat.at(t.pos);
+            // A haven takes some of it off: all of it at the water's edge,
+            // where a person can get into the sea, and rather less in a car
+            // park. Nothing else in the model gives relief from flame contact,
+            // and this is why the two kinds of haven are distinguished at all.
+            let danger = threat.at(t.pos) * (1.0 - t.shelter_relief).clamp(0.0, 1.0);
             let t = &mut self.travellers[ti];
             if danger >= fire::threat::IMPASSABLE {
                 t.heat_s += dt * danger;
@@ -1443,14 +1928,20 @@ impl Abm {
             }
             return;
         }
-        let routes = match mode {
-            Mode::Car => &self.routes_car,
-            Mode::Foot => &self.routes_foot,
+        let routes = match (goal, mode) {
+            (Goal::Haven, _) => &self.routes_haven,
+            (Goal::Shore, _) => &self.routes_shore,
+            (_, Mode::Car) => &self.routes_car,
+            (_, Mode::Foot) => &self.routes_foot,
         };
 
         if routes.cost[at as usize] == 0.0 {
-            // Standing on a refuge.
-            self.mark_safe(ti);
+            // Standing on the destination.
+            if matches!(goal, Goal::Haven | Goal::Shore) {
+                self.arrive_haven(ti, at);
+            } else {
+                self.mark_safe(ti);
+            }
             return;
         }
 
@@ -1542,7 +2033,14 @@ impl Abm {
                     Mode::Foot => s.on_foot += 1,
                 }
             }
+            if t.state == TravelState::Sheltering {
+                s.sheltering += 1;
+                if t.shelter_relief >= WATER_RELIEF {
+                    s.at_the_shore += 1;
+                }
+            }
         }
+        s.lifted = self.boat_lift.map(|b| b.lifted).unwrap_or(0);
         s
     }
 
@@ -1576,6 +2074,32 @@ fn clamp_to_world(p: Pos, scn: &Scenario) -> Pos {
 
 fn dist(a: Pos, b: Pos) -> f32 {
     ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt()
+}
+
+/// How long the order actually takes to reach *this* household, given what the
+/// fire has done to the network and who they are.
+///
+/// Two things move it off the baked channel, and both are the same shape of
+/// correction: the channel is a property of the population and whether it works
+/// is a property of the incident.
+///
+/// - A party staying in a hotel or a let is told by whoever is running the
+///   place, over a PA or a knock on the door. That does not go over the mobile
+///   network, so it is the one population that gets *more* reliable when the
+///   infrastructure fails.
+/// - A mobile alert with no mast is not a mobile alert. It falls back to the
+///   delay of having no channel at all, which is what "the fire knocked out
+///   communications" means for the household on the end of it. A siren is a
+///   physical thing on a pole and a neighbour is a neighbour: neither is
+///   touched.
+fn warning_delay_s(h: &HouseholdAgent, signal: bool) -> f32 {
+    if h.transient {
+        return MANAGED_DELAY_S;
+    }
+    if !signal && h.channel == WarningChannel::MobileAlert {
+        return channel_delay_s(WarningChannel::None);
+    }
+    channel_delay_s(h.channel)
 }
 
 /// How long the commander's order takes to reach a household, by the channel

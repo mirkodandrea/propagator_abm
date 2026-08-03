@@ -46,6 +46,7 @@ enum Action {
     Quit,
     EvacuateNear,
     EvacuateAll,
+    RequestBoats,
     NextUnit,
     Arm(OrderKind),
     StandDown,
@@ -176,6 +177,30 @@ pub fn menubar(
                 }
                 if item(ui, "Evacuate everyone", "Shift+E").clicked() {
                     a(Action::EvacuateAll, &mut act);
+                    ui.close_menu();
+                }
+                // A capacity the road network does not have, and the reason the
+                // Rhodes scenario is in the set. No shortcut and no map click:
+                // it is one decision for the whole incident, and three tools
+                // already contend for left-click.
+                let boats = sim.agents.boat_lift();
+                let coastal = sim.agents.havens.iter().any(|h| h.is_water());
+                let label = match boats {
+                    Some(b) if b.on_station(sim.agents.time_s()) => "Boats on station".to_string(),
+                    Some(b) => format!("Boats inbound — {:.0} min", b.minutes_out(sim.agents.time_s())),
+                    None => "Request a boat lift at the shore".to_string(),
+                };
+                let row = ui
+                    .add_enabled(coastal && boats.is_none(), |ui: &mut egui::Ui| {
+                        item(ui, &label, "")
+                    })
+                    .on_disabled_hover_text(if coastal {
+                        "already requested"
+                    } else {
+                        "no shore in this window to lift anyone off"
+                    });
+                if row.clicked() {
+                    a(Action::RequestBoats, &mut act);
                     ui.close_menu();
                 }
                 ui.separator();
@@ -500,6 +525,20 @@ pub fn menubar(
             Action::EvacuateAll => {
                 let n = sim.agents.order_evacuation_all();
                 info!("general evacuation ordered: {n} households");
+            }
+            Action::RequestBoats => {
+                match sim.agents.request_boat_lift(
+                    abm::orders::LIFT_DELAY_S,
+                    abm::orders::LIFT_RATE_PER_MIN,
+                ) {
+                    Ok(()) => info!(
+                        "boat lift requested: on station in {:.0} min",
+                        abm::orders::LIFT_DELAY_S / 60.0
+                    ),
+                    // A sentence rather than a silent no-op, the same rule
+                    // every suppression refusal follows.
+                    Err(e) => warn!("{e}"),
+                }
             }
             Action::NextUnit => {
                 let n = sim.crews.units.len();

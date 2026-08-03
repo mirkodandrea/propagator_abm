@@ -227,6 +227,10 @@ pub enum Outcome {
     Defend,
     /// Stop trying to move and shelter where they are.
     Shelter,
+    /// Leave the house on foot for the nearest survivable clearing.
+    OpenGround,
+    /// The same, for the water's edge.
+    Shore,
 }
 
 pub fn outcome_of(a: ActionKind) -> Outcome {
@@ -235,6 +239,8 @@ pub fn outcome_of(a: ActionKind) -> Outcome {
         ActionKind::EvacuateNow => Outcome::Go,
         ActionKind::Defend => Outcome::Defend,
         ActionKind::Shelter => Outcome::Shelter,
+        ActionKind::ShelterNearby => Outcome::OpenGround,
+        ActionKind::MakeForShore => Outcome::Shore,
         // `Stay`, plus the suppression half of the enum, which a validated
         // household graph cannot produce.
         _ => Outcome::Hold,
@@ -309,6 +315,10 @@ pub enum PersonOutcome {
     Shelter,
     /// Turn round and walk back to the household's home.
     HeadHome,
+    /// Make for the nearest survivable clearing rather than for a refuge.
+    OpenGround,
+    /// The same, for the water's edge.
+    Shore,
 }
 
 pub fn person_outcome_of(a: ActionKind) -> PersonOutcome {
@@ -316,6 +326,8 @@ pub fn person_outcome_of(a: ActionKind) -> PersonOutcome {
         ActionKind::WalkOut => PersonOutcome::WalkOut,
         ActionKind::TakeShelter => PersonOutcome::Shelter,
         ActionKind::HeadHome => PersonOutcome::HeadHome,
+        ActionKind::WalkToOpenGround => PersonOutcome::OpenGround,
+        ActionKind::WalkToShore => PersonOutcome::Shore,
         // `Remain`, plus the other two domains' halves of the enum, which a
         // validated person graph cannot produce.
         _ => PersonOutcome::Carry,

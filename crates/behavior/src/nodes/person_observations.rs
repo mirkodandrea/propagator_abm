@@ -231,6 +231,67 @@ person_bool!(
     is_sheltering
 );
 
+// --- what the road network cannot offer them --------------------------------
+
+person_number!(
+    "person.spot_fire_distance_m",
+    "Distance to a spot fire",
+    "Metres to the nearest fire that started somewhere not contiguous with the \
+     mapped front. For someone already out on the road this is the more \
+     dangerous of the two distances: the front is where they last saw it, and a \
+     spot fire can appear between them and where they are walking.",
+    ["ember", "spot", "jump", "firebrand", "behind", "new"],
+    spot_fire_distance_m
+);
+
+person_number!(
+    "person.spot_fire_age_min",
+    "Age of that spot fire",
+    "Minutes since the nearest spot fire started, or a very large number if \
+     there has been none.",
+    ["ember", "spot", "new", "recent", "minutes"],
+    spot_fire_age_min
+);
+
+person_bool!(
+    "person.is_visitor",
+    "A visitor, not a resident",
+    "No vehicle, no local knowledge, and nowhere in this window that is home. \
+     A visitor who is \"away from their household\" is away from a household \
+     that does not exist here, which is why \"Going back for the family\" has \
+     nothing to offer them.",
+    ["tourist", "hotel", "transient", "guest", "holiday"],
+    is_visitor
+);
+
+person_number!(
+    "person.open_ground_distance_m",
+    "Distance to open ground",
+    "Network metres on foot to the nearest survivable open ground: a car park, \
+     a cleared field, a beach. Not a refuge — nobody is organising anything \
+     there. Compare it against \"Distance to refuge\": open ground is usually \
+     much nearer, and is the answer when the refuge is not reachable in time.",
+    ["clearing", "safety zone", "last resort", "park", "beach"],
+    open_ground_distance_m
+);
+
+person_number!(
+    "person.shore_distance_m",
+    "Distance to the shore",
+    "Network metres on foot to the water's edge. Very large inland.",
+    ["sea", "water", "beach", "coast", "shoreline"],
+    shore_distance_m
+);
+
+person_number!(
+    "person.boat_lift_min",
+    "Minutes to a boat lift",
+    "Minutes until a maritime pickup is on station at the shore, zero once it \
+     is, and a very large number when none has been asked for.",
+    ["boat", "sea", "coastguard", "lift", "pickup", "ferry"],
+    boat_lift_min
+);
+
 person_number!(
     "person.jitter",
     "Individual variation",

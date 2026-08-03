@@ -186,6 +186,46 @@ fn handle(req: &ApiRequest, sim: &mut Sim, restarted: &mut EventWriter<crate::si
                 Err(e) => (500, err(e)),
             }
         }
+        // The commander's other two levers. Both live here rather than on the
+        // map because both need a *place* and three tools already contend for
+        // left-click — a fourth needs a rule, not a patch (see the note in
+        // CLAUDE.md). A closure is an area and the API is where an area can be
+        // given without inventing one.
+        ("POST", "/control/close_road") => {
+            let v: Value = serde_json::from_str(&req.body).unwrap_or(Value::Null);
+            let (Some(x), Some(y)) = (
+                v.get("x").and_then(Value::as_f64),
+                v.get("y").and_then(Value::as_f64),
+            ) else {
+                return (
+                    400,
+                    err("expected {\"x\": number, \"y\": number, \"radius_m\": number, \"minutes\": number}"),
+                );
+            };
+            let radius_m = v.get("radius_m").and_then(Value::as_f64).unwrap_or(300.0) as f32;
+            let minutes = v.get("minutes").and_then(Value::as_f64).unwrap_or(30.0) as f32;
+            let links = sim.agents.close_road(
+                scenario::Pos { x: x as f32, y: y as f32 },
+                radius_m,
+                minutes * 60.0,
+            );
+            // Zero links is not an error and is worth reporting: a closure over
+            // open ground looks exactly like one that worked.
+            (200, json!({"ok": true, "links_closed": links}).to_string())
+        }
+        ("POST", "/control/reopen_roads") => {
+            sim.agents.reopen_roads();
+            (200, ok())
+        }
+        ("POST", "/control/boat_lift") => {
+            let v: Value = serde_json::from_str(&req.body).unwrap_or(Value::Null);
+            let minutes = v.get("minutes").and_then(Value::as_f64).unwrap_or(30.0) as f32;
+            let rate = v.get("rate_per_min").and_then(Value::as_f64).unwrap_or(3.5) as f32;
+            match sim.agents.request_boat_lift(minutes * 60.0, rate) {
+                Ok(()) => (200, ok()),
+                Err(e) => (409, err(e)),
+            }
+        }
         ("POST", "/control/unit_task") => handle_unit_task(&req.body, sim),
 
         _ => (404, err("no such route")),
@@ -280,11 +320,26 @@ fn status_json(sim: &Sim) -> Value {
             "defending": stats.defending,
             "cutoff": stats.cutoff,
             "casualties": stats.casualties,
+            // Alive, out of the house, off the road and *not* evacuated. A
+            // separate count because collapsing it into either of the two
+            // either overstates the evacuation or understates who is alive.
+            "sheltering": stats.sheltering,
+            "at_the_shore": stats.at_the_shore,
         },
         "people": {
             "safe": stats.people_safe,
             "moving": stats.people_moving,
             "at_risk": stats.people_at_risk,
+            "lifted_by_boat": stats.lifted,
+        },
+        "incident": {
+            "road_closures": sim.agents.closures().len(),
+            "boat_lift_min": sim
+                .agents
+                .boat_lift()
+                .map(|b| b.minutes_out(sim.agents.time_s()) as f64),
+            "masts_down": sim.agents.comms().down(),
+            "spot_fires": sim.agents.spot_fires().len(),
         },
         "units": {
             "staged": ustats.staged,

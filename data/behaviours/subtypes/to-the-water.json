@@ -1,0 +1,25 @@
+{
+  "id": "to-the-water",
+  "name": "Makes for the water",
+  "description": "Gives up on the refuge for whatever is nearest and survivable, and walks to the shore when a boat lift is coming. The two halves of it are different decisions: the first is what the Mati accounts describe — people who reached open water lived and people who did not were the fatalities — and the second is what Rhodes turned that into by putting boats at the other end. Ships at zero share, and it is the only profile in the model that reduces casualties without anybody arriving to help, which is exactly why it is worth measuring rather than assuming.",
+  "author": "shipped",
+  "tags": [
+    "maritime",
+    "last resort"
+  ],
+  "graph": "default-separated-person",
+  "overrides": {
+    "8.enabled": {
+      "t": "bool",
+      "v": true
+    },
+    "9.enabled": {
+      "t": "bool",
+      "v": true
+    }
+  },
+  "traits": {},
+  "capabilities": {},
+  "share": 0.0,
+  "enabled": true
+}

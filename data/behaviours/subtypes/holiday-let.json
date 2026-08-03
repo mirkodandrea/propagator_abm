@@ -1,0 +1,29 @@
+{
+  "id": "holiday-let",
+  "name": "Visitors in a let",
+  "description": "Nobody here lives here. No car of their own, no idea which road goes where, and a warning that arrives through whoever is running the place rather than over a resident's alert — which makes them the one population that gets *more* reliable when the fire takes the mast out. Rhodes was substantially a crisis about these people, and until this profile the model had none of them: every person in it was drawn from a dwelling.",
+  "author": "shipped",
+  "tags": [
+    "transient",
+    "tourist"
+  ],
+  "graph": "default-evacuation",
+  "overrides": {
+    "16.own_judgement_alarm": {
+      "t": "number",
+      "v": 0.55
+    }
+  },
+  "traits": {
+    "risk_perception": 0.35,
+    "trust_authority": 0.75,
+    "prep_time_min": 15.0,
+    "defensible_space": 0.2
+  },
+  "capabilities": {
+    "vehicle": false,
+    "transient": true
+  },
+  "share": 0.0,
+  "enabled": true
+}

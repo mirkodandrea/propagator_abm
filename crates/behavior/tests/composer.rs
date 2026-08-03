@@ -185,20 +185,37 @@ fn a_household_that_planned_to_defend_does_not_leave_on_an_order() {
 /// Pinned rather than left as a comment because the whole complaint the blocks
 /// answer was "the detail is too fine grained", and a graph that drifts back up
 /// to thirty nodes has quietly undone it.
+///
+/// It is pinned as a *shape* rather than as a count, and that distinction had to
+/// be made the first time the graph legitimately grew: adding the four blocks
+/// the real-incident scenarios asked for took it from thirteen nodes to twenty,
+/// and a bare cap would have read that as the regression it is the opposite of.
+/// What matters is that every box is either a named assumption, a proposal, a
+/// sink, or the one fan-in that collects the proposals — never a step of
+/// arithmetic somebody has to reconstruct the meaning of.
 #[test]
 fn the_default_graph_is_written_in_blocks() {
     let g = default_graph();
-    assert!(
-        g.nodes.len() <= 14,
-        "the shipped behaviour is back up to {} nodes",
-        g.nodes.len()
-    );
     let blocks = g
         .nodes
         .iter()
         .filter(|n| n.spec().map(|s| s.category) == Some(Category::Block))
         .count();
-    assert!(blocks >= 4, "only {blocks} of the graph is blocks");
+    assert!(blocks >= 8, "only {blocks} of the graph is blocks");
+
+    for n in &g.nodes {
+        let spec = n.spec().expect("every shipped node is registered");
+        let structural = matches!(
+            spec.category,
+            Category::Block | Category::Action | Category::Output
+        ) || n.type_id == "logic.any";
+        assert!(
+            structural,
+            "{} is neither an assumption, a proposal, a sink nor the fan-in: \
+             the shipped behaviour is being written in pieces again",
+            n.type_id
+        );
+    }
     // No bare arithmetic left: every number in the shipped behaviour is a
     // parameter on a named assumption, which is what a subtype overrides.
     assert!(

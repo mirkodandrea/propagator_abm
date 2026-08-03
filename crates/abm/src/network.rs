@@ -330,6 +330,25 @@ pub fn solve(
     threat: &fire::ThreatField,
     drivable_only: bool,
 ) -> RouteField {
+    solve_with(net, refuges, threat, drivable_only, &[])
+}
+
+/// The same, with a set of links closed to traffic by order.
+///
+/// `closed` is indexed by [`Edge::id`] and may be empty, which is the usual
+/// case. A closure is deliberately a property of the *field* rather than of the
+/// network: the fire cutting a road and the commander closing one produce the
+/// same rerouting through the same machinery, which is the whole reason
+/// routing is a field and not a search (finding 8), and a unit or a pedestrian
+/// asking [`route`] is unaffected — a barricade stops civilian traffic, not the
+/// engine that asked for it and not somebody on foot.
+pub fn solve_with(
+    net: &RoadNetwork,
+    refuges: &[NodeId],
+    threat: &fire::ThreatField,
+    drivable_only: bool,
+    closed: &[bool],
+) -> RouteField {
     let n = net.len();
     let mut field = RouteField::empty(n);
     let mut heap: BinaryHeap<Entry> = BinaryHeap::new();
@@ -354,6 +373,13 @@ pub fn solve(
         }
         for e in net.neighbours(node) {
             if drivable_only && !e.drivable {
+                continue;
+            }
+            // A closure is a traffic order, so it only binds the mode it was
+            // issued against: closing the Aurelia does not stop anyone walking
+            // down it, and modelling it as if it did would make the lever look
+            // far worse than it is.
+            if drivable_only && closed.get(e.id as usize).copied().unwrap_or(false) {
                 continue;
             }
             let mid = midpoint(net.pos(node), net.pos(e.to));
