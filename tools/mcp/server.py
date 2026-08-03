@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Optional
@@ -70,9 +71,13 @@ def _post(path: str, body: dict) -> Any:
 
 @mcp.tool()
 def get_status() -> dict:
-    """Incident-wide readout: simulated clock, play state, speed, weather,
-    and household/people/unit counts by status. Call this first to see what
-    is going on before drilling into any one agent."""
+    """Incident-wide readout: which scenario is loaded (id/name/is_dev),
+    simulated clock, play state, speed, weather, fire health (burnt_ha,
+    active_front_cells, peak_fireline_kw_m), structure damage counts
+    (threatened/alight/destroyed), and household/people/unit counts by
+    status. Call this first to see what is going on before drilling into any
+    one agent, and again after load_scenario/set_profile_share/restart to
+    confirm the change actually took."""
     return _get("/status")
 
 
@@ -103,6 +108,12 @@ def get_agent_history(kind: str, id: Optional[int] = None) -> list:
 def list_households(status: Optional[str] = None, ordered: Optional[bool] = None) -> list:
     """The household roster: id, status, whether an evacuation order has
     reached them, their stated intent, household size and home position.
+    Also carries `subtype` (the authored profile driving this household's
+    decisions, id and name) and `decision` (that profile's most recent
+    action/priority/prep_scale/urgency) whenever a household behaviour
+    library is loaded -- both are null under the hand-written model. This is
+    how to check a set_profile_share/reload_behaviour_library call actually
+    changed what an agent does, not just which file it reads from.
     Optionally filtered by status (e.g. "preparing", "evacuated / safe",
     "defending") or by whether an order has been issued."""
     rows = _get("/agents/households")
@@ -116,8 +127,124 @@ def list_households(status: Optional[str] = None, ordered: Optional[bool] = None
 @mcp.tool()
 def list_units() -> list:
     """The suppression roster: every engine, hand crew and air tanker, with
-    its callsign, state, current task and position."""
+    its callsign, state, current task and position. Also carries `policy`
+    (which authored unit-safety profile governs it, id and name) whenever a
+    suppression-unit behaviour library is loaded."""
     return _get("/agents/units")
+
+
+@mcp.tool()
+def list_people() -> list:
+    """The separated-people roster: everyone who is not with their household
+    (out when the incident started, or separated since) and is therefore an
+    agent in their own right rather than part of a household's decision.
+    Roughly 400 of 1,577 people on the shipped scenario. id, which household
+    they belong to, status, whether they are currently away, and position.
+    Each also carries `subtype` (the authored profile driving them, if a
+    people-behaviour library is loaded) and `decision` (its most recent
+    action/priority/urgency), the same as list_households."""
+    return _get("/agents/people")
+
+
+# --- scenarios -------------------------------------------------------------
+
+
+@mcp.tool()
+def list_scenarios() -> dict:
+    """Every scenario the game can load: the four real incidents (spotorno,
+    mati, pedrogao, rhodes) and the synthetic "development laboratories"
+    built to exercise one ABM mechanism in isolation at a time -- abm_micro,
+    congestion_funnel, fire_extreme, fire_mild, mass_evacuation, policy_lab,
+    road_cutoff, suppression_access, town_scale. For each: id, name,
+    description, location, is_dev, and population counts. Works even before
+    any scenario has been launched, so it is a reasonable first call in a
+    fresh game process."""
+    return _get("/scenarios")
+
+
+@mcp.tool()
+def load_scenario(id: str, timeout_s: float = 20.0) -> dict:
+    """Switch the running incident to a different scenario, in the same game
+    process -- no need to kill and relaunch `cargo run`. Equivalent to the
+    in-game Scenario -> "Load scenario..." menu item, aimed automatically at
+    `id` (see list_scenarios for valid ids).
+
+    Blocks and polls get_status until the switch has actually completed --
+    the game needs to tear down the old scene, load the new scenario's
+    terrain/population/roads and rebuild it, which takes real wall-clock time
+    (roughly 0.2-1s locally) -- and returns the fresh status once it has, or
+    raises if it has not finished within timeout_s."""
+    _post("/control/load_scenario", {"id": id})
+    deadline = time.monotonic() + timeout_s
+    last: Optional[dict] = None
+    while time.monotonic() < deadline:
+        try:
+            status = _get("/status")
+        except RuntimeError:
+            status = None
+        if status is not None and status.get("scenario", {}).get("id") == id:
+            return status
+        last = status
+        time.sleep(0.2)
+    raise RuntimeError(
+        f"load_scenario({id!r}) did not complete within {timeout_s}s (last status: {last})"
+    )
+
+
+# --- behaviour -------------------------------------------------------------
+
+
+@mcp.tool()
+def list_behaviour_graphs() -> list:
+    """Every authored behaviour graph currently loaded, across all three
+    domains: id, name, which kind of agent it is for ("household", "person"
+    or "suppression_unit"), description and node count. Use with
+    list_behaviour_profiles to see which graph a given profile runs."""
+    return _get("/behaviour/graphs")
+
+
+@mcp.tool()
+def list_behaviour_profiles() -> list:
+    """Every authored agent subtype (profile) currently loaded: id, name,
+    description, which graph it runs, its domain, and the number that decides
+    whether it is in play -- `share` of the population for households and
+    separated people (0 means authored but not assigned to anyone), `enabled`
+    plus which unit kinds it governs for suppression units. Change one with
+    set_profile_share / set_profile_enabled."""
+    return _get("/behaviour/profiles")
+
+
+@mcp.tool()
+def set_profile_share(id: str, share: float) -> dict:
+    """Change what fraction of the population a household or separated-person
+    profile is assigned (before normalisation across all profiles sharing a
+    domain; see list_behaviour_profiles for current shares). Rebuilds the
+    agent model and restarts the incident on the same fire, weather, seed and
+    ignition list -- a controlled comparison, not a hot swap. Fails without
+    changing anything if this would leave a domain with no runnable policy
+    (e.g. zeroing the last household profile's share)."""
+    return _post("/control/set_profile", {"id": id, "share": share})
+
+
+@mcp.tool()
+def set_profile_enabled(id: str, enabled: bool) -> dict:
+    """Turn a suppression-unit profile on or off (households and separated
+    people use `share` for the same purpose -- see set_profile_share).
+    Restarts the incident the same way set_profile_share does."""
+    return _post("/control/set_profile", {"id": id, "enabled": enabled})
+
+
+@mcp.tool()
+def reload_behaviour_library(path: Optional[str] = None) -> dict:
+    """Re-read the behaviour library from disk and adopt it -- the composer's
+    "Reload" followed by "Apply and restart", with no editor window needed.
+    Use after hand-editing a file under data/behaviours/ or regenerating it
+    (`cargo test -p behavior -- --ignored write_shipped_library`). path
+    defaults to data/behaviours (or $SPOTORNO_DATA/behaviours). Lenient per
+    file: one malformed graph or profile is reported in `file_errors` rather
+    than failing the whole reload, unless every file fails."""
+    body = {"path": path} if path is not None else {}
+    return _post("/control/reload_behaviour", body)
 
 
 # --- control -------------------------------------------------------------
@@ -233,6 +360,84 @@ def assign_unit_task(
         if v is not None:
             body[k] = v
     return _post("/control/unit_task", body)
+
+
+@mcp.tool()
+def take_screenshot(
+    path: str,
+    focus_x: Optional[float] = None,
+    focus_y: Optional[float] = None,
+    distance_m: Optional[float] = None,
+    yaw_deg: Optional[float] = None,
+    pitch_deg: Optional[float] = None,
+    layer: Optional[str] = None,
+    wait_s: float = 1.0,
+) -> dict:
+    """Capture the current 3D view to a PNG on disk -- the only way to
+    actually *see* the incident (buildings burning or not, where the fire
+    front is, whether an overlay renders sensibly) without a human at the
+    keyboard. Read the resulting file with a file-reading tool afterwards;
+    this call only writes it.
+
+    focus_x/focus_y move the camera to look at a point in world metres, the
+    same scenario-frame coordinates every other tool here uses (see
+    place_ignition, close_road); distance_m is the orbit distance in metres;
+    yaw_deg/pitch_deg the orbit angle. layer switches the fire overlay --
+    one of "flames" (default), "intensity", "arrival", or "spread risk" (see
+    get_status -> fire for the numbers each one visualises). Any of these
+    left out keeps the camera/layer wherever it currently is.
+
+    path must be somewhere the game process itself can write to (it is a
+    native app, not sandboxed the way this MCP server might be). wait_s is
+    how long to sleep before returning, since the game takes a short settle
+    window plus a render-thread round trip to actually write the file --
+    raise it if the read that follows still 404s."""
+    body: dict = {"path": path}
+    for k, v in (
+        ("focus_x", focus_x),
+        ("focus_y", focus_y),
+        ("distance_m", distance_m),
+        ("yaw_deg", yaw_deg),
+        ("pitch_deg", pitch_deg),
+        ("layer", layer),
+    ):
+        if v is not None:
+            body[k] = v
+    result = _post("/control/screenshot", body)
+    time.sleep(wait_s)
+    return result
+
+
+@mcp.tool()
+def close_road(x: float, y: float, radius_m: float = 300.0, minutes: float = 30.0) -> dict:
+    """Close every drivable road link within radius_m of a world position
+    (metres, scenario frame) for `minutes` simulated minutes -- a commander's
+    order that binds civilian traffic (routing reroutes around it, or a
+    household abandons a car caught on it) and nothing else: it does not stop
+    the fire. Zero links closed is not an error and is worth checking -- it
+    means the point was over open ground, not on the road network."""
+    return _post(
+        "/control/close_road",
+        {"x": x, "y": y, "radius_m": radius_m, "minutes": minutes},
+    )
+
+
+@mcp.tool()
+def reopen_roads() -> dict:
+    """Lift every road closure currently in effect, immediately."""
+    return _post("/control/reopen_roads", {})
+
+
+@mcp.tool()
+def request_boat_lift(minutes: float = 30.0, rate_per_min: float = 3.5) -> dict:
+    """Request a maritime lift: capacity the road network does not have,
+    arriving late (see get_status -> incident.boat_lift_min for how long
+    until it is on station) and running for `minutes` simulated minutes at
+    `rate_per_min` people picked up per minute from the shore. Fails if a
+    lift is already active, or if this scenario's window has no shore havens
+    at all (see list_behaviour_profiles for the separated-person `to-the-water`
+    profile this pairs with)."""
+    return _post("/control/boat_lift", {"minutes": minutes, "rate_per_min": rate_per_min})
 
 
 if __name__ == "__main__":

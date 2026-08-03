@@ -454,6 +454,27 @@ fn a_trace_records_every_node_and_ranks_the_proposals() {
 }
 
 #[test]
+fn a_trace_records_the_parameters_a_block_actually_read() {
+    let g = CompiledGraph::compile(&default_graph(), &Overrides::new()).unwrap();
+    let obs = Observation::from(HouseholdObs {
+        intent: IntentValue::WaitAndSee,
+        ..HouseholdObs::default()
+    });
+    let (_, trace) = g.eval_traced(&obs);
+    let alarm = trace.nodes.iter().find(|n| n.type_id == "block.alarm").unwrap();
+    let spec = registry().get(alarm.type_id).unwrap();
+    let read: Vec<&str> = alarm
+        .params_read
+        .iter()
+        .map(|i| spec.params[*i as usize].name)
+        .collect();
+
+    assert_eq!(read, ["wait_and_see", "risk_relief", "spread"]);
+    assert!(!read.contains(&"leave_early"));
+    assert!(!read.contains(&"stay_defend"));
+}
+
+#[test]
 fn a_sweep_finds_the_threshold_it_was_pointed_at() {
     let g = CompiledGraph::compile(&default_graph(), &Overrides::new()).unwrap();
     let base = Observation::from(HouseholdObs {

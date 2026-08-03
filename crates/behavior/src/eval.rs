@@ -11,6 +11,7 @@
 //! Tracing is a separate entry point rather than a flag, so the hot path
 //! carries no branch for it and the test bench gets the full picture.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
@@ -79,6 +80,13 @@ pub struct NodeTrace {
     pub category: crate::node::Category,
     pub inputs: Vec<Vec<Value>>,
     pub outputs: Vec<Value>,
+    /// Parameter slots this node actually read while producing its outputs.
+    ///
+    /// A compound block can expose several alternatives but only consult one
+    /// of them for this agent (for example, one alarm threshold per plan).
+    /// Recording the reads lets the live editor identify the knobs that
+    /// mattered without guessing from the block's type.
+    pub params_read: Vec<u16>,
     /// Per input port, the `(node id, output port)` pairs feeding it.
     ///
     /// Carried on the trace rather than looked up in the graph so a slice can be
@@ -338,7 +346,13 @@ impl CompiledGraph {
             }
 
             let inputs = Inputs { slots: &s.slots, ports: n.spec.inputs };
-            let params = Params { values: &n.params };
+            // Only traced evaluations pay for parameter-read bookkeeping. The
+            // ordinary ABM path evaluates thousands of agents and stays a
+            // plain slice lookup.
+            let param_reads = trace.as_ref().map(|_| {
+                (0..n.params.len()).map(|_| Cell::new(false)).collect::<Vec<_>>()
+            });
+            let params = Params { values: &n.params, reads: param_reads.as_deref() };
             let out = &mut s.outputs[i];
             out.clear();
             (n.spec.eval)(&ctx, &params, &inputs, out);
@@ -364,6 +378,16 @@ impl CompiledGraph {
                     category: n.spec.category,
                     inputs: s.slots.clone(),
                     outputs: out.clone(),
+                    params_read: param_reads
+                        .as_ref()
+                        .map(|reads| {
+                            reads
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(i, read)| read.get().then_some(i as u16))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
                     // Compiled indices back to graph node ids: the trace is read
                     // against the editor's canvas, which knows nothing about
                     // topological order.

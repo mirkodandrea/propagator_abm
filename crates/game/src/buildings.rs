@@ -123,6 +123,14 @@ pub struct Buildings {
 #[derive(Resource, Default)]
 pub struct HoveredHousehold(pub Option<usize>);
 
+/// Incident-wide structure damage tally, from [`Buildings::damage_counts`].
+#[derive(Default, Clone, Copy)]
+pub struct DamageCounts {
+    pub threatened: usize,
+    pub alight: usize,
+    pub destroyed: usize,
+}
+
 pub fn spawn(
     mut commands: Commands,
     sim: Res<Sim>,
@@ -742,6 +750,27 @@ impl Buildings {
             }
         }
         None
+    }
+
+    /// How many drawable structures currently sit in each damage state --
+    /// the incident-wide version of `status_of`, for a status readout that
+    /// wants "how bad is it" rather than one building's own state. `destroyed`
+    /// in particular is not derivable from `fire::StructureExposure` alone:
+    /// it is the `alight_at_s` burn-down latch (see the module doc), so
+    /// counting it means reading this resource rather than the fire model.
+    pub fn damage_counts(&self) -> DamageCounts {
+        let mut counts = DamageCounts::default();
+        for chunk in &self.chunks {
+            for s in &chunk.structures {
+                match s.drawn {
+                    x if x == Damage::Threatened as u8 => counts.threatened += 1,
+                    x if x == Damage::Alight as u8 => counts.alight += 1,
+                    x if x == Damage::Destroyed as u8 => counts.destroyed += 1,
+                    _ => {}
+                }
+            }
+        }
+        counts
     }
 }
 

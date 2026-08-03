@@ -919,7 +919,10 @@ The **Live tab** is the other half of debugging, and it is the one that works on
 the real incident rather than a made-up one. Click an agent on the map — a
 household, a person, a unit — and the canvas starts showing what their behaviour
 is doing: every node's outputs on the box, every input value on its pin, and the
-nodes coloured by how they relate to the decision that was taken.
+nodes coloured by how they relate to the decision that was taken. Nodes on the
+current decision path have a bright outline, and currently relevant nodes list
+the effective parameters they actually read on that tick — not every knob the
+block happens to expose.
 
 The bottom **Live debugger** is the focused version of that view: current
 decision, proposals, every node's value and role, transport controls, and recent

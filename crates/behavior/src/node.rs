@@ -14,6 +14,7 @@
 //! else — no central list to update, and no way to add a node the palette does
 //! not know about.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
@@ -198,16 +199,30 @@ impl ParamValue {
 /// names once, so the hot path never does a map lookup.
 pub struct Params<'a> {
     pub(crate) values: &'a [ParamValue],
+    /// Slots read during a traced evaluation. Absent on the hot path, so live
+    /// debugging does not add bookkeeping to every agent's ordinary tick.
+    pub(crate) reads: Option<&'a [Cell<bool>]>,
 }
 
 impl<'a> Params<'a> {
+    fn mark_read(&self, i: usize) {
+        if let Some(reads) = self.reads {
+            if let Some(read) = reads.get(i) {
+                read.set(true);
+            }
+        }
+    }
+
     pub fn num(&self, i: usize) -> f32 {
+        self.mark_read(i);
         self.values.get(i).map(ParamValue::as_number).unwrap_or(0.0)
     }
     pub fn boolean(&self, i: usize) -> bool {
+        self.mark_read(i);
         self.values.get(i).map(ParamValue::as_bool).unwrap_or(false)
     }
     pub fn key(&self, i: usize) -> &str {
+        self.mark_read(i);
         self.values.get(i).map(ParamValue::as_str).unwrap_or("")
     }
     pub fn intent(&self, i: usize) -> IntentValue {

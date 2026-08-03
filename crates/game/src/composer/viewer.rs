@@ -157,6 +157,13 @@ impl LiveRole {
             LiveRole::Cold => 0.45,
         }
     }
+
+    /// Current-tick states. Both deserve their parameters on the canvas: the
+    /// active path explains what won, while a withheld proposal explains the
+    /// nearby rule that was checked and said no.
+    fn is_current(self) -> bool {
+        matches!(self, LiveRole::Active | LiveRole::Withheld)
+    }
 }
 
 impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
@@ -351,6 +358,76 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
         }
     }
 
+    fn has_footer(&mut self, node: &EditorNode) -> bool {
+        let Some(live) = self.live else { return false };
+        let Some(spec) = node.spec() else { return false };
+        live.role(node.id).is_current()
+            && !spec.params.is_empty()
+            && live
+                .trace
+                .node(node.id)
+                .is_some_and(|trace| !trace.params_read.is_empty())
+    }
+
+    fn show_footer(
+        &mut self,
+        node: NodeId,
+        _inputs: &[InPin],
+        _outputs: &[OutPin],
+        ui: &mut egui::Ui,
+        _scale: f32,
+        snarl: &mut Snarl<EditorNode>,
+    ) {
+        let Some(live) = self.live else { return };
+        let editor_node = &snarl[node];
+        let Some(spec) = editor_node.spec() else { return };
+        let Some(trace) = live.trace.node(editor_node.id) else { return };
+        let role = live.role(editor_node.id);
+
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("USED PARAMETERS")
+                    .small()
+                    .color(role.colour()),
+            );
+            for index in &trace.params_read {
+                let Some(param) = spec.params.get(*index as usize) else { continue };
+                let value = live
+                    .graph
+                    .param(editor_node.id, param.name)
+                    .unwrap_or_else(|| param.default_value());
+                parameter_badge(ui, role, param, &value);
+            }
+        });
+    }
+
+    fn final_node_rect(
+        &mut self,
+        node: NodeId,
+        ui_rect: egui::Rect,
+        _graph_rect: egui::Rect,
+        ui: &mut egui::Ui,
+        scale: f32,
+        snarl: &mut Snarl<EditorNode>,
+    ) {
+        let Some(live) = self.live else { return };
+        let id = snarl[node].id;
+        if live.role(id) != LiveRole::Active {
+            return;
+        }
+
+        // A full outline is deliberately stronger than the header swatch. It
+        // makes the current backward slice readable while zoomed out, where
+        // labels and parameter badges no longer are.
+        let winning = live.winner == Some(id);
+        let width = if winning { 3.5 } else { 2.25 } * scale.clamp(0.75, 1.5);
+        ui.painter().rect_stroke(
+            ui_rect.expand(2.0 * scale.clamp(0.75, 1.5)),
+            5.0 * scale,
+            egui::Stroke::new(width, LiveRole::Active.colour()),
+        );
+    }
+
     /// The rule that makes the canvas trustworthy.
     ///
     /// Delegated to `behavior` rather than duplicated: the editor and the
@@ -490,14 +567,26 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
 
         if !spec.params.is_empty() {
             ui.separator();
-            ui.small("Effective parameters");
-            for param in spec.params {
-                let value = snarl[node]
-                    .params
-                    .get(param.name)
-                    .cloned()
+            ui.small(if self.live.is_some() {
+                "Applied parameters · ● read this tick"
+            } else {
+                "Effective parameters"
+            });
+            let trace = self.live.and_then(|live| live.trace.node(id));
+            for (index, param) in spec.params.iter().enumerate() {
+                let value = self
+                    .live
+                    .and_then(|live| live.graph.param(id, param.name))
+                    .or_else(|| snarl[node].params.get(param.name).cloned())
                     .unwrap_or_else(|| param.default_value());
-                ui.small(format!("{} = {}", param.name, value.display()));
+                let text = format!("{} = {}", param.label, parameter_value(param, &value));
+                let read = trace.is_some_and(|trace| trace.params_read.contains(&(index as u16)));
+                if read {
+                    let role = self.live.map(|live| live.role(id)).unwrap_or(LiveRole::Active);
+                    ui.colored_label(role.colour(), format!("● {text}"));
+                } else {
+                    ui.weak(format!("  {text}"));
+                }
             }
         }
 
@@ -603,6 +692,57 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
             }
         }
     }
+}
+
+/// Compact, unit-aware parameter value for the canvas. The inspector keeps
+/// the full editing widget; this is a readout meant to survive a busy graph.
+fn parameter_value(spec: &behavior::ParamSpec, value: &ParamValue) -> String {
+    match (spec.kind, value) {
+        (behavior::ParamKind::Number { unit, .. }, ParamValue::Number(n)) => {
+            let mut number = format!("{n:.3}");
+            while number.contains('.') && number.ends_with('0') {
+                number.pop();
+            }
+            if number.ends_with('.') {
+                number.pop();
+            }
+            format!("{number}{unit}")
+        }
+        (behavior::ParamKind::Bool { .. }, ParamValue::Bool(value)) => {
+            if *value { "on".into() } else { "off".into() }
+        }
+        (behavior::ParamKind::Choice { .. }, ParamValue::Choice(value)) => super::pretty(value),
+        (behavior::ParamKind::Text { .. }, ParamValue::Text(value)) => value.clone(),
+        (_, value) => value.display(),
+    }
+}
+
+fn parameter_badge(
+    ui: &mut egui::Ui,
+    role: LiveRole,
+    spec: &behavior::ParamSpec,
+    value: &ParamValue,
+) {
+    let colour = role.colour();
+    egui::Frame::none()
+        .fill(colour.gamma_multiply(0.12))
+        .stroke(egui::Stroke::new(0.8, colour.gamma_multiply(0.8)))
+        .rounding(3.0)
+        .inner_margin(egui::Margin::symmetric(4.0, 2.0))
+        .show(ui, |ui| {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(format!(
+                        "{}  =  {}",
+                        spec.label,
+                        parameter_value(spec, value)
+                    ))
+                    .small(),
+                )
+                .wrap(false),
+            )
+            .on_hover_text(spec.doc);
+        });
 }
 
 /// Materialise a behavior graph in the canvas representation.

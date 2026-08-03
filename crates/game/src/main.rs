@@ -300,7 +300,7 @@ fn main() -> anyhow::Result<()> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         app.add_systems(Startup, api::setup);
-        app.add_systems(Update, api::serve);
+        app.add_systems(Update, (api::serve, api::take_pending_shot));
     }
 
     app.run();
