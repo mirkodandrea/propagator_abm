@@ -139,7 +139,7 @@ use identical row/col indexing. Access needs `AWS_PROFILE=return`.
 | `render_terrain.tif` | same, as GeoTIFF for inspection | `scenarios/spotorno/` |
 | `osm.json` | buildings, roads, water, in world metres — each building carries `address`/`locality` where the OSM bake could tell (`scripts/fetch_osm.py::assign_addresses`) | `scenarios/spotorno/` |
 | `population.json` | dwellings, households, people — each household carries the `address`/`locality` of the building it is in | `scenarios/spotorno/` |
-| `fuels_eu12.json` | the 12-class fuel table — **read by all scenarios** | `data/` (top level) |
+| `fuels_eu12.json` | the 12-class fuel table — **read by all scenarios**. Not a verbatim copy of upstream's: the three shrub classes carry `spotting`, see below | `data/` (top level) |
 | `osm_raw.json` | raw Overpass response (cache; delete to refetch) | `data/` (top level) |
 
 ## Source COGs
@@ -191,6 +191,21 @@ $PY scripts/bake_fuels.py                             # eu12 fuel table -> fuels
 `fuel.i32`, `dem.f64` and `fuels_eu12.json`, not the GeoTIFFs. Pulling a TIFF
 decoder into the Rust build just to read two fixed-size grids is not worth
 the dependency.
+
+### The fuel table diverges from CIMA's on one field
+
+`bake_fuels.py` reads
+`propagator_sim/example/pedrogao/fuels_eu12.yaml` and then applies
+`SPOTTING_OVERRIDES`: the three shrub classes (ids 7–9) get `spotting: true`
+and `prob_ign_by_embers: 0.4`, where both upstream eu12 tables flag ember
+generation on conifers alone. Shrub is the fuel that carries fire on every
+window here — 706 of the 1,226 cells that burnt on Spotorno under upstream's
+table, against 146 conifer — so with generation conifer-only the core's
+spotting model ran and produced nothing at all on two of the four real
+scenarios. It roughly doubles the two-hour burnt area and takes structure loss
+from 1 building to 33. **Do not resolve a diff here by re-copying the yaml**;
+the override lives in the script for exactly that reason. Rationale in
+`CLAUDE.md` finding 41, measurement in `crates/fire/tests/spotting.rs`.
 
 For Spotorno specifically, steps 2–5 re-run from the already-committed
 `data/spotorno_fuel.tif` / `spotorno_dem.tif` and the cached

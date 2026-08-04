@@ -445,12 +445,21 @@ measured against the core's 30-point moisture of extinction
 
 | Action | Coverage | Moisture added | Area vs. free-burning |
 |---|---|---|---|
-| 60 m cut line, 1.4 km, 300 m ahead | — | — | 734 of 1,226 cells (**−40%**) |
-| 8 Canadair loads over the same band | 0.56 L/m² | +17 pts | −8% |
-| 20 loads (more than two aircraft could deliver) | 1.40 L/m² | +42 pts | −34% |
+| 60 m cut line, 1.4 km, 300 m ahead | — | — | 1,645 of 1,936 cells (**−15%**) |
+| 8 Canadair loads over the same band | 0.56 L/m² | +17 pts | nothing measurable |
+| 20 loads (more than two aircraft could deliver) | 1.40 L/m² | +42 pts | −14% |
+
+Means of five seeds, not one run: `realizations = 1` is a single sample, and
+since the shrub fuel classes started throwing embers (`CLAUDE.md` finding 41)
+the same cut line reads anywhere between −7% and −40% depending on the seed.
+The pre-spotting figures were −24%, −5% and −27% on the same five seeds; the
+−40%/−8%/−34% this table used to carry were one draw of that spread.
 
 Water buys time; cut fuel holds ground. Which is the operationally correct answer,
-and it is what makes both unit types worth having.
+and it is what makes both unit types worth having — but note that a line 300 m
+ahead of this fire is now *inside its own ember shadow*: the median firebrand
+lands about 320 m downwind, and pushing the line further out helps less rather
+than more (`fire::spotting::line_offset_sweep`).
 
 ## Does it change the outcome?
 
@@ -459,14 +468,14 @@ and it is what makes both unit types worth having.
 
 ```
 2 h at seed 42, tramontana 35 km/h, 6% moisture
-  no suppression               49.0 ha
-  everything at one point      45.4 ha   (487 m line, 648 kL)
-  aircraft re-tasked every 5 min  38.7 ha   (491 m line, 648 kL)
+  no suppression               81.7 ha
+  everything at one point      64.9 ha   (180 m line, 648 kL)
+  aircraft re-tasked every 5 min  56.4 ha   (160 m line, 661 kL)
 ```
 
 The middle row is the intuitive plan and it wastes most of the water: the front
 passes the drop point and every load after that lands in the black. Re-reading the
-head of the fire off the map every few minutes is worth another 15% of the
+head of the fire off the map every few minutes is worth another 10% of the
 scenario for the same litres — which is the skill the feature is there to
 exercise.
 
@@ -616,12 +625,11 @@ Measured through the self-test, 15 minutes after a general order on an
 identical fire:
 
 ```
-  shipped hand-written model   576 households departed
-  shipped behaviour library    473
+  shipped hand-written model   476 households departed
+  shipped behaviour library    476
 ```
 
-The difference is the profiles' own preparation times (25 min for wait-and-see,
-35 for needs-assistance), not a disagreement about who should go.
+The two agree exactly, which is the transcription doing its job.
 
 # Where the numbers live
 

@@ -453,4 +453,24 @@ impl FireSim {
         let v = self.ignited_at[c.row * self.world.fire_cols + c.col];
         (v != i32::MIN).then_some(v)
     }
+
+    /// How many cells this fire lit by throwing an ember at them.
+    ///
+    /// The core's own tally, not a reconstruction: `abm::spot` answers the
+    /// different and more useful question of what a *resident* would call a
+    /// separate fire, which deliberately counts a second ignition somebody
+    /// lit by hand and does not distinguish provenance. This one is the
+    /// kernel's ground truth, and it exists so a test can tell "the ember
+    /// model did nothing" from "the detector saw nothing".
+    pub fn ember_ignited_cells(&self) -> usize {
+        self.sim
+            .get_spotting_receiving()
+            .map(|per_realization| {
+                per_realization
+                    .iter()
+                    .map(|g| g.as_slice().iter().filter(|v| **v != 0).count())
+                    .sum()
+            })
+            .unwrap_or(0)
+    }
 }

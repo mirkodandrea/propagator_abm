@@ -406,10 +406,20 @@ fn a_managed_population_is_warned_when_the_network_is_not() {
 /// A front growing into new ground is not a spot fire, and a second ignition two
 /// kilometres away is. The distinction is the whole value of the field: without
 /// it a new fire behind you reads exactly like the front creeping closer.
+///
+/// Run in **calm air**, which is the only way to hold the front to contiguous
+/// growth now that shrubs throw embers: the kernel's landing distance is
+/// proportional to wind speed, so at zero wind every ember falls inside its own
+/// cell and is discarded, and anything this test then sees is the detector's
+/// doing rather than the core's. In the shipped tramontana the same fire spots
+/// for real — [`the_shipped_fire_spots`] is that half.
 #[test]
 fn only_a_non_contiguous_ignition_counts_as_a_spot_fire() {
     let scn = Scenario::load(data_dir()).unwrap();
-    let mut fire = fire_for(&scn);
+    let calm = Weather { wind_speed_kmh: 0.0, ..Weather::default() };
+    let plan = fire::plan_ignition(&scn, calm.wind_dir_deg, 250.0);
+    let mut fire = FireSim::new(&scn, calm, 42).unwrap();
+    fire.ignite_patch(plan.centre, plan.radius_m, &scn).unwrap();
     let mut agents = Abm::new(&scn, 42).unwrap();
 
     run(&scn, &mut fire, &mut agents, 30, 10);
@@ -436,6 +446,30 @@ fn only_a_non_contiguous_ignition_counts_as_a_spot_fire() {
     let (d, age) = agents.spot_fires().nearest(spot.pos, agents.time_s());
     assert!(d < 200.0, "the spot fire is {d:.0} m from itself");
     assert!(age <= 6.0, "a fire lit five minutes ago reads as {age:.0} minutes old");
+}
+
+/// The shipped fire spots, and nobody has to light a second one for it to.
+///
+/// This is the assertion that the mechanism is *live* rather than merely
+/// present, and it is here because it was not for months: the eu12 table flags
+/// `spotting` on conifers alone, conifers are 3% of this window against 7%
+/// shrub, and over two hours `mati` and `pedrogao` produced no spot fire at
+/// all. `block.spot_fire` and the `reacts-to-events` profile were wired to
+/// something that could not happen — the same always-negative shape as houses
+/// never burning and wetting the flames. See `scripts/bake_fuels.py`, which
+/// carries the divergence from CIMA's table, and `fire/tests/spotting.rs`,
+/// which measures what it cost.
+#[test]
+fn the_shipped_fire_spots() {
+    let scn = Scenario::load(data_dir()).unwrap();
+    let mut fire = fire_for(&scn);
+    let mut agents = Abm::new(&scn, 42).unwrap();
+    run(&scn, &mut fire, &mut agents, 120, 10);
+    assert!(
+        !agents.spot_fires().is_empty(),
+        "two hours of a 35 km/h tramontana on Ligurian macchia and not one \
+         detached fire: check that the shrub classes still carry `spotting`"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -622,16 +656,6 @@ fn haven_report() {
     }
 }
 
-fn centroid(ps: impl Iterator<Item = Pos>) -> Pos {
-    let (mut x, mut y, mut n) = (0.0, 0.0, 0.0);
-    for p in ps {
-        x += p.x;
-        y += p.y;
-        n += 1.0;
-    }
-    Pos { x: x / n, y: y / n }
-}
-
 /// The burnable cell with the most of `homes` within `r` metres of it — the
 /// place to light a fire that has to reach a *population* rather than a house.
 fn most_surrounded_burnable(scn: &Scenario, homes: &[Pos], r: f32) -> Option<Pos> {
@@ -657,25 +681,9 @@ fn most_surrounded_burnable(scn: &Scenario, homes: &[Pos], r: f32) -> Option<Pos
     best.map(|(_, q)| q)
 }
 
-/// The nearest cell to `p` that will actually carry a fire.
-fn nearest_burnable(scn: &Scenario, p: Pos) -> Option<Pos> {
-    let w = scn.world;
-    let mut best: Option<(f32, Pos)> = None;
-    for row in (0..w.fire_rows).step_by(2) {
-        for col in (0..w.fire_cols).step_by(2) {
-            let c = Cell { row, col };
-            if !scn.is_burnable(c) {
-                continue;
-            }
-            let q = w.centre_of(c);
-            let d = (q.x - p.x).powi(2) + (q.y - p.y).powi(2);
-            if best.map(|(bd, _)| d < bd).unwrap_or(true) {
-                best = Some((d, q));
-            }
-        }
-    }
-    best.map(|(_, q)| q)
-}
+/// Radius, in 20 m cells, of the patch [`burnable_away_from`] promises is solid
+/// fuel. Matches the 200 m the one caller lights.
+const PATCH_CELLS: i64 = 10;
 
 /// A patch of burnable fuel at least `min_m` from `p`, with enough of it around
 /// to establish — single-cell ignitions fizzle about a fifth of the time
@@ -691,9 +699,13 @@ fn burnable_away_from(scn: &Scenario, p: Pos, min_m: f32) -> Option<Pos> {
             if !scn.is_burnable(c) {
                 continue;
             }
-            // A neighbourhood of fuel, not one lucky cell.
-            let solid = (-3i64..=3).all(|dr| {
-                (-3i64..=3).all(|dc| {
+            // A neighbourhood of fuel, not one lucky cell — and one that
+            // covers the whole patch the caller is about to light, not just
+            // its middle. A 200 m patch straddling a road lights as *two*
+            // detached blobs, which is a correct reading of a fuel break and
+            // an incorrect reading of one ignition.
+            let solid = (-PATCH_CELLS..=PATCH_CELLS).all(|dr| {
+                (-PATCH_CELLS..=PATCH_CELLS).all(|dc| {
                     let (r, cc) = (row as i64 + dr, col as i64 + dc);
                     r >= 0
                         && cc >= 0

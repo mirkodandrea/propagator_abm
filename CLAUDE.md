@@ -132,7 +132,8 @@ $PY scripts/build_render_terrain.py --scenario $ID --factor 4 --smooth 1.0
 $PY scripts/generate_population.py --scenario $ID --people 1500 --seed 42
 $PY scripts/bake_fire_rasters.py --scenario $ID       # GeoTIFF -> raw arrays for Rust
 $PY scripts/write_scenario_json.py --scenario $ID     # scenario.json + data/scenarios.json, from the actual bake
-$PY scripts/bake_fuels.py                             # eu12 fuel table -> JSON (shared, run once)
+$PY scripts/bake_fuels.py                             # eu12 fuel table -> JSON (shared, run once;
+                                                      # forks upstream on shrub spotting, finding 41)
 ```
 
 For Spotorno, every step after `clip_cogs.py` reruns from the committed flat
@@ -267,10 +268,19 @@ minute, and stops spread past its 30-point moisture of extinction. The original
 aircraft that changed nothing. Fine fuel load is ~1 kg/m² and moisture is water
 mass over dry fuel mass, so with ~⅓ of a drop reaching the fine fuel, 1 L/m² is
 ~30 points (`MOISTURE_POINTS_PER_LITRE`). Measured on the shipped scenario over
-2 h: a 60 m cut line 300 m ahead of the front saves 40% of the area, a light
-drop (0.56 L/m², +17 pts) 8%, a saturating one (+42 pts) 34%. Water buys time,
-cut fuel holds ground — which is the operationally correct answer, and it is
-what makes both unit types worth having.
+2 h, mean of five seeds: a 60 m cut line 300 m ahead of the front saves **15%**
+of the area and a saturating drop (+42 pts) **14%**, while a light one
+(0.56 L/m², +17 pts) saves nothing measurable. Water buys time, cut fuel holds
+ground — which is the operationally correct answer, and it is what makes both
+unit types worth having.
+
+Three of those four numbers moved, and how is finding 41: the line saved 24%
+and the saturating drop 27% before the shrub classes started throwing embers,
+and the light drop's "8%" was one draw of a distribution whose mean was 5% and
+whose spread covered it. These are five-seed means now for the reason finding 3
+gives — `realizations = 1` is one sample, and spotting widened it enough that
+the same intervention read anywhere between 60% and 93% of the free-burning
+area depending on the seed.
 
 **16. Suppression works on the fuel ahead of the front, never on the flames.**
 The kernel never un-lights a cell — burn-out is `fire`'s own ageing layer — so
@@ -700,6 +710,49 @@ keeping: 2 s through 10 s now agree exactly, where before 4 s was 47
 households behind 6 s. **A step-size invariance check has to sweep below the
 model's own internal cadence, not just above it.**
 
+**41. Somebody else's calibrated table is still a claim about your window.**
+`FireSim::new` has set `do_spotting = true` since the beginning, and the core's
+ember model is a real one — Poisson emission per burning cell, a landing
+distance scaled by wind and fireline intensity, a delayed ignition at the far
+end. It could not fire. Generation is gated on `fuels.spotting[from]`, and both
+eu12 tables in `propagator_sim` flag that on **conifers alone**; conifers are
+3.2% of the Spotorno window against 7.2% shrub, and of the cells that actually
+burnt in two hours 706 were shrub and 146 conifer. On `mati` it was 712 shrub
+against **3** conifer. Two of the four real scenarios produced **zero** spot
+fires over a full incident — so `block.spot_fire`, the `reacts-to-events`
+profile and the whole "a new fire starts behind you" mechanism were wired to
+something that could not happen, which is the same always-negative as houses
+never burning (finding 2) and wetting the flames (finding 16), arriving this
+time through a data file nobody had reason to doubt.
+
+The asymmetry is what gives it away. *Receiving* is not gated the same way:
+the landing test is `P_C0 * (1 + prob_ign_by_embers)`, so a zero there is the
+base probability rather than a veto and any burnable cell can catch an ember.
+The table therefore said Mediterranean maquis is downwind-only — it can be lit
+by a firebrand and can never throw one — which is not a defensible statement
+about the fuel that carries these fires. `scripts/bake_fuels.py` now overrides
+ids 7–9 to `spotting: true, prob_ign_by_embers: 0.4`, in the bake rather than
+in the JSON, because a hand-edited `data/fuels_eu12.json` is silently reverted
+by the next run of the script that generates it (finding 39a, one file over).
+
+It is a fork of CIMA's table and it moved everything: **49.0 → 81.7 ha** on the
+shipped two-hour scenario, **38.8 → 149.9 ha** on `mati`, and structure loss
+from 1 building to 33. Nothing about the ember *range* was touched and nothing
+needed to be — `d_median ∝ U · I^(1/3)` already gives a shrub run a shorter
+throw than a crowning conifer one through its lower intensity. The evidence is
+`crates/fire/tests/spotting.rs`, which asserts the shrub classes still carry
+the flag (a re-copy from upstream is a plausible, silent regression), asserts
+that calm air still cannot spot, and sweeps what a cut line is now worth.
+
+The operational consequence is the one worth knowing: **a line 300 m ahead of
+this fire sits inside its own ember shadow.** The median firebrand at 35 km/h
+over a 60 MW/m front lands about 320 m downwind, so the line gets jumped, and
+moving it further out is worse rather than better — at 800 m the fire that
+arrives is not the one the line was cut against and the flanks have gone round
+it. There is no offset that is both beyond the embers and in front of the fire,
+which is a real thing about wind-driven fire in maquis rather than a bug, and
+it is now the shape of the suppression game.
+
 ---
 
 ## Current state
@@ -796,7 +849,7 @@ Measured, 2 h, general order at T+0 (`abm --ignored traffic_report`):
 ```
                     households   busiest link   queued   median edge
   spotorno                 750       2 cars         16       8 m
-  town_scale               400       4 cars          0     633 m
+  town_scale               400       5 cars          0     633 m
   mass_evacuation        1,667      13 cars          0     540 m
   congestion_funnel      1,000      73 cars        118     320 m
 ```
@@ -827,15 +880,17 @@ number in this file:
 
 ```
         aware  prep  moving  safe  defend  cutoff  dead
- 30 min    42   146      16     70      51       0     0
- 60 min    42     0      27    205      51       0     0
-120 min    27     8       2    240      48       0     0
+ 30 min    42   146      17     69      51       0     0
+ 60 min    38     0      27    209      51       0     0
+120 min    26     0       2    252      44       1     0
 ```
 
-Median time from departure to refuge: 85 min. Identical to within one
-household at every timestep before and after the traffic model — checked
-against a worktree at the previous commit, because "it should not have changed
-much" is not a measurement.
+Median time from departure to refuge: 84 min. Re-measured after finding 41 —
+before shrub spotting this read 51 defending and 240 safe at two hours, and the
+`cutoff` column was zero everywhere. **One household's route is now cut**,
+which is the first time anything in this model has been trapped, and seven of
+the defenders left rather than hold. That column staying at 0 for months is
+what the first open question below is about.
 
 **What the incident can break, and where people go when it does**
 (`abm::spot`, `abm::comms`, `abm::haven`, `abm::orders`): five mechanisms that
@@ -895,20 +950,31 @@ flying the aircraft properly rather than parking them:
 
 ```
 2 h, seed 42, tramontana 35 km/h, 6% moisture
-  no suppression               49.0 ha
-  everything at one point      45.4 ha   (487 m line, 648 kL)
-  aircraft re-tasked every 5 min  38.7 ha   (491 m line, 648 kL)
+  no suppression               81.7 ha
+  everything at one point      64.9 ha   (180 m line, 648 kL)
+  aircraft re-tasked every 5 min  56.4 ha   (160 m line, 661 kL)
 ```
+
+The line lengths in that table are a third of what they were before finding 41
+and it is not a suppression change: the crews are pulling themselves back. A
+fire throwing embers 300 m puts more of the ground a crew was cutting on over
+`WORK_LIMIT`, and a unit that withdraws stops producing line. Whether hand
+crews are worth having at all under spotting is now a live question rather than
+the rhetorical one it used to be.
 
 **The shipped scenario** (seed 42, tramontana 35 km/h from N, 6% moisture,
 ignition at cell (153, 246), r=250 m):
 
 ```
-  15 min   23.4 ha   front 586   FLI 80,908 kW/m   threatened  27
-  90 min   38.7 ha   front 103   FLI 17,047        threatened  18
- 105 min   42.8 ha   front 128   FLI 66,596        threatened 107
- 120 min   49.0 ha   front 200   FLI 66,596        threatened 137
+  15 min   23.4 ha   front 586   FLI 68,140 kW/m   threatened  71   lost   0
+  90 min   53.8 ha   front 348   FLI 41,798        threatened 142   lost   1
+ 105 min   67.4 ha   front 442   FLI 54,961        threatened 142   lost  18
+ 120 min   81.7 ha   front 472   FLI 28,972        threatened 132   lost  33
 ```
+
+166 of 750 households end the incident with some accumulated damage. Both of
+those figures were 1 and a handful before shrub spotting, which is what closed
+the "structure loss is too rare to see in play" question below.
 
 **The other three real scenarios open with their own measured conditions**
 (`crates/game/src/sim.rs::opening_conditions`, finding 38), not Spotorno's
@@ -917,10 +983,15 @@ swept per place in `crates/fire/tests/real_scenario_ignitions.rs`:
 
 ```
                      wind          speed   moisture  radius   peak threatened  alight (2h)
-  mati               293° (WNW)    45 km/h   5%        225 m       56              12
-  pedrogao           315° (NW)     45 km/h   5%        150 m      366             103
-  rhodes             315° (NW)     30 km/h   6%        200 m      102              22
+  mati               293° (WNW)    45 km/h   5%        225 m       56              20
+  pedrogao           315° (NW)     45 km/h   5%        150 m      385             162
+  rhodes             315° (NW)     30 km/h   6%        200 m      102              30
 ```
+
+Those radii were swept before finding 41 and have not been re-picked against
+it. They still look like the right trade-off on the re-run sweep, but the
+sweep is much noisier now — `mati` burns 34.5 ha at r=150 and 149.9 ha at
+r=225 — and one seed per radius is no longer enough to choose on.
 
 **Agent Behaviour Composer** (`crates/behavior`, `crates/game/src/composer/`):
 a node editor for the agent decision layers, so the behavioural assumptions can
@@ -1105,14 +1176,14 @@ live there too.
 the self-test, 15 minutes after a general order on an identical fire:
 
 ```
-  shipped hand-written model   473 households departed
-  shipped behaviour library    473          (same fire, same order, same seed)
+  shipped hand-written model   476 households departed
+  shipped behaviour library    476          (same fire, same order, same seed)
 ```
 
-The two agree exactly, which is the transcription doing its job. This block
-read 576 against 473 for some time and both halves of that were stale: the
-self-test at the previous commit reports 473/473 as well, so nothing about the
-traffic queue moved it and the discrepancy was never real.
+The two agree exactly, which is the transcription doing its job. Both halves
+moved together from 473 when the shrub classes started throwing embers
+(finding 41), which is the only way that pair is allowed to move: the number
+is a property of the fire, and the *agreement* is the property being tested.
 
 And the unit policy's first interesting knob, measured on an engine attacking
 300 m downwind for 25 minutes (`refill_threshold_report`):
@@ -1367,15 +1438,19 @@ because it is what gets you *out* of a state.
 
 ## Open questions
 
-- **Nobody is ever caught, so half the civilian model cannot be measured.**
-  Threat at a house peaks near 0.3 over two hours, no structure ever ignites and
-  no route is ever cut, on any of the four real scenarios — so every branch
-  downstream of "the fire is on the property" is nearly inert, including the
-  `evacuate_now` and `shelter` branches that have shipped for months. Whether
-  making for open ground beats sheltering in the house is therefore unmeasured
-  and the test that exercises it has to lower `block.fire_at_the_door`'s own
-  threshold to construct the situation. This is the same root as the structure
-  loss question below and it is the biggest one in the model.
+- **Almost nobody is ever caught, so half the civilian model still cannot be
+  measured — but it is no longer nobody.** Finding 41 moved this: 33 structures
+  are alight at two hours where one was, 166 households take some damage, and
+  one household's route is cut, which is one more than in the entire history of
+  this model. Every branch downstream of "the fire is on the property" is still
+  nearly inert at a sample size of one, so whether making for open ground beats
+  sheltering in the house remains unmeasured and
+  `the_last_resort_profile_sends_people_to_open_ground` still has to construct
+  its own situation — it lights the fire *in the town* now rather than at the
+  nearest burnable cell, because the old version passed on one household out of
+  750 and any change to the fire's draw flipped it. The remaining question is
+  whether the shipped calibration should produce enough of this to measure, or
+  whether that is a different scenario.
 - **A boat lift currently costs six lives and saves none** on the two windows
   that have a shore, because those people were reaching a land refuge anyway.
   That is the honest answer for Spotorno and `rhodes` at 750 households and not
@@ -1386,20 +1461,26 @@ because it is what gets you *out* of a state.
   express reaching it. A `places.py` edit and a pipeline re-run.
 - A haven is a point, not a capacity. Two hundred people at one car park is two
   hundred people at one car park, and nothing says when that stops being safe.
-- Structure loss is rare at the current tuning (1 building at 250 m start, 31
-  at 500 m) — the front passes too quickly to accumulate ignition. Needs
-  tuning if structure loss should be live pressure rather than a rare event.
+- Structure loss stopped being rare when shrubs started throwing embers: 33
+  buildings alight at two hours on the 250 m start, against 1 before, and 162
+  on `pedrogao`. The question inverts — nothing has checked whether *that* is
+  the right number, and 162 of 750 households in two hours is a catastrophe
+  rather than an initial attack. It matches what Pedrógão Grande actually was,
+  which is either the point or a coincidence, and nobody has looked.
 - Ember reach saturates at its 2,500 m cap much of the time; that cap is doing
   more work than it should.
 - At `max` speed the per-frame step cap (30 simulated seconds) will bind on a
   large fire, so achieved speed will fall below requested. Honest fix is
   displaying both, not raising the cap.
-- Structure loss being rare means the building damage states (alight, charred)
-  are almost never seen in play. Worth checking they look right before tuning
-  the fire to produce more of them.
+- The building damage states (alight, charred) are now reached by 33 buildings
+  in a shipped two-hour run rather than one, and **nobody has looked at them on
+  screen since**. They were written against a case that essentially never
+  happened; the first thing to do about finding 41 in the renderer is take a
+  screenshot at T+120 and see whether a burning town reads.
 - 135 households intend to stay and defend and, at the current tuning, mostly
-  never leave — the fire does not reach them. That is defensible, but it means
-  the most interesting civilian behaviour in the model is currently inert.
+  never leave — though seven of them now do, which is the first evidence the
+  branch works on the shipped run rather than only in a constructed test. The
+  most interesting civilian behaviour in the model is still nearly inert.
 - **Traffic is a queue, not car-following.** Vehicles are individual and they
   queue nose to tail, but they have no acceleration profile: a car joining the
   back of a line goes from road speed to stopped within one movement sub-step
@@ -1437,7 +1518,11 @@ because it is what gets you *out* of a state.
   published rate and the honest answer, but it means the crews' role is holding a
   short piece of *existing* break rather than cutting new line. Worth measuring
   whether tasking them onto road-adjacent alignments (widening what is already
-  there) makes them matter.
+  there) makes them matter. Finding 41 sharpened this twice over: the crews now
+  produce 180 m rather than 487 m in the same scripted attack because more of
+  the ground goes over `WORK_LIMIT` and they withdraw, and a line 300 m ahead
+  of the front is inside the ember shadow anyway. "Is a hand crew worth having
+  under spotting" is now a real question with a plausible answer of no.
 - Nothing models crew fatigue, shift length, or the water actually running out
   at the hydrant. Engines can shuttle indefinitely.
 - The engine's four-cell work footprint is what makes its tank matter (see

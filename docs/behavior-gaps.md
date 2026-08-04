@@ -185,6 +185,17 @@ and `block.person_spot_fire` are the two assumptions. What it deliberately does
 criterion, so a second ignition the player lit counts too, which is what a
 resident would see.
 
+**And it could not fire, for months after that was written.** The core models
+spotting and the detector reads it, but *generation* is gated on the fuel
+table's `spotting` flag, which upstream sets on conifers alone — 3% of the
+Spotorno window, 0.3% of what burnt on `mati`. Measured over two hours:
+`mati` and `pedrogao`, the two windows this whole document is about, produced
+**zero** spot fires. Both halves were built correctly and the mechanism was
+inert because of a data file. `scripts/bake_fuels.py` now flags the shrub
+classes too; see `CLAUDE.md` finding 41. The lesson is the one this section is
+an instance of: a mechanism is not present until something asserts it fires on
+the scenario it was built for.
+
 ### 3. No lever to close a road to civilian traffic
 
 Investigators found police failed to close the N236 in time at Pedrógão
