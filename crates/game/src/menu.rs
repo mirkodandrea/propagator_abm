@@ -187,7 +187,10 @@ pub fn menubar(
                 let coastal = sim.agents.havens.iter().any(|h| h.is_water());
                 let label = match boats {
                     Some(b) if b.on_station(sim.agents.time_s()) => "Boats on station".to_string(),
-                    Some(b) => format!("Boats inbound — {:.0} min", b.minutes_out(sim.agents.time_s())),
+                    Some(b) => format!(
+                        "Boats inbound — {:.0} min",
+                        b.minutes_out(sim.agents.time_s())
+                    ),
                     None => "Request a boat lift at the shore".to_string(),
                 };
                 let row = ui
@@ -405,17 +408,29 @@ pub fn menubar(
             // one place that is always visible whatever else is collapsed.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(4.0);
+                ui.menu_button(speed_label(speed), |ui| {
+                    ui.label("Simulation speed");
+                    let mut custom_speed = speed;
+                    if ui
+                        .add(
+                            egui::Slider::new(&mut custom_speed, MIN_SPEED..=MAX_SPEED)
+                                .logarithmic(true)
+                                .suffix("x"),
+                        )
+                        .changed()
+                    {
+                        a(Action::Speed(custom_speed), &mut act);
+                    }
+                    ui.separator();
+                    for (value, label) in PRESETS {
+                        if ui.selectable_label(near(speed, value), label).clicked() {
+                            a(Action::Speed(value), &mut act);
+                            ui.close_menu();
+                        }
+                    }
+                });
                 if ui
-                    .selectable_label(false, speed_label(speed))
-                    .on_hover_text("Time acceleration — [ and ] step it")
-                    .clicked()
-                {
-                    // Cycling the presets is the fast gesture; the full
-                    // logarithmic slider lives in Simulation ▸ Speed.
-                    a(Action::Speed(next_preset(speed)), &mut act);
-                }
-                if ui
-                    .button("⏭")
+                    .button("Step")
                     .on_hover_text(
                         "Step one decision (.) — every agent decides exactly once, paused \
                          or not",
@@ -425,7 +440,7 @@ pub fn menubar(
                     a(Action::Step, &mut act);
                 }
                 if ui
-                    .button(if playing { "⏸" } else { "▶" })
+                    .button(if playing { "Pause" } else { "Play" })
                     .on_hover_text(if playing {
                         "Pause (Space)"
                     } else {
@@ -489,9 +504,37 @@ pub fn menubar(
             {
                 a(Action::Overview, &mut act);
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.weak("/ find entity · ? shortcuts");
-            });
+        });
+    });
+
+    egui::TopBottomPanel::bottom("workspace_navigation").show(ctx, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            let panels = &mut *panels;
+            for (label, placement) in [
+                ("Response controls", &mut panels.dock),
+                ("Entities", &mut panels.inspector),
+            ] {
+                if ui.selectable_label(placement.visible(), label).clicked() {
+                    *placement = if placement.visible() {
+                        PanelPlacement::Hidden
+                    } else {
+                        PanelPlacement::Docked
+                    };
+                }
+            }
+            ui.separator();
+            for tab in BottomTab::ALL {
+                let active = panels.incident.visible() && panels.bottom_tab == tab;
+                if ui.selectable_label(active, tab.label()).clicked() {
+                    if active {
+                        panels.incident = PanelPlacement::Hidden;
+                        composer.open = false;
+                        interview.open = false;
+                    } else {
+                        a(Action::Bottom(tab), &mut act);
+                    }
+                }
+            }
         });
     });
 
@@ -527,10 +570,10 @@ pub fn menubar(
                 info!("general evacuation ordered: {n} households");
             }
             Action::RequestBoats => {
-                match sim.agents.request_boat_lift(
-                    abm::orders::LIFT_DELAY_S,
-                    abm::orders::LIFT_RATE_PER_MIN,
-                ) {
+                match sim
+                    .agents
+                    .request_boat_lift(abm::orders::LIFT_DELAY_S, abm::orders::LIFT_RATE_PER_MIN)
+                {
                     Ok(()) => info!(
                         "boat lift requested: on station in {:.0} min",
                         abm::orders::LIFT_DELAY_S / 60.0
@@ -707,15 +750,6 @@ fn speed_label(speed: f32) -> String {
     } else {
         format!("{speed:.0}x")
     }
-}
-
-/// The next preset above the current speed, wrapping at the top.
-fn next_preset(speed: f32) -> f32 {
-    PRESETS
-        .iter()
-        .map(|(v, _)| *v)
-        .find(|v| *v > speed + 0.5)
-        .unwrap_or(PRESETS[0].0)
 }
 
 /// What an armed left-click will do, for the status strip.

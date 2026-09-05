@@ -429,41 +429,44 @@ pub fn units_body(
     let mut recall: Option<usize> = None;
     let mut show_inspector = false;
 
-    crate::ui::section(ui, "Effort");
-    egui::Grid::new("supp").num_columns(2).show(ui, |ui| {
-        ui.label("Working");
-        ui.label(format!("{} of {}", stats.working, sim.crews.units.len()));
-        ui.end_row();
-        ui.label("Water used");
-        ui.label(format!(
-            "{:.1} kL · {} drops",
-            stats.water_l / 1000.0,
-            stats.drops
-        ));
-        ui.end_row();
-        ui.label("Line cut");
-        ui.label(format!("{:.0} m", stats.line_m));
-        ui.end_row();
-        if stats.lost > 0 {
-            ui.colored_label(egui::Color32::from_rgb(255, 90, 70), "Units lost");
-            ui.colored_label(
-                egui::Color32::from_rgb(255, 90, 70),
-                format!("{}", stats.lost),
-            );
+    ui.collapsing("Response statistics", |ui| {
+        crate::ui::section(ui, "Effort");
+        egui::Grid::new("supp").num_columns(2).show(ui, |ui| {
+            ui.label("Working");
+            ui.label(format!("{} of {}", stats.working, sim.crews.units.len()));
             ui.end_row();
-        }
+            ui.label("Water used");
+            ui.label(format!(
+                "{:.1} kL · {} drops",
+                stats.water_l / 1000.0,
+                stats.drops
+            ));
+            ui.end_row();
+            ui.label("Line cut");
+            ui.label(format!("{:.0} m", stats.line_m));
+            ui.end_row();
+            if stats.lost > 0 {
+                ui.colored_label(egui::Color32::from_rgb(255, 90, 70), "Units lost");
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 90, 70),
+                    format!("{}", stats.lost),
+                );
+                ui.end_row();
+            }
+        });
     });
 
     ui.add_space(8.0);
     crate::ui::section(ui, "Roster");
+    egui::ScrollArea::vertical().id_source("crew_roster").max_height(210.0).show(ui, |ui| {
     for u in &sim.crews.units {
         let selected = tool.selected == Some(u.id);
         let c = crate::units::colour(u.kind, u.state);
         let srgb = c.to_srgba();
         let colour = egui::Color32::from_rgb(
-            (srgb.red * 255.0) as u8,
-            (srgb.green * 255.0) as u8,
-            (srgb.blue * 255.0) as u8,
+            (srgb.red * 255.0).max(130.0) as u8,
+            (srgb.green * 255.0).max(130.0) as u8,
+            (srgb.blue * 255.0).max(130.0) as u8,
         );
         let mut text =
             egui::RichText::new(format!("{}  —  {}", u.callsign, status_line(&sim, u.id)))
@@ -520,6 +523,8 @@ pub fn units_body(
             );
         }
     }
+
+    });
 
     ui.add_space(8.0);
     crate::ui::section(ui, "Orders");

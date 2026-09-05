@@ -55,9 +55,8 @@ impl UiFocus {
     }
 }
 
-/// State for the short, player-facing introduction. It opens with the
-/// scenario so a first-time player understands the role before unpausing,
-/// then remains one click away from the Incident panel.
+/// The full bilingual guide, available from Help. A compact quick start
+/// lives in the response panel so onboarding does not obscure the map.
 #[derive(Resource)]
 pub struct HelpUi {
     pub open: bool,
@@ -74,14 +73,8 @@ pub enum HelpLanguage {
 impl Default for HelpUi {
     fn default() -> Self {
         Self {
-            // Open for a player, shut for a script. An unattended run — a
-            // capture, the self-test, an autoplay demo — has nobody to dismiss
-            // it, and a modal window across the middle of every screenshot is
-            // the one thing that makes the captures useless for reviewing the
-            // thing they were taken to review.
-            open: ["SPOTORNO_AUTOPLAY", "SPOTORNO_SHOT", "SPOTORNO_SELFTEST"]
-                .iter()
-                .all(|k| std::env::var(k).is_err()),
+            // The inline quick start introduces the workflow without covering the map.
+            open: false,
             shortcuts_open: false,
             language: HelpLanguage::English,
         }
@@ -118,7 +111,7 @@ impl BottomTab {
 
     pub fn label(self) -> &'static str {
         match self {
-            BottomTab::Incident => "Incident view",
+            BottomTab::Incident => "Incident report",
             BottomTab::Chat => "Chat",
             BottomTab::Debug => "Live debugger",
             BottomTab::Behaviour => "Behavior editor",
@@ -152,14 +145,22 @@ pub struct PanelState {
     /// Fixed-width right entity navigator and detail.
     pub inspector: PanelPlacement,
     pub bottom_tab: BottomTab,
+    pub command_tab: DockTab,
 }
 
 impl Default for PanelState {
     fn default() -> Self {
         PanelState {
-            incident: PanelPlacement::Docked,
+            incident: if std::env::var("SPOTORNO_COMPOSER").is_ok()
+                || std::env::var("SPOTORNO_DEBUG").is_ok()
+            {
+                PanelPlacement::Docked
+            } else {
+                PanelPlacement::Hidden
+            },
             dock: PanelPlacement::Docked,
-            inspector: PanelPlacement::Docked,
+            inspector: PanelPlacement::Hidden,
+            command_tab: DockTab::Units,
             bottom_tab: if std::env::var("SPOTORNO_COMPOSER").is_ok() {
                 BottomTab::Behaviour
             } else if std::env::var("SPOTORNO_DEBUG").is_ok() {
@@ -175,7 +176,10 @@ impl PanelState {
     /// Bring the surface that owns an operational destination back on screen.
     pub fn focus_tab(&mut self, tab: DockTab) {
         match tab {
-            DockTab::Fire | DockTab::Units => self.dock = PanelPlacement::Docked,
+            DockTab::Fire | DockTab::Units => {
+                self.dock = PanelPlacement::Docked;
+                self.command_tab = tab;
+            }
             DockTab::Entities => self.inspector = PanelPlacement::Docked,
         }
     }
@@ -190,9 +194,10 @@ impl PanelState {
     }
 
     pub fn reset_layout(&mut self) {
-        self.incident = PanelPlacement::Docked;
+        self.incident = PanelPlacement::Hidden;
         self.dock = PanelPlacement::Docked;
-        self.inspector = PanelPlacement::Docked;
+        self.inspector = PanelPlacement::Hidden;
+        self.command_tab = DockTab::Units;
         self.bottom_tab = BottomTab::Incident;
     }
 }
@@ -221,7 +226,7 @@ pub fn panel(
     let scenario_name = sim.scenario.metadata.name.clone();
     let is_dev = sim.scenario.is_dev();
     let mut order = None;
-    let tab = panels.bottom_tab;
+    let mut tab = panels.bottom_tab;
     let available = ctx.available_rect().height();
     let height = match tab {
         BottomTab::Incident => 260.0,
@@ -261,9 +266,14 @@ pub fn panel(
             });
             ui.separator();
 
+            tab = panels.bottom_tab;
             match tab {
                 BottomTab::Incident => {
-                    order = incident_body(ui, &sim, *layer);
+                    egui::ScrollArea::vertical()
+                        .id_source("incident_report_scroll")
+                        .show(ui, |ui| {
+                            order = incident_body(ui, &sim, *layer);
+                        });
                 }
                 BottomTab::Chat => {
                     crate::interview::panel_body(
@@ -803,7 +813,8 @@ pub fn setup_style(mut contexts: EguiContexts) {
         .text_styles
         .insert(egui::TextStyle::Small, egui::FontId::proportional(11.5));
     style.spacing.item_spacing = egui::vec2(7.0, 5.0);
-    style.spacing.button_padding = egui::vec2(7.0, 3.0);
+    style.spacing.button_padding = egui::vec2(9.0, 5.0);
+    style.spacing.interact_size.y = 26.0;
     style.visuals.override_text_color = Some(egui::Color32::from_rgb(224, 229, 235));
     style.visuals.panel_fill = egui::Color32::from_rgb(22, 25, 29);
     style.visuals.window_fill = egui::Color32::from_rgb(25, 29, 34);
@@ -840,7 +851,7 @@ pub fn dock(
         .width_range(300.0..=430.0)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("Command");
+                ui.heading("Incident response");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
                         .small_button("×")
@@ -851,24 +862,81 @@ pub fn dock(
                     }
                 });
             });
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut panels.command_tab, DockTab::Units, "Response");
+                ui.selectable_value(&mut panels.command_tab, DockTab::Fire, "Fire setup");
+            });
             ui.separator();
             egui::ScrollArea::vertical()
-                .id_source("command_scroll")
+                .id_source(("command_scroll", panels.command_tab as u8))
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    execution_body(ui, &mut sim, &mut restarted);
-                    ui.add_space(12.0);
-                    wildfire_body(ui, &mut sim, &mut tool, &mut restarted, &mut day);
-                    ui.add_space(12.0);
-                    section(ui, "Intervention");
-                    show_inspector = crate::command::units_body(
-                        ui,
-                        &mut sim,
-                        &mut order,
-                        &mut tool,
-                        &mut selected,
-                        &mut camera,
-                    );
+                    if panels.command_tab == DockTab::Fire {
+                        ui.weak("Adjust the conditions or add a new ignition.");
+                        ui.add_space(10.0);
+                        wildfire_body(ui, &mut sim, &mut tool, &mut restarted, &mut day);
+                        ui.add_space(12.0);
+                        ui.collapsing("Restart & random seed", |ui| {
+                            restart_body(ui, &mut sim, &mut restarted);
+                        });
+                    } else {
+                        ui.collapsing("Quick start", |ui| {
+                            ui.label("1. Press Play in the top bar to start the clock.");
+                            ui.label("2. Select a crew, choose an order, then click the map.");
+                            ui.label("3. Order evacuation and track households reaching safety.");
+                            ui.weak("Drag to orbit · right-drag to pan · scroll to zoom.");
+                        });
+                        ui.add_space(10.0);
+                        section(ui, "Civilian safety");
+                        let stats = sim.agents.stats();
+                        let total = sim.agents.households.len();
+                        ui.label(format!("{} of {total} households safe", stats.safe));
+                        ui.add(
+                            egui::ProgressBar::new(stats.safe as f32 / total.max(1) as f32)
+                                .desired_height(8.0),
+                        );
+                        if stats.cutoff > 0 || stats.casualties > 0 {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(255, 150, 118),
+                                format!(
+                                    "{} cut off · {} casualties",
+                                    stats.cutoff, stats.casualties
+                                ),
+                            );
+                        }
+                        ui.horizontal_wrapped(|ui| {
+                            if ui
+                                .button("Evacuate nearby")
+                                .on_hover_text("Households within 2 km of the opening fire")
+                                .clicked()
+                            {
+                                let centre = sim.scenario.world.centre_of(sim.ignition.centre);
+                                sim.agents.order_evacuation(centre, 2000.0);
+                            }
+                            if ui
+                                .button("Evacuate everyone")
+                                .on_hover_text("Order all households to evacuate (Shift+E)")
+                                .clicked()
+                            {
+                                sim.agents.order_evacuation_all();
+                            }
+                        });
+                        if ui.link("View full incident report").clicked() {
+                            panels.focus_bottom(BottomTab::Incident);
+                        }
+                        ui.add_space(16.0);
+                        section(ui, "Crews & orders");
+                        ui.weak("Select a crew below, then choose its order.");
+                        show_inspector = crate::command::units_body(
+                            ui,
+                            &mut sim,
+                            &mut order,
+                            &mut tool,
+                            &mut selected,
+                            &mut camera,
+                        );
+                    }
                 });
         });
 
@@ -878,46 +946,7 @@ pub fn dock(
     focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
 
-fn execution_body(ui: &mut egui::Ui, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
-    section(ui, "Execution control");
-    ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new(format!("T+{}", sim.clock()))
-                .monospace()
-                .strong(),
-        );
-        if ui
-            .button(if sim.playing { "⏸ Pause" } else { "▶ Play" })
-            .clicked()
-        {
-            sim.playing = !sim.playing;
-        }
-        if ui
-            .button("⏭ Step")
-            .on_hover_text("Advance one agent decision interval")
-            .clicked()
-        {
-            sim.request_step();
-        }
-    });
-
-    ui.horizontal_wrapped(|ui| {
-        for (speed, label) in PRESETS {
-            if ui
-                .selectable_label((sim.speed - speed).abs() < 0.5, label)
-                .clicked()
-            {
-                sim.speed = speed;
-            }
-        }
-    });
-    ui.add(
-        egui::Slider::new(&mut sim.speed, MIN_SPEED..=MAX_SPEED)
-            .logarithmic(true)
-            .text("speed")
-            .custom_formatter(|value, _| speed_text(value as f32)),
-    );
-
+fn restart_body(ui: &mut egui::Ui, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
     let mut seed = sim.seed;
     ui.horizontal(|ui| {
         ui.label("Seed");
@@ -939,14 +968,6 @@ fn execution_body(ui: &mut egui::Ui, sim: &mut Sim, restarted: &mut EventWriter<
             }
             Err(error) => error!("restart failed: {error:#}"),
         }
-    }
-}
-
-fn speed_text(speed: f32) -> String {
-    if speed >= 60.0 {
-        format!("{:.1} min/s", speed / 60.0)
-    } else {
-        format!("{speed:.0}x")
     }
 }
 
@@ -975,45 +996,8 @@ pub fn wildfire_body(
     let opening = sim.ignitions.iter().filter(|i| i.at_s == 0).count();
     let added = sim.ignitions.len() - opening;
 
-    section(ui, "Time of day");
-    let linked_hour = (day.start_hour + sim.time_s() as f32 / 3600.0).rem_euclid(24.0);
-    let mut linked = day.linked();
-    let shown = day.manual_hour.unwrap_or(linked_hour).rem_euclid(24.0);
-    ui.horizontal(|ui| {
-        ui.label("Clock");
-        ui.strong(format!(
-            "{:02}:{:02}",
-            shown as u32,
-            (shown.fract() * 60.0) as u32
-        ));
-        if linked {
-            ui.small("(sim time)");
-        }
-    });
-    if ui
-        .checkbox(&mut linked, "linked to sim clock")
-        .on_hover_text(
-            "Unlink to scrub the sun and moon to any hour without \
-             touching the incident clock — for lighting a shot or \
-             checking how a scene reads at night.",
-        )
-        .changed()
-    {
-        day.manual_hour = if linked { None } else { Some(linked_hour) };
-    }
-    let mut manual = day.manual_hour.unwrap_or(linked_hour);
-    let r = ui.add_enabled(
-        !linked,
-        egui::Slider::new(&mut manual, 0.0..=24.0)
-            .custom_formatter(|v, _| format!("{:02}:{:02}", v as i64, (v.fract() * 60.0) as i64))
-            .text("hour"),
-    );
-    if !linked && r.changed() {
-        day.manual_hour = Some(manual);
-    }
-
     ui.add_space(8.0);
-    section(ui, "Fire parameters");
+    section(ui, "Weather");
     let from = weather.wind_dir_deg as f32;
     ui.horizontal(|ui| {
         ui.label("Wind");
@@ -1112,14 +1096,14 @@ pub fn wildfire_body(
     });
     ui.horizontal(|ui| {
         if ui
-            .add_enabled(added > 0, egui::Button::new("Forget added"))
+            .add_enabled(added > 0, egui::Button::new("Remove added ignitions"))
             .on_hover_text("Drop the fires you lit mid-run from the restart list.")
             .clicked()
         {
             clear_extra = true;
         }
         if ui
-            .button("Replan for wind")
+            .button("Replan & restart")
             .on_hover_text(
                 "Move the opening fire to the best-measured start for \
          this wind direction — inland, in continuous fuel, \
@@ -1128,6 +1112,48 @@ pub fn wildfire_body(
             .clicked()
         {
             replan = true;
+        }
+    });
+
+    ui.add_space(12.0);
+    ui.collapsing("Lighting & time of day", |ui| {
+        section(ui, "Time of day");
+        let linked_hour = (day.start_hour + sim.time_s() as f32 / 3600.0).rem_euclid(24.0);
+        let mut linked = day.linked();
+        let shown = day.manual_hour.unwrap_or(linked_hour).rem_euclid(24.0);
+        ui.horizontal(|ui| {
+            ui.label("Clock");
+            ui.strong(format!(
+                "{:02}:{:02}",
+                shown as u32,
+                (shown.fract() * 60.0) as u32
+            ));
+            if linked {
+                ui.small("(sim time)");
+            }
+        });
+        if ui
+            .checkbox(&mut linked, "linked to sim clock")
+            .on_hover_text(
+                "Unlink to scrub the sun and moon to any hour without \
+             touching the incident clock — for lighting a shot or \
+             checking how a scene reads at night.",
+            )
+            .changed()
+        {
+            day.manual_hour = if linked { None } else { Some(linked_hour) };
+        }
+        let mut manual = day.manual_hour.unwrap_or(linked_hour);
+        let r = ui.add_enabled(
+            !linked,
+            egui::Slider::new(&mut manual, 0.0..=24.0)
+                .custom_formatter(|v, _| {
+                    format!("{:02}:{:02}", v as i64, (v.fract() * 60.0) as i64)
+                })
+                .text("hour"),
+        );
+        if !linked && r.changed() {
+            day.manual_hour = Some(manual);
         }
     });
 
