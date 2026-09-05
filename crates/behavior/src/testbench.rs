@@ -61,6 +61,7 @@ pub fn situations() -> Vec<Situation> {
         order_issued: true,
         warning_received: true,
         minutes_since_order: 4.0,
+        minutes_since_warning: 2.5,
         ..base
     };
 
@@ -74,6 +75,7 @@ pub fn situations() -> Vec<Situation> {
         order_issued: true,
         warning_received: true,
         minutes_since_order: 38.0,
+        minutes_since_warning: 36.5,
         ..base
     };
 
@@ -88,6 +90,7 @@ pub fn situations() -> Vec<Situation> {
         order_issued: true,
         warning_received: true,
         minutes_since_order: 52.0,
+        minutes_since_warning: 50.5,
         ..base
     };
 
@@ -112,6 +115,7 @@ pub fn situations() -> Vec<Situation> {
         comms_down: true,
         order_issued: true,
         warning_received: false,
+        minutes_since_warning: f32::MAX,
         minutes_since_order: 18.0,
         trust_authority: 0.8,
         ..ordered
@@ -121,6 +125,21 @@ pub fn situations() -> Vec<Situation> {
         open_ground_distance_m: 220.0,
         shore_distance_m: 480.0,
         ..cut_off
+    };
+
+    // The moment `block.order_confirmation` is about: they have just been told,
+    // they believe it, and there is nothing out of the window to confirm it.
+    let just_told = HouseholdObs {
+        time_min: 16.0,
+        fire_distance_m: 1800.0,
+        cue: 0.06,
+        threat: 0.0,
+        order_issued: true,
+        warning_received: true,
+        minutes_since_order: 2.0,
+        minutes_since_warning: 0.5,
+        trust_authority: 0.8,
+        ..base
     };
 
     let unwarned = HouseholdObs {
@@ -141,6 +160,12 @@ pub fn situations() -> Vec<Situation> {
             name: "Order given, fire distant",
             note: "The order has arrived over their channel; the fire is still 1.1 km off.",
             obs: ordered.into(),
+        },
+        Situation {
+            name: "Just told, nothing visible",
+            note: "Thirty seconds after the order reached them. They trust it, and \
+                   there is nothing out of the window that agrees with it yet.",
+            obs: just_told.into(),
         },
         Situation {
             name: "Order given, low trust",
@@ -515,6 +540,7 @@ pub enum SweepField {
     RiskPerception,
     TrustAuthority,
     MinutesSinceOrder,
+    MinutesSinceWarning,
     Jitter,
     SpotFireDistanceM,
     OpenGroundDistanceM,
@@ -543,7 +569,7 @@ pub enum SweepField {
 }
 
 impl SweepField {
-    const HOUSEHOLD: [SweepField; 11] = [
+    const HOUSEHOLD: [SweepField; 12] = [
         SweepField::TimeMin,
         SweepField::Threat,
         SweepField::FireDistanceM,
@@ -551,6 +577,7 @@ impl SweepField {
         SweepField::RiskPerception,
         SweepField::TrustAuthority,
         SweepField::MinutesSinceOrder,
+        SweepField::MinutesSinceWarning,
         SweepField::Jitter,
         SweepField::SpotFireDistanceM,
         SweepField::OpenGroundDistanceM,
@@ -611,6 +638,7 @@ impl SweepField {
             SweepField::RiskPerception => "Risk perception",
             SweepField::TrustAuthority => "Trust in authority",
             SweepField::MinutesSinceOrder => "Minutes since order",
+            SweepField::MinutesSinceWarning => "Minutes since told",
             SweepField::Jitter => "Individual variation",
             SweepField::SpotFireDistanceM => "Distance to a spot fire (m)",
             SweepField::OpenGroundDistanceM => "Distance to open ground (m)",
@@ -643,6 +671,7 @@ impl SweepField {
             SweepField::TimeMin => (0.0, 120.0),
             SweepField::FireDistanceM => (0.0, 2500.0),
             SweepField::MinutesSinceOrder => (0.0, 120.0),
+            SweepField::MinutesSinceWarning => (0.0, 120.0),
             SweepField::UnitDistanceToFire => (0.0, 2000.0),
             SweepField::UnitDistanceToTask => (0.0, 3000.0),
             SweepField::UnitMinutesOnTask => (0.0, 120.0),
@@ -675,6 +704,7 @@ impl SweepField {
             SweepField::RiskPerception => with_h(obs, |h| h.risk_perception = v),
             SweepField::TrustAuthority => with_h(obs, |h| h.trust_authority = v),
             SweepField::MinutesSinceOrder => with_h(obs, |h| h.minutes_since_order = v),
+            SweepField::MinutesSinceWarning => with_h(obs, |h| h.minutes_since_warning = v),
             SweepField::Jitter => with_h(obs, |h| h.jitter = v),
             SweepField::SpotFireDistanceM => with_h(obs, |h| {
                 h.spot_fire_distance_m = v;
@@ -720,6 +750,7 @@ impl SweepField {
             SweepField::RiskPerception => h.risk_perception,
             SweepField::TrustAuthority => h.trust_authority,
             SweepField::MinutesSinceOrder => h.minutes_since_order,
+            SweepField::MinutesSinceWarning => h.minutes_since_warning,
             SweepField::Jitter => h.jitter,
             SweepField::SpotFireDistanceM => h.spot_fire_distance_m,
             SweepField::OpenGroundDistanceM => h.open_ground_distance_m,

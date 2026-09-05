@@ -111,6 +111,61 @@ behavior_node! {
 }
 
 behavior_node! {
+    id: "block.order_confirmation",
+    name: "Do they check first?",
+    category: Block,
+    domain: Household,
+    doc: "What a household does between hearing an order and acting on it.\n\n\
+          The shipped model has them act on the first word they hear, and that \
+          is the one part of the warning sequence every study of it says does \
+          not happen. People who are told to go look out of the window, ring \
+          somebody, walk to the end of the road, wait for it to be said again — \
+          and *then* go. The order does not start the evacuation, it starts the \
+          checking.\n\n\
+          Two things end the checking. Their own senses confirm it — alarm at \
+          or past \"Alarm that confirms it\", or the fire close enough to see — \
+          and they go at once. Or nothing confirms it and they go anyway once \
+          they have spent \"Time spent checking\" on it, which is the household \
+          that asked around and found nobody who knew any better.\n\n\
+          This does not make anyone refuse: trust in \"Response to the order\" \
+          is what decides *whether*, and this decides *when*. Turning it on \
+          moves the departure curve to the right and stretches it out, which is \
+          the shape every real evacuation has and the shipped one does not.",
+    keywords: ["confirm", "milling", "check", "delay", "believe", "order", "warning", "second source"],
+    inputs: [(bool "told", "Whether the order alone would move them", false)],
+    outputs: [
+        (bool "acts", "They act on the order now"),
+        (bool "still checking", "They believe it and have not gone yet"),
+        (number "wait_min", "Minutes of checking this household will do, for a readout")
+    ],
+    params: [
+        (bool "enabled", "Enabled", "Whether checking happens at all. Off passes the order straight through, which is the shipped model and every figure measured on it.", false),
+        (number "milling_min", "Time spent checking", "Minutes between being told and acting, for a household nothing else confirms it to.", 12.0, 0.0, 120.0, "min"),
+        (number "confirm_alarm", "Alarm that confirms it", "Their own alarm at or above which the order needs no further confirmation and they go at once.", 0.25, 0.0, 1.0, ""),
+        (number "confirm_within_m", "Fire near enough to confirm it", "Seeing fire this close is confirmation on its own, whatever their alarm says.", 1000.0, 0.0, 2500.0, "m"),
+        (number "spread", "Spread across households", "Width of the individual variation on the checking time, centred on zero. Zero makes every household that was told at the same moment leave at the same moment.", 6.0, 0.0, 60.0, "min")
+    ],
+    eval: |ctx, p, i, out| {
+        let h = ctx.household();
+        let told = i.boolean(0);
+        // Inclusive on both, because a profile that wants "any alarm at all
+        // confirms it" sets the threshold to zero and a strict test there is a
+        // branch that never fires (finding 26).
+        let corroborated = h.cue >= p.num(2) || h.fire_distance_m <= p.num(3);
+        // The clock runs from when they were *told*, not from when the order
+        // was issued: a household with no channel hears twenty minutes late and
+        // its checking starts then, which is the whole reason
+        // `minutes_since_warning` exists.
+        let wait = (p.num(1) + p.num(4) * (h.jitter - 0.5)).max(0.0);
+        let waited = h.minutes_since_warning >= wait;
+        let done = !p.boolean(0) || corroborated || waited;
+        out.push(Value::Bool(told && done));
+        out.push(Value::Bool(told && p.boolean(0) && !done));
+        out.push(Value::Number(if p.boolean(0) { wait } else { 0.0 }));
+    },
+}
+
+behavior_node! {
     id: "block.fire_at_the_door",
     name: "Fire on the property",
     category: Block,

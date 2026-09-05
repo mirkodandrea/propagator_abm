@@ -143,6 +143,18 @@ obs_number!(
     minutes_since_order
 );
 
+obs_number!(
+    "obs.minutes_since_warning",
+    "Minutes since told",
+    "Minutes since the order actually reached this household over its own \
+     channel, or a very large number if it has not. Behind \"Minutes since \
+     order\" by anything from 90 s to twenty minutes, and it is the clock a \
+     household's own reaction runs on -- they cannot start reacting to a \
+     message they have not had.",
+    ["delay", "elapsed", "told", "heard", "milling", "confirm"],
+    minutes_since_warning
+);
+
 // --- the household ---------------------------------------------------------
 
 behavior_node! {

@@ -110,7 +110,10 @@ pub fn default_graph() -> BehaviorGraph {
     // --- column 2: departure, and its consequence -------------------------
     let depart = b.add("logic.any", 320.0, 80.0);
     b.wire(alarm, 0, depart, 0);
-    b.wire(order, 0, depart, 0);
+    // The order reaches `depart` through `block.order_confirmation`, which is
+    // appended at the bottom of this function and ships switched off. Off, it
+    // passes `order.comply` through unchanged, so this is the same graph it
+    // has always been.
 
     let defending = b.add("block.stand_ground", 320.0, 300.0);
     b.num(defending, "min_defensible_space", 0.0);
@@ -217,6 +220,27 @@ pub fn default_graph() -> BehaviorGraph {
     b.num(to_shore, "priority", 4.5);
     b.wire(last, 1, to_shore, 0);
     b.wire(to_shore, 0, decision, 0);
+
+    // --- what happens between hearing the order and acting on it -----------
+    //
+    // Appended, and it belongs in column 2 immediately after `order`: the ids
+    // are positional and every profile's overrides are keyed on them, so the
+    // box that goes in the middle of the canvas still goes on the end of this
+    // function (finding 36).
+    //
+    // It ships **off**, and off it is a wire: `acts` is `told`, so the graph is
+    // exactly the one every figure in CLAUDE.md was measured on. On, it is the
+    // missing half of the warning sequence — see `takes-some-convincing`, and
+    // finding 42 for what a 0.35 trust threshold against a Beta(4, 2) trust
+    // bake turns "we told them" into.
+    let confirm = b.add("block.order_confirmation", 320.0, 620.0);
+    b.boolean(confirm, "enabled", false);
+    b.num(confirm, "milling_min", 12.0);
+    b.num(confirm, "confirm_alarm", 0.25);
+    b.num(confirm, "confirm_within_m", 1000.0);
+    b.num(confirm, "spread", 6.0);
+    b.wire(order, 0, confirm, 0);
+    b.wire(confirm, 0, depart, 0);
 
     b.g
 }
@@ -548,7 +572,7 @@ pub fn default_subtypes() -> Vec<AgentSubtype> {
     assisted.tags = vec!["vulnerable".into()];
     assisted.share = 0.1;
     assisted.overrides.insert(alarm("wait_and_see"), ParamValue::Number(0.08));
-    assisted.overrides.insert(trust_threshold, ParamValue::Number(0.2));
+    assisted.overrides.insert(trust_threshold.clone(), ParamValue::Number(0.2));
     assisted.overrides.insert(prepare_priority, ParamValue::Number(1.0));
     assisted.traits.insert(TraitKey::PrepTimeMin, 35.0);
     assisted.capabilities.insert(Capability::Vehicle, false);
@@ -605,7 +629,29 @@ pub fn default_subtypes() -> Vec<AgentSubtype> {
     reactive.overrides.insert(signal("enabled"), ParamValue::Bool(true));
     reactive.overrides.insert(last("enabled"), ParamValue::Bool(true));
 
-    vec![prepared, waiting, defender, assisted, visiting, reactive]
+    // --- the one that questions the order itself ----------------------------
+    //
+    // The other five profiles vary how a household reads the *fire*. This one
+    // varies how it reads the *commander*, which is the half nobody had looked
+    // at: measured on the shipped bake, a general order moves 500 of 750
+    // households and silence moves 109, so the order is not a lever in this
+    // model, it is the model. Finding 42.
+    let confirm = |param: &str| key(&g, "block.order_confirmation", 0, param);
+
+    let mut convinced = base(
+        "takes-some-convincing",
+        "Takes some convincing",
+        "Hears the order, and then checks: looks outside, rings someone, waits for it          to be said again. Goes at once if their own eyes confirm it and after about          twelve minutes if nothing does — and only if they gave the instruction enough          weight to begin with, which at a threshold in the middle of the trust bake          rather than in its bottom fifth is roughly half of them rather than nearly          all. Neither half of that is a different kind of person: it is the shipped          household with the confirmation step the shipped model skips.",
+    );
+    convinced.tags = vec!["compliance".into(), "milling".into(), "warning".into()];
+    convinced.share = 0.0;
+    convinced.overrides.insert(confirm("enabled"), ParamValue::Bool(true));
+    // Trust is baked Beta(4, 2) -- median 0.70, and only 40 of 750 households
+    // sit below 0.35. A threshold in the bottom fifth of its own distribution
+    // is not a threshold, so this one is put where the mass is.
+    convinced.overrides.insert(trust_threshold, ParamValue::Number(0.65));
+
+    vec![prepared, waiting, defender, assisted, visiting, reactive, convinced]
 }
 
 /// Suppression profiles.

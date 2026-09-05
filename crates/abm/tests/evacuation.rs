@@ -247,6 +247,184 @@ fn report() {
     }
 }
 
+/// The finding this pins is that the order is not a lever in this model, it is
+/// the model: silence moves a seventh of the town and a general order moves two
+/// thirds of it, and the gap is one comparison — `trust_authority` against a
+/// threshold of 0.35, in a bake whose trust is Beta(4, 2). Only 40 of 750
+/// households sit below it, so the clause that is supposed to decide *whether*
+/// somebody complies decides almost nothing (finding 42).
+///
+/// This is an assertion rather than a report for the reason finding 34 gives: a
+/// derivation nobody re-checks moves without anybody noticing. Change the trait
+/// bake, the threshold, or the perception terms and one of these numbers moves
+/// and says so.
+#[test]
+fn the_order_is_the_whole_evacuation() {
+    let departed = |order: bool| {
+        let (scn, mut fire, mut agents) = setup();
+        if order {
+            agents.order_evacuation_all();
+        }
+        run(&scn, &mut fire, &mut agents, 120, 10);
+        let s = agents.stats();
+        (s.safe + s.moving + s.preparing, agents.households.len())
+    };
+
+    let (silent, n) = departed(false);
+    let (ordered, _) = departed(true);
+
+    // Perception on its own is conservative: most of the town cannot see a fire
+    // that is 2.7 km away at T+30, and `SEE_RANGE_M` is 2,500 m.
+    assert!(
+        silent * 4 < n,
+        "{silent} of {n} left with nobody told anything: perception alone is doing \
+         the evacuation, which it should not be"
+    );
+    // And the order is close to universal, which is the half worth watching.
+    assert!(
+        ordered > silent * 3,
+        "a general order moved {ordered} against {silent} for silence: the commander's \
+         lever has stopped being the dominant term, which is a real change and not a \
+         drift"
+    );
+
+    // The compliance gate, straight off the bake. This is the number that makes
+    // the two above what they are.
+    let scn = Scenario::load(data_dir()).unwrap();
+    let below = scn
+        .population
+        .households
+        .iter()
+        .filter(|h| h.trust_authority <= 0.35)
+        .count();
+    assert!(
+        below * 10 < scn.population.households.len(),
+        "{below} of {} households sit below the shipped trust threshold -- if that has \
+         become a real share, finding 42 has been addressed and this test should say so",
+        scn.population.households.len()
+    );
+}
+
+/// The anatomy behind [`the_order_is_the_whole_evacuation`], for the times the
+/// pin moves and somebody has to work out which half moved.
+#[test]
+#[ignore = "reports numbers rather than asserting them"]
+fn compliance_report() {
+    let scn = Scenario::load(data_dir()).unwrap();
+    let hs = &scn.population.households;
+    let mut trust: Vec<f32> = hs.iter().map(|h| h.trust_authority).collect();
+    trust.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let pct = |p: usize| trust[hs.len() * p / 100];
+    println!(
+        "trust_authority over {} households: p5 {:.2}  p25 {:.2}  p50 {:.2}  p75 {:.2}",
+        hs.len(),
+        pct(5),
+        pct(25),
+        pct(50),
+        pct(75)
+    );
+    for t in [0.2, 0.35, 0.5, 0.65, 0.8] {
+        let comply = hs
+            .iter()
+            .filter(|h| h.trust_authority > t && h.intent != scenario::population::Intent::StayDefend)
+            .count();
+        println!(
+            "  threshold {t:.2}: {comply:3} of {} households an order can move ({:.0}%)",
+            hs.len(),
+            100.0 * comply as f32 / hs.len() as f32
+        );
+    }
+
+    println!("\n            silent          general order at T+0");
+    println!("   time   aware departed    aware departed  told");
+    let (scn_a, mut fire_a, mut silent) = setup();
+    let (scn_b, mut fire_b, mut ordered) = setup();
+    ordered.order_evacuation_all();
+    for m in 1..=12 {
+        run(&scn_a, &mut fire_a, &mut silent, 10, 10);
+        run(&scn_b, &mut fire_b, &mut ordered, 10, 10);
+        let (a, b) = (silent.stats(), ordered.stats());
+        let told = ordered.households.iter().filter(|h| h.warning_received).count();
+        println!(
+            "  {:3} min {:6} {:8} {:8} {:8} {:5}",
+            m * 10,
+            a.aware,
+            a.preparing + a.moving + a.safe,
+            b.aware,
+            b.preparing + b.moving + b.safe,
+            told
+        );
+    }
+}
+
+/// What the confirmation step and a threshold in the middle of the trust bake
+/// are each worth, on the same fire and the same order.
+///
+/// Two separate levers and it matters that they are separate: one changes *when*
+/// a household that was going to leave leaves, the other changes *whether*.
+/// Tuning a delay until it produces a compliance rate is how those get confused.
+#[test]
+#[ignore = "reports numbers rather than asserting them"]
+fn confirmation_report() {
+    use behavior::{BehaviorGraph, Library, ParamValue};
+
+    fn profile(household: &str, confirm: bool, trust: Option<f32>) -> Library {
+        let mut lib = behavior::defaults::default_library();
+        for (id, sub) in lib.subtypes.iter_mut() {
+            if sub.graph == behavior::defaults::DEFAULT_GRAPH_ID {
+                sub.share = if id == household { 1.0 } else { 0.0 };
+            }
+        }
+        let g = behavior::defaults::default_graph();
+        let key = |ty: &str, param: &str| {
+            let n = g.nodes.iter().find(|n| n.type_id == ty).unwrap();
+            BehaviorGraph::override_key(n.id, param)
+        };
+        let sub = lib.subtypes.get_mut(household).unwrap();
+        if confirm {
+            sub.overrides
+                .insert(key("block.order_confirmation", "enabled"), ParamValue::Bool(true));
+        }
+        if let Some(t) = trust {
+            sub.overrides
+                .insert(key("block.order_response", "trust_threshold"), ParamValue::Number(t));
+        }
+        lib
+    }
+
+    let scn = Scenario::load(data_dir()).unwrap();
+    let curve = |lib: &Library| {
+        let h = abm::BehaviorRuntime::build(lib).unwrap().unwrap();
+        let p = abm::PersonRuntime::build(lib).unwrap().unwrap();
+        let mut agents = Abm::with_behaviours(&scn, 42, h, p).unwrap();
+        let weather = fire::Weather::default();
+        let plan = fire::plan_ignition(&scn, weather.wind_dir_deg, 250.0);
+        let mut fire = FireSim::new(&scn, weather, 42).unwrap();
+        fire.ignite_patch(plan.centre, plan.radius_m, &scn).unwrap();
+        agents.order_evacuation_all();
+        let mut out = Vec::new();
+        for _ in 0..8 {
+            run(&scn, &mut fire, &mut agents, 15, 10);
+            let s = agents.stats();
+            out.push(s.preparing + s.moving + s.safe);
+        }
+        out
+    };
+
+    let cases = [
+        ("shipped (wait-and-see)", profile("wait-and-see", false, None)),
+        ("+ checks first", profile("wait-and-see", true, None)),
+        ("+ trust 0.65", profile("wait-and-see", false, Some(0.65))),
+        ("takes-some-convincing", profile("takes-some-convincing", false, None)),
+    ];
+    println!("households departed, general order at T+0, 750 households");
+    println!("{:24}{}", "", (1..=8).map(|i| format!("{:>7}", i * 15)).collect::<String>());
+    for (name, lib) in cases {
+        let c = curve(&lib);
+        println!("{name:24}{}", c.iter().map(|v| format!("{v:>7}")).collect::<String>());
+    }
+}
+
 /// Most households own a car, and the ones that do should be leaving in it.
 /// A model where everyone walks is a model where the road network does not
 /// matter, which would quietly delete the most important constraint in the

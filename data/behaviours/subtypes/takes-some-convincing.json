@@ -1,0 +1,26 @@
+{
+  "id": "takes-some-convincing",
+  "name": "Takes some convincing",
+  "description": "Hears the order, and then checks: looks outside, rings someone, waits for it          to be said again. Goes at once if their own eyes confirm it and after about          twelve minutes if nothing does — and only if they gave the instruction enough          weight to begin with, which at a threshold in the middle of the trust bake          rather than in its bottom fifth is roughly half of them rather than nearly          all. Neither half of that is a different kind of person: it is the shipped          household with the confirmation step the shipped model skips.",
+  "author": "shipped",
+  "tags": [
+    "compliance",
+    "milling",
+    "warning"
+  ],
+  "graph": "default-evacuation",
+  "overrides": {
+    "1.trust_threshold": {
+      "t": "number",
+      "v": 0.65
+    },
+    "20.enabled": {
+      "t": "bool",
+      "v": true
+    }
+  },
+  "traits": {},
+  "capabilities": {},
+  "share": 0.0,
+  "enabled": true
+}

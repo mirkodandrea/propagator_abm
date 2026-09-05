@@ -316,6 +316,10 @@ pub struct HouseholdAgent {
     pub members: Vec<usize>,
     /// Time the order was issued to this household, or `f32::INFINITY`.
     ordered_at_s: f32,
+    /// Time the order actually *arrived* over this household's channel, or
+    /// `f32::INFINITY`. Behind `ordered_at_s` by 90 s to 20 minutes, and it is
+    /// the clock anything a household does *about* the order has to run on.
+    warned_at_s: f32,
 }
 
 /// Aggregate readout for the HUD and the debrief.
@@ -535,6 +539,7 @@ impl Abm {
                 transient,
                 members: h.members.clone(),
                 ordered_at_s: f32::INFINITY,
+                warned_at_s: f32::INFINITY,
             });
         }
 
@@ -1128,6 +1133,11 @@ impl Abm {
             cue: h.cue,
             order_issued: h.ordered,
             warning_received: h.warning_received,
+            minutes_since_warning: if h.warned_at_s.is_finite() {
+                (self.time_s - h.warned_at_s) / 60.0
+            } else {
+                f32::MAX
+            },
             minutes_since_order: if h.ordered_at_s.is_finite() {
                 (self.time_s - h.ordered_at_s) / 60.0
             } else {
@@ -1247,6 +1257,7 @@ impl Abm {
             if h.ordered && !h.warning_received && now - h.ordered_at_s >= warning_delay_s(h, signal)
             {
                 h.warning_received = true;
+                h.warned_at_s = now;
             }
 
             let jitter = hash01(h.id as u64, 0x51);

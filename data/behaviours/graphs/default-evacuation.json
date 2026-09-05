@@ -327,17 +327,41 @@
           "v": 4.5
         }
       }
+    },
+    {
+      "id": 20,
+      "type": "block.order_confirmation",
+      "pos": [
+        320.0,
+        620.0
+      ],
+      "params": {
+        "confirm_alarm": {
+          "t": "number",
+          "v": 0.25
+        },
+        "confirm_within_m": {
+          "t": "number",
+          "v": 1000.0
+        },
+        "enabled": {
+          "t": "bool",
+          "v": false
+        },
+        "milling_min": {
+          "t": "number",
+          "v": 12.0
+        },
+        "spread": {
+          "t": "number",
+          "v": 6.0
+        }
+      }
     }
   ],
   "wires": [
     {
       "from_node": 0,
-      "from_port": 0,
-      "to_node": 3,
-      "to_port": 0
-    },
-    {
-      "from_node": 1,
       "from_port": 0,
       "to_node": 3,
       "to_port": 0
@@ -460,6 +484,18 @@
       "from_node": 19,
       "from_port": 0,
       "to_node": 9,
+      "to_port": 0
+    },
+    {
+      "from_node": 1,
+      "from_port": 0,
+      "to_node": 20,
+      "to_port": 0
+    },
+    {
+      "from_node": 20,
+      "from_port": 0,
+      "to_node": 3,
       "to_port": 0
     }
   ]

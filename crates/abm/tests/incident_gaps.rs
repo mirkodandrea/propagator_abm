@@ -498,6 +498,122 @@ fn the_shipped_profiles_are_unchanged_by_any_of_it() {
     assert!(s.safe > 200, "only {} households reached safety", s.safe);
 }
 
+// ---------------------------------------------------------------------------
+// The half of the warning sequence the model skipped
+// ---------------------------------------------------------------------------
+
+/// Measured on the shipped bake: a general order moves 500 of 750 households
+/// and silence moves 109, so the commander's order is not a lever in this model,
+/// it *is* the model. Two reasons, and `block.order_confirmation` is about the
+/// second — the order is believed instantly, so the whole town leaves inside one
+/// warning-delivery window. See finding 42.
+///
+/// The assertion that matters is the one this file exists for: the branch has to
+/// *fire*, not merely validate.
+#[test]
+fn checking_before_leaving_delays_the_departure_and_spreads_it_out() {
+    let scn = Scenario::load(data_dir()).unwrap();
+
+    // The same household in every respect except the confirmation step, so the
+    // difference cannot be a different kind of person. `takes-some-convincing`
+    // also moves the trust threshold, so this comparison isolates the delay by
+    // overriding only the block.
+    let mut delayed = library_with("wait-and-see", "walk-out");
+    let g = behavior::defaults::default_graph();
+    let node = g
+        .nodes
+        .iter()
+        .find(|n| n.type_id == "block.order_confirmation")
+        .expect("the shipped graph carries the confirmation block");
+    let key = behavior::BehaviorGraph::override_key(node.id, "enabled");
+    delayed.subtypes.get_mut("wait-and-see").unwrap().overrides.insert(key, behavior::ParamValue::Bool(true));
+
+    let departed_at = |lib: &Library| {
+        let mut fire = fire_for(&scn);
+        let mut agents = agents_for(&scn, lib);
+        agents.order_evacuation_all();
+        let mut curve = Vec::new();
+        for _ in 0..12 {
+            run(&scn, &mut fire, &mut agents, 10, 10);
+            let s = agents.stats();
+            curve.push(s.preparing + s.moving + s.safe);
+        }
+        curve
+    };
+
+    let straight = departed_at(&library_with("wait-and-see", "walk-out"));
+    let checked = departed_at(&delayed);
+
+    // T+20: the checking window. Fewer households have acted, and by a margin
+    // that is the mechanism rather than noise.
+    assert!(
+        checked[1] + 30 < straight[1],
+        "confirmation changed nothing in the first twenty minutes: {} vs {}",
+        checked[1],
+        straight[1]
+    );
+    // T+120: they get there in the end. This block delays, it does not refuse —
+    // refusing is what the trust threshold is for, and conflating the two is
+    // how a delay gets tuned to produce a compliance rate.
+    let (a, b) = (checked[11], straight[11]);
+    assert!(
+        a * 10 >= b * 9,
+        "confirmation stopped people leaving rather than delaying them: {a} vs {b}"
+    );
+}
+
+/// The profile is the other half: a threshold in the middle of the trust bake
+/// rather than in its bottom fifth. Both together are what "we told them to go"
+/// is actually worth.
+#[test]
+fn the_convincing_profile_leaves_a_real_share_of_the_town_at_home() {
+    let scn = Scenario::load(data_dir()).unwrap();
+
+    let outcome = |household: &str| {
+        let mut fire = fire_for(&scn);
+        let mut agents = agents_for(&scn, &library_with(household, "walk-out"));
+        agents.order_evacuation_all();
+        run(&scn, &mut fire, &mut agents, 120, 10);
+        let s = agents.stats();
+        (s.safe + s.moving + s.preparing, agents.households.len())
+    };
+
+    let (shipped, n) = outcome("wait-and-see");
+    let (convinced, _) = outcome("takes-some-convincing");
+
+    assert!(
+        convinced * 4 < shipped * 3,
+        "a trust threshold at 0.65 moved {convinced} of {n} against the shipped {shipped}: \
+         it is not filtering anybody, which is the always-negative finding 42 is about"
+    );
+    assert!(
+        convinced > n / 10,
+        "only {convinced} of {n} left at all -- the profile refuses rather than convinces"
+    );
+}
+
+/// The block reads a latched timestamp rather than accumulating, so it may not
+/// make the model depend on how often it is stepped. Checked separately from
+/// the other mechanisms because it is the only one on the *warning* clock, and
+/// that clock advances at the warning-delivery quantum rather than at `dt`.
+#[test]
+fn confirmation_is_step_size_invariant() {
+    let scn = Scenario::load(data_dir()).unwrap();
+    let outcome = |dt: i64| {
+        let mut fire = fire_for(&scn);
+        let mut agents = agents_for(&scn, &library_with("takes-some-convincing", "walk-out"));
+        agents.order_evacuation_all();
+        run(&scn, &mut fire, &mut agents, 90, dt);
+        let s = agents.stats();
+        s.safe + s.moving + s.preparing
+    };
+    let (coarse, fine) = (outcome(60), outcome(5));
+    assert!(
+        (coarse as i64 - fine as i64).abs() <= (coarse.max(fine) / 20 + 3) as i64,
+        "60 s step departed {coarse} and 5 s departed {fine}"
+    );
+}
+
 /// A road closure, a boat lift and a haven are all things the *incident* does,
 /// so none of them may make the model depend on how often it is stepped.
 #[test]

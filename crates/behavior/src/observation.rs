@@ -63,6 +63,15 @@ pub struct HouseholdObs {
     pub warning_received: bool,
     /// Minutes since the order was issued, or a large number if none has been.
     pub minutes_since_order: f32,
+    /// Minutes since the order actually *arrived* over this household's own
+    /// channel, or a large number if it has not.
+    ///
+    /// The clock a confirmation delay has to run on. `minutes_since_order` runs
+    /// from the command post's decision, so measuring milling against it makes
+    /// a household with no channel finish checking at the same instant it is
+    /// told — which is to say it acts on the first word it hears, and that is
+    /// the behaviour the whole confirmation literature says does not happen.
+    pub minutes_since_warning: f32,
 
     // --- the household ----------------------------------------------------
     /// Their stated pre-fire plan.
@@ -159,6 +168,7 @@ impl Default for HouseholdObs {
             order_issued: false,
             warning_received: false,
             minutes_since_order: 1.0e6,
+            minutes_since_warning: 1.0e6,
             intent: IntentValue::WaitAndSee,
             risk_perception: 0.5,
             trust_authority: 0.5,

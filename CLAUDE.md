@@ -753,6 +753,61 @@ it. There is no offset that is both beyond the embers and in front of the fire,
 which is a real thing about wind-driven fire in maquis rather than a bug, and
 it is now the shape of the suppression game.
 
+**42. A threshold in the bottom fifth of its own distribution is not a
+threshold, and the trait it filters was never looked at.** "Why is everybody
+always evacuating on Spotorno" has one answer and it is not the fire.
+Measured over two hours (`compliance_report`): with nobody told anything **109
+of 750** households leave and only 122 ever cross their own alarm threshold —
+at T+30 the median household is 2,683 m from the nearest fire, past
+`SEE_RANGE_M`, so most of the town literally cannot see it. With a general
+order, **500** leave, **748 of 750** have the warning inside thirty minutes,
+and **461 of them have gone within ten** — the whole evacuation in one block.
+The order is not a lever in this model, it is the model.
+
+Two things do that, and they are different things. The first is the compliance
+gate: `block.order_response` asks `trust_authority > 0.35` against a bake of
+`Beta(4, 2)` — median **0.70**, p5 **0.34** — so **40 of 750** households sit
+below it and the clause that decides *whether* somebody complies decides
+almost nothing. It is the same shape as houses never burning (finding 2) and
+wetting the flames (finding 16) with the sign flipped: an always-*positive*,
+which is harder to see, because a branch that always fires looks like a
+population that agrees with you. Sweeping the threshold across the bake is one
+line and nobody had: 0.35 → 78% of the town, 0.50 → 68%, 0.65 → 49%, 0.80 →
+23%. The second is that there was no gap between hearing and acting at all.
+A household received the order and departed on the same tick, so the departure
+curve is one step at the warning-delivery quantum, and the confirmation phase
+every study of warning response describes — look outside, ring somebody, wait
+for it to be said again — was simply absent from a model whose entire subject
+is warning response.
+
+`block.order_confirmation` is the missing half, appended to the shipped graph
+and **switched off**, where off is a wire (`acts` is `told`) rather than a
+default: `the_shipped_policy_reproduces_the_hand_written_one` still passes
+unchanged, which is the only acceptable way to add a box to a graph that has
+published numbers. Its clock is `minutes_since_warning`, a new observation,
+and that is not a detail — `minutes_since_order` runs from the command post's
+decision, so milling measured against it finishes at the same instant for the
+household on a mobile alert and the one with no channel, which is to say the
+second household acts on the first word it hears. The two levers stay separate
+boxes on purpose, and the measurement is why (`confirmation_report`, general
+order at T+0, households departed):
+
+```
+                             15     30     45     60     90    120  min
+  shipped (wait-and-see)    562    584    584    584    589    589
+  + checks first            242    565    584    584    589    589
+  + trust 0.65              365    379    382    382    409    412
+  takes-some-convincing     169    367    382    382    409    412
+```
+
+Confirmation moves *when* and changes the endpoint by nothing; trust changes
+*whether* and changes the endpoint by 177 households. Tuning a delay until it
+produces a compliance rate would have conflated them, and the shipped model
+had neither. `takes-some-convincing` ships at share 0 with both, for the
+reason `family-first` does. The pin is `the_order_is_the_whole_evacuation`,
+which asserts the two halves rather than reporting them, because a derivation
+nobody re-checks moves without anybody noticing (finding 34).
+
 ---
 
 ## Current state
@@ -818,6 +873,10 @@ structure exposure and a coarse 200 m distance-to-fire field (what they can
 slope, rerouting and abandonment of vehicles on a cut road. The
 commander's order is a lever, not a teleport: it still arrives over each
 household's own channel (90 s mobile alert → 20 min for no channel at all).
+It is, however, close to the *only* lever — silence moves 109 households of 750
+and a general order moves 500, and the gap is one comparison against a trait
+nobody had plotted, which is finding 42 and the reason
+`block.order_confirmation` exists.
 Rendered as one capsule per person plus one vehicle per driving household, drawn
 at 3× life size (`people::FIGURE_SCALE`) because at command altitude a person is
 sub-pixel.
@@ -873,7 +932,7 @@ per-agent A* rather than reading the route field, because it is the one case the
 field cannot answer.
 
 A representative run — general order at T+10 min to the 325 households in
-range, 2 h incident (`abm --ignored evacuation_timeline`). Re-measured when the
+range, 2 h incident (`abm --ignored report`). Re-measured when the
 traffic queue landed; the previous table here described a T+5 order and had
 drifted from what the test actually runs, which is worth knowing about every
 number in this file:
@@ -1039,7 +1098,7 @@ further edit — there is no central list, which means there is no way to add a
 node the editor does not know about. A node declares `domain:` or is
 domain-free; `anything_that_reads_the_world_declares_a_domain` is what stops a
 node reading a default observation in the wrong graph and looking like a branch
-that never fires. 143 ship — 75 offered to a household graph, 61 to a person
+that never fires. 145 ship — 77 offered to a household graph, 61 to a person
 one, 49 to a unit one, and the 21 in all three are the arithmetic. The counts
 come from `palette_report` (`cargo test -p behavior --release -- --ignored
 palette_report --nocapture`), which is a report rather than an assertion: a test
@@ -1052,9 +1111,9 @@ reading what it needs off the observation itself and exposing the numbers that
 assumption turns on as parameters. That is also exactly what a subtype
 overrides, so a profile stops being a list of node ids and becomes a list of
 named quantities. The shipped evacuation behaviour was **31 nodes** written in
-observations and arithmetic; on blocks it is **20**, of which thirteen are the
-original model and six are the branches the real-incident scenarios asked for,
-and the unit policy is 6. The primitives are all still in the palette — a block's *structure* is fixed,
+observations and arithmetic; on blocks it is **21**, of which thirteen are the
+original model, six are the branches the real-incident scenarios asked for and
+one is the confirmation step finding 42 is about, and the unit policy is 6. The primitives are all still in the palette — a block's *structure* is fixed,
 and rebuilding one out of `Logic` nodes is the supported way to change it.
 
 The scientist-facing surface is a graph. Four port types (`number`, `bool`,
@@ -1077,7 +1136,7 @@ the domains differ, and it follows from what is being assigned to:
   them and they are named individuals; a hash would make "why did Autobotte 2
   do that" a question about arithmetic rather than about a file.
 
-Eleven profiles ship: four household, on the one graph, differing only in
+Twelve profiles ship: four household, on the one graph, differing only in
 numbers — which is the pattern the whole thing is for — plus `walk-out` and
 `family-first` (the latter at share 0), plus `standing-orders` (the shipped unit
 policy, written down) and `cautious-engines` (off by default). The inspector
@@ -1085,14 +1144,17 @@ edits the *override* when a profile is selected and says so, because a scientist
 who moves a threshold and finds they moved it for everyone has been badly
 served.
 
-Three of the eleven ship at **share 0** and are the ones worth reading first,
+Four of the twelve ship at **share 0** and are the ones worth reading first,
 because each is a claim about a real incident rather than a variation on a
 number: `holiday-let` (a visiting party — no car, told by whoever runs the
 place, and no idea what the smoke over that ridge means), `reacts-to-events`
 (the same household as `wait-and-see` with the spot-fire, no-signal and
-last-resort branches switched on) and `to-the-water` (a separated person who
+last-resort branches switched on), `to-the-water` (a separated person who
 gives up on the refuge for whatever is nearest, and walks to a boat when one is
-coming). Giving any of them a share makes the run incomparable with every figure
+coming) and `takes-some-convincing` (the same household as `wait-and-see` that
+checks before it acts on an order, and gives the order enough weight to act on
+in the first place at a threshold that is actually in the trust bake — finding
+42). Giving any of them a share makes the run incomparable with every figure
 measured before it, which is the comparison rather than a caveat — the same way
 `family-first` ships.
 
@@ -1108,7 +1170,7 @@ The **test bench** puts a made-up agent in a situation and reads back the answer
 node by node, plus a sweep that varies one field across its range and reports
 where the decision actually changes — a threshold here is never a single number,
 so the alternative is guessing. Situations, editable fields and sweep fields all
-follow the open graph's domain; eleven household situations ship, ten person
+follow the open graph's domain; twelve household situations ship, ten person
 ones and nine unit ones, each chosen because it is a moment the hand-written
 layer either handled or visibly did not — the five most recent because they are
 moments it could not describe at all, like a fire that started behind them or a
@@ -1278,12 +1340,15 @@ SPOTORNO_AUTOPLAY=1 cargo run --release -p game   # start running immediately (w
 SPOTORNO_ORDER_AT=600 cargo run --release -p game  # auto-order evacuation at T+10 min
 SPOTORNO_ATTACK_AT=300 cargo run --release -p game # commit every unit to the head at T+5 min
 cargo test --release                     # everything, ~4 s
-cargo test -p abm --release -- --ignored --nocapture     # evacuation timeline,
-       # routing cost, the engine refill-threshold sweep, what the haven and
-       # mast derivations found in each window (`haven_report`), what the
-       # incident-mechanism profiles cost (`incident_mechanism_report`), where
-       # traffic queues on each window (`traffic_report`), and the step-size
-       # sweep that has to bracket `DECISION_S` from below (`step_size_sweep`)
+cargo test -p abm --release -- --ignored --nocapture     # the evacuation
+       # timeline (`report`), routing cost, the engine refill-threshold sweep,
+       # what the haven and mast derivations found in each window
+       # (`haven_report`), what the incident-mechanism profiles cost
+       # (`incident_mechanism_report`), where traffic queues on each window
+       # (`traffic_report`), the step-size sweep that has to bracket
+       # `DECISION_S` from below (`step_size_sweep`), and the two behind
+       # finding 42 — what the order is actually worth (`compliance_report`)
+       # and what checking first costs (`confirmation_report`)
 cargo test -p fire --release -- --ignored --nocapture    # slow calibration sweeps
 
 # the wildfire controls, driven without a keyboard: place an ignition mid-run,
@@ -1438,6 +1503,23 @@ because it is what gets you *out* of a state.
 
 ## Open questions
 
+- **Whether the shipped calibration should keep an order that nearly everybody
+  obeys instantly.** Finding 42 built both halves of the answer and turned
+  neither on: `block.order_confirmation` ships off and `takes-some-convincing`
+  ships at share 0, because every figure in this file was measured without
+  them. What is unmeasured is which setting is *right*. Real compliance to a
+  wildfire evacuation order runs 50–80% depending on how it is worded, who
+  gives it and what people can see, and confirmation-seeking is measured in
+  tens of minutes — so the shipped 78%-instantly is inside the range on the
+  first number and outside it on the second. Adopting the confirmation step as
+  the default is a re-measurement of everything, which is exactly why it is a
+  decision rather than a fix.
+- **Nothing correlates compliance with anything.** `trust_authority` is drawn
+  independently per household, so the order's effect is spread uniformly over
+  the town — the same artefact the subtype shares have. Real non-compliance
+  clusters: by neighbourhood, by tenure, by whether the last order turned out
+  to be unnecessary. The model has no memory of a previous warning at all, so
+  a repeated or a cried-wolf order is not expressible.
 - **Almost nobody is ever caught, so half the civilian model still cannot be
   measured — but it is no longer nobody.** Finding 41 moved this: 33 structures
   are alight at two hours where one was, 166 households take some damage, and

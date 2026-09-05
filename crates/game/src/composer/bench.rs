@@ -180,6 +180,7 @@ fn household_inputs(ui: &mut egui::Ui, obs: &mut Observation) {
     slider(ui, "Distance to fire (m)", &mut o.fire_distance_m, 0.0, 2500.0);
     slider(ui, "Perceived alarm", &mut o.cue, 0.0, 1.0);
     slider(ui, "Minutes since order", &mut o.minutes_since_order, 0.0, 180.0);
+    slider(ui, "Minutes since told", &mut o.minutes_since_warning, 0.0, 180.0);
     slider(ui, "Risk perception", &mut o.risk_perception, 0.0, 1.0);
     slider(ui, "Trust in authority", &mut o.trust_authority, 0.0, 1.0);
     slider(ui, "Preparation time (min)", &mut o.prep_time_min, 0.0, 120.0);
