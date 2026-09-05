@@ -36,6 +36,7 @@ use egui_snarl::{ui::SnarlStyle, Snarl};
 use behavior::{BehaviorGraph, Domain, Library, Observation, ParamValue, Report, Wire};
 
 pub mod bench;
+mod guided;
 mod help;
 mod inspector;
 pub mod live;
@@ -68,10 +69,10 @@ impl RightTab {
 
     pub fn label(self) -> &'static str {
         match self {
-            RightTab::Inspector => "Node",
+            RightTab::Inspector => "Settings",
             RightTab::Subtypes => "Profiles",
-            RightTab::Bench => "Bench",
-            RightTab::Live => "Live",
+            RightTab::Bench => "Try a situation",
+            RightTab::Live => "Watch an agent",
             RightTab::Help => "Help",
         }
     }
@@ -95,6 +96,8 @@ impl RightTab {
 #[derive(Resource)]
 pub struct Composer {
     pub open: bool,
+    /// Start with readable rules; wiring remains available in the advanced view.
+    pub advanced: bool,
     /// Where the library is read from and written to.
     pub root: PathBuf,
     pub lib: Library,
@@ -175,6 +178,7 @@ impl Composer {
             // unattended screenshot run can capture the editor; its value
             // picks the right-hand tab. In play it is opened with `b`.
             open: std::env::var("SPOTORNO_COMPOSER").is_ok(),
+            advanced: false,
             root,
             lib,
             snarl: Snarl::new(),
@@ -248,7 +252,6 @@ impl Composer {
         self.graph_domain = g.domain;
         self.snarl = viewer::snarl_from_graph(&g);
         self.selected = None;
-        self.live.frame = None;
 
         self.sync();
     }
@@ -290,10 +293,18 @@ impl Composer {
     /// Write the canvas into the library. Does not touch disk.
     pub fn commit(&mut self) {
         self.sync();
-        self.lib
-            .graphs
-            .insert(self.graph_id.clone(), self.graph.clone());
-        self.dirty = true;
+        // Canvas wire iteration order is not the saved file's order.
+        let normalise = |mut graph: BehaviorGraph| {
+            graph.nodes.sort_by_key(|n| n.id);
+            graph.wires.sort_by_key(|w| (w.from_node, w.from_port, w.to_node, w.to_port));
+            graph
+        };
+        if self.lib.graphs.get(&self.graph_id).cloned().map(normalise)
+            != Some(normalise(self.graph.clone())) {
+
+            self.lib.graphs.insert(self.graph_id.clone(), self.graph.clone());
+            self.dirty = true;
+        }
     }
 
     pub fn save(&mut self) {
@@ -316,6 +327,10 @@ impl Composer {
     pub fn reload(&mut self) {
         let (lib, report) = read_library(&self.root);
         self.load_report = report;
+        if self.load_report.iter().any(|f| !f.ok()) {
+            self.set_error("Reload cancelled: some files could not load. Your edits are kept. See Help → Files on disk.".into());
+            return;
+        }
         if lib.graphs.is_empty() {
             self.set_error("nothing saved there yet".into());
             return;
@@ -330,21 +345,11 @@ impl Composer {
         });
         self.dirty = true;
 
-        let bad = self.load_report.iter().filter(|f| !f.ok()).count();
-        if bad == 0 {
-            self.set_status(format!(
-                "reloaded {} behaviour(s) and {} profile(s)",
-                self.lib.graphs.len(),
-                self.lib.subtypes.len()
-            ));
-        } else {
-            // Loud, and it names a count rather than a file: the Help tab lists
-            // each one with its parse error, and repeating the first here would
-            // suggest it was the only one.
-            self.set_error(format!(
-                "reloaded, but {bad} file(s) would not load — see Help ▸ Files on disk"
-            ));
-        }
+        self.set_status(format!(
+            "Reloaded {} behaviour(s) and {} profile(s). Apply and restart to run them.",
+            self.lib.graphs.len(),
+            self.lib.subtypes.len()
+        ));
     }
 
     fn refresh_load_report(&mut self) {
@@ -508,6 +513,7 @@ impl Composer {
         // error.
         g.add(domain.decision_output(), [600.0, 200.0]);
         self.lib.graphs.insert(id.clone(), g);
+        self.dirty = true;
         self.load_graph(&id);
         self.set_status(format!("new {} behaviour", domain.label().to_lowercase()));
     }
@@ -693,12 +699,15 @@ fn window(
 /// The application embeds this in its large bottom tab; retaining a plain body
 /// keeps the editor independent of where that work surface is hosted.
 pub fn panel_body(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBehaviour>) {
+    c.sync();
     toolbar(ui, c, apply);
     ui.separator();
-    egui::SidePanel::left("composer-palette")
-        .resizable(true)
-        .default_width(260.0)
-        .show_inside(ui, |ui| palette::panel(ui, c));
+    if c.advanced {
+        egui::SidePanel::left("composer-palette")
+            .resizable(true)
+            .default_width(260.0)
+            .show_inside(ui, |ui| palette::panel(ui, c));
+    }
     egui::SidePanel::right("composer-inspector")
         .resizable(true)
         .default_width(360.0)
@@ -727,7 +736,13 @@ pub fn panel_body(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<A
     egui::TopBottomPanel::bottom("composer-issues")
         .resizable(false)
         .show_inside(ui, |ui| issues(ui, c));
-    egui::CentralPanel::default().show_inside(ui, |ui| viewer::canvas(ui, c));
+    egui::CentralPanel::default().show_inside(ui, |ui| {
+        if c.advanced {
+            viewer::canvas(ui, c);
+        } else {
+            guided::panel(ui, c);
+        }
+    });
 }
 
 /// The selected agent's live behavior trace, embedded in the bottom debugger
@@ -753,6 +768,9 @@ fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBeh
         }
         ui.separator();
         ui.small(format!("editing {}", current.agent_label()));
+        ui.separator();
+        ui.selectable_value(&mut c.advanced, false, "Guided settings");
+        ui.selectable_value(&mut c.advanced, true, "Advanced wiring");
     });
 
     ui.horizontal_wrapped(|ui| {
@@ -793,15 +811,16 @@ fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBeh
             g.name = format!("{} (copy)", g.name);
             c.lib.graphs.insert(id.clone(), g);
             c.load_graph(&id);
-            c.set_status("duplicated".into());
+            c.dirty = true;
+            c.set_status("Duplicated. Assign a profile to this copy before applying it.".into());
         }
 
         ui.separator();
-        if ui.button("Save").clicked() {
+        if ui.button("Save to disk").clicked() {
             c.save();
         }
         if ui
-            .button("Reload")
+            .button("Discard edits and reload")
             .on_hover_text("Discard edits and re-read the files")
             .clicked()
         {
@@ -822,7 +841,10 @@ fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBeh
         );
         if resp.clicked() {
             c.commit();
-            apply.send(ApplyBehaviour);
+            match c.lib.validate_runtime() {
+                Ok(()) => { apply.send(ApplyBehaviour); }
+                Err(e) => c.set_error(format!("Cannot run yet: {e:#}")),
+            }
         }
         if !runnable {
             ui.colored_label(
@@ -832,6 +854,8 @@ fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBeh
         }
     });
 
+    ui.small("1. Choose a behaviour   >   2. Adjust settings and profiles   >   3. Try a situation   >   4. Apply and restart");
+    ui.small(if c.dirty { "Changes are not running yet. Apply and restart uses them in this incident; Save to disk keeps them for next launch." } else { "Save to disk keeps your behaviours for next launch. Apply and restart runs the library from the beginning." });
     ui.horizontal(|ui| {
         ui.label("Name");
         if ui.text_edit_singleline(&mut c.graph_name).changed() {
@@ -914,7 +938,7 @@ pub(crate) fn param_widget(
                 // whose declared range is huge gets a drag value instead.
                 let wide = (max - min) > 1000.0;
                 changed |= if wide {
-                    ui.add(egui::DragValue::new(n).speed(0.5).suffix(unit))
+                    ui.add(egui::DragValue::new(n).speed(0.5).range(min..=max).suffix(unit))
                         .changed()
                 } else {
                     ui.add(egui::Slider::new(n, min..=max).suffix(unit))
@@ -956,4 +980,24 @@ pub(crate) fn pretty(key: &str) -> String {
         first.make_ascii_uppercase();
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn browsing_does_not_mark_the_library_as_changed() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/behaviours");
+        let mut c = Composer::new(root);
+        c.dirty = false;
+        c.commit();
+        assert!(!c.dirty);
+        c.switch_domain(Domain::Person);
+        assert!(!c.dirty);
+        c.graph_name.push_str(" edited");
+        c.commit();
+        assert!(c.dirty);
+        assert_eq!(c.lib.graphs[&c.graph_id].name, c.graph_name);
+    }
 }

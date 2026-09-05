@@ -100,10 +100,8 @@ pub fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
-    // Silhouettes, not models: a box on wheels, a figure with a tool, a cross
-    // with wings. At this distance the shape is the whole read.
-    let engine = meshes.add(Cuboid::new(2.4, 2.6, 6.2));
-    let crew = meshes.add(Capsule3d::new(0.5, 1.4).mesh().latitudes(4).longitudes(6));
+    let engine = meshes.add(crate::models::mesh("fire_engine"));
+    let crew = meshes.add(crate::models::mesh("firefighter"));
     let tanker = meshes.add(tanker_mesh());
 
     let vr = sim.scenario.vr_palette().is_some();
@@ -233,13 +231,18 @@ pub fn update_units(
         let lift = if u.kind.is_air() {
             AIR_ALTITUDE_M
         } else {
-            symbol_scale(sim.scenario.vr_palette().is_some()) * 1.3
+            0.05
         };
         tf.translation = frame::to_bevy(u.pos, ground + lift);
         // World bearing to Bevy yaw: north is -Z and the meshes' long axis is
         // +Z, so a heading of zero (due east) is a quarter turn. Same conversion
         // as the civilian vehicles, for the same reason.
-        tf.rotation = Quat::from_rotation_y(u.heading - std::f32::consts::FRAC_PI_2);
+        let forward_offset = if u.kind.is_air() {
+            -std::f32::consts::FRAC_PI_2
+        } else {
+            std::f32::consts::FRAC_PI_2
+        };
+        tf.rotation = Quat::from_rotation_y(u.heading + forward_offset);
 
         // One material per entity here rather than a shared palette: there are
         // eight of these, and mutating the material in place is what makes a

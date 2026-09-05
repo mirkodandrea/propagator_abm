@@ -208,6 +208,7 @@ impl Sim {
         seed: u64,
         behaviour: behavior::Library,
     ) -> anyhow::Result<Sim> {
+        behaviour.validate_runtime()?;
         let household_runtime = Self::runtime(&behaviour)?;
         let person_runtime = Self::person_runtime(&behaviour)?;
         let unit_runtime = Self::unit_runtime(&behaviour)?;
@@ -348,6 +349,7 @@ impl Sim {
     pub fn restart(&mut self) -> anyhow::Result<()> {
         // Compile and check complete domain coverage before disturbing the live
         // run. An invalid edit must leave the current incident intact.
+        self.behaviour.validate_runtime()?;
         let household_runtime = Self::runtime(&self.behaviour)?;
         let person_runtime = Self::person_runtime(&self.behaviour)?;
         let unit_runtime = Self::unit_runtime(&self.behaviour)?;

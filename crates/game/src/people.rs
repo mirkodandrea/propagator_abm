@@ -66,11 +66,8 @@ pub fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
-    // A capsule reads as a person at any angle and costs almost nothing; the
-    // silhouette is doing all the work at this distance anyway.
-    let person: Handle<Mesh> =
-        meshes.add(Capsule3d::new(0.32, 1.1).mesh().latitudes(4).longitudes(6));
-    let car = meshes.add(Cuboid::new(1.8, 1.5, 4.3));
+    let person = meshes.add(crate::models::mesh("pedestrian"));
+    let car = meshes.add(crate::models::mesh("car"));
 
     // VR-training dev scenarios render everyone flat and unlit — the status
     // colours themselves stay meaningful (they are what the ABM testing
@@ -186,7 +183,7 @@ pub fn spawn_vehicles(mut commands: Commands, sim: Res<Sim>, mut assets: ResMut<
             MaterialMeshBundle::<RetroMaterial> {
                 mesh: assets.car.clone(),
                 material: assets.car_normal.clone(),
-                transform: Transform::from_translation(frame::to_bevy(t.pos, ground + 1.0))
+                transform: Transform::from_translation(frame::to_bevy(t.pos, ground + 0.05))
                     .with_scale(Vec3::splat(scale * 0.8)),
                 ..default()
             },
@@ -234,8 +231,12 @@ pub fn update_people(
         }
 
         let ground = sim.scenario.terrain.height_at(p.pos);
-        let scale = figure_scale(sim.scenario.vr_palette().is_some());
-        tf.translation = frame::to_bevy(p.pos, ground + scale * 0.5);
+        let next = frame::to_bevy(p.pos, ground + 0.05);
+        let movement = next - tf.translation;
+        if movement.x * movement.x + movement.z * movement.z > 0.0001 {
+            tf.rotation = Quat::from_rotation_y(movement.x.atan2(movement.z));
+        }
+        tf.translation = next;
         let m = &assets.status[p.status as usize];
         if *mat != *m {
             *mat = m.clone();
@@ -278,11 +279,10 @@ pub fn update_vehicles(
         }
 
         let ground = sim.scenario.terrain.height_at(t.pos);
-        let scale = figure_scale(sim.scenario.vr_palette().is_some());
-        tf.translation = frame::to_bevy(t.pos, ground + scale * 0.6);
+        tf.translation = frame::to_bevy(t.pos, ground + 0.05);
         // World-frame bearing to a Bevy yaw: north is -Z, and the mesh's long
         // axis is +Z, so a heading of 0 (due east) is a quarter turn.
-        tf.rotation = Quat::from_rotation_y(t.heading - std::f32::consts::FRAC_PI_2);
+        tf.rotation = Quat::from_rotation_y(t.heading + std::f32::consts::FRAC_PI_2);
 
         let m = if t.state == TravelState::Cutoff {
             &assets.car_stuck

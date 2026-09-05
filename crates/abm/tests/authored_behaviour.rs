@@ -285,3 +285,42 @@ fn shelter_is_not_a_departure() {
     let left = agents.households.iter().filter(|h| h.traveller.is_some()).count();
     assert_eq!(left, 0, "{left} households evacuated on a shelter-only behaviour");
 }
+
+/// Exercise the authored JSON → loader → runtime → agent decision path, then
+/// edit the file and rebuild. No compiled default can satisfy both outcomes.
+#[test]
+fn disk_behaviours_are_loaded_and_executed_after_editing() {
+    let root = std::env::temp_dir().join(format!("abm-runtime-{}", std::process::id()));
+    let scn = Scenario::load(data_dir()).unwrap();
+    let mut lib = Library::load_dir(&data_dir().join("behaviours")).unwrap();
+    let mut graph = BehaviorGraph::new("disk-policy", "Disk policy");
+    let condition = graph.add("param.bool", [0.0, 0.0]).unwrap();
+    graph.node_mut(condition).unwrap().params.insert("value".into(), ParamValue::Bool(true));
+    let action = graph.add("action.shelter", [200.0, 0.0]).unwrap();
+    let output = graph.add("out.decision", [400.0, 0.0]).unwrap();
+    graph.connect(behavior::Wire { from_node: condition, from_port: 0, to_node: action, to_port: 0 });
+    graph.connect(behavior::Wire { from_node: action, from_port: 0, to_node: output, to_port: 0 });
+    let household_ids: Vec<_> = lib.subtypes.values()
+        .filter(|s| lib.domain_of(s) == Some(behavior::Domain::Household))
+        .map(|s| s.id.clone()).collect();
+    for id in household_ids { lib.subtypes.get_mut(&id).unwrap().share = 0.0; }
+    let mut profile = behavior::AgentSubtype::new("disk-profile", "Disk profile", &graph.id);
+    profile.share = 1.0;
+    lib.subtypes.insert(profile.id.clone(), profile);
+    lib.graphs.insert(graph.id.clone(), graph.clone());
+    lib.save_dir(&root).unwrap();
+
+    for (node_type, expected) in [("action.shelter", ActionKind::Shelter), ("action.evacuate_now", ActionKind::EvacuateNow)] {
+        graph.node_mut(action).unwrap().type_id = node_type.into();
+        lib.graphs.insert(graph.id.clone(), graph.clone());
+        lib.save_graph(&root, &graph).unwrap();
+        let loaded = Library::load_dir(&root).unwrap();
+        loaded.validate_runtime().unwrap();
+        let mut agents = Abm::with_behavior(&scn, 42, runtime(&loaded)).unwrap();
+        let fire = fire_for(&scn);
+        agents.step(10.0, &fire, &scn);
+        assert_eq!(agents.behaviour_of(0).unwrap().0, "disk-profile");
+        assert_eq!(agents.behaviour_of(0).unwrap().2.action, expected);
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}

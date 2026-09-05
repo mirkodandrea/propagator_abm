@@ -15,6 +15,11 @@ use super::Composer;
 
 pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
     let Some(node_id) = c.selected else {
+        if !c.advanced {
+            ui.label("Choose a behaviour rule on the left to see its settings here.");
+            ui.small("Choose a profile to change its settings, or Shared settings to edit the defaults. Try a situation previews the result before you apply it.");
+            return;
+        }
         ui.label("Select a node on the canvas, or add one from the palette.");
         ui.separator();
         ui.small(

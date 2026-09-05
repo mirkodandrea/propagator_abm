@@ -90,6 +90,13 @@ pub fn handle_launch_selection(
         return;
     };
 
+    if let Some(file) = composer.load_report.iter().find(|file| !file.ok()) {
+        selector.error = Some(format!("Cannot launch: behaviour file {} could not load: {}",
+            file.path.display(), file.error.as_deref().unwrap_or("unknown error")));
+        selector.confirmed = false;
+        return;
+    }
+
     let result = scenario::Scenario::load_by_id(&data_path.0, &scenario_id);
 
     // Load scenario

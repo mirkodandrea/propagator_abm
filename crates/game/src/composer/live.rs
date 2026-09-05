@@ -130,6 +130,8 @@ impl Frame {
 /// The composer's live-inspection state.
 #[derive(Default)]
 pub struct Live {
+    /// Keep the explanation readable without requiring graph literacy.
+    pub show_diagram: bool,
     /// The agent being watched, if any.
     pub subject: Option<Subject>,
     /// The most recent capture. Taken out of the composer while the canvas
@@ -337,6 +339,9 @@ pub fn capture(sim: Res<Sim>, selected: Res<Selected>, mut composer: ResMut<Comp
         return;
     };
 
+    // Draft changes must be visible even while the simulation is paused.
+    if let Some(frame) = &mut c.live.frame { frame.stale = c.dirty; }
+
     // Nothing has moved and the agent has not changed, so the last capture is
     // still the answer. `explain` is one graph evaluation, but it is one per
     // frame at 60 Hz for as long as something is selected.
@@ -416,12 +421,41 @@ pub fn debugger_panel(ui: &mut egui::Ui, c: &mut Composer) {
         .show_inside(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| panel_impl(ui, c, false));
         });
-    egui::CentralPanel::default().show_inside(ui, |ui| super::viewer::debug_canvas(ui, c));
+    egui::CentralPanel::default().show_inside(ui, |ui| {
+        ui.checkbox(&mut c.live.show_diagram, "Show decision diagram (advanced)");
+        if c.live.show_diagram {
+            super::viewer::debug_canvas(ui, c);
+        } else if let Some(frame) = &c.live.frame {
+            ui.heading("What led to this decision?");
+            ui.label(format!("{} — {}", frame.agent, frame.decision.action.label()));
+            ui.small("These rules contributed to the answer. The panel on the right shows other actions considered and lets you advance to the next decision.");
+            egui::ScrollArea::vertical().id_source("decision-explanation").show(ui, |ui| {
+                for node in &frame.trace.nodes {
+                    if !frame.active.contains(&node.node) { continue; }
+                    ui.group(|ui| {
+                        ui.strong(node.name);
+                        if let Some(spec) = frame.graph.node(node.node).and_then(|n| n.spec()) {
+                            ui.small(spec.doc);
+                            for (port, value) in spec.outputs.iter().zip(&node.outputs) {
+                                ui.label(format!("{}: {}", port.name, value.display()));
+                            }
+                        }
+                    });
+                }
+                if frame.active.is_empty() {
+                    ui.label("No rule proposed an action. The default action applies.");
+                }
+            });
+        } else {
+            ui.heading("Understand an agent’s decisions");
+            ui.label("Select a household, person or response unit on the map. Then use Next decision to watch how its behaviour responds to the situation.");
+        }
+    });
 }
 
 fn panel_impl(ui: &mut egui::Ui, c: &mut Composer, editor_context: bool) {
     ui.horizontal(|ui| {
-        ui.heading(if editor_context { "Live" } else { "Live behavior debugger" });
+        ui.heading(if editor_context { "Live" } else { "Why did this agent act?" });
         if editor_context {
             ui.checkbox(&mut c.live.follow, "follow selection").on_hover_text(
                 "Switch the canvas to whatever the selected agent is running. Off keeps the \
@@ -508,6 +542,13 @@ fn panel_impl(ui: &mut egui::Ui, c: &mut Composer, editor_context: bool) {
         ui.small(format!("urgency readout {:.2}", d.urgency));
     }
 
+    if let Some(winner) = frame.winner.and_then(|id| frame.trace.nodes.iter().find(|n| n.node == id)) {
+        ui.label(format!("“{}” proposed this action with the highest priority ({:.2}).", winner.name, d.priority));
+    } else {
+        ui.label("No rule proposed an action, so this agent uses its default action.");
+    }
+    ui.small("This explains the applied behaviour using the agent’s current situation. Movement and safety constraints can still affect what happens next.");
+
     transport(ui, c);
 
     // --- the legend ---------------------------------------------------------
@@ -532,7 +573,7 @@ fn panel_impl(ui: &mut egui::Ui, c: &mut Composer, editor_context: bool) {
 
     // --- the proposals ------------------------------------------------------
     ui.separator();
-    ui.label("Proposals");
+    ui.label("Actions considered (highest priority wins)");
     if frame.trace.proposals.is_empty() {
         ui.small("Nothing fired: the agent is doing its default.");
     }
@@ -550,7 +591,7 @@ fn panel_impl(ui: &mut egui::Ui, c: &mut Composer, editor_context: bool) {
 
     // --- every node, in evaluation order ------------------------------------
     ui.separator();
-    ui.label("Node by node");
+    egui::CollapsingHeader::new("Detailed rule results").show(ui, |ui| {
     egui::ScrollArea::vertical().max_height(240.0).id_source("live-trace").show(ui, |ui| {
         for n in &frame.trace.nodes {
             let role = frame.role(n.node);
@@ -567,6 +608,8 @@ fn panel_impl(ui: &mut egui::Ui, c: &mut Composer, editor_context: bool) {
                 jump = Some(n.node);
             }
         }
+    });
+
     });
 
     // --- what it has been doing ---------------------------------------------
@@ -619,15 +662,15 @@ fn panel_impl(ui: &mut egui::Ui, c: &mut Composer, editor_context: bool) {
 fn transport(ui: &mut egui::Ui, c: &mut Composer) {
     ui.horizontal(|ui| {
         let (glyph, hint) = if c.live.playing {
-            ("⏸", "Pause the incident")
+            ("Pause", "Pause the incident")
         } else {
-            ("▶", "Run the incident")
+            ("Run", "Run the incident")
         };
         if ui.button(glyph).on_hover_text(hint).clicked() {
             c.live.toggle_play = true;
         }
         if ui
-            .button("⏭")
+            .button("Next decision")
             .on_hover_text(
                 "One decision tick. Every agent decides exactly once, and the highlight \
                  moves to what they decided.",

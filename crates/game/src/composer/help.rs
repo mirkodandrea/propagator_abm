@@ -30,7 +30,17 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
     });
     ui.separator();
 
-    section(ui, "What a behaviour is", true, |ui| {
+    section(ui, "Start here: change a behaviour without coding", true, |ui| {
+        bullet(ui, "In Guided settings, choose the kind of agent and its behaviour.");
+        bullet(ui, "Choose a profile, then a rule and Adjust settings. Shared settings changes the defaults used by profiles without their own setting.");
+        bullet(ui, "Check Profiles: a population profile needs a positive share; a unit profile must be enabled. A behaviour without an active profile affects no agents.");
+        bullet(ui, "Use Try a situation to preview a decision without changing the incident.");
+        bullet(ui, "Apply and restart runs your changes from the beginning of the incident. Save to disk also keeps them for the next desktop launch.");
+        bullet(ui, "Select an agent and open Live debugger. Read why it acts, then press Next decision to advance the incident.");
+        para(ui, "Advanced wiring lets you add rules and change their connections. You can adjust existing rules without using it.");
+    });
+
+    section(ui, "What a behaviour is", false, |ui| {
         para(
             ui,
             "A behaviour is a graph of boxes and wires that answers one question about one \

@@ -982,3 +982,27 @@ fn palette_report() {
     let shared = registry().all().filter(|s| s.domain.is_none()).count();
     println!("  {:20} {shared}", "domain-free");
 }
+
+#[test]
+fn runtime_validation_rejects_silently_dropped_profiles() {
+    let mut lib = behavior::defaults::default_library();
+    lib.validate_runtime().unwrap();
+    let profile = lib.subtypes.values_mut().next().unwrap();
+    profile.graph = "missing-behaviour".into();
+    assert!(lib.validate_runtime().unwrap_err().to_string().contains("missing-behaviour"));
+}
+
+#[test]
+fn runtime_validation_requires_each_agent_domain() {
+    for domain in Domain::ALL {
+        let mut lib = behavior::defaults::default_library();
+        let ids: Vec<_> = lib.subtypes.values().filter(|s| lib.domain_of(s) == Some(domain))
+            .map(|s| s.id.clone()).collect();
+        for id in ids {
+            let s = lib.subtypes.get_mut(&id).unwrap();
+            s.share = 0.0;
+            s.enabled = false;
+        }
+        assert!(lib.validate_runtime().unwrap_err().to_string().contains(domain.label()));
+    }
+}

@@ -313,6 +313,31 @@ impl Library {
             .map_err(|r| CompileError::Invalid(graph_id.to_string(), r))
     }
 
+    /// Check the whole runnable library before starting or replacing an incident.
+    /// Missing graph references must not silently remove profiles from assignment.
+    pub fn validate_runtime(&self) -> Result<()> {
+        for profile in self.subtypes.values() {
+            anyhow::ensure!(self.graphs.contains_key(&profile.graph),
+                "Profile \"{}\" needs missing behaviour \"{}\". Load that behaviour or update the profile.",
+                profile.name, profile.graph);
+            anyhow::ensure!(profile.share.is_finite() && profile.share >= 0.0,
+                "Profile \"{}\" needs a finite, non-negative population share.", profile.name);
+        }
+        for domain in Domain::ALL {
+            let assigned: Vec<String> = if domain == Domain::SuppressionUnit {
+                self.unit_assignment()
+            } else {
+                self.share_assignment(domain).into_iter().map(|(id, _)| id).collect()
+            };
+            anyhow::ensure!(!assigned.is_empty(),
+                "{} has no active profiles. Open Profiles and enable a profile or give it a positive share.", domain.label());
+            for id in assigned {
+                self.compile(&id)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Which domain a subtype runs in, from the graph it points at.
     ///
     /// A subtype does not carry its own domain: it would be a second place for

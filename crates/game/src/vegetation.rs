@@ -1,4 +1,4 @@
-//! Procedural vegetation.
+//! Fuel-driven vegetation using Blender-authored tree and shrub archetypes.
 //!
 //! The fuel raster is the only vegetation source this scenario has — there is
 //! no tree inventory, and there never will be one at 10 km scale — so the
@@ -12,7 +12,7 @@
 //! so *all* of the land cover a player sees is geometry: grass tussocks and
 //! macchia as much as trees. That raises the plant count into the hundreds of
 //! thousands, which sets the budget for everything below — each archetype is
-//! built to a few dozen vertices, and the visual density comes from crown
+//! built to at most 120 vertices, and the visual density comes from crown
 //! width and overlap rather than from stem count, because a hundred wide
 //! crowns close a canopy that a thousand narrow ones would not.
 //!
@@ -335,118 +335,24 @@ fn mul(c: [f32; 3], k: f32) -> [f32; 3] {
 
 // --- archetypes ------------------------------------------------------------
 //
-// All four are built from three primitives (a tapered prism, a cone fan and a
-// squashed octahedron) and stay in the tens of vertices, because there are
-// hundreds of thousands of them. Detail buys nothing here: at the altitude a
-// commander plays from, a tree is a handful of pixels, and only its
-// silhouette, its crown width and the shadow it casts read at all.
-//
-// Crowns are deliberately wide. Canopy closure is what makes a hillside look
-// vegetated, and it is far cheaper to reach with overlapping crowns than with
-// more stems.
-
-fn conifer(
-    out: &mut Builder,
-    base: Vec3,
-    scale: f32,
-    yaw: f32,
-    foliage: [f32; 3],
-    wood: [f32; 3],
-    rng: &mut Rng,
-) {
-    // Aleppo and maritime pine: tall, bare-stemmed, with the crown carried in
-    // the top third — the profile that makes a Ligurian ridge look like one.
+// Blender archetypes retain chunk batching, species palettes and burn ranges.
+// Normalized trees scale to the existing ecological height distributions.
+fn conifer(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
+    foliage: [f32; 3], wood: [f32; 3], rng: &mut Rng) {
     let height = (12.0 + rng.unit() * 9.0) * scale;
-    let radius = height * (0.26 + rng.unit() * 0.10);
-    out.prism(
-        base,
-        height * 0.62,
-        height * 0.040,
-        height * 0.022,
-        yaw,
-        wood,
-        4,
-    );
-
-    // Three skirts, each narrower and higher; the lowest is the widest.
-    for i in 0..3 {
-        let t = i as f32 / 2.0;
-        let bottom = height * (0.34 + 0.20 * i as f32);
-        let r = radius * (1.0 - 0.45 * t);
-        // Foliage darkens toward the shaded interior of the crown.
-        let shade = mul(foliage, 0.82 + 0.18 * t);
-        out.cone(
-            base + Vec3::Y * bottom,
-            r,
-            height * (0.36 - 0.06 * t),
-            yaw + i as f32 * 0.7,
-            shade,
-            6,
-        );
-    }
+    out.model("pine", base, Vec3::splat(height), yaw, foliage, wood);
 }
 
-fn broadleaf(
-    out: &mut Builder,
-    base: Vec3,
-    scale: f32,
-    yaw: f32,
-    foliage: [f32; 3],
-    wood: [f32; 3],
-    rng: &mut Rng,
-) {
-    // Holm oak: short trunk, crown wider than the tree is tall.
+fn broadleaf(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
+    foliage: [f32; 3], wood: [f32; 3], rng: &mut Rng) {
     let height = (7.0 + rng.unit() * 6.0) * scale;
-    let trunk = height * 0.34;
-    out.prism(
-        base,
-        trunk * 1.2,
-        height * 0.055,
-        height * 0.038,
-        yaw,
-        wood,
-        4,
-    );
-
-    // Three offset lobes read as a broad, lumpy crown; one alone is a
-    // lollipop from every angle.
-    let crown = height * (0.46 + rng.unit() * 0.12);
-    out.blob(base + Vec3::Y * (trunk + crown * 0.62), crown, yaw, foliage);
-    out.blob(
-        base + Vec3::new(crown * 0.55, trunk + crown * 0.95, crown * 0.25),
-        crown * 0.68,
-        yaw + 1.1,
-        mul(foliage, 1.08),
-    );
-    out.blob(
-        base + Vec3::new(-crown * 0.45, trunk + crown * 0.80, -crown * 0.4),
-        crown * 0.62,
-        yaw + 2.4,
-        mul(foliage, 0.88),
-    );
+    out.model("oak", base, Vec3::splat(height), yaw, foliage, wood);
 }
 
-fn shrub(out: &mut Builder, base: Vec3, scale: f32, yaw: f32, foliage: [f32; 3], rng: &mut Rng) {
-    // Macchia: a clump of cistus and heather, knee to shoulder high and much
-    // wider than it is tall. The spread matters more than the height — this is
-    // the fuel that carries fire across a Ligurian hillside, and it should
-    // look like continuous cover, not like scattered bushes.
+fn shrub(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
+    foliage: [f32; 3], rng: &mut Rng) {
     let r = (2.6 + rng.unit() * 2.2) * scale;
-    let lobes = 3 + (rng.unit() * 2.0) as usize;
-    for i in 0..lobes {
-        let a = yaw + i as f32 * (std::f32::consts::TAU / lobes as f32) + rng.unit() * 0.6;
-        let reach = r * (0.35 + rng.unit() * 0.5);
-        let off = Vec3::new(a.cos() * reach, 0.0, a.sin() * reach);
-        // Lobes vary in tone: macchia is a mix of species, never one green.
-        let tone = mul(foliage, 0.80 + rng.unit() * 0.45);
-        out.dome(
-            base + off,
-            r * (0.45 + rng.unit() * 0.35),
-            r * (0.5 + rng.unit() * 0.4),
-            a,
-            tone,
-        );
-    }
+    out.model("bush", base, Vec3::new(r, r * 0.8, r), yaw, foliage, foliage);
 }
 
 fn grass(out: &mut Builder, base: Vec3, scale: f32, yaw: f32, foliage: [f32; 3], rng: &mut Rng) {
@@ -485,6 +391,20 @@ struct Builder {
 }
 
 impl Builder {
+    fn model(&mut self, name: &str, base: Vec3, scale: Vec3, yaw: f32,
+        foliage: [f32; 3], wood: [f32; 3]) {
+        let model = crate::models::model(name);
+        let start = self.positions.len() as u32;
+        let rotation = Quat::from_rotation_y(yaw);
+        for (i, p) in model.positions.iter().enumerate() {
+            let color = if model.wood[i] { wood } else { foliage };
+            // Preserve species colour and the authored crown's tonal variation.
+            let shade = if model.wood[i] { 1.0 } else { model.colors[i][1] / 0.38 };
+            self.vertex(base + rotation * (Vec3::from(*p) * scale), mul(color, shade));
+        }
+        self.indices.extend(model.indices.iter().map(|i| start + i));
+    }
+
     fn vertex(&mut self, p: Vec3, c: [f32; 3]) -> u32 {
         let i = self.positions.len() as u32;
         self.positions.push([p.x, p.y, p.z]);
@@ -493,36 +413,7 @@ impl Builder {
         i
     }
 
-    /// Tapered vertical prism: trunks and stems.
-    fn prism(
-        &mut self,
-        base: Vec3,
-        height: f32,
-        r_bottom: f32,
-        r_top: f32,
-        yaw: f32,
-        color: [f32; 3],
-        sides: usize,
-    ) {
-        let start = self.positions.len() as u32;
-        for i in 0..sides {
-            let a = yaw + i as f32 / sides as f32 * std::f32::consts::TAU;
-            let (s, c) = a.sin_cos();
-            self.vertex(base + Vec3::new(c * r_bottom, 0.0, s * r_bottom), color);
-            self.vertex(base + Vec3::new(c * r_top, height, s * r_top), color);
-        }
-        for i in 0..sides {
-            let a = start + (i as u32) * 2;
-            let b = start + (((i + 1) % sides) as u32) * 2;
-            self.indices
-                .extend_from_slice(&[a, b, a + 1, b, b + 1, a + 1]);
-        }
-    }
-
-    /// Low lumpy dome: shrub lobes and grass tussocks. An apex fan like
-    /// [`Builder::cone`], but squat and with an irregular rim, which is what
-    /// separates a bush from a party hat. Five segments — there are hundreds
-    /// of thousands of these.
+    /// Low, irregular dome for the remaining procedural grass tussocks.
     fn dome(&mut self, base: Vec3, radius: f32, height: f32, yaw: f32, color: [f32; 3]) {
         const SEGMENTS: usize = 5;
         // The tip leans, so a clump of domes does not read as a row of cones.
@@ -545,49 +436,6 @@ impl Builder {
             let a = ring + i as u32;
             let b = ring + ((i + 1) % SEGMENTS) as u32;
             self.indices.extend_from_slice(&[apex, a, b]);
-        }
-    }
-
-    /// Cone as an apex fan over a ring: conifer skirts.
-    fn cone(
-        &mut self,
-        base: Vec3,
-        radius: f32,
-        height: f32,
-        yaw: f32,
-        color: [f32; 3],
-        segments: usize,
-    ) {
-        let apex = self.vertex(base + Vec3::Y * height, color);
-        let ring = self.positions.len() as u32;
-        for i in 0..segments {
-            let a = yaw + i as f32 / segments as f32 * std::f32::consts::TAU;
-            let (s, c) = a.sin_cos();
-            self.vertex(base + Vec3::new(c * radius, 0.0, s * radius), color);
-        }
-        for i in 0..segments {
-            let a = ring + i as u32;
-            let b = ring + ((i + 1) % segments) as u32;
-            self.indices.extend_from_slice(&[apex, a, b]);
-        }
-    }
-
-    /// Squashed octahedron: a broadleaf crown in 8 triangles.
-    fn blob(&mut self, centre: Vec3, radius: f32, yaw: f32, color: [f32; 3]) {
-        let top = self.vertex(centre + Vec3::Y * radius, color);
-        let bottom = self.vertex(centre - Vec3::Y * radius * 0.8, color);
-        let ring = self.positions.len() as u32;
-        for i in 0..4 {
-            let a = yaw + i as f32 * std::f32::consts::FRAC_PI_2;
-            let (s, c) = a.sin_cos();
-            // Slight per-lobe stretch so the crown is not perfectly regular.
-            let k = radius * if i % 2 == 0 { 1.15 } else { 0.85 };
-            self.vertex(centre + Vec3::new(c * k, 0.0, s * k), color);
-        }
-        for i in 0..4u32 {
-            let a = ring + i;
-            let b = ring + (i + 1) % 4;
-            self.indices.extend_from_slice(&[top, a, b, bottom, b, a]);
         }
     }
 
