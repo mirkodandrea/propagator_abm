@@ -305,20 +305,14 @@ pub fn sync_markers(
     assets.drawn = sim.ignitions.len();
 }
 
-/// Show the placed rings only while the ignition tool is armed.
-///
-/// A permanent ring round the opening fire is pure clutter — the burn scar
-/// already says where the fire is, far more precisely. What the rings are
-/// actually for is *editing*: seeing where you have already lit something, so
-/// the next click is placed in relation to it.
+/// Show ignition rings while editing and during the initial paused briefing.
+/// Before the first simulation tick the flame layer has no visible front yet.
 pub fn show_markers(
+    sim: Res<Sim>,
     tool: Res<IgnitionTool>,
     mut markers: Query<&mut Visibility, With<IgnitionMarker>>,
 ) {
-    if !tool.is_changed() {
-        return;
-    }
-    let want = if tool.mode == EditMode::Place {
+    let want = if tool.mode == EditMode::Place || sim.time_s() == 0 {
         Visibility::Inherited
     } else {
         Visibility::Hidden

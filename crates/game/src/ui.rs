@@ -138,6 +138,8 @@ impl PanelPlacement {
 /// Placement and navigation state for the three workspaces.
 #[derive(Resource)]
 pub struct PanelState {
+    pub evacuation_notice: Option<String>,
+    pub preview_evacuation: bool,
     /// Bottom incident/chat/behavior workbench.
     pub incident: PanelPlacement,
     /// Left execution/fire/intervention controls.
@@ -151,6 +153,8 @@ pub struct PanelState {
 impl Default for PanelState {
     fn default() -> Self {
         PanelState {
+            evacuation_notice: None,
+            preview_evacuation: false,
             incident: if std::env::var("SPOTORNO_COMPOSER").is_ok()
                 || std::env::var("SPOTORNO_DEBUG").is_ok()
             {
@@ -634,17 +638,17 @@ fn help_english(ui: &mut egui::Ui, location: &str) {
     ui.add_space(8.0);
     ui.heading("A simple first run");
     ui.label(
-        "1. Look at the fire, and try the four map layers under View ▸ Fire layer (or press 1–4).",
+        "1. Stay paused while assessing the fire. Try the four map layers (1–4).",
     );
     ui.label("2. Order an evacuation when people may be at risk.");
-    ui.label("3. Select a unit under Intervention on the left, choose an order, then click the map to place it.");
+    ui.label("3. Select a crew in Incident response → Response, choose an order, then click a valid map target.");
     ui.label("4. Press Play and adjust time acceleration as the incident develops.");
     ui.small("There is no score: use the information in the panels to see the consequences of each decision.");
     ui.add_space(8.0);
     ui.heading("Reading the panels");
     ui.label("The menu bar along the top reaches everything, and the clock, play button and speed sit at its right-hand end.");
-    ui.label("The left Command panel contains execution controls, compact wind and moisture parameters, ignition settings, and crew intervention.");
-    ui.label("The fixed-width right panel finds any household, person, vehicle or unit. Selecting a row or map symbol shows that entity's detail directly below the navigator.");
+    ui.label("Incident response has two tabs: Response for evacuation and crew orders; Fire setup for weather, ignition settings and restart. Select a crew once to give orders or use Locate to find it.");
+    ui.label("Open Entities from the bottom bar to find any household, person, vehicle or unit. Selecting a row or map symbol shows that entity's detail directly below the navigator.");
     ui.label("The bottom workbench switches between the incident view, agent chat, the selected agent's live behavior debugger, and the behavior editor.");
     ui.add_space(8.0);
     ui.heading("Why did they do that?");
@@ -682,15 +686,15 @@ fn help_italian(ui: &mut egui::Ui, location: &str) {
     ui.label(format!("Sei il responsabile delle operazioni per un incendio boschivo vicino a {location}. Incendio, meteo, strade, famiglie e squadre di intervento sono simulati in tempo reale. Il tuo compito è osservare la situazione, proteggere le persone e usare le squadre dove possono fare la differenza."));
     ui.add_space(8.0);
     ui.heading("Una prima simulazione semplice");
-    ui.label("1. Osserva l'incendio e prova i quattro livelli in View ▸ Fire layer (o premi 1–4).");
+    ui.label("1. Rimani in pausa e osserva l’incendio. Prova i quattro livelli della mappa (1–4).");
     ui.label("2. Ordina l'evacuazione quando le persone potrebbero essere in pericolo.");
-    ui.label("3. Seleziona una squadra in Intervento a sinistra, scegli un ordine e poi clicca sulla mappa per assegnarlo.");
+    ui.label("3. Seleziona una squadra in Incident response → Response, scegli un ordine e poi clicca sulla mappa per assegnarlo.");
     ui.label("4. Premi Play e regola l'accelerazione del tempo mentre l'emergenza evolve.");
     ui.small("Non c'è un punteggio: usa le informazioni nei pannelli per capire le conseguenze delle decisioni.");
     ui.add_space(8.0);
     ui.heading("Come leggere i pannelli");
     ui.label("La barra dei menu in alto raggiunge ogni funzione; orologio, play e velocità stanno alla sua destra.");
-    ui.label("Il pannello Comando a sinistra contiene esecuzione, parametri compatti per vento e umidità, inneschi e intervento delle squadre.");
+    ui.label("Incident response contiene Response per evacuazioni e ordini alle squadre, e Fire setup per meteo, inneschi e riavvio. Seleziona una squadra e usa Locate per trovarla.");
     ui.label("Il pannello a larghezza fissa sulla destra trova famiglie, persone, veicoli e squadre; il dettaglio dell'entità selezionata appare subito sotto l'elenco.");
     ui.label(
         "L'area in basso passa tra vista incidente, chat, debugger del comportamento dell'agente selezionato ed editor dei comportamenti.",
@@ -761,7 +765,10 @@ pub fn map_hud(
         order.armed,
         order.line_from.is_some(),
     ) {
-        format!("{hint}  ·  Esc cancels")
+        let detail = order.preview_reason.unwrap_or(if order.is_armed() {
+            "Valid target · gold: road approach / hose coverage · cyan: work area"
+        } else { "Click to place ignition" });
+        format!("{hint} · Esc cancels\n{detail}")
     } else if let Some(target) = hovered.0 {
         format!(
             "{}  ·  click to inspect",
@@ -784,13 +791,15 @@ pub fn map_hud(
     egui::Area::new(egui::Id::new("map_hud"))
         .order(egui::Order::Foreground)
         .interactable(false)
-        .fixed_pos(egui::pos2(rect.left() + 12.0, rect.bottom() - 38.0))
+        .pivot(egui::Align2::LEFT_BOTTOM)
+        .fixed_pos(egui::pos2(rect.left() + 12.0, rect.bottom() - 12.0))
         .show(ctx, |ui| {
             egui::Frame::none()
                 .fill(egui::Color32::from_black_alpha(205))
                 .rounding(egui::Rounding::same(5.0))
                 .inner_margin(egui::Margin::symmetric(10.0, 6.0))
                 .show(ui, |ui| {
+                    ui.set_max_width((rect.width() - 44.0).max(140.0));
                     ui.label(text);
                 });
         });
@@ -805,16 +814,16 @@ pub fn setup_style(mut contexts: EguiContexts) {
         .insert(egui::TextStyle::Heading, egui::FontId::proportional(18.0));
     style
         .text_styles
-        .insert(egui::TextStyle::Body, egui::FontId::proportional(14.0));
+        .insert(egui::TextStyle::Body, egui::FontId::proportional(16.0));
     style
         .text_styles
-        .insert(egui::TextStyle::Button, egui::FontId::proportional(13.5));
+        .insert(egui::TextStyle::Button, egui::FontId::proportional(15.0));
     style
         .text_styles
-        .insert(egui::TextStyle::Small, egui::FontId::proportional(11.5));
+        .insert(egui::TextStyle::Small, egui::FontId::proportional(13.0));
     style.spacing.item_spacing = egui::vec2(7.0, 5.0);
     style.spacing.button_padding = egui::vec2(9.0, 5.0);
-    style.spacing.interact_size.y = 26.0;
+    style.spacing.interact_size.y = 30.0;
     style.visuals.override_text_color = Some(egui::Color32::from_rgb(224, 229, 235));
     style.visuals.panel_fill = egui::Color32::from_rgb(22, 25, 29);
     style.visuals.window_fill = egui::Color32::from_rgb(25, 29, 34);
@@ -844,11 +853,12 @@ pub fn dock(
         return;
     }
     let mut show_inspector = false;
+    panels.preview_evacuation = false;
 
     egui::SidePanel::left("control_dock")
         .resizable(true)
-        .default_width(330.0)
-        .width_range(300.0..=430.0)
+        .default_width(390.0)
+        .width_range(350.0..=500.0)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("Incident response");
@@ -868,6 +878,12 @@ pub fn dock(
                 ui.selectable_value(&mut panels.command_tab, DockTab::Fire, "Fire setup");
             });
             ui.separator();
+            if panels.command_tab == DockTab::Units {
+                egui::TopBottomPanel::bottom("selected_crew_orders")
+                    .show_inside(ui, |ui| {
+                        crate::command::orders_body(ui, &mut sim, &mut order, &mut tool, &mut selected, &mut camera);
+                    });
+            }
             egui::ScrollArea::vertical()
                 .id_source(("command_scroll", panels.command_tab as u8))
                 .auto_shrink([false, false])
@@ -881,12 +897,14 @@ pub fn dock(
                             restart_body(ui, &mut sim, &mut restarted);
                         });
                     } else {
-                        ui.collapsing("Quick start", |ui| {
-                            ui.label("1. Press Play in the top bar to start the clock.");
-                            ui.label("2. Select a crew, choose an order, then click the map.");
-                            ui.label("3. Order evacuation and track households reaching safety.");
-                            ui.weak("Drag to orbit · right-drag to pan · scroll to zoom.");
-                        });
+                        egui::CollapsingHeader::new("First run: plan while paused")
+                            .default_open(sim.fire.time_s() == 0)
+                            .show(ui, |ui| {
+                                ui.label("1. Assess the fire and homes at risk (map layers 1–4).");
+                                ui.label("2. Order evacuation; select a crew and place a valid order.");
+                                ui.label("3. Press Play. Track safe households, losses and crew progress.");
+                                ui.small("Space: play/pause · F: focus selection · drag: orbit · right-drag: pan · scroll: zoom");
+                            });
                         ui.add_space(10.0);
                         section(ui, "Civilian safety");
                         let stats = sim.agents.stats();
@@ -905,29 +923,38 @@ pub fn dock(
                                 ),
                             );
                         }
+                        let ordered = sim.agents.households.iter().filter(|h| h.ordered).count();
+                        ui.label(format!("Ordered {ordered}/{total} · preparing {} · moving {}", stats.preparing, stats.moving));
+                        ui.small(format!("{} people at risk · {} defending", stats.people_at_risk, stats.defending));
+                        let threatened = sim.fire.exposure().threatened(0.05).count();
+                        let lost = sim.fire.exposure().fields().iter().filter(|f| f.alight).count();
+                        ui.label(format!("Structures: {threatened} threatened · {lost} lost"));
+                        if let Some(message) = &panels.evacuation_notice {
+                            ui.colored_label(egui::Color32::from_rgb(130, 230, 180), message);
+                        }
                         ui.horizontal_wrapped(|ui| {
-                            if ui
-                                .button("Evacuate nearby")
-                                .on_hover_text("Households within 2 km of the opening fire")
-                                .clicked()
-                            {
+                            let near = ui.button("Evacuate 2 km").on_hover_text("Preview: 2 km around the opening ignition, not the camera or current fire edge.");
+                            panels.preview_evacuation = near.hovered() || near.has_focus();
+                            if near.clicked() {
                                 let centre = sim.scenario.world.centre_of(sim.ignition.centre);
-                                sim.agents.order_evacuation(centre, 2000.0);
+                                let n = sim.agents.order_evacuation(centre, 2000.0);
+                                panels.evacuation_notice = Some(format!("Evacuation ordered: {n} newly notified households (2 km)."));
                             }
                             if ui
-                                .button("Evacuate everyone")
+                                .add_enabled(ordered < total, egui::Button::new(if ordered == total { "Everyone ordered" } else { "Evacuate everyone" }))
                                 .on_hover_text("Order all households to evacuate (Shift+E)")
                                 .clicked()
                             {
-                                sim.agents.order_evacuation_all();
+                                let n = sim.agents.order_evacuation_all();
+                                panels.evacuation_notice = Some(format!("Evacuation ordered: {n} newly notified households."));
                             }
                         });
                         if ui.link("View full incident report").clicked() {
                             panels.focus_bottom(BottomTab::Incident);
                         }
-                        ui.add_space(16.0);
+                        ui.add_space(8.0);
                         section(ui, "Crews & orders");
-                        ui.weak("Select a crew below, then choose its order.");
+                        ui.small("Select a crew; its orders stay at the bottom of this panel.");
                         show_inspector = crate::command::units_body(
                             ui,
                             &mut sim,
@@ -1266,4 +1293,15 @@ pub fn sync_viewport(
         physical_size: UVec2::new(w, h),
         depth: 0.0..1.0,
     });
+}
+
+/// Read egui focus after all panels, before any map or keyboard actions.
+pub fn finalize_input_focus(
+    mut contexts: EguiContexts,
+    mut focus: ResMut<UiFocus>,
+    interview: Res<crate::interview::Interview>,
+) {
+    let ctx = contexts.ctx_mut();
+    focus.keyboard = ctx.wants_keyboard_input() || interview.open;
+    focus.pointer |= ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }

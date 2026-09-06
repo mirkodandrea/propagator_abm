@@ -45,6 +45,10 @@ name = "accesskit"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6cf780eb737f2d4a49ffbd512324d53ad089070f813f7be7f99dbd5123a7f448"
+dependencies = [
+ "enumn",
+ "serde",
+]
 
 [[package]]
 name = "accesskit_consumer"
@@ -2115,11 +2119,14 @@ name = "game"
 version = "0.1.0"
 dependencies = [
  "abm",
+ "accesskit 0.12.3",
+ "accesskit 0.14.0",
  "anyhow",
  "behavior",
  "bevy",
  "bevy_egui",
  "chat",
+ "egui",
  "egui-snarl",
  "fire",
  "getrandom 0.3.4",

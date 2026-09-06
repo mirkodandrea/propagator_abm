@@ -563,11 +563,11 @@ pub fn menubar(
             Action::EvacuateNear => {
                 let centre = sim.scenario.world.centre_of(sim.ignition.centre);
                 let n = sim.agents.order_evacuation(centre, 2000.0);
-                info!("evacuation ordered within 2 km: {n} households");
+                panels.evacuation_notice = Some(format!("Evacuation ordered: {n} newly notified households (2 km)."));
             }
             Action::EvacuateAll => {
                 let n = sim.agents.order_evacuation_all();
-                info!("general evacuation ordered: {n} households");
+                panels.evacuation_notice = Some(format!("Evacuation ordered: {n} newly notified households."));
             }
             Action::RequestBoats => {
                 match sim

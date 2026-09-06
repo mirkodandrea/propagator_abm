@@ -52,6 +52,16 @@ impl OrderKind {
         }
     }
 
+    pub fn label_for(self, kind: UnitKind) -> &'static str {
+        match (self, kind) {
+            (Self::Attack, UnitKind::Engine) => "Suppress from road",
+            (Self::Attack, UnitKind::HandCrew) => "Build defensive line here",
+            (Self::Line, _) => "Draw line (2 clicks)",
+            (Self::Drop, _) => "Drop water here",
+            _ => self.label(),
+        }
+    }
+
     /// Can this unit take this order at all? The same rules
     /// [`abm::suppression::Suppression::assign`] enforces, asked early so the
     /// button can be greyed out rather than the click refused.
@@ -78,6 +88,14 @@ pub struct OrderTool {
     /// Last refusal, for the panel to show. Not a log line: the reason an order
     /// was refused is the most useful thing the model knows about the map.
     pub refusal: Option<String>,
+    pub confirmation: Option<String>,
+    /// Keep the matching mouse release from selecting an entity after disarming.
+    pub click_consumed: bool,
+    /// Planned road approach for the current cursor, reused by the overlay.
+    pub preview_route: Vec<Pos>,
+    pub preview_road: Option<Pos>,
+    pub preview_reason: Option<&'static str>,
+    preview_key: Option<(usize, OrderKind, i64, i32, i32)>,
 }
 
 impl OrderTool {
@@ -93,6 +111,7 @@ impl OrderTool {
             self.armed = Some(kind);
             self.line_from = None;
             self.refusal = None;
+            self.confirmation = None;
         }
     }
 
@@ -100,6 +119,10 @@ impl OrderTool {
         self.armed = None;
         self.hover = None;
         self.line_from = None;
+        self.preview_route.clear();
+        self.preview_road = None;
+        self.preview_reason = None;
+        self.preview_key = None;
     }
 }
 
@@ -158,6 +181,7 @@ pub fn controls(
     mut ignition: ResMut<IgnitionTool>,
     mut sim: ResMut<Sim>,
     mut panels: ResMut<crate::ui::PanelState>,
+    mut selected: ResMut<crate::inspect::Selected>,
 ) {
     if focus.typing() {
         return;
@@ -179,9 +203,11 @@ pub fn controls(
         // Only through the units that can actually be given an order, so Tab
         // never parks the selection on an aircraft that has not been called.
         let start = tool.selected.map(|s| s + 1).unwrap_or(0);
+        tool.disarm();
         tool.selected = (0..n)
             .map(|k| (start + k) % n)
             .find(|id| sim.crews.units[*id].assignable());
+        selected.target = tool.selected.map(crate::inspect::Target::Unit);
     }
     if keys.just_pressed(KeyCode::KeyC) {
         let n = sim.crews.request_air();
@@ -199,7 +225,12 @@ pub fn controls(
         (KeyCode::KeyD, OrderKind::Drop),
     ];
     for (key, kind) in armed {
-        if keys.just_pressed(key) {
+        if keys.just_pressed(key)
+            && tool
+                .selected
+                .and_then(|id| sim.crews.units.get(id))
+                .is_some_and(|u| kind.allowed_for(u.kind) && u.assignable())
+        {
             // Arming an order takes left-click off the ignition tool: two tools
             // fighting for the same click is how a control stops being trusted.
             if ignition.mode != EditMode::Off {
@@ -220,11 +251,15 @@ pub fn controls(
 /// achieve anything there.
 pub fn hover(
     sim: Res<Sim>,
+    buttons: Res<ButtonInput<MouseButton>>,
     ui_focus: Res<crate::ui::UiFocus>,
     mut tool: ResMut<OrderTool>,
     windows: Query<&Window, With<PrimaryWindow>>,
     camera: Query<(&Camera, &GlobalTransform), With<OrbitCamera>>,
 ) {
+    if buttons.just_pressed(MouseButton::Left) {
+        tool.click_consumed = false;
+    }
     if !tool.is_armed() || ui_focus.pointer {
         if tool.hover.is_some() {
             tool.hover = None;
@@ -235,8 +270,28 @@ pub fn hover(
         return;
     };
     let (kind, unit) = (tool.armed, tool.selected);
-    tool.hover = pick::cursor_ground(&sim.scenario, camera, cam_tf, window)
-        .map(|p| (p, workable(&sim, p, kind, unit)));
+    tool.hover = pick::cursor_ground(&sim.scenario, camera, cam_tf, window).map(|p| {
+        // Keep pathfinding out of stationary rendering frames. A metre of
+        // cursor movement or a simulation tick invalidates the preview.
+        let key = unit.zip(kind).map(|(id, order)| {
+            (
+                id,
+                order,
+                sim.fire.time_s(),
+                p.x.round() as i32,
+                p.y.round() as i32,
+            )
+        });
+        if key != tool.preview_key || key.is_none() {
+            let preview = target_preview(&sim, p, kind, unit);
+            tool.preview_route = preview.route;
+            tool.preview_road = preview.road;
+            tool.preview_reason = preview.reason;
+            tool.preview_key = key;
+        }
+        let ok = tool.preview_reason.is_none();
+        (p, ok)
+    });
 }
 
 /// Would an order at `p` do anything?
@@ -248,37 +303,85 @@ pub fn hover(
 /// Asked of the *selected* unit, not of its kind in general: whether a road is
 /// within hose reach depends on which engine is being sent, because reachability
 /// is per road component and one engine's network is not another's.
+#[cfg(test)]
 pub fn workable(sim: &Sim, p: Pos, order: Option<OrderKind>, unit: Option<usize>) -> bool {
-    let world = &sim.scenario.world;
-    if !world.contains(p) {
-        return false;
+    target_preview(sim, p, order, unit).reason.is_none()
+}
+
+#[derive(Default)]
+struct TargetPreview {
+    route: Vec<Pos>,
+    road: Option<Pos>,
+    reason: Option<&'static str>,
+}
+
+fn target_preview(
+    sim: &Sim,
+    p: Pos,
+    order: Option<OrderKind>,
+    unit: Option<usize>,
+) -> TargetPreview {
+    let mut preview = TargetPreview::default();
+    preview.reason = Some("Select an available unit and an order first.");
+    let Some(u) = unit.and_then(|id| sim.crews.units.get(id)) else {
+        return preview;
+    };
+    let Some(order) = order else { return preview };
+    if !u.assignable() || !order.allowed_for(u.kind) {
+        return preview;
     }
-    let Some(unit) = unit.and_then(|id| sim.crews.units.get(id)) else {
-        return false;
-    };
-    let has_fuel = |reach: f32| {
-        fire::cells_in_radius(world, p, reach)
-            .into_iter()
-            .any(|c| sim.fire.is_suppressible(c, &sim.scenario))
-    };
-    match (order, unit.kind) {
-        // An engine works from the road, so the question is whether there is a
-        // road *this* engine can get to within hose reach of the point -- and
-        // whether there is anything beside it worth wetting.
-        (Some(OrderKind::Attack), UnitKind::Engine) => {
-            let net = &sim.agents.network;
-            let road = net
-                .nearest(unit.pos, true)
-                .and_then(|a| net.nearest_reachable(p, true, a))
-                .map(|n| net.pos(n));
-            road.map_or(false, |r| {
-                (r.x - p.x).powi(2) + (r.y - p.y).powi(2) <= ENGINE_REACH_M.powi(2)
-            }) && has_fuel(ENGINE_REACH_M)
+    if !sim.scenario.world.contains(p) {
+        preview.reason = Some("Target is outside the scenario.");
+        return preview;
+    }
+    if !u.kind.is_air() {
+        let net = &sim.agents.network;
+        let driving = u.kind == UnitKind::Engine;
+        let endpoints = net
+            .nearest(u.pos, driving)
+            .and_then(|from| net.nearest_reachable(p, driving, from).map(|to| (from, to)));
+        let Some((from, to)) = endpoints else {
+            preview.reason = Some("No connected road or path. Choose another target or unit.");
+            return preview;
+        };
+        let road = net.pos(to);
+        preview.road = Some(road);
+        if driving && distance(road, p) > ENGINE_REACH_M {
+            preview.reason = Some("Outside hose reach. Target inside the road coverage ring.");
+            return preview;
         }
-        (Some(OrderKind::Attack | OrderKind::Line), _) => has_fuel(120.0),
-        (Some(OrderKind::Drop), _) => has_fuel(abm::suppression::DROP_LENGTH_M * 0.5),
-        _ => false,
+        let Some(route) = abm::network::route(net, from, to, sim.fire.threat(), driving) else {
+            preview.reason =
+                Some("Approach blocked by fire. Choose another target or request aircraft.");
+            return preview;
+        };
+        preview.route.push(u.pos);
+        preview.route.push(net.pos(from));
+        preview
+            .route
+            .extend(route.into_iter().map(|node| net.pos(node)));
+        if !driving {
+            preview.route.push(p);
+        }
     }
+    let reach = match u.kind {
+        UnitKind::Engine => ENGINE_REACH_M,
+        UnitKind::HandCrew => 120.0,
+        UnitKind::AirTanker => abm::suppression::DROP_LENGTH_M * 0.5,
+    };
+    preview.reason = if fire::cells_in_radius(&sim.scenario.world, p, reach)
+        .into_iter()
+        .any(|c| sim.fire.is_suppressible(c, &sim.scenario))
+    {
+        None
+    } else {
+        Some("No suppressible fuel here. Choose unburnt fuel near the fire edge.")
+    };
+    preview
+}
+
+fn distance(a: Pos, b: Pos) -> f32 {
+    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt()
 }
 
 /// Turn a click into an order.
@@ -290,20 +393,20 @@ pub fn place(
     if !tool.is_armed() || !buttons.just_pressed(MouseButton::Left) {
         return;
     }
-    let Some((p, ok)) = tool.hover else { return };
+    let Some((p, _)) = tool.hover else { return };
+    tool.click_consumed = true;
     let Some(id) = tool.selected else {
         tool.refusal = Some("Select a unit first.".into());
         return;
     };
-    if !ok {
-        // The ring is already red; the panel says why in words.
-        tool.refusal = Some(match tool.armed {
-            Some(OrderKind::Drop) => "Nothing unburnt to drop on there.".into(),
-            Some(OrderKind::Attack) if sim.crews.units[id].kind == UnitKind::Engine => {
-                "No road within hose reach of there.".into()
-            }
-            _ => "No fuel worth working there.".into(),
-        });
+    let preview = target_preview(&sim, p, tool.armed, tool.selected);
+    tool.preview_reason = preview.reason;
+    if preview.reason.is_some() {
+        tool.refusal = Some(
+            tool.preview_reason
+                .unwrap_or("Target is not workable.")
+                .into(),
+        );
         return;
     }
 
@@ -328,11 +431,19 @@ pub fn place(
             let u = &sim.crews.units[id];
             info!("{} ordered: {:?}", u.callsign, task);
             tool.refusal = None;
-            // Line orders disarm: the alignment is placed, and leaving the tool
-            // armed would make the next click start another one by accident.
-            if matches!(task, Task::Line { .. }) {
-                tool.disarm();
-            }
+            tool.confirmation = Some(format!(
+                "{}: {} ordered at {:.0}, {:.0} m.{}",
+                u.callsign,
+                tool.armed.unwrap().label_for(u.kind),
+                p.x,
+                p.y,
+                if sim.playing {
+                    ""
+                } else {
+                    " Press Play to execute."
+                }
+            ));
+            tool.disarm();
         }
         Err(why) => {
             tool.refusal = Some(format!("{}: {why}", sim.crews.units[id].callsign));
@@ -381,6 +492,41 @@ pub fn update_cursor(
         }
     }
     let Some((p, ok)) = tool.hover else { return };
+    // A road-centered ring shows actual hose coverage; the approach shows how
+    // the selected crew gets there. These are plans, not guarantees about future fire.
+    let mut segments = tool
+        .preview_route
+        .windows(2)
+        .filter(|pair| distance(pair[0], pair[1]) > 0.1)
+        .map(|pair| crate::units::ribbon(&sim.scenario, pair[0], pair[1], 5.0));
+    if let Some(mut route_mesh) = segments.next() {
+        for segment in segments {
+            route_mesh.merge(&segment);
+        }
+        commands.spawn((
+            MaterialMeshBundle::<RetroMaterial> {
+                mesh: meshes.add(route_mesh),
+                material: assets.anchor.clone(),
+                ..default()
+            },
+            OrderCursor,
+        ));
+    }
+    if tool
+        .selected
+        .is_some_and(|id| sim.crews.units[id].kind == UnitKind::Engine)
+    {
+        if let Some(road) = tool.preview_road {
+            commands.spawn((
+                MaterialMeshBundle::<RetroMaterial> {
+                    mesh: meshes.add(ring_mesh(&sim.scenario, road, ENGINE_REACH_M)),
+                    material: assets.anchor.clone(),
+                    ..default()
+                },
+                OrderCursor,
+            ));
+        }
+    }
     commands.spawn((
         MaterialMeshBundle::<RetroMaterial> {
             mesh: meshes.add(ring_mesh(&sim.scenario, p, CURSOR_R_M)),
@@ -400,34 +546,62 @@ pub fn update_cursor(
 /// Unit ids survive a restart (the roster is rebuilt identically), so the
 /// selection *could* be kept — but a half-placed line anchored in the previous
 /// run, and a refusal explaining a fire that no longer exists, could not.
-pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut tool: ResMut<OrderTool>) {
+pub fn reset(
+    mut restarted: EventReader<crate::sim::SimRestarted>,
+    mut tool: ResMut<OrderTool>,
+    mut panels: ResMut<crate::ui::PanelState>,
+) {
     if restarted.is_empty() {
         return;
     }
     restarted.clear();
+    panels.evacuation_notice = None;
+    panels.preview_evacuation = false;
     tool.disarm();
     tool.refusal = None;
+    tool.confirmation = None;
 }
 
-/// The **Units** tab: the roster, the selection, and the orders.
-///
-/// Embedded under Intervention in the left command panel, where it remains
-/// visible while an order is placed on the map.
+/// The scrollable response roster and air-support controls. Orders live in
+/// `orders_body`, pinned outside this scroll area.
 pub fn units_body(
     ui: &mut egui::Ui,
     sim: &mut Sim,
     tool: &mut OrderTool,
-    ignition: &mut IgnitionTool,
+    _ignition: &mut IgnitionTool,
     selected_entity: &mut crate::inspect::Selected,
     camera: &mut Query<&mut crate::camera::OrbitCamera>,
 ) -> bool {
     let stats = sim.crews.stats();
     let air_eta = sim.crews.air_eta_s();
     let mut select: Option<usize> = tool.selected;
-    let mut arm: Option<OrderKind> = None;
     let mut request_air = false;
-    let mut recall: Option<usize> = None;
     let mut show_inspector = false;
+
+    ui.add_space(8.0);
+    crate::ui::section(ui, "Air support");
+    ui.horizontal(|ui| {
+        let none_left = stats.unrequested == 0;
+        if ui
+            .add_enabled(!none_left, egui::Button::new("✈ Request air support  (C)"))
+            .on_hover_text(format!(
+                "Aircraft come from the national fleet, not from {}. \
+                 Ask early: they are 25 minutes out.",
+                sim.scenario.metadata.location,
+            ))
+            .clicked()
+        {
+            request_air = true;
+        }
+        if let Some(eta) = air_eta {
+            ui.colored_label(
+                egui::Color32::from_rgb(240, 180, 60),
+                format!("● {:.0} min out", (eta / 60.0).max(0.0)),
+            );
+        }
+    });
+    ui.add_space(6.0);
+    ui.small("Tab next unit · A attack · L cut line · D drop · X stand down · Esc cancel");
 
     ui.collapsing("Response statistics", |ui| {
         crate::ui::section(ui, "Effort");
@@ -458,7 +632,7 @@ pub fn units_body(
 
     ui.add_space(8.0);
     crate::ui::section(ui, "Roster");
-    egui::ScrollArea::vertical().id_source("crew_roster").max_height(210.0).show(ui, |ui| {
+    egui::CollapsingHeader::new("Crew roster").default_open(true).show(ui, |ui| {
     for u in &sim.crews.units {
         let selected = tool.selected == Some(u.id);
         let c = crate::units::colour(u.kind, u.state);
@@ -477,6 +651,7 @@ pub fn units_body(
         let row = ui.selectable_label(selected, text);
         if row.clicked() {
             select = Some(u.id);
+            selected_entity.target = Some(crate::inspect::Target::Unit(u.id));
         }
         if row.double_clicked() {
             selected_entity.target = Some(crate::inspect::Target::Unit(u.id));
@@ -516,7 +691,7 @@ pub fn units_body(
         row.on_hover_text(format!(
             "{detail}\n\nDouble-click to locate and inspect this unit."
         ));
-        if !u.note.is_empty() {
+        if selected && !u.note.is_empty() {
             ui.small(
                 egui::RichText::new(format!("    {}", u.note))
                     .color(egui::Color32::from_rgb(240, 180, 60)),
@@ -526,14 +701,286 @@ pub fn units_body(
 
     });
 
+    if select != tool.selected {
+        tool.disarm();
+        tool.confirmation = None;
+        tool.selected = select;
+        // A new selection cannot inherit a half-placed line from the old one.
+        tool.line_from = None;
+        tool.refusal = None;
+    }
+    if request_air {
+        let n = sim.crews.request_air();
+        info!("air support requested: {n} aircraft");
+    }
+    show_inspector
+}
+
+/// Text for the panel: what this unit is doing, in one line.
+pub fn status_line(sim: &Sim, id: usize) -> String {
+    let Some(u) = sim.crews.units.get(id) else {
+        return String::new();
+    };
+    let mut s = u.state.label().to_string();
+    if u.state == UnitState::Inbound {
+        let eta = (u.arrives_at_s - sim.crews.time_s()).max(0.0);
+        s = format!("inbound, {:.0} min", eta / 60.0);
+    }
+    match u.task {
+        Task::Attack { .. } => s.push_str(if u.kind == UnitKind::HandCrew {
+            " · preparing defensive line"
+        } else {
+            " · road suppression"
+        }),
+        Task::Line { from, to } => {
+            let total = ((to.x - from.x).powi(2) + (to.y - from.y).powi(2)).sqrt();
+            s.push_str(&format!(" · line {:.0}/{:.0} m", u.line_done_m, total));
+        }
+        Task::Drop { .. } => s.push_str(" · drop run"),
+        Task::Return => s.push_str(" · returning"),
+        Task::Hold => {}
+    }
+    s
+}
+
+/// The inspector, roster, and map share one selected crew.
+pub fn sync_selection(selected: Res<crate::inspect::Selected>, mut tool: ResMut<OrderTool>) {
+    let id = match selected.target {
+        Some(crate::inspect::Target::Unit(id)) => Some(id),
+        _ => None,
+    };
+    if selected.is_changed() && tool.selected != id {
+        tool.disarm();
+        tool.selected = id;
+        tool.refusal = None;
+        tool.confirmation = None;
+    }
+}
+
+#[derive(Component)]
+pub struct EvacuationPreview;
+
+pub fn evacuation_preview(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    panels: Res<crate::ui::PanelState>,
+    assets: Res<CursorAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    existing: Query<Entity, With<EvacuationPreview>>,
+) {
+    if panels.preview_evacuation && panels.dock.visible() {
+        if existing.is_empty() {
+            let centre = sim.scenario.world.centre_of(sim.ignition.centre);
+            commands.spawn((
+                MaterialMeshBundle::<RetroMaterial> {
+                    mesh: meshes.add(ring_mesh(&sim.scenario, centre, 2000.0)),
+                    material: assets.anchor.clone(),
+                    ..default()
+                },
+                EvacuationPreview,
+            ));
+        }
+    } else {
+        for e in &existing {
+            commands.entity(e).despawn();
+        }
+    }
+}
+
+#[cfg(test)]
+mod ux_tests {
+    use super::*;
+
+    fn simulation() -> Sim {
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let scenario = scenario::Scenario::load_by_id(data, "suppression_access").unwrap();
+        let (weather, radius) = crate::sim::opening_conditions("suppression_access");
+        Sim::new(
+            scenario,
+            weather,
+            radius,
+            42,
+            behavior::defaults::default_library(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn placing_an_order_disarms_and_acknowledges() {
+        let sim = simulation();
+        let id = sim
+            .crews
+            .units
+            .iter()
+            .find(|u| u.kind == UnitKind::HandCrew)
+            .unwrap()
+            .id;
+        let target = (0..sim.scenario.world.fire_rows)
+            .flat_map(|y| {
+                (0..sim.scenario.world.fire_cols).map(move |x| scenario::Cell { row: y, col: x })
+            })
+            .map(|c| sim.scenario.world.centre_of(c))
+            .find(|&p| workable(&sim, p, Some(OrderKind::Attack), Some(id)))
+            .expect("workable crew target");
+        let mut buttons = ButtonInput::<MouseButton>::default();
+        buttons.press(MouseButton::Left);
+        let mut app = App::new();
+        app.insert_resource(sim)
+            .insert_resource(buttons)
+            .insert_resource(OrderTool {
+                selected: Some(id),
+                armed: Some(OrderKind::Attack),
+                hover: Some((target, true)),
+                ..default()
+            })
+            .add_systems(Update, place);
+        app.update();
+        let tool = app.world().resource::<OrderTool>();
+        assert!(!tool.is_armed());
+        assert!(tool
+            .confirmation
+            .as_ref()
+            .unwrap()
+            .contains("Build defensive line"));
+        assert!(matches!(
+            app.world().resource::<Sim>().crews.units[id].task,
+            Task::Attack { .. }
+        ));
+        // A second click must not replace the accepted order.
+        app.update();
+        assert!(!app.world().resource::<OrderTool>().is_armed());
+    }
+
+    #[test]
+    fn text_focus_acquired_this_frame_blocks_game_shortcuts() {
+        fn focus_search(mut contexts: bevy_egui::EguiContexts) {
+            let ctx = contexts.ctx_mut();
+            ctx.begin_frame(egui::RawInput::default());
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let mut search = String::new();
+                ui.text_edit_singleline(&mut search).request_focus();
+            });
+        }
+        let sim = simulation();
+        let id = sim
+            .crews
+            .units
+            .iter()
+            .find(|u| u.kind == UnitKind::Engine)
+            .unwrap()
+            .id;
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::KeyA);
+        let mut app = App::new();
+        app.insert_resource(sim)
+            .insert_resource(keys)
+            .init_resource::<bevy_egui::EguiUserTextures>()
+            .init_resource::<crate::ui::UiFocus>()
+            .init_resource::<crate::ui::PanelState>()
+            .init_resource::<crate::interview::Interview>()
+            .init_resource::<crate::inspect::Selected>()
+            .init_resource::<IgnitionTool>()
+            .insert_resource(OrderTool {
+                selected: Some(id),
+                ..default()
+            })
+            .add_systems(
+                Update,
+                (focus_search, crate::ui::finalize_input_focus, controls).chain(),
+            );
+        app.world_mut().spawn((
+            Window::default(),
+            PrimaryWindow,
+            bevy_egui::EguiContext::default(),
+        ));
+        app.update();
+        assert!(app.world().resource::<crate::ui::UiFocus>().typing());
+        assert!(!app.world().resource::<OrderTool>().is_armed());
+    }
+
+    #[test]
+    fn invalid_or_incompatible_targets_do_not_pass_validation() {
+        let sim = simulation();
+        let engine = sim
+            .crews
+            .units
+            .iter()
+            .find(|u| u.kind == UnitKind::Engine)
+            .unwrap();
+        assert!(!workable(
+            &sim,
+            engine.pos,
+            Some(OrderKind::Drop),
+            Some(engine.id)
+        ));
+        assert!(!workable(
+            &sim,
+            Pos {
+                x: -100.0,
+                y: -100.0
+            },
+            Some(OrderKind::Attack),
+            Some(engine.id)
+        ));
+        assert!(!workable(&sim, engine.pos, Some(OrderKind::Attack), None));
+    }
+
+    #[test]
+    fn selecting_an_entity_cancels_stale_order_and_syncs_crew() {
+        let mut app = App::new();
+        let mut selected = crate::inspect::Selected::default();
+        selected.target = Some(crate::inspect::Target::Unit(2));
+        app.insert_resource(selected)
+            .insert_resource(OrderTool {
+                selected: Some(1),
+                armed: Some(OrderKind::Attack),
+                ..default()
+            })
+            .add_systems(Update, sync_selection);
+        app.update();
+        let tool = app.world().resource::<OrderTool>();
+        assert_eq!(tool.selected, Some(2));
+        assert!(!tool.is_armed());
+    }
+}
+
+/// Pinned below the response scroll area so commands never disappear behind the roster.
+pub fn orders_body(
+    ui: &mut egui::Ui,
+    sim: &mut Sim,
+    tool: &mut OrderTool,
+    ignition: &mut IgnitionTool,
+    selected_entity: &mut crate::inspect::Selected,
+    camera: &mut Query<&mut OrbitCamera>,
+) {
+    let select = tool.selected;
+    let mut arm = None;
+    let mut recall = None;
     ui.add_space(8.0);
     crate::ui::section(ui, "Orders");
     match select.and_then(|id| sim.crews.units.get(id)) {
         None => {
-            ui.label("Select a unit above, or press Tab, to give it an order.");
+            ui.label("Select a crew in the roster to give it an order.");
         }
         Some(u) => {
-            ui.label(format!("For {}", u.callsign));
+            ui.horizontal(|ui| {
+                ui.strong(format!("For {}", u.callsign));
+                if ui.button("Locate").clicked() {
+                    selected_entity.target = Some(crate::inspect::Target::Unit(u.id));
+                    if let Ok(mut orbit) = camera.get_single_mut() {
+                        orbit.focus =
+                            crate::frame::to_bevy(u.pos, sim.scenario.terrain.height_at(u.pos));
+                        orbit.distance = 220.0;
+                    }
+                }
+            });
+            ui.label(status_line(sim, u.id));
+            if !u.note.is_empty() {
+                ui.colored_label(egui::Color32::YELLOW, u.note);
+            }
+            if u.kind == UnitKind::HandCrew {
+                ui.small("Builds a line across the fire’s approach; does not spray water.");
+            }
             ui.horizontal_wrapped(|ui| {
                 for kind in [OrderKind::Attack, OrderKind::Line, OrderKind::Drop] {
                     // Inbound aircraft included: briefing one is the
@@ -541,9 +988,9 @@ pub fn units_body(
                     let allowed = kind.allowed_for(u.kind) && u.assignable();
                     let armed = tool.armed == Some(kind);
                     let label = if armed {
-                        format!("▶ {}", kind.label())
+                        format!("▶ {}", kind.label_for(u.kind))
                     } else {
-                        kind.label().to_string()
+                        kind.label_for(u.kind).to_string()
                     };
                     let b = ui.add_enabled(allowed, egui::SelectableLabel::new(armed, label));
                     let b = match kind {
@@ -582,76 +1029,25 @@ pub fn units_body(
         }
     }
 
+    if let Some(message) = &tool.confirmation {
+        ui.colored_label(egui::Color32::from_rgb(130, 230, 180), message);
+    }
     if let Some(why) = &tool.refusal {
         ui.colored_label(egui::Color32::from_rgb(255, 140, 110), why);
     }
 
-    ui.add_space(8.0);
-    crate::ui::section(ui, "Air support");
-    ui.horizontal(|ui| {
-        let none_left = stats.unrequested == 0;
-        if ui
-            .add_enabled(!none_left, egui::Button::new("✈ Request air support  (C)"))
-            .on_hover_text(format!(
-                "Aircraft come from the national fleet, not from {}. \
-                 Ask early: they are 25 minutes out.",
-                sim.scenario.metadata.location,
-            ))
-            .clicked()
-        {
-            request_air = true;
-        }
-        if let Some(eta) = air_eta {
-            ui.colored_label(
-                egui::Color32::from_rgb(240, 180, 60),
-                format!("● {:.0} min out", (eta / 60.0).max(0.0)),
-            );
-        }
-    });
-    ui.add_space(6.0);
-    ui.small("Tab next unit · A attack · L cut line · D drop · X stand down · Esc cancel");
-
-    if select != tool.selected {
-        tool.selected = select;
-        // A new selection cannot inherit a half-placed line from the old one.
-        tool.line_from = None;
-        tool.refusal = None;
-    }
     if let Some(kind) = arm {
-        if ignition.mode != EditMode::Off {
-            ignition.mode = EditMode::Off;
-        }
+        ignition.mode = EditMode::Off;
         tool.toggle(kind);
     }
     if let Some(id) = recall {
-        let _ = sim.crews.assign(id, Task::Return);
-    }
-    if request_air {
-        let n = sim.crews.request_air();
-        info!("air support requested: {n} aircraft");
-    }
-    show_inspector
-}
-
-/// Text for the panel: what this unit is doing, in one line.
-pub fn status_line(sim: &Sim, id: usize) -> String {
-    let Some(u) = sim.crews.units.get(id) else {
-        return String::new();
-    };
-    let mut s = u.state.label().to_string();
-    if u.state == UnitState::Inbound {
-        let eta = (u.arrives_at_s - sim.crews.time_s()).max(0.0);
-        s = format!("inbound, {:.0} min", eta / 60.0);
-    }
-    match u.task {
-        Task::Attack { .. } => s.push_str(" · direct attack"),
-        Task::Line { from, to } => {
-            let total = ((to.x - from.x).powi(2) + (to.y - from.y).powi(2)).sqrt();
-            s.push_str(&format!(" · line {:.0}/{:.0} m", u.line_done_m, total));
+        if sim.crews.assign(id, Task::Return).is_ok() {
+            tool.disarm();
+            tool.refusal = None;
+            tool.confirmation = Some(format!(
+                "{}: returning to staging.",
+                sim.crews.units[id].callsign
+            ));
         }
-        Task::Drop { .. } => s.push_str(" · drop run"),
-        Task::Return => s.push_str(" · returning"),
-        Task::Hold => {}
     }
-    s
 }

@@ -270,7 +270,7 @@ impl Sim {
             // SPOTORNO_AUTOPLAY=1 starts running immediately, for screenshots
             // and for headless timing runs.
             playing: std::env::var("SPOTORNO_AUTOPLAY").is_ok(),
-            speed: 8.0,
+            speed: 1.0,
             step_requests: 0,
             accumulator: 0.0,
             generation: 0,

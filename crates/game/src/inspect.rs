@@ -170,7 +170,7 @@ pub fn pick_click(
         return;
     }
     let down = tracker.down_at.take();
-    if tool.mode != EditMode::Off || order.is_armed() || ui_focus.pointer {
+    if tool.mode != EditMode::Off || order.is_armed() || order.click_consumed || ui_focus.pointer {
         return;
     }
     let (Some(down), Some(cur), Ok((camera, cam_tf))) =

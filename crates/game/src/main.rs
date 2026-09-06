@@ -34,6 +34,8 @@ mod interview;
 mod menu;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_text_input;
+#[cfg(not(target_arch = "wasm32"))]
+mod native_accessibility;
 mod people;
 mod models;
 mod pick;
@@ -101,6 +103,8 @@ fn main() -> anyhow::Result<()> {
     })
     .add_plugins(EguiPlugin);
     #[cfg(not(target_arch = "wasm32"))]
+    app.add_plugins(native_accessibility::NativeAccessibilityPlugin);
+    #[cfg(not(target_arch = "wasm32"))]
     app.add_plugins(native_text_input::NativeTextInputPlugin);
     #[cfg(target_arch = "wasm32")]
     app.add_plugins(web_clipboard::WebClipboardPlugin);
@@ -153,10 +157,9 @@ fn main() -> anyhow::Result<()> {
         ),
     )
     .add_systems(OnExit(AppState::Playing), teardown_scene)
-    // Ordering that matters, and only that: `menu::menubar` decides who owns
-    // the pointer and the keyboard this frame, so it runs before every other
-    // panel and before every shortcut system; the docked panels have to all
-    // land before `sync_viewport` reads what space is left for the 3D camera;
+    // Build panels first, then finalize input ownership before shortcuts and
+    // map tools. A search field can acquire focus during this very frame.
+    // Docked panels also precede `sync_viewport`, which reserves map space;
     // and the restart resets have to land before the views that would
     // otherwise read the stale state they are clearing.
     .add_systems(
@@ -175,6 +178,7 @@ fn main() -> anyhow::Result<()> {
                 inspect::panel,
                 interview::settings_window,
                 ui::sync_viewport,
+                ui::finalize_input_focus,
             )
                 .chain()
                 .run_if(in_state(AppState::Playing)),
@@ -183,6 +187,7 @@ fn main() -> anyhow::Result<()> {
                 camera::controls,
                 ignition_edit::hover,
                 ignition_edit::place,
+                command::sync_selection,
                 command::hover,
                 command::place,
                 inspect::hover_map,
@@ -191,15 +196,14 @@ fn main() -> anyhow::Result<()> {
                 buildings::hover,
             )
                 .chain()
-                .after(inspect::panel)
+                .after(ui::finalize_input_focus)
                 .run_if(in_state(AppState::Playing)),
         ),
     )
     .add_systems(
         Update,
         (
-            // Every shortcut system reads `UiFocus::keyboard`, which the menu
-            // bar wrote this frame — so they must all run after it.
+            // Shortcuts see focus from every panel, including a newly clicked search field.
             (
                 controls,
                 browser::toggle,
@@ -207,7 +211,7 @@ fn main() -> anyhow::Result<()> {
                 command::controls.before(command::hover),
                 interview::shortcut,
             )
-                .after(menu::menubar)
+                .after(ui::finalize_input_focus)
                 .run_if(in_state(AppState::Playing)),
             // Draining the worker's channel is not a shortcut and not a panel:
             // it runs whether or not the window is open, so an answer that
@@ -253,6 +257,7 @@ fn main() -> anyhow::Result<()> {
                 units::sync_orders,
                 units::update_work_overlay,
                 command::update_cursor,
+                command::evacuation_preview,
             )
                 .after(fire_view::reset)
                 .after(buildings::reset)
@@ -520,7 +525,7 @@ fn controls(
 
     if shift && keys.just_pressed(KeyCode::KeyE) {
         let n = sim.agents.order_evacuation_all();
-        info!("general evacuation ordered: {n} households");
+        panels.evacuation_notice = Some(format!("Evacuation ordered: {n} newly notified households."));
     }
     if keys.just_pressed(KeyCode::KeyI) {
         tool.mode = match tool.mode {
@@ -599,7 +604,14 @@ fn controls(
 fn teardown_scene(
     mut commands: Commands,
     roots: Query<Entity, (With<Transform>, Without<Parent>)>,
+    mut order: ResMut<command::OrderTool>,
+    mut panels: ResMut<ui::PanelState>,
+    mut selected: ResMut<inspect::Selected>,
 ) {
+    *order = command::OrderTool::default();
+    panels.evacuation_notice = None;
+    panels.preview_evacuation = false;
+    selected.target = None;
     let mut n = 0;
     for e in &roots {
         commands.entity(e).despawn_recursive();

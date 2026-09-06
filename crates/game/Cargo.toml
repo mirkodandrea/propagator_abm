@@ -29,6 +29,11 @@ egui-snarl = { version = "0.4.4", features = ["serde"] }
 # call site.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tiny_http = "0.12"
+# egui and Bevy pin different AccessKit generations. The native bridge adapts
+# their serialized node schema without changing either rendering dependency.
+egui = { version = "0.28.1", default-features = false, features = ["accesskit"] }
+accesskit_egui = { package = "accesskit", version = "0.12.3", features = ["serde"] }
+accesskit_native = { package = "accesskit", version = "0.14.0", features = ["serde"] }
 # Native text fields use bevy_egui's arboard-backed clipboard. Keeping this
 # target-specific avoids compiling its incompatible legacy web bridge.
 bevy_egui = { version = "0.28", default-features = false, features = ["manage_clipboard"] }
