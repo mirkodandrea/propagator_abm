@@ -32,6 +32,7 @@ mod ignition_edit;
 mod inspect;
 mod interview;
 mod menu;
+mod map2d;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_text_input;
 #[cfg(not(target_arch = "wasm32"))]
@@ -115,6 +116,7 @@ fn main() -> anyhow::Result<()> {
     .add_plugins(far_terrain::FarTerrainPlugin)
     .add_plugins(composer::ComposerPlugin)
     .init_state::<AppState>()
+    .init_resource::<map2d::Renderer>()
     .init_resource::<ui::UiFocus>()
     .init_resource::<ui::HelpUi>()
     .init_resource::<ignition_edit::IgnitionTool>()
@@ -143,6 +145,7 @@ fn main() -> anyhow::Result<()> {
         OnEnter(AppState::Playing),
         (
             setup_scene,
+            map2d::setup,
             fire_view::setup,
             ignition_edit::setup,
             inspect::setup,
@@ -185,6 +188,7 @@ fn main() -> anyhow::Result<()> {
             (
                 camera::validate_mode,
                 camera::controls,
+                map2d::sync_camera,
                 ignition_edit::hover,
                 ignition_edit::place,
                 command::sync_selection,
@@ -205,7 +209,7 @@ fn main() -> anyhow::Result<()> {
         (
             // Shortcuts see focus from every panel, including a newly clicked search field.
             (
-                controls,
+                controls.before(camera::controls).before(command::controls),
                 browser::toggle,
                 fire_view::layer_controls,
                 command::controls.before(command::hover),
@@ -242,8 +246,8 @@ fn main() -> anyhow::Result<()> {
                 .after(ui::dock)
                 .run_if(in_state(AppState::Playing)),
             (
-                fire_view::update_overlay,
-                fire_view::update_flames,
+                fire_view::update_overlay.run_if(map2d::scene3d),
+                fire_view::update_flames.run_if(map2d::scene3d),
                 vegetation::burn,
                 buildings::damage,
                 people::spawn_vehicles,
@@ -266,6 +270,8 @@ fn main() -> anyhow::Result<()> {
                 .after(units::reset)
                 .after(command::reset)
                 .run_if(in_state(AppState::Playing)),
+            map2d::update.run_if(in_state(AppState::Playing)),
+            map2d::share_markers.run_if(in_state(AppState::Playing)),
             capture::manual.run_if(in_state(AppState::Playing)),
             apply_behaviour
                 .after(sim::step_fire)
@@ -470,6 +476,7 @@ fn setup_scene(
 /// evacuate — which is not a hypothetical, since the Entities tab's search box
 /// and the composer's node fields are both plain egui text edits.
 fn controls(
+    mut renderer: ResMut<map2d::Renderer>,
     keys: Res<ButtonInput<KeyCode>>,
     focus: Res<ui::UiFocus>,
     mut sim: ResMut<Sim>,
@@ -500,6 +507,23 @@ fn controls(
         return;
     }
 
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    let primary = keys.pressed(KeyCode::ControlLeft)
+        || keys.pressed(KeyCode::ControlRight)
+        || keys.pressed(KeyCode::SuperLeft)
+        || keys.pressed(KeyCode::SuperRight);
+    if primary && keys.just_pressed(KeyCode::KeyR) {
+        match sim.restart() {
+            Ok(()) => {
+                restarted.send(sim::SimRestarted);
+            }
+            Err(e) => error!("restart failed: {e:#}"),
+        }
+    }
+    if camera::modified(&keys) { return; }
+    if !shift && keys.just_pressed(KeyCode::KeyV) {
+        *renderer = if *renderer == map2d::Renderer::Map2d { map2d::Renderer::Scene3d } else { map2d::Renderer::Map2d };
+    }
     if keys.just_pressed(KeyCode::Space) {
         sim.playing = !sim.playing;
     }
@@ -517,11 +541,7 @@ fn controls(
     if keys.just_pressed(KeyCode::BracketLeft) {
         sim.speed = (sim.speed / 2.0).max(ui::MIN_SPEED);
     }
-    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    let primary = keys.pressed(KeyCode::ControlLeft)
-        || keys.pressed(KeyCode::ControlRight)
-        || keys.pressed(KeyCode::SuperLeft)
-        || keys.pressed(KeyCode::SuperRight);
+
 
     if shift && keys.just_pressed(KeyCode::KeyE) {
         let n = sim.agents.order_evacuation_all();
@@ -551,6 +571,7 @@ fn controls(
         help.shortcuts_open = !help.shortcuts_open;
     }
     if keys.just_pressed(KeyCode::Home) {
+        *cam_mode = camera::CameraMode::Free;
         if let Ok(mut orbit) = orbit.get_single_mut() {
             let w = &sim.scenario.world;
             let p = scenario::Pos {
@@ -562,6 +583,7 @@ fn controls(
         }
     }
     if keys.just_pressed(KeyCode::KeyF) {
+        *cam_mode = camera::CameraMode::Free;
         if let Ok(mut orbit) = orbit.get_single_mut() {
             let target = if shift {
                 None
@@ -578,14 +600,7 @@ fn controls(
             }
         }
     }
-    if primary && keys.just_pressed(KeyCode::KeyR) {
-        match sim.restart() {
-            Ok(()) => {
-                restarted.send(sim::SimRestarted);
-            }
-            Err(e) => error!("restart failed: {e:#}"),
-        }
-    }
+
 }
 
 /// Empty the world on the way back to the scenario selector.

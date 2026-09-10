@@ -183,11 +183,8 @@ pub fn controls(
     mut panels: ResMut<crate::ui::PanelState>,
     mut selected: ResMut<crate::inspect::Selected>,
 ) {
-    if focus.typing() {
+    if focus.typing() || crate::camera::modified(&keys) {
         return;
-    }
-    if keys.just_pressed(KeyCode::Escape) {
-        tool.disarm();
     }
     // The invariant: at most one tool owns left-click. Arming an order disarms
     // the ignition tool below; this is the other direction, so whichever the
@@ -202,13 +199,16 @@ pub fn controls(
         let n = sim.crews.units.len();
         // Only through the units that can actually be given an order, so Tab
         // never parks the selection on an aircraft that has not been called.
-        let start = tool.selected.map(|s| s + 1).unwrap_or(0);
+        let reverse = crate::camera::shift(&keys);
+        let start = tool.selected.map(|s| if reverse { (s + n.saturating_sub(1)) % n.max(1) } else { s + 1 })
+            .unwrap_or(if reverse { n.saturating_sub(1) } else { 0 });
         tool.disarm();
         tool.selected = (0..n)
-            .map(|k| (start + k) % n)
+            .map(|k| if reverse { (start + n - k) % n } else { (start + k) % n })
             .find(|id| sim.crews.units[*id].assignable());
         selected.target = tool.selected.map(crate::inspect::Target::Unit);
     }
+    if crate::camera::shift(&keys) { return; }
     if keys.just_pressed(KeyCode::KeyC) {
         let n = sim.crews.request_air();
         if n > 0 {
@@ -803,6 +803,31 @@ mod ux_tests {
             behavior::defaults::default_library(),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn platform_chords_do_not_arm_orders() {
+        let sim = simulation();
+        let id = sim.crews.units.iter().find(|u| u.kind == UnitKind::Engine).unwrap().id;
+        let mut app = App::new();
+        app.insert_resource(sim)
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<crate::ui::UiFocus>()
+            .init_resource::<crate::ui::PanelState>()
+            .init_resource::<crate::inspect::Selected>()
+            .init_resource::<IgnitionTool>()
+            .insert_resource(OrderTool { selected: Some(id), ..default() })
+            .add_systems(Update, controls);
+        for modifier in [KeyCode::ControlLeft, KeyCode::SuperRight, KeyCode::AltLeft] {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.reset_all(); keys.press(modifier); keys.press(KeyCode::KeyA);
+            app.update();
+            assert!(!app.world().resource::<OrderTool>().is_armed());
+        }
+        let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        keys.reset_all(); keys.press(KeyCode::KeyA);
+        app.update();
+        assert!(app.world().resource::<OrderTool>().is_armed());
     }
 
     #[test]

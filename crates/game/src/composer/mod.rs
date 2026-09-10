@@ -648,7 +648,7 @@ fn toggle(
     mut panels: ResMut<crate::ui::PanelState>,
     focus: Res<crate::ui::UiFocus>,
 ) {
-    if focus.typing() {
+    if focus.typing() || crate::camera::modified(&keys) || crate::camera::shift(&keys) {
         return;
     }
     if keys.just_pressed(KeyCode::KeyG) {

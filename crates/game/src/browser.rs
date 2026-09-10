@@ -55,10 +55,10 @@ pub fn toggle(
     mut panels: ResMut<crate::ui::PanelState>,
     mut browser: ResMut<BrowserUi>,
 ) {
-    if focus.typing() {
+    if focus.typing() || crate::camera::modified(&keys) {
         return;
     }
-    if keys.just_pressed(KeyCode::KeyB) {
+    if keys.just_pressed(KeyCode::KeyB) && !crate::camera::shift(&keys) {
         if panels.inspector.visible() {
             panels.inspector = crate::ui::PanelPlacement::Hidden;
         } else {

@@ -247,7 +247,7 @@ pub fn layer_controls(
     focus: Res<crate::ui::UiFocus>,
     mut layer: ResMut<FireLayer>,
 ) {
-    if focus.typing() {
+    if focus.typing() || crate::camera::modified(&keys) || crate::camera::shift(&keys) {
         return;
     }
     for (key, value) in [
@@ -487,7 +487,7 @@ fn bilinear_hazard(field: &FireField, hazard: &[f32], p: Pos) -> f32 {
 /// Log ramp over 10 .. 10 000 kW/m: the decade is what changes the tactics.
 /// Roughly the standard suppression bands — direct attack (green/yellow),
 /// heavy equipment only (orange), nothing works (white-hot).
-fn intensity_color(fli: f32) -> [f32; 3] {
+pub(crate) fn intensity_color(fli: f32) -> [f32; 3] {
     let t = ((fli.max(10.0).log10() - 1.0) / 3.0).clamp(0.0, 1.0);
     ramp(
         t,
@@ -508,7 +508,7 @@ fn intensity_color(fli: f32) -> [f32; 3] {
 /// dark line drawn where one band meets the next. A smooth ramp over elapsed
 /// time — the obvious implementation — is unreadable, because a fire that has
 /// been running 25 minutes covers a quarter of it.
-fn arrival_color(arrival_s: f32, now_s: f32) -> [f32; 3] {
+pub(crate) fn arrival_color(arrival_s: f32, now_s: f32) -> [f32; 3] {
     const BAND_S: f32 = 600.0;
     let _ = now_s;
     let bands = (arrival_s.max(0.0) / BAND_S).max(0.0);
@@ -531,7 +531,7 @@ fn arrival_color(arrival_s: f32, now_s: f32) -> [f32; 3] {
     [c[0] * edge, c[1] * edge, c[2] * edge]
 }
 
-fn hazard_color(p: f32) -> [f32; 3] {
+pub(crate) fn hazard_color(p: f32) -> [f32; 3] {
     ramp(
         p.clamp(0.0, 1.0).sqrt(),
         &[

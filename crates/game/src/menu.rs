@@ -75,7 +75,7 @@ const CLOCK_SIZE: f32 = 15.0;
 pub fn menubar(
     mut contexts: EguiContexts,
     mut sim: ResMut<Sim>,
-    mut layer: ResMut<FireLayer>,
+    rendering: (ResMut<FireLayer>, ResMut<crate::map2d::Renderer>, ResMut<crate::camera::CameraMode>),
     mut panels: ResMut<PanelState>,
     mut focus: ResMut<UiFocus>,
     mut help: ResMut<HelpUi>,
@@ -90,6 +90,7 @@ pub fn menubar(
     mut quit: EventWriter<AppExit>,
     mut camera: Query<&mut OrbitCamera>,
 ) {
+    let (mut layer, mut renderer, mut camera_mode) = rendering;
     let ctx = contexts.ctx_mut();
     let mut act: Option<Action> = None;
     let a = |action: Action, slot: &mut Option<Action>| *slot = Some(action);
@@ -278,6 +279,16 @@ pub fn menubar(
             });
 
             ui.menu_button("View", |ui| {
+                ui.label(egui::RichText::new("RENDERER · V to switch").small().weak());
+                for (mode, label) in [
+                    (crate::map2d::Renderer::Scene3d, "3D scene"),
+                    (crate::map2d::Renderer::Map2d, "Simplified 2D"),
+                ] {
+                    if ui.selectable_value(&mut *renderer, mode, label).clicked() {
+                        ui.close_menu();
+                    }
+                }
+                ui.separator();
                 ui.label(egui::RichText::new("FIRE LAYER").small().weak());
                 for (i, l) in FireLayer::ALL.iter().enumerate() {
                     if ui
@@ -332,7 +343,7 @@ pub fn menubar(
                     ui.close_menu();
                 }
                 ui.separator();
-                ui.small("Drag orbit · Shift/right-drag pan · scroll zoom · arrows pan");
+                ui.small(crate::camera::navigation_hint(*renderer));
             });
 
             ui.menu_button("Debug", |ui| {
@@ -660,6 +671,7 @@ pub fn menubar(
                 }
             }
             Action::FocusSelection => {
+                *camera_mode = crate::camera::CameraMode::Free;
                 if let (Some(target), Ok(mut orbit)) = (selected.target, camera.get_single_mut()) {
                     if let Some(p) = crate::inspect::target_pos(&sim, target) {
                         let h = sim.scenario.terrain.height_at(p);
@@ -669,6 +681,7 @@ pub fn menubar(
                 }
             }
             Action::CentreOnFire => {
+                *camera_mode = crate::camera::CameraMode::Free;
                 if let Ok(mut orbit) = camera.get_single_mut() {
                     let (p, h) =
                         crate::terrain_mesh::cell_ground(&sim.scenario, sim.ignition.centre);
@@ -677,6 +690,7 @@ pub fn menubar(
                 }
             }
             Action::Overview => {
+                *camera_mode = crate::camera::CameraMode::Free;
                 if let Ok(mut orbit) = camera.get_single_mut() {
                     let w = &sim.scenario.world;
                     let p = scenario::Pos {

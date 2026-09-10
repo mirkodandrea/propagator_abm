@@ -566,9 +566,13 @@ pub fn shortcuts_panel(
                     ),
                     ("Shift+F", "focus the opening fire"),
                     ("Home", "whole-scenario overview"),
-                    ("Arrows", "pan"),
-                    ("Drag / Shift-drag", "orbit / pan · right-drag also pans"),
-                    ("Scroll", "zoom"),
+                    ("Arrows / Shift+Arrows", "pan / pan faster"),
+                    ("Q / E", "rotate in 3D"),
+                    ("Page Up / Page Down", "tilt in 3D"),
+                    ("V", "switch 2D / 3D renderer"),
+                    ("Left-drag", "3D orbit · 2D pan"),
+                    ("Shift/right/middle-drag", "pan · manual pan stops following"),
+                    ("Scroll / + / −", "zoom · 2D scroll zooms at the pointer"),
                 ],
             );
             shortcuts_group(
@@ -587,7 +591,7 @@ pub fn shortcuts_panel(
                 &[
                     ("Shift+E", "general evacuation order"),
                     ("I", "arm ignition placement"),
-                    ("Tab", "next available unit"),
+                    ("Tab / Shift+Tab", "next / previous available unit"),
                     ("A / L / D", "attack / line / drop"),
                     ("X", "stand down selected unit"),
                     ("C", "request air support"),
@@ -659,7 +663,7 @@ fn help_english(ui: &mut egui::Ui, location: &str) {
         [
             (
                 "Move the view",
-                "left-drag orbit · right-drag pan · scroll zoom · arrow keys pan",
+                "drag: 3D orbit / 2D pan · right-drag pan · scroll/+− zoom · arrows pan",
             ),
             (
                 "Run time",
@@ -670,7 +674,7 @@ fn help_english(ui: &mut egui::Ui, location: &str) {
             ("Ignition", "I, then click the map · Ctrl/⌘+R restarts"),
             (
                 "Crew orders",
-                "Tab next unit · A attack · L line · D drop · X stand down · C request air",
+                "Tab/Shift+Tab next/previous unit · A attack · L line · D drop · X stand down · C request air",
             ),
             (
                 "Panels",
@@ -708,7 +712,7 @@ fn help_italian(ui: &mut egui::Ui, location: &str) {
         [
             (
                 "Muovere la visuale",
-                "trascina a sinistra per ruotare · a destra per spostare · rotella per zoom · frecce per scorrere",
+                "trascina: orbita 3D / sposta 2D · tasto destro: sposta · rotella/+−: zoom · frecce: sposta · V: 2D/3D",
             ),
             ("Tempo", "Spazio avvia/pausa · . un passo decisionale · [ e ] cambiano velocità"),
             ("Evacuazione", "Shift+E ordina l'evacuazione generale"),
@@ -719,7 +723,7 @@ fn help_italian(ui: &mut egui::Ui, location: &str) {
             ("Innesco", "I, poi clicca la mappa · Ctrl/⌘+R riavvia"),
             (
                 "Ordini alle squadre",
-                "Tab squadra successiva · A attacco · L linea · D lancio · X rientro · C supporto aereo",
+                "Tab/Shift+Tab squadra successiva/precedente · A attacco · L linea · D lancio · X rientro · C supporto aereo",
             ),
             (
                 "Pannelli",
@@ -748,6 +752,7 @@ fn controls_guide(ui: &mut egui::Ui, rows: [(&str, &str); 8]) {
 /// Lightweight feedback over the map. It is deliberately non-interactive so
 /// it never steals an entity click or a camera drag.
 pub fn map_hud(
+    renderer: Res<crate::map2d::Renderer>,
     mut contexts: EguiContexts,
     hovered: Res<crate::inspect::HoveredTarget>,
     selected: Res<crate::inspect::Selected>,
@@ -785,7 +790,7 @@ pub fn map_hud(
             crate::inspect::target_label(&sim, target)
         )
     } else {
-        "Click an entity to inspect  ·  drag orbit · right-drag pan · scroll zoom".to_string()
+        crate::camera::navigation_hint(*renderer).to_string()
     };
     let rect = ctx.available_rect();
     egui::Area::new(egui::Id::new("map_hud"))
@@ -903,7 +908,7 @@ pub fn dock(
                                 ui.label("1. Assess the fire and homes at risk (map layers 1–4).");
                                 ui.label("2. Order evacuation; select a crew and place a valid order.");
                                 ui.label("3. Press Play. Track safe households, losses and crew progress.");
-                                ui.small("Space: play/pause · F: focus selection · drag: orbit · right-drag: pan · scroll: zoom");
+                                ui.small("Space: play/pause · F: focus · drag: 3D orbit / 2D pan · right-drag: pan · scroll/+−: zoom");
                             });
                         ui.add_space(10.0);
                         section(ui, "Civilian safety");

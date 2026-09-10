@@ -93,6 +93,7 @@ impl Selected {
 #[derive(Resource, Default)]
 pub struct ClickTracker {
     down_at: Option<Vec2>,
+    dragged: bool,
 }
 
 /// Nearest inspectable thing under the map cursor. Kept separately from the
@@ -164,7 +165,13 @@ pub fn pick_click(
     };
 
     if buttons.just_pressed(MouseButton::Left) {
-        tracker.down_at = window.cursor_position();
+        tracker.down_at = if ui_focus.pointer || tool.mode != EditMode::Off || order.is_armed() {
+            None
+        } else { window.cursor_position() };
+        tracker.dragged = false;
+    }
+    if let (Some(down), Some(cur)) = (tracker.down_at, window.cursor_position()) {
+        tracker.dragged |= down.distance(cur) > CLICK_SLOP_PX;
     }
     if !buttons.just_released(MouseButton::Left) {
         return;
@@ -178,7 +185,7 @@ pub fn pick_click(
     else {
         return;
     };
-    if down.distance(cur) > CLICK_SLOP_PX {
+    if tracker.dragged || down.distance(cur) > CLICK_SLOP_PX {
         return;
     }
 

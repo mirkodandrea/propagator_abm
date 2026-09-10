@@ -1058,7 +1058,7 @@ pub fn shortcut(
     mut interview: ResMut<Interview>,
     mut panels: ResMut<crate::ui::PanelState>,
 ) {
-    if focus.typing() || !keys.just_pressed(KeyCode::KeyT) {
+    if focus.typing() || crate::camera::modified(&keys) || crate::camera::shift(&keys) || !keys.just_pressed(KeyCode::KeyT) {
         return;
     }
     match selected.target.and_then(|t| subject_of(&sim, t)) {
