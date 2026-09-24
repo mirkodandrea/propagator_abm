@@ -250,7 +250,7 @@ impl CompiledGraph {
         }
 
         let reg = registry();
-        let mut nodes = Vec::with_capacity(report.order.len());
+        let mut nodes: Vec<CompiledNode> = Vec::with_capacity(report.order.len());
         let mut max_out = 1;
 
         for gi in &report.order {
@@ -263,12 +263,7 @@ impl CompiledGraph {
                 .iter()
                 .map(|p| {
                     let key = BehaviorGraph::override_key(gn.id, p.name);
-                    overrides
-                        .get(&key)
-                        .cloned()
-                        .or_else(|| gn.params.get(p.name).cloned())
-                        .filter(|v| v.same_kind(&p.default_value()))
-                        .unwrap_or_else(|| p.default_value())
+                    p.resolve_value(gn.params.get(p.name), overrides.get(&key))
                 })
                 .collect();
 
@@ -280,6 +275,10 @@ impl CompiledGraph {
                 }
             }
 
+            // Multi-input order is stable across saves and canvas projections.
+            for slot in &mut sources {
+                slot.sort_by_key(|(from, port)| (nodes[*from as usize].id, *port));
+            }
             nodes.push(CompiledNode { id: gn.id, spec, params, sources });
         }
 
@@ -322,7 +321,17 @@ impl CompiledGraph {
         let d = self.run(obs, &mut scratch, Some(&mut trace));
         trace.decision = d;
         trace.sink = self.nodes.get(self.decision).map(|n| n.id);
-        trace.proposals.sort_by(|a, b| b.2.total_cmp(&a.2));
+        // Only proposals actually presented to the decision sink are candidates.
+        // A disconnected high-priority action must never appear as the winner.
+        trace.proposals = trace.sink.and_then(|id| trace.node(id)).map(|sink| {
+            sink.sources.first().into_iter().flatten()
+                .zip(sink.inputs.first().into_iter().flatten())
+                .filter_map(|((id, _), value)| {
+                    let action = value.as_action();
+                    action.fired.then_some((*id, action.kind, action.priority))
+                }).collect()
+        }).unwrap_or_default();
+        trace.proposals.sort_by(|a, b| b.2.total_cmp(&a.2).then_with(|| a.0.cmp(&b.0)));
         (d, trace)
     }
 
@@ -364,13 +373,6 @@ impl CompiledGraph {
             }
 
             if let Some(t) = trace.as_deref_mut() {
-                if n.spec.category == crate::node::Category::Action {
-                    if let Some(Value::Action(a)) = out.first() {
-                        if a.fired {
-                            t.proposals.push((n.id, a.kind, a.priority));
-                        }
-                    }
-                }
                 t.nodes.push(NodeTrace {
                     node: n.id,
                     type_id: n.spec.id,

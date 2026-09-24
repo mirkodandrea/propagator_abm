@@ -25,7 +25,7 @@ use crate::subtype::AgentSubtype;
 use crate::validate::Report;
 
 /// Everything authored, in memory.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Library {
     pub graphs: BTreeMap<String, BehaviorGraph>,
     pub subtypes: BTreeMap<String, AgentSubtype>,

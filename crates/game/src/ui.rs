@@ -102,10 +102,9 @@ pub enum BottomTab {
 }
 
 impl BottomTab {
-    pub const ALL: [BottomTab; 4] = [
+    pub const ALL: [BottomTab; 3] = [
         BottomTab::Incident,
         BottomTab::Chat,
-        BottomTab::Debug,
         BottomTab::Behaviour,
     ];
 
@@ -114,7 +113,7 @@ impl BottomTab {
             BottomTab::Incident => "Incident report",
             BottomTab::Chat => "Chat",
             BottomTab::Debug => "Live debugger",
-            BottomTab::Behaviour => "Behavior editor",
+            BottomTab::Behaviour => "Behavior",
         }
     }
 }
@@ -206,7 +205,7 @@ impl PanelState {
     }
 }
 
-/// The bottom workbench: incident view, chat, live behavior debugger and editor.
+/// Incident and chat dock below the map; Behavior opens a full-screen workspace.
 ///
 /// Its height is fixed per tab. In particular, it does not inherit a previous
 /// tab's dragged size, which made switching from the large behavior canvas back
@@ -225,6 +224,32 @@ pub fn panel(
 ) {
     let ctx = contexts.ctx_mut();
     if panels.incident == PanelPlacement::Hidden {
+        return;
+    }
+    // Legacy debugger destinations enter the same full-screen workspace.
+    if panels.bottom_tab == BottomTab::Debug {
+        panels.bottom_tab = BottomTab::Behaviour;
+        composer.right = crate::composer::RightTab::Live;
+    }
+    if panels.bottom_tab == BottomTab::Behaviour {
+        composer.open = true;
+        let rect = ctx.screen_rect().shrink(8.0);
+        egui::Window::new("Behavior workspace")
+            .title_bar(false).fixed_rect(rect).resizable(false).collapsible(false)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.heading("Behavior");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Back to map  ·  G").clicked() {
+                            panels.incident = PanelPlacement::Hidden;
+                            composer.open = false;
+                        }
+                    });
+                });
+                crate::composer::panel_body(ui, &mut composer, &mut apply);
+            });
+        focus.pointer = true;
+        focus.keyboard |= ctx.wants_keyboard_input();
         return;
     }
     let scenario_name = sim.scenario.metadata.name.clone();
@@ -289,7 +314,7 @@ pub fn panel(
                     );
                 }
                 BottomTab::Debug => {
-                    crate::composer::live_debugger_body(ui, &mut composer);
+                    crate::composer::panel_body(ui, &mut composer, &mut apply);
                 }
                 BottomTab::Behaviour => {
                     crate::composer::panel_body(ui, &mut composer, &mut apply);
@@ -604,7 +629,7 @@ pub fn shortcuts_panel(
                 &[
                     ("/", "open Entities and focus search"),
                     ("B", "show / hide Entities"),
-                    ("G", "open the Behavior editor bottom tab"),
+                    ("G", "open the Behavior workspace"),
                     (
                         "T",
                         "open Chat for the selected agent — pauses the incident",
@@ -653,11 +678,11 @@ fn help_english(ui: &mut egui::Ui, location: &str) {
     ui.label("The menu bar along the top reaches everything, and the clock, play button and speed sit at its right-hand end.");
     ui.label("Incident response has two tabs: Response for evacuation and crew orders; Fire setup for weather, ignition settings and restart. Select a crew once to give orders or use Locate to find it.");
     ui.label("Open Entities from the bottom bar to find any household, person, vehicle or unit. Selecting a row or map symbol shows that entity's detail directly below the navigator.");
-    ui.label("The bottom workbench switches between the incident view, agent chat, the selected agent's live behavior debugger, and the behavior editor.");
+    ui.label("The bottom workbench holds the incident report and chat. Behavior opens a full-screen workspace for editing, testing and debugging.");
     ui.add_space(8.0);
     ui.heading("Why did they do that?");
     ui.label("Households, people caught away from home, and suppression units each decide for themselves, and every one of those decision models can be read and rewritten. Press G for the Behavior editor: it holds the decision graph for each kind of agent, a test bench, and its own help.");
-    ui.label("Select an agent and press F2 for the live behavior debugger: its current decision, proposals, node values, active path and recent history. Press . to step one decision at a time, paused or not. The editor's Live view overlays the same trace on the graph.");
+    ui.label("Select an agent and press F2 for the live behavior debugger: its current decision, proposals, node values, active path and recent history. Press . to step one decision at a time, paused or not. Debug shows the applied graph; Edit shows the draft. Click a node for details.");
     controls_guide(
         ui,
         [
@@ -706,7 +731,7 @@ fn help_italian(ui: &mut egui::Ui, location: &str) {
     ui.add_space(8.0);
     ui.heading("Perché si comportano così?");
     ui.label("Famiglie, persone sorprese fuori casa e squadre di intervento decidono ciascuna per conto proprio, e ognuno di questi modelli decisionali si può leggere e riscrivere. Premi G per l'editor dei comportamenti: contiene il grafo decisionale di ogni tipo di agente, un banco di prova e la propria guida.");
-    ui.label("Seleziona un agente e premi F2 per il debugger live: decisione corrente, proposte, valori dei nodi, percorso attivo e cronologia recente. Premi . per avanzare di una decisione alla volta, anche in pausa. La vista Live dell'editor sovrappone la stessa traccia al grafo.");
+    ui.label("Seleziona un agente e premi F2 per il debugger live: decisione corrente, proposte, valori dei nodi, percorso attivo e cronologia recente. Premi . per avanzare di una decisione alla volta, anche in pausa. Debug mostra il grafo applicato; Edit mostra la bozza. Seleziona un nodo per i dettagli.");
     controls_guide(
         ui,
         [
@@ -754,6 +779,7 @@ fn controls_guide(ui: &mut egui::Ui, rows: [(&str, &str); 8]) {
 pub fn map_hud(
     renderer: Res<crate::map2d::Renderer>,
     mut contexts: EguiContexts,
+    panels: Res<PanelState>,
     hovered: Res<crate::inspect::HoveredTarget>,
     selected: Res<crate::inspect::Selected>,
     sim: Res<Sim>,
@@ -761,6 +787,7 @@ pub fn map_hud(
     order: Res<crate::command::OrderTool>,
     mode: Res<crate::camera::CameraMode>,
 ) {
+    if panels.bottom_tab == BottomTab::Behaviour && panels.incident.visible() { return; }
     let ctx = contexts.ctx_mut();
     if hovered.0.is_some() && ignition.mode == EditMode::Off && !order.is_armed() {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -789,6 +816,7 @@ pub fn map_hud(
             "Selected: {}{camera}  ·  F focus · Esc clear",
             crate::inspect::target_label(&sim, target)
         )
+
     } else {
         crate::camera::navigation_hint(*renderer).to_string()
     };

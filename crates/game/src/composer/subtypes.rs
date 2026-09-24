@@ -61,7 +61,7 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
     let domain = c.domain();
 
     ui.horizontal(|ui| {
-        ui.label("Behaviour");
+        ui.label("Behaviour").on_hover_text("Changing behavior clears this profile’s node overrides. Undo restores them.");
         // Only this domain's graphs: pointing a household profile at a unit
         // policy would compile and then never match a single override.
         let ids: Vec<(String, String)> = c
@@ -150,7 +150,7 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
             }
             ui.small(format!(
                 "{} = {}",
-                behavior::subtype::describe_key(key, Some(&c.graph)),
+                behavior::subtype::describe_key(key, c.lib.graphs.get(&s.graph)),
                 value.display()
             ));
         });
@@ -180,6 +180,7 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
 
     if changed {
         c.lib.subtypes.insert(id.clone(), s);
+        c.select_profile(&id);
         c.dirty = true;
     }
 
@@ -318,14 +319,7 @@ fn roster(ui: &mut egui::Ui, c: &mut Composer) {
         }
         if ui.add_enabled(selected.is_some(), egui::Button::new("Delete")).clicked() {
             if let Some(id) = selected {
-                match c.lib.delete_subtype(&c.root.clone(), &id) {
-                    Ok(()) => {
-                        c.subtype = c.first_subtype_in(c.domain());
-                        c.dirty = true;
-                        c.set_status(format!("deleted {id}"));
-                    }
-                    Err(e) => c.set_error(format!("{e:#}")),
-                }
+                c.delete_profile(&id);
             }
         }
     });
@@ -351,7 +345,7 @@ fn roster(ui: &mut egui::Ui, c: &mut Composer) {
             ui.horizontal(|ui| {
                 let selected = c.subtype.as_deref() == Some(id.as_str());
                 if ui.selectable_label(selected, &name).clicked() {
-                    c.subtype = Some(id.clone());
+                    c.select_profile(&id);
                 }
                 match domain {
                     Domain::Household | Domain::Person if share <= 0.0 => {

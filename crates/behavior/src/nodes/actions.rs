@@ -15,6 +15,15 @@ use crate::behavior_node;
 use crate::node::withheld;
 use crate::value::{ActionKind, ActionProposal, Value};
 
+/// Shared composition contract for every domain's action nodes. Existing
+/// condition and parameter slots retain their saved indices.
+fn propose(kind: ActionKind, p: &crate::node::Params, i: &crate::node::Inputs, priority_param: usize) -> Value {
+    if !i.boolean(0) || i.boolean(2) { return withheld(kind); }
+    let priority = if i.all(1).is_empty() { p.num(priority_param) } else { i.num(1) };
+    if !priority.is_finite() { return withheld(kind); }
+    Value::Action(ActionProposal { kind, priority, fired: true })
+}
+
 /// A preset action node: fixed kind, one priority parameter.
 macro_rules! action_node {
     ($id:literal, $name:literal, $dom:ident, $doc:literal, [$($kw:literal),* $(,)?], $kind:ident, $prio:expr) => {
@@ -25,7 +34,11 @@ macro_rules! action_node {
             domain: $dom,
             doc: $doc,
             keywords: [$($kw),*],
-            inputs: [(bool "when", "Propose this action while the condition holds", false)],
+            inputs: [
+                (bool "when", "Propose while this condition holds", false),
+                (number "priority", "Optional computed priority. Unwired uses the Priority setting. Non-finite values withhold the action.", 0.0),
+                (bool "unless", "Withhold while this condition holds", false)
+            ],
             outputs: [(action "proposal", "The proposal, for the Decision output")],
             params: [
                 (number "priority", "Priority",
@@ -34,15 +47,7 @@ macro_rules! action_node {
                     $prio, 0.0, 10.0, "")
             ],
             eval: |_c, p, i, out| {
-                out.push(if i.boolean(0) {
-                    Value::Action(ActionProposal {
-                        kind: ActionKind::$kind,
-                        priority: p.num(0),
-                        fired: true,
-                    })
-                } else {
-                    withheld(ActionKind::$kind)
-                });
+                out.push(propose(ActionKind::$kind, p, i, 0));
             },
         }
     };
@@ -137,7 +142,11 @@ behavior_node! {
           when a subtype needs to change *which* action a branch proposes \
           rather than only how strongly.",
     keywords: ["custom", "generic", "any", "decide"],
-    inputs: [(bool "when", "Propose while the condition holds", false)],
+    inputs: [
+        (bool "when", "Propose while this condition holds", false),
+        (number "priority", "Optional computed priority. Unwired uses the Priority setting. Non-finite values withhold the action.", 0.0),
+        (bool "unless", "Withhold while this condition holds", false)
+    ],
     outputs: [(action "proposal", "The proposal, for the Decision output")],
     params: [
         (choice "action", "Action", "What to propose.", "prepare",
@@ -147,11 +156,7 @@ behavior_node! {
     ],
     eval: |_c, p, i, out| {
         let kind = p.action(0);
-        out.push(if i.boolean(0) {
-            Value::Action(ActionProposal { kind, priority: p.num(1), fired: true })
-        } else {
-            withheld(kind)
-        });
+        out.push(propose(kind, p, i, 1));
     },
 }
 
@@ -234,7 +239,11 @@ behavior_node! {
           only how strongly — \"engines return to staging when dry, crews hold\" \
           is one graph and two overrides rather than two graphs.",
     keywords: ["custom", "generic", "any", "decide"],
-    inputs: [(bool "when", "Propose while the condition holds", false)],
+    inputs: [
+        (bool "when", "Propose while this condition holds", false),
+        (number "priority", "Optional computed priority. Unwired uses the Priority setting. Non-finite values withhold the action.", 0.0),
+        (bool "unless", "Withhold while this condition holds", false)
+    ],
     outputs: [(action "proposal", "The proposal, for the Unit decision output")],
     params: [
         (choice "action", "Action", "What to propose.", "withdraw",
@@ -243,11 +252,7 @@ behavior_node! {
     ],
     eval: |_c, p, i, out| {
         let kind = p.action(0);
-        out.push(if i.boolean(0) {
-            Value::Action(ActionProposal { kind, priority: p.num(1), fired: true })
-        } else {
-            withheld(kind)
-        });
+        out.push(propose(kind, p, i, 1));
     },
 }
 
@@ -346,7 +351,11 @@ behavior_node! {
           parameter. Use this when a profile needs to change *which* action a \
           branch proposes rather than only how strongly.",
     keywords: ["custom", "generic", "any", "decide"],
-    inputs: [(bool "when", "Propose while the condition holds", false)],
+    inputs: [
+        (bool "when", "Propose while this condition holds", false),
+        (number "priority", "Optional computed priority. Unwired uses the Priority setting. Non-finite values withhold the action.", 0.0),
+        (bool "unless", "Withhold while this condition holds", false)
+    ],
     outputs: [(action "proposal", "The proposal, for the Person decision output")],
     params: [
         (choice "action", "Action", "What to propose.", "walk_out",
@@ -356,10 +365,6 @@ behavior_node! {
     ],
     eval: |_c, p, i, out| {
         let kind = p.action(0);
-        out.push(if i.boolean(0) {
-            Value::Action(ActionProposal { kind, priority: p.num(1), fired: true })
-        } else {
-            withheld(kind)
-        });
+        out.push(propose(kind, p, i, 1));
     },
 }

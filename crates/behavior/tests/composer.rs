@@ -67,6 +67,8 @@ fn every_node_declares_itself_coherently() {
                     | "out.person_decision"
                     | "logic.any"
                     | "logic.all"
+                    | "logic.at_least"
+                    | "math.sum"
             );
             assert!(!p.multi || combiner, "{}.{} is multi-connection", spec.id, p.name);
         }

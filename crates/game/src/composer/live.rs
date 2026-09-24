@@ -1,7 +1,7 @@
 //! Watching one agent's behaviour run.
 //!
-//! Select a household, a person or a unit on the map and this points the editor
-//! at the graph that agent is actually running, then keeps it in step with the
+//! Select a household, a person or a unit on the map to inspect its applied
+//! graph without changing the open draft. The debugger stays in step with the
 //! incident: what every node produced this tick, which of them fed the decision
 //! that was taken, which branches were checked and declined, and which parts of
 //! the graph have not mattered in the last few minutes.
@@ -49,7 +49,7 @@ use bevy_egui::egui;
 use behavior::{ActionKind, BehaviorGraph, Decision, NodeId, Trace, Value};
 
 use super::viewer::LiveRole;
-use super::{Composer, RightTab};
+use super::Composer;
 use crate::inspect::{Selected, Target};
 use crate::sim::Sim;
 
@@ -131,7 +131,7 @@ impl Frame {
 #[derive(Default)]
 pub struct Live {
     /// Keep the explanation readable without requiring graph literacy.
-    pub show_diagram: bool,
+    pub selected_node: Option<NodeId>,
     /// The agent being watched, if any.
     pub subject: Option<Subject>,
     /// The most recent capture. Taken out of the composer while the canvas
@@ -139,10 +139,6 @@ pub struct Live {
     pub frame: Option<Frame>,
     /// Newest last, capped at [`HISTORY`].
     pub history: VecDeque<Recorded>,
-    /// Follow the selection: switch the canvas to whatever the selected agent
-    /// is running. On by default, because a live view of a graph you are not
-    /// looking at is not a live view.
-    pub follow: bool,
     /// Union of the active sets across `history`.
     seen: BTreeSet<NodeId>,
     /// The sim generation the last capture was taken at, so a paused sim is
@@ -166,16 +162,6 @@ pub struct Live {
 }
 
 impl Live {
-    /// The default the editor opens with: a live view of a graph you are not
-    /// looking at is not a live view, so following the selection is on.
-    pub fn following() -> Live {
-        Live { follow: true, ..Live::default() }
-    }
-
-    pub fn watching(&self) -> bool {
-        self.subject.is_some() && self.frame.is_some()
-    }
-
     /// Drop everything about the agent that was being watched.
     ///
     /// Called whenever the subject changes. Keeping the history across a switch
@@ -183,6 +169,7 @@ impl Live {
     /// exactly like the new agent having been somewhere it has never been.
     fn forget(&mut self) {
         self.frame = None;
+        self.selected_node = None;
         self.history.clear();
         self.seen.clear();
         self.last_generation = u64::MAX;
@@ -300,17 +287,12 @@ fn explain(sim: &Sim, target: Target) -> Option<Capture> {
 fn effective_graph(lib: &behavior::Library, subtype_id: &str) -> Option<BehaviorGraph> {
     let subtype = lib.subtypes.get(subtype_id)?;
     let mut graph = lib.graphs.get(&subtype.graph)?.clone();
-    for (key, value) in &subtype.overrides {
-        let Some((node, param)) = behavior::subtype::split_key(key) else { continue };
-        let valid = graph
-            .node(node)
-            .and_then(|n| n.spec())
-            .and_then(|spec| spec.params.iter().find(|p| p.name == param))
-            .is_some_and(|p| value.same_kind(&p.default_value()));
-        if valid {
-            if let Some(node) = graph.node_mut(node) {
-                node.params.insert(param.to_string(), value.clone());
-            }
+    for node in &mut graph.nodes {
+        let Some(spec) = node.spec() else { continue };
+        for param in spec.params {
+            let key = BehaviorGraph::override_key(node.id, param.name);
+            let value = param.resolve_value(node.params.get(param.name), subtype.overrides.get(&key));
+            node.params.insert(param.name.to_string(), value);
         }
     }
     Some(graph)
@@ -369,8 +351,6 @@ pub fn capture(sim: Res<Sim>, selected: Res<Selected>, mut composer: ResMut<Comp
         }
     }
 
-    let graph_id = cap.graph_id.clone();
-    let subtype_id = cap.subtype_id.clone();
     c.live.frame = Some(Frame {
         graph_id: cap.graph_id,
         graph: cap.graph,
@@ -388,270 +368,95 @@ pub fn capture(sim: Res<Sim>, selected: Res<Selected>, mut composer: ResMut<Comp
         stale: c.dirty,
     });
 
-    // Point the editor at what this agent is running. Committed first, so an
-    // edit in progress goes into the library rather than being thrown away by
-    // the load — but the dirty flag is put back afterwards, because following
-    // the selection is not an edit and marking the library unsaved for clicking
-    // around the map would make the warning meaningless.
-    if c.live.follow && c.open && c.graph_id != graph_id && c.lib.graphs.contains_key(&graph_id) {
-        let was_dirty = c.dirty;
-        c.commit();
-        c.load_graph(&graph_id);
-        c.dirty = was_dirty;
-        c.subtype = Some(subtype_id);
-    }
+
 }
 
 // ---------------------------------------------------------------------------
 // The panel
 // ---------------------------------------------------------------------------
 
-pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
-    panel_impl(ui, c, true);
-}
-
-/// Focused live trace for the application's bottom debugger. Unlike the
-/// editor's Live tab, this does not depend on which graph the canvas happens
-/// to have open: selection alone determines what is shown.
+/// The applied graph and its trace share one canvas; details come from the
+/// selected runtime node, never from a draft with a matching graph id.
 pub fn debugger_panel(ui: &mut egui::Ui, c: &mut Composer) {
-    egui::SidePanel::right("live-debug-details")
-        .resizable(true)
-        .default_width(360.0)
-        .width_range(280.0..=520.0)
-        .show_inside(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| panel_impl(ui, c, false));
+    transport(ui, c);
+    if let Some(frame) = &c.live.frame {
+        ui.horizontal_wrapped(|ui| {
+            ui.strong(&frame.agent);
+            ui.weak(&frame.subtype_name).on_hover_text(&frame.subtype_id);
+            ui.colored_label(super::bench::action_colour(frame.decision.action), frame.decision.action.label());
+            ui.weak("Applied behavior");
         });
-    egui::CentralPanel::default().show_inside(ui, |ui| {
-        ui.checkbox(&mut c.live.show_diagram, "Show decision diagram (advanced)");
-        if c.live.show_diagram {
-            super::viewer::debug_canvas(ui, c);
-        } else if let Some(frame) = &c.live.frame {
-            ui.heading("What led to this decision?");
-            ui.label(format!("{} — {}", frame.agent, frame.decision.action.label()));
-            ui.small("These rules contributed to the answer. The panel on the right shows other actions considered and lets you advance to the next decision.");
-            egui::ScrollArea::vertical().id_source("decision-explanation").show(ui, |ui| {
-                for node in &frame.trace.nodes {
-                    if !frame.active.contains(&node.node) { continue; }
-                    ui.group(|ui| {
-                        ui.strong(node.name);
-                        if let Some(spec) = frame.graph.node(node.node).and_then(|n| n.spec()) {
-                            ui.small(spec.doc);
-                            for (port, value) in spec.outputs.iter().zip(&node.outputs) {
+    } else {
+        ui.centered_and_justified(|ui| { ui.label("Select a household, person or unit on the map, then open Debug."); });
+        return;
+    }
+    ui.separator();
+    egui::SidePanel::right("live-debug-details")
+        .resizable(true).default_width(320.0).width_range(260.0..=460.0)
+        .show_inside(ui, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                let Some(frame) = &c.live.frame else { return };
+                if c.dirty { ui.weak("Draft edits are not running."); }
+                ui.strong("Actions considered");
+                if frame.trace.proposals.is_empty() { ui.weak("No proposal · default action"); }
+                for (node, kind, priority) in &frame.trace.proposals {
+                    let winner = frame.winner == Some(*node);
+                    let label = format!("{}{}  ·  {:.2}", if winner { "▶ " } else { "" }, kind.label(), priority);
+                    if ui.selectable_label(c.live.selected_node == Some(*node), label).clicked() {
+                        c.live.selected_node = Some(*node);
+                    }
+                }
+                ui.separator();
+                if let Some(node) = c.live.selected_node.and_then(|id| frame.graph.node(id)) {
+                    if let Some(spec) = node.spec() {
+                        ui.heading(spec.name);
+                        ui.colored_label(frame.role(node.id).colour(), frame.role(node.id).label());
+                        egui::CollapsingHeader::new("About this node").show(ui, |ui| { ui.label(spec.doc); });
+                        if let Some(trace) = frame.trace.node(node.id) {
+                            ui.strong("Outputs");
+                            for (port, value) in spec.outputs.iter().zip(&trace.outputs) {
                                 ui.label(format!("{}: {}", port.name, value.display()));
                             }
+                            if !trace.params_read.is_empty() {
+                                ui.separator();
+                                ui.strong("Parameters used");
+                                for index in &trace.params_read {
+                                    if let Some(param) = spec.params.get(*index as usize) {
+                                        let value = frame.graph.param(node.id, param.name).unwrap_or_else(|| param.default_value());
+                                        ui.label(format!("{}: {}", param.label, value.display()));
+                                    }
+                                }
+                            }
                         }
-                    });
-                }
-                if frame.active.is_empty() {
-                    ui.label("No rule proposed an action. The default action applies.");
-                }
+                    } else { ui.label(&node.type_id); }
+                } else { ui.weak("Select a node to inspect its values."); }
+                ui.separator();
+                egui::CollapsingHeader::new("Decision history").show(ui, |ui| {
+                    let mut last = None;
+                    for r in c.live.history.iter().rev() {
+                        if last == Some(r.action) { continue; }
+                        last = Some(r.action);
+                        ui.small(format!("T+{:02}:{:02}  {} · {:.2}", r.time_s / 60, r.time_s % 60, r.action.label(), r.priority));
+                    }
+                });
+                egui::CollapsingHeader::new("Legend").show(ui, |ui| {
+                    for role in [LiveRole::Active, LiveRole::Withheld, LiveRole::Recent, LiveRole::Cold] {
+                        ui.colored_label(role.colour(), role.label());
+                    }
+                    ui.small("Every node evaluates. The highlighted connections contribute to the winning decision.");
+                });
             });
-        } else {
-            ui.heading("Understand an agent’s decisions");
-            ui.label("Select a household, person or response unit on the map. Then use Next decision to watch how its behaviour responds to the situation.");
-        }
-    });
-}
-
-fn panel_impl(ui: &mut egui::Ui, c: &mut Composer, editor_context: bool) {
-    ui.horizontal(|ui| {
-        ui.heading(if editor_context { "Live" } else { "Why did this agent act?" });
-        if editor_context {
-            ui.checkbox(&mut c.live.follow, "follow selection").on_hover_text(
-                "Switch the canvas to whatever the selected agent is running. Off keeps the \
-                 behaviour you are editing on screen while the highlight follows the agent — \
-                 which shows nothing at all unless they happen to be the same graph.",
-            );
-        } else {
-            ui.weak("selected agent · real incident");
-        }
-    });
-
-    let Some(_) = c.live.subject else {
-        ui.separator();
-        ui.label("Nothing is selected.");
-        ui.small(
-            "Click a person, a household or a unit on the map. Their behaviour opens here and \
-             stays in step with the incident: what every node produced, and which of them \
-             produced the decision.",
-        );
-        return;
-    };
-
-    // Taken out for the body and put back at the end: the panel reads the frame
-    // and writes to the composer at the same time, and the frame is the one
-    // thing here that is genuinely large enough to be worth not cloning.
-    let frame = c.live.frame.take();
-    let Some(frame) = frame else {
-        ui.separator();
-        ui.label("No applied behavior graph is available for this selection.");
-        ui.small(
-            "The entity may have disappeared since selection, or the applied behavior library \
-             may be invalid. Every live decision layer requires a graph.",
-        );
-        return;
-    };
-
-    ui.separator();
-    ui.horizontal(|ui| {
-        ui.strong(&frame.agent);
-        ui.small(&frame.subtype_name).on_hover_text(&frame.subtype_id);
-    });
-
-    if editor_context && frame.graph_id != c.graph_id {
-        ui.colored_label(
-            egui::Color32::from_rgb(0xd8, 0xa6, 0x4b),
-            "The canvas is showing a different behaviour.",
-        );
-        let want = frame.graph_id.clone();
-        if ui.button(format!("Open \"{want}\"")).clicked() {
-            c.commit();
-            c.load_graph(&want);
-        }
-        c.live.frame = Some(frame);
-        return;
-    }
-
-    if frame.stale {
-        ui.colored_label(
-            egui::Color32::from_rgb(0xd8, 0xa6, 0x4b),
-            "Edited since the incident was started.",
-        )
-        .on_hover_text(
-            "The highlight describes the behaviour as applied. Anything you have changed \
-             since is not what is running — press \"Apply and restart\" to make it so.",
-        );
-    }
-
-    ui.small(
-        "Bright outlines mark the current decision path. Parameter rows on those nodes show only \
-         the values the node actually read this tick.",
-    );
-
-    // --- what it decided ----------------------------------------------------
-    ui.add_space(4.0);
-    let d = frame.decision;
-    ui.horizontal(|ui| {
-        ui.colored_label(super::bench::action_colour(d.action), d.action.label());
-        ui.small(format!("priority {:.2}", d.priority));
-    });
-    if d.prep_scale != 1.0 {
-        ui.small(format!("preparation ×{:.2}", d.prep_scale));
-    }
-    if d.urgency > 0.0 {
-        ui.small(format!("urgency readout {:.2}", d.urgency));
-    }
-
-    if let Some(winner) = frame.winner.and_then(|id| frame.trace.nodes.iter().find(|n| n.node == id)) {
-        ui.label(format!("“{}” proposed this action with the highest priority ({:.2}).", winner.name, d.priority));
-    } else {
-        ui.label("No rule proposed an action, so this agent uses its default action.");
-    }
-    ui.small("This explains the applied behaviour using the agent’s current situation. Movement and safety constraints can still affect what happens next.");
-
-    transport(ui, c);
-
-    // --- the legend ---------------------------------------------------------
-    // Not decoration: four states in two greens is unreadable without it, and
-    // the difference between "checked and declined" and "never reached" is the
-    // single most useful thing on the canvas.
-    ui.separator();
-    egui::CollapsingHeader::new("What the colours mean").default_open(false).show(ui, |ui| {
-        for role in [LiveRole::Active, LiveRole::Withheld, LiveRole::Recent, LiveRole::Cold] {
-            ui.horizontal(|ui| {
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
-                ui.painter().rect_filled(rect, 2.0, role_colour(role));
-                ui.small(role.label());
-            });
-        }
-        ui.small(
-            "Every node runs on every tick — this is a dataflow graph, not a flowchart. \
-             \"On the path taken\" means the node fed a value into the decision that won.",
-        );
-    });
-
-    // --- the proposals ------------------------------------------------------
-    ui.separator();
-    ui.label("Actions considered (highest priority wins)");
-    if frame.trace.proposals.is_empty() {
-        ui.small("Nothing fired: the agent is doing its default.");
-    }
-    let mut jump: Option<NodeId> = None;
-    for (i, (node, kind, prio)) in frame.trace.proposals.iter().enumerate() {
-        let text = format!("{} {} @ {prio:.2}", if i == 0 { "▶" } else { " " }, kind.label());
-        if ui
-            .add(egui::Label::new(egui::RichText::new(text).color(super::bench::action_colour(*kind))).sense(egui::Sense::click()))
-            .on_hover_text("Select the node that made this proposal")
-            .clicked()
-        {
-            jump = Some(*node);
-        }
-    }
-
-    // --- every node, in evaluation order ------------------------------------
-    ui.separator();
-    egui::CollapsingHeader::new("Detailed rule results").show(ui, |ui| {
-    egui::ScrollArea::vertical().max_height(240.0).id_source("live-trace").show(ui, |ui| {
-        for n in &frame.trace.nodes {
-            let role = frame.role(n.node);
-            let values =
-                n.outputs.iter().map(Value::display).collect::<Vec<_>>().join(", ");
-            let r = ui.add(
-                egui::Label::new(
-                    egui::RichText::new(format!("{} = {values}", n.name))
-                        .color(role_colour(role)),
-                )
-                .sense(egui::Sense::click()),
-            );
-            if r.on_hover_text(role.label()).clicked() {
-                jump = Some(n.node);
-            }
-        }
-    });
-
-    });
-
-    // --- what it has been doing ---------------------------------------------
-    ui.separator();
-    egui::CollapsingHeader::new(format!("History ({})", c.live.history.len()))
-        .default_open(false)
-        .show(ui, |ui| {
-            if c.live.history.len() < 2 {
-                ui.small("Nothing yet. Step or run the incident and the decisions land here.");
-            }
-            // Newest first: what it is doing now is the question, and what it
-            // was doing forty ticks ago is the follow-up.
-            let mut last: Option<ActionKind> = None;
-            for r in c.live.history.iter().rev() {
-                // Only the changes. A list of two hundred identical rows hides
-                // the three moments that matter.
-                if last == Some(r.action) {
-                    continue;
-                }
-                last = Some(r.action);
-                ui.small(
-                    egui::RichText::new(format!(
-                        "T+{:02}:{:02}  {} @ {:.2}",
-                        r.time_s / 60,
-                        r.time_s % 60,
-                        r.action.label(),
-                        r.priority
-                    ))
-                    .color(super::bench::action_colour(r.action)),
-                );
-            }
         });
-
-    if editor_context {
-        if let Some(node) = jump {
-            if let Some(sid) = c.snarl_id_of(node) {
-                c.selected = Some(sid);
-                c.right = RightTab::Inspector;
-            }
+    egui::CentralPanel::default().show_inside(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut c.wiring, false, "Structure");
+            ui.selectable_value(&mut c.wiring, true, "Wiring");
+        });
+        if c.wiring { super::viewer::debug_canvas(ui, c); }
+        else if let Some(frame) = &c.live.frame {
+            super::structure::panel(ui, &frame.graph, Some(frame), &mut c.live.selected_node);
         }
-    }
-    c.live.frame = Some(frame);
+    });
 }
 
 /// Play, pause and step, in the panel that needs them.
@@ -683,12 +488,6 @@ fn transport(ui: &mut egui::Ui, c: &mut Composer) {
     });
 }
 
-fn role_colour(role: LiveRole) -> egui::Color32 {
-    // The viewer owns the palette; the panel must not invent a second one, or
-    // the legend stops describing the canvas.
-    role.colour()
-}
-
 /// Carry the panel's transport requests onto the simulation.
 ///
 /// A separate system rather than the panel touching `Sim` directly, because the
@@ -701,5 +500,27 @@ pub fn transport_requests(mut sim: ResMut<Sim>, mut composer: ResMut<Composer>) 
     }
     if std::mem::take(&mut composer.live.step) {
         sim.request_step();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn applied_parameter_display_matches_runtime_even_for_malformed_overrides() {
+        let mut lib = behavior::defaults::default_library();
+        let profile = lib.subtypes.values().find(|s| lib.domain_of(s) == Some(behavior::Domain::Household)).unwrap().id.clone();
+        let graph_id = lib.subtypes[&profile].graph.clone();
+        let graph = lib.graphs.get_mut(&graph_id).unwrap();
+        let id = graph.add("param.number", [0.0, 0.0]).unwrap();
+        graph.node_mut(id).unwrap().params.insert("value".into(), behavior::ParamValue::Number(42.0));
+        let key = BehaviorGraph::override_key(id, "value");
+        for value in [behavior::ParamValue::Bool(true), behavior::ParamValue::Number(9.0)] {
+            lib.subtypes.get_mut(&profile).unwrap().overrides.insert(key.clone(), value);
+            let (_, trace) = lib.compile(&profile).unwrap().eval_traced(&behavior::HouseholdObs::default().into());
+            let displayed = effective_graph(&lib, &profile).unwrap().param(id, "value").unwrap().as_number();
+            assert_eq!(trace.node(id).unwrap().outputs[0], Value::Number(displayed));
+        }
     }
 }

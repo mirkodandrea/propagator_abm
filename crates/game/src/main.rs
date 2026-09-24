@@ -353,10 +353,10 @@ fn apply_behaviour(
     .collect::<Vec<_>>()
     .join(", ");
 
-    match sim.apply_behaviour(lib) {
+    match sim.apply_behaviour(lib.clone()) {
         Ok(()) => {
             restarted.send(sim::SimRestarted);
-            composer.dirty = false;
+            composer.mark_applied(lib);
             composer.set_status(format!("restarted on {described}"));
             info!("agent behaviour applied: {described}");
         }
@@ -492,6 +492,11 @@ fn controls(
 ) {
     // Escape is the exception: it is what gets you *out* of a state, so it has
     // to work even while a widget has focus.
+    if keys.just_pressed(KeyCode::Escape) && panels.bottom_tab == ui::BottomTab::Behaviour && panels.incident.visible() {
+        panels.incident = ui::PanelPlacement::Hidden;
+        composer.open = false;
+        return;
+    }
     if keys.just_pressed(KeyCode::Escape) {
         let cancelling = tool.mode != ignition_edit::EditMode::Off
             || order.is_armed()
@@ -560,8 +565,9 @@ fn controls(
         help.open = !help.open;
     }
     if keys.just_pressed(KeyCode::F2) {
-        if panels.bottom_tab == ui::BottomTab::Debug && panels.incident.visible() {
+        if panels.bottom_tab == ui::BottomTab::Behaviour && composer.right == composer::RightTab::Live && panels.incident.visible() {
             panels.incident = ui::PanelPlacement::Hidden;
+            composer.open = false;
         } else {
             composer.open = false;
             panels.focus_bottom(ui::BottomTab::Debug);

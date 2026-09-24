@@ -158,12 +158,7 @@ impl LiveRole {
         }
     }
 
-    /// Current-tick states. Both deserve their parameters on the canvas: the
-    /// active path explains what won, while a withheld proposal explains the
-    /// nearby rule that was checked and said no.
-    fn is_current(self) -> bool {
-        matches!(self, LiveRole::Active | LiveRole::Withheld)
-    }
+
 }
 
 impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
@@ -222,7 +217,8 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
                     ui.visuals().text_color().gamma_multiply(r.dim()),
                 );
             }
-            let r = ui.label(text);
+            let r = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+            if r.clicked() { self.selected = Some(node); }
             if let Some(s) = spec {
                 let hover = match role {
                     Some(role) => format!("{}\n\n▸ {}", s.doc, role.label()),
@@ -258,9 +254,6 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
             }
         });
 
-        if !snarl[node].comment.is_empty() {
-            ui.small(snarl[node].comment.clone());
-        }
 
         // What this node actually produced on the tick being watched, on the
         // box rather than in a list off to one side. Reading a graph and
@@ -358,49 +351,6 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
         }
     }
 
-    fn has_footer(&mut self, node: &EditorNode) -> bool {
-        let Some(live) = self.live else { return false };
-        let Some(spec) = node.spec() else { return false };
-        live.role(node.id).is_current()
-            && !spec.params.is_empty()
-            && live
-                .trace
-                .node(node.id)
-                .is_some_and(|trace| !trace.params_read.is_empty())
-    }
-
-    fn show_footer(
-        &mut self,
-        node: NodeId,
-        _inputs: &[InPin],
-        _outputs: &[OutPin],
-        ui: &mut egui::Ui,
-        _scale: f32,
-        snarl: &mut Snarl<EditorNode>,
-    ) {
-        let Some(live) = self.live else { return };
-        let editor_node = &snarl[node];
-        let Some(spec) = editor_node.spec() else { return };
-        let Some(trace) = live.trace.node(editor_node.id) else { return };
-        let role = live.role(editor_node.id);
-
-        ui.vertical(|ui| {
-            ui.label(
-                egui::RichText::new("USED PARAMETERS")
-                    .small()
-                    .color(role.colour()),
-            );
-            for index in &trace.params_read {
-                let Some(param) = spec.params.get(*index as usize) else { continue };
-                let value = live
-                    .graph
-                    .param(editor_node.id, param.name)
-                    .unwrap_or_else(|| param.default_value());
-                parameter_badge(ui, role, param, &value);
-            }
-        });
-    }
-
     fn final_node_rect(
         &mut self,
         node: NodeId,
@@ -475,33 +425,6 @@ impl<'a> SnarlViewer<EditorNode> for Viewer<'a> {
     fn drop_inputs(&mut self, pin: &InPin, snarl: &mut Snarl<EditorNode>) {
         if self.editable {
             snarl.drop_inputs(pin.id);
-        }
-    }
-
-    fn has_body(&mut self, node: &EditorNode) -> bool {
-        // Only the nodes whose *whole content* is a constant get an inline
-        // editor. Everything else is edited in the inspector, so a canvas of
-        // forty nodes stays readable.
-        self.editable
-            && matches!(node.type_id.as_str(), "param.number" | "param.bool" | "param.intent")
-    }
-
-    fn show_body(
-        &mut self,
-        node: NodeId,
-        _inputs: &[InPin],
-        _outputs: &[OutPin],
-        ui: &mut egui::Ui,
-        _scale: f32,
-        snarl: &mut Snarl<EditorNode>,
-    ) {
-        let Some(spec) = snarl[node].spec() else { return };
-        let param = spec.params.iter().find(|p| p.name == "value" || p.name == "plan");
-        let Some(param) = param.copied() else { return };
-        let n = &mut snarl[node];
-        let mut value = n.params.get(param.name).cloned().unwrap_or_else(|| param.default_value());
-        if super::param_widget(ui, &param, &mut value) {
-            n.params.insert(param.name.to_string(), value);
         }
     }
 
@@ -717,34 +640,6 @@ fn parameter_value(spec: &behavior::ParamSpec, value: &ParamValue) -> String {
     }
 }
 
-fn parameter_badge(
-    ui: &mut egui::Ui,
-    role: LiveRole,
-    spec: &behavior::ParamSpec,
-    value: &ParamValue,
-) {
-    let colour = role.colour();
-    egui::Frame::none()
-        .fill(colour.gamma_multiply(0.12))
-        .stroke(egui::Stroke::new(0.8, colour.gamma_multiply(0.8)))
-        .rounding(3.0)
-        .inner_margin(egui::Margin::symmetric(4.0, 2.0))
-        .show(ui, |ui| {
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(format!(
-                        "{}  =  {}",
-                        spec.label,
-                        parameter_value(spec, value)
-                    ))
-                    .small(),
-                )
-                .extend(),
-            )
-            .on_hover_text(spec.doc);
-        });
-}
-
 /// Materialise a behavior graph in the canvas representation.
 ///
 /// Kept as a single conversion for both the editor and the live debugger so
@@ -791,9 +686,8 @@ fn node_issues(report: &behavior::Report, node: behavior::NodeId) -> String {
 
 /// The next unused node identity on this canvas.
 ///
-/// Linear over the nodes, which is nothing at the scale these graphs are, and
-/// correct after a delete: reusing the id of a node that was removed would hand
-/// the new node every subtype override the old one had.
+/// Allocate above the live nodes. Composer::commit removes deleted-node
+/// overrides before an id can be reused by a later edit.
 pub fn free_id(snarl: &Snarl<EditorNode>) -> behavior::NodeId {
     snarl.nodes().map(|n| n.id).max().map_or(1, |m| m.saturating_add(1))
 }
@@ -807,13 +701,13 @@ pub fn canvas(ui: &mut egui::Ui, c: &mut Composer) {
     let mut viewer = Viewer {
         issues: &report,
         domain: c.domain(),
-        live: frame.as_ref().filter(|f| f.graph_id == c.graph_id),
+        live: None,
         selected: None,
         added: false,
         editable: true,
     };
     let style = super::editor_style();
-    c.snarl.show(&mut viewer, &style, "behaviour-canvas", ui);
+    c.snarl.show(&mut viewer, &style, ("behaviour-canvas", &c.graph_id, c.view_revision), ui);
     let (selected, added) = (viewer.selected, viewer.added);
     c.report = report;
     c.live.frame = frame;
@@ -849,7 +743,8 @@ pub fn debug_canvas(ui: &mut egui::Ui, c: &mut Composer) {
 
     ui.horizontal(|ui| {
         ui.strong(format!("Applied graph: {}", frame.graph.name));
-        ui.weak("scroll to zoom · drag background to pan");
+        if ui.small_button("Fit graph").clicked() { c.view_revision += 1; }
+        ui.weak("scroll to zoom · drag to pan");
     });
     ui.separator();
 
@@ -864,6 +759,9 @@ pub fn debug_canvas(ui: &mut egui::Ui, c: &mut Composer) {
         editable: false,
     };
     let style = super::editor_style();
-    snarl.show(&mut viewer, &style, "live-debug-canvas", ui);
+    snarl.show(&mut viewer, &style, ("live-debug-canvas", &frame.graph_id, c.view_revision), ui);
+    if let Some(sid) = viewer.selected {
+        c.live.selected_node = snarl.get_node(sid).map(|n| n.id);
+    }
     c.live.frame = Some(frame);
 }

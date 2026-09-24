@@ -30,18 +30,20 @@
 use std::path::PathBuf;
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::egui;
 use egui_snarl::{ui::SnarlStyle, Snarl};
 
 use behavior::{BehaviorGraph, Domain, Library, Observation, ParamValue, Report, Wire};
 
 pub mod bench;
-mod guided;
 mod help;
+mod history;
+mod composition;
 mod inspector;
 pub mod live;
 mod palette;
 mod subtypes;
+mod structure;
 mod viewer;
 
 pub use viewer::EditorNode;
@@ -58,46 +60,10 @@ pub enum RightTab {
     Help,
 }
 
-impl RightTab {
-    pub const ALL: [RightTab; 5] = [
-        RightTab::Inspector,
-        RightTab::Subtypes,
-        RightTab::Bench,
-        RightTab::Live,
-        RightTab::Help,
-    ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            RightTab::Inspector => "Settings",
-            RightTab::Subtypes => "Profiles",
-            RightTab::Bench => "Try a situation",
-            RightTab::Live => "Watch an agent",
-            RightTab::Help => "Help",
-        }
-    }
-
-    pub fn doc(self) -> &'static str {
-        match self {
-            RightTab::Inspector => "The selected node: what it does, and the numbers it turns on.",
-            RightTab::Subtypes => "Named profiles over this behaviour, and which agents run them.",
-            RightTab::Bench => {
-                "Put a made-up agent in a situation and read the answer back node by node."
-            }
-            RightTab::Live => {
-                "Watch the agent selected on the map decide, tick by tick, on this canvas."
-            }
-            RightTab::Help => "How to build, run, debug and share a behaviour.",
-        }
-    }
-}
-
 /// The composer's whole state.
 #[derive(Resource)]
 pub struct Composer {
     pub open: bool,
-    /// Start with readable rules; wiring remains available in the advanced view.
-    pub advanced: bool,
     /// Where the library is read from and written to.
     pub root: PathBuf,
     pub lib: Library,
@@ -127,6 +93,8 @@ pub struct Composer {
     /// Where a palette click drops a node, in graph space.
     pub drop_at: egui::Pos2,
     pub selected: Option<egui_snarl::NodeId>,
+    pub view_revision: u64,
+    pub wiring: bool,
 
     /// Subtype being edited, and the one it is being compared with.
     pub subtype: Option<String>,
@@ -150,6 +118,9 @@ pub struct Composer {
     pub status_is_error: bool,
     /// Set when the library has changed since the model was last rebuilt.
     pub dirty: bool,
+    applied: Library,
+    saved: Library,
+    history: history::History,
 }
 
 /// Ask the game to rebuild the agent model on the composer's library.
@@ -178,8 +149,10 @@ impl Composer {
             // unattended screenshot run can capture the editor; its value
             // picks the right-hand tab. In play it is opened with `b`.
             open: std::env::var("SPOTORNO_COMPOSER").is_ok(),
-            advanced: false,
             root,
+            applied: history::normalized(&lib),
+            saved: history::normalized(&lib),
+            history: history::History::default(),
             lib,
             snarl: Snarl::new(),
             graph_id: graph_id.clone(),
@@ -198,10 +171,12 @@ impl Composer {
             palette_query: String::new(),
             drop_at: egui::Pos2::ZERO,
             selected: None,
+            view_revision: 0,
+            wiring: false,
             subtype: None,
             compare_with: None,
             bench: bench::Bench::default(),
-            live: live::Live::following(),
+            live: live::Live::default(),
             load_report,
             transfer_path: String::new(),
             status: String::new(),
@@ -225,6 +200,7 @@ impl Composer {
                 None => c.set_error(format!("no such agent kind: {key:?}")),
             }
         }
+        c.checkpoint(false);
         c
     }
 
@@ -252,7 +228,10 @@ impl Composer {
         self.graph_domain = g.domain;
         self.snarl = viewer::snarl_from_graph(&g);
         self.selected = None;
-
+        if self.subtype.as_ref().and_then(|id| self.lib.subtypes.get(id))
+            .is_none_or(|s| s.graph != self.graph_id) {
+            self.subtype = None;
+        }
         self.sync();
     }
 
@@ -293,24 +272,80 @@ impl Composer {
     /// Write the canvas into the library. Does not touch disk.
     pub fn commit(&mut self) {
         self.sync();
-        // Canvas wire iteration order is not the saved file's order.
-        let normalise = |mut graph: BehaviorGraph| {
-            graph.nodes.sort_by_key(|n| n.id);
-            graph.wires.sort_by_key(|w| (w.from_node, w.from_port, w.to_node, w.to_port));
-            graph
-        };
-        if self.lib.graphs.get(&self.graph_id).cloned().map(normalise)
-            != Some(normalise(self.graph.clone())) {
-
-            self.lib.graphs.insert(self.graph_id.clone(), self.graph.clone());
-            self.dirty = true;
+        // Remove overrides at the same time as their nodes. Otherwise a new
+        // node reusing an id could inherit settings meant for the deleted one.
+        let removed: Vec<_> = self.lib.graphs.get(&self.graph_id).into_iter()
+            .flat_map(|g| &g.nodes).filter(|n| self.graph.node(n.id).is_none())
+            .map(|n| format!("{}.", n.id)).collect();
+        for profile in self.lib.subtypes.values_mut().filter(|s| s.graph == self.graph_id) {
+            profile.overrides.retain(|key, _| !removed.iter().any(|prefix| key.starts_with(prefix)));
         }
+        self.lib.graphs.insert(self.graph_id.clone(), self.graph.clone());
+        self.dirty = history::normalized(&self.lib) != self.applied;
+    }
+
+    fn checkpoint(&mut self, grouping: bool) {
+        self.commit();
+        self.history.record(history::Snapshot {
+            lib: history::normalized(&self.lib), graph_id: self.graph_id.clone(), subtype: self.subtype.clone(),
+        }, grouping);
+    }
+
+    fn restore(&mut self, snapshot: history::Snapshot) {
+        self.lib = snapshot.lib;
+        self.subtype = snapshot.subtype;
+        self.load_graph(&snapshot.graph_id);
+        self.compare_with = None;
+        self.dirty = history::normalized(&self.lib) != self.applied;
+        self.view_revision += 1;
+    }
+
+    pub fn undo(&mut self) {
+        self.checkpoint(false);
+        if let Some(snapshot) = self.history.undo() { self.restore(snapshot); }
+    }
+
+    pub fn redo(&mut self) {
+        self.checkpoint(false);
+        if let Some(snapshot) = self.history.redo() { self.restore(snapshot); }
+    }
+
+    pub fn mark_applied(&mut self, applied: Library) {
+        self.applied = history::normalized(&applied);
+        self.commit();
+    }
+
+    fn unsaved(&self) -> bool { history::normalized(&self.lib) != self.saved }
+
+    fn select_profile(&mut self, id: &str) {
+        let Some(graph) = self.lib.subtypes.get(id).map(|s| s.graph.clone()) else { return };
+        if !self.lib.graphs.contains_key(&graph) {
+            self.set_error(format!("Profile references missing behavior: {graph}"));
+            return;
+        }
+        self.commit();
+        if graph != self.graph_id { self.load_graph(&graph); }
+        self.subtype = Some(id.to_string());
+    }
+
+    fn delete_profile(&mut self, id: &str) {
+        self.lib.subtypes.remove(id);
+        if self.subtype.as_deref() == Some(id) { self.subtype = None; }
+        self.dirty = true;
+        self.set_status("Profile removed from draft. Save to keep this change.".into());
     }
 
     pub fn save(&mut self) {
         self.commit();
-        match self.lib.save_dir(&self.root) {
+        let result = self.lib.save_dir(&self.root).and_then(|()| {
+            let deleted: Vec<_> = self.saved.subtypes.keys().filter(|id| !self.lib.subtypes.contains_key(*id)).cloned().collect();
+            let mut previous = self.saved.clone();
+            for id in deleted { previous.delete_subtype(&self.root, &id)?; }
+            Ok(())
+        });
+        match result {
             Ok(()) => {
+                self.saved = history::normalized(&self.lib);
                 let (graphs, subtypes) = (self.lib.graphs.len(), self.lib.subtypes.len());
                 self.set_status(format!(
                     "saved {graphs} behaviour(s) and {subtypes} profile(s) to {}",
@@ -335,6 +370,7 @@ impl Composer {
             self.set_error("nothing saved there yet".into());
             return;
         }
+        self.saved = history::normalized(&lib);
         self.lib = lib;
         let id = self.graph_id.clone();
         let first = self.lib.graphs.keys().next().cloned().unwrap_or_default();
@@ -583,6 +619,7 @@ fn read_library(_root: &PathBuf) -> (Library, Vec<behavior::FileReport>) {
 /// constructing it costs nothing.
 pub(crate) fn editor_style() -> SnarlStyle {
     SnarlStyle {
+        bg_pattern: Some(egui_snarl::ui::BackgroundPattern::NoPattern),
         pin_size: Some(7.0),
         wire_width: Some(2.5),
         wire_frame_size: Some(24.0),
@@ -654,7 +691,7 @@ fn toggle(
     if keys.just_pressed(KeyCode::KeyG) {
         if composer.open && panels.bottom_tab == crate::ui::BottomTab::Behaviour {
             composer.open = false;
-            panels.focus_bottom(crate::ui::BottomTab::Incident);
+            panels.incident = crate::ui::PanelPlacement::Hidden;
         } else {
             composer.open = true;
             panels.focus_bottom(crate::ui::BottomTab::Behaviour);
@@ -662,118 +699,91 @@ fn toggle(
     }
 }
 
-#[allow(dead_code)]
-fn window(
-    mut contexts: EguiContexts,
-    mut composer: ResMut<Composer>,
-    mut focus: ResMut<crate::ui::UiFocus>,
-    mut apply: EventWriter<ApplyBehaviour>,
-) {
-    if !composer.open {
+/// Full-screen workspace body. The structure and wiring views share the draft;
+/// debugging projects the applied snapshot through the same renderers.
+pub fn panel_body(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBehaviour>) {
+    let grouping = ui.ctx().wants_keyboard_input() || ui.input(|i| i.pointer.any_down());
+    c.checkpoint(grouping);
+    // Text fields keep their own undo; workspace shortcuts act only outside them.
+    if !ui.ctx().wants_keyboard_input() {
+        let redo = ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Z));
+        let undo = ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z));
+        if redo { c.redo(); } else if undo { c.undo(); }
+    }
+    ui.horizontal(|ui| {
+        ui.selectable_value(&mut c.right, RightTab::Inspector, "Edit");
+        ui.selectable_value(&mut c.right, RightTab::Live, "Debug");
+        ui.selectable_value(&mut c.right, RightTab::Bench, "Test");
+        ui.selectable_value(&mut c.right, RightTab::Subtypes, "Profiles");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.small_button("Help & files").clicked() { c.right = RightTab::Help; }
+            ui.weak(match (c.unsaved(), c.dirty) {
+                (true, true) => "Unsaved · not applied",
+                (true, false) => "Applied · unsaved",
+                (false, true) => "Saved · not applied",
+                (false, false) => "Saved · applied",
+            });
+        });
+    });
+    ui.separator();
+    if c.right == RightTab::Live {
+        live::debugger_panel(ui, c);
         return;
     }
-    let ctx = contexts.ctx_mut();
-    let c = &mut *composer;
-
-    let mut open = true;
-    egui::Window::new("Agent Behaviour Composer")
-        .open(&mut open)
-        // Sized for the three columns it has to hold at once: palette,
-        // canvas, inspector. Below the minimum the canvas stops being a canvas
-        // and the window is better dragged bigger than laid out differently.
-        .default_size([1460.0, 900.0])
-        .min_size([1040.0, 640.0])
-        .vscroll(false)
-        .show(ctx, |ui| {
-            panel_body(ui, c, &mut apply);
-        });
-
-    // The canvas eats drags and the text fields eat keys; without this the
-    // camera orbits behind the window and `space` pauses the sim mid-rename.
-    focus.pointer |= ctx.is_pointer_over_area() || ctx.wants_keyboard_input();
-
-    composer.open &= open;
-}
-
-/// The complete behavior workbench, usable inside either a window or a dock.
-/// The application embeds this in its large bottom tab; retaining a plain body
-/// keeps the editor independent of where that work surface is hosted.
-pub fn panel_body(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBehaviour>) {
-    c.sync();
     toolbar(ui, c, apply);
     ui.separator();
-    if c.advanced {
-        egui::SidePanel::left("composer-palette")
-            .resizable(true)
-            .default_width(260.0)
-            .show_inside(ui, |ui| palette::panel(ui, c));
-    }
     egui::SidePanel::right("composer-inspector")
-        .resizable(true)
-        .default_width(360.0)
+        .resizable(true).default_width(320.0).width_range(260.0..=460.0)
         .show_inside(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                for tab in RightTab::ALL {
-                    let watching = tab == RightTab::Live && c.live.watching();
-                    let label = if watching {
-                        format!("● {}", tab.label())
-                    } else {
-                        tab.label().to_string()
-                    };
-                    ui.selectable_value(&mut c.right, tab, label)
-                        .on_hover_text(tab.doc());
-                }
-            });
-            ui.separator();
             egui::ScrollArea::vertical().show(ui, |ui| match c.right {
                 RightTab::Inspector => inspector::panel(ui, c),
                 RightTab::Subtypes => subtypes::panel(ui, c),
                 RightTab::Bench => bench::panel(ui, c),
-                RightTab::Live => live::panel(ui, c),
                 RightTab::Help => help::panel(ui, c),
+                RightTab::Live => unreachable!(),
             });
         });
     egui::TopBottomPanel::bottom("composer-issues")
-        .resizable(false)
-        .show_inside(ui, |ui| issues(ui, c));
+        .resizable(false).show_inside(ui, |ui| issues(ui, c));
     egui::CentralPanel::default().show_inside(ui, |ui| {
-        if c.advanced {
+        ui.horizontal(|ui| {
+            ui.strong(&c.graph_name);
+            ui.selectable_value(&mut c.wiring, false, "Structure");
+            ui.selectable_value(&mut c.wiring, true, "Wiring");
+            if c.wiring && ui.small_button("Fit graph").clicked() { c.view_revision += 1; }
+        });
+        if c.wiring {
             viewer::canvas(ui, c);
         } else {
-            guided::panel(ui, c);
+            let mut selected = c.selected.and_then(|id| c.snarl.get_node(id)).map(|n| n.id);
+            structure::panel(ui, &c.graph, None, &mut selected);
+            if let Some(id) = selected { c.selected = c.snarl_id_of(id); }
         }
     });
-}
-
-/// The selected agent's live behavior trace, embedded in the bottom debugger
-/// without the rest of the graph-authoring workbench.
-pub fn live_debugger_body(ui: &mut egui::Ui, c: &mut Composer) {
-    live::debugger_panel(ui, c);
+    c.checkpoint(grouping);
 }
 
 fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBehaviour>) {
-    // Which kind of agent, first and on its own row: everything below it —
-    // the graph list, the palette, the profiles, the bench — is scoped to this
-    // one choice, and a control that changes that much should not be sitting in
-    // a line of buttons.
     ui.horizontal(|ui| {
         let current = c.domain();
         for d in Domain::ALL {
-            let r = ui
-                .selectable_label(d == current, d.label())
-                .on_hover_text(d.doc());
-            if r.clicked() && d != current {
-                c.switch_domain(d);
-            }
+            if ui.selectable_label(d == current, d.label()).clicked() { c.switch_domain(d); }
         }
         ui.separator();
-        ui.small(format!("editing {}", current.agent_label()));
-        ui.separator();
-        ui.selectable_value(&mut c.advanced, false, "Guided settings");
-        ui.selectable_value(&mut c.advanced, true, "Advanced wiring");
+        let selected = c.subtype.as_ref().and_then(|id| c.lib.subtypes.get(id))
+            .filter(|s| s.graph == c.graph_id).map(|s| s.name.as_str()).unwrap_or("Shared defaults");
+        egui::ComboBox::from_id_source("edit-profile").selected_text(selected).show_ui(ui, |ui| {
+            ui.selectable_value(&mut c.subtype, None, "Shared defaults");
+            for profile in c.lib.subtypes.values().filter(|s| s.graph == c.graph_id) {
+                ui.selectable_value(&mut c.subtype, Some(profile.id.clone()), &profile.name);
+            }
+        });
     });
 
     ui.horizontal_wrapped(|ui| {
+        if ui.add_enabled(!c.history.undo.is_empty(), egui::Button::new("Undo")).clicked() { c.undo(); }
+        if ui.add_enabled(!c.history.redo.is_empty(), egui::Button::new("Redo")).clicked() { c.redo(); }
+        ui.separator();
         let current = c.graph_id.clone();
         let domain = c.domain();
         egui::ComboBox::from_id_source("composer-graph")
@@ -794,6 +804,9 @@ fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBeh
                 }
             });
 
+        composition::rule_menu(ui, c);
+        ui.menu_button("Add node", |ui| { palette::panel(ui, c); });
+        ui.menu_button("Manage", |ui| {
         if ui
             .button("New")
             .on_hover_text("Start an empty behaviour")
@@ -828,13 +841,19 @@ fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBeh
         }
 
         ui.separator();
-        let runnable = c.runnable();
+        ui.label("Name");
+        if ui.text_edit_singleline(&mut c.graph_name).changed() { c.dirty = true; }
+        });
+        ui.separator();
+        c.commit();
+        let runtime_error = c.lib.validate_runtime().err().map(|e| format!("{e:#}"));
+        let runnable = c.runnable() && runtime_error.is_none();
         let btn = egui::Button::new(if c.dirty {
             "Apply and restart *"
         } else {
             "Apply and restart"
         });
-        let resp = ui.add_enabled(runnable, btn).on_hover_text(
+        let resp = ui.add_enabled(runnable, btn).on_disabled_hover_text(runtime_error.as_deref().unwrap_or("Fix the graph errors before applying")).on_hover_text(
             "Rebuild the agent model on this library and replay the incident from the start. \
              The fire, the weather and the ignition list are unchanged, so this is a like-for-like \
              comparison.",
@@ -849,19 +868,11 @@ fn toolbar(ui: &mut egui::Ui, c: &mut Composer, apply: &mut EventWriter<ApplyBeh
         if !runnable {
             ui.colored_label(
                 egui::Color32::from_rgb(0xe0, 0x6c, 0x5f),
-                format!("{} error(s)", c.report.error_count()),
+                if c.report.error_count() > 0 { format!("{} error(s)", c.report.error_count()) } else { "Library cannot be applied".into() },
             );
         }
     });
 
-    ui.small("1. Choose a behaviour   >   2. Adjust settings and profiles   >   3. Try a situation   >   4. Apply and restart");
-    ui.small(if c.dirty { "Changes are not running yet. Apply and restart uses them in this incident; Save to disk keeps them for next launch." } else { "Save to disk keeps your behaviours for next launch. Apply and restart runs the library from the beginning." });
-    ui.horizontal(|ui| {
-        ui.label("Name");
-        if ui.text_edit_singleline(&mut c.graph_name).changed() {
-            c.dirty = true;
-        }
-    });
     if !c.status.is_empty() {
         let colour = if c.status_is_error {
             egui::Color32::from_rgb(0xe0, 0x6c, 0x5f)
@@ -985,6 +996,131 @@ pub(crate) fn pretty(key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn editor() -> Composer {
+        Composer::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/behaviours"))
+    }
+
+    #[test]
+    fn undo_groups_gestures_and_tracks_the_applied_version() {
+        let mut c = editor();
+        let original = c.graph_name.clone();
+        for name in ["E", "Ed", "Edited"] {
+            c.graph_name = name.into();
+            c.checkpoint(true);
+        }
+        c.checkpoint(false);
+        assert_eq!(c.history.undo.len(), 1);
+        c.mark_applied(c.lib.clone());
+        assert!(!c.dirty);
+        c.undo();
+        assert_eq!(c.graph_name, original);
+        assert!(c.dirty);
+        c.redo();
+        assert_eq!(c.graph_name, "Edited");
+        assert!(!c.dirty);
+        c.undo();
+        c.graph_name = "Another edit".into();
+        c.checkpoint(false);
+        assert!(c.history.redo.is_empty());
+    }
+
+    #[test]
+    fn deleting_nodes_cleans_profile_overrides_and_undo_restores_them() {
+        let mut c = editor();
+        let profile = c.subtype.clone().unwrap();
+        let id = viewer::free_id(&c.snarl);
+        let sid = c.snarl.insert_node(egui::Pos2::ZERO, EditorNode::new(id, "param.number"));
+        let key = BehaviorGraph::override_key(id, "value");
+        c.lib.subtypes.get_mut(&profile).unwrap().overrides.insert(key.clone(), ParamValue::Number(42.0));
+        c.checkpoint(false);
+        c.snarl.remove_node(sid);
+        c.checkpoint(false);
+        assert!(!c.lib.subtypes[&profile].overrides.contains_key(&key));
+        c.undo();
+        assert!(c.graph.node(id).is_some());
+        assert_eq!(c.lib.subtypes[&profile].overrides[&key], ParamValue::Number(42.0));
+        c.redo();
+        assert!(c.graph.node(id).is_none());
+        let reused = viewer::free_id(&c.snarl);
+        assert_eq!(reused, id);
+        c.snarl.insert_node(egui::Pos2::ZERO, EditorNode::new(reused, "param.number"));
+        c.commit();
+        assert!(!c.lib.subtypes[&profile].overrides.contains_key(&key));
+    }
+
+    #[test]
+    fn selecting_a_profile_opens_its_graph_and_browsing_is_not_an_edit() {
+        let mut c = editor();
+        let profile = c.lib.subtypes.values().find(|s| s.graph != c.graph_id).unwrap().clone();
+        c.select_profile(&profile.id);
+        c.checkpoint(false);
+        assert_eq!(c.graph_id, profile.graph);
+        assert_eq!(c.subtype.as_deref(), Some(profile.id.as_str()));
+        assert!(c.history.undo.is_empty());
+        assert!(!c.dirty);
+        c.load_graph(behavior::defaults::DEFAULT_GRAPH_ID);
+        assert!(c.subtype.is_none());
+    }
+
+    #[test]
+    fn profile_deletion_stays_in_draft_until_save_and_is_undoable() {
+        let root = std::env::temp_dir().join(format!("behavior-editor-test-{}", uuid::Uuid::new_v4()));
+        let library = editor().lib;
+        library.save_dir(&root).unwrap();
+        let mut c = Composer::new(root.clone());
+        let id = c.subtype.clone().unwrap();
+        c.delete_profile(&id);
+        c.checkpoint(false);
+        assert!(Library::load_dir_reported(&root).unwrap().library.subtypes.contains_key(&id));
+        assert!(c.unsaved());
+        c.save();
+        assert!(!c.status_is_error, "{}", c.status);
+        assert!(!Library::load_dir_reported(&root).unwrap().library.subtypes.contains_key(&id));
+        assert!(!c.unsaved());
+        c.undo();
+        assert!(c.lib.subtypes.contains_key(&id));
+        assert!(c.unsaved());
+        assert!(!c.dirty);
+        c.save();
+        assert!(Library::load_dir_reported(&root).unwrap().library.subtypes.contains_key(&id));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn debug_views_render_applied_graph_without_changing_the_draft() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/behaviours");
+        let mut c = Composer::new(root);
+        let applied = c.graph.clone();
+        let compiled = behavior::CompiledGraph::compile(&applied, &Default::default()).unwrap();
+        let (decision, trace) = compiled.eval_traced(&behavior::HouseholdObs::default().into());
+        c.live.frame = Some(live::Frame {
+            graph_id: applied.id.clone(), graph: applied.clone(),
+            subtype_id: "test".into(), subtype_name: "Test profile".into(), agent: "Test agent".into(),
+            decision, winner: trace.winner(), active: trace.active(), withheld: trace.withheld(),
+            seen: Default::default(),
+            values: trace.nodes.iter().map(|n| (n.node, n.outputs.clone())).collect(),
+            inputs: Default::default(), trace, stale: true,
+        });
+        c.graph_name = "Draft only".into();
+        c.snarl = Snarl::new();
+        c.commit();
+        let draft = c.to_graph();
+        for wiring in [false, true] {
+            c.wiring = wiring;
+            let ctx = egui::Context::default();
+            let output = ctx.run(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 900.0))),
+                ..Default::default()
+            }, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| live::debugger_panel(ui, &mut c));
+            });
+            assert!(!output.shapes.is_empty());
+            assert_eq!(c.live.frame.as_ref().unwrap().graph, applied);
+            assert_eq!(c.to_graph(), draft);
+            assert!(c.dirty);
+        }
+    }
 
     #[test]
     fn browsing_does_not_mark_the_library_as_changed() {

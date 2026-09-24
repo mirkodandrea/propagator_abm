@@ -15,18 +15,8 @@ use super::Composer;
 
 pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
     let Some(node_id) = c.selected else {
-        if !c.advanced {
-            ui.label("Choose a behaviour rule on the left to see its settings here.");
-            ui.small("Choose a profile to change its settings, or Shared settings to edit the defaults. Try a situation previews the result before you apply it.");
-            return;
-        }
-        ui.label("Select a node on the canvas, or add one from the palette.");
-        ui.separator();
-        ui.small(
-            "Right-click the canvas to add a node where you clicked. Drag a wire into empty \
-             space to add a node that can accept it.",
-        );
-        graph_notes(ui, c);
+        ui.label("Select a node to edit its settings.");
+        egui::CollapsingHeader::new("Author notes & overrides").show(ui, |ui| graph_notes(ui, c));
         return;
     };
     let Some(node) = c.snarl.get_node(node_id) else {
@@ -38,7 +28,11 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
             egui::Color32::from_rgb(0xe0, 0x6c, 0x5f),
             format!("This build has no node type \"{}\".", node.type_id),
         );
-        ui.small("It was saved by a build that had it. Delete it, or open the file in a build that does.");
+        if ui.button("Delete unknown node").clicked() {
+            c.snarl.remove_node(node_id);
+            c.selected = None;
+            c.dirty = true;
+        }
         return;
     };
 
@@ -47,27 +41,7 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
         ui.heading(spec.name);
         ui.small(format!("#{node_key}"));
     });
-    ui.label(spec.doc);
-    ui.small(spec.id);
-
-    // What this node is doing in the incident right now, when an agent is being
-    // watched. Answered here as well as on the canvas because this is where a
-    // scientist is when they are changing the number the branch turns on, and
-    // "did that branch fire" is the question they are about to ask.
-    if let Some(f) = c.live.frame.as_ref().filter(|f| f.graph_id == c.graph_id) {
-        let role = f.role(node_key);
-        ui.separator();
-        ui.horizontal(|ui| {
-            ui.colored_label(role.colour(), "●");
-            ui.small(format!("{}  ·  {}", f.agent, role.label()));
-        });
-        if let Some(values) = f.values.get(&node_key) {
-            for (port, v) in spec.outputs.iter().zip(values) {
-                ui.small(format!("{} = {}", port.name, v.display()));
-            }
-        }
-    }
-    ui.separator();
+    egui::CollapsingHeader::new("About this node").show(ui, |ui| { ui.label(spec.doc); ui.small(spec.id); });
 
     // Which of the two things the sliders below are writing to.
     let editing_subtype = c
@@ -85,7 +59,7 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
                     egui::Color32::from_rgb(0x9a, 0x8c, 0xe0),
                     format!("Editing overrides for \"{name}\""),
                 );
-                ui.small("The graph's own values are unchanged. Switch the subtype to \"none\" to edit those.");
+                ui.small("The graph's own values are unchanged. Choose Shared defaults to edit those.");
             }
             None => {
                 ui.small("Editing the graph's own values, which every subtype inherits.");
@@ -155,6 +129,8 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
         }
     }
 
+    super::composition::inputs(ui, c, node_key);
+
     ui.separator();
     ui.label("Note");
     let mut comment = c.snarl.get_node(node_id).map(|n| n.comment.clone()).unwrap_or_default();
@@ -181,6 +157,9 @@ pub fn panel(ui: &mut egui::Ui, c: &mut Composer) {
     }
 
     ui.separator();
+    if spec.category != behavior::Category::Output && ui.button("Duplicate branch").clicked() {
+        c.duplicate_branch(node_key);
+    }
     if ui.button("Delete node").clicked() {
         c.snarl.remove_node(node_id);
         c.selected = None;
@@ -192,7 +171,7 @@ fn graph_notes(ui: &mut egui::Ui, c: &mut Composer) {
     ui.separator();
     ui.heading("This behaviour");
     ui.small(format!("id: {}", c.graph_id));
-    ui.label("Description");
+    ui.label("Author notes (not executable)");
     if ui
         .add(egui::TextEdit::multiline(&mut c.graph_description).desired_rows(4))
         .changed()

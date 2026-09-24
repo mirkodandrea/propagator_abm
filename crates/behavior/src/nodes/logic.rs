@@ -323,3 +323,50 @@ behavior_node! {
         out.push(Value::Number(w));
     },
 }
+
+// Composition primitives: all remain stateless and domain-independent.
+behavior_node! {
+    id: "math.sum",
+    name: "Sum of signals",
+    category: Logic,
+    doc: "Add any number of numeric signals. Use Scale and offset before this node to weight each contribution. With no signals, returns zero.",
+    keywords: ["sum", "aggregate", "weighted", "score", "priority"],
+    inputs: [(numbers "signals", "Numbers to add")],
+    outputs: [(number "total", "Sum of the connected signals")],
+    params: [],
+    eval: |_c, _p, i, out| out.push(Value::Number(i.all(0).iter().map(|v| v.as_number()).sum())),
+}
+
+behavior_node! {
+    id: "logic.at_least",
+    name: "At least N conditions",
+    category: Logic,
+    doc: "True when at least N of the connected conditions hold. N is rounded up to a whole number. With no conditions, only N = 0 succeeds.",
+    keywords: ["quorum", "count", "vote", "two", "several", "conditions"],
+    inputs: [(bools "conditions", "Conditions to count")],
+    outputs: [(bool "met", "Enough conditions hold"), (number "count", "Number of true conditions")],
+    params: [(number "minimum", "Minimum true", "Required count, rounded up.", 2.0, 0.0, 100.0, "")],
+    eval: |_c, p, i, out| {
+        let count = i.all(0).iter().filter(|v| v.as_bool()).count() as f32;
+        out.push(Value::Bool(count >= p.num(0).ceil().max(0.0)));
+        out.push(Value::Number(count));
+    },
+}
+
+behavior_node! {
+    id: "cmp.in_range",
+    name: "Within a range",
+    category: Logic,
+    doc: "True inside an inclusive numeric band. Reversed bounds are treated as the same band. Useful for time windows, distances, and intermediate threat levels.",
+    keywords: ["between", "band", "window", "time", "distance"],
+    inputs: [(number "value", "Number to test", 0.0)],
+    outputs: [(bool "inside", "Value is between the bounds, inclusive")],
+    params: [
+        (number "low", "Lower bound", "One end of the band.", 0.0, -100000.0, 100000.0, ""),
+        (number "high", "Upper bound", "Other end of the band.", 1.0, -100000.0, 100000.0, "")
+    ],
+    eval: |_c, p, i, out| {
+        let (a, b, value) = (p.num(0), p.num(1), i.num(0));
+        out.push(Value::Bool(value >= a.min(b) && value <= a.max(b)));
+    },
+}

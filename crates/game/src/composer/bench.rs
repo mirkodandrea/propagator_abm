@@ -121,7 +121,7 @@ fn situation_picker(ui: &mut egui::Ui, c: &mut Composer) {
         ui.label("Situation");
         let name = situations.get(c.bench.situation).map(|s| s.name).unwrap_or("custom");
         egui::ComboBox::from_id_source("bench-situation")
-            .selected_text(name)
+            .selected_text(if situations.get(c.bench.situation).is_some_and(|s| s.obs == c.bench.obs) { name.to_string() } else { format!("Custom (from {name})") })
             .show_ui(ui, |ui| {
                 for (i, s) in situations.iter().enumerate() {
                     if ui
@@ -306,7 +306,7 @@ fn evaluate(ui: &mut egui::Ui, c: &mut Composer) {
     };
     let (decision, trace) = g.eval_traced(&c.bench.obs);
 
-    if let Some(id) = &c.subtype {
+    if let Some(id) = c.subtype.as_ref().filter(|id| c.lib.subtypes.get(*id).is_some_and(|s| s.graph == c.graph_id)) {
         let name = c.lib.subtypes.get(id).map(|s| s.name.as_str()).unwrap_or(id);
         ui.small(format!("with profile: {name}"));
     } else {

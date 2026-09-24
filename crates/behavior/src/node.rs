@@ -127,6 +127,13 @@ pub struct ParamSpec {
 }
 
 impl ParamSpec {
+    /// Resolve parameters identically for compilation and applied-graph inspection.
+    /// A malformed override falls back to the spec default, matching runtime behavior.
+    pub fn resolve_value(&self, graph: Option<&ParamValue>, override_value: Option<&ParamValue>) -> ParamValue {
+        override_value.or(graph).filter(|v| v.same_kind(&self.default_value()))
+            .cloned().unwrap_or_else(|| self.default_value())
+    }
+
     pub fn default_value(&self) -> ParamValue {
         match self.kind {
             ParamKind::Number { default, .. } => ParamValue::Number(default),
@@ -446,6 +453,9 @@ macro_rules! __port {
     };
     (bool $name:literal, $doc:literal, $d:expr) => {
         $crate::PortSpec { name: $name, ty: $crate::ValueType::Bool, doc: $doc, default: Some($crate::Value::Bool($d)), multi: false }
+    };
+    (numbers $name:literal, $doc:literal) => {
+        $crate::PortSpec { name: $name, ty: $crate::ValueType::Number, doc: $doc, default: None, multi: true }
     };
     (bools $name:literal, $doc:literal) => {
         $crate::PortSpec { name: $name, ty: $crate::ValueType::Bool, doc: $doc, default: None, multi: true }

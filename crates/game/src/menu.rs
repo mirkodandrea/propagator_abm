@@ -60,7 +60,6 @@ enum Action {
     Bottom(BottomTab),
     Help,
     Shortcuts,
-    Debug,
     FocusSelection,
     CentreOnFire,
     Overview,
@@ -346,29 +345,8 @@ pub fn menubar(
                 ui.small(crate::camera::navigation_hint(*renderer));
             });
 
-            ui.menu_button("Debug", |ui| {
-                if item(
-                    ui,
-                    if panels.bottom_tab == BottomTab::Debug && panels.incident.visible() {
-                        "Hide live behavior debugger"
-                    } else {
-                        "Live behavior debugger"
-                    },
-                    "F2",
-                )
-                .clicked()
-                {
-                    a(Action::Debug, &mut act);
-                    ui.close_menu();
-                }
-                if item(ui, "Behavior editor", "G")
-                    .on_hover_text(
-                        "Author the decision model for households, separated people or \
-                         suppression units as a node graph — and watch the selected agent \
-                         run it.",
-                    )
-                    .clicked()
-                {
+            ui.menu_button("Behavior", |ui| {
+                if item(ui, "Open behavior workspace", "G / F2").clicked() {
                     a(Action::Composer, &mut act);
                     ui.close_menu();
                 }
@@ -634,7 +612,7 @@ pub fn menubar(
             Action::Composer => {
                 if composer.open && panels.bottom_tab == BottomTab::Behaviour {
                     composer.open = false;
-                    panels.focus_bottom(BottomTab::Incident);
+                    panels.incident = PanelPlacement::Hidden;
                 } else {
                     composer.open = true;
                     panels.focus_bottom(BottomTab::Behaviour);
@@ -661,15 +639,6 @@ pub fn menubar(
             }
             Action::Help => help.open = true,
             Action::Shortcuts => help.shortcuts_open = !help.shortcuts_open,
-            Action::Debug => {
-                if panels.bottom_tab == BottomTab::Debug && panels.incident.visible() {
-                    panels.incident = PanelPlacement::Hidden;
-                } else {
-                    composer.open = false;
-                    interview.open = false;
-                    panels.focus_bottom(BottomTab::Debug);
-                }
-            }
             Action::FocusSelection => {
                 *camera_mode = crate::camera::CameraMode::Free;
                 if let (Some(target), Ok(mut orbit)) = (selected.target, camera.get_single_mut()) {
