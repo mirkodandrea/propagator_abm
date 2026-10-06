@@ -10,7 +10,7 @@ use bevy_egui::egui::{self, pos2, vec2, Align2, Color32, FontId, Pos2, Rect, Rou
 use bevy_egui::{EguiContexts, EguiSettings};
 
 use super::strings_it as t;
-use super::{Cmd, Kiosk, Phase, OPERATOR_HOLD_S, PLAY_IDLE_GRACE_S, PLAY_IDLE_WARN_S};
+use super::{Cmd, Kiosk, Phase, OPERATOR_HOLD_S};
 use crate::command::{OrderKind, OrderTool};
 use crate::sim::Sim;
 
@@ -485,8 +485,8 @@ fn play(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &mut Sim, tool: &mut OrderT
     action_bar(ctx, kiosk, sim, tool, screen, k);
 
     // "Are you still there?"
-    if kiosk.idle_s >= PLAY_IDLE_WARN_S && kiosk.ordered_at_s.is_none() && !kiosk.paused {
-        let left = (PLAY_IDLE_WARN_S + PLAY_IDLE_GRACE_S - kiosk.idle_s).max(0.0);
+    if kiosk.idle_s >= super::play_idle_warn_s() && kiosk.ordered_at_s.is_none() && !kiosk.paused {
+        let left = (super::play_idle_warn_s() + super::play_idle_grace_s() - kiosk.idle_s).max(0.0);
         let q = layer(ctx, "still");
         q.rect_filled(screen, Rounding::ZERO, Color32::from_black_alpha(150));
         big(&q, screen.center() - vec2(0.0, 30.0), Align2::CENTER_CENTER, t::STILL_THERE, 72.0, INK);
@@ -766,7 +766,6 @@ fn operator(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect) {
         }
         if ui.button("Ricomincia").clicked() {
             kiosk.cmd = Some(Cmd::Begin);
-            kiosk.pinned = true;
         }
         if ui.button("Chiudi").clicked() {
             kiosk.operator_open = false;

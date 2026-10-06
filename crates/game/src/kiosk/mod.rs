@@ -46,10 +46,20 @@ const ATTRACT_SPEED: f32 = 90.0;
 /// How long the finished attract fire is left on screen before it relights.
 const ATTRACT_HOLD_S: f32 = 5.0;
 /// Idle on any screen but PLAY, then back to ATTRACT (spec §5).
-const IDLE_RESET_S: f32 = 60.0;
+const IDLE_RESET_BASE_S: f32 = 60.0;
 /// Idle during PLAY before "Sei ancora lì?", and how long that waits.
-const PLAY_IDLE_WARN_S: f32 = 150.0;
-const PLAY_IDLE_GRACE_S: f32 = 30.0;
+const PLAY_IDLE_WARN_BASE_S: f32 = 150.0;
+const PLAY_IDLE_GRACE_BASE_S: f32 = 30.0;
+
+/// `KIOSK_IDLE_S=<s>` sets the idle reset (default 60) and scales the in-play
+/// warning with it, so the reset path can be tested in seconds.
+fn idle_scale() -> f32 {
+    static S: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *S.get_or_init(|| std::env::var("KIOSK_IDLE_S").ok().and_then(|v| v.parse::<f32>().ok()).map_or(1.0, |s| (s / 60.0).max(0.02)))
+}
+pub(crate) fn idle_reset_s() -> f32 { IDLE_RESET_BASE_S * idle_scale() }
+pub(crate) fn play_idle_warn_s() -> f32 { PLAY_IDLE_WARN_BASE_S * idle_scale() }
+pub(crate) fn play_idle_grace_s() -> f32 { PLAY_IDLE_GRACE_BASE_S * idle_scale() }
 /// Hold the top-right corner this long for the operator panel.
 const OPERATOR_HOLD_S: f32 = 3.0;
 /// Most steps one frame may run; at the demo speed this never binds.
@@ -331,8 +341,8 @@ pub fn step(
     let idle_out = match phase {
         Phase::Attract => false,
         // Watching the fire after an order is playing, not idling; pause suspends it.
-        Phase::Play => !kiosk.paused && kiosk.ordered_at_s.is_none() && idle >= PLAY_IDLE_WARN_S + PLAY_IDLE_GRACE_S,
-        _ => idle >= IDLE_RESET_S,
+        Phase::Play => !kiosk.paused && kiosk.ordered_at_s.is_none() && idle >= play_idle_warn_s() + play_idle_grace_s(),
+        _ => idle >= idle_reset_s(),
     };
     if idle_out {
         kiosk.cmd = Some(Cmd::NextTown);

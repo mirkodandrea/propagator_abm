@@ -8,6 +8,8 @@ use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
+use scenario::Pos;
+
 use super::{Kiosk, Phase};
 use crate::camera::OrbitCamera;
 use crate::sim::Sim;
@@ -16,7 +18,7 @@ const MIN_PITCH: f32 = -0.96;
 const MAX_PITCH: f32 = -0.78;
 const MAX_YAW: f32 = 0.52;
 const MIN_DIST: f32 = 800.0;
-const MAX_DIST: f32 = 4300.0;
+const MAX_DIST: f32 = 4600.0;
 const PAN_RADIUS_M: f32 = 1500.0;
 const PLAY_DIST: f32 = 1900.0;
 const FLY_IN_S: f32 = 8.0;
@@ -32,10 +34,22 @@ fn home_focus(sim: &Sim, kiosk: &Kiosk) -> Vec3 {
     // and framing the middle of the map put it under the HUD (playtest §16 #4).
     let hs = &sim.agents.households;
     let n = hs.len().max(1) as f32;
-    let centre = scenario::Pos { x: hs.iter().map(|h| h.home.x).sum::<f32>() / n, y: hs.iter().map(|h| h.home.y).sum::<f32>() / n };
+    let centre = Pos { x: hs.iter().map(|h| h.home.x).sum::<f32>() / n, y: hs.iter().map(|h| h.home.y).sum::<f32>() / n };
     let ig = kiosk.spec.ignition;
-    let p = scenario::Pos { x: centre.x * 0.5 + ig.x * 0.5, y: centre.y * 0.5 + ig.y * 0.5 };
-    crate::frame::to_bevy(p, sim.scenario.terrain.height_at(p))
+    let p = Pos { x: centre.x * 0.55 + ig.x * 0.45, y: centre.y * 0.55 + ig.y * 0.45 };
+    // Nudged south, so the town clears the action bar at the bottom of the screen.
+    crate::frame::to_bevy(Pos { x: p.x, y: p.y - 350.0 }, sim.scenario.terrain.height_at(p))
+}
+
+/// Far enough to hold both the town and the fire between the HUD bands.
+fn play_dist(sim: &Sim, kiosk: &Kiosk) -> f32 {
+    let f = crate::frame::to_world(home_focus(sim, kiosk));
+    let ig = kiosk.spec.ignition;
+    let d = |x: f32, y: f32| ((x - f.x).powi(2) + (y - f.y).powi(2)).sqrt();
+    let mut rs: Vec<f32> = sim.agents.households.iter().map(|h| d(h.home.x, h.home.y)).collect();
+    rs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let r95 = rs.get(rs.len() * 95 / 100).copied().unwrap_or(0.0);
+    (r95.max(d(ig.x, ig.y)) * 3.6).clamp(PLAY_DIST, 4400.0)
 }
 
 #[derive(Default)]
@@ -70,6 +84,7 @@ pub fn camera(
     let Ok((mut orbit, mut tf, camera, mut dof)) = query.get_single_mut() else { return };
     let home = home_focus(&sim, &kiosk);
     let t = kiosk.phase_t;
+    let pd = play_dist(&sim, &kiosk);
 
     // The user took the wheel: remember it for the rest of this phase.
     let touched = delta.length_squared() > 0.0 && (buttons.pressed(MouseButton::Left) || buttons.pressed(MouseButton::Right))
@@ -87,14 +102,14 @@ pub fn camera(
             orbit.focus = home;
             orbit.yaw = 0.45 * (time.elapsed_seconds() * 0.07).sin();
             orbit.pitch = -0.86;
-            orbit.distance = 2000.0;
+            orbit.distance = pd;
         }
         Phase::Briefing if !user_has_it && t < FLY_IN_S => {
             let k = ease(t / FLY_IN_S);
             orbit.focus = home;
             orbit.yaw = -0.45 * (1.0 - k);
             orbit.pitch = -1.15 + (1.15 - 0.86) * k;
-            orbit.distance = 4600.0 + (PLAY_DIST - 4600.0) * k;
+            orbit.distance = 4600.0 + (pd - 4600.0) * k;
         }
         _ => {
             let window = windows.get_single().ok();
@@ -133,7 +148,7 @@ pub fn camera(
                 orbit.focus = home;
                 orbit.yaw = 0.0;
                 orbit.pitch = -0.86;
-                orbit.distance = PLAY_DIST;
+                orbit.distance = pd;
             }
         }
     }

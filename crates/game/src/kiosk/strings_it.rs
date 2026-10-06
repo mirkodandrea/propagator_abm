@@ -9,20 +9,16 @@ pub const SUBTITLE: &str = "Settimana della Protezione Civile";
 pub const START: &str = "Clicca per iniziare";
 
 pub const GO: &str = "Comincia";
-pub const SKIP: &str = "Salta";
 pub const RETRY: &str = "Riprova";
 pub const ANOTHER_TOWN: &str = "Un altro paese";
 pub const SEE_COMPARE: &str = "Cosa sarebbe successo senza ordini?";
-pub const BACK: &str = "Indietro";
 
 // --- HUD -----------------------------------------------------------------
 pub const SAFE: &str = "Al sicuro";
 pub const MOVING: &str = "In fuga";
 pub const DANGER: &str = "In pericolo";
 pub const HOMES_LOST: &str = "Case colpite";
-pub const FAMILIES: &str = "famiglie";
 pub const WIND_FROM: &str = "Vento da";
-pub const FIRE_GOES: &str = "il fuoco va verso";
 pub const TIME_LEFT: &str = "Tempo rimasto";
 pub const PAUSED: &str = "In pausa";
 
@@ -70,7 +66,6 @@ pub fn pending_order(action: &str) -> String {
     format!("{action}: clicca sulla mappa dove intervenire")
 }
 pub const PENDING_LINE: &str = "clicca sulla mappa per scegliere il punto";
-pub const CANCEL: &str = "Annulla";
 
 // --- Idle ----------------------------------------------------------------
 pub const STILL_THERE: &str = "Sei ancora lì?";
@@ -87,7 +82,6 @@ pub const HOMES_LOST_LC: &str = "case colpite dal fuoco";
 pub const HECTARES: &str = "ettari bruciati";
 pub const CAUGHT_SHORT: &str = "in casa col fuoco";
 pub const HECTARES_SHORT: &str = "ettari";
-pub const CAUGHT: &str = "raggiunte dal fuoco in casa";
 
 pub fn safe_of(safe: usize, total: usize) -> String {
     format!("{safe}/{total}")
