@@ -12,6 +12,7 @@ pub mod cost;
 pub mod mission;
 pub mod policy;
 pub mod sweep;
+pub mod trust;
 pub mod run;
 pub mod weather;
 

@@ -12,6 +12,7 @@ use scenario::{Pos, Scenario};
 
 use crate::cost;
 use crate::mission::Spec;
+use crate::trust;
 
 /// Simulated seconds per step: `DECISION_S` rounded up to the fire's quantum.
 pub const STEP_S: i64 = 6;
@@ -25,6 +26,9 @@ pub const LOST_RADIUS_M: f32 = 150.0;
 pub enum Order {
     /// Every household, whatever the distance.
     EvacuateAll,
+    /// Households within `radius_m` of `centre` (spec 5.5): warns fewer, spares
+    /// the rest a needless flight.
+    EvacuateZone { centre: Pos, radius_m: f32 },
     /// Send the best free unit of this (ground) kind at the fire edge nearest `at`.
     Attack { kind: UnitKind, at: Pos },
     /// Request the aircraft if not yet asked, and send a load at `at`.
@@ -257,6 +261,9 @@ pub struct Variant {
     /// when it draws the session's weather (`weather::draw_with`); `Run` itself
     /// only sees the resulting spec. `None` = shipped climate.
     pub shift_p: Option<(f32, f32)>,
+    /// Cry-wolf (spec 5.2): the most trust a fully needless order costs the
+    /// households still to be ordered. `None` = off, nothing runs.
+    pub cry_wolf: Option<f32>,
 }
 
 pub struct Run {
@@ -268,6 +275,7 @@ pub struct Run {
     pub tally: Tally,
     /// What the commander did, for [`Run::ledger`] (spec 5.1).
     pub log: cost::Log,
+    wolf: Option<trust::CryWolf>,
     shift_pending: bool,
 }
 
@@ -287,13 +295,14 @@ impl Run {
         let mut staging: Vec<Pos> = agents.refuges.iter().map(|r| r.pos).collect();
         let d = |p: &Pos| (p.x - ig.x).powi(2) + (p.y - ig.y).powi(2);
         staging.sort_by(|a, b| d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal));
+        let wolf = variant.cry_wolf.map(|d| trust::CryWolf::new(&agents, d));
         let mut crews = Suppression::new(&scn, &staging)?;
         crews.effect = variant.unit_effect;
         let mut tally = tally;
         if variant.defend_homes {
             tally.enable_defence();
         }
-        Ok(Run { scn, fire, agents, crews, spec, tally, log: cost::Log::default(), shift_pending: spec.shift.is_some() })
+        Ok(Run { scn, fire, agents, crews, spec, tally, log: cost::Log::default(), wolf, shift_pending: spec.shift.is_some() })
     }
 
     pub fn time_s(&self) -> i64 {
@@ -305,12 +314,34 @@ impl Run {
     }
 
     pub fn order(&mut self, o: Order) {
+        let before: Vec<bool> = self.agents.households.iter().map(|h| h.ordered).collect();
+        self.order_inner(o);
+        if matches!(o, Order::EvacuateAll | Order::EvacuateZone { .. }) {
+            let moved: Vec<usize> = (0..before.len()).filter(|&i| !before[i] && self.agents.households[i].ordered).collect();
+            if !moved.is_empty() {
+                self.log.push(cost::Entry::Evacuation { at_s: self.fire.time_s(), households: moved.len() });
+                if let Some(w) = self.wolf.as_mut() {
+                    w.note_order(self.fire.time_s(), moved);
+                }
+            }
+        }
+    }
+
+    /// Trust and anger for the HUD (spec 5.2). Constant while cry-wolf is off.
+    pub fn trust(&self) -> trust::Trust {
+        match &self.wolf {
+            Some(w) => w.trust(&self.agents),
+            None => trust::CryWolf::new(&self.agents, 0.0).trust(&self.agents),
+        }
+    }
+
+    fn order_inner(&mut self, o: Order) {
         match o {
             Order::EvacuateAll => {
-                let n = self.agents.order_evacuation_all();
-                if n > 0 {
-                    self.log.push(cost::Entry::Evacuation { at_s: self.fire.time_s(), households: n });
-                }
+                self.agents.order_evacuation_all();
+            }
+            Order::EvacuateZone { centre, radius_m } => {
+                self.agents.order_evacuation(centre, radius_m);
             }
             Order::Attack { kind, at } => {
                 if let Some(id) = self.best_unit(kind) {
@@ -357,6 +388,9 @@ impl Run {
             self.fire.queue(a);
         }
         self.tally.note(&self.agents, &self.fire);
+        if let Some(w) = self.wolf.as_mut() {
+            w.step(&mut self.agents, &self.fire, &self.scn.world);
+        }
         let dropped: Vec<Pos> =
             self.crews.units.iter().zip(&drops_before).filter(|(u, &b)| u.drops > b).map(|(u, _)| u.pos).collect();
         for _ in &dropped {

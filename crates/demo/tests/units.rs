@@ -69,15 +69,27 @@ fn scaling_what_a_unit_does_does_not_save_homes() {
 /// them later saves fewer -- timing matters.
 #[test]
 fn protecting_homes_saves_homes_and_earlier_saves_more() {
-    let on = Variant { defend_homes: true, ..Variant::default() };
-    let policies = vec![Policy::none(), Policy::protect(3), Policy::protect(30)];
-    let rs = run_grid(&data_dir(), &["demo_valle"], &policies, &[Variant::default(), on], 1..=12);
-    let (early, e_se) = paired(&rs, "demo_valle", (1, 1), (0, 1), |o| o.homes_lost as f32);
-    let (late, _) = paired(&rs, "demo_valle", (2, 1), (0, 1), |o| o.homes_lost as f32);
-    println!("valle: protect T+3 {early:+.1} +- {e_se:.1} homes, T+30 {late:+.1}");
+    // The pinned beat (valle's scripted wind shift at T+30), 12 seeds, so the
+    // comparison does not move when the drawn climate is retuned.
+    let spec = demo::spec("demo_valle").unwrap();
+    let homes = |policy: &Policy, defend: bool, seed: u64| {
+        let d = draw("demo_valle", seed).unwrap();
+        let d = demo::Draw { spec, ..d };
+        let mut r = Run::with_variant(&data_dir(), spec, seed, Variant { defend_homes: defend, ..Variant::default() }).unwrap();
+        policy.play(&mut r, &d).unwrap().homes_lost as f32
+    };
+    let mean_delta = |policy: Policy, defend: bool| -> (f32, f32) {
+        let d: Vec<f32> = (1..=12u64).map(|s| homes(&policy, defend, s) - homes(&Policy::none(), defend, s)).collect();
+        let m = d.iter().sum::<f32>() / d.len() as f32;
+        let sd = (d.iter().map(|x| (x - m).powi(2)).sum::<f32>() / d.len() as f32).sqrt();
+        (m, sd / (d.len() as f32).sqrt())
+    };
+    let (early, se) = mean_delta(Policy::protect(3), true);
+    let (late, _) = mean_delta(Policy::protect(30), true);
+    println!("valle (pinned shift): protect T+3 {early:+.1} +- {se:.1} homes, T+30 {late:+.1}");
     assert!(early < -2.0, "protecting at T+3 saved only {early:.1} homes");
     assert!(early < late - 0.5, "an engine posted at T+3 should save more than one posted at T+30 ({early:.1} vs {late:.1})");
     // And with defence off the same orders are worth nothing.
-    let (off, off_se) = paired(&rs, "demo_valle", (1, 0), (0, 0), |o| o.homes_lost as f32);
+    let (off, off_se) = mean_delta(Policy::protect(3), false);
     assert!(off > -3.0 * off_se.max(1.0), "without defence the posting should not help ({off:+.1})");
 }
