@@ -22,16 +22,47 @@ generators.
 from __future__ import annotations
 
 import json
+import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from generate_synthetic_scenarios import (  # noqa: E402
-    ROOT, SCENARIOS_DIR, distribute_people, paint_segment, road, traits,
-)
+ROOT = Path(__file__).resolve().parent.parent
+SCENARIOS_DIR = ROOT / "data" / "scenarios"
+
+
+def road(road_id: int, name: str, line: list[tuple[float, float]], *,
+         drivable: bool = True, track: bool = False, road_class: str = "tertiary") -> dict:
+    return {
+        "id": road_id,
+        "class": road_class,
+        "drivable": drivable,
+        "track": track,
+        "name": name,
+        "oneway": False,
+        "line": [[float(round(x, 2)), float(round(y, 2))] for x, y in line],
+    }
+
+
+def paint_segment(grid: np.ndarray, a: list[float], b: list[float], size: float, value: int, radius: int = 0):
+    rows, cols = grid.shape
+    length = math.dist(a, b)
+    for t in np.linspace(0.0, 1.0, max(2, int(length / (size / cols)) * 2)):
+        x, y = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+        col = int(np.clip(x / size * cols, 0, cols - 1))
+        row = int(np.clip((size - y) / size * rows, 0, rows - 1))
+        grid[max(0, row-radius):row+radius+1, max(0, col-radius):col+radius+1] = value
+
+
+def distribute_people(total: int, households: int) -> list[int]:
+    sizes = [total // households] * households
+    for i in range(total % households):
+        sizes[i] += 1
+    assert all(1 <= n <= 5 for n in sizes)
+    return sizes
+
 
 CREATED = "2026-10-06"
 WORLD = 4000
