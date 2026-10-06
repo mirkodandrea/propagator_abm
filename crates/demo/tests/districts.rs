@@ -32,6 +32,13 @@ fn every_town_has_three_districts_and_an_assembly_area() {
 #[test]
 fn the_wind_decides_which_district_is_in_danger() {
     let rs = run_grid(&data_dir(), &["demo_borgo", "demo_valle"], &[Policy::none()], &[Default::default()], 1..=16);
+    // The end card may never say a district was spared while counting
+    // families caught in it.
+    for r in &rs {
+        for d in &r.districts {
+            assert!(d.caught == 0 || d.reached_at_s.is_some(), "{} seed {}: caught {} in a district never reached", r.town, r.seed, d.caught);
+        }
+    }
     for id in ["demo_borgo", "demo_valle"] {
         let mean = |shift: bool, k: usize| {
             let v: Vec<f32> = rs

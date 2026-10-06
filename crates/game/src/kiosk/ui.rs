@@ -982,7 +982,7 @@ fn outcome(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &Sim, screen: Rect, k: f
                 p.galley(c + vec2(-gs.x * 0.5, r + 22.0), g, alpha(MUTED, 200));
             }
         }
-        y += 92.0;
+        y += 108.0;
 
         // The lesson, and the bill.
         let any_reached = reports.iter().any(|r| r.reached_at_s.is_some());

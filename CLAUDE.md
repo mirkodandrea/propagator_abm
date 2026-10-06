@@ -40,8 +40,15 @@ Ownership: gameplay owns the model crates and `data/`; presentation owns
   the whole session. The operator corner (hold top-right) is the only hidden UI.
 - Env harnesses (test/ops only): `KIOSK_SHOT=<dir>` walks a session and
   photographs it, with `KIOSK_TOWN=borgo|valle|porto`, `KIOSK_WINDOWED=1`,
-  `KIOSK_PLAY_S=<s>`; `KIOSK_FPS=1` logs the frame rate; `KIOSK_IDLE_S=<s>` sets
-  the idle reset (default 60).
+  `KIOSK_PLAY_S=<s>`, `KIOSK_SHOT_ZOOM=<k>`, `KIOSK_SHOT_FOCUS=x,y`;
+  `KIOSK_FPS=1` logs the frame rate; `KIOSK_IDLE_S=<s>` sets the idle reset
+  (default 60).
+- **The game is districts.** Each town is three districts (a household's
+  `locality`); the kiosk's controls are chips pinned over them; every number
+  the player sees comes from one `demo::Referee` that the twin also keeps.
+- Assets: `scripts/build_town_models.py` (Blender) bakes the town kit to
+  `assets/models/town.json`; `scripts/generate_demo_scenarios.py` builds the
+  towns.
 
 ## Hard-won findings — do not rediscover these
 
@@ -346,6 +353,40 @@ it. There is no offset that is both beyond the embers and in front of the fire,
 which is a real thing about wind-driven fire in maquis rather than a bug, and
 it is now the shape of the suppression game.
 
+
+**43. A layer calibrated for a 10 km window saturates a 4 km town, and on
+screen that is a lie, not a blur.** `fire::exposure` throws embers 2.5 km
+(finding 7) — right for structure loss on Spotorno, but in a demo town every
+house is inside that reach of every fire, so the building view, which tinted
+houses "threatened" and then "alight" from it, showed the whole town burning
+while the end card, which counts homes by burnt ground within 150 m, said no
+home was hit. The view now reads the session's books (`demo::Referee`: a home
+the tally counts as hit flares and chars; a threatened *district* takes a warm
+cast). **Anything the player sees and anything the end card counts must come
+from the same rule** — the same lesson as `reached` vs `caught` in
+`demo::district` (a district "spared" with families caught in it).
+
+**44. A fair judgement and a timely one can be different times, and then the
+mechanism has no right setting.** Cry-wolf judges an order needless if the fire
+has not come within 300 m of the households it moved after `JUDGE_AFTER_S`.
+On the district towns the districts the fire really reaches are first
+threatened at T+21–29 median, up to T+46, while a warning stops paying by about
+T+12. At ten minutes the meter punished every *correct* early warning — the
+mechanism taught the opposite of its lesson, and nothing errored; at thirty it
+is fair but can no longer cost an order that matters. Measure when the thing
+being judged actually happens (`district_probe::threatened_times`) before
+choosing when to judge it; here the answer was to judge in hindsight, on the
+end card, and leave the in-session mechanism off.
+
+**45. Refuges are measured, so a synthetic town can have none.** A refuge is a
+drivable node with at most 12 % burnable fuel within 300 m (`abm::refuge`). A
+small town ringed by gardens and maquis never qualifies, so the only refuges
+were the map-edge exits — and Porto's single exit was the end of the road
+through the fire, so warned families drove into it and were counted trapped.
+Nothing failed; the evacuation just did not work. Each demo town now has an
+*area di attesa* cleared wide enough to pass the test, and
+`districts::every_town_has_three_districts_and_an_assembly_area` asserts a
+non-exit refuge exists.
 
 ## Working agreements
 

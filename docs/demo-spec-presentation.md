@@ -1,255 +1,143 @@
 # Demo — presentation spec (graphics, GUI, kiosk shell)
 
-Owner: the **presentation agent**. Read `docs/demo-spec.md` first (goal, decisions,
-the contract with the gameplay agent) and `CLAUDE.md` (findings 11–13, 21–23, 25 bind
+Read `docs/demo-spec.md` first and `CLAUDE.md` (findings 11–13, 21–23, 25 bind
 rendering and input). The model side is `docs/demo-spec-gameplay.md`.
 
-Legend: ✅ done · 🔲 to do · ✂ cut-list item (drop first if days slip).
+Legend: ✅ done · 🔶 partly · 🔲 to do · ✂ cut-list item.
 
-## 0. How this agent works
+## 0. How this side works
 
-**Owns:** `crates/game` (kiosk shell, rendering, UI, camera), `assets/`,
-`shaders/`, `scripts/build_models.py`, `strings_it.rs`, the screenshot harness.
-**Does not touch:** `crates/{demo,abm,fire,scenario,behavior}` model behaviour, `data/`
-scenarios. Needs a number, event or refusal the model doesn't expose? Add a row to the
-contract table in `docs/demo-spec-gameplay.md` §1 and build against the *current*
-type meanwhile (render "—" or hide the element); never compute game logic in the UI.
+**Owns:** `crates/game`, `assets/`, shaders, `scripts/build_models.py`,
+`scripts/build_town_models.py`, `strings_it.rs`, the screenshot harness. Never
+computes game logic: levels, reached/needless, medals, costs come from `demo::`.
 
 **Method:** screenshot, read every PNG, fix, repeat. `KIOSK_SHOT=<dir>` walks a
-session (`KIOSK_TOWN`, `KIOSK_PLAY_S`, `KIOSK_WINDOWED`); check **all three towns**
-and read the actual image — a correct overlay nobody can see looks like a broken one
-(finding 13), and a back-facing mesh draws nothing while the logs say it exists
-(finding 11). Frame rate is measured, not assumed.
+session as a sensible commander (district 0 warned and defended at the
+briefing), shooting attract, briefing (before/after orders), play (early/late)
+and the outcome panel. `KIOSK_SHOT_ZOOM=<k>` and `KIOSK_SHOT_FOCUS=x,y` for
+close-ups. Check **all three towns** and read the image — a correct overlay
+nobody can see looks broken (finding 13), a back-facing mesh draws nothing
+(finding 11).
 
-**Do not polish a screen the gameplay agent is about to change.** Money, trust,
-decision cards and unit chips (contract rows) change the HUD; build the layout slots
-now, fill them when the field lands.
+## 1. Screens (v2) ✅
 
-## 1. Done
+**Attract.** Title, tagline ("Un incendio, tre quartieri, il vento che decide.
+Tocca a te."), the town's name, the fire playing at speed behind. Click anywhere.
 
-- ✅ Kiosk shell (`crates/game/src/kiosk/`): attract / briefing / play / outcome /
-  compare, operator corner, fixed 6 s steps shared with `demo::Run`, counterfactual
-  on a thread, clamped camera, `strings_it.rs`, no shortcut can fire.
-- ✅ UI v1 in CIMA colours: pictograms, counters, compass, action bar, forecast card,
-  outcome and compare cards, logo.
-- ✅ Removed: composer, behaviour/debug tabs, `egui-snarl`, `DEMO` flag.
-- ✅ **Playtest fixes (2026-10-06, `07cc021`):** banner above the action bar
-  (`ACTION_BAR_TOP`), forecast card layout, play idle only before the first order
-  (warn 150 s, pause suspends), outcome/compare cards on `Outcome::secure()` with the
-  same rows, one headline, takeaway no longer praises needless evacuation, clock
-  shows "Tempo rimasto", bearings spelled out, camera frames the households'
-  centroid (Porto), logo moved off the action bar.
+**Briefing = planning, clock stopped.** Short fly-in (4 s) onto the whole town.
+Bottom-left card: town, one-paragraph situation, how to play, **Via!**. Right
+column: compass (with a dashed ghost arrow where the wind may turn) and forecast
+card. Bottom-right strip: the lesson in one line ("avvisare presto… falso
+allarme…"). The district chips are live: orders given here happen at T+0.
+Starts by itself after 75 s.
 
-## 2. Clean-up (game side) ✅ (done in round 1)
+**Play.** Top-left: town, `T+mm`, time left, progress; the bill under it. Top
+strip: four counters (al sicuro / in viaggio / in pericolo / case colpite).
+Right column: compass + wind in words + forecast card (pulses amber when issue 2
+lands). **On the map:** one chip per district — name, households, status in
+colour (green calm / amber watch / orange threatened, pulsing / red reached) with
+"Fuoco a 650 m", and two buttons: **Avvisa** (turns into "✓ Avvisati 34/148 via"
+with a progress fill) and **Difendi** (shows "2 autobotti"; disabled when none
+is free). An **Incendio** label rides the fire's head. Bottom-left: advisor
+bubble (Capo squadra VVF / Sindaco / Meteo, portrait, one line, 7 s, queued).
+Bottom: action bar — *Allerta generale*, *Autobotti* (count; pressing it says
+"usa «Difendi» sui quartieri"), *Canadair* (arm, click the map), *Pausa*,
+*Veloce* (×3). Chips keep out of the right column and the advisor band.
 
-Delete what is not the demo from `crates/game`: `menu.rs`, `ui.rs` panels (keep
-`UiFocus`), `browser.rs`, `scenario_selector.rs`, `ignition_edit.rs`, `inspect.rs`
-panels (keep a selection ring only if §6 needs it), `selftest.rs`, `api.rs` +
-`tiny_http`, `interview.rs`, `map2d.rs`, `history.rs` if unused,
-`native_accessibility.rs`, `web_clipboard.rs`, `native_text_input.rs`, `capture.rs`
-scripted layers (keep the harness in `kiosk::shots`); web/wasm targets and the
-`wasm-release` profile; far terrain, 25 km sea and the sky clock (`far_terrain.rs`,
-`sea.rs`, `sky.rs`) — replaced by the plinth and fixed light (§4). Then rewrite
-`CLAUDE.md` for the demo only, keeping findings 2, 3, 5, 7, 11–14, 17–19, 21–23, 25,
-34, 37, 39–41. Resulting layout: one crate or two (`demo` lib + `demo-app` bin) —
-pick the simpler; headless tests must stay window-free. Small commits, tests green
-after each. (Model-side data/test deletion is the gameplay agent's, spec §3.)
+**Outcome.** Camera slides the burnt town into the left half; a panel on the
+right: headline ("Tutti al sicuro!" / "Ottimo lavoro!" / "Hai fatto la
+differenza" / "Il fuoco è stato più veloce"), families safe with bar, families
+caught vs **senza ordini** (from the twin; spinner, then "non disponibile" after
+20 s), "Hai salvato N famiglie rispetto a nessun ordine", **one row per
+district** (its story, caught vs without orders), **three medals** (earned in
+gold, unearned dim with a one-line hint for next time), the lesson, the bill.
+*Riprova* replays the same draw from the briefing; *Un altro paese*.
 
-## 3. Kiosk shell and UI
+## 2. Town kit and look ✅ / 🔶
 
-Full-screen borderless, cursor visible, **no single-key shortcuts** (finding 25),
-hidden operator corner, egui at 1.5–2×, CIMA navy/orange, large rounded targets.
+- **Blender kit** (`scripts/build_town_models.py` → `assets/models/town.json`,
+  contact sheet `town_preview.png`, source `town_assets.blend`): church with
+  campanile, chapel, town hall with clock and tricolore, school, fire station
+  with red bay doors and hose tower, petrol station, water tower, substation
+  with pylon, farmhouse, barn, silo, mill with water wheel, workshop with sawtooth
+  roof, lighthouse; props (cypress, street tree, fountain, bench, umbrellas,
+  loungers, beach hut, boat, sailboat, pier, Protezione Civile tent and *area di
+  attesa* sign, camping tents, caravan, goal, streetlight); cars (hatchback,
+  saloon, SUV, van, Ape, bus, camper); figures (man, woman, child, elder with a
+  stick). Paint and clothes are pure white in the bake so the game's tint (car
+  paint, status colour) shows through. Test: every face's winding agrees with
+  its normal (`models::tests`).
+- **Landmarks** (`town_kit.rs`, a child of `buildings`): a building whose kind
+  is modelled is drawn with its kit model scaled to the footprint on a paved lot;
+  open spaces (piazza, pitch, car park, *area di attesa*, lido, campsite,
+  harbour, cemetery) are draped on the terrain and dressed with props. All in
+  the building chunks' merged mesh.
+- **Houses**: one per street slot, kind-sized (villa 12×10 … hotel 21×13), pastel
+  Italian palette (ochre, apricot, cream, rose, pale yellow, Ligurian blue, mint,
+  terracotta), shop awnings and sign boards, garden trees and cypresses behind
+  about half the houses. Ground: lawn green in gardens, pale paving in the cores.
+- **House states follow the books**: a home the referee counts as hit burns
+  (8 simulated minutes) then chars; a threatened district takes a warm cast. Not
+  the exposure layer (its 2.5 km ember reach tinted every house in these towns).
+- **People and cars**: figure by age from the population; car body by household
+  (mostly hatchbacks and saloons, the odd Ape and camper), eight paints.
+- **Beacons** only over families the fire is on (trapped, or alarming threat at
+  a home still occupied). Spot-fire rings and closures unchanged.
+- Camera frames the districts and the fire (bounding box), not the households'
+  centroid; zoom and pan stay free within limits.
 
-Session flow: ATTRACT → BRIEFING → PLAY → OUTCOME → COMPARE → retry | ATTRACT; idle
-60 s outside PLAY returns to ATTRACT. Restart goes through the reset path
-(finding 21).
+## 3. Work needed (priority order)
 
-Remaining UI work:
-- 🔲 **Slots for gameplay fields** (contract rows): money counter, trust meter,
-  forecast ghost arrow, "perché?" line, unit chips with one-sentence status, closed
-  road / spot fire markers. Lay out now; wire when the field exists.
-- 🔲 **Advisors** (§7.3 old): Capo squadra (fire), Polizia locale (roads), Sindaco
-  (warnings/trust); one bubble at a time, ≥ 8 s apart, fired on an `Event` from the
-  contract. One `advisors.rs` table `(trigger, speaker, text_it)`.
-- 🔲 **Decision pauses** (§7.4 old): dim map, card with 2–3 big choices incl.
-  "aspetta"; driven by model `Event`s, not scripts.
-- 🔲 **Overlays** ≥ +20 m above ground (finding 13), verified by screenshot: wind
-  arrow on the terrain, spot-fire ring + "!", threat tint, household beacons
-  (green/amber/red), evacuation chevrons, closed-road icons, selection ring, ghost of
-  the no-orders perimeter on COMPARE (§16 #38).
-- 🔲 **Briefing**: single card in the bottom third, town centred; the fly-in must be
-  visible (§16 #22).
-- 🔲 **Attract**: tagline and button spacing, title off the village (§16 #21 rest).
-- 🔲 **Action bar**: "Evacuazione" after use says "avvisate N famiglie · T+mm" (§16
-  #24); refusals as persistent unit chips, not a 6 s banner (§16 #25).
-- 🔲 **Compass**: faint second arrow for the forecast shift; flash "Il vento è
-  cambiato!" when it does (§16 #23, #39).
-- 🔲 **Outcome**: line "l'evacuazione salva le persone, non le case" (§16 #18);
-  town chip "N famiglie in pericolo" (§16 #41).
-- 🔲 **Robustness of the twin spinner**: `Err` variant over the channel, "non
-  disponibile" after a 10 s timeout; cancel a stale twin on `Cmd::Begin` (§16 #32–33).
-- 🔲 **Operator**: "Ricomincia" must not silently pin the town (§16 #12); delete unused
-  strings `SKIP`, `BACK` or use them (§16 #11); `KIOSK_IDLE_S` to test the reset in
-  seconds; progress ring on the idle warning (§16 #42).
-- 🔲 **Localisation**: native-speaker review of `strings_it.rs`; refusal mapping
-  (when the gameplay agent delivers `Refusal`, a test that every variant maps).
-- 🔲 **LLM bubbles (OpenRouter)** ✂: short in-character bubbles via `crates/chat`
-  (finding 30), hard timeout, canned fallback, rate-limited, never pauses; angry
-  households (trust) are the natural speakers. Needs network; fallback mandatory.
+1. **Fire read.** From the play camera the fire is a dark smudge with small
+   flames; it should be the brightest, most animated thing on the table: taller
+   flame billboards on the front, a glowing edge line, ember sparks toward the
+   wind, smoke columns leaning with it.
+2. **Order feedback on the map.** When *Avvisa* is pressed: a ring pulse over the
+   district and a siren icon; when *Difendi*: a ring at the engine's post (data:
+   `Referee::posted` count today; needs the post positions exposed —
+   **request to gameplay**: `Referee::posts(d) -> &[Pos]`).
+3. **Chip density.** Three chips with two buttons each is the whole UI; check in
+   the playtest whether a collapsed chip (name + status) that expands on hover
+   reads better at 2 m.
+4. **Polish.** Vertex sway on trees; headlight blink in queues; water drop
+   splash and wet strip under a Canadair run; roofs (hip/gable mix by kind);
+   district ground tint by level.
+5. **Ops.** `KIOSK_SELFTEST=1` (state machine, reset fan-out per finding 21, no
+   key does anything, idle reset leaks nothing); `scripts/run_demo.sh`
+   supervisor; operator quit button; native-speaker review of `strings_it.rs`;
+   dead-code warnings (`FireLayer`, `models::model`, `OrderKind::{Attack,Line}`).
+6. **Target machine:** fps (was 57 on the dev Mac before the kit; the kit adds
+   ~10 k triangles per town, measure), pointer, idle timings.
 
-## 4. Graphics — *Link's Awakening* diorama, one still light
+## 4. Frame budget
 
-Reference: the 2019 remake. Priority: legibility from 2 m, then the toy-diorama read,
-then polish. Fire is the only truly bright thing against a calm pastel world. **Fixed
-lighting; no day/night.** Today the town is tiny and dark and houses read as faint
-orange dashes (§16 #20) — this is the largest remaining quality gap.
+30 fps floor, measured on the real machine. Disable in order: shadow
+resolution, cascades, bloom quality, depth-of-field samples, MSAA→FXAA. Never
+disable: fire glow, the district chips, the wind arrow.
 
-- 🔲 **Tilt-shift (core):** one cheap full-screen post pass, blur ramping with
-  distance from a horizontal focus band, slight vignette/saturation lift, never on
-  egui; fallback Bevy `DepthOfField`. Keep the band on the town.
-- 🔲 **Lighting:** one warm low-angle sun that never moves, soft shadows (few cascades),
-  generous ambient, TonyMcMapface/AgX, bloom threshold high so only fire/embers/
-  beacons glow. Remove the clock from `sky.rs`. Pick by screenshot against the
-  reference.
-- 🔲 **Diorama:** terrain as a raised plinth/tile block with visible strata sides and a
-  base; sea as a glossy tile inside the block; drop `far_terrain` and the 25 km sea;
-  horizon is the table, softly out of focus.
-- 🔲 **Materials:** smooth slightly glossy "plastic", flat or two-tone shading,
-  vertex-colour palettes (CIMA-tinted); inverted-hull outlines only if cheap.
-- 🔲 **Buildings (priority):** chunky rounded low-poly houses, distinct roofs/chimneys/
-  gardens; church, town hall, school, fire station; states intact / threatened /
-  alight / charred read at a glance.
-- 🔲 **Vegetation:** big round-topped trees and bushes as chunky props (hundreds, not
-  230 k plants), fuel class readable by tree type and ground tint, vertex-sine sway.
-  Large frame-rate win.
-- 🔲 **People and cars:** round, bright, oversized figures (keep 3× scale), walking
-  bob, family groups; chunky toy cars with headlight blink, queues that read at the
-  exit; engine, crew van, Canadair with distinct silhouettes; refuges drawn as
-  *places* (piazza, car park, quay, sign) with visible sheltering groups.
-- 🔲 **Fire/smoke/embers:** layered flame billboards that flicker, soft round smoke
-  bent by the wind, ember streaks with a flash on spot-fire landing, water-drop cloud
-  and wet strip, fireline strip, hose stream.
-- **Frame budget:** 30 fps floor, decided by measurement on day 1 on the real
-  machine. Disable in order: shadow resolution, cascades, bloom quality, tilt-shift
-  samples, MSAA→FXAA. Never disable: fire glow, beacons, wind arrow, the tilt-shift
-  read. Operator `quality` low/medium/high.
+## 5. Assets pipeline
 
-## 5. Assets 🔶 (props/toys built in Rust in `toy.rs`; the Blender pipeline is unused)
+```sh
+/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build_town_models.py
+/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build_models.py   # trees, old figures
+python3 scripts/generate_demo_scenarios.py   # towns: districts, houses, landmarks
+cargo test -p game models::tests
+```
 
-Reuse `assets/models/emergency_assets.blend` → `scripts/build_models.py` →
-`meshes.json` (embedded, vertex colours; read `assets/models/README.md`). Low-poly
-(< 2 k tris), shared CIMA-tinted palette, baked vertex AO: house variants (+ charred),
-civic buildings, pine/maquis/olive/grass props, car / fire engine / crew van / tanker
-aircraft, figures, plinth. ✂ custom assets (keep the existing set) if days slip.
+Landmark footprints in the generator (`*_LANDMARKS`) and the kit's authored
+footprints (`BUILDERS` in the Blender script) should match; the game scales one
+to the other.
 
-## 6. Robustness and ops 🔲
+## 6. Testing (presentation)
 
-`scripts/run_demo.sh` supervisor relaunches on exit; fully offline except OpenRouter
-bubbles; fullscreen borderless; OS sleep/screensaver off. Ship
-`docs/demo-operator.md` (one page: launch, operator corner, reset, frozen-screen
-procedure, power settings, the three towns in one sentence each, staff talking
-points).
+- ✅ `sim::tests::the_live_session_and_its_headless_twin_agree` (COMPARE honesty).
+- ✅ `models::tests` (bakes valid, kit winding).
+- 🔲 `KIOSK_SELFTEST` (above). 🔲 Every `EventKind` has an advisor line or a
+  deliberate `None` (exhaustive match today; a test would pin it).
+- 🔲 Real pointer: operator corner, pause/fast, Canadair arming, chip clicks.
 
-## 7. Testing (presentation)
+## 7. History
 
-- 🔲 `KIOSK_SELFTEST=1` harness (not a mode) for the Bevy side: state machine, reset
-  fan-out (finding 21), order buttons, "no key does anything", idle reset leaks
-  nothing, COMPARE twin equals the live `Sim` for the same orders.
-- 🔲 Screenshots at T+10 / T+60 / end for all three towns, reviewed by eye.
-- 🔲 Frame-rate measurement on the real machine; 30 fps floor.
-- 🔲 Test that every refusal string/variant maps to something other than the fallback.
-- 🔲 Operator corner, pause/resume, cancel, camera clamp, scroll/orbit: verify with a
-  real pointer (not possible headless).
-
-## 8. Open questions (presentation)
-
-- Clean-up end state: one crate or two (§2).
-- Final town names and Italian copy; native-speaker review.
-- GPU/resolution on the actual machine (sets default quality; Switch-class target).
-- Whether to keep all three towns loaded to avoid the reload hitch on town change
-  (§16 #32 old notes).
-
-## 9. Playtest findings owned here (2026-10-06)
-
-Bugs #1–#4, #6, #7, #9, #10, #12 fixed (see §1); remaining from the playtest:
-#8 refusal mapping, #11 unused strings, #20 legibility (§4), #21 attract spacing,
-#22 briefing card, #23 forecast arrow, #24 action-bar feedback, #25 persistent
-refusal, #26–#29 copy (done: #26, #27, #28, #29 title), #31 native review, #32–#34
-twin/restart robustness, #37–#39 "perché?", COMPARE ghost, wind-changed flash,
-#41 danger chip, #42 idle ring. Full text in git history at `da0549b`.
-
-Could not check (needs a pointer/profiler): live fps, unit tasking on the map,
-bad-point refusals on screen, order-button double click, operator corner, idle
-timings in practice, unit sprites/spot rings/smoke/traffic on the map, restart leaks.
-
-## 10. Status after the first presentation pass
-
-Shipped: §2 clean-up (workbench, api, interview, far terrain, sea, sky, wasm,
-`egui-snarl`; `crates/game` is kiosk-only, `CLAUDE.md` rewritten, `docs/demo-operator.md`
-written); §4 plinth with strata walls and table (`plinth.rs`), one fixed warm sun,
-depth-of-field as the tilt-shift read, toy-scale houses (1.7x), per-town camera framing
-(`kiosk::view::play_dist`); `KIOSK_IDLE_S`, `KIOSK_FPS`; Ricomincia no longer pins the
-town; unused strings removed. Measured ~32-38 fps in the screenshot harness on the dev
-Mac (windowed 1600x1000 at 2x), so the 30 fps floor holds with little margin.
-
-Not done: overlays (§3), briefing/attract fixes, action-bar feedback, twin robustness,
-advisors, `KIOSK_SELFTEST`, supervisor script, vegetation props (still 230 k plants),
-people/cars/units art, fire/smoke polish, native Italian review, remaining dead-code
-warnings (`FireLayer` variants in `fire_view.rs`).
-
-Requests to gameplay: none new. Slots for money/trust/events are not yet laid out.
-
-## 11. Status after the second presentation pass
-
-Shipped: vegetation is ~4 k chunky toy props (pine stacks, cloud-lobe broadleaves,
-macchia domes; `PROP_SCALE` 2.6) over a pastel land-cover ground tint (bilinear,
-domain-warped; `terrain_mesh::cover_tint`) instead of 230 k plants; `toy.rs` builds
-person, crew squad, car, fire engine, crew van (swaps with the squad when the crew
-works on foot), air tanker and refuge sign in code (no Blender needed; the
-`meshes.json` pipeline is now unused by the game for these, still used for
-`models::mesh` trees nowhere); toy houses (footprint 1.5x, height 1.7x, chimneys, six
-roof colours, warm cast for "threatened", loud alight/charred); figures 8x with walk
-bob, pastel cars; `overlays.rs`: wind arrow beside the fire, household beacons
-(amber/red/blue), spot-fire ring + "!", closure ring + barrier; fire flames larger,
-smoke lighter; briefing as bottom card with forecast top-left; attract spacing;
-outcome/compare anchored low; camera framing = town/fire midpoint, `KIOSK_SHOT_ZOOM`
-and `KIOSK_SHOT_FOCUS` for close-ups, `3b_play_late` screenshot.
-Frame rate (dev Mac, windowed 1600x1000 @2x): before 20-30 fps in play; now 57 fps in
-play (uncapped with `KIOSK_FPS`, so CPU-bound by the model step, not the renderer) and
-120 fps on attract. Vegetation triangles 10 M -> 0.36 M.
-
-Not done: vertex-sine sway (needs a custom vertex shader on the retro material),
-evacuation chevrons, selection ring, inverted-hull outlines, tilt-shift is still Bevy
-DepthOfField, advisors, decision pauses, twin robustness, `KIOSK_SELFTEST`, supervisor
-script. The outcome/compare cards still cover most of the map. Requests to gameplay:
-none; HUD slots for money/trust not laid out.
-
-## 12. Work needed (priority order, 2026-10-06)
-
-1. **Wire the delivered model (X in the shared spec; gameplay's rows are ✅).** Money
-   counter (HUD + outcome/compare, "senza ordini: 0 €"), trust meter, the "perché?" line
-   from `why::Why`, `Refusal` → Italian with an every-variant test, `Event` → markers and
-   later advisors. Build the layout slots first (empty-state safe), then fill.
-2. **Unit buttons follow decision W1.** B: subtitle says what the action does, map
-   feedback (a ring on the defended cluster, an icon on the home). D: remove buttons and
-   unit art. Don't polish either until Mirko decides.
-3. **Legibility from 2 m (acceptance 11).** Beacons too small; threatened ≈ intact
-   (needs gameplay's graded threat level, §1b item 3 there — meanwhile tint by alight/
-   charred only); civic buildings (church, town hall, school, fire station) and distinct
-   gardens; evacuation chevrons; selection ring; closed-road ring never seen on screen —
-   force a case and look.
-4. **End cards must show the scar.** Outcome/compare still cover most of the map: shrink
-   the cards or add the ghost no-orders perimeter on COMPARE so one picture says "same
-   fire".
-5. **Polish.** Vertex-sine sway (custom vertex shader), family groups, headlight blink,
-   ember flash, water-drop cloud/wet strip, hose stream, outlines only if cheap; an
-   operator `quality` low/medium/high.
-6. **Read the unread screenshots** (final borgo briefing and compare, valle attract) and
-   re-shoot all three towns after every item above.
-7. **Robustness and ops.** Twin spinner `Err` variant + 10 s timeout + cancel on
-   `Cmd::Begin`; operator quit button; `KIOSK_SELFTEST=1` (state machine, reset fan-out
-   per finding 21, no key does anything, idle reset leaks nothing, live `Sim` == `Run`);
-   `scripts/run_demo.sh` supervisor; native-speaker Italian review; dead-code warnings
-   (`FireLayer` in `fire_view.rs`).
-8. **Needs a real pointer/target machine:** 57 fps on the real GPU, unit tasking, operator
-   corner, idle timings, beacon legibility, overlays during a wind shift.
+v1 status, playtest findings (#1–#42) and the first two presentation passes are in
+git at `1eb263c` (this file). v2: districts on the map, merged outcome panel,
+town kit — `523c14a`.

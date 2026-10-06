@@ -1,5 +1,11 @@
 # Demo — notes for the next pass
 
+> **Superseded in part (2026-10-06).** §1's "it is buttons, not a game" led to
+> v2: districts warned and defended from chips on the map, a frozen briefing,
+> per-district end card with medals (`demo-spec.md` §0). The ideas below that
+> v2 did not take (drawing lines, radio calls, prediction markers, rewind) are
+> still open.
+
 Written 2026-10-06, while the first kiosk loop was being built. Companion to
 `demo-spec.md` (shared) and its halves `demo-spec-gameplay.md` (§1 here is mostly
 theirs) and `demo-spec-presentation.md` (§4 rough edges); this file is what the spec does *not* yet say.

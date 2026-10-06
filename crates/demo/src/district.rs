@@ -59,7 +59,8 @@ pub struct Report {
     pub warned_at_s: Option<i64>,
     /// When fire first came within [`THREATENED_M`] of a home.
     pub threatened_at_s: Option<i64>,
-    /// When the fire first reached a home (threat alarming there).
+    /// When the fire first reached a home (threat alarming there) or caught a
+    /// family of this district.
     pub reached_at_s: Option<i64>,
     /// When an engine first started defending homes here.
     pub defended_at_s: Option<i64>,
@@ -195,7 +196,13 @@ pub fn note(districts: &[District], reports: &mut [Report], tally: &crate::Tally
         if r.threatened_at_s.is_none() && r.closest_m <= THREATENED_M {
             r.threatened_at_s = Some(now);
         }
-        if r.reached_at_s.is_none() && d.households.iter().any(|&i| threat.at(agents.households[i].home) >= fire::threat::ALARMING) {
+        // Reached: the threat is alarming at a home, or the fire has caught a
+        // family here by any of the tally's routes (trapped on the road, a
+        // house lit by embers). One rule with "caught", or the end card can
+        // say a district was spared while counting families caught in it.
+        if r.reached_at_s.is_none()
+            && d.households.iter().any(|&i| tally.caught_at(i).is_some() || threat.at(agents.households[i].home) >= fire::threat::ALARMING)
+        {
             r.reached_at_s = Some(now);
         }
         let (mut caught, mut safe, mut moving) = (0, 0, 0);

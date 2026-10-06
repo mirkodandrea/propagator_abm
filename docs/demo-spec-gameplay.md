@@ -1,374 +1,180 @@
 # Demo — gameplay spec (headless, A/B-tested)
 
-Owner: the **gameplay agent**. Read `docs/demo-spec.md` first (goal, decisions, the
-contract with the presentation agent) and `CLAUDE.md` (the model's findings are
-constraints). Companion: `docs/demo-notes.md` §1 (gameplay ideas).
-The presentation side is `docs/demo-spec-presentation.md`.
+Read `docs/demo-spec.md` first (the game in one paragraph, decisions, the
+contract) and `CLAUDE.md` (the model's findings are constraints). The
+presentation side is `docs/demo-spec-presentation.md`.
 
-Legend: ✅ done · 🔲 to do · ✂ cut-list item.
+Legend: ✅ done · 🔶 partly · 🔲 to do · ✂ cut-list item.
 
-## 0. How this agent works
+## 0. How this side works
 
 **Backend only. No window, no Bevy, no screenshots.** Everything here is built and
-judged through `crates/demo` (`demo::Run`, `demo::Tally`, `demo::weather`,
-`demo::mission`) and the model crates under it. If a change cannot be measured
-headlessly it is not finished.
+judged through `crates/demo` and the model crates under it. If a change cannot be
+measured headlessly it is not finished.
 
-**Owns:** `crates/{demo,abm,fire,scenario,behavior,chat}`, `data/`, `scripts/`,
-`propagator-core` integration. **Does not touch:** `crates/game`, `assets/`,
-`strings_it.rs`, shaders. Anything the player must *see or read* is delivered as a
-field or enum on a `demo::` type plus a line in the contract table (§1) — the
-presentation agent renders it.
+**Owns:** `crates/{demo,abm,fire,scenario,behavior,chat}`, `data/`, `scripts/`
+(including `generate_demo_scenarios.py`). Anything the player must *see or read*
+is delivered as a field or enum on a `demo::` type plus a row in §1.
 
-**A/B method (the point of this agent).** Every design question below is settled by
-a measured comparison, not by argument:
-- A *policy* is a scripted commander: a list of `(time_s, Order)` plus a name
-  (`none`, `evacuate T+0/10/20/40`, `follow-forecast`, `units-only T+3`,
-  `evacuate+units`, `zone`, `re-task aircraft`, …). Put them in
-  `crates/demo/src/policy.rs` (new) so tests and sweeps share one definition.
-- A *variant* is a model option behind a switch inert by default (finding 34): e.g.
-  `unit_effect = {off, ×2, ×4}`, `trust_decay = {0, 0.1, 0.2}`. Variants live in a
-  `demo::Variant` struct passed to `Run::new`, never in globals.
-- A sweep = policies × variants × towns × seeds (≥16 seeds; a 90 min run ≈ 0.1 s,
-  432 runs ≈ 32 s on 4 threads). Report mean and spread of: families safe/secure,
-  caught at home, homes hit, hectares, money (§6.5), and **regret** (see below).
-- Results go in `crates/demo/tests/` as `#[ignore]` reports **and** as asserted
-  pins for the winner. Record the table in this file under the section it settles.
-- **The target lesson to optimise for:** no single policy dominates across seeds.
-  "Evacuate at T+0 always", "never", and "follow the forecast blindly" must each
-  lose to a better policy on average, and each must win on *some* seeds. Define
-  *regret* = (best policy's outcome on this seed) − (this policy's outcome); a good
-  design has all fixed policies with non-trivial mean regret.
+**A/B method.** Every design question is settled by a measured comparison:
+- a *policy* is a scripted commander (`demo::policy`): `none`, `evac T+k`,
+  `at-risk T+k`, `downwind T+0`, `react to shift`, `district forecast`,
+  `warn when threatened`, `DefendDistrict(d, n)`, …;
+- a *variant* is a model option inert by default (finding 34), in `demo::Variant`;
+- a sweep = policies × variants × towns × drawn seeds (`demo::sweep::run_grid`,
+  all cores). Report mean ± s.e.; pin the conclusion with an assertion; record the
+  table here.
+- **Target:** no fixed policy wins on every dimension (families caught, false
+  alarms, money), and every lesson in `demo-spec.md` §0 is a test that *fires*.
 
-## 1. Contract with the presentation agent
-
-Gameplay delivers, presentation renders. Add a row when a new field is needed; the
-presentation agent reads this table rather than the model.
+## 1. Contract with the presentation side
 
 | Delivered by `demo::` | Meaning | Status |
 |---|---|---|
-| `Outcome { households, safe, moving, in_danger, caught, homes_lost, hectares }` + `secure()` | end-card numbers; `secure()` = households − in_danger | ✅ |
-| `Forecast { issue, wind_from_deg, wind_kmh, cone_deg, shift_p, shift_to_deg, shift_eta_min }` | forecast card | ✅ |
-| `Order::{EvacuateAll, Attack, Drop, …}` + `Run::order` | everything the player can do | ✅ partial |
-| `cost::Log` (feed it: `push(Entry::Evacuation/AirLoad)`, `task(t, unit, kind)`) → `Log::price(now_s) -> cost::Ledger` (`total_eur()`, `by_action(Action::{Evacuation,Engines,Crews,Air})`, `items`); `Run::log`, `Run::ledger()` | money counter, end card. **The live game builds its own `Log` from the orders it issues and the drops it sees; same code prices both** | ✅ 5.1 (tariffs are placeholders, see `cost.rs` sources) |
-| `Run::trust() -> trust::Trust { mean, angry_households }`; `trust::CryWolf::{new(agents, delta), note_order(t, ids), step(&mut agents, fire, world), trust(agents)}` for the live game | trust meter | ✅ 5.2, **off unless `Variant::cry_wolf = Some(delta)`** |
-| `Event { at_s, kind: EventKind, pos }`, kinds `SpotFire`, `WindShifted{from,to}`, `UnitWithdrew{unit,kind}`, `UnitLost{..}`, `MastDown`, `FireNearTown`; `Run::events` (append-only), `Run::latest_spot()` | advisors, decision pauses, map markers. No text. "Forecast changed" is `ISSUE_2_AT_S` (a `Draw` fact, not a run event) | ✅ 5.4/5.6 (road cut: not yet) |
-| `why::why(&Outcome, Facts) -> Why { kind: WhyKind, facts, lead_min }`, `Run::facts()`, `Run::why()`, `Outcome::why(facts)` | "perché?" line (§16 #37). Kinds: `FireNeverCame, CloseButNobodyCaught, OrderInTime, NoOrder, OrderTooLate, SomeSlowToLeave, WindShiftReachedTown` | ✅ |
-| `refusal::Refusal` (11 variants, `Refusal::ALL`), `Refusal::from_assign(&str)`, `refusal::check(crews, agents, fire, scn, unit, Intent, pos)` | typed refusals; replaces `target_preview`'s strings. Presentation owns the Italian + the "every variant mapped" test | ✅ 5.7 (game still uses its own strings) |
-| `Order::EvacuateZone { centre, radius_m }` | zone evacuation | ✅ order only; no map tool, no HoldRoad (5.5) |
-| `Tally::enable_defence()` + `note_defence(crews, agents, fire, world, dropped_at)`; `Variant::defend_homes` | option B: engines on station / drops over homes defend houses (see §4.1). **Inert until the kiosk calls `enable_defence`** | ✅ implemented, **awaiting Mirko's decision** |
-| `Variant { unit_effect, defend_homes, shift_p, cry_wolf }`, `Run::with_variant` | sweep switches, all inert at `Default` (pinned) | ✅ |
-| `policy::Policy` (scripted commanders), `sweep::{run_grid, summarise, paired, regret_by}` | A/B harness (headless only) | ✅ |
+| `Referee` (`new(spec, scn, agents, variant)`, `before_step(fire, crews) -> shifted`, `after_step(Parts)`, `order(Order, Parts)`, `tally`, `log`, `events`, `districts`, `reports`, `posted(d)`, `ledger(now)`, `trust(agents)`, `outcome(&Parts)`, `facts()`) and `Parts { scn, fire, agents, crews }` | **the one set of books**: the kiosk steps it around `Sim::advance`, `Run` around its own model | ✅ |
+| `Run { scn, fire, agents, crews, spec, referee }`, `Run::with_variant`, `play`, `step`, `order`, `head()`, `district_toward(bearing)` | headless twin and sweeps | ✅ |
+| `district::{District { name, households, centre, radius_m }, Report, Level, Badges, badges(), IN_TIME_MIN, THREATENED_M, WATCH_M}` | district chips and the end card. `Report { households, warned_at_s, threatened_at_s, reached_at_s, defended_at_s, closest_m, fire_now_m, caught, safe, moving }`, `level()`, `needless()`, `lead_min()` | ✅ |
+| `Order::{EvacuateAll, EvacuateZone, EvacuateDistrict(d), Defend { kind, district }, Attack, Drop}` | everything the player can do | ✅ |
+| `Outcome { households, safe, moving, in_danger, caught, homes_lost, hectares }` + `secure()` | headline numbers | ✅ |
+| `Forecast` + `Draw::forecast(issue)`, `ISSUE_2_AT_S` (= 8 min) | forecast card, the T+8 update | ✅ |
+| `Event { at_s, kind, pos }`, kinds `SpotFire`, `WindShifted`, `UnitWithdrew`, `UnitLost`, `MastDown`, `FireNearTown`, `DistrictThreatened{district}`, `DistrictReached{district}`, `FalseAlarm` | advisor lines (`strings_it::advisor`) | ✅ |
+| `cost::{Log, Ledger}` via `Referee::ledger` | the bill | ✅ (tariffs placeholder, W3) |
+| `run::{head_of, best_unit, staging}` | the fire label; unit choice shared by twin and kiosk | ✅ |
+| `Variant { unit_effect, defend_homes, shift_p, cry_wolf }` | sweep switches; **kiosk plays `defend_homes: true` only** | ✅ |
+| `why::Why` | one-line explanation (superseded on the card by per-district stories; kept for tests) | ✅ |
+| `refusal::Refusal` | typed refusals (only the Canadair map click can be refused now) | ✅ |
 
-## 1b. Work needed (priority order, 2026-10-06)
+## 2. The district game (v2) ✅
 
-1. **Decision W1 (units).** Once Mirko picks B or D: B → pin the final rules in
-   `tests/units.rs`, re-run the §4 sweep on the merged build, and settle borgo/porto
-   (engines spend their tank before the fire arrives there — try a staged engine, a
-   hydrant-adjacent station, or a later fire arrival; measure, do not guess). D → remove
-   the unit orders from the delivered API and delete `Tally::enable_defence` etc.
-2. **Decision W2 (clean-up).** On approval, do §3: unregister `spotorno`, delete the
-   three real windows, retarget ~40 tests, port the finding pins; small commits, green
-   after each.
-3. **Support the wiring (X in the shared spec).** Expose what the kiosk needs without it
-   re-deriving logic: a `Run`-independent live-game entry point for `cost::Log`,
-   `CryWolf` and defence stepping (the live `Sim` has no `Run`); a per-household threat
-   level (`Intact | Threatened | AtRisk | Alight | Charred`, graded by distance/time to
-   fire, not "within 2.5 km of embers") for the presentation agent's building colours;
-   a `Run`-vs-`Sim` equality test with orders and ledger.
-4. **Balance.** (a) shift-probability floors for borgo/porto; (b) a cost scale a robust
-   follower margin can sit on — sweep the evacuation price and print the margin ± s.e.
-   per town, replace placeholder tariffs with sourced ones (Protezione Civile / regional
-   tariffs, source in code); (c) cry-wolf: needs zone orders or a repeat order to bite —
-   A/B a two-order session; (d) twin-hindsight vs forward estimate of "needless".
-5. **Remaining 5.x.** `HoldRoad` (+ A/B on porto), road-cut event and decision prompts
-   (5.6), seed-of-day, CPU per model step (the kiosk is CPU-bound at ~17 ms/frame in
-   play; profile `Sim::advance` before the 2,000-person range matters).
-6. **Re-run regret test and acceptance 9/10** on the final build; record the tables.
+### 2.1 Why
 
-## 2. Done
+v1 had one decision — *when* to press Evacuazione — and pressing it at T+0 was
+always right. Measured on the v1 towns (`district_probe`, 12 drawn sessions): the
+fire arrived **everywhere in a town at once** (borgo T+49–60 in every 200 m
+bucket) and only reached the town in about half the sessions, so *who* to warn
+had no answer and half the sessions taught nothing. Fires were also slow
+(17–60 ha/h, ~1 km/h head run from a 60 m start), so the first two minutes on
+screen were a smudge 1 km from the houses.
 
-- ✅ Three towns (`scripts/generate_demo_scenarios.py` → `data/scenarios/demo_*`).
-- ✅ `crates/demo`: `mission::spec`, `run::Run`, `run::Tally`; `Order::Attack/Drop`.
-- ✅ `abm::SEE_RANGE_M` 800 m; `homes_lost` = burnt ground within 150 m.
-- ✅ §6.1 seeded weather draw + calibrated two-issue forecast (`demo::weather`).
-- ✅ §6.4 fire part: 60 m opening fires, beats re-measured (`tests/small.rs`).
-- ✅ `Outcome::secure()`.
-- ✅ Beat tests (`tests/towns.rs`, `small.rs`), determinism (same seed ⇒ same outcome).
+### 2.2 The towns (`scripts/generate_demo_scenarios.py`)
 
-## 3. Clean-up (model side) 🔲 — **blocked, see below**
+Each town is three named districts (a household's `locality`; `District` order =
+the scenario's `localities`), placed so that **district 0 is downwind of the
+opening wind, district 1 is downwind of the forecast shift, district 2 is upwind
+in every forecast** (a false alarm if warned). Houses stand along streets, one
+building per street slot shared by its households, with kinds (villa, house,
+terrace, shop, apartments, hotel) and landmarks (presentation §5). Each town has
+an *area di attesa* that `abm::refuge::choose` finds by itself (measured:
+without it the only refuges were map-edge exits, and Porto's single refuge was
+the end of the road through the fire).
 
-**Status:** attempted and stopped. Deleting `data/scenarios/{mati,pedrogao,rhodes}` was
-denied by the sandbox (irreversible local destruction), so none of the deletion was done.
-What was learned: ~40 abm/fire tests (the pins for findings 5, 17-19, 34, 39-42 among
-them) load `Scenario::load(data_dir)` = the registry default `spotorno`, and are
-calibrated to Spotorno's geometry (hard-coded ignition cell, 512x512 grid, 750
-households); on the demo towns (200x200 grid, 250-350 households) 17 of them fail on
-calibration, not on a bug. Cheap, safe route proposed: keep `spotorno` on disk as a
-**test fixture only** (point those tests at `Scenario::load_by_id(.., "spotorno")`,
-unregister it from `data/scenarios.json` so no selector shows it), delete `mati`,
-`pedrogao`, `rhodes` (91 MB) and their 3 test uses (incident_gaps mast/shore tests can
-run on the demo towns; `traffic.rs` pedrogao -> demo_porto; `real_scenario_ignitions.rs`
-goes), then port the finding pins to demo towns one at a time. Needs a human to approve
-the deletions.
+| town | districts (households) | fire | wind / shift |
+|---|---|---|---|
+| Rocca Ventosa (`demo_borgo`) | Il Borgo 148 · Le Coste 64 · Il Mulino 38 | pines S of the village, r=100 m | S 35 km/h; 20–70 % → E 45 km/h at T+12–26 |
+| Due Casali (`demo_valle`) | Casale Ovest 102 · Casale Est 102 · Fondovalle 96 | car fire on the road between the hamlets, r=100 m | E 30; 25–75 % → W 45 |
+| Porto Pineta (`demo_porto`) | La Pineta 102 · Centro 180 · Il Faro 68 | pines N of town, r=150 m | N 40; 15–60 % → NE 40 |
 
-Delete the non-demo data and the tests that load it, **keeping the pins for findings
-5, 17–19, 34, 39–42** (port them to `demo_*`):
-- `data/scenarios/{spotorno,mati,pedrogao,rhodes}` + labs, `data/spotorno_*`,
-  `data/osm_raw.json`, `scripts/` real-data pipeline (keep
-  `generate_demo_scenarios.py`, `bake_fuels.py` output, `build_models.py`).
-- `crates/telemetry` unless §6.7's event stream wants it; wasm profile.
-- Do this first, in small commits, tests green after each. The `crates/game` side of
-  the clean-up belongs to the presentation agent.
+Mission length 60 simulated minutes; preparation 6–18 min (12–35 left a third of
+the town caught however early the warning).
 
-## 4. The open design question: do units matter? 🔲 (blocks the demo)
+### 2.3 Measured (pinned in `tests/districts.rs`, tables `tests/district_sweep.rs`)
 
-Finding (§16 #17, 16 seeds × 3 towns): crew + engine + Canadair at T+3 change homes
-hit by ≈ 0 (13.9 vs 12.8 borgo; 15.6 vs 14.3 valle; 21.8 vs 21.4 porto). Three of
-five buttons do nothing measurable. Causes: engine pumps 6 min then spends ~10 on a
-hydrant trip; crews cut ~0 m at 120 m/h and withdraw under heat; a front is dozens
-of 20 m cells (findings 15, 16, 41).
+Families caught at home, drawn sessions (12–16 per town):
 
-**A/B these options against the same sweep (policy `units-only T+3`,
-`evacuate+units`), pick by the criterion below, and record the table here:**
-
-| Option | What changes | Cost |
-|---|---|---|
-| A. effectiveness multiplier | demo-only `Variant::unit_effect` scaling engine water / crew line rate (×1, ×2, ×4, ×8), inert at ×1, pinned by a test | changes a published `abm` number — **Mirko's call; ask before merging, run the sweep first** |
-| B. different job | units *protect* rather than stop: engine **sprinklers a house cluster** (that cluster's `homes_lost` falls), crew **holds a road** open (the exit stays passable), aircraft **wets a corridor** ahead of the front | fits the model as it is; needs a protect task + exposure discount; the closest to `demo-notes.md` §1.1 |
-| C. smaller fire / earlier window | opening fire ~1 ha is already the floor (finding 3); try a slower-growing opening so T+3 action is on a *front of a few cells* | little; may fall short |
-| D. cut the buttons | units are scenery | loses half the game |
-
-**Acceptance for whichever wins:** units at T+3 reduce homes hit **and** hectares by a
-margin an asserted test pins, on every town's mean; units at T+30 reduce them by
-clearly less (so timing matters); no unit order is worth more than its §6.5 cost on
-the seeds where the fire never threatens anyone. Report the sweep, not a single seed.
-
-### 4.1 Sweep results (2026-10-06, 16 drawn seeds x 3 towns, paired on the same draw)
-
-Harness: `demo::policy` (scripted commanders, units sent to `Run::head()` as it is
-*when ordered*), `demo::sweep` (parallel grid, mean/sd, paired difference +- s.e.,
-regret), `abm::suppression::UnitEffect` and `demo::Variant` (all inert at default,
-pinned by `tests/units.rs`). Reports: `tests/units_sweep.rs`, `tests/units_diag.rs`
-(`cargo test -p demo --release --test units_sweep -- --ignored <name> --nocapture`).
-
-**Why units did nothing (units_diag):** crews cut 0 m — they withdraw because the head
-is over `WORK_LIMIT` (the ember shadow, finding 41); aircraft "broke off: not
-survivable" on borgo/porto and drop 37 loads on valle to no effect; engines
-saturate their 4 cells at x1 already (6 L/m2 >> extinction), so a bigger dose is moot.
-The limit is *area and survivability*, not intensity.
-
-**Option A (multiplier) — fails.** Paired change vs no units, homes hit (mean +- s.e.),
-`units T+3 @+300 m`: x1 / x8 / x32 = borgo +0.2/-2.5/-1.1 (+-2-3), valle +1.2/+1.2/+1.0
-(+-1), porto -1.2/+0.8/-0.3 (+-3). Even "god mode" (line x8, water x8, hose reach x4,
-steadier nerves x0.25 or 0): borgo -0.4/-1.7, valle +3.8/+2.4, porto +3.7/+4.9, all
-within noise; hectares -2 to -6 of ~20-55 (best single cell: borgo -6.1 +- 1.6).
-Pinned: `scaling_what_a_unit_does_does_not_save_homes`. **No change to a published
-abm number was made or is proposed.**
-
-**Option C (slower opening fire) — fails.** Wind x0.6 and +3 % moisture: homes hit
-fall to 0 on borgo/porto (3.6 on valle) *before* units matter; units save 1-2 ha of
-12-18 (10 %) on a fire that threatens nobody. A slower fire removes the lesson.
-
-**Option B (protect homes) — works where the fire reaches the town in time.** Demo-side
-rule (`Tally::enable_defence`, `Variant::defend_homes`): an engine working with water
-within 80 m defends the homes there for a tank's worth of sprinkling (25 min at
-~100 L/min, restarted by a refill); a drop over homes defends them 15 min; a defended
-home is lost only to flame contact (25 m), an undefended one when burnt ground is
-within 150 m. Loss is latched at first contact, so *when* the engine is on station is
-the mechanic. Paired change in homes hit vs no units (both with defence on):
-
-| town | protect T+3 | protect T+10 | protect T+30 | protect when head <600 m | <300 m |
-|---|---|---|---|---|---|
-| valle | -4.9 +- 0.8 | -4.6 +- 0.7 | -2.9 +- 1.2 | -4.5 +- 0.7 | -1.2 +- 0.5 |
-| borgo | +1.3 +- 2.1 | +1.1 +- 1.8 | +1.1 +- 1.9 | +1.5 +- 1.7 | -1.7 +- 0.9 |
-| porto | +3.5 +- 2.9 | 0.0 +- 1.4 | 0.0 +- 0.0 | -1.7 +- 1.9 | -0.1 +- 0.1 |
-
-Hectares are unchanged by B (it protects homes, it does not stop the fire). Pinned:
-`protecting_homes_saves_homes_and_earlier_saves_more` on valle's scripted beat (wind
-shift at T+30, 12 seeds): protect T+3 **-7.1 +- 0.9** homes, protect T+30 **+0.3** — so
-timing matters strongly where the fire reaches the town on schedule — and
-`home_defence_changes_nothing_until_a_unit_is_posted`. (The table above was taken on
-the drawn climate before valle's shift odds were lowered in 5.3; on the new drawn
-climate valle protect T+3 is -2.3 +- 0.8, T+30 -2.2: fewer sessions have the shift.)
-
-**Spot split (5.4), 16 seeds, paired vs none, defence off:** all units at the head
-`@+300m` T+3: homes +0.2/+0.9/-1.2 (borgo/valle/porto, +-2-3); one engine + one crew at
-the head and one of each at every spot: -0.4/+0.9/+2.2. Nothing separates them: the
-spot-fire split is not a lever while units cannot stop fire (same finding as A).
-
-**Honest status: no option meets the §4 acceptance on every town.** B is the only
-one with a real, timed effect, on valle. Borgo/porto engines arrive ~T+13, spend their
-25-minute tank before the fire reaches the town (head 1000 m from the nearest home
-at T+25) and the effect vanishes; in those towns the fire often threatens no one
-(finding §16 #15/#16, see 5.3). **Decision needed (Mirko):** adopt B as the demo
-rule (kiosk calls `Tally::enable_defence`; `protect` becomes the unit action), and
-raise `shift_p`/threat floors (5.3) so borgo/porto reach the town; or D (cut the
-unit buttons). Option A should not be pursued.
-
-## 5. Next gameplay steps (build in this order; they interact)
-
-**Status 2026-10-06 (gameplay agent):** 5.1 ✅ (gate pinned, tables below), 5.2 ✅
-(mechanism + pin; off by default), 5.3 ✅ partly (valle odds changed; borgo/porto
-threat share not raised, see below), 5.4 ✅ events + pins, 5.7 ✅, `Outcome::why` ✅,
-5.5 zone order only, 5.6 partly (events exist; road-cut event and decision prompts
-not). §3 clean-up **not done** (see §3).
-
-### 5.1 Cost (money) ✅ — §6.5
-
-Tariffs in `demo::cost` (placeholders from memory, **to verify**): air load EUR 3,000;
-engine EUR 250/h; crew EUR 60/h; **evacuation EUR 250 per household** (EUR 62.5 k borgo,
-75 k valle, 87.5 k porto). The evacuation scale was chosen by sweep (`tests/cost_sweep.rs`):
-at EUR 40/household the order cost ~EUR 10 k and T+0 won everywhere. Mean loss in EUR k
-(spent + 20 k x families caught at home + 20 k x homes reached; analysis weights only,
-never shown), 24 drawn seeds:
-
-| town | never | evac T+0 | T+10 | T+20 | T+40 | follow-forecast |
+| town | none | at-risk T+0 | at-risk T+20 | warn when threatened | warn everyone T+0 | false alarms at-risk / everyone |
 |---|---|---|---|---|---|---|
-| borgo | 354 | 297 | 310 | 342 | 411 | **285** |
-| valle | 412 | 361 | 361 | 362 | 432 | **333** |
-| porto | 462 | 454 | 462 | 498 | 547 | **426** |
+| borgo | 13.2 | **4.2** | 12.9 | 12.8 | 4.2 | 0.17 / 1.17 |
+| valle | 27.2 | **7.6** | 23.8 | 26.0 | 7.6 | 0.25 / 1.25 |
+| porto | 20.3 | 9.8 | 20.0 | 20.3 | **6.9** | 0.00 / 0.75 |
 
-Pinned (`tests/cost.rs`): follower < both always and never on every town; each of "never"
-and "T+0" is the best policy on some seeds with non-trivial regret; cost is a pure
-function of the log. Caveats: the follower's edge is 4-8 %, and it exists only because
-the evacuation bill is large relative to a family; at EUR 5 k/family T+0 ties or wins on
-borgo and loses on nothing. The ratio (evacuation bill : harm) is the design lever, and it
-is a number to agree with the presentation side's end card, not a fact.
+- **The wind decides who** (no orders): borgo, wind holds → Il Borgo 13.9 / Le
+  Coste 0; wind shifts → 0 / 11.6; upwind 0.0. Valle 15.7 / 0 vs 0 / 27.2.
+- **Warning decay** (`warning_decay`, the district at risk warned at T+k): borgo
+  hold 4.7 / 9.1 / 12.3 / 13.6 at T+0/5/10/15; valle shift 4.2 / 6.9 / 10.6 / 15.8.
+  A warning at T+10 still saves about half — hence the forecast update at T+8.
+- **Reacting to the shift when it happens** saves nothing (borgo 17.8 = downwind-only;
+  valle 16.8 → 10.2 only because valle's shift is early). Act on the forecast.
+- Earlier sweep with the 12–35 min preparation for reference: best play left
+  10–16 caught; with 6–18 it is 4–10.
 
-(Original text:) Every intervention costs money
-Every intervention costs money; a running total is shown, never as a score. Unit costs
-set from published tariffs, source written in code (`demo::cost`): Canadair per load,
-engine/crew per hour, a general evacuation (lost working day, buses), a *needless*
-evacuation costing the same as a needed one. `Suppression` already tracks `drops`,
-`water_used_l`, `line_cut_m`. **Cost is a pure function of the action log** (test), so
-the headless twin and the live game price identically. End card: money beside what it
-saved; COMPARE: "senza ordini: 0 €".
-*A/B:* with cost on, "evacuate at T+0 always" and "never" must both lose to the
-forecast-follower on average (finding §16 #13/#14). This is the gate for the forecast
-being a real decision (§6.1 "Not done").
+### 2.4 Engines (option B, adopted) — `tests/units.rs`
 
-### 5.2 Trust / anger (cry-wolf) ✅ — §6.2
+An engine posted to a district defends the homes within `DEFEND_REACH_M` (120 m)
+of its post **from first arrival until it is re-tasked or lost**, not only while
+pumping (the model rightly pulls crews out of lethal heat when the front passes,
+which is when houses need them; tied to `Working`, three engines changed nothing).
+Posts spread along the fire-facing edge (`District::post_facing`). Homes hit
+(burnt ground within 150 m, or 25 m when defended), sessions where the wind holds:
 
-Built as `demo::trust::CryWolf`, off unless `Variant::cry_wolf = Some(delta)`. An order
-is judged 30 min later by what the fire did (hindsight, from the fire state, not a
-twin): if more than half the households it moved never had fire within 800 m, it was
-needless, and every household not yet ordered loses `delta x needless_share` of
-`trust_authority`; the shipped compliance gate (trust > 0.35) does the rest. Pinned
-(`tests/trust.rs`): nothing moves with no order; on valle, a needless zone order at T+0
-then a general order at T+31: mean trust -0.24, ~229 households lose >= 0.10, families
-caught at home 5.9 -> 7.6 (+1.7, 8 seeds, delta 0.35). Modest because the second order
-is late anyway; the mechanism needs a *sequence* of orders to matter, which one general
-order per session cannot give: it pays off with zone orders (5.5) or a repeat order. Open: twin-hindsight vs
-forward estimate of "needless" was not compared (spec 8).
+| town | none | 3 engines on district 0 | on the upwind district |
+|---|---|---|---|
+| borgo | 68.4 | **32.9** | 68.4 |
+| valle | 64.7 | **16.7** | 64.7 |
 
-(Original text:)
-A **needless** order lowers `trust_authority` of those households for the *next*
-order and raises their confirmation delay (finding 42's `block.order_confirmation`
-is the hook). Needless = decided against the twin (hindsight, exact) or a forward
-threat estimate (fairer): **measure how often they disagree, then choose** (§7 open
-question). Provably inert until an order is given (finding 34): pin both halves —
-branch fires; shipped runs unchanged. Tune by sweeping (early-needless, later-needed)
-pairs. Deliver `trust` and `angry_households` (§1 contract).
+Timing matters less than place (T+3 vs T+15 within noise on borgo; the engines
+arrive ~T+8 either way). Option A (multiplier) is not used; its pin was removed
+because god-mode units now save ~8 homes on borgo — irrelevant while B ships.
 
-### 5.3 Forecast usefulness + shift probabilities ✅ partly — §6.1 remainder, §16 #14–16
+### 2.5 Cry-wolf — off in the kiosk
 
-Done: valle `shift_p` 0.6-0.95 -> **0.10-0.70** so a no-shift valle session exists and the
-forecast follower beats evacuate-always there too (table in 5.1); `Climate::shift_threatens`
-says which way the shift cuts; `weather::draw_with` + `Variant::shift_p` sweep odds
-(`cost_sweep::climate_sweep`). Measured finding: **raising threat share and keeping the
-forecast a decision pull in opposite directions**. At borgo/porto shipped odds (0.15-0.85)
-about 25-50 % of sessions threaten (caught >= 3 under no orders) and the follower wins; at
-(0.05-0.45) 62 % threaten but the follower collapses to "evacuate at T+0" (tie, 617 vs 617).
-Shipped odds kept for borgo/porto. Open: seed-of-day (not built).
-Also found: valle's no-shift fire never throws an ember at 25-35 km/h / 4-6 % (0/10
-sessions); spotting there comes only with the shift's west wind (10/10).
+Mechanism unchanged (`trust::CryWolf`, variant only). Measured
+(`district_probe::threatened_times`): districts the fire really reaches are first
+threatened at T+21–29 median (p10 11–14, max 46), so a ten-minute judgement (tried)
+branded most *correct* early warnings false alarms and the trust meter punished
+the right play. At 30 minutes it is fair but can no longer cost a later order that
+matters. **Decision:** judge false alarms in hindsight on the end card
+(`Report::needless`, medal *Nessun falso allarme*); `JUDGE_AFTER_S` back to 30 min;
+`tests/trust.rs` pins only that the mechanism fires and is inert.
 
-(Original text:)
-- Test: following the forecast beats ignoring it over many seeds but not on every
-  seed — needs §5.1 to bite.
-- Raise the floor of `shift_p` for borgo/porto (≈0.1–0.5) and/or make the shift less
-  decisive so ≥ ~75 % of sessions threaten the town (today 55 % of borgo/porto and
-  all valle no-shift sessions threaten nobody). Alternative: a **seed of the day**
-  (pinned beat seed per town) — decide by sweep; see open question.
-- COMPARE twin keeps the same drawn weather and seed, orders removed (✅, keep tested).
+## 3. Clean-up (model side) 🔲 — blocked on W2
 
-### 5.4 Spot fires as a first-class event 🔲 — §6.3
-Shrub spotting is on (finding 41). Assert ≥1 spot fire per town in a typical run
-(`tests/towns.rs`; porto is built around it); emit a spot-fire `Event` with position
-and age; a unit can be sent to it. Spot fires are the reason to split units — A/B
-"all units at the head" vs "one at the spot".
+Unchanged: deleting `data/scenarios/{mati,pedrogao,rhodes}` needs Mirko's approval;
+~40 abm/fire tests pin findings on Spotorno's geometry. Proposal stands: keep
+`spotorno` as an unregistered test fixture, delete the other three, port the
+pins one at a time.
 
-### 5.5 Zone evacuation and a road-hold task 🔲 — `demo-notes.md` §1.3
-`Order::EvacuateZone { centre, radius }` (warns fewer, spares needless flight) and
-`Order::HoldRoad` for crews (keep an exit passable). A/B vs all-or-nothing on porto,
-whose lesson is "the road out burns".
+## 4. Work needed (priority order)
 
-### 5.6 Decision events from real model changes 🔲 — §7.4 data side
-The model, not a script, says when something needs a decision: road cut, spot fire,
-mast burnt, forecast changed, wind shifted, unit stranded. Emit them as `Event`s
-(§1) with enough context for a one-sentence prompt and 2–3 choices incl. "aspetta".
+1. **Porto balance.** "At-risk T+0" (La Pineta + Centro) leaves 9.8 caught against
+   6.9 for "everyone": Il Faro's families are caught on the road in shift sessions.
+   Either move Il Faro so it is truly upwind of both winds, or give it its own exit
+   along the coast; re-run `district_sweep`.
+2. **Valle residual.** Best play leaves ~8 caught (borgo ~4). Check who (the
+   `who_is_caught_after_a_t0_warning` probe) before tuning.
+3. **Cost (W3).** Replace placeholder tariffs with sourced ones; decide whether the
+   bill should separate needless evacuations.
+4. **Spot fires.** Check each town still produces ≥1 spot fire in a typical run
+   (advisor line exists; no pin on the new towns).
+5. **Seed of the day / operator switch** (open question).
+6. **W2 clean-up** (§3).
 
-### 5.7 Typed refusals 🔲 — §16 #8
-`command::target_preview` returns English `&'static str`s which the UI substring-
-matches. Replace with a `Refusal` enum (in `abm`/`demo`); test that every variant has
-an Italian mapping (the test lives in presentation, the enum here).
+## 5. Earlier steps (status)
 
-### 5.8 Beyond buttons (not in scope now, shapes the API) 🔲 — §6.6
-Drawn zones/fire lines, unit chips, radio calls, tapping a family (LLM), prediction
-marker, rewind-and-choose (free because `Run` is deterministic). Keep `Order` and
-`Event` expressive enough that none of these needs a model change later.
+- 5.1 Cost ✅ (`demo::cost`, placeholder tariffs; pure function of the log, pinned).
+  The v1 forecast gate ("follow-forecast beats always/never") belonged to the
+  one-order game and was retired; its district equivalent is §2.3.
+- 5.2 Cry-wolf ✅ mechanism, off in the kiosk (§2.5).
+- 5.3 Forecast ✅: calibrated draw, issue 2 at T+8 (was T+15, after the decision
+  could still be taken).
+- 5.4 Events ✅, plus district transitions and `FalseAlarm`.
+- 5.5 Zone evacuation → superseded by districts ✅. `HoldRoad` ✂.
+- 5.6 Decision prompts → advisors (presentation) ✅; road-cut event 🔲.
+- 5.7 Typed refusals ✅.
 
 ## 6. Model rules (binding)
 
-`Sim::advance` is the one stepping path (finding 5); demo speed is a fixed simulated-
-s per real-s; same scenario + seed + weather draw + orders ⇒ same outcome (COMPARE
-depends on it; tested); every new mechanism (anger, cost, forecast, unit effect) is
+`Sim::advance` + `Referee` is the one stepping path (finding 5); same scenario +
+seed + draw + orders ⇒ same outcome, live or twin (tested); every new mechanism is
 **provably inert until used** (finding 34); tuned constants are per-scenario
-(finding 38); every new behaviour gets a test that asserts it *fires*, not that the
-model runs (findings 26, 35, 42); `cargo test --release` stays green. A change to a
-number published in `CLAUDE.md` is flagged in the commit message and to Mirko.
+(finding 38); every new behaviour gets a test that asserts it *fires*;
+`cargo test --release` stays green. Demo constants changed in v2 (none published
+in `CLAUDE.md`): `NEEDLESS_RADIUS_M` 800→300, `DEFEND_REACH_M` 80→120,
+`ISSUE_2_AT_S` 15→8 min, defence follows the posting.
 
-## 7. Testing (gameplay)
+## 7. Open questions
 
-- ✅ Beat tests. 🔲 Add: forecast usefulness (5.3); anger fires and is inert at T+0
-  (5.2); ≥1 spot fire per town (5.4); unit effectiveness margin and timing (§4);
-  cost is a pure function of the action log (5.1); a scripted good commander beats
-  "no orders" on `secure` **and** money spent is plausible; idle commander still
-  reaches the end (playability); refuge/haven/mast coverage per town (findings 9,
-  34); outcome rows add up to the household count (§16 #6); every fixed policy has
-  non-trivial regret (§0).
-- Sweeps are cheap: run them in tests, print the table with `--ignored --nocapture`,
-  pin the conclusion with an assertion.
-
-## 8. Open questions (gameplay)
-
-- Unit effectiveness: A / B / C / D (§4). **Ask Mirko before changing a published
-  `abm` number**; bring the sweep.
-- Money: real unit costs and their sources (Protezione Civile / regional tariffs).
-- How a *needless* order is judged: twin vs forward estimate (5.2).
-- Session seeding: random per visitor (now), seed of the day, or an operator switch.
-- Outcome semantics: `secure()` shipped; revisit if playtests find it misleading.
-- Whether `demo_porto` stays (cut-list item) once measured.
-
-## 9. Playtest findings owned here (2026-10-06)
-
-Evidence for the above, from 16 seeds × 3 towns × 9 policies (full text in git
-history at `da0549b`, `docs/demo-spec.md` §16):
-
-| town | none safe/caught | T+0 | T+40 | forecast-follower | units only | homes hit (any) |
-|---|---|---|---|---|---|---|
-| borgo (250) | 147 / 13.8 | 219 / 4.8 | 182 / 13.4 | 167 / 9.6 | 144 / 13.3 | 12.8 (units: 13.9) |
-| valle (300) | 61 / 8.5 | 236 / 2.2 | 211 / 5.5 | 61 / 8.5 | 57 / 10.3 | 14.3 (units: 15.6) |
-| porto (350) | 140 / 12.0 | 289 / 5.2 | 221 / 12.1 | 189 / 9.1 | 138 / 15.3 | 21.4 (units: 21.8) |
-
-(Safe here is the old evacuees-only count; `secure()` is the card's number now.)
-
-- #13 evacuate-at-T+0 dominates; nothing costs anything → 5.1, 5.2.
-- #14 following the forecast is worse than always evacuating → 5.1, 5.3.
-- #15, #16 55 % of borgo/porto and valle no-shift sessions threaten nobody → 5.3.
-- #17 units decorative → §4.
-- #18 "case colpite" invariant to evacuation → by design; presentation adds a line.
-- #19 late order (T+40) ≈ none on borgo/porto, but valle T+40 is nearly free → check
-  after 5.1.
-- #35 headless is fast → the whole method in §0.
+- Should Porto keep a bait district, given its geometry (4.1)?
+- Money: real unit costs and sources (W3).
+- Session seeding: random per visitor (now), seed of the day, or operator switch.
+- Should *Allerta generale* stay? It ties on families and teaches false alarms by
+  contrast — keep, unless playtests show it becomes the only button pressed.

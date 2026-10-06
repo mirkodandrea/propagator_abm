@@ -17,14 +17,25 @@ that relaunches on exit is not yet written.)
 
 **Power:** disable sleep and the screensaver on the host.
 
-**The three towns** (placeholder names): *Rocca Ventosa* — a hill village with two
-exits and wind pushing the fire uphill; *Due Casali* — two hamlets with a fire
-between them and a wind shift forecast; *Porto Pineta* — a coastal town whose one
-road closes before the fire arrives.
+**How a session goes (~3½ min):** the briefing stops the clock — the visitor
+reads the wind arrow and the forecast and gives first orders from the chips over
+each district (*Avvisa* warns that district, *Difendi* sends a fire engine to
+protect its homes), then presses *Via!*. The fire runs ~2½ min; advisors comment;
+*Veloce* fast-forwards. The end panel tells each district's story, compares with
+"no orders" on the same fire, and gives up to three medals.
 
-**Talking points:** the fire goes where the wind blows; people need warning early,
-but not too early; the forecast is a forecast and can be wrong; evacuation saves
-people, only suppression saves houses.
+**The three towns** (placeholder names), three districts each: *Rocca Ventosa* —
+the wind drives the fire up at Il Borgo; if it turns, Le Coste is next; Il
+Mulino is never in danger. *Due Casali* — a car fire between two hamlets; the
+west one first, the east one if the wind swings; Fondovalle is safe.
+*Porto Pineta* — the pines behind town; La Pineta first, then the Centro; the
+seafront is the assembly area.
+
+**Talking points:** the fire goes where the wind blows; warn early (preparing to
+leave takes time); warn who is at risk, not everyone — a false alarm costs
+credibility; the forecast is odds, not a verdict, and acting on it early is the
+point; evacuation saves people, fire engines save houses, and only where the fire
+is going; the *area di attesa* (green sign, blue tents) is where people go.
 
 **Diagnostics (not for visitors):** `KIOSK_FPS=1` logs the frame rate;
 `KIOSK_SHOT=<dir>` photographs a session; `KIOSK_WINDOWED=1` runs in a window.
