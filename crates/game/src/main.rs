@@ -25,6 +25,7 @@ mod kiosk;
 mod library;
 mod models;
 mod people;
+mod plinth;
 mod pick;
 mod retro;
 mod rings;
@@ -61,8 +62,8 @@ fn main() -> anyhow::Result<()> {
         }),
         ..default()
     }))
-    .insert_resource(ClearColor(Color::srgb(0.55, 0.66, 0.78)))
-    .insert_resource(AmbientLight { color: Color::srgb(0.72, 0.78, 0.92), brightness: 130.0 })
+    .insert_resource(ClearColor(Color::srgb(0.80, 0.76, 0.70)))
+    .insert_resource(AmbientLight { color: Color::srgb(0.85, 0.88, 1.0), brightness: 420.0 })
     .add_plugins(EguiPlugin)
     .add_plugins(fire_shader::FireShaderPlugin)
     .add_plugins(retro::RetroShaderPlugin)
@@ -91,6 +92,10 @@ fn main() -> anyhow::Result<()> {
     )
     .add_systems(OnExit(AppState::Playing), teardown_scene);
 
+    if std::env::var("KIOSK_FPS").is_ok() {
+        app.add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
+            .add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::filtered(vec![bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS]));
+    }
     kiosk_systems(&mut app);
     app.run();
     Ok(())
@@ -104,11 +109,12 @@ fn setup_scene(
 ) {
     terrain_mesh::build(&sim.scenario, &mut commands, &mut meshes, &mut materials);
     roads::build(&sim.scenario, &mut commands, &mut meshes, &mut materials);
+    plinth::build(&sim.scenario, &mut commands, &mut meshes, &mut materials);
 
     // One fixed sun: no clock, no day/night (spec decisions).
     commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight { shadows_enabled: true, illuminance: 9000.0, ..default() },
-        transform: Transform::from_xyz(-0.5, 0.8, 0.35).looking_at(Vec3::ZERO, Vec3::Y),
+        directional_light: DirectionalLight { shadows_enabled: true, illuminance: 11_000.0, color: Color::srgb(1.0, 0.93, 0.80), ..default() },
+        transform: Transform::from_xyz(-0.55, 0.85, 0.45).looking_at(Vec3::ZERO, Vec3::Y),
         cascade_shadow_config: CascadeShadowConfigBuilder {
             num_cascades: 4,
             minimum_distance: 2.0,
@@ -133,6 +139,15 @@ fn setup_scene(
         },
         BloomSettings { intensity: 0.20, ..BloomSettings::NATURAL },
         OrbitCamera { focus, distance, ..default() },
+        bevy::core_pipeline::prepass::DepthPrepass,
+        bevy::core_pipeline::dof::DepthOfFieldSettings {
+            mode: bevy::core_pipeline::dof::DepthOfFieldMode::Gaussian,
+            focal_distance: distance,
+            sensor_height: 0.01866,
+            aperture_f_stops: 0.012,
+            max_circle_of_confusion_diameter: 48.0,
+            max_depth: 12_000.0,
+        },
     ));
 }
 

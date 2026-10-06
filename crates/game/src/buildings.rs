@@ -290,6 +290,9 @@ mod palette {
     pub const CIVIC_WALL: [f32; 3] = [0.90, 0.89, 0.85];
 }
 
+/// Footprint magnification (see `emit_building`).
+const TOY_SCALE: f32 = 1.7;
+
 /// Emit one building, and return the vertex range of its window quads
 /// (`start == end` if it has none). `None` for footprints too degenerate to
 /// draw.
@@ -336,6 +339,20 @@ fn emit_building(
         ring.reverse();
     }
 
+    // Toy scale: a diorama house is bigger than a real one, so the town reads
+    // at 2 m. About the footprint's own centroid.
+    {
+        let k = TOY_SCALE;
+        let (cx, cy) = (
+            ring.iter().map(|p| p.x).sum::<f32>() / ring.len() as f32,
+            ring.iter().map(|p| p.y).sum::<f32>() / ring.len() as f32,
+        );
+        for p in ring.iter_mut() {
+            p.x = cx + (p.x - cx) * k;
+            p.y = cy + (p.y - cy) * k;
+        }
+    }
+    let area = area * TOY_SCALE * TOY_SCALE;
     let kind = Kind::of(b.kind.as_deref(), area);
     let h = hash01(b.id as u64, 0x1F);
     // The population bake's storey count is itself synthetic and sits at 2 for

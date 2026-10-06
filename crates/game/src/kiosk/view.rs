@@ -15,10 +15,10 @@ use crate::sim::Sim;
 const MIN_PITCH: f32 = -0.96;
 const MAX_PITCH: f32 = -0.78;
 const MAX_YAW: f32 = 0.52;
-const MIN_DIST: f32 = 1300.0;
+const MIN_DIST: f32 = 800.0;
 const MAX_DIST: f32 = 4300.0;
 const PAN_RADIUS_M: f32 = 1500.0;
-const PLAY_DIST: f32 = 2700.0;
+const PLAY_DIST: f32 = 1900.0;
 const FLY_IN_S: f32 = 8.0;
 
 fn ease(t: f32) -> f32 {
@@ -34,7 +34,7 @@ fn home_focus(sim: &Sim, kiosk: &Kiosk) -> Vec3 {
     let n = hs.len().max(1) as f32;
     let centre = scenario::Pos { x: hs.iter().map(|h| h.home.x).sum::<f32>() / n, y: hs.iter().map(|h| h.home.y).sum::<f32>() / n };
     let ig = kiosk.spec.ignition;
-    let p = scenario::Pos { x: centre.x * 0.7 + ig.x * 0.3, y: centre.y * 0.7 + ig.y * 0.3 };
+    let p = scenario::Pos { x: centre.x * 0.5 + ig.x * 0.5, y: centre.y * 0.5 + ig.y * 0.5 };
     crate::frame::to_bevy(p, sim.scenario.terrain.height_at(p))
 }
 
@@ -54,7 +54,7 @@ pub fn camera(
     mut motion: EventReader<MouseMotion>,
     mut wheel: EventReader<MouseWheel>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    mut query: Query<(&mut OrbitCamera, &mut Transform, &Camera)>,
+    mut query: Query<(&mut OrbitCamera, &mut Transform, &Camera, &mut bevy::core_pipeline::dof::DepthOfFieldSettings)>,
     time: Res<Time>,
     mut drag: Local<Drag>,
     mut released: Local<Option<(Phase, f32)>>,
@@ -67,7 +67,7 @@ pub fn camera(
             MouseScrollUnit::Pixel => e.y / 50.0,
         })
         .sum();
-    let Ok((mut orbit, mut tf, camera)) = query.get_single_mut() else { return };
+    let Ok((mut orbit, mut tf, camera, mut dof)) = query.get_single_mut() else { return };
     let home = home_focus(&sim, &kiosk);
     let t = kiosk.phase_t;
 
@@ -87,7 +87,7 @@ pub fn camera(
             orbit.focus = home;
             orbit.yaw = 0.45 * (time.elapsed_seconds() * 0.07).sin();
             orbit.pitch = -0.86;
-            orbit.distance = 2800.0;
+            orbit.distance = 2000.0;
         }
         Phase::Briefing if !user_has_it && t < FLY_IN_S => {
             let k = ease(t / FLY_IN_S);
@@ -158,6 +158,7 @@ pub fn camera(
     let ground = sim.scenario.terrain.height_at(crate::frame::to_world(tf.translation));
     tf.translation.y = tf.translation.y.max(ground + 25.0);
     tf.look_at(orbit.focus, Vec3::Y);
+    dof.focal_distance = tf.translation.distance(orbit.focus);
 }
 
 /// Screen angle, clockwise from straight up, of a world bearing.
