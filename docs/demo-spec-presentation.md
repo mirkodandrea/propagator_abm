@@ -198,3 +198,28 @@ people/cars/units art, fire/smoke polish, native Italian review, remaining dead-
 warnings (`FireLayer` variants in `fire_view.rs`).
 
 Requests to gameplay: none new. Slots for money/trust/events are not yet laid out.
+
+## 11. Status after the second presentation pass
+
+Shipped: vegetation is ~4 k chunky toy props (pine stacks, cloud-lobe broadleaves,
+macchia domes; `PROP_SCALE` 2.6) over a pastel land-cover ground tint (bilinear,
+domain-warped; `terrain_mesh::cover_tint`) instead of 230 k plants; `toy.rs` builds
+person, crew squad, car, fire engine, crew van (swaps with the squad when the crew
+works on foot), air tanker and refuge sign in code (no Blender needed; the
+`meshes.json` pipeline is now unused by the game for these, still used for
+`models::mesh` trees nowhere); toy houses (footprint 1.5x, height 1.7x, chimneys, six
+roof colours, warm cast for "threatened", loud alight/charred); figures 8x with walk
+bob, pastel cars; `overlays.rs`: wind arrow beside the fire, household beacons
+(amber/red/blue), spot-fire ring + "!", closure ring + barrier; fire flames larger,
+smoke lighter; briefing as bottom card with forecast top-left; attract spacing;
+outcome/compare anchored low; camera framing = town/fire midpoint, `KIOSK_SHOT_ZOOM`
+and `KIOSK_SHOT_FOCUS` for close-ups, `3b_play_late` screenshot.
+Frame rate (dev Mac, windowed 1600x1000 @2x): before 20-30 fps in play; now 57 fps in
+play (uncapped with `KIOSK_FPS`, so CPU-bound by the model step, not the renderer) and
+120 fps on attract. Vegetation triangles 10 M -> 0.36 M.
+
+Not done: vertex-sine sway (needs a custom vertex shader on the retro material),
+evacuation chevrons, selection ring, inverted-hull outlines, tilt-shift is still Bevy
+DepthOfField, advisors, decision pauses, twin robustness, `KIOSK_SELFTEST`, supervisor
+script. The outcome/compare cards still cover most of the map. Requests to gameplay:
+none; HUD slots for money/trust not laid out.

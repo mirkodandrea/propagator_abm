@@ -372,7 +372,7 @@ fn briefing(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32) {
     let size = vec2(860.0f32.min(screen.width() - 40.0), 270.0);
     let rect = Rect::from_center_size(pos2(screen.center().x, screen.bottom() - size.y * 0.5 - 40.0 + (1.0 - slide) * 80.0), size);
     // Top-left, clear of the town at the centre of the frame.
-    let fc = Rect::from_min_size(pos2(28.0 - (1.0 - slide) * 80.0, 150.0), vec2(520.0f32.min(screen.width() - 56.0), 186.0));
+    let fc = Rect::from_min_size(pos2(28.0 - (1.0 - slide) * 80.0, 24.0), vec2(520.0f32.min(screen.width() - 56.0), 186.0));
     forecast_card(&layer(ctx, "forecast_brief"), fc, &kiosk.forecast_at(0));
     egui::Area::new("briefing".into()).fixed_pos(rect.min).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.set_min_size(size);

@@ -116,6 +116,16 @@ pub fn camera(
             orbit.pitch = -1.15 + (1.15 - 0.86) * k;
             orbit.distance = 4600.0 + (pd - 4600.0) * k;
         }
+        Phase::Outcome | Phase::Compare if !user_has_it => {
+            // The result card takes the lower three quarters: lift the burnt
+            // ground into the strip above it, and pull back a little.
+            let target = home + Vec3::new(0.0, 0.0, 0.22 * pd);
+            let k = (time.delta_seconds() * 2.5).min(1.0);
+            orbit.focus = orbit.focus.lerp(target, k);
+            orbit.distance += (pd * 1.25 - orbit.distance) * k;
+            orbit.pitch += (-0.86 - orbit.pitch) * k;
+            orbit.yaw += (0.0 - orbit.yaw) * k;
+        }
         _ => {
             let window = windows.get_single().ok();
             let over_map = window.is_some_and(|w| w.focused)
