@@ -13,6 +13,15 @@ debugger, which are removed or about to be (§4).
 
 Legend: ✅ done · 🔲 to do · ✂ cut-list item (drop first if days slip).
 
+**Where we are (2026-10-06, branch `settimana-protezione-civile`).** The kiosk plays a
+full session in all three towns: small 60 m fires, a seeded weather draw with a
+calibrated two-issue forecast, evacuation / crew / engine / Canadair orders, outcome and
+no-orders compare. The first playtest (§16) found the loop *works but does not yet teach*:
+evacuating at T+0 wins everywhere because nothing costs anything, the forecast has nothing
+to decide, and three of five action buttons change nothing measurable. Priorities, in
+order: (1) the four blocker/major UI bugs and the outcome-card fix (§13 step 2a), (2) the
+unit-effectiveness decision (§6.4), (3) cost and trust (§6.5, §6.2), (4) the rest of §4.
+
 ## 1. Goal
 
 A student walks up cold and, within 30 s, is making decisions as an incident
@@ -90,6 +99,7 @@ debrief; control API in the kiosk; persistent leaderboard.
 - ✅ **§6.4 opening fire** at the 60 m floor, beats re-measured, borgo forestry road.
 - ✅ **§6.1 v1**: seeded weather draw per session, calibrated two-issue forecast,
   forecast card in briefing and play (`demo::weather`, `tests/forecast.rs`).
+- ✅ First playtest, 2026-10-06 (§16): 37 findings, 4 UI blockers/majors, 2 design blockers.
 - ✅ `demo::Run` takes unit orders (`Order::Attack`, `Order::Drop`) so the twin can
   price them.
 
@@ -156,7 +166,14 @@ ATTRACT ──click──▶ BRIEFING ──▶ PLAY ──▶ OUTCOME ──▶
   orders, computed at load). Idle: 60 s outside PLAY → ATTRACT; in PLAY 90 s →
   "Sei ancora lì?", reset after 30 s more. Restart goes through the reset path
   (finding 21).
-- 🔲 The briefing now includes the **forecast** (§6.1).
+- ✅ The briefing includes the **forecast** (§6.1).
+- 🔲 **Play idle must not fire while the player is watching** (§16 #3): today
+  90 s warn + 30 s grace = reset at 120 s of no mouse movement in a 180 s session.
+  Count idle in PLAY only before the first order, or warn at ≥150 s; pause must
+  suspend it; add `KIOSK_IDLE_S` so the reset is testable in seconds.
+- 🔲 **Outcome card** (§16 #5–7, #18, #30): "al sicuro" must include families the fire
+  never touched, both cards show the same rows (safe · in pericolo · case colpite ·
+  ettari), the takeaway stops praising needless evacuations, one headline not two.
 - 🔲 COMPARE must still be *the same fire*: with random weather (§6.1) the twin
   gets the same drawn weather and seed, orders removed.
 
@@ -366,6 +383,11 @@ stays green.
   buttons, "no key does anything", idle-reset leaks nothing.
 - 🔲 Screenshots at T+10 / T+60 / end, reviewed by eye (✅ harness exists).
 - 🔲 Frame-rate measurement on the real machine: 30 fps floor.
+- 🔲 From the playtest (§16): a CI test that "follow the forecast" and "evacuate always"
+  are *both* beaten by a better policy once cost exists; a test that every refusal string
+  the model can return maps to something other than the fallback (#8); a test that
+  outcome rows add up to the household count (#6); tuning sweeps are cheap (a 90 min run
+  ~0.1 s, 432 runs ~32 s) so run them in tests, not by hand.
 
 ## 12. Robustness and ops 🔲
 
@@ -379,13 +401,14 @@ sentence each, staff talking points).
 
 | Step | Deliverable | Gate |
 |---|---|---|
-| 1 | §4 clean-up: demo-only repo, CLAUDE.md rewritten, tests green (**partly done**, §4 status) | `cargo test --release` green, `cargo build` small |
-| 2 | §6.4 small fire + re-measured beats ✅; §6.3 spot-fire visible 🔲 | ≥1 spot per town; early action visibly works 🔲 (needs a model decision, §6.4) |
-| 3 | §6.1 draw + forecast card ✅; §6.2 trust/anger 🔲 | forecast useful-but-wrong test (needs §6.5); cry-wolf test |
-| 4 | §6.5 cost accounting, outcome card with money | twin and live price identically |
-| 5 | §8 diorama pass: fixed light, plinth, tilt-shift, buildings, people, cars | screenshot beside the reference; 30 fps |
-| 6 | Advisors, overlays, Italian review, operator doc, supervisor script | **playtest with 3–5 new people**, no one stuck >60 s |
-| 7 | Buffer, fixes only; LLM bubbles if time | |
+| 1 | §4 clean-up: demo-only repo, CLAUDE.md rewritten, tests green (**partly done**, §4 status) | `cargo test --release` green, `cargo build` small, acceptance 8 |
+| 2 ✅ | §6.4 small fire + re-measured beats; §6.1 draw + forecast card | done; early action does not yet work (§6.4) |
+| **2a** 🔲 | **Playtest fixes (§16 #1–5, #9–10, #21)**: banner above the action bar, forecast card title/caveat, idle reset, porto framing, outcome-card semantics and copy | re-run `KIOSK_SHOT` on all three towns, read every PNG; no half-hidden text |
+| 2b 🔲 | **Decide and build unit effectiveness** (§6.4, §15); §6.3 spot fires visible; shift probability floors so ≥~75 % of sessions threaten the town (§16 #15–16) | units at T+3 reduce houses hit and hectares by a margin a test asserts; every town's beat shows in most seeds |
+| 3 | §6.5 cost accounting + outcome card with money; §6.2 trust/anger | twin and live price identically; "evacuate always" and "never" both lose to the forecast-follower on average; cry-wolf test |
+| 4 | §8 diorama pass: fixed light, plinth, tilt-shift, buildings, people, cars; overlays (§7.6) incl. forecast ghost arrow | screenshot beside the reference; 30 fps measured; town legible at 2 m |
+| 5 | Advisors, Italian review, operator doc, supervisor script, `KIOSK_SELFTEST` | **playtest with 3–5 new people**, no one stuck >60 s |
+| 6 | Buffer, fixes only; LLM bubbles if time | |
 
 Cut order if days slip: LLM bubbles, outline shader, `demo_porto`,
 advisors (plain ticker instead), custom assets. **Never cut**: kiosk shell, idle
@@ -394,16 +417,21 @@ point of the game).
 
 ## 14. Acceptance
 
-1. Cold start to PLAY ≤30 s with no staff explanation.
-2. Full session 3–5 min, ends on the outcome card without an operator.
-3. 60 s idle anywhere returns to ATTRACT with clean state.
-4. All three towns: good play beats idle on families safe, by the margin the beat
-   tests assert, **and** a needless evacuation costs trust and money.
-5. A forecast is shown, is right on average and wrong sometimes.
-6. No single-key shortcut does anything; the operator corner does.
-7. No English visible; no audio required.
-8. `cargo test --release` passes; the repo contains no non-demo scenarios, UI or
-   scripts.
+Status from the first playtest (§16; by code and screenshots, no mouse):
+
+1. Cold start to PLAY ≤30 s with no staff explanation. — *not timed; likely passes*.
+2. Full session 3–5 min, ends on the outcome card without an operator. — *passes by code*, but
+   the 120 s idle reset can cut it short (§5, §16 #3). 🔲
+3. 60 s idle anywhere returns to ATTRACT with clean state. — *passes by code*; leaks not
+   verified until `KIOSK_SELFTEST` exists. 🔲
+4. All three towns: good play beats idle on families safe, by the margin the beat tests
+   assert ✅, **and** a needless evacuation costs trust and money ❌ (§6.2, §6.5).
+5. A forecast is shown, is right on average and wrong sometimes. ✅ (but not yet *useful*, §16 #14)
+6. No single-key shortcut does anything; the operator corner does. — shortcuts ✅ by
+   construction; operator corner not verified (needs a mouse).
+7. No English visible; no audio required. ✅ on every screen reached.
+8. `cargo test --release` passes ✅; the repo contains no non-demo scenarios, UI or
+   scripts ❌ (§4: real/lab scenarios, workbench modules, telemetry, wasm remain).
 
 ## 15. Open questions
 
@@ -414,6 +442,16 @@ point of the game).
   commander could have known)? The twin is simplest; the estimate is fairer. Decide
   from a measurement of how often they disagree.
 - Clean-up end state: one crate or two (§4).
+- **Unit effectiveness (blocks the "units matter" half of the demo).** The model's
+  suppression cannot stop even a 1 ha fire (§6.4, §16 #17). Options: (a) a demo-only
+  effectiveness multiplier on engine water / crew line, inert by default and pinned by a
+  test; (b) change what units *do* in the demo (e.g. protect a road or a house cluster
+  rather than stop the fire), which fits the model as it is; (c) accept that units are
+  scenery and cut the buttons. (a) changes a published `abm` number, so it is Mirko's call.
+- **Outcome card semantics.** Count "never touched by the fire and still home" as safe, or
+  headline "in pericolo" / caught instead (§16 #5).
+- **Session seeding.** Random per visitor (current), a fixed "seed of the day" so staff can
+  show each town's beat, or both with an operator switch (§16 #15, #40).
 - Final town names and Italian copy, native-speaker review.
 - GPU/resolution on the actual machine (sets the default quality; target is modest, Switch-class).
 

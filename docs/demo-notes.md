@@ -94,6 +94,10 @@ Ideas, not decisions. Each is a replacement for "press a button":
 
 ## 4. Known rough edges (not yet done)
 
+The prioritised, evidence-backed list is `demo-spec.md` §16 (playtest 2026-10-06);
+the items below are the older, shorter list.
+
+
 - Nothing on the map yet for: wind arrow *on the terrain*, spot-fire rings,
   evacuation chevrons, queues, closed roads, selection ring (spec §7.6).
 - Town switching reloads the scenario (a visible hitch on the way back to
