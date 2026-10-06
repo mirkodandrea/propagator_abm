@@ -372,7 +372,6 @@ pub fn panel(
     mut focus: ResMut<crate::ui::UiFocus>,
     mut mode: ResMut<crate::camera::CameraMode>,
     mut panels: ResMut<crate::ui::PanelState>,
-    mut composer: ResMut<crate::composer::Composer>,
     mut interview: ResMut<crate::interview::Interview>,
     mut camera: Query<&mut crate::camera::OrbitCamera>,
     sim: Res<Sim>,
@@ -385,9 +384,6 @@ pub fn panel(
     let target = selected.target;
     let mut close = false;
     let mut jump_to: Option<Target> = None;
-    // Set by the behaviour section's two doors into live inspection and editing.
-    let mut open_debugger = false;
-    let mut open_composer = false;
     // Set by the interview button — the second door out of this panel, and the
     // only one that leads to the agent rather than to the model behind it.
     let mut open_interview = false;
@@ -405,7 +401,6 @@ pub fn panel(
                     Target::Unit(id) => unit_panel(ui, &sim, id, &mut mode),
                 }
                 interview_row(ui, &sim, target, &mut open_interview);
-                behaviour_panel(ui, &sim, &mut open_debugger, &mut open_composer, target);
                 history_panel(ui, &sim, target);
             });
     };
@@ -458,15 +453,6 @@ pub fn panel(
         selected.target = None;
     } else if let Some(t) = jump_to {
         selected.target = Some(t);
-    }
-    if open_debugger {
-        composer.open = false;
-        panels.focus_bottom(crate::ui::BottomTab::Debug);
-    }
-    if open_composer {
-        composer.open = true;
-        composer.right = crate::composer::RightTab::Live;
-        panels.focus_bottom(crate::ui::BottomTab::Behaviour);
     }
     if open_interview {
         if let Some(target) = target {
@@ -646,9 +632,7 @@ fn household_panel(
 
 /// The door into an interview with this agent.
 ///
-/// Above the Behaviour section rather than below it, because the two answer
-/// the same question at opposite ends: the composer explains the decision as
-/// the *model* made it, this asks the agent. A traveller is a vehicle and so
+/// A traveller is a vehicle and so
 /// has no voice of its own — the button reaches whoever is inside it, which is
 /// what [`crate::interview::subject_of`] resolves.
 fn interview_row(ui: &mut egui::Ui, sim: &Sim, target: Target, open: &mut bool) {
@@ -673,122 +657,6 @@ fn interview_row(ui: &mut egui::Ui, sim: &Sim, target: Target, open: &mut bool) 
             ui.small(format!("→ {}", crate::interview::label(sim, subject)));
         }
     });
-}
-
-/// Why this agent is doing what it is doing according to its graph.
-///
-/// One function for all three kinds of agent, because the answer has the same
-/// shape in each: a profile, a decision, and the branches that produced it. The
-/// only per-kind part is which of the model's `explain` calls to make, and that
-/// is three lines at the top.
-fn behaviour_panel(
-    ui: &mut egui::Ui,
-    sim: &Sim,
-    debug: &mut bool,
-    edit: &mut bool,
-    target: Target,
-) {
-    let found = match target {
-        Target::Household(id) => sim.agents.behaviour_of(id),
-        Target::Person(id) => sim.agents.person_behaviour_of(id),
-        // A unit's roster does not cache the last decision the way the civilian
-        // ones do, so the profile comes from the roster and the decision from
-        // the trace below.
-        Target::Unit(id) => sim
-            .crews
-            .policy_of(id)
-            .map(|(sid, name)| (sid, name, behavior::Decision::default())),
-        Target::Traveller(_) => None,
-    };
-    let Some((subtype_id, subtype_name, decision)) = found else {
-        return;
-    };
-    let (subtype_id, subtype_name) = (subtype_id.to_string(), subtype_name.to_string());
-
-    // Re-evaluated against the current fire rather than cached from the last
-    // decision tick, so what it shows is what the agent would decide right now.
-    // It is one graph on one agent at UI rate.
-    let explained = match target {
-        Target::Household(id) => sim.agents.explain(id, &sim.fire),
-        Target::Person(id) => sim.agents.explain_person(id, &sim.fire),
-        Target::Unit(id) => sim
-            .crews
-            .explain(id, &sim.agents.network, &sim.fire, &sim.scenario),
-        Target::Traveller(_) => None,
-    };
-    let decision = explained.as_ref().map(|(d, _)| *d).unwrap_or(decision);
-
-    ui.separator();
-    ui.horizontal(|ui| {
-        ui.strong("Behaviour");
-        ui.label(&subtype_name).on_hover_text(&subtype_id);
-        if ui
-            .small_button("Live debug")
-            .on_hover_text("Inspect this agent's current decision trace in the bottom debugger.")
-            .clicked()
-        {
-            *debug = true;
-        }
-        if ui
-            .small_button("Edit graph")
-            .on_hover_text("Open the full Behavior editor on this agent's graph.")
-            .clicked()
-        {
-            *edit = true;
-        }
-    });
-    ui.label(format!(
-        "{}  ·  priority {:.2}",
-        decision.action.label(),
-        decision.priority
-    ));
-    if decision.prep_scale != 1.0 {
-        ui.small(format!("preparation ×{:.2}", decision.prep_scale));
-    }
-    if decision.urgency > 0.0 {
-        ui.small(format!("urgency readout {:.2}", decision.urgency));
-    }
-
-    egui::CollapsingHeader::new("Why")
-        .default_open(false)
-        .show(ui, |ui| {
-            let Some((_, trace)) = &explained else {
-                ui.small("(no explanation available)");
-                return;
-            };
-            if trace.proposals.is_empty() {
-                ui.small("No branch of the behaviour fired: the agent is doing its default.");
-            } else {
-                for (i, (node, kind, prio)) in trace.proposals.iter().enumerate() {
-                    ui.small(format!(
-                        "{} {} @ {prio:.2} (node #{node})",
-                        if i == 0 { "▶" } else { " " },
-                        kind.label()
-                    ));
-                }
-            }
-            ui.separator();
-            // Which boxes actually produced the answer, rather than all of them.
-            // The full list is in the composer's Live tab; here it is the short
-            // version, and the short version is the slice.
-            let active = trace.active();
-            for n in &trace.nodes {
-                // Observations are already on the panel above; what is worth
-                // reading here is what the behaviour *made* of them.
-                if n.category == behavior::Category::Observation {
-                    continue;
-                }
-                let values = n
-                    .outputs
-                    .iter()
-                    .map(behavior::Value::display)
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let mark = if active.contains(&n.node) { "▸" } else { " " };
-                ui.small(format!("{mark} {} = {values}", n.name));
-            }
-            ui.small("▸ marks the boxes that fed the decision that was taken.");
-        });
 }
 
 /// What this agent's own row in the run's [`crate::history::History`] says

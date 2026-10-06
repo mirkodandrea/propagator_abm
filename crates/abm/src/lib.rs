@@ -420,7 +420,14 @@ pub struct Abm {
 /// Coarse grid spacing for the visible-fire field, metres.
 const FD_M: f32 = 200.0;
 /// Beyond this the fire is not a personal cue, however big it is.
-const SEE_RANGE_M: f32 = 2500.0;
+///
+/// Deliberately short (the demo's 4 km towns sit wholly inside the old 2.5 km):
+/// with a long range everyone in a small window sees the fire from minute zero
+/// and leaves on their own, and an evacuation order changes nothing.
+const SEE_RANGE_M: f32 = 800.0;
+/// The cap on the distance *observations* handed to a behaviour graph. Its
+/// default of 2500 m reads as "nothing seen", so it is not the sight range.
+const OBS_RANGE_M: f32 = 2500.0;
 
 impl Abm {
     /// Build on the shipped graph library.
@@ -1129,7 +1136,7 @@ impl Abm {
             radiant: ex.radiant,
             ember: ex.ember,
             structure_alight: ex.alight,
-            fire_distance_m: self.fire_distance(h.home).min(SEE_RANGE_M),
+            fire_distance_m: self.fire_distance(h.home).min(OBS_RANGE_M),
             cue: h.cue,
             order_issued: h.ordered,
             warning_received: h.warning_received,
@@ -1156,7 +1163,7 @@ impl Abm {
             is_defending: h.status == Status::Defending,
             route_blocked: !refuge_distance_m.is_finite(),
             refuge_distance_m,
-            spot_fire_distance_m: spot_m.min(SEE_RANGE_M),
+            spot_fire_distance_m: spot_m.min(OBS_RANGE_M),
             spot_fire_age_min: spot_age,
             road_closed,
             // A mast being down is not a fact about one household's channel:
@@ -1406,7 +1413,7 @@ impl Abm {
             time_min: self.time_s / 60.0,
             threat: danger,
             heat_fraction,
-            fire_distance_m: self.fire_distance(p.pos).min(SEE_RANGE_M),
+            fire_distance_m: self.fire_distance(p.pos).min(OBS_RANGE_M),
             cue: p.cue,
             order_issued: self.order_at_s.is_finite(),
             minutes_since_order: if self.order_at_s.is_finite() {
@@ -1431,7 +1438,7 @@ impl Abm {
             is_moving,
             is_heading_home,
             is_sheltering,
-            spot_fire_distance_m: spot_m.min(SEE_RANGE_M),
+            spot_fire_distance_m: spot_m.min(OBS_RANGE_M),
             spot_fire_age_min: spot_age,
             is_visitor: p.visitor,
             open_ground_distance_m: self.haven_distance(p.pos, false),

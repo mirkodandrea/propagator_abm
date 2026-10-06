@@ -78,7 +78,7 @@ pub fn init_selector(data_path: Res<DataPath>, mut selector: ResMut<ScenarioSele
 pub fn handle_launch_selection(
     data_path: Res<DataPath>,
     mut selector: ResMut<ScenarioSelector>,
-    composer: Res<crate::composer::Composer>,
+    library: Res<crate::library::BehaviourLibrary>,
     mut next_state: ResMut<NextState<AppState>>,
     mut commands: Commands,
     mut window: Query<&mut Window>,
@@ -90,7 +90,7 @@ pub fn handle_launch_selection(
         return;
     };
 
-    if let Some(file) = composer.load_report.iter().find(|file| !file.ok()) {
+    if let Some(file) = library.load_report.iter().find(|file| !file.ok()) {
         selector.error = Some(format!("Cannot launch: behaviour file {} could not load: {}",
             file.path.display(), file.error.as_deref().unwrap_or("unknown error")));
         selector.confirmed = false;
@@ -113,7 +113,7 @@ pub fn handle_launch_selection(
 
             // Create Sim
             let (weather, radius_m) = opening_conditions(&scenario_id);
-            match Sim::new(scenario, weather, radius_m, 42, composer.lib.clone()) {
+            match Sim::new(scenario, weather, radius_m, 42, library.lib.clone()) {
                 Ok(sim) => {
                     // Update window title
                     if let Ok(mut win) = window.get_single_mut() {

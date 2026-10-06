@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use fire::CellFire;
 use scenario::Cell;
 
-use crate::composer::Composer;
+use crate::library::BehaviourLibrary;
 use crate::ignition_edit::IgnitionTool;
 use crate::people::PersonView;
 use crate::scenario_selector::ScenarioSelector;
@@ -82,7 +82,7 @@ pub fn run(
     mut test: ResMut<SelfTest>,
     mut sim: ResMut<Sim>,
     mut tool: ResMut<IgnitionTool>,
-    mut composer: ResMut<Composer>,
+    library: Res<BehaviourLibrary>,
     mut restarted: EventWriter<SimRestarted>,
     mut next_state: ResMut<NextState<AppState>>,
     selector: Res<ScenarioSelector>,
@@ -406,11 +406,10 @@ pub fn run(
             test.stage = Stage::ShippedLeg;
         }
 
-        // The Agent Behaviour Composer. Its data structures are tested in
+        // The behaviour library. Its data structures are tested in
         // `crates/behavior` and its effect on the model in `crates/abm`, but
-        // the *wiring* -- the editor's projection of its own canvas, the
-        // library it holds, the restart that adopts it -- is Bevy behaviour,
-        // and this is the only place it can be exercised.
+        // the wiring -- the library the game loads, the restart that adopts it --
+        // is Bevy behaviour, and this is the only place it can be exercised.
         Stage::ShippedLeg => {
             if t < LEG_S {
                 return;
@@ -421,32 +420,13 @@ pub fn run(
                 test.shipped_departed
             );
 
-            // What the editor would hand to the model is the projection of its
-            // own canvas, not the file it loaded. If those disagree, every edit
-            // a scientist makes is applied to something other than what they
-            // see.
-            composer.sync();
             check(
                 &mut test,
-                composer.runnable(),
-                &format!(
-                    "the composer opened on a behaviour with {} error(s)",
-                    composer.report.error_count()
-                ),
-            );
-            check(
-                &mut test,
-                composer.graph.nodes.len() == composer.snarl.nodes().count(),
-                "the composer's projection lost a node",
-            );
-            check(
-                &mut test,
-                !composer.lib.assignment().is_empty(),
+                !library.lib.assignment().is_empty(),
                 "the shipped behaviour library has no profile in play",
             );
 
-            composer.commit();
-            let lib = composer.lib.clone();
+            let lib = library.lib.clone();
             let profiles = lib.assignment().len();
             match sim.apply_behaviour(lib) {
                 Ok(()) => {
@@ -473,7 +453,7 @@ pub fn run(
             // The suppression half of the same library. Applying a behaviour
             // rebuilds `Suppression` too, and incomplete unit coverage must
             // reject the restart rather than produce a partially governed run.
-            let unit_profiles = composer.lib.unit_assignment().len();
+            let unit_profiles = library.lib.unit_assignment().len();
             check(
                 &mut test,
                 unit_profiles > 0,
@@ -495,7 +475,7 @@ pub fn run(
             // nobody would look exactly like one that agreed with the shipped
             // behaviour, which is the always-negative this whole family of
             // checks exists for.
-            let person_profiles = composer.lib.person_assignment().len();
+            let person_profiles = library.lib.person_assignment().len();
             check(
                 &mut test,
                 person_profiles > 0,
@@ -512,23 +492,6 @@ pub fn run(
                 running == away,
                 &format!("{running} of {away} separated people are running an authored behaviour"),
             );
-
-            // The whole point of giving editor nodes an identity of their own:
-            // a trace's node ids have to name boxes the canvas can find. When
-            // they did not, every override and every highlight silently pointed
-            // at nothing while the graph carried on validating.
-            if let Some(g) = sim.behaviour.graphs.get(&composer.graph_id) {
-                let missing = g
-                    .nodes
-                    .iter()
-                    .filter(|n| composer.snarl_id_of(n.id).is_none())
-                    .count();
-                check(
-                    &mut test,
-                    missing == 0,
-                    &format!("{missing} running node(s) have no box on the canvas"),
-                );
-            }
 
             println!(
                 "[selftest] behaviour applied: {profiles} household profile(s), \

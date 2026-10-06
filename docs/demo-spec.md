@@ -1,476 +1,371 @@
-# Demo rewrite — spec
+# Demo — spec and remaining work
 
 Interactive kiosk demo for students visiting the gazebo at the *Settimana della
-Protezione Civile*, Rome. Written 2026-10-06 for a fresh session; the event is
-about a week out. Read `CLAUDE.md` first — its findings are constraints here, not
-background.
+Protezione Civile*, Rome. Spec written 2026-10-06 and updated the same day after
+the first playable loop; event about a week out. Companion: `docs/demo-notes.md`
+(gameplay critique and ideas). Read `CLAUDE.md` for the model's findings (they are
+constraints), keeping in mind it still describes the workbench, composer and live
+debugger, which are removed or about to be (§4).
+
+Legend: ✅ done · 🔲 to do · ✂ cut-list item (drop first if days slip).
 
 ## 1. Goal
 
-A student walks up cold and, within 30 seconds, is making decisions as an
-incident commander in a small stylised town, watching individual families
-respond to a fire. A session is **3–5 minutes**, ends on a clear outcome, and
-invites a second try.
+A student walks up cold and, within 30 s, is making decisions as an incident
+commander in a small stylised town, watching individual families respond to a
+fire. A session is **3–5 min**, ends on a clear outcome, and invites a second
+try. Success: a bystander says unprompted *"the fire goes where the wind blows,
+people need warning early, but not too early, and my decisions changed who got
+out."*
 
-Success is a bystander who can say, unprompted: *"the fire goes where the wind
-blows, people need warning early, and my decisions changed who got out."*
+**The branch's purpose is a clean demo game.** Everything that is not the demo is
+to be deleted (§4), not kept alive behind a flag.
 
-## 2. Non-goals
+## 2. Decisions and non-goals
 
-- Real places, real historical fires, or anything modelled on a fatal incident.
-  **No `spotorno`, `mati`, `pedrogao`, `rhodes` in the demo.**
-- Economy, zoning, budgets, building mechanics. The only SimCity idea we keep is
-  *limited resources*, which the model already has.
-- Changing any number in the model crates. See §9.
-- The composer, interview/LLM chat, debrief, control API, web build. (Web is a
-  possible later target — `docs/web.md` — but not for this event.)
-- A persistent leaderboard or numeric score. See §6.5 for what the end card
-  shows instead.
+Settled with Mirko:
+- Hardware: capable desktop, mouse only, no touch, **no speakers** (captions
+  only, no audio). Audience: students; tone clear, not childish; loss framing
+  never dwells on harm.
+- **Setting: Roman region.** Towns are fictional but Lazio-flavoured (placeholder
+  names: Rocca Ventosa, Due Casali, Porto Pineta; native-speaker review needed).
+- **Graphics target: the *Link's Awakening* (2019 Switch remake) diorama look** —
+  a toy-like miniature on a plinth: glossy plastic-smooth chunky models, soft
+  saturated pastel palette, rounded shapes, strong **tilt-shift** (sharp band in
+  the middle, blur toward top and bottom edges), soft shadows, a table-top edge
+  with the world visibly ending. Solid 30 fps on modest hardware: the look comes
+  from art direction and one post pass, not from expensive effects.
+- **Visual identity: CIMA Foundation** (cimafoundation.org): navy `#001E31`, blue
+  `#004070`, orange `#DD7500`, pale grey `#D4DBDE`, and the white mark
+  (`assets/brand/cima_logo_white.png`). ✅ in the UI; the same palette should
+  guide the in-world look.
+- Facts + counterfactual on the end card; **no numeric score**. (Money, §6.5, is
+  a *cost shown*, not a score.)
+- Air tankers (Canadair ×2) are exposed.
+- **LLM bubbles: OpenRouter** (needs network at the gazebo; canned fallback is
+  mandatory).
+- **The model may be changed** (experimental branch, no back-compat). Every change
+  keeps `cargo test --release` green.
+- **No day/night cycle.** One still, interesting lighting (§8).
 
-## 3. Architecture decision
+Non-goals: real places or historical fires (**no `spotorno`, `mati`, `pedrogao`,
+`rhodes`**); zoning/budgets beyond the intervention cost in §6.5; web build;
+debrief; control API in the kiosk; persistent leaderboard.
 
-**New binary crate `crates/demo`**, depending on `scenario`, `fire`, `abm` (and
-`behavior` only because `abm` needs it). It does **not** depend on `game`,
-`chat`, `telemetry`'s chat table, or anything under `game/src/composer/`.
+## 3. Done
 
-Why a new crate rather than a mode inside `game`: `game` has ~40 modules of
-researcher UI, shortcut handling (finding 25) and egui panels that a kiosk must
-not expose, and a demo that is "game minus things" keeps leaking them.
+- ✅ **Three towns** (`scripts/generate_demo_scenarios.py` →
+  `data/scenarios/demo_{borgo,valle,porto}`, 250/300/350 households, 4 km, 20 m
+  grid). Populations authored *complacent*.
+- ✅ **`crates/demo`** headless lib: `mission::spec` (pinned opening conditions,
+  `demo_valle` wind shift), `run::Run` (fire-then-agents at the 6 s step),
+  `run::Tally` (shared outcome counting: `caught`, `homes_lost`, …).
+- ✅ **Model:** `abm::SEE_RANGE_M` 2500 → 800 m; behaviour-graph distance
+  observations keep their own 2500 m cap (`OBS_RANGE_M`).
+- ✅ **Beat tests** (`crates/demo/tests/towns.rs`, five-seed means, caught at home):
+  borgo 32 / 13 / 20 / 32 and porto 43 / 20 / 22 / 34 for none / T+0 / T+10 / T+20;
+  valle hamlet B 13 → 4 with an early order; towns load with connected roads; an
+  order moves people; runs are deterministic.
+- ✅ **`homes_lost` no longer saturates.** It was "alight", which firebrands
+  (2.5 km reach) set on every house whatever the player did (borgo 250/250). Now
+  "households with burnt ground within 150 m" (`LOST_RADIUS_M`, measured in
+  `tests/lost.rs`): 54 / 15 / 47 on borgo / valle / porto. UI label "case colpite".
+  An order never changes it; only suppression does — a lesson, not a bug.
+- ✅ **Kiosk shell** (`crates/game/src/kiosk/`, `DEMO=1`): attract / briefing /
+  play / outcome / compare; idle reset (60 s; 90 s + 30 s in play); hidden
+  operator corner (hold top-right 3 s); fixed 6 s steps shared with `demo::Run`;
+  counterfactual twin computed on a thread at load; clamped camera; all strings in
+  `strings_it.rs`; **no shortcut can fire** (`UiFocus::keyboard` held true).
+- ✅ **UI v1** in CIMA colours: painted pictograms, counters, live wind compass,
+  action bar (Evacuazione · Squadra · Autobotte · Canadair · Pausa), outcome and
+  compare cards, CIMA mark. Screenshot harness `KIOSK_SHOT=<dir>`,
+  `KIOSK_PLAY_S`, `KIOSK_TOWN`, `KIOSK_WINDOWED`.
+- ✅ **Removed** the composer, behaviour/debug tabs, `egui-snarl`.
 
-Reuse by **copying then trimming**, not by refactoring `game` this week:
-`frame.rs` (the only place the north→−Z flip lives — keep using `to_bevy` /
-`to_world`), `terrain_mesh.rs`, `sea.rs`, `sky.rs`, `models.rs`, `roads.rs`,
-`buildings.rs`, `people.rs`, `units.rs`, `fire_view.rs`, `fire_shader.rs`,
-`sim.rs` (`Sim::advance`, `Sim::new`, `opening_conditions`). Preserve the
-findings that live in them: 11 (winding), 12 (resample drapes), 13 (overlays
-under canopy), 21 (restart clears latched view state), 22–23 (fog, sea). If
-copying proves heavier than expected, the fallback is to make `game` a lib and
-add a `demo` feature — decide in the first two hours, do not agonise.
+## 4. Clean-up: delete everything that is not the demo 🔲 (first task)
 
-Dependency direction stays as in `CLAUDE.md`; `demo` is a new leaf at the top.
+The branch ends as a demo-only codebase. Do this **before** new features so
+nothing new is built on code about to be removed. Do it in small commits, tests
+green after each.
 
-## 4. Session flow
+Delete:
+- **Real scenarios and their pipeline**: `data/scenarios/{spotorno,mati,pedrogao,
+  rhodes}`, `data/spotorno_*`, `data/osm_raw.json`, the synthetic ABM labs
+  (`abm_micro`, `test_small`, `town_scale`, `mass_evacuation`,
+  `congestion_funnel`, …), `scripts/{clip_cogs,fetch_osm,build_render_terrain,
+  generate_population,bake_fire_rasters,write_scenario_json,bake_fuels,
+  generate_synthetic_scenarios}.py` and `places.py` — keep
+  `generate_demo_scenarios.py` and **`bake_fuels.py`'s output** (`data/fuels_eu12.json`
+  is shared: keep the file, drop the script's real-data parts).
+- **Workbench UI in `crates/game`**: `menu.rs`, `ui.rs` panels, `browser.rs`,
+  `scenario_selector.rs`, `ignition_edit.rs`, `inspect.rs` panels (keep selection
+  ring only if §7.6 needs it), `selftest.rs`, `api.rs` + `tiny_http`,
+  `interview.rs` (the LLM *interview window*; keep `crates/chat` for bubbles),
+  `map2d.rs`, `history.rs` if unused, `native_accessibility.rs`, `web_clipboard.rs`,
+  `native_text_input.rs`, `capture.rs` scripted layers (keep the screenshot
+  harness in `kiosk::shots`).
+- **`crates/telemetry`** unless the event log is wanted for the outcome card;
+  **web/wasm** targets and `wasm-release` profile; `docs/` for removed tools;
+  `tools/mcp`.
+- **Far terrain, 25 km sea, day/night sky** (`far_terrain.rs`, `sea.rs`, `sky.rs`
+  clock) — replaced by a plinth and a fixed light (§8).
+- **CLAUDE.md**: rewrite to describe only the demo; move the findings that still
+  bind (2, 3, 5, 7, 11–14, 17–19, 21–23, 25, 34, 37, 39–41) and drop the rest.
+
+Keep (the model): `scenario`, `fire`, `abm`, `behavior` (the graphs are the
+decision layer — `abm` has no second implementation, so the library stays; the
+*editor* is gone), `propagator-core`, `chat`.
+
+Resulting layout: either rename `game` → `demo` and fold `crates/demo` (headless)
+into it as `demo::headless`, or keep two crates (`demo` lib + `demo-app` bin). Pick
+the simpler one; the headless tests must stay window-free.
+
+## 5. Session flow ✅ (v1), 🔲 changes below
 
 ```
-ATTRACT ──touch──▶ BRIEFING ──▶ PLAY (with 2–3 decision pauses) ──▶ OUTCOME ──▶ COMPARE ──▶ (retry | ATTRACT)
-   ▲                                                                                              │
-   └───────────────────────── 60 s idle on any screen except PLAY ───────────────────────────────┘
+ATTRACT ──click──▶ BRIEFING ──▶ PLAY ──▶ OUTCOME ──▶ COMPARE ──▶ retry | ATTRACT
+   ▲                                                                   │
+   └────────────── 60 s idle on any screen except PLAY ────────────────┘
 ```
 
-- **ATTRACT**: slow camera orbit over the town, the fire already burning in
-  accelerated time, large "Tocca per iniziare". Loops forever. Pre-seeded run,
-  no player.
-- **BRIEFING** (≤20 s, skippable): one card. Who you are, what's at stake, what
-  the buttons do. Camera fly-in (≈8 s) to the town.
-- **PLAY**: fixed mission length of **~3 minutes real time** (≈ 60–90 simulated
-  minutes at a fixed demo speed; tune in §8). Real-time with scripted pauses.
-- **OUTCOME**: four facts (§6.5), no points.
-- **COMPARE**: *"Stesso incendio, nessun ordine"* — rerun the identical fire
-  with no orders, show the same four facts side by side. Restart is already a
-  controlled comparison (`Sim::ignitions` carry `at_s`); the "no orders" run
-  can be computed headlessly at load time so it is instant.
-- **Idle reset**: 60 s without input outside PLAY → ATTRACT. During PLAY: 90 s
-  without input → auto-pause with "Sei ancora lì?", then reset after another
-  30 s. A restart must go through the existing reset path so latched view state
-  clears (finding 21).
+- ATTRACT: slow orbit, fire burning in accelerated time. BRIEFING (≤20 s): one
+  card, fly-in. PLAY: ~3 min real time = the mission at a fixed speed (verify the
+  30 s per-frame step cap never binds). OUTCOME then COMPARE (identical fire, no
+  orders, computed at load). Idle: 60 s outside PLAY → ATTRACT; in PLAY 90 s →
+  "Sei ancora lì?", reset after 30 s more. Restart goes through the reset path
+  (finding 21).
+- 🔲 The briefing now includes the **forecast** (§6.1).
+- 🔲 COMPARE must still be *the same fire*: with random weather (§6.1) the twin
+  gets the same drawn weather and seed, orders removed.
 
-## 5. Synthetic scenarios
+## 6. Next gameplay step
 
-Three authored fictional towns, one per difficulty step. They are **designed
-for a teaching beat**, not generated at random, and each is verified by a
-headless test (§9) that the beat actually happens.
+The first loop is "press buttons, watch" (see `demo-notes.md`). The next step gives
+the player *uncertainty, consequences and cost*. All six items below are in scope;
+they interact, so build them in the order given.
 
-Authoring: extend `scripts/generate_synthetic_scenarios.py` (it already emits
-`scenario.json`, roads, population and fuel/DEM rasters for the labs) with a
-new `demo` family of specs, or add `scripts/generate_demo_scenarios.py` reusing
-its helpers. They register in `data/scenarios.json` like any other. Finding 39a
-applies: do not hand-write the registry.
+### 6.1 Varying weather and imperfect forecasts 🔲
+- Each session draws its weather from a **seeded distribution per town** (wind
+  direction and speed, fuel moisture, and *when/whether* a shift happens), seed
+  recorded so the COMPARE twin and tests reproduce it.
+- The player sees a **forecast**, not the truth: wind bearing/speed with an
+  uncertainty cone, a "probabilità di cambio vento" figure, a forecast hour that
+  refreshes (and can contradict the earlier one). The compass shows the *observed*
+  wind; the forecast is a separate, honestly-wrong card.
+- Forecast error is drawn from the same seed: sometimes the shift arrives early,
+  late or not at all. A cautious player pays (needless evacuation, §6.2 and §6.5);
+  a trusting player is caught. **The lesson is acting under uncertainty**, so the
+  forecast must be *useful on average and wrong sometimes*, not noise. Measure
+  that (a test: following the forecast beats ignoring it over many seeds, but not
+  on every seed).
+- Replaces the single scripted `demo_valle` shift with a drawn one (valle keeps a
+  high shift probability).
 
-| id | Name (placeholder) | Beat | Mechanism it teaches |
-|---|---|---|---|
-| `demo_borgo` | *Borgo San Fiorenzo* | **Warn early.** Hillside village, one clear downwind slope, two exits. Wind constant. | An early order saves families; waiting costs them. |
-| `demo_valle` | *Valle dei Pini* | **The wind changes.** Same village shape, a scripted wind shift at ~T+25 min turns the fire toward a second hamlet that was safe. | Conditions change; re-assess. Re-plan ignition/wind via the existing mid-run wind control. |
-| `demo_porto` | *Porto Rosso* | **One road out.** Coastal town, single narrow exit and a beach/haven; spot fires ignite behind the front. | Traffic queues, spotting, and the front being unpredictable. Uses the traffic queue (finding 39) and spot fires (finding 41). |
+### 6.2 Population anger / trust 🔲
+- A **needless** evacuation order (the fire would not have reached the household,
+  decided afterwards against the twin or by a forward threat estimate) lowers the
+  trust of those households in the *next* order: `trust_authority` drops, and their
+  `prep_time`/confirmation delay rises (finding 42's `order_confirmation` block is
+  the existing hook). Households that evacuated needlessly and are then told to
+  stay show *anger* in the HUD ("Fiducia: 71 % → 54 %").
+- Visible consequence: a later, *needed* order is obeyed by fewer families. This is
+  the cry-wolf effect, and it is the tradeoff that stops "evacuate at T+0" being
+  the dominant strategy.
+- Must be **provably inert** until an order is given (finding 34): nothing changes
+  at T+0, and the shipped figures in `crates/fire/tests` stay unchanged. Pin both
+  halves in a test (branch fires; shipped runs identical).
+- Tuning is measured, not guessed: a sweep of (early-needless order, later-needed
+  order) pairs across seeds.
 
-Design requirements for every demo scenario:
+### 6.3 Spotting on, multiple fires 🔲
+- Shrub spotting is already enabled in the model (finding 41); the demo must make
+  it *readable*: a spot fire appears as a new ring with a "!" and a one-line advisor
+  call ("Nuovo focolaio a est del paese"), and the player can send units to it.
+- Ensure every town produces **≥1 spot fire** in a typical run (assert it per town
+  in `tests/towns.rs`; `demo_porto` is built around it).
+- Spot fires are a reason to **split units**: the player must prioritise.
 
-- **World size 3–5 km, 150–400 households.** Small enough to read at a glance
-  and to hold a high frame rate; large enough that individual families are
-  visible (the `town_scale` lab is 5 km / 400 households — use it as the
-  reference for performance).
-- **Fire must threaten people within the first ~minute of play.** Finding 4: a
-  fire travels only 500–800 m in two hours, so ignition placement and radius are
-  the scenario. Size per scenario empirically in the style of
-  `crates/fire/tests/sizing.rs` and `real_scenario_ignitions.rs`, using
-  `ignite_patch` (finding 3) and **five-seed means** (finding 41). Pin the
-  chosen `radius_m` / wind / moisture in `sim.rs::opening_conditions`, keyed on
-  id (finding 38).
-- **Houses never burn in the CA** (finding 2) and threat at a house peaks
-  around 0.3 (finding 35). Do not design a scenario whose drama depends on
-  `StructureExposure` reaching "alight" without measuring that it does. Spotting
-  (finding 41) is what makes buildings alight; confirm with a run.
-- **Refuges and havens must be real** (findings 9, 34): check the derived
-  refuge/haven/mast coverage on each new window, and make it an assertion.
-- Each scenario carries Italian `name`, `description`, and **invented**
-  `localities` (fictional place names; no `addr:city` derivation applies).
-- Terrain is authored, not clipped from data: gentle ridge, valley, a
-  coastline for `demo_porto`. Keep DEM smooth; fuel is a hand-painted mosaic of
-  `eu_fuel12` classes (maquis, pine, grass, non-vegetated village core) so the
-  fire's path is legible from the air.
+### 6.4 Start with a very small fire 🔲
+- Opening fire becomes small (a few hectares, radius ~40–60 m) so that **early
+  action visibly works**: a crew or an engine at T+3 min can stop it, a late one
+  cannot. Today's radius is 120–150 m, already a going fire.
+- This changes the pacing: the first minutes are about *whether* to commit
+  resources, the later minutes about *where the weather takes it*. It also makes the
+  "start small, grows with wind" story the briefing tells.
+- Constraint from finding 3: single-cell ignitions fizzle ~20 % of seeds, and
+  `MIN_IGNITION_RADIUS_M` is 60 m for exactly that reason. Either keep 60 m as the
+  floor (then "very small" means ~1–2 ha) or **seed-filter** (reject draws that do
+  not establish, deterministically). Measure which; do not ship a coin flip.
+- Re-measure every beat test (§3) — they were taken on the larger fire.
 
-**Behaviour for the demo.** Use the shipped behaviour library plus the
-`takes-some-convincing` profile at a nonzero share *for demo scenarios only* if
-playtesting shows an order that nearly everyone obeys instantly feels hollow
-(finding 42). That is a demo-only data choice; it must not touch the shipped
-`data/behaviours/` for the other scenarios. Measure before deciding.
+### 6.5 Extinction cost (money) 🔲
+- Every intervention costs money; a small running total ("Spesa: 18.400 €") is
+  shown, never as a score. Illustrative unit costs (to be set from published
+  figures and written down in code with their source): Canadair drop per load,
+  engine per hour, hand crew per hour, a general evacuation (lost working day,
+  buses), a *needless* evacuation costing the same as a needed one.
+- It is the other half of the tradeoff in §6.2: acting is not free, waiting is not
+  free. The outcome card shows **money spent beside what it saved** (families safe,
+  hectares) and, in COMPARE, "senza ordini: 0 €".
+- Needs per-action accounting in `Suppression` (units already track `drops`,
+  `water_used_l`, `line_cut_m`) and a `demo::cost` module so the headless twin and
+  the live game price identically. Test: cost is a pure function of the action
+  log.
 
-## 6. UI
+### 6.6 Interactivity beyond buttons 🔲
+Not in this step's scope but it shapes the UI of the above: drawing evacuation
+zones and fire lines on the map, unit chips with one-sentence status, radio calls
+that ask for a decision, tapping a family to hear it (LLM, §7.9). See
+`demo-notes.md` §1.
 
-Full-screen, no window chrome, cursor hidden outside play. **No single-key
-shortcuts at all** in the demo build (finding 25 — strangers at the keys). A
-hidden operator chord (e.g. hold top-right corner 3 s, or `Ctrl+Shift+F10`)
-opens a small operator panel: scenario select, restart, toggle sound, quit.
+## 7. UI
 
-Use egui, `set_pixels_per_point` ≈ 1.5–2.0, dark high-contrast theme, large
-rounded widgets. Design for reading at 2–3 m. Min button height ≈ 96 px, body
-text ≥ 24 pt.
+Full-screen borderless, cursor visible, **no single-key shortcuts** (finding 25),
+hidden operator corner (✅) for restart, pin town, next town. egui at 1.5–2×, CIMA
+navy/orange, large rounded targets (✅).
 
-### 6.1 Action bar (bottom-centre)
-Five icon buttons, Italian labels, each with a state (ready / cooldown /
-unavailable-with-reason):
+- ✅ **7.1 Action bar** and **7.2 HUD** v1 (above). 🔲 add: forecast card (§6.1),
+  trust meter (§6.2), money counter (§6.5), a refusal/banner line (✅ banner exists).
+- 🔲 **7.3 Advisors**: Capo squadra (fire), Polizia locale (roads), Sindaco
+  (warnings / trust). Templated Italian from `Sim` events, one bubble at a time,
+  ≥8 s apart, fired on a *change*. One `advisors.rs` table of
+  `(trigger, speaker, text_it)`. Spot fires and forecast updates are triggers.
+- 🔲 **7.4 Decision pauses**: scripted per scenario as data; dim map, card with 2–3
+  big choices incl. "aspetta". Prefer events generated from real model changes
+  (road cut, spot fire, forecast changed) to hand scripting.
+- ✅ **7.5 Outcome/Compare** v1. 🔲 add money (§6.5) and trust at the end.
+- 🔲 **7.6 Overlays** (≥+20 m above ground, finding 13; verify by screenshot): wind
+  arrow *on the terrain*, spot-fire ring + "!", threat tint, household beacons
+  (green / amber / red), evacuation chevrons, closed-road icons, selection ring.
+- ✅ **7.7 Localisation** structure (one `strings_it.rs`); 🔲 native-speaker review.
+- 🔲 **7.9 NPC speech bubbles (OpenRouter)** ✂: short in-character bubbles via
+  `crates/chat` (finding 30: only the agent's own traits, senses and event log).
+  Hard timeout, canned templated fallback, rate-limited, never pauses the
+  incident. Angry households (§6.2) are the natural speakers.
 
-| Button | Does | Existing machinery |
+## 8. Graphics — Link's Awakening diorama, one still light
+
+Reference: the 2019 *Link's Awakening* remake. Priority: legibility from 2 m, then
+the toy-diorama read, then polish. Fire is the only truly bright, saturated thing
+against a calm pastel world. **Fixed lighting; no day/night cycle.**
+
+- 🔲 **Tilt-shift is core, no longer cut-list.** One cheap full-screen post pass:
+  blur ramps in with distance from a horizontal focus band (and a slight
+  vignette/saturation lift), never applied to egui. Fallback: Bevy's built-in
+  `DepthOfField`. Keep the focus band on the town so houses, people and cars stay
+  crisp; the blurred edges hide the world's end.
+- 🔲 **Lighting**: one warm, low-angle sun that never moves, soft shadows (few
+  cascades, large softness), generous ambient so shadows stay pastel not black,
+  TonyMcMapface/AgX, bloom threshold high so only fire/embers/beacons glow. Remove
+  the simulated clock from `sky.rs` (static rig, no time-of-day UI). Pick the light
+  by screenshot against the reference.
+- 🔲 **The diorama**: terrain as a raised **plinth/tile block** with visible sides
+  (layered earth strata), a wooden/stone base, slightly rounded corners; the sea,
+  where there is one, is a glossy tile *inside* the block. Drop `far_terrain` and
+  the 25 km sea; the horizon is the table, softly out of focus.
+- 🔲 **Materials**: smooth, slightly glossy "plastic" look — flat or two-tone
+  shading, gentle specular, vertex-colour palettes (CIMA-tinted), thin darker
+  outlines optional (inverted-hull) on buildings and figures only if cheap.
+- 🔲 **Buildings** (priority): chunky rounded low-poly houses with clearly different
+  roofs, chimneys and little gardens; church, town hall, school, fire station.
+  States intact / threatened / alight / charred read at a glance by colour, smoke
+  and glow.
+- 🔲 **Vegetation**: big round-topped trees and bushes as single chunky props (a few
+  hundred, not 230 k plants), fuel class readable by tree *type* and ground tint;
+  gentle wind sway by a vertex sine. Large frame-rate win.
+- 🔲 **People and cars**: round, bright, slightly oversized figures (keep the 3×
+  scale) with a walking bob, family groups; chunky toy cars with headlight blink
+  and queues that read at the exit; engine, crew van and Canadair with distinct
+  silhouettes. Shelters/refuges are drawn as *places* (piazza, car park, quay,
+  with a sign), and sheltering groups are visible.
+- 🔲 **Fire/smoke/embers**: stylised — layered flame billboards that bob and flicker,
+  soft round smoke puffs bent by the wind, ember streaks with a flash on spot-fire
+  landing, water-drop cloud and a darkened wet strip, fireline strip, hose stream.
+- **Frame budget**: 30 fps floor, decided by measurement on day 1. Disable in order:
+  shadow resolution, cascades, bloom quality, tilt-shift sample count, MSAA→FXAA.
+  Never disable: fire glow, beacons, wind arrow, the tilt-shift read (reduce
+  samples instead). Operator `quality` low/medium/high.
+
+## 9. Assets 🔲
+
+Reuse the existing pipeline: `assets/models/emergency_assets.blend` →
+`scripts/build_models.py` → `meshes.json` (embedded, vertex colours; read
+`assets/models/README.md`). New or restyled, low-poly (<2 k tris), a shared palette
+tied to CIMA colours, baked vertex AO: house variants (+ charred), civic buildings,
+pine / maquis / olive / grass props, car / fire engine / crew van / tanker
+aircraft, simple figures, plinth, action-bar icons (2D, painted in egui ✅).
+✂ custom assets (keep the existing set) if days slip.
+
+## 10. Model rules
+
+The model may change for the demo, but: `Sim::advance` is the one stepping path
+(finding 5); demo speed is a fixed simulated-s per real-s; a restart clears
+latched view state (finding 21) and is tested; same scenario + seed + weather draw +
+orders ⇒ same outcome (COMPARE depends on it; tested); any new mechanism (§6.2
+anger, §6.5 cost, forecast) is **provably inert until used** (finding 34); a tuned
+constant is per-scenario (finding 38); every new behaviour gets a test that asserts
+it *fires*, not that the model runs (findings 26, 35, 42); `cargo test --release`
+stays green.
+
+## 11. Testing
+
+- ✅ Beat tests (§3). 🔲 Re-measure after §6.4 (small fire) and add: forecast
+  usefulness (§6.1), anger fires and is inert at T+0 (§6.2), ≥1 spot fire per town
+  (§6.3), early crew stops the small fire and a late one does not (§6.4), cost is a
+  pure function of the action log (§6.5), good scripted commander beats "no orders"
+  on families safe **and** money spent is plausible, idle commander still reaches
+  OUTCOME (playability), refuge/haven/mast coverage per town (findings 9, 34).
+- 🔲 `DEMO_SELFTEST=1` for the Bevy side: state machine, reset fan-out, order
+  buttons, "no key does anything", idle-reset leaks nothing.
+- 🔲 Screenshots at T+10 / T+60 / end, reviewed by eye (✅ harness exists).
+- 🔲 Frame-rate measurement on the real machine: 30 fps floor.
+
+## 12. Robustness and ops 🔲
+
+`scripts/run_demo.sh` supervisor relaunches on exit; fully offline **except**
+OpenRouter bubbles (fallback when the network is down); fullscreen borderless; OS
+sleep/screensaver off. Ship `docs/demo-operator.md` (one page: launch, operator
+corner, reset, frozen-screen procedure, power settings, the three towns in one
+sentence each, staff talking points).
+
+## 13. Milestones (remaining)
+
+| Step | Deliverable | Gate |
 |---|---|---|
-| **Evacuazione** | general order | `Sim` order path (`e`) |
-| **Squadra** | arm hand-crew order, then tap map | `command.rs` crews |
-| **Autobotte** | arm engine order, then tap map | `command.rs` engines |
-| **Canadair** | request air support / drop here | `abm::suppression` air tankers (`Canadair 1-2`): requested, 25 min to arrive, briefable while inbound |
-| **Pausa** | pause / resume | clock |
+| 1 | §4 clean-up: demo-only repo, CLAUDE.md rewritten, tests green | `cargo test --release` green, `cargo build` small |
+| 2 | §6.4 small fire + re-measured beats; §6.3 spot-fire visible | early action visibly works; ≥1 spot per town |
+| 3 | §6.1 weather draw + forecast card; §6.2 trust/anger | forecast useful-but-wrong test; cry-wolf test |
+| 4 | §6.5 cost accounting, outcome card with money | twin and live price identically |
+| 5 | §8 diorama pass: fixed light, plinth, tilt-shift, buildings, people, cars | screenshot beside the reference; 30 fps |
+| 6 | Advisors, overlays, Italian review, operator doc, supervisor script | **playtest with 3–5 new people**, no one stuck >60 s |
+| 7 | Buffer, fixes only; LLM bubbles if time | |
 
-Tap button → tap map. A big orange banner states the pending order
-(*"Tocca la mappa per mandare la squadra"*) with a visible ✕. One tool armed at
-a time, as now. Refusals are one Italian sentence, shown on screen, never silent
-(the model already generates them).
+Cut order if days slip: LLM bubbles, outline shader, `demo_porto`,
+advisors (plain ticker instead), custom assets. **Never cut**: kiosk shell, idle
+reset, outcome + counterfactual, the wind arrow, the forecast (it is the new
+point of the game).
 
-### 6.2 HUD
-- **Top-left counters**, four, each with icon, colour and an animated tick on
-  change: *Al sicuro · In fuga · In pericolo · Case perse*. Sourced from
-  aggregate `Sim` state — the player is the commander, so the god view is
-  correct *here* (finding 30 constrains agent *speech*, not the HUD).
-- **Top-centre**: clock + mission line (*"T+00:42 · Proteggi Borgo San Fiorenzo"*).
-- **Wind arrow** on the map and in the HUD, always visible. It is the single best
-  teaching visual.
+## 14. Acceptance
 
-### 6.3 Advisors
-Three portraits with speech bubbles, templated Italian text driven by `Sim`
-events and thresholds — **no LLM**:
+1. Cold start to PLAY ≤30 s with no staff explanation.
+2. Full session 3–5 min, ends on the outcome card without an operator.
+3. 60 s idle anywhere returns to ATTRACT with clean state.
+4. All three towns: good play beats idle on families safe, by the margin the beat
+   tests assert, **and** a needless evacuation costs trust and money.
+5. A forecast is shown, is right on average and wrong sometimes.
+6. No single-key shortcut does anything; the operator corner does.
+7. No English visible; no audio required.
+8. `cargo test --release` passes; the repo contains no non-demo scenarios, UI or
+   scripts.
 
-- **Capo squadra** — fire behaviour ("Il fuoco sta salendo verso il crinale").
-- **Polizia locale** — roads/traffic ("La strada per Noli è intasata").
-- **Sindaco** — population/warnings ("Metà delle famiglie non ha ricevuto l'allarme").
+## 15. Open questions
 
-Rules: at most one bubble at a time, ≥8 s apart, newest replaces oldest, each
-fires on a *change* not a state. A single `advisors.rs` with a table of
-`(trigger, speaker, text_it)` so non-programmers can edit the wording.
-
-### 6.4 Decision pauses
-Scripted per scenario as data (`demo/missions/<id>.ron` or JSON): at sim time
-*t* or on a condition, pause, dim the map, push the camera to the relevant area,
-show a card with 2–3 big choices. Choices map to the same orders as §6.1 plus
-"aspetta". Each scenario has 2–3.
-
-### 6.5 Outcome card
-Facts, no points:
-
-```
-famiglie al sicuro   212 / 250
-ancora in pericolo    11
-case perse             4
-ettari bruciati       38
-```
-
-then the COMPARE screen with the same four numbers for "nessun ordine" beside
-yours, and a one-line Italian takeaway chosen from the difference (e.g. "Il tuo
-ordine ha salvato 61 famiglie in più"). `CLAUDE.md` records *Scoring: none* as a
-settled decision; this is deliberately **facts and a counterfactual, not a
-score**. Flag to Mirko if that line is judged too close.
-
-## 7. Graphics
-
-Hardware is a **capable desktop with a mouse** (§16), so the budget is a modern
-GPU at 1080p-1440p, not an integrated one. Spend it in this order: **legibility
-from 2 m first, then a cohesive stylised look, then polish effects.** Do not
-restyle terrain/road materials from scratch; spend effort on overlays, lighting
-and post-processing, which are cheap in Bevy 0.14 and change the picture most.
-
-Art direction in one line: **a lit, warm, slightly oversaturated miniature model
-of a Mediterranean town**, with fire as the only truly bright thing on screen.
-Everything else is mid-value so the fire, the beacons and the overlays always
-win the eye.
-
-### 7.1 Diorama camera and framing
-- Fixed pitch ~45-55 degrees, yaw limited to a +/-30 degree arc, zoom/pan clamped
-  to the town. Narrow-FOV perspective first; true orthographic only if clearly
-  better (fog, sea and chunk culling were tuned for perspective).
-- Crop to the town with a visible **table edge / plinth** (see §8). Retire
-  `far_terrain` and the 25 km sea bands in the demo: they hide the window edge
-  and are pure cost here (findings 22-23 stop applying; do not carry the code).
-- Gentle automatic camera assists, all cancellable by any mouse input: ease to
-  a new spot fire or decision area; slow drift in ATTRACT; fly-in on BRIEFING.
-
-### 7.2 Lighting, shadows and colour (biggest look-per-hour)
-Use Bevy 0.14 built-ins; verify each against the actual `bevy = "0.14"` feature
-flags and the project's custom `Material`s (water and fire shaders are custom,
-so anything that needs `StandardMaterial` prepasses must be tested on them).
-- **Directional sun with cascaded shadow maps**, tight cascade bounds around the
-  town. Soft long shadows at low sun angle sell the miniature. Time of day
-  advances through the mission toward golden hour then dusk (existing sky/time
-  controls); dusk makes the fire glow, so it doubles as pacing.
-- **Tonemapping** (`TonyMcMapface` or `AgX`) with **HDR + Bloom**. Bloom is
-  what makes the fire front, embers, beacons and headlights feel luminous.
-  Keep the threshold high so only emissive things bloom, never the sea or roofs.
-- **Colour grading**: lift saturation ~10-15%, warm highlights, slightly cool
-  shadows. One preset per time-of-day stop, interpolated.
-- **Ambient occlusion** (SSAO) for contact shadows under eaves, between houses
-  and at tree bases, if it composes with the chosen AA mode; otherwise bake a
-  cheap vertex-colour AO into the Blender assets (§8) and skip SSAO.
-- **Anti-aliasing**: MSAA 4x or TAA, whichever coexists with the effects above.
-  Thin ribbons (roads) and rooflines alias badly without it.
-- **Fog/haze**: a distance-based warm haze tinted by smoke density near the
-  front. Because a custom `Material` gets no fog (finding 22), the water and
-  fire shaders must apply it themselves; reuse `apply_scene_fog`.
-- **Auto exposure** is optional; a hand-tuned exposure per time-of-day stop is
-  more predictable on a kiosk.
-
-### 7.3 Tilt-shift and depth of field
-- Bevy 0.14 has a built-in `DepthOfField` (gaussian/bokeh). Try it first with a
-  focal distance on the town centre for a free miniature look.
-- A true tilt-shift (blur by *screen-space vertical distance*, not depth) is a
-  small custom post-process pass: sharp horizontal band, blur ramping to the top
-  and bottom edges, strength ~1-2 percent of screen height at the extremes. Budget
-  half a day. Cut it, not the legibility work, if it costs frames.
-- Never blur the HUD or any overlay; apply before egui and before screen-space
-  markers.
-
-### 7.4 Fire, smoke and embers (the hero effect)
-- **Front**: emissive orange to yellow along the active edge by age/intensity
-  (`get_fireline_int`), dark red-black char behind it, a faint ash-grey at
-  burn-out. Animated flicker via a noise-scrolled emissive in `fire_shader.rs`,
-  not by re-meshing.
-- **Flame billboards/particles** along the head only, scaled by fireline
-  intensity (flame length `L = 0.0775 * I^0.46`, finding 6) so a crowning
-  conifer run visibly towers over a grass creep. This is a teaching visual, not
-  decoration: bigger flames = more danger.
-- **Smoke**: soft, lit, wind-bent columns that lean *downwind* and darken with
-  intensity; ground haze drifting with the wind. Layered billboard particles
-  with depth-fade are enough; volumetric fog is an option only if frame rate
-  allows.
-- **Embers**: bright streaks flung downwind from the front. When one lands and
-  starts a spot fire, a visible arc and a flash make the mechanism readable
-  before the advisor even says it.
-- **Dusk glow**: fire casts a warm point or area light onto nearby houses and
-  trees (cap the count; fake with emissive vertex tint on the houses in
-  `buildings.rs` if real lights are too costly).
-- **Aircraft drops**: a visible tanker flying a straight run, a spreading
-  water cloud and a darkened wet strip on the ground that fades with the
-  moisture decay (finding 15).
-- **Fireline**: a pale cut strip drawn on the ground where a crew has worked.
-- **Hose and water**: a thin animated stream from an engine to its target.
-
-### 7.5 Terrain, vegetation and water
-- Stylised terrain shading: fuel-class colour blending with a gentle height
-  gradient, subtle contour lines for relief readability at the diorama angle.
-  Keep the existing 5 m posting; the demo windows are small so the vertex
-  budget is generous.
-- Vegetation: Blender instanced props (§8) with a little wind sway
-  (vertex-shader sine, driven by the real wind speed and direction) so the wind
-  is visible in the scenery, not only in the HUD arrow.
-- Water: keep the custom shader; add a soft shoreline foam fade and a subtle
-  specular glint. Boats at anchor for `demo_porto`.
-- Roads: keep casing-plus-surface ribbons, but lighter asphalt and clearer
-  junctions so queues read; add small lane markings on the main roads if cheap.
-  Re-check winding on any new draped strip (finding 11).
-
-### 7.6 Make the invisible visible
-Per `CLAUDE.md`, "nothing new is drawn on the map". All overlays sit at **+20 m
-or higher** (finding 13) and are verified by actually looking at a screenshot:
-- Spot fire: pulsing ring plus "!" billboard for ~20 s.
-- Threat tint on terrain around the front (from `ThreatField`), a soft red
-  gradient, not a hard polygon.
-- Household beacons: green safe / amber preparing / red threatened, with a gentle
-  pulse for "threatened and not yet leaving".
-- Evacuation flow: car and walker trails or chevrons toward refuges; refuges and
-  havens glow.
-- Closed road: barrier icon. Burnt mast: broken-mast icon, with the lost
-  coverage shown on the Allarmi layer.
-- Layers as icon toggles replacing keys 1-4: **Fuoco**, **Evacuazione**,
-  **Traffico**, **Allarmi**, each with a legend.
-- Selection: a clear ring and a small floating info card (traits an agent could
-  know, in the spirit of finding 30), not the researcher inspector.
-
-### 7.7 Buildings, people and vehicles
-- **Building states** read at a glance: intact, threatened (warm rim light /
-  heat shimmer), alight (flames and glow), charred (dark roof, missing section).
-  **Take screenshots first**: the open question in `CLAUDE.md` is that nobody has
-  looked at alight and charred buildings since shrub spotting made them
-  reachable.
-- Keep the 3x figure scale. Colour people by state, a small bob when walking,
-  a headlight blink on cars, a short trail behind moving vehicles. A puff when a
-  house ignites; a chime-and-sparkle when a family reaches safety.
-
-### 7.8 UI polish
-- A consistent icon set (SVG/PNG, drawn once) for buttons and layers; soft
-  glass-style panels; rounded corners; drop shadows under floating cards.
-- Motion: counters tick with a short ease, cards slide in, the decision pause
-  dims and slightly desaturates the world behind the card. Keep every
-  transition under ~250 ms.
-- Typography: one rounded, highly legible font, large sizes (§6), tabular
-  figures for counters so they do not jitter.
-
-### 7.9 Frame budget and fallbacks
-Decide on day 1 by measurement. Order to disable if frames drop, cheapest loss
-first: tilt-shift, SSAO, volumetric haze, point lights from fire, cascade count,
-shadow resolution, MSAA to FXAA. Never disable: bloom on fire, the threat tint,
-beacons, the wind arrow. Provide a single `quality` setting (low/medium/high)
-in the operator panel so a slower machine on the day can be fixed without code.
-
-## 8. Assets (Blender)
-
-A Blender pipeline already exists and **must be reused, not replaced**:
-`assets/models/emergency_assets.blend` → `scripts/build_models.py` →
-`assets/models/meshes.json`, embedded via `include_str!` in
-`crates/game/src/models.rs` (one mesh + material per symbol; vertex colours
-and a `wood` flag per vertex). Read `assets/models/README.md` before touching
-it. Keep the embed so native and any later web build load identically.
-
-New or restyled assets (toy/miniature look, flat vertex colours, low poly,
-< 2 k tris each, shared palette):
-
-- Houses: 4–5 Mediterranean variants, plus a **burning** and a **charred** variant of each (or a shader tint, if cheaper).
-- Village landmarks: church with campanile, town hall, school, fire station, a harbour crane/boat for `demo_porto`.
-- Vegetation: pine, maquis clump, olive, grass tuft, as instanced props.
-- Vehicles: car, fire engine, crew van, tanker aircraft; people as simple figures.
-- Icons for the action bar and layers (can be 2D SVG/PNG in egui rather than Blender).
-- A **table base / plinth** mesh for the diorama edge.
-- Bake cheap vertex-colour **ambient occlusion** into every asset (darker at creases and contact points): free at run time, and it carries the miniature look even with SSAO off.
-- Lower-poly variants for far instances if the town needs them; check the triangle total in a screenshot pass.
-
-Pipeline rule: assets are baked offline to `meshes.json`; nothing in the game
-reads `.blend` at run time (matches the project's "scripts never run at game
-time" rule).
-
-## 9. Model invariants (do not break)
-
-The demo is a presentation layer over a measured model. Hard rules:
-
-1. **No change to `crates/scenario`, `crates/fire`, `crates/abm`, `crates/behavior`
-   behaviour or numbers.** New scenarios are *data*; new mission logic is in
-   `crates/demo`. If a model change is unavoidable, stop and ask — every figure
-   in `CLAUDE.md` was measured against the current model.
-2. Anything accumulated per update is a bug (finding 5); keep using
-   `Sim::advance` so single-step and play take the same path.
-3. Step size: demo speed is a fixed simulated-seconds-per-real-second; verify the
-   per-frame cap (30 simulated s) never binds at the chosen speed.
-4. A restart clears latched view state (finding 21). Test it: run, restart, and
-   assert the new run opens clean.
-5. Determinism: same scenario + seed + orders ⇒ same outcome. The COMPARE
-   screen depends on it.
-
-## 10. Testing
-
-Headless, under `crates/demo/tests/` (or `crates/abm/tests/` for model-side
-facts), in the style of the existing `*_report` / assertion split:
-
-- **Beat tests** — one per scenario, asserting the mechanism *fires*, not that
-  the run completes (findings 26, 35, 39): `demo_borgo` — ordering at T+0 saves
-  strictly more households than ordering at T+20 min, on a five-seed mean;
-  `demo_valle` — the wind shift puts the second hamlet in the threat field;
-  `demo_porto` — a queue forms on the exit and at least one spot fire occurs.
-- **Counterfactual test** — the "no orders" run is worse than a competent run on
-  each scenario, with margin, or the COMPARE screen has nothing to say.
-- **Playability budget** — a scripted "good" commander and a scripted "idle"
-  commander both reach OUTCOME inside the mission length.
-- **Idle reset** — simulated idle drives ATTRACT with no leaked state.
-- A `DEMO_SELFTEST=1` mode mirroring `SPOTORNO_SELFTEST=1` for the Bevy-side
-  parts (state machine, reset fan-out, order buttons) that only exist as
-  resources and events.
-- **Screenshots at T+10 / T+60 / end** via the existing `SPOTORNO_SHOT_*`-style
-  capture, reviewed by eye. "Can I see it" is the only check for graphics.
-
-## 11. Performance and robustness
-
-- Target **60 fps** on the actual demo machine; **30 fps floor**. Measure on
-  that hardware on day 1, before building more on top.
-- If it does not hold: reduce render-terrain factor, cut tilt-shift, then cap
-  instance counts. The demo worlds are 3–5 km so the 4 M-vertex budget of the
-  real windows does not apply — choose the render posting for the smaller
-  window (a 5 m posting over 4 km is ~0.64 M verts).
-- **Crash safety:** a supervisor script (`scripts/run_demo.sh`) relaunches the
-  binary on exit. Ship a looping pre-recorded attract video as a fallback
-  screen.
-- Offline: no network access anywhere in the demo. No LLM, no telemetry upload.
-- Fullscreen, borderless, cursor hidden outside the play area, OS sleep and
-  screensaver disabled (operator checklist, §13).
-
-## 12. Localisation
-
-Italian only for the demo UI. Every user-visible string lives in one
-`strings_it.rs` (or `.toml`), looked up by key — no literals in widgets — so a
-second language is a table, not a hunt. Advisor text, briefing, decision cards,
-refusals and the outcome takeaway are all in that table. Have a native speaker
-read it before the event.
-
-## 13. Operator notes (ship as `docs/demo-operator.md`)
-
-One page: how to launch, the operator chord, how to reset, what to do if frozen,
-power/sleep settings, the three scenarios in one sentence each, and the
-talking points a staff member can use ("why did the wind change the result?").
-
-## 14. Milestones
-
-| Days | Deliverable | Gate |
-|---|---|---|
-| 1 | `crates/demo` skeleton on a copied terrain + one synthetic town; kiosk shell, state machine, idle reset; **frame rate measured on target hardware**; screenshots of damage states | fps ≥ 30 on the demo machine |
-| 2 | Action bar, HUD counters, orders working end to end on `demo_borgo` | a stranger can place an order unaided |
-| 3 | Outcome card + counterfactual; briefing; scripted pauses | full loop ATTRACT→OUTCOME→ATTRACT |
-| 4 | Overlays/layers, advisors, spot-fire and wind visuals; `demo_valle` | all §7.2 visible in a screenshot |
-| 5 | `demo_porto`; Blender assets in; diorama look; audio | all three scenarios pass beat tests |
-| 6 | Italian review, operator doc, supervisor script, **playtest on real hardware with 3–5 people who have not seen it** | no one gets stuck in under 60 s |
-| 7 | Buffer, fixes only. Freeze at the end of day 6 if possible. | |
-
-If days slip: cut, in order — tilt-shift, audio, `demo_porto`, advisors (fall
-back to a plain ticker), custom assets (keep the existing Blender set). Never
-cut: the kiosk shell, idle reset, outcome + counterfactual, the wind arrow.
-
-## 15. Acceptance
-
-1. Cold start to PLAY in ≤30 s with no explanation from staff.
-2. A full session is 3–5 min and ends on the outcome card without an operator.
-3. Idle for 60 s anywhere returns to ATTRACT with a clean state.
-4. All three scenarios: good play beats idle on families safe, by the margin the
-   beat tests assert.
-5. No single-key shortcut does anything; the operator chord does.
-6. No English strings visible to the player.
-7. `cargo test --release` still passes at the repository root with the model
-   crates untouched (`git diff` shows no changes under `crates/{scenario,fire,abm,behavior}`).
-
-## 16. Decisions and remaining questions
-
-Settled with Mirko on 2026-10-06:
-- **Hardware**: a capable desktop with a mouse. No touch. The §7 graphics budget
-  assumes a modern discrete GPU; still measure on the day-1 gate. Buttons stay
-  large (read from a distance) but hover states and a visible cursor are fine.
-- **Outcome card**: facts plus the counterfactual comparison are acceptable; no
-  numeric score.
-- **Aircraft**: yes, expose the air tankers. `CLAUDE.md`'s decisions table has
-  been updated to match.
-- **Audience**: students. Tone is clear and direct, not childish; the loss
-  framing ("case perse") stays but never dwells on harm to people.
-
-Remaining:
-- **Names**: are the three fictional town names fine, or should they nod to a
-  Roman-region setting?
-- **GPU model and resolution** on the actual machine (sets the default quality
-  preset in §7.9).
-- **Sound**: will the gazebo have speakers, or is it a noisy open space where
-  audio should be optional and captions carry everything?
+- Money: real unit costs and their sources (Protezione Civile / regional tariffs);
+  shown in € per session.
+- How is a *needless* order judged — against the twin (hindsight, exact, but
+  unknown to the household at the time) or a forward threat estimate (what the
+  commander could have known)? The twin is simplest; the estimate is fairer. Decide
+  from a measurement of how often they disagree.
+- Clean-up end state: one crate or two (§4).
+- Final town names and Italian copy, native-speaker review.
+- GPU/resolution on the actual machine (sets the default quality; target is modest, Switch-class).

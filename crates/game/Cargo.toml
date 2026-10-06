@@ -7,6 +7,7 @@ description = "Bevy front end for the Spotorno wildfire serious game"
 
 [dependencies]
 scenario.workspace = true
+demo = { path = "../demo" }
 fire.workspace = true
 abm.workspace = true
 behavior = { workspace = true, features = ["reflect"] }
@@ -21,7 +22,6 @@ bevy = { version = "0.14", default-features = true }
 # code targets an older web-sys `Navigator::clipboard()` signature. The web
 # build installs its own browser text-edit bridge in `web_clipboard.rs`.
 bevy_egui = { version = "0.28", default-features = false, features = ["open_url", "default_fonts", "render"] }
-egui-snarl = { version = "0.4.4", features = ["serde"] }
 
 # The local control/inspection API (`crate::api`) is a background OS thread
 # accepting TCP connections, which wasm32-unknown-unknown has neither -- kept

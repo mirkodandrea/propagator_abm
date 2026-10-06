@@ -21,7 +21,7 @@ mod buildings;
 mod camera;
 mod capture;
 mod command;
-mod composer;
+mod library;
 mod far_terrain;
 mod field;
 mod fire_shader;
@@ -31,6 +31,7 @@ mod history;
 mod ignition_edit;
 mod inspect;
 mod interview;
+mod kiosk;
 mod menu;
 mod map2d;
 #[cfg(not(target_arch = "wasm32"))]
@@ -90,6 +91,7 @@ fn main() -> anyhow::Result<()> {
             resolution: (1280.0, 720.0).into(),
             #[cfg(not(target_arch = "wasm32"))]
             resolution: (1600.0, 1000.0).into(),
+            mode: if kiosk::enabled() { kiosk::window_mode() } else { bevy::window::WindowMode::Windowed },
             ..default()
         }),
         ..default()
@@ -114,7 +116,7 @@ fn main() -> anyhow::Result<()> {
     .add_plugins(sky::SkyPlugin)
     .add_plugins(sea::SeaPlugin)
     .add_plugins(far_terrain::FarTerrainPlugin)
-    .add_plugins(composer::ComposerPlugin)
+    .add_plugins(library::LibraryPlugin)
     .init_state::<AppState>()
     .init_resource::<map2d::Renderer>()
     .init_resource::<ui::UiFocus>()
@@ -159,13 +161,66 @@ fn main() -> anyhow::Result<()> {
             interview::open_from_env,
         ),
     )
-    .add_systems(OnExit(AppState::Playing), teardown_scene)
+    .add_systems(OnExit(AppState::Playing), teardown_scene);
+
+    if kiosk::enabled() {
+        kiosk_systems(&mut app);
+    } else {
+        workbench_systems(&mut app);
+    }
+
+    // Unattended exercise of the wildfire controls. Runs after the resets so
+    // it observes the state the views will actually see.
+    if let Some(test) = selftest::from_env() {
+        app.insert_resource(test).add_systems(
+            Update,
+            selftest::run
+                .after(sim::step_fire)
+                .after(fire_view::reset)
+                .after(buildings::reset)
+                .after(people::reset)
+                .run_if(in_state(AppState::Playing)),
+        );
+    }
+
+    // Unattended capture: runs the scenario forward, grabs one frame per fire
+    // layer and exits. Only active when SPOTORNO_SHOT names a directory.
+    if let Some(capture) = capture::from_env() {
+        app.insert_resource(capture)
+            .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
+            .add_systems(
+                Update,
+                capture::scripted
+                    .after(fire_view::update_flames)
+                    .run_if(in_state(AppState::Playing)),
+            );
+    }
+
+    // The local control/inspection API: a background thread accepting plain
+    // HTTP on localhost, for `tools/mcp` or a `curl` prompt to read the agent
+    // history and drive the incident. `api::setup` starts the listener before
+    // any scenario is loaded, and `api::serve` — unconditional on `AppState`,
+    // unlike almost every other system here — answers each queued request
+    // whether or not one is loaded yet. See `crate::api` for why this does
+    // not exist on the wasm32 build.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        app.add_systems(Startup, api::setup);
+        app.add_systems(Update, (api::serve, api::take_pending_shot));
+    }
+
+    app.run();
+
+    Ok(())
+}
+
+fn workbench_systems(app: &mut App) {
     // Build panels first, then finalize input ownership before shortcuts and
     // map tools. A search field can acquire focus during this very frame.
     // Docked panels also precede `sync_viewport`, which reserves map space;
     // and the restart resets have to land before the views that would
     // otherwise read the stale state they are clearing.
-    .add_systems(
+        app.add_systems(
         Update,
         (
             scenario_selector::handle_launch_selection
@@ -273,98 +328,8 @@ fn main() -> anyhow::Result<()> {
             map2d::update.run_if(in_state(AppState::Playing)),
             map2d::share_markers.run_if(in_state(AppState::Playing)),
             capture::manual.run_if(in_state(AppState::Playing)),
-            apply_behaviour
-                .after(sim::step_fire)
-                .run_if(in_state(AppState::Playing)),
         ),
     );
-
-    // Unattended exercise of the wildfire controls. Runs after the resets so
-    // it observes the state the views will actually see.
-    if let Some(test) = selftest::from_env() {
-        app.insert_resource(test).add_systems(
-            Update,
-            selftest::run
-                .after(sim::step_fire)
-                .after(fire_view::reset)
-                .after(buildings::reset)
-                .after(people::reset)
-                .run_if(in_state(AppState::Playing)),
-        );
-    }
-
-    // Unattended capture: runs the scenario forward, grabs one frame per fire
-    // layer and exits. Only active when SPOTORNO_SHOT names a directory.
-    if let Some(capture) = capture::from_env() {
-        app.insert_resource(capture)
-            .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
-            .add_systems(
-                Update,
-                capture::scripted
-                    .after(fire_view::update_flames)
-                    .run_if(in_state(AppState::Playing)),
-            );
-    }
-
-    // The local control/inspection API: a background thread accepting plain
-    // HTTP on localhost, for `tools/mcp` or a `curl` prompt to read the agent
-    // history and drive the incident. `api::setup` starts the listener before
-    // any scenario is loaded, and `api::serve` — unconditional on `AppState`,
-    // unlike almost every other system here — answers each queued request
-    // whether or not one is loaded yet. See `crate::api` for why this does
-    // not exist on the wasm32 build.
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        app.add_systems(Startup, api::setup);
-        app.add_systems(Update, (api::serve, api::take_pending_shot));
-    }
-
-    app.run();
-
-    Ok(())
-}
-
-/// Rebuild the agent model on whatever the composer currently holds.
-///
-/// Routed through `SimRestarted` like every other restart, so the latched view
-/// state — charred buildings, the plume, the vehicle entities — is cleared by
-/// the same three `reset` systems (see finding 21 in CLAUDE.md). A behaviour
-/// change that left the old run's cars parked on the map would be the same bug
-/// in a new coat.
-fn apply_behaviour(
-    mut events: EventReader<composer::ApplyBehaviour>,
-    mut sim: ResMut<Sim>,
-    mut composer: ResMut<composer::Composer>,
-    mut restarted: EventWriter<sim::SimRestarted>,
-) {
-    if events.is_empty() {
-        return;
-    }
-    events.clear();
-
-    let lib = composer.lib.clone();
-    let described = [
-        (lib.assignment().len(), "household"),
-        (lib.person_assignment().len(), "person"),
-        (lib.unit_assignment().len(), "unit"),
-    ]
-    .into_iter()
-    .map(|(n, what)| format!("{n} {what} profile(s)"))
-    .collect::<Vec<_>>()
-    .join(", ");
-
-    match sim.apply_behaviour(lib.clone()) {
-        Ok(()) => {
-            restarted.send(sim::SimRestarted);
-            composer.mark_applied(lib);
-            composer.set_status(format!("restarted on {described}"));
-            info!("agent behaviour applied: {described}");
-        }
-        Err(e) => {
-            composer.set_error(format!("{e:#}"));
-            error!("applying behaviour failed: {e:#}");
-        }
-    }
 }
 
 fn setup_scene(
@@ -474,7 +439,7 @@ fn setup_scene(
 /// Gated on [`ui::UiFocus::typing`] like every other shortcut system. Without
 /// it, `e` typed into any text field in the application orders the town to
 /// evacuate — which is not a hypothetical, since the Entities tab's search box
-/// and the composer's node fields are both plain egui text edits.
+/// and the interview's question box are both plain egui text edits.
 fn controls(
     mut renderer: ResMut<map2d::Renderer>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -487,16 +452,10 @@ fn controls(
     mut selected: ResMut<inspect::Selected>,
     mut help: ResMut<ui::HelpUi>,
     mut panels: ResMut<ui::PanelState>,
-    mut composer: ResMut<composer::Composer>,
     mut restarted: EventWriter<sim::SimRestarted>,
 ) {
     // Escape is the exception: it is what gets you *out* of a state, so it has
     // to work even while a widget has focus.
-    if keys.just_pressed(KeyCode::Escape) && panels.bottom_tab == ui::BottomTab::Behaviour && panels.incident.visible() {
-        panels.incident = ui::PanelPlacement::Hidden;
-        composer.open = false;
-        return;
-    }
     if keys.just_pressed(KeyCode::Escape) {
         let cancelling = tool.mode != ignition_edit::EditMode::Off
             || order.is_armed()
@@ -564,15 +523,6 @@ fn controls(
     if keys.just_pressed(KeyCode::F1) {
         help.open = !help.open;
     }
-    if keys.just_pressed(KeyCode::F2) {
-        if panels.bottom_tab == ui::BottomTab::Behaviour && composer.right == composer::RightTab::Live && panels.incident.visible() {
-            panels.incident = ui::PanelPlacement::Hidden;
-            composer.open = false;
-        } else {
-            composer.open = false;
-            panels.focus_bottom(ui::BottomTab::Debug);
-        }
-    }
     if shift && keys.just_pressed(KeyCode::Slash) {
         help.shortcuts_open = !help.shortcuts_open;
     }
@@ -639,4 +589,59 @@ fn teardown_scene(
         n += 1;
     }
     info!("scene torn down: {n} root entities");
+}
+
+/// The kiosk's schedule: the same views and resets as the workbench, with the
+/// menus, panels and every shortcut system left out (see `kiosk`).
+fn kiosk_systems(app: &mut App) {
+    app.insert_resource(kiosk::Kiosk::from_env()).add_systems(
+        Update,
+        (
+            kiosk::launch.run_if(in_state(AppState::SelectingScenario)),
+            (
+                kiosk::activity,
+                kiosk::draw,
+                kiosk::step,
+                kiosk::camera,
+                kiosk::shots,
+                command::hover,
+                command::place,
+            )
+                .chain()
+                .run_if(in_state(AppState::Playing)),
+            (
+                fire_view::reset,
+                buildings::reset,
+                people::reset,
+                inspect::reset,
+                units::reset,
+                command::reset,
+                camera::reset,
+            )
+                .after(kiosk::step)
+                .run_if(in_state(AppState::Playing)),
+            (
+                fire_view::update_overlay.run_if(map2d::scene3d),
+                fire_view::update_flames.run_if(map2d::scene3d),
+                vegetation::burn,
+                buildings::damage,
+                people::spawn_vehicles,
+                people::update_people,
+                people::update_vehicles,
+                inspect::update_ring,
+                units::update_units,
+                units::sync_orders,
+                units::update_work_overlay,
+                command::update_cursor,
+            )
+                .after(fire_view::reset)
+                .after(buildings::reset)
+                .after(people::reset)
+                .after(inspect::reset)
+                .after(units::reset)
+                .after(command::reset)
+                .run_if(in_state(AppState::Playing)),
+            capture::manual.run_if(in_state(AppState::Playing)),
+        ),
+    );
 }

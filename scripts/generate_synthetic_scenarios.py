@@ -358,6 +358,8 @@ def remove_old_synthetic_scenarios():
             metadata = json.loads(metadata_path.read_text())
         except (OSError, json.JSONDecodeError):
             continue
+        if "demo" in metadata.get("tags", []):
+            continue  # authored by generate_demo_scenarios.py, not a lab
         if metadata.get("scenario_type") == "synthetic" or metadata.get("is_dev") is True:
             shutil.rmtree(path)
 

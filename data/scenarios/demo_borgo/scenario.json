@@ -1,0 +1,38 @@
+{
+  "id": "demo_borgo",
+  "name": "Borgo San Fiorenzo",
+  "description": "Un borgo sulla collina con due vie d'uscita. Il vento spinge il fuoco in salita verso le case: dare l'allarme in tempo cambia chi si salva.",
+  "location": "Luogo immaginario",
+  "country": "Italia",
+  "nationality": "Italian",
+  "region": "an invented town in central Italy",
+  "localities": [
+    "Borgo San Fiorenzo",
+    "Colle Alto",
+    "Case Bassa"
+  ],
+  "coordinates": [
+    0.0,
+    0.0
+  ],
+  "utm_zone": 0,
+  "world_size_m": [
+    4000.0,
+    4000.0
+  ],
+  "fire_grid_size": [
+    200,
+    200
+  ],
+  "buildings_count": 250,
+  "households_count": 250,
+  "people_count": 750,
+  "scenario_type": "synthetic",
+  "creation_date": "2026-10-06",
+  "version": "1.0.0",
+  "tags": [
+    "demo",
+    "kiosk"
+  ],
+  "is_dev": false
+}

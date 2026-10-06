@@ -1,0 +1,38 @@
+{
+  "id": "demo_valle",
+  "name": "Valle dei Pini",
+  "description": "Due borgate in una valle. La seconda e al sicuro finche il vento non cambia: bisogna rivalutare la situazione.",
+  "location": "Luogo immaginario",
+  "country": "Italia",
+  "nationality": "Italian",
+  "region": "an invented town in central Italy",
+  "localities": [
+    "Valle dei Pini",
+    "Borgata Alta",
+    "Borgata Bassa"
+  ],
+  "coordinates": [
+    0.0,
+    0.0
+  ],
+  "utm_zone": 0,
+  "world_size_m": [
+    4000.0,
+    4000.0
+  ],
+  "fire_grid_size": [
+    200,
+    200
+  ],
+  "buildings_count": 300,
+  "households_count": 300,
+  "people_count": 900,
+  "scenario_type": "synthetic",
+  "creation_date": "2026-10-06",
+  "version": "1.0.0",
+  "tags": [
+    "demo",
+    "kiosk"
+  ],
+  "is_dev": false
+}

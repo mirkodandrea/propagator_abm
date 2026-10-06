@@ -20,7 +20,6 @@ use bevy_egui::{egui, EguiContexts};
 
 use crate::camera::OrbitCamera;
 use crate::command::{OrderKind, OrderTool};
-use crate::composer::Composer;
 use crate::fire_view::FireLayer;
 use crate::ignition_edit::{EditMode, IgnitionTool};
 use crate::inspect::Selected;
@@ -53,7 +52,6 @@ enum Action {
     RequestAir,
     Cancel,
     ArmIgnition,
-    Composer,
     Interview,
     LlmSettings,
     Tab(DockTab),
@@ -80,7 +78,6 @@ pub fn menubar(
     mut help: ResMut<HelpUi>,
     mut ignition: ResMut<IgnitionTool>,
     mut order: ResMut<OrderTool>,
-    mut composer: ResMut<Composer>,
     mut interview: ResMut<crate::interview::Interview>,
     selected: Res<Selected>,
     mut restarted: EventWriter<SimRestarted>,
@@ -317,7 +314,6 @@ pub fn menubar(
                 });
                 if item(ui, "Reset panel layout", "").clicked() {
                     panels.reset_layout();
-                    composer.open = false;
                     interview.open = false;
                     ui.close_menu();
                 }
@@ -345,12 +341,7 @@ pub fn menubar(
                 ui.small(crate::camera::navigation_hint(*renderer));
             });
 
-            ui.menu_button("Behavior", |ui| {
-                if item(ui, "Open behavior workspace", "G / F2").clicked() {
-                    a(Action::Composer, &mut act);
-                    ui.close_menu();
-                }
-                ui.separator();
+            ui.menu_button("Interview", |ui| {
                 ui.label(egui::RichText::new("INTERVIEW").small().weak());
                 if ui
                     .add_enabled(
@@ -517,8 +508,7 @@ pub fn menubar(
                 if ui.selectable_label(active, tab.label()).clicked() {
                     if active {
                         panels.incident = PanelPlacement::Hidden;
-                        composer.open = false;
-                        interview.open = false;
+                            interview.open = false;
                     } else {
                         a(Action::Bottom(tab), &mut act);
                     }
@@ -609,15 +599,6 @@ pub fn menubar(
                     panels.focus_tab(DockTab::Fire);
                 }
             }
-            Action::Composer => {
-                if composer.open && panels.bottom_tab == BottomTab::Behaviour {
-                    composer.open = false;
-                    panels.incident = PanelPlacement::Hidden;
-                } else {
-                    composer.open = true;
-                    panels.focus_bottom(BottomTab::Behaviour);
-                }
-            }
             Action::Interview => {
                 match selected
                     .target
@@ -634,7 +615,6 @@ pub fn menubar(
             Action::Tab(tab) => panels.focus_tab(tab),
             Action::Bottom(tab) => {
                 panels.focus_bottom(tab);
-                composer.open = tab == BottomTab::Behaviour;
                 interview.open = tab == BottomTab::Chat && interview.subject.is_some();
             }
             Action::Help => help.open = true,

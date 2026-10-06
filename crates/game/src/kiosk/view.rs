@@ -1,0 +1,163 @@
+//! The kiosk camera: a miniature seen from above, never lost.
+//!
+//! Pitch 45-55 degrees, yaw within +-30, zoom and pan clamped to the town
+//! (spec §8). Replaces `camera::controls`, which is a free orbit. Any mouse
+//! input cancels the scripted fly-in.
+
+use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
+use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
+
+use super::{Kiosk, Phase};
+use crate::camera::OrbitCamera;
+use crate::sim::Sim;
+
+const MIN_PITCH: f32 = -0.96;
+const MAX_PITCH: f32 = -0.78;
+const MAX_YAW: f32 = 0.52;
+const MIN_DIST: f32 = 1300.0;
+const MAX_DIST: f32 = 4300.0;
+const PAN_RADIUS_M: f32 = 1500.0;
+const PLAY_DIST: f32 = 2700.0;
+const FLY_IN_S: f32 = 8.0;
+
+fn ease(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// What the camera looks at: the middle of town, nudged toward the fire.
+fn home_focus(sim: &Sim, kiosk: &Kiosk) -> Vec3 {
+    let w = &sim.scenario.world;
+    let centre = scenario::Pos { x: w.width_m * 0.5, y: w.height_m * 0.5 };
+    let ig = kiosk.spec.ignition;
+    let p = scenario::Pos { x: centre.x * 0.75 + ig.x * 0.25, y: centre.y * 0.75 + ig.y * 0.25 };
+    crate::frame::to_bevy(p, sim.scenario.terrain.height_at(p))
+}
+
+#[derive(Default)]
+pub struct Drag {
+    left: bool,
+    right: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn camera(
+    kiosk: Res<Kiosk>,
+    sim: Res<Sim>,
+    focus: Res<crate::ui::UiFocus>,
+    order: Res<crate::command::OrderTool>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    mut motion: EventReader<MouseMotion>,
+    mut wheel: EventReader<MouseWheel>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut query: Query<(&mut OrbitCamera, &mut Transform, &Camera)>,
+    time: Res<Time>,
+    mut drag: Local<Drag>,
+    mut released: Local<Option<(Phase, f32)>>,
+) {
+    let delta = motion.read().fold(Vec2::ZERO, |s, e| s + e.delta);
+    let scroll: f32 = wheel
+        .read()
+        .map(|e| match e.unit {
+            MouseScrollUnit::Line => e.y,
+            MouseScrollUnit::Pixel => e.y / 50.0,
+        })
+        .sum();
+    let Ok((mut orbit, mut tf, camera)) = query.get_single_mut() else { return };
+    let home = home_focus(&sim, &kiosk);
+    let t = kiosk.phase_t;
+
+    // The user took the wheel: remember it for the rest of this phase.
+    let touched = delta.length_squared() > 0.0 && (buttons.pressed(MouseButton::Left) || buttons.pressed(MouseButton::Right))
+        || scroll != 0.0;
+    if touched && released.map(|(p, _)| p) != Some(kiosk.phase) {
+        *released = Some((kiosk.phase, t));
+    }
+    let user_has_it = released.map(|(p, _)| p) == Some(kiosk.phase);
+    if kiosk.phase_t < 0.05 {
+        *released = None;
+    }
+
+    match kiosk.phase {
+        Phase::Attract => {
+            orbit.focus = home;
+            orbit.yaw = 0.45 * (time.elapsed_seconds() * 0.07).sin();
+            orbit.pitch = -0.86;
+            orbit.distance = 2800.0;
+        }
+        Phase::Briefing if !user_has_it && t < FLY_IN_S => {
+            let k = ease(t / FLY_IN_S);
+            orbit.focus = home;
+            orbit.yaw = -0.45 * (1.0 - k);
+            orbit.pitch = -1.15 + (1.15 - 0.86) * k;
+            orbit.distance = 4600.0 + (PLAY_DIST - 4600.0) * k;
+        }
+        _ => {
+            let window = windows.get_single().ok();
+            let over_map = window.is_some_and(|w| w.focused)
+                && !focus.pointer
+                && window.and_then(|w| crate::pick::cursor_position(camera, w)).is_some();
+            let left_free = !order.is_armed();
+            if buttons.just_pressed(MouseButton::Left) {
+                drag.left = over_map && left_free;
+            }
+            if buttons.just_pressed(MouseButton::Right) {
+                drag.right = over_map;
+            }
+            if !buttons.pressed(MouseButton::Left) {
+                drag.left = false;
+            }
+            if !buttons.pressed(MouseButton::Right) {
+                drag.right = false;
+            }
+            if drag.left {
+                orbit.yaw -= delta.x * 0.004;
+                orbit.pitch -= delta.y * 0.003;
+            }
+            if drag.right {
+                let h = camera.logical_viewport_size().map_or(1000.0, |s| s.y).max(1.0);
+                let scale = orbit.distance * 0.83 / h;
+                let rot = Quat::from_rotation_y(orbit.yaw);
+                let tilt = orbit.pitch.sin().abs().max(0.3);
+                orbit.focus += rot * Vec3::new(-delta.x, 0.0, delta.y / tilt) * scale;
+            }
+            if over_map && scroll != 0.0 {
+                orbit.distance *= (-scroll.clamp(-6.0, 6.0) * 0.1).exp();
+            }
+            // First frame of play after the fly-in: settle on the home framing.
+            if kiosk.phase == Phase::Play && t < 0.05 && !user_has_it {
+                orbit.focus = home;
+                orbit.yaw = 0.0;
+                orbit.pitch = -0.86;
+                orbit.distance = PLAY_DIST;
+            }
+        }
+    }
+
+    orbit.yaw = orbit.yaw.clamp(-MAX_YAW, MAX_YAW);
+    orbit.pitch = orbit.pitch.clamp(MIN_PITCH, MAX_PITCH);
+    orbit.distance = orbit.distance.clamp(MIN_DIST, MAX_DIST);
+    let off = Vec2::new(orbit.focus.x - home.x, orbit.focus.z - home.z);
+    if off.length() > PAN_RADIUS_M {
+        let c = off.normalize() * PAN_RADIUS_M;
+        orbit.focus.x = home.x + c.x;
+        orbit.focus.z = home.z + c.y;
+    }
+    orbit.focus.y = sim.scenario.terrain.height_at(crate::frame::to_world(orbit.focus));
+
+    let dir = Vec3::new(
+        orbit.yaw.sin() * orbit.pitch.cos(),
+        -orbit.pitch.sin(),
+        orbit.yaw.cos() * orbit.pitch.cos(),
+    );
+    tf.translation = orbit.focus + dir * orbit.distance;
+    let ground = sim.scenario.terrain.height_at(crate::frame::to_world(tf.translation));
+    tf.translation.y = tf.translation.y.max(ground + 25.0);
+    tf.look_at(orbit.focus, Vec3::Y);
+}
+
+/// Screen angle, clockwise from straight up, of a world bearing.
+pub fn screen_angle(bearing_deg: f32, yaw: f32) -> f32 {
+    bearing_deg.to_radians() + yaw
+}

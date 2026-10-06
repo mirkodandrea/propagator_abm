@@ -208,15 +208,46 @@ impl Sim {
         seed: u64,
         behaviour: behavior::Library,
     ) -> anyhow::Result<Sim> {
+        // A going fire at the WUI edge, not a single cell: see
+        // FireSim::ignite_patch and fire::ignition for why both the size and
+        // the placement matter.
+        let ignition = fire::plan_ignition(&scenario, weather.wind_dir_deg, radius_m);
+        Self::with_ignition(scenario, weather, ignition, seed, behaviour)
+    }
+
+    /// A mission with its fire lit exactly where the caller says, rather than
+    /// where `plan_ignition` would choose. The kiosk demo's towns pin their
+    /// ignition (`demo::spec`), and the COMPARE screen is only honest if the
+    /// live run and its headless twin are lit at the same cell.
+    pub fn at_ignition(
+        scenario: Scenario,
+        weather: Weather,
+        at: Pos,
+        radius_m: f32,
+        seed: u64,
+        behaviour: behavior::Library,
+    ) -> anyhow::Result<Sim> {
+        let ignition = IgnitionPlan {
+            centre: scenario.world.cell_of(at),
+            radius_m,
+            households_downwind: 0,
+            corridor_fuel: 1.0,
+        };
+        Self::with_ignition(scenario, weather, ignition, seed, behaviour)
+    }
+
+    fn with_ignition(
+        scenario: Scenario,
+        weather: Weather,
+        ignition: IgnitionPlan,
+        seed: u64,
+        behaviour: behavior::Library,
+    ) -> anyhow::Result<Sim> {
         behaviour.validate_runtime()?;
         let household_runtime = Self::runtime(&behaviour)?;
         let person_runtime = Self::person_runtime(&behaviour)?;
         let unit_runtime = Self::unit_runtime(&behaviour)?;
         let mut fire = FireSim::new(&scenario, weather, seed)?;
-        // A going fire at the WUI edge, not a single cell: see
-        // FireSim::ignite_patch and fire::ignition for why both the size and
-        // the placement matter.
-        let ignition = fire::plan_ignition(&scenario, weather.wind_dir_deg, radius_m);
         // println, not info!: Sim::new runs before Bevy installs its logger.
         println!(
             "ignition ({}, {}) r={:.0} m: {} households downwind, corridor {:.0}% burnable",
