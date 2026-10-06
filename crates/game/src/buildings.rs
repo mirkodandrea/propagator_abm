@@ -291,7 +291,7 @@ mod palette {
 }
 
 /// Footprint magnification (see `emit_building`).
-const TOY_SCALE: f32 = 1.7;
+const TOY_SCALE: f32 = 2.6;
 
 /// Emit one building, and return the vertex range of its window quads
 /// (`start == end` if it has none). `None` for footprints too degenerate to

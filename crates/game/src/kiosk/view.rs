@@ -49,7 +49,7 @@ fn play_dist(sim: &Sim, kiosk: &Kiosk) -> f32 {
     let mut rs: Vec<f32> = sim.agents.households.iter().map(|h| d(h.home.x, h.home.y)).collect();
     rs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let r95 = rs.get(rs.len() * 95 / 100).copied().unwrap_or(0.0);
-    (r95.max(d(ig.x, ig.y)) * 3.6).clamp(PLAY_DIST, 4400.0)
+    (r95.max(d(ig.x, ig.y)) * 2.9).clamp(PLAY_DIST * 0.8, 4400.0)
 }
 
 #[derive(Default)]
