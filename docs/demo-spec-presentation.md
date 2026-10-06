@@ -181,3 +181,20 @@ twin/restart robustness, #37–#39 "perché?", COMPARE ghost, wind-changed flash
 Could not check (needs a pointer/profiler): live fps, unit tasking on the map,
 bad-point refusals on screen, order-button double click, operator corner, idle
 timings in practice, unit sprites/spot rings/smoke/traffic on the map, restart leaks.
+
+## 10. Status after the first presentation pass
+
+Shipped: §2 clean-up (workbench, api, interview, far terrain, sea, sky, wasm,
+`egui-snarl`; `crates/game` is kiosk-only, `CLAUDE.md` rewritten, `docs/demo-operator.md`
+written); §4 plinth with strata walls and table (`plinth.rs`), one fixed warm sun,
+depth-of-field as the tilt-shift read, toy-scale houses (1.7x), per-town camera framing
+(`kiosk::view::play_dist`); `KIOSK_IDLE_S`, `KIOSK_FPS`; Ricomincia no longer pins the
+town; unused strings removed. Measured ~32-38 fps in the screenshot harness on the dev
+Mac (windowed 1600x1000 at 2x), so the 30 fps floor holds with little margin.
+
+Not done: overlays (§3), briefing/attract fixes, action-bar feedback, twin robustness,
+advisors, `KIOSK_SELFTEST`, supervisor script, vegetation props (still 230 k plants),
+people/cars/units art, fire/smoke polish, native Italian review, remaining dead-code
+warnings (`FireLayer` variants in `fire_view.rs`).
+
+Requests to gameplay: none new. Slots for money/trust/events are not yet laid out.
