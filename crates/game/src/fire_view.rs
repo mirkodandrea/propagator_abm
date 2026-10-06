@@ -240,28 +240,6 @@ fn empty_mesh() -> Mesh {
     m
 }
 
-/// Number keys switch layers; View ▸ Fire layer has the same four, with each
-/// one's legend on hover.
-pub fn layer_controls(
-    keys: Res<ButtonInput<KeyCode>>,
-    focus: Res<crate::ui::UiFocus>,
-    mut layer: ResMut<FireLayer>,
-) {
-    if focus.typing() || crate::camera::modified(&keys) || crate::camera::shift(&keys) {
-        return;
-    }
-    for (key, value) in [
-        (KeyCode::Digit1, FireLayer::Flames),
-        (KeyCode::Digit2, FireLayer::Intensity),
-        (KeyCode::Digit3, FireLayer::Arrival),
-        (KeyCode::Digit4, FireLayer::Hazard),
-    ] {
-        if keys.just_pressed(key) && *layer != value {
-            *layer = value;
-        }
-    }
-}
-
 /// Clear the drifting particles when the sim restarts.
 ///
 /// The overlay and the flame billboards are rebuilt from the fire state every

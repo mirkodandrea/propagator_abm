@@ -24,10 +24,10 @@ use std::sync::Mutex;
 
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
-use bevy::window::{MonitorSelection, WindowMode};
+use bevy::window::WindowMode;
 use demo::{Draw, Forecast, Outcome, Spec, Tally, STEP_S};
 
-use crate::scenario_selector::DataPath;
+use crate::DataPath;
 use crate::sim::{Sim, SimRestarted};
 use crate::AppState;
 
@@ -433,22 +433,6 @@ pub fn step(
             }
             _ => {}
         }
-    }
-}
-
-/// Reload the scenario when a town switch asked for it. Runs in the selecting
-/// state, where `launch` picks up the (new) `Kiosk::spec`.
-pub fn wants_reload(kiosk: Res<Kiosk>) -> bool {
-    kiosk.reload || kiosk.cf_rx.is_none()
-}
-
-pub fn fullscreen(mut windows: Query<&mut Window>) {
-    if let Ok(mut w) = windows.get_single_mut() {
-        w.mode = window_mode();
-        if w.mode != WindowMode::Windowed {
-            w.cursor.visible = true;
-        }
-        let _ = MonitorSelection::Current;
     }
 }
 

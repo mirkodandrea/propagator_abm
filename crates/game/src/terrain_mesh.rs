@@ -380,10 +380,6 @@ impl VrGridBuilder {
     }
 }
 
-/// Height lookup used when placing anything on the ground.
-pub fn ground(scn: &Scenario, p: Pos) -> f32 {
-    scn.terrain.height_at(p)
-}
 
 /// Centre of a fire cell, lifted onto the terrain.
 pub fn cell_ground(scn: &Scenario, c: Cell) -> (Pos, f32) {

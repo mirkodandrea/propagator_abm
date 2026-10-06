@@ -11,78 +11,6 @@ use bevy::prelude::*;
 use fire::{FireSim, IgnitionPlan, Weather};
 use scenario::{Cell, Pos, Scenario};
 
-/// Radius of the fire the scenario opens with: already a going fire at the
-/// WUI edge, which is the situation an incident commander is called to.
-///
-/// Sized empirically (`crates/fire/tests/sizing.rs`). A fire only travels
-/// ~500-800 m in a two-hour initial-attack window, so a small ignition simply
-/// cannot reach the coastal settlement from anywhere it can sustain itself.
-/// Measured over a 2 h run: 150 m radius threatens 37-80 households, 250 m
-/// threatens 137 while burning half as much ground as 500 m. 250 m it is.
-pub const START_RADIUS_M: f32 = 250.0;
-
-/// Opening weather and start radius for a named real scenario.
-///
-/// `Weather::default()` and `START_RADIUS_M` were tuned once, against
-/// Spotorno's tramontana alone, and every other real scenario silently
-/// inherited them — a north wind blowing toward the sea has no reason to be
-/// the right start for a hillside above the Attica coast. Swept per place in
-/// `crates/fire/tests/real_scenario_ignitions.rs` /
-/// `real_scenario_ignitions_fine.rs`: coarse over 8 wind directions and three
-/// radii, then fine over a finer radius grid at a bearing grounded in the
-/// place's own historical fire rather than whichever direction maximised
-/// threatened households.
-///
-///  - `mati`: WNW, ~293°, the reported sustained bearing for the July 2018
-///    Attica fire (32-56 km/h first two hours). 225 m: 56 households
-///    threatened at peak, 12 with accumulated damage.
-///  - `pedrogao`: ~315°, the bearing the fire rotated onto around 18:05 under
-///    convective outflow ahead of the storm that overran the N236-1. This
-///    window is extreme at every radius tried (300-480 households
-///    threatened) — the real event was one of the fastest-moving fires
-///    recorded in Europe — so the smallest radius that reliably establishes
-///    is the honest choice: 150 m still threatens 366 and damages 103.
-///  - `rhodes`: ~315°, northwesterly meltemi (the southeastern-Aegean form,
-///    not the northerly one further up the chain). 200 m: 102 households
-///    threatened, 22 damaged, without the burn area climbing past 90 ha.
-///
-/// Anything not listed — every synthetic ABM-lab scenario, and any real place
-/// added and not yet measured — falls back to Spotorno's own tuning, which is
-/// at least a real, reasoned start rather than an arbitrary one.
-pub fn opening_conditions(scenario_id: &str) -> (Weather, f32) {
-    match scenario_id {
-        "mati" => (
-            Weather { wind_dir_deg: 293.0, wind_speed_kmh: 45.0, moisture_pct: 5.0 },
-            225.0,
-        ),
-        "pedrogao" => (
-            Weather { wind_dir_deg: 315.0, wind_speed_kmh: 45.0, moisture_pct: 5.0 },
-            150.0,
-        ),
-        "rhodes" => (
-            Weather { wind_dir_deg: 315.0, wind_speed_kmh: 30.0, moisture_pct: 6.0 },
-            200.0,
-        ),
-        _ => (Weather::default(), START_RADIUS_M),
-    }
-}
-
-/// Never advance more than this much simulated time in a single frame, however
-/// far behind the accumulator has fallen.
-const MAX_STEP_PER_FRAME_S: f32 = 30.0;
-/// Granularity handed to the core. Small enough that the fire front updates
-/// smoothly, large enough that the event heap isn't churned pointlessly.
-const STEP_QUANTUM_S: i64 = 2;
-
-/// Smallest ignition the UI will let you place.
-///
-/// Not an arbitrary minimum: below roughly this size a patch is a coin flip at
-/// `realizations=1` and simply fails to establish about a fifth of the time
-/// (see [`FireSim::ignite_patch`]). Letting the player place a 20 m ignition
-/// would mean shipping that coin flip as a feature.
-pub const MIN_IGNITION_RADIUS_M: f32 = 60.0;
-pub const MAX_IGNITION_RADIUS_M: f32 = 600.0;
-
 /// One lit patch, and when it was lit.
 ///
 /// Kept as a list rather than a single point so the scenario is *reproducible*:
@@ -124,21 +52,7 @@ pub struct Sim {
     /// Every domain must have an active profile. A missing or invalid graph is
     /// an error; the simulator has no second decision implementation to use.
     pub behaviour: behavior::Library,
-    /// Per-run log of what happened to each agent, for the Inspector's
-    /// History section and (later) an LLM "interview an agent" feature.
-    /// Rebuilt from scratch alongside `agents`/`crews` on every restart —
-    /// see `crate::history` for why it does not outlive one run.
-    pub history: crate::history::History,
     pub playing: bool,
-    /// Simulated seconds per wall-clock second.
-    pub speed: f32,
-    /// Decision ticks the player has asked for one at a time, and which run
-    /// whether or not the sim is playing.
-    ///
-    /// A counter rather than a flag so holding the key down queues steps instead
-    /// of dropping all but the last, and so a step asked for on a frame that
-    /// already stepped is not silently lost.
-    pub step_requests: u32,
     accumulator: f32,
     /// Bumped whenever the fire state changes, so views rebuild only then.
     ///
@@ -162,18 +76,6 @@ pub struct Sim {
     /// Seed for the fire core and the agent model. Editable so a scenario can
     /// be re-rolled without restarting the process.
     pub seed: u64,
-    /// Simulated time at which a general evacuation order fires by itself.
-    /// Only set by `SPOTORNO_ORDER_AT`, for unattended runs and screenshots --
-    /// in play the order is the commander's to give.
-    auto_order_s: Option<i64>,
-    /// `SPOTORNO_ORDER_AT`, kept so a restart re-arms the same auto-order.
-    auto_order_env_s: Option<i64>,
-    /// Simulated time at which every unit is committed to the head of the fire
-    /// by itself, and air support is requested. `SPOTORNO_ATTACK_AT` only, for
-    /// screenshots and unattended runs — in play this is the commander's job,
-    /// and doing it well is most of the game.
-    auto_attack_s: Option<i64>,
-    auto_attack_env_s: Option<i64>,
 }
 
 /// Where suppression units stage, in the order they are handed out.
@@ -201,20 +103,6 @@ fn staging(agents: &Abm, ignition: Pos) -> Vec<Pos> {
 pub struct SimRestarted;
 
 impl Sim {
-    pub fn new(
-        scenario: Scenario,
-        weather: Weather,
-        radius_m: f32,
-        seed: u64,
-        behaviour: behavior::Library,
-    ) -> anyhow::Result<Sim> {
-        // A going fire at the WUI edge, not a single cell: see
-        // FireSim::ignite_patch and fire::ignition for why both the size and
-        // the placement matter.
-        let ignition = fire::plan_ignition(&scenario, weather.wind_dir_deg, radius_m);
-        Self::with_ignition(scenario, weather, ignition, seed, behaviour)
-    }
-
     /// A mission with its fire lit exactly where the caller says, rather than
     /// where `plan_ignition` would choose. The kiosk demo's towns pin their
     /// ignition (`demo::spec`), and the COMPARE screen is only honest if the
@@ -279,30 +167,13 @@ impl Sim {
             crews.units.iter().filter(|u| u.kind.is_air()).count(),
         );
 
-        let auto_order_env_s = std::env::var("SPOTORNO_ORDER_AT")
-            .ok()
-            .and_then(|v| v.parse().ok());
-        let auto_attack_env_s = std::env::var("SPOTORNO_ATTACK_AT")
-            .ok()
-            .and_then(|v| v.parse().ok());
-
-        let history = crate::history::History::new(&agents, &crews);
-        history.record_run_started(seed, weather);
-        history.record_ignition(0, ignition.centre.row, ignition.centre.col, ignition.radius_m);
-        history.record_locations(&scenario.population);
-
         Ok(Sim {
             fire,
             agents,
             crews,
             scenario,
             behaviour,
-            history,
-            // SPOTORNO_AUTOPLAY=1 starts running immediately, for screenshots
-            // and for headless timing runs.
-            playing: std::env::var("SPOTORNO_AUTOPLAY").is_ok(),
-            speed: 1.0,
-            step_requests: 0,
+            playing: false,
             accumulator: 0.0,
             generation: 0,
             ignitions: vec![Ignition {
@@ -314,10 +185,6 @@ impl Sim {
             pending_ignitions: Vec::new(),
             weather,
             seed,
-            auto_order_s: auto_order_env_s,
-            auto_order_env_s,
-            auto_attack_s: auto_attack_env_s,
-            auto_attack_env_s,
         })
     }
 
@@ -346,26 +213,6 @@ impl Sim {
         abm::UnitRuntime::build(lib)
             .map_err(|e| anyhow::anyhow!("suppression-unit behaviour: {e}"))?
             .ok_or_else(|| anyhow::anyhow!("suppression-unit behaviour: no profile is enabled"))
-    }
-
-    /// Adopt an authored behaviour library and restart onto it.
-    ///
-    /// A restart rather than a hot swap, deliberately. Households are
-    /// mid-decision — milling, on the road, committed to defending — and a new
-    /// decision layer would be answering about a state the old one produced.
-    /// The fire, the weather, the seed and the ignition list are untouched, so
-    /// this *is* the controlled comparison.
-    pub fn apply_behaviour(&mut self, lib: behavior::Library) -> anyhow::Result<()> {
-        let previous = std::mem::replace(&mut self.behaviour, lib);
-        match self.restart() {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                // `restart` is transactional, so restoring the library is
-                // enough to leave the current incident exactly as it was.
-                self.behaviour = previous;
-                Err(e)
-            }
-        }
     }
 
     /// Rebuild the fire and the agents from scratch and replay the ignition
@@ -425,19 +272,6 @@ impl Sim {
         self.ignitions = ignitions;
         self.pending_ignitions = pending;
         self.accumulator = 0.0;
-        // Fresh log, not a reset one: a restart discards every household's
-        // decision history exactly as it discards `agents` itself, or a
-        // household's "why" would answer for a run that no longer exists.
-        self.history = crate::history::History::new(&self.agents, &self.crews);
-        self.history.record_run_started(self.seed, self.weather);
-        self.history.record_locations(&self.scenario.population);
-        for ig in &self.ignitions {
-            if ig.at_s <= 0 {
-                self.history.record_ignition(ig.at_s, ig.centre.row, ig.centre.col, ig.radius_m);
-            }
-        }
-        self.auto_order_s = self.auto_order_env_s;
-        self.auto_attack_s = self.auto_attack_env_s;
         // Not reset: `generation` (a staleness token -- see the field) and
         // `speed`/`playing`, which are the player's view settings and not part
         // of the scenario.
@@ -453,28 +287,6 @@ impl Sim {
         Ok(())
     }
 
-    /// Light a new patch at the current simulated time.
-    ///
-    /// Recorded in [`Sim::ignitions`] with its timestamp, so it survives a
-    /// restart as a scheduled event rather than silently becoming part of the
-    /// opening fire.
-    pub fn add_ignition(&mut self, centre: Cell, radius_m: f32) -> anyhow::Result<()> {
-        let at_s = self.time_s();
-        self.fire.ignite_patch(centre, radius_m, &self.scenario)?;
-        self.ignitions.push(Ignition {
-            centre,
-            radius_m,
-            at_s,
-        });
-        self.history.record_ignition(at_s, centre.row, centre.col, radius_m);
-        self.generation += 1;
-        info!(
-            "ignition added at ({}, {}) r={radius_m:.0} m, T+{at_s} s",
-            centre.row, centre.col
-        );
-        Ok(())
-    }
-
     /// Apply the staged [`Sim::weather`] to the running fire, from now on.
     ///
     /// Weather is a boundary condition in the core, so this changes what the
@@ -483,75 +295,8 @@ impl Sim {
     /// real incident.
     pub fn apply_weather(&mut self) -> anyhow::Result<()> {
         self.fire.set_weather(self.weather)?;
-        self.history.record_weather(self.time_s(), self.weather);
         self.generation += 1;
         Ok(())
-    }
-
-    /// Has the staged weather drifted from what the fire is actually running?
-    pub fn weather_dirty(&self) -> bool {
-        let live = self.fire.weather();
-        (live.wind_dir_deg - self.weather.wind_dir_deg).abs() > 1e-6
-            || (live.wind_speed_kmh - self.weather.wind_speed_kmh).abs() > 1e-6
-            || (live.moisture_pct - self.weather.moisture_pct).abs() > 1e-6
-    }
-
-    /// The furthest-downwind burning cell: the head of the fire, which is where
-    /// an initial attack goes. Falls back to the ignition before anything is
-    /// alight.
-    pub fn fire_head(&self) -> Pos {
-        self.fire
-            .active_cells()
-            .iter()
-            .map(|c| self.scenario.world.centre_of(*c))
-            .min_by(|a, b| a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap_or_else(|| self.scenario.world.centre_of(self.ignition.centre))
-    }
-
-    /// Send every ground unit to the head of the fire, request air support, and
-    /// task whatever aircraft are already on station. Returns units committed.
-    ///
-    /// The "everything, now" plan. Not a good plan — the measured comparison in
-    /// `abm`'s `suppression_changes_the_outcome` shows re-tasking the aircraft
-    /// onto the moving head saves half again as much ground — but it is the
-    /// plan a screenshot and an unattended run need, and it is what a player
-    /// does in their first thirty seconds.
-    pub fn commit_all_to_head(&mut self) -> usize {
-        let head = self.fire_head();
-        // Air support is asked for *first*: an aircraft that has not been
-        // requested cannot be tasked, but one that is merely inbound can be
-        // briefed, and then goes to work the moment it is on station.
-        self.crews.request_air();
-        let ids: Vec<usize> = self.crews.units.iter().map(|u| u.id).collect();
-        let mut n = 0;
-        for id in ids {
-            let task = if self.crews.units[id].kind.is_air() {
-                abm::Task::Drop { at: head }
-            } else {
-                abm::Task::Attack { at: head }
-            };
-            if self.crews.assign(id, task).is_ok() {
-                n += 1;
-            }
-        }
-        n
-    }
-
-    /// `HH:MM:SS` since ignition, for the HUD.
-    pub fn clock(&self) -> String {
-        let t = self.fire.time_s();
-        format!("{:02}:{:02}:{:02}", t / 3600, (t / 60) % 60, t % 60)
-    }
-
-    /// Ask for one decision tick, to be run on the next frame whether or not
-    /// the sim is playing.
-    ///
-    /// This is the granularity a behaviour is *authored* at: the fire's own
-    /// quantum is 2 s and almost every one of those shows no behavioural change
-    /// at all, so stepping by it would mean pressing the key three times to see
-    /// anything and having no way to know which press did it.
-    pub fn request_step(&mut self) {
-        self.step_requests = self.step_requests.saturating_add(1);
     }
 
     /// Advance the whole incident by exactly `seconds` of simulated time.
@@ -563,22 +308,6 @@ impl Sim {
     pub fn advance(&mut self, seconds: i64) -> anyhow::Result<()> {
         if seconds <= 0 {
             return Ok(());
-        }
-
-        if let Some(at) = self.auto_order_s {
-            if self.time_s() >= at {
-                let n = self.agents.order_evacuation_all();
-                info!("scheduled general evacuation at T+{at}s: {n} households");
-                self.auto_order_s = None;
-            }
-        }
-
-        if let Some(at) = self.auto_attack_s {
-            if self.time_s() >= at {
-                self.auto_attack_s = None;
-                let n = self.commit_all_to_head();
-                info!("scheduled initial attack at T+{at}s: {n} units committed");
-            }
         }
 
         // Replayed mid-run ignitions, lit as the clock reaches them. Only ever
@@ -599,9 +328,7 @@ impl Sim {
                 };
                 match lit {
                     Err(e) => warn!("replayed ignition at T+{}s failed: {e:#}", ig.at_s),
-                    Ok(()) => {
-                        self.history.record_ignition(ig.at_s, ig.centre.row, ig.centre.col, ig.radius_m)
-                    }
+                    Ok(()) => {}
                 }
             }
         }
@@ -616,69 +343,31 @@ impl Sim {
             fire.queue(action);
         }
         self.generation += 1;
-        self.history.observe(self.time_s(), &self.agents, &self.crews);
         Ok(())
-    }
-}
-
-/// Simulated seconds one requested step covers.
-///
-/// One household decision interval, rounded up to the fire's own quantum so the
-/// step lands on a boundary the core can actually advance to. Every agent in
-/// every domain gets exactly one decision out of it.
-pub const STEP_S: i64 =
-    ((abm::DECISION_S as i64 + STEP_QUANTUM_S - 1) / STEP_QUANTUM_S) * STEP_QUANTUM_S;
-
-pub fn step_fire(mut sim: ResMut<Sim>, time: Res<Time>) {
-    // A requested step runs whether or not the clock is running, and takes
-    // precedence: someone who has paused to read a behaviour and pressed the
-    // step key wants that step, not a frame of free running.
-    let advance = if sim.step_requests > 0 {
-        sim.step_requests -= 1;
-        STEP_S
-    } else if sim.playing {
-        let dt = time.delta_seconds().min(0.25) * sim.speed;
-        sim.accumulator = (sim.accumulator + dt).min(MAX_STEP_PER_FRAME_S);
-        let whole = sim.accumulator as i64;
-        if whole < STEP_QUANTUM_S {
-            return;
-        }
-        let advance = (whole / STEP_QUANTUM_S) * STEP_QUANTUM_S;
-        sim.accumulator -= advance as f32;
-        advance
-    } else {
-        return;
-    };
-
-    if let Err(e) = sim.advance(advance) {
-        error!("fire core failed: {e:#}");
-        sim.playing = false;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Sim;
-    use scenario::{Scenario, ScenarioRegistry};
+    use scenario::Scenario;
 
     #[test]
-    fn every_registered_scenario_starts_a_simulation() -> anyhow::Result<()> {
+    fn every_demo_town_starts_a_simulation() -> anyhow::Result<()> {
         let data_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
-        let registry = ScenarioRegistry::discover(&data_dir)?;
-
-        for metadata in registry.list() {
-            let scenario = Scenario::load_by_id(&data_dir, &metadata.id)?;
-            let (weather, radius_m) = super::opening_conditions(&metadata.id);
-            Sim::new(
+        for id in demo::ALL {
+            let spec = demo::draw(id, 42).expect("demo town has a spec").spec;
+            let scenario = Scenario::load_by_id(&data_dir, spec.id)?;
+            Sim::at_ignition(
                 scenario,
-                weather,
-                radius_m,
+                spec.weather,
+                spec.ignition,
+                spec.radius_m,
                 42,
                 behavior::defaults::default_library(),
             )
-                .map_err(|error| anyhow::anyhow!("{}: {error:#}", metadata.id))?;
+            .map_err(|error| anyhow::anyhow!("{}: {error:#}", spec.id))?;
         }
-
         Ok(())
     }
 }

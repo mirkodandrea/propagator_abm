@@ -55,7 +55,6 @@ const WINDOW_LIT: [f32; 4] = [2.1, 1.55, 0.85, 1.0];
 /// fade: a lit window is a binary fact about a house (is anyone home, is it
 /// dark out), and a threshold crossed twice a run is a cheaper and just as
 /// honest a signal as a continuous glow ramp.
-const NIGHT_BRIGHTNESS: f32 = 0.15;
 
 /// Chunk edge in metres.
 const CHUNK_M: f32 = 512.0;
@@ -114,21 +113,6 @@ pub struct Buildings {
     /// and the click-select pipeline: both need to go from "which house" to
     /// "which few thousand vertices" without a linear scan.
     by_household: HashMap<u32, (usize, usize)>,
-}
-
-/// Which structure, if any, the cursor is currently over — a household id,
-/// same key as `Buildings::by_household`. Kept apart from `inspect::Selected`
-/// because hovering and selecting are different gestures: hovering never
-/// requires a click and is not undone by one landing elsewhere.
-#[derive(Resource, Default)]
-pub struct HoveredHousehold(pub Option<usize>);
-
-/// Incident-wide structure damage tally, from [`Buildings::damage_counts`].
-#[derive(Default, Clone, Copy)]
-pub struct DamageCounts {
-    pub threatened: usize,
-    pub alight: usize,
-    pub destroyed: usize,
 }
 
 pub fn spawn(
@@ -731,49 +715,6 @@ pub fn reset(
     }
 }
 
-impl Buildings {
-    /// Damage state of the structure a household lives in, for the inspector.
-    /// `None` for a household whose building was too small or degenerate to
-    /// draw (`emit_building` returned `None` for it).
-    pub fn status_of(&self, household_id: usize) -> Option<&'static str> {
-        let id = household_id as u32;
-        for chunk in &self.chunks {
-            for s in &chunk.structures {
-                if s.households.contains(&id) {
-                    return Some(match s.drawn {
-                        x if x == Damage::Threatened as u8 => "threatened",
-                        x if x == Damage::Alight as u8 => "alight",
-                        x if x == Damage::Destroyed as u8 => "destroyed",
-                        _ => "undamaged",
-                    });
-                }
-            }
-        }
-        None
-    }
-
-    /// How many drawable structures currently sit in each damage state --
-    /// the incident-wide version of `status_of`, for a status readout that
-    /// wants "how bad is it" rather than one building's own state. `destroyed`
-    /// in particular is not derivable from `fire::StructureExposure` alone:
-    /// it is the `alight_at_s` burn-down latch (see the module doc), so
-    /// counting it means reading this resource rather than the fire model.
-    pub fn damage_counts(&self) -> DamageCounts {
-        let mut counts = DamageCounts::default();
-        for chunk in &self.chunks {
-            for s in &chunk.structures {
-                match s.drawn {
-                    x if x == Damage::Threatened as u8 => counts.threatened += 1,
-                    x if x == Damage::Alight as u8 => counts.alight += 1,
-                    x if x == Damage::Destroyed as u8 => counts.destroyed += 1,
-                    _ => {}
-                }
-            }
-        }
-        counts
-    }
-}
-
 /// Recompute one structure's colours from scratch: `base` plus whatever
 /// `s.drawn`/`s.lit` currently say. Shared by the damage pass (which decides
 /// those two fields) and the hover pass (which only ever replays them) so
@@ -821,23 +762,8 @@ fn recolor_structure(colors: &mut [[f32; 4]], base: &[[f32; 4]], s: &Structure) 
     }
 }
 
-/// A temporary brightening laid on top of whatever `recolor_structure` just
-/// computed — the hover feedback that used to be a floating beacon.
-fn hover_boost(colors: &mut [[f32; 4]], s: &Structure) {
-    for c in &mut colors[s.vert_start as usize..s.vert_end as usize] {
-        *c = [
-            (c[0] * 1.35 + 0.18).min(2.2),
-            (c[1] * 1.30 + 0.15).min(2.0),
-            (c[2] * 1.25 + 0.12).min(2.0),
-            c[3],
-        ];
-    }
-}
-
 pub fn damage(
     sim: Res<Sim>,
-    sun: Res<crate::sky::SunState>,
-    hovered: Res<HoveredHousehold>,
     mut buildings: ResMut<Buildings>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
@@ -851,17 +777,11 @@ pub fn damage(
     // it would otherwise read as permanent night (the resource's default is
     // `brightness: 0.0`) and every occupied house would glow regardless of
     // the actual simulated hour.
-    let night = sim.scenario.vr_palette().is_none() && sun.brightness < NIGHT_BRIGHTNESS;
+    let night = false;
 
-    let Buildings {
-        chunks,
-        by_household,
-    } = &mut *buildings;
-    let hovered_at = hovered
-        .0
-        .and_then(|h| by_household.get(&(h as u32)).copied());
+    let Buildings { chunks, .. } = &mut *buildings;
 
-    for (ci, chunk) in chunks.iter_mut().enumerate() {
+    for chunk in chunks.iter_mut() {
         let mut dirty = false;
         for s in &mut chunk.structures {
             let (mut alight, mut load) = (false, 0.0f32);
@@ -915,75 +835,6 @@ pub fn damage(
         let mut colors = chunk.base.clone();
         for s in &chunk.structures {
             recolor_structure(&mut colors, &chunk.base, s);
-        }
-        if let Some((hci, hsi)) = hovered_at {
-            if hci == ci {
-                hover_boost(&mut colors, &chunk.structures[hsi]);
-            }
-        }
-        if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
-            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
-        }
-    }
-}
-
-/// Screen-space hover test against every occupiable household, the same
-/// technique `inspect::pick_click` uses for the click itself — projecting a
-/// few hundred candidate points is cheap enough to repeat every frame, and
-/// it is what makes the hover zoom-invariant. Only rewrites the (at most
-/// two) chunks whose highlight actually changed.
-pub fn hover(
-    ui_focus: Res<crate::ui::UiFocus>,
-    tool: Res<crate::ignition_edit::IgnitionTool>,
-    order: Res<crate::command::OrderTool>,
-    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
-    camera: Query<(&Camera, &GlobalTransform), With<crate::camera::OrbitCamera>>,
-    sim: Res<Sim>,
-    mut hovered: ResMut<HoveredHousehold>,
-    buildings: Res<Buildings>,
-    mut meshes: ResMut<Assets<Mesh>>,
-) {
-    let armed = tool.mode != crate::ignition_edit::EditMode::Off || order.is_armed();
-    let mut new_hover = None;
-    if !ui_focus.pointer && !armed {
-        if let (Ok(window), Ok((camera, cam_tf))) = (windows.get_single(), camera.get_single()) {
-            if let Some(cursor) = crate::pick::cursor_position(camera, window) {
-                let mut best: Option<(f32, usize)> = None;
-                for h in &sim.agents.households {
-                    if h.status == Status::Evacuated {
-                        continue;
-                    }
-                    let ground = sim.scenario.terrain.height_at(h.home);
-                    let world = crate::frame::to_bevy(h.home, ground + 4.0);
-                    if let Some(screen) = camera.world_to_viewport(cam_tf, world) {
-                        let d = screen.distance(cursor);
-                        if d < crate::inspect::PICK_PX && best.map_or(true, |(bd, _)| d < bd) {
-                            best = Some((d, h.id));
-                        }
-                    }
-                }
-                new_hover = best.map(|(_, id)| id);
-            }
-        }
-    }
-
-    if new_hover == hovered.0 {
-        return;
-    }
-    let old = hovered.0;
-    hovered.0 = new_hover;
-
-    for id in [old, new_hover].into_iter().flatten() {
-        let Some(&(ci, si)) = buildings.by_household.get(&(id as u32)) else {
-            continue;
-        };
-        let chunk = &buildings.chunks[ci];
-        let mut colors = chunk.base.clone();
-        for s in &chunk.structures {
-            recolor_structure(&mut colors, &chunk.base, s);
-        }
-        if hovered.0 == Some(id) {
-            hover_boost(&mut colors, &chunk.structures[si]);
         }
         if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);

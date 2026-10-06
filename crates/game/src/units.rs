@@ -18,7 +18,7 @@
 //! has to be findable, and there are eight of them against 1,577 people.
 //!
 //! The one thing worth knowing before editing: the work overlay sits at
-//! [`crate::ignition_edit::RING_LIFT_M`] above the ground like every other
+//! [`crate::rings::RING_LIFT_M`] above the ground like every other
 //! symbol here, *not* on it. Vegetation on this map is 5–15 m of real plants, so
 //! a cut line painted on the terrain is rendered perfectly and seen never.
 
@@ -31,7 +31,7 @@ use scenario::{Cell, Pos, Scenario};
 use crate::frame;
 use crate::retro;
 use crate::retro::RetroMaterial;
-use crate::ignition_edit::{ring_mesh, RING_LIFT_M};
+use crate::rings::{ring_mesh, RING_LIFT_M};
 use crate::sim::Sim;
 
 /// How far above life size units are drawn.
