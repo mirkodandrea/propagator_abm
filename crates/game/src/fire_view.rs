@@ -639,7 +639,7 @@ pub fn update_flames(
         // Byram flame length, with a floor: a metre-high creeping flame is
         // physically right and visually nothing, and the player still has to
         // be able to see where the fire is.
-        let flame_m = flame_length_m(fli).clamp(1.5, 45.0) * (0.45 + 0.55 * flaming);
+        let flame_m = (flame_length_m(fli) * 1.6).clamp(9.0, 60.0) * (0.45 + 0.55 * flaming);
         // A hot cell carries several tongues, a creeping one carries a single
         // flicker. Sub-cell placement is what stops them lining up on a grid.
         let tongues = (1.0 + (fli / 700.0).min(4.0) * flaming).round() as usize;
@@ -661,7 +661,7 @@ pub fn update_flames(
             // across the cell, so tongues differ within one cell too.
             let local = field.intensity(p).max(fli * 0.4);
             let h_m = flame_m * flicker * (0.6 + 0.4 * (local / fli.max(1.0)).min(1.5));
-            let half_w = (h_m * 0.42).min(scn.world.cellsize * 0.5);
+            let half_w = (h_m * 0.45).min(scn.world.cellsize * 0.95);
             let sway = (t * 2.6 + phase).sin() * h_m * 0.16;
 
             // Additive light competing with a daylit hillside: the multiplier
@@ -685,11 +685,11 @@ pub fn update_flames(
         let k = (puff.age / puff.life).clamp(0.0, 1.0);
         // Grows as it disperses, darkest and densest near the fire.
         let size = puff.size * (0.6 + 1.9 * k);
-        let shade = 0.16 + 0.42 * k;
+        let shade = 0.40 + 0.38 * k;
         // Fade in fast, out slowly: a puff should never pop into existence.
         // Kept thin — hundreds of puffs overlap, and at 0.55 each the plume
         // turned into a white wall as soon as the camera dropped into it.
-        let alpha = (k * 6.0).min(1.0) * (1.0 - k).powf(1.4) * 0.32;
+        let alpha = (k * 6.0).min(1.0) * (1.0 - k).powf(1.4) * 0.42;
         let spin = puff.phase * 6.28 + k * 0.6;
         let (s, c) = spin.sin_cos();
         let r = (right * c + up * s) * size;
@@ -699,8 +699,8 @@ pub fn update_flames(
             r,
             u,
             1.0,
-            [shade, shade * 0.94, shade * 0.88, alpha],
-            [shade, shade * 0.94, shade * 0.88, alpha],
+            [shade * 1.05, shade * 0.92, shade * 0.84, alpha],
+            [shade * 1.05, shade * 0.92, shade * 0.84, alpha],
         );
     }
 

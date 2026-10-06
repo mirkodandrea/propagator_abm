@@ -24,6 +24,7 @@ mod frame;
 mod kiosk;
 mod library;
 mod models;
+mod overlays;
 mod people;
 mod plinth;
 mod pick;
@@ -32,6 +33,7 @@ mod rings;
 mod roads;
 mod sim;
 mod terrain_mesh;
+mod toy;
 mod textures;
 mod ui;
 mod units;
@@ -58,6 +60,8 @@ fn main() -> anyhow::Result<()> {
             title: kiosk::strings_it::TITLE.into(),
             resolution: (1600.0, 1000.0).into(),
             mode: kiosk::window_mode(),
+            // KIOSK_FPS measures the real frame cost, so it must not be vsync-capped.
+            present_mode: if std::env::var("KIOSK_FPS").is_ok() { bevy::window::PresentMode::AutoNoVsync } else { bevy::window::PresentMode::AutoVsync },
             ..default()
         }),
         ..default()
@@ -86,6 +90,7 @@ fn main() -> anyhow::Result<()> {
             buildings::spawn,
             agents::spawn,
             people::setup,
+            overlays::setup,
             people::mark_refuges,
             units::setup,
         ),
@@ -188,6 +193,7 @@ fn kiosk_systems(app: &mut App) {
                 fire_view::reset,
                 buildings::reset,
                 people::reset,
+                overlays::reset,
                 units::reset,
                 command::reset,
             )
@@ -201,7 +207,10 @@ fn kiosk_systems(app: &mut App) {
                 people::spawn_vehicles,
                 people::update_people,
                 people::update_vehicles,
+                people::bob_people.after(people::update_people),
                 units::update_units,
+                overlays::update_markers,
+                overlays::update_wind,
                 units::sync_orders,
                 units::update_work_overlay,
                 command::update_cursor,

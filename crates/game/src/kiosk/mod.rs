@@ -470,7 +470,8 @@ pub fn shots(
         0 if stage.1 > 4.0 => { snap("1_attract"); kiosk.cmd = Some(Cmd::Begin); *stage = (1, 0.0); }
         1 if stage.1 > 4.0 => { snap("2_briefing"); kiosk.cmd = Some(Cmd::Go); *stage = (2, 0.0); }
         2 if stage.1 > 2.0 => { sim.agents.order_evacuation_all(); kiosk.ordered_at_s = Some(sim.time_s()); *stage = (3, 0.0); }
-        3 if stage.1 > 6.0 => { snap("3_play"); *stage = (4, 0.0); }
+        3 if stage.1 > 6.0 => { snap("3_play"); *stage = (7, 0.0); }
+        7 if stage.1 > 8.0 => { snap("3b_play_late"); *stage = (4, 0.0); }
         4 if kiosk.phase == Phase::Outcome && kiosk.phase_t > 1.0 => { snap("4_outcome"); kiosk.enter(Phase::Compare); *stage = (5, 0.0); }
         5 if stage.1 > 2.5 && kiosk.counterfactual.is_some() => { snap("5_compare"); *stage = (6, 0.0); }
         6 if stage.1 > 1.0 => { exit.send(AppExit::Success); }

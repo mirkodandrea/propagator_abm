@@ -279,11 +279,13 @@ mod palette {
         [0.83, 0.70, 0.58], // sand
         [0.90, 0.79, 0.66], // pale ochre
     ];
-    pub const ROOFS: [[f32; 3]; 4] = [
-        [0.63, 0.31, 0.21],
-        [0.70, 0.37, 0.24],
-        [0.57, 0.29, 0.22],
-        [0.66, 0.34, 0.19],
+    pub const ROOFS: [[f32; 3]; 6] = [
+        [0.80, 0.38, 0.24],
+        [0.86, 0.46, 0.28],
+        [0.72, 0.30, 0.24],
+        [0.90, 0.56, 0.30],
+        [0.55, 0.42, 0.50],
+        [0.34, 0.50, 0.58],
     ];
     pub const INDUSTRIAL_WALL: [f32; 3] = [0.74, 0.74, 0.72];
     pub const INDUSTRIAL_ROOF: [f32; 3] = [0.52, 0.55, 0.57];
@@ -291,7 +293,10 @@ mod palette {
 }
 
 /// Footprint magnification (see `emit_building`).
-const TOY_SCALE: f32 = 2.6;
+const TOY_SCALE: f32 = 1.5;
+
+/// Toy houses are taller than real ones so they stand up out of the street.
+const TOY_HEIGHT: f32 = 1.7;
 
 /// Emit one building, and return the vertex range of its window quads
 /// (`start == end` if it has none). `None` for footprints too degenerate to
@@ -387,7 +392,7 @@ fn emit_building(
         Kind::Industrial => 6.5 + h * 3.0,
         Kind::Civic => storeys * STOREY_M * 1.35,
         _ => storeys * STOREY_M * (0.95 + 0.1 * h),
-    };
+    } * TOY_HEIGHT;
 
     // Ground: sit the base below the lowest corner and the eave above the
     // highest, so a building on a slope is cut into the hill rather than
@@ -422,7 +427,7 @@ fn emit_building(
             },
             match kind {
                 Kind::Industrial | Kind::Shed => palette::INDUSTRIAL_ROOF,
-                _ => palette::ROOFS[(hash01(b.id as u64, 0x3D) * 4.0) as usize % 4],
+                _ => palette::ROOFS[(hash01(b.id as u64, 0x3D) * 6.0) as usize % 6],
             },
         ),
     };
@@ -508,7 +513,7 @@ fn emit_building(
         // pinch — but at this scale the silhouette is right and the cost is a
         // few triangles.
         let inset = (area.sqrt() * 0.22).clamp(1.0, 4.5);
-        let ridge_h = (inset * 0.75).clamp(1.2, 3.5);
+        let ridge_h = (inset * 1.25).clamp(2.2, 6.0);
         let cap: Vec<Pos> = offset_ring(&eaves, centroid, -inset);
         let ridge = eave + ridge_h;
         for i in 0..m {
@@ -531,6 +536,18 @@ fn emit_building(
             centroid,
             [roof[0] * 1.12, roof[1] * 1.1, roof[2] * 1.08],
         );
+        // A chimney on most houses: the silhouette cue that says "home".
+        if matches!(kind, Kind::House | Kind::Apartments) && hash01(b.id as u64, 0x55) < 0.7 {
+            let k = (area.sqrt() * 0.07).clamp(0.9, 1.8);
+            let c = Pos { x: centroid.x + k * 1.6, y: centroid.y + k * 0.6 };
+            let sq = [
+                Pos { x: c.x - k * 0.5, y: c.y - k * 0.5 },
+                Pos { x: c.x + k * 0.5, y: c.y - k * 0.5 },
+                Pos { x: c.x + k * 0.5, y: c.y + k * 0.5 },
+                Pos { x: c.x - k * 0.5, y: c.y + k * 0.5 },
+            ];
+            out.prism(&sq, ridge - 0.8, ridge + k * 2.2, [0.78, 0.70, 0.62], [0.35, 0.30, 0.28]);
+        }
     }
     Some((window_start, window_end))
 }
@@ -647,6 +664,16 @@ impl Builder {
             .extend_from_slice(&[start, start + 1, start + 2, start, start + 2, start + 3]);
     }
 
+    /// A CCW ring extruded from `y0` to `y1`, with a flat cap.
+    fn prism(&mut self, ring: &[Pos], y0: f32, y1: f32, wall: [f32; 3], top: [f32; 3]) {
+        let m = ring.len();
+        for i in 0..m {
+            let (a, c) = (ring[i], ring[(i + 1) % m]);
+            self.quad([a.x, y0, -a.y], [c.x, y0, -c.y], [c.x, y1, -c.y], [a.x, y1, -a.y], wall);
+        }
+        self.fan(ring, y1, centroid(ring), top);
+    }
+
     /// Cap a ring at height `y` with a fan around its centroid.
     fn fan(&mut self, ring: &[Pos], y: f32, c: Pos, color: [f32; 3]) {
         let start = self.positions.len() as u32;
@@ -745,7 +772,8 @@ fn recolor_structure(colors: &mut [[f32; 4]], base: &[[f32; 4]], s: &Structure) 
             // enough to pick the building out of the street.
             for i in range {
                 let c = base[i];
-                colors[i] = [(c[0] * 1.15 + 0.10).min(1.4), c[1] * 0.95, c[2] * 0.80, 1.0];
+                // Unmistakable from altitude: the whole house goes hot amber.
+                colors[i] = [(c[0] * 0.4 + 0.95).min(1.6), c[1] * 0.5 + 0.50, c[2] * 0.2 + 0.05, 1.0];
             }
         }
         x if x == Damage::Alight as u8 => {

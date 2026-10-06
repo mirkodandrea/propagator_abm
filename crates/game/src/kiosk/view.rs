@@ -30,15 +30,19 @@ fn ease(t: f32) -> f32 {
 
 /// What the camera looks at: the middle of town, nudged toward the fire.
 fn home_focus(sim: &Sim, kiosk: &Kiosk) -> Vec3 {
+    if let Some((x, y)) = shot_focus() {
+        let p = Pos { x, y };
+        return crate::frame::to_bevy(p, sim.scenario.terrain.height_at(p));
+    }
     // The households' centroid, not the window's: Porto's town sits at one edge
     // and framing the middle of the map put it under the HUD (playtest §16 #4).
     let hs = &sim.agents.households;
     let n = hs.len().max(1) as f32;
     let centre = Pos { x: hs.iter().map(|h| h.home.x).sum::<f32>() / n, y: hs.iter().map(|h| h.home.y).sum::<f32>() / n };
     let ig = kiosk.spec.ignition;
-    let p = Pos { x: centre.x * 0.55 + ig.x * 0.45, y: centre.y * 0.55 + ig.y * 0.45 };
+    let p = Pos { x: centre.x * 0.5 + ig.x * 0.5, y: centre.y * 0.5 + ig.y * 0.5 };
     // Nudged south, so the town clears the action bar at the bottom of the screen.
-    crate::frame::to_bevy(Pos { x: p.x, y: p.y - 350.0 }, sim.scenario.terrain.height_at(p))
+    crate::frame::to_bevy(Pos { x: p.x, y: p.y - 40.0 }, sim.scenario.terrain.height_at(p))
 }
 
 /// Far enough to hold both the town and the fire between the HUD bands.
@@ -49,7 +53,7 @@ fn play_dist(sim: &Sim, kiosk: &Kiosk) -> f32 {
     let mut rs: Vec<f32> = sim.agents.households.iter().map(|h| d(h.home.x, h.home.y)).collect();
     rs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let r95 = rs.get(rs.len() * 95 / 100).copied().unwrap_or(0.0);
-    (r95.max(d(ig.x, ig.y)) * 2.9).clamp(PLAY_DIST * 0.8, 4400.0)
+    (r95.max(d(ig.x, ig.y)) * 3.4).clamp(PLAY_DIST * 0.8, 4400.0)
 }
 
 #[derive(Default)]
@@ -84,7 +88,7 @@ pub fn camera(
     let Ok((mut orbit, mut tf, camera, mut dof)) = query.get_single_mut() else { return };
     let home = home_focus(&sim, &kiosk);
     let t = kiosk.phase_t;
-    let pd = play_dist(&sim, &kiosk);
+    let pd = play_dist(&sim, &kiosk) * shot_zoom();
 
     // The user took the wheel: remember it for the rest of this phase.
     let touched = delta.length_squared() > 0.0 && (buttons.pressed(MouseButton::Left) || buttons.pressed(MouseButton::Right))
@@ -106,7 +110,8 @@ pub fn camera(
         }
         Phase::Briefing if !user_has_it && t < FLY_IN_S => {
             let k = ease(t / FLY_IN_S);
-            orbit.focus = home;
+            // The card takes the bottom third: lift the town clear of it.
+            orbit.focus = home + Vec3::new(0.0, 0.0, 0.16 * pd * k);
             orbit.yaw = -0.45 * (1.0 - k);
             orbit.pitch = -1.15 + (1.15 - 0.86) * k;
             orbit.distance = 4600.0 + (pd - 4600.0) * k;
@@ -155,7 +160,7 @@ pub fn camera(
 
     orbit.yaw = orbit.yaw.clamp(-MAX_YAW, MAX_YAW);
     orbit.pitch = orbit.pitch.clamp(MIN_PITCH, MAX_PITCH);
-    orbit.distance = orbit.distance.clamp(MIN_DIST, MAX_DIST);
+    orbit.distance = orbit.distance.clamp(MIN_DIST * shot_zoom().min(1.0), MAX_DIST);
     let off = Vec2::new(orbit.focus.x - home.x, orbit.focus.z - home.z);
     if off.length() > PAN_RADIUS_M {
         let c = off.normalize() * PAN_RADIUS_M;
@@ -179,4 +184,20 @@ pub fn camera(
 /// Screen angle, clockwise from straight up, of a world bearing.
 pub fn screen_angle(bearing_deg: f32, yaw: f32) -> f32 {
     bearing_deg.to_radians() + yaw
+}
+
+/// `KIOSK_SHOT_ZOOM=<k>` scales the play distance, to photograph close-ups.
+fn shot_zoom() -> f32 {
+    static Z: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *Z.get_or_init(|| std::env::var("KIOSK_SHOT_ZOOM").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0))
+}
+
+/// `KIOSK_SHOT_FOCUS=x,y` (world metres) for close-ups of a particular place.
+fn shot_focus() -> Option<(f32, f32)> {
+    static F: std::sync::OnceLock<Option<(f32, f32)>> = std::sync::OnceLock::new();
+    *F.get_or_init(|| {
+        let v = std::env::var("KIOSK_SHOT_FOCUS").ok()?;
+        let (a, b) = v.split_once(',')?;
+        Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+    })
 }
