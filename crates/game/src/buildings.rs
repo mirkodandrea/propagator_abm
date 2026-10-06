@@ -40,6 +40,9 @@ use scenario::{Building, Pos, Scenario};
 
 use crate::sim::Sim;
 use crate::retro;
+
+#[path = "town_kit.rs"]
+mod town_kit;
 use crate::retro::RetroMaterial;
 
 /// Unlit window glass — dark enough that a daylit building reads as an
@@ -66,8 +69,9 @@ const STOREY_M: f32 = 3.2;
 /// building a shadow line under the eave instead of a flat silhouette.
 const EAVE_M: f32 = 0.55;
 
-/// Simulated seconds a structure flames before it is a ruin.
-const BURN_DOWN_S: f32 = 25.0 * 60.0;
+/// Simulated seconds a structure flames before it is a ruin. Short, so a
+/// three-minute session shows the ruin and not only the flare.
+const BURN_DOWN_S: f32 = 8.0 * 60.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -242,7 +246,7 @@ enum Kind {
 impl Kind {
     fn of(tag: Option<&str>, area: f32) -> Kind {
         match tag.unwrap_or("yes") {
-            "house" | "detached" | "residential" | "cabin" | "bungalow" | "villa" => Kind::House,
+            "house" | "detached" | "residential" | "cabin" | "bungalow" | "villa" | "terrace" | "shop" => Kind::House,
             "apartments" | "hotel" | "dormitory" => Kind::Apartments,
             "industrial" | "warehouse" | "commercial" | "retail" | "supermarket" => {
                 Kind::Industrial
@@ -270,14 +274,14 @@ impl Kind {
 /// place in this file that is taste rather than data.
 mod palette {
     pub const WALLS: [[f32; 3]; 8] = [
-        [0.87, 0.75, 0.55], // ochre
-        [0.85, 0.66, 0.50], // apricot
-        [0.92, 0.88, 0.79], // cream
-        [0.80, 0.57, 0.49], // faded rose
-        [0.88, 0.82, 0.63], // pale yellow
-        [0.76, 0.72, 0.66], // grey-beige
-        [0.83, 0.70, 0.58], // sand
-        [0.90, 0.79, 0.66], // pale ochre
+        [0.93, 0.76, 0.50], // ochre
+        [0.95, 0.66, 0.52], // apricot
+        [0.96, 0.93, 0.84], // cream
+        [0.90, 0.58, 0.55], // rose
+        [0.97, 0.88, 0.58], // pale yellow
+        [0.70, 0.82, 0.90], // Ligurian pale blue
+        [0.76, 0.88, 0.76], // mint
+        [0.86, 0.48, 0.38], // terracotta red
     ];
     pub const ROOFS: [[f32; 3]; 6] = [
         [0.80, 0.38, 0.24],
@@ -311,10 +315,16 @@ fn emit_building(
     if n < 3 {
         return None;
     }
+    // Landmarks and open spaces come from the town kit.
+    if town_kit::emit(scn, b, out) {
+        let end = out.positions.len() as u32;
+        return Some((end, end));
+    }
     let area = b.area();
     if area < 6.0 {
         return None;
     }
+    town_kit::garden(scn, b, out);
 
     // OSM rings repeat the first point as the last; drop it, and drop any
     // vertex that duplicates its predecessor, or the wall quads degenerate.
@@ -472,6 +482,35 @@ fn emit_building(
         }
     }
     let window_end = out.positions.len() as u32;
+
+    // A shop: a striped awning over the street side and a sign board, so the
+    // main street reads as shops with flats above from across the gazebo.
+    if b.kind.as_deref() == Some("shop") {
+        let south = ring.iter().map(|p| p.y).fold(f32::MAX, f32::min);
+        let (x0, x1) = (
+            ring.iter().map(|p| p.x).fold(f32::MAX, f32::min) + 0.6,
+            ring.iter().map(|p| p.x).fold(f32::MIN, f32::max) - 0.6,
+        );
+        let g = scn.terrain.height_at(Pos { x: (x0 + x1) * 0.5, y: south });
+        let (top, low) = (g + 4.6, g + 3.4);
+        let stripes = [[0.92, 0.25, 0.22], [0.97, 0.95, 0.90], [0.20, 0.55, 0.35], [0.97, 0.95, 0.90], [0.25, 0.45, 0.85]];
+        let pick = stripes[(hash01(b.id as u64, 0x91) * 3.0) as usize % 3 * 2 % 5];
+        let n = 6;
+        for k in 0..n {
+            let xa = x0 + (x1 - x0) * k as f32 / n as f32;
+            let xb = x0 + (x1 - x0) * (k + 1) as f32 / n as f32;
+            let col = if k % 2 == 0 { pick } else { [0.97, 0.95, 0.90] };
+            // Wound so the face points up and out over the street (finding 11).
+            out.quad([xa, top, -(south - 0.05)], [xa, low, -(south - 2.4)], [xb, low, -(south - 2.4)], [xb, top, -(south - 0.05)], col);
+        }
+        out.quad(
+            [x0 + 1.0, top + 1.6, -(south - 0.12)],
+            [x0 + 1.0, top + 0.4, -(south - 0.12)],
+            [x1 - 1.0, top + 0.4, -(south - 0.12)],
+            [x1 - 1.0, top + 1.6, -(south - 0.12)],
+            [0.98, 0.90, 0.55],
+        );
+    }
 
     // The eave ring is the footprint pushed outward, which both casts the
     // shadow line and hides the seam where roof meets wall.
@@ -772,8 +811,8 @@ fn recolor_structure(colors: &mut [[f32; 4]], base: &[[f32; 4]], s: &Structure) 
             // enough to pick the building out of the street.
             for i in range {
                 let c = base[i];
-                // Unmistakable from altitude: the whole house goes hot amber.
-                colors[i] = [(c[0] * 0.4 + 0.95).min(1.6), c[1] * 0.5 + 0.50, c[2] * 0.2 + 0.05, 1.0];
+                // A warm cast, not a colour change: the street still reads.
+                colors[i] = [(c[0] * 0.85 + 0.18).min(1.3), c[1] * 0.80 + 0.06, c[2] * 0.6, 1.0];
             }
         }
         x if x == Damage::Alight as u8 => {
@@ -807,45 +846,42 @@ fn recolor_structure(colors: &mut [[f32; 4]], base: &[[f32; 4]], s: &Structure) 
     }
 }
 
+/// Building states follow the session's books (`demo::Referee`), not the fire
+/// model's raw exposure layer: that layer's ember reach (2.5 km) marks every
+/// house in a demo town as threatened and, in time, alight, so the houses
+/// burnt on screen while the end card said no home was hit. A home the books
+/// count as hit by the fire flares and then chars; a district the fire is
+/// threatening takes a warm cast. One source of truth for both.
 pub fn damage(
     sim: Res<Sim>,
+    kiosk: Res<crate::kiosk::Kiosk>,
     mut buildings: ResMut<Buildings>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     if !sim.is_changed() {
         return;
     }
-    let exposure = sim.fire.exposure();
-    let threat = sim.fire.threat();
+    let Some(referee) = kiosk.referee.as_ref() else { return };
     let now = sim.time_s() as f32;
-    // VR-training dev scenarios have no sun and never update `SunState`, so
-    // it would otherwise read as permanent night (the resource's default is
-    // `brightness: 0.0`) and every occupied house would glow regardless of
-    // the actual simulated hour.
-    let night = false;
+    let mut warm = vec![false; sim.agents.households.len()];
+    for (d, r) in referee.districts.iter().zip(&referee.reports) {
+        if r.level() >= demo::Level::Threatened {
+            for &i in &d.households {
+                if let Some(w) = warm.get_mut(i) {
+                    *w = true;
+                }
+            }
+        }
+    }
 
     let Buildings { chunks, .. } = &mut *buildings;
 
     for chunk in chunks.iter_mut() {
         let mut dirty = false;
         for s in &mut chunk.structures {
-            let (mut alight, mut load) = (false, 0.0f32);
-            let mut occupied = false;
-            for &h in &s.households {
-                let Some(hh) = sim.agents.households.get(h as usize) else {
-                    continue;
-                };
-                let f = exposure.get(h as usize);
-                alight |= f.alight;
-                load = load.max(f.radiant + f.ember);
-                occupied |= !matches!(hh.status, Status::Evacuating | Status::Evacuated);
-            }
-            if s.households.is_empty() {
-                // No residents, so no exposure record: fall back to how
-                // survivable it is to stand there.
-                load = threat.at(s.pos);
-            }
-            if alight && s.alight_at_s.is_infinite() {
+            let lost = s.households.iter().any(|&h| referee.tally.home_lost(h as usize) == Some(true));
+            let threatened = s.households.iter().any(|&h| warm.get(h as usize) == Some(&true));
+            if lost && s.alight_at_s.is_infinite() {
                 s.alight_at_s = now;
             }
             let want = if s.alight_at_s.is_finite() {
@@ -854,22 +890,13 @@ pub fn damage(
                 } else {
                     Damage::Alight
                 }
-            } else if load > 0.08 {
+            } else if threatened {
                 Damage::Threatened
             } else {
                 Damage::None
             } as u8;
             if want != s.drawn {
                 s.drawn = want;
-                dirty = true;
-            }
-            // Windows only matter while the structure reads as undamaged —
-            // threatened/alight/destroyed already overwrite the whole range,
-            // window quads included (finding #14's lesson generalises: don't
-            // maintain two sources of truth for the same vertices).
-            let lit = want == Damage::None as u8 && night && occupied;
-            if lit != s.lit {
-                s.lit = lit;
                 dirty = true;
             }
         }

@@ -50,7 +50,9 @@ pub struct VehicleView {
 
 #[derive(Resource)]
 pub struct PeopleAssets {
-    car: Handle<Mesh>,
+    /// Body types, picked per household so a queue is a street's worth of
+    /// different cars (and the odd Ape) rather than one car repeated.
+    cars: Vec<Handle<Mesh>>,
     /// Indexed by [`Status`].
     status: Vec<Handle<RetroMaterial>>,
     car_normal: Vec<Handle<RetroMaterial>>,
@@ -66,8 +68,17 @@ pub fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
-    let person = meshes.add(crate::toy::person());
-    let car = meshes.add(crate::toy::car());
+    // Figures by age: children, adults, the elderly with a stick. The clothes
+    // are white in the bake so the status tint still carries the meaning.
+    let figure: Vec<Handle<Mesh>> = ["person_man", "person_woman", "person_child", "person_elder"]
+        .iter()
+        .map(|n| meshes.add(crate::models::kit_mesh(n)))
+        .collect();
+    // Weighted: mostly small hatchbacks and saloons, as on any Italian road.
+    let cars: Vec<Handle<Mesh>> = ["car_hatch", "car_hatch", "car_hatch", "car_sedan", "car_sedan", "car_suv", "car_van", "car_ape", "car_camper"]
+        .iter()
+        .map(|n| meshes.add(crate::models::kit_mesh(n)))
+        .collect();
 
     // VR-training dev scenarios render everyone flat and unlit — the status
     // colours themselves stay meaningful (they are what the ABM testing
@@ -109,6 +120,8 @@ pub fn setup(
         [0.60, 0.85, 0.62],
         [0.95, 0.65, 0.65],
         [0.75, 0.70, 0.92],
+        [0.85, 0.20, 0.18],
+        [0.30, 0.34, 0.40],
     ]
     .iter()
     .map(|c| {
@@ -133,9 +146,15 @@ pub fn setup(
     // People all exist from the start; visibility is what changes.
     for p in &sim.agents.people {
         let ground = sim.scenario.terrain.height_at(p.pos);
+        let age = sim.scenario.population.people.get(p.id).map_or(40, |q| q.age);
+        let mesh = match age {
+            a if a < 14 => &figure[2],
+            a if a >= 70 => &figure[3],
+            _ => &figure[p.id % 2],
+        };
         commands.spawn((
             MaterialMeshBundle::<RetroMaterial> {
-                mesh: person.clone(),
+                mesh: mesh.clone(),
                 material: status[Status::Evacuating as usize].clone(),
                 transform: Transform::from_translation(frame::to_bevy(p.pos, ground))
                     .with_scale(Vec3::splat(scale)),
@@ -148,7 +167,7 @@ pub fn setup(
 
     info!("people layer: {} figures", sim.agents.people.len());
     commands.insert_resource(PeopleAssets {
-        car,
+        cars,
         status,
         car_normal,
         car_stuck,
@@ -195,7 +214,7 @@ pub fn spawn_vehicles(mut commands: Commands, sim: Res<Sim>, mut assets: ResMut<
         let scale = figure_scale(sim.scenario.vr_palette().is_some());
         commands.spawn((
             MaterialMeshBundle::<RetroMaterial> {
-                mesh: assets.car.clone(),
+                mesh: assets.cars[(t.household.wrapping_mul(2654435761) >> 7) % assets.cars.len()].clone(),
                 material: assets.car_normal[i % assets.car_normal.len()].clone(),
                 transform: Transform::from_translation(frame::to_bevy(t.pos, ground + 0.05))
                     .with_scale(Vec3::splat(scale * 0.8)),

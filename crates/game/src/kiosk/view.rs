@@ -21,39 +21,45 @@ const MIN_DIST: f32 = 800.0;
 const MAX_DIST: f32 = 4600.0;
 const PAN_RADIUS_M: f32 = 1500.0;
 const PLAY_DIST: f32 = 1900.0;
-const FLY_IN_S: f32 = 8.0;
+const FLY_IN_S: f32 = 4.0;
 
 fn ease(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
 
-/// What the camera looks at: the middle of town, nudged toward the fire.
+/// The places the frame has to hold: every district and the fire's origin.
+fn frame_points(sim: &Sim, kiosk: &Kiosk) -> Vec<Pos> {
+    let mut pts: Vec<Pos> = kiosk.referee.as_ref().map(|r| r.districts.iter().map(|d| d.centre).collect()).unwrap_or_default();
+    if pts.is_empty() {
+        pts = sim.agents.households.iter().map(|h| h.home).collect();
+    }
+    pts.push(kiosk.spec.ignition);
+    pts
+}
+
+/// What the camera looks at: the middle of the districts and the fire.
 fn home_focus(sim: &Sim, kiosk: &Kiosk) -> Vec3 {
     if let Some((x, y)) = shot_focus() {
         let p = Pos { x, y };
         return crate::frame::to_bevy(p, sim.scenario.terrain.height_at(p));
     }
-    // The households' centroid, not the window's: Porto's town sits at one edge
-    // and framing the middle of the map put it under the HUD (playtest §16 #4).
-    let hs = &sim.agents.households;
-    let n = hs.len().max(1) as f32;
-    let centre = Pos { x: hs.iter().map(|h| h.home.x).sum::<f32>() / n, y: hs.iter().map(|h| h.home.y).sum::<f32>() / n };
-    let ig = kiosk.spec.ignition;
-    let p = Pos { x: centre.x * 0.5 + ig.x * 0.5, y: centre.y * 0.5 + ig.y * 0.5 };
-    // Nudged south, so the town clears the action bar at the bottom of the screen.
-    crate::frame::to_bevy(Pos { x: p.x, y: p.y - 40.0 }, sim.scenario.terrain.height_at(p))
+    let pts = frame_points(sim, kiosk);
+    let (x0, x1) = pts.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.x), b.max(p.x)));
+    let (y0, y1) = pts.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.y), b.max(p.y)));
+    // Nudged south: the chips stand above their districts and the action bar
+    // takes the bottom of the screen, so the frame's centre sits a little low.
+    let p = Pos { x: (x0 + x1) * 0.5, y: (y0 + y1) * 0.5 - 60.0 };
+    crate::frame::to_bevy(p, sim.scenario.terrain.height_at(p))
 }
 
-/// Far enough to hold both the town and the fire between the HUD bands.
+/// Close enough that the houses read, far enough to hold every district.
 fn play_dist(sim: &Sim, kiosk: &Kiosk) -> f32 {
     let f = crate::frame::to_world(home_focus(sim, kiosk));
-    let ig = kiosk.spec.ignition;
-    let d = |x: f32, y: f32| ((x - f.x).powi(2) + (y - f.y).powi(2)).sqrt();
-    let mut rs: Vec<f32> = sim.agents.households.iter().map(|h| d(h.home.x, h.home.y)).collect();
-    rs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let r95 = rs.get(rs.len() * 95 / 100).copied().unwrap_or(0.0);
-    (r95.max(d(ig.x, ig.y)) * 3.4).clamp(PLAY_DIST * 0.8, 4400.0)
+    let pts = frame_points(sim, kiosk);
+    let (ex, ey) = pts.iter().fold((0.0f32, 0.0f32), |(a, b), p| (a.max((p.x - f.x).abs()), b.max((p.y - f.y).abs())));
+    // The screen is wider than tall and tilted: north-south extent costs more.
+    (ex.max(ey * 1.35) * 2.3 + 500.0).clamp(1300.0, 4200.0)
 }
 
 #[derive(Default)]
@@ -110,20 +116,20 @@ pub fn camera(
         }
         Phase::Briefing if !user_has_it && t < FLY_IN_S => {
             let k = ease(t / FLY_IN_S);
-            // The card takes the bottom third: lift the town clear of it.
-            orbit.focus = home + Vec3::new(0.0, 0.0, 0.16 * pd * k);
+            orbit.focus = home;
             orbit.yaw = -0.45 * (1.0 - k);
             orbit.pitch = -1.15 + (1.15 - 0.86) * k;
             orbit.distance = 4600.0 + (pd - 4600.0) * k;
         }
-        Phase::Outcome | Phase::Compare if !user_has_it => {
-            // The result card takes the lower three quarters: lift the burnt
-            // ground into the strip above it, and pull back a little.
-            let target = home + Vec3::new(0.0, 0.0, 0.22 * pd);
+        Phase::Outcome if !user_has_it => {
+            // The result panel takes the right half: slide the burnt town into
+            // the left half, and pull back a little.
+            let right = Quat::from_rotation_y(orbit.yaw) * Vec3::X;
+            let target = home + right * 0.30 * pd;
             let k = (time.delta_seconds() * 2.5).min(1.0);
             orbit.focus = orbit.focus.lerp(target, k);
-            orbit.distance += (pd * 1.25 - orbit.distance) * k;
-            orbit.pitch += (-0.86 - orbit.pitch) * k;
+            orbit.distance += (pd * 1.15 - orbit.distance) * k;
+            orbit.pitch += (-0.9 - orbit.pitch) * k;
             orbit.yaw += (0.0 - orbit.yaw) * k;
         }
         _ => {

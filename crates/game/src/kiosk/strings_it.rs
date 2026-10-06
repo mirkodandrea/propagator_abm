@@ -2,31 +2,40 @@
 //!
 //! No literal in a widget: if it is visible it is here, which is what makes
 //! "no English on screen" a thing a native speaker can review in one file.
+//! District names are place names and come from the town data.
 //! NOTE: placeholder copy, still to be read by a native speaker.
+
+use demo::EventKind;
+
+use super::Speaker;
 
 pub const TITLE: &str = "Comandante dell'incidente";
 pub const SUBTITLE: &str = "Settimana della Protezione Civile";
+pub const TAGLINE: &str = "Un incendio, tre quartieri, il vento che decide. Tocca a te.";
 pub const START: &str = "Clicca per iniziare";
 
-pub const GO: &str = "Comincia";
+pub const GO: &str = "Via!";
 pub const RETRY: &str = "Riprova";
 pub const ANOTHER_TOWN: &str = "Un altro paese";
-pub const SEE_COMPARE: &str = "Cosa sarebbe successo senza ordini?";
+
+// --- Briefing (the clock is stopped) ----------------------------------------
+pub const BRIEF_HOW: &str = "Il tempo è fermo. Guarda il vento e le previsioni, poi avvisa i quartieri in pericolo e manda le autobotti. Quando sei pronto, premi Via!";
+pub const BRIEF_TIP: &str = "Avvisare presto salva le famiglie. Avvisare chi non è in pericolo è un falso allarme: a ogni falso allarme la gente ci crede un po' meno.";
 
 // --- HUD -----------------------------------------------------------------
-pub const SAFE: &str = "Al sicuro";
-pub const MOVING: &str = "In fuga";
-pub const DANGER: &str = "In pericolo";
-pub const HOMES_LOST: &str = "Case colpite";
+pub const SAFE: &str = "al sicuro";
+pub const MOVING: &str = "in viaggio";
+pub const DANGER: &str = "in pericolo";
+pub const HOMES_LOST: &str = "case colpite";
 pub const WIND_FROM: &str = "Vento da";
-pub const TIME_LEFT: &str = "Tempo rimasto";
+pub const TIME_LEFT: &str = "Tempo";
 pub const PAUSED: &str = "In pausa";
+pub const SPENT: &str = "Spesa";
 
 // --- Forecast (spec 6.1) ---------------------------------------------------
 pub const FORECAST: &str = "Previsioni";
 pub const FORECAST_UPDATED: &str = "Nuove previsioni";
-pub const FORECAST_NEW: &str = "Nuove previsioni del vento";
-pub const SHIFT_CHANCE: &str = "Probabilità che il vento cambi";
+pub const SHIFT_CHANCE: &str = "Probabilità che il vento giri";
 pub const FORECAST_CAVEAT: &str = "Sono previsioni: possono sbagliare";
 
 pub fn forecast_wind(dir: &str, kmh: f32, cone: f32) -> String {
@@ -34,26 +43,61 @@ pub fn forecast_wind(dir: &str, kmh: f32, cone: f32) -> String {
 }
 
 pub fn forecast_shift(to: &str, a: u32, b: u32) -> String {
-    format!("Se cambia: da {to}, tra {a} e {b} min")
+    format!("Se gira: da {to}, tra {a} e {b} min")
+}
+
+// --- District chips -------------------------------------------------------
+pub const WARN: &str = "Avvisa";
+pub const DEFEND: &str = "Difendi";
+pub const WARNED: &str = "Avvisati";
+pub const NO_ENGINES: &str = "nessuna libera";
+pub const FIRE_HERE: &str = "Il fuoco è qui!";
+pub const CALM: &str = "Tranquillo";
+pub const FIRE_TAG: &str = "Incendio";
+
+pub fn fire_at(m: f32) -> String {
+    if m >= 1000.0 {
+        format!("Fuoco a {:.1} km", m / 1000.0)
+    } else {
+        format!("Fuoco a {:.0} m", (m / 50.0).round() * 50.0)
+    }
+}
+
+pub fn leaving(out: usize, total: usize) -> String {
+    format!("{out}/{total} via")
+}
+
+pub fn engines_posted(n: usize) -> String {
+    match n {
+        1 => "1 autobotte".into(),
+        n => format!("{n} autobotti"),
+    }
+}
+
+pub fn households(n: usize) -> String {
+    format!("{n} famiglie")
 }
 
 // --- Action bar ----------------------------------------------------------
-pub const ACT_EVACUATE: &str = "Evacuazione";
-pub const ACT_EVACUATE_SUB: &str = "avvisa tutte le famiglie";
-pub const ACT_EVACUATE_DONE: &str = "ordine dato";
-pub const ACT_CREW: &str = "Squadra";
-pub const ACT_ENGINE: &str = "Autobotte";
+pub const ACT_EVACUATE: &str = "Allerta generale";
+pub const ACT_EVACUATE_SUB: &str = "avvisa tutti i quartieri";
+pub const ACT_EVACUATE_DONE: &str = "tutti avvisati";
+pub const ACT_ENGINE: &str = "Autobotti";
 pub const ACT_AIR: &str = "Canadair";
 pub const ACT_PAUSE: &str = "Pausa";
 pub const ACT_RESUME: &str = "Riprendi";
 pub const ACT_PAUSE_SUB: &str = "ferma il tempo";
-pub const ACT_NONE_LEFT: &str = "tutte impegnate";
+pub const ACT_FAST: &str = "Veloce";
+pub const ACT_FAST_ON: &str = "x3";
+pub const ACT_FAST_SUB: &str = "avanti veloce";
 pub const ACT_AIR_ASK: &str = "arrivo in 25 min";
-pub const ACT_AIR_READY: &str = "sul posto";
+pub const ACT_AIR_READY: &str = "clicca un quartiere";
+pub const ACT_ENGINE_HINT: &str = "usa «Difendi» sui quartieri";
 
-pub fn free_units(n: usize) -> String {
+pub fn free_engines(n: usize) -> String {
     match n {
-        1 => "1 libera".to_string(),
+        0 => NO_ENGINES.into(),
+        1 => "1 libera".into(),
         n => format!("{n} libere"),
     }
 }
@@ -62,10 +106,46 @@ pub fn air_inbound(min: u32, sec: u32) -> String {
     format!("in arrivo {min}:{sec:02}")
 }
 
-pub fn pending_order(action: &str) -> String {
-    format!("{action}: clicca sulla mappa dove intervenire")
+pub const PENDING_DROP: &str = "Canadair: clicca sulla mappa dove lanciare";
+
+// --- Advisors ----------------------------------------------------------------
+pub fn speaker(s: Speaker) -> &'static str {
+    match s {
+        Speaker::Fire => "Capo squadra VVF",
+        Speaker::Mayor => "Sindaco",
+        Speaker::Weather => "Meteo",
+    }
 }
-pub const PENDING_LINE: &str = "clicca sulla mappa per scegliere il punto";
+
+pub const ADVISOR_START: &str = "Il fuoco corre col vento: guarda la freccia. Dove punta, lì arriverà.";
+
+pub fn forecast_update(p: f32, to: &str) -> String {
+    format!("Nuove previsioni: probabilità che il vento giri da {to} al {:.0}%.", p * 100.0)
+}
+
+/// What an advisor says about a model event, if anything. `warned[k]`: whether
+/// district `k` has been warned.
+pub fn advisor(kind: &EventKind, names: &[String], warned: &[bool]) -> Option<(Speaker, String)> {
+    let name = |k: usize| names.get(k).cloned().unwrap_or_default();
+    Some(match *kind {
+        EventKind::SpotFire => (Speaker::Fire, "Un nuovo focolaio! Le scintille hanno fatto saltare il fuoco più avanti.".into()),
+        EventKind::WindShifted { to_deg, .. } => {
+            (Speaker::Weather, format!("Il vento è girato: ora soffia da {}. Quale quartiere ha davanti?", crate::kiosk::ui::bearing_name(to_deg)))
+        }
+        EventKind::DistrictThreatened { district } if warned.get(district) == Some(&true) => {
+            (Speaker::Mayor, format!("Il fuoco è vicino a {}. Le famiglie sono state avvisate.", name(district)))
+        }
+        EventKind::DistrictThreatened { district } => {
+            (Speaker::Mayor, format!("Il fuoco è vicino a {} e nessuno li ha avvisati!", name(district)))
+        }
+        EventKind::DistrictReached { district } => (Speaker::Fire, format!("Il fuoco è arrivato a {}.", name(district))),
+        EventKind::FalseAlarm => (Speaker::Mayor, "La gente si lamenta: un avviso era un falso allarme. Al prossimo ci crederanno meno.".into()),
+        EventKind::UnitWithdrew { .. } => (Speaker::Fire, "Una squadra si ritira: il calore è troppo forte. Tornerà appena passa il fronte.".into()),
+        EventKind::UnitLost { .. } => (Speaker::Fire, "Abbiamo perso un mezzo nel fuoco.".into()),
+        EventKind::MastDown => (Speaker::Mayor, "Il fuoco ha abbattuto un ripetitore: alcune famiglie non ricevono più gli avvisi sul telefono.".into()),
+        EventKind::FireNearTown => return None,
+    })
+}
 
 // --- Idle ----------------------------------------------------------------
 pub const STILL_THERE: &str = "Sei ancora lì?";
@@ -73,29 +153,90 @@ pub const STILL_THERE_SUB: &str = "Tocca per continuare, altrimenti si ricominci
 
 // --- Outcome -------------------------------------------------------------
 pub const OUTCOME_TITLE: &str = "Fine dell'incidente";
-pub const COMPARE_TITLE: &str = "Con i tuoi ordini / Senza ordini";
-pub const YOU: &str = "Tu";
-pub const NO_ORDERS: &str = "Nessun ordine";
 pub const FAMILIES_SAFE: &str = "famiglie al sicuro";
-pub const STILL_IN_DANGER: &str = "ancora in pericolo";
-pub const HOMES_LOST_LC: &str = "case colpite dal fuoco";
-pub const HECTARES: &str = "ettari bruciati";
-pub const CAUGHT_SHORT: &str = "in casa col fuoco";
-pub const HECTARES_SHORT: &str = "ettari";
+pub const CAUGHT: &str = "sorprese in casa dal fuoco";
+pub const WITHOUT_ORDERS: &str = "senza ordini";
+pub const TWIN_WAIT: &str = "Calcolo: cosa sarebbe successo senza ordini…";
+pub const TWIN_NA: &str = "Confronto non disponibile";
+pub const BADGES: &str = "Medaglie";
+pub const BADGE_IN_TIME: &str = "In tempo";
+pub const BADGE_IN_TIME_HINT: &str = "avvisa almeno 10 minuti prima del fuoco";
+pub const BADGE_NO_FALSE: &str = "Nessun falso allarme";
+pub const BADGE_NO_FALSE_HINT: &str = "avvisa solo chi è in pericolo";
+pub const BADGE_DEFENDED: &str = "Case difese";
+pub const BADGE_DEFENDED_HINT: &str = "manda le autobotti prima del fuoco";
+pub const EVAC_SAVES_PEOPLE: &str = "L'evacuazione salva le persone; le case le difendono le autobotti.";
 
-pub fn safe_of(safe: usize, total: usize) -> String {
-    format!("{safe}/{total}")
+pub fn saved_vs_none(saved: i64) -> String {
+    match saved {
+        s if s > 1 => format!("Hai salvato {s} famiglie rispetto a nessun ordine"),
+        1 => "Hai salvato 1 famiglia rispetto a nessun ordine".into(),
+        0 => "Stesso risultato che senza ordini".into(),
+        s => format!("{} famiglie in più sorprese che senza ordini", -s),
+    }
 }
 
-/// One takeaway, chosen from the difference between the run and its twin.
-pub fn takeaway(you_caught: usize, cf_caught: usize) -> String {
-    if you_caught + 3 <= cf_caught {
-        let n = cf_caught - you_caught;
-        format!("Le tue decisioni hanno cambiato le cose: {n} famiglie in meno sono state sorprese dal fuoco in casa.")
-    } else if cf_caught == 0 {
-        "Questa volta il fuoco non ha minacciato nessuno in casa, anche senza ordini. Avvisare tutti subito non era necessario: capire dove va il vento fa la differenza.".to_string()
+pub fn headline(caught: usize, saved: Option<i64>) -> &'static str {
+    match (caught, saved) {
+        (0, _) => "Tutti al sicuro!",
+        (c, Some(s)) if s > 0 && c <= 3 => "Ottimo lavoro!",
+        (_, Some(s)) if s > 0 => "Hai fatto la differenza",
+        (_, Some(_)) => "Il fuoco è stato più veloce",
+        _ => "Fine dell'incidente",
+    }
+}
+
+/// One line per district for the end card.
+pub fn district_story(r: &demo::district::Report) -> (String, Mood) {
+    let t = |s: i64| format!("T+{}", s / 60);
+    match (r.warned_at_s, r.reached_at_s) {
+        (Some(w), Some(a)) if (a - w) / 60 >= demo::district::IN_TIME_MIN => {
+            (format!("Avvisato a {} · fuoco a {}: {} min di anticipo", t(w), t(a), (a - w) / 60), Mood::Good)
+        }
+        (Some(w), Some(a)) if a > w => (format!("Avvisato a {}, ma il fuoco è arrivato a {}: poco tempo", t(w), t(a)), Mood::Meh),
+        (Some(w), Some(a)) => (format!("Avvisato a {}, dopo il fuoco ({})", t(w), t(a)), Mood::Bad),
+        (None, Some(a)) => (format!("Mai avvisato · fuoco arrivato a {}", t(a)), Mood::Bad),
+        (Some(w), None) if r.needless() => (format!("Avvisato a {} · il fuoco non è arrivato: falso allarme", t(w)), Mood::Meh),
+        (Some(w), None) => (format!("Avvisato a {} · il fuoco si è fermato vicino", t(w)), Mood::Good),
+        (None, None) => ("Il fuoco non è arrivato: giusto non allarmarli".into(), Mood::Good),
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Mood {
+    Good,
+    Meh,
+    Bad,
+}
+
+pub fn spent_eur(eur: f32) -> String {
+    let k = (eur / 1000.0).round() as i64;
+    if k == 0 {
+        "0 €".into()
     } else {
-        "Questa volta i tuoi ordini non hanno cambiato molto. Prova ad avvisare prima: il fuoco va dove soffia il vento e il tempo è la cosa che manca.".to_string()
+        format!("{k}.000 €")
+    }
+}
+
+pub fn caught_line(n: usize) -> String {
+    match n {
+        1 => "1 famiglia sorpresa in casa".into(),
+        n => format!("{n} famiglie sorprese in casa"),
+    }
+}
+
+/// The lesson of the session, from the badges and the districts.
+pub fn lesson(b: demo::district::Badges, any_reached: bool, any_needless: bool) -> &'static str {
+    if !any_reached {
+        "Questa volta il fuoco non ha raggiunto nessun quartiere. Capire dove va il vento evita allarmi inutili."
+    } else if !b.in_time {
+        "Il fuoco va dove soffia il vento, e veloce. Le famiglie hanno bisogno di tempo: avvisa prima."
+    } else if any_needless {
+        "In tempo! Ma un avviso era inutile: ogni falso allarme fa perdere fiducia."
+    } else if !b.homes_defended {
+        "Famiglie avvisate in tempo. Le autobotti, mandate presto dove va il vento, salvano anche le case."
+    } else {
+        "Hai letto il vento, avvisato in tempo e difeso le case. Così lavora la Protezione Civile."
     }
 }
 
@@ -104,30 +245,26 @@ pub struct TownText {
     pub name: &'static str,
     pub place: &'static str,
     pub brief: &'static str,
-    pub mission: &'static str,
 }
 
 pub fn town(id: &str) -> TownText {
     match id {
         "demo_borgo" => TownText {
             name: "Rocca Ventosa",
-            place: "Un borgo sulla collina",
-            brief: "Un incendio è partito sotto il paese e il vento lo spinge in salita. Le famiglie non si sono accorte di nulla. Quando vuoi dare l'allarme?",
-            mission: "Porta tutte le famiglie al sicuro",
+            place: "Un borgo sulla collina e due frazioni",
+            brief: "Un incendio è partito nella pineta sotto il paese. Il vento lo spinge in salita, ma oggi potrebbe girare.",
         },
         "demo_valle" => TownText {
             name: "Due Casali",
-            place: "Una valle con due frazioni",
-            brief: "Il fuoco corre verso la prima frazione. Ma il vento oggi non è stabile: tieni d'occhio la freccia, perché prima o poi cambia.",
-            mission: "Proteggi entrambe le frazioni",
+            place: "Una valle, due casali e una frazione",
+            brief: "Un'auto ha preso fuoco sulla provinciale, tra i due casali. Il vento spinge le fiamme verso ovest. Se gira, tocca all'altro casale.",
         },
         "demo_porto" => TownText {
             name: "Porto Pineta",
-            place: "Un paese sul mare con una sola strada",
-            brief: "Il fuoco è nella pineta dietro il paese. Una sola strada porta fuori, e passa proprio lì vicino. Il fuoco può saltare avanti con le scintille.",
-            mission: "Fai uscire tutti prima che la strada si chiuda",
+            place: "Un paese di mare con una sola strada",
+            brief: "Il fuoco è nella pineta dietro il paese. L'unica strada passa proprio di lì: il lungomare è l'area di attesa sicura.",
         },
-        _ => TownText { name: "Paese", place: "", brief: "", mission: "" },
+        _ => TownText { name: "Paese", place: "", brief: "" },
     }
 }
 
@@ -139,8 +276,7 @@ pub fn refusal(english: &str) -> &'static str {
         s if s.contains("No connected road") => "Non c'è una strada che arrivi fin lì.",
         s if s.contains("Outside hose reach") => "È troppo lontano dalla strada per la manichetta.",
         s if s.contains("Approach blocked") => "Il fuoco ha tagliato la strada per arrivarci.",
-        s if s.contains("No suppressible fuel") => "Lì non c'è niente da difendere: scegli vegetazione non ancora bruciata.",
-        s if s.contains("cannot cut line") => "Un'autobotte non può aprire una linea: manda una squadra.",
+        s if s.contains("No suppressible fuel") => "Lì non c'è niente da bagnare: scegli vegetazione non ancora bruciata.",
         s if s.contains("aircraft drop") => "Gli aerei lanciano acqua, non aprono linee.",
         s if s.contains("only aircraft") => "Solo gli aerei possono lanciare.",
         s if s.contains("Select") => "Scegli prima cosa fare.",

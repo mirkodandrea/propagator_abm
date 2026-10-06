@@ -465,19 +465,33 @@ def create(d: Demo) -> dict:
     people_total = int(d.households * 3.0)
     sizes = distribute_people(people_total, d.households)
     buildings, dwellings, households, people = [], [], [], []
+    # One building per street slot, shared by the households there: a villa
+    # holds one or two, a block of flats three. Its footprint follows its kind.
+    sizes_by_kind = {"villa": (12, 10), "house": (13, 10), "terrace": (17, 10), "shop": (16, 11),
+                     "apartments": (18, 13), "hotel": (21, 13)}
+    slot_building = {}
     for hid, count in enumerate(sizes):
-        ax, ay, locality, bkind = anchors[hid % len(anchors)]
-        ring_no = hid // len(anchors)
-        x = float(np.clip(ax + rng.uniform(-3, 3) + (ring_no % 2) * 15 * (1 if hid % 2 else -1), 12, WORLD - 32))
-        y = float(np.clip(ay + rng.uniform(-3, 3) + (ring_no // 2) * 9, 12, WORLD - 28))
-        bid = hid + 1
-        ring = [[x - 7, y - 5], [x + 7, y - 5], [x + 7, y + 5], [x - 7, y + 5]]
-        buildings.append({"id": bid, "kind": bkind, "name": f"Casa {bid}", "centroid": [x, y], "ring": ring, "locality": locality})
-        col = int(np.clip(x // cs, 0, GRID - 1))
-        row = int(np.clip((WORLD - y) // cs, 0, GRID - 1))
-        fuel[row, col] = 0
-        dwellings.append({"osm_id": bid, "kind": "residential", "pos": [x, y], "area_m2": 140.0,
-                          "levels": 2, "units": 1, "cell": [row, col], "dist_to_fuel_m": cs, "fuel_at_site": 0})
+        slot = hid % len(anchors)
+        ax, ay, locality, bkind = anchors[slot]
+        if slot not in slot_building:
+            bw, bd = sizes_by_kind.get(bkind, (13, 10))
+            x = float(np.clip(ax + rng.uniform(-2, 2), 12, WORLD - 32))
+            y = float(np.clip(ay + rng.uniform(-1.5, 1.5), 12, WORLD - 28))
+            bid = len(buildings) + 1
+            ring = [[x - bw / 2, y - bd / 2], [x + bw / 2, y - bd / 2], [x + bw / 2, y + bd / 2], [x - bw / 2, y + bd / 2]]
+            buildings.append({"id": bid, "kind": bkind, "name": f"Casa {bid}", "centroid": [x, y], "ring": ring, "locality": locality})
+            col = int(np.clip(x // cs, 0, GRID - 1))
+            row = int(np.clip((WORLD - y) // cs, 0, GRID - 1))
+            fuel[row, col] = 0
+            levels = {"apartments": 3, "hotel": 4, "shop": 2, "terrace": 2}.get(bkind, 2)
+            dwellings.append({"osm_id": bid, "kind": "residential", "pos": [x, y], "area_m2": float(bw * bd),
+                              "levels": levels, "units": 1, "cell": [row, col], "dist_to_fuel_m": cs, "fuel_at_site": 0})
+            slot_building[slot] = (bid, x, y, row, col)
+        bid, bx, by, row, col = slot_building[slot]
+        # Households in one building stand a few metres apart, so the model's
+        # own geometry (exposure, the walk to the car) still has a spread.
+        k = hid // len(anchors)
+        x, y = bx + (k - 1) * 3.0, by
         member_ids = list(range(len(people), len(people) + count))
         households.append({"id": hid, "building": bid, "pos": [x, y], "cell": [row, col], "size": count,
                            "dist_to_fuel_m": cs, **demo_traits(hid, rng), "status": "normal",

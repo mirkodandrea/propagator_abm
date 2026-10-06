@@ -24,11 +24,13 @@
 use abm::Abm;
 use fire::FireSim;
 
-/// How long after an order it is judged. Ten minutes, not thirty: in the
-/// district towns every warning that still saves anyone is given by about T+12
-/// (`district_sweep::warning_decay`), so a false alarm judged at T+30 could
-/// never cost the commander the next order -- the mechanism was inert in play.
-pub const JUDGE_AFTER_S: i64 = 10 * 60;
+/// How long after an order it is judged. Not shorter: on the district towns a
+/// district the fire really reaches is first threatened at T+21-29 (median),
+/// up to T+46 (`district_probe::threatened_times`), so a ten-minute judgement
+/// (tried) branded most *correct* early warnings false alarms. The kiosk
+/// therefore leaves this mechanism off and judges false alarms in hindsight on
+/// the end card (`district::Report::needless`).
+pub const JUDGE_AFTER_S: i64 = 30 * 60;
 /// Fire this close to a home, at any point before the judgment, justifies having
 /// moved that household. Was 800 m, which in the district towns justified a
 /// warning to every district at T+0 (`district::THREATENED_M`).

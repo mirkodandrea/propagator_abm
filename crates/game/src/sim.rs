@@ -370,4 +370,62 @@ mod tests {
         }
         Ok(())
     }
+
+    /// COMPARE honesty: the live kiosk path (`Sim` + `demo::Referee`, with the
+    /// behaviour library loaded from `data/` as the kiosk loads it) and the
+    /// headless twin (`demo::Run`) give the same outcome, district stories and
+    /// bill for the same orders. If they drift, "senza ordini" compares two
+    /// different models, not two commanders.
+    #[test]
+    fn the_live_session_and_its_headless_twin_agree() -> anyhow::Result<()> {
+        use abm::suppression::UnitKind;
+        use demo::{Order, Parts, Referee};
+        let data_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let lib = behavior::Library::load_dir_reported(&data_dir.join(behavior::library::DEFAULT_DIR))?.library;
+        let variant = crate::kiosk::variant();
+        for id in demo::ALL {
+            let draw = demo::draw(id, 11).expect("demo town");
+            let spec = draw.spec;
+            let orders: Vec<(i64, Order)> = vec![
+                (0, Order::EvacuateDistrict(0)),
+                (0, Order::Defend { kind: UnitKind::Engine, district: 0 }),
+                (8 * 60, Order::EvacuateDistrict(1)),
+            ];
+            let end = 30 * 60;
+
+            let mut twin = demo::Run::with_variant(&data_dir, spec, draw.seed, variant)?;
+            let mut next = 0;
+            while twin.time_s() < end {
+                while next < orders.len() && orders[next].0 <= twin.time_s() {
+                    twin.order(orders[next].1);
+                    next += 1;
+                }
+                twin.step()?;
+            }
+
+            let mut sim = Sim::at_ignition(Scenario::load_by_id(&data_dir, spec.id)?, spec.weather, spec.ignition, spec.radius_m, draw.seed, lib.clone())?;
+            let mut referee = Referee::new(spec, &sim.scenario, &sim.agents, variant);
+            let mut next = 0;
+            while sim.time_s() < end {
+                while next < orders.len() && orders[next].0 <= sim.time_s() {
+                    let Sim { scenario, fire, agents, crews, .. } = &mut sim;
+                    referee.order(orders[next].1, Parts { scn: scenario, fire, agents, crews });
+                    next += 1;
+                }
+                {
+                    let Sim { fire, crews, .. } = &mut sim;
+                    referee.before_step(fire, crews)?;
+                }
+                sim.advance(demo::STEP_S)?;
+                let Sim { scenario, fire, agents, crews, .. } = &mut sim;
+                referee.after_step(Parts { scn: scenario, fire, agents, crews });
+            }
+            let live = referee.tally.outcome(&sim.agents, &sim.fire, &sim.scenario.world);
+            assert_eq!(live, twin.outcome(), "{id}: the live session and its twin disagree");
+            assert_eq!(referee.reports, twin.referee.reports, "{id}: district stories disagree");
+            assert_eq!(referee.ledger(end), twin.ledger(), "{id}: the bills disagree");
+        }
+        Ok(())
+    }
 }
+

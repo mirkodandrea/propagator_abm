@@ -49,11 +49,15 @@ fn cover_tint(scn: &Scenario, p: Pos) -> [f32; 3] {
             col: (x0 + dx).clamp(0.0, (w.fire_cols - 1) as f32) as usize,
         };
         match scn.fuel_at(c) {
-            1..=3 => [0.74, 0.66, 0.38],
+            // Gardens and lawns round the houses: the green that makes a
+            // town read as a town (class 1 is only ever painted there).
+            1 => [0.56, 0.74, 0.40],
+            2..=3 => [0.74, 0.66, 0.38],
             4..=6 => [0.42, 0.60, 0.30],
             7..=9 => [0.52, 0.55, 0.30],
             10..=12 => [0.28, 0.48, 0.30],
-            _ => [0.68, 0.62, 0.50],
+            // Built-up ground: pale paving rather than bare earth.
+            _ => [0.84, 0.81, 0.74],
         }
     };
     let mut out = [0.0; 3];

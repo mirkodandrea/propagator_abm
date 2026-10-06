@@ -88,6 +88,9 @@ pub struct OrderTool {
     /// was refused is the most useful thing the model knows about the map.
     pub refusal: Option<String>,
     pub confirmation: Option<String>,
+    /// An order the map click produced, for the kiosk to give through its
+    /// books (`demo::Referee`) rather than straight to the units.
+    pub issued: Option<demo::Order>,
     /// Keep the matching mouse release from selecting an entity after disarming.
     pub click_consumed: bool,
     /// Planned road approach for the current cursor, reused by the overlay.
@@ -320,6 +323,14 @@ pub fn place(
         return;
     }
 
+    // A drop is a kiosk order: it is priced and logged like any other.
+    if tool.armed == Some(OrderKind::Drop) {
+        tool.issued = Some(demo::Order::Drop { at: p });
+        tool.refusal = None;
+        tool.confirmation = Some(String::new());
+        tool.disarm();
+        return;
+    }
     let task = match tool.armed {
         Some(OrderKind::Attack) => Some(Task::Attack { at: p }),
         Some(OrderKind::Drop) => Some(Task::Drop { at: p }),

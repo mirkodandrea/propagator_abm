@@ -232,3 +232,30 @@ fn engines_after_a_defend_order() -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+/// When do districts the fire eventually reaches first become threatened
+/// (fire within district::THREATENED_M)? Sets how soon a false alarm can be judged.
+#[test]
+#[ignore]
+fn threatened_times() -> anyhow::Result<()> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+    for id in demo::ALL {
+        let mut ts: Vec<i64> = vec![];
+        let mut never = 0;
+        for seed in 1..=24u64 {
+            let draw = demo::draw(id, seed).unwrap();
+            let mut run = demo::Run::new(&dir, draw.spec, draw.seed)?;
+            run.play(&[])?;
+            for (k, r) in run.referee.reports.iter().enumerate() {
+                if k == 2 { if r.threatened_at_s.is_none() { never += 1 } continue; }
+                if r.reached_at_s.is_some() {
+                    ts.push(r.threatened_at_s.unwrap_or(9999) / 60);
+                }
+            }
+        }
+        ts.sort();
+        let q = |f: f32| ts[((ts.len() as f32 - 1.0) * f) as usize];
+        println!("{id}: reached districts threatened at min p10 {} p50 {} p90 {} max {} (n {}); upwind never threatened {never}/24", q(0.1), q(0.5), q(0.9), ts.last().unwrap(), ts.len());
+    }
+    Ok(())
+}

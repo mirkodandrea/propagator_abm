@@ -174,16 +174,19 @@ pub fn update_markers(
         return;
     }
     let mut b = Buf { pos: vec![], col: vec![], idx: vec![], nrm: vec![] };
+    // Only the families the fire is on: a red beacon over a home means
+    // "someone is still in there". Warned, leaving and safe families are
+    // already told by the district chips and the moving figures and cars; a
+    // beacon over every roof (the first version) was noise.
+    let threat = sim.fire.threat();
     for h in &sim.agents.households {
-        let color = match h.status {
-            Status::Warned | Status::Preparing => [1.0, 0.78, 0.1],
-            Status::Trapped | Status::Defending => [1.0, 0.18, 0.12],
-            Status::Casualty => [0.2, 0.2, 0.2],
-            Status::Evacuating => [0.3, 0.7, 1.0],
-            _ => continue,
-        };
+        let at_home = matches!(h.status, Status::Normal | Status::Warned | Status::Preparing | Status::Defending);
+        let caught = matches!(h.status, Status::Trapped) || (at_home && threat.at(h.home) >= fire::threat::ALARMING);
+        if !caught {
+            continue;
+        }
         let g = sim.scenario.terrain.height_at(h.home);
-        octa(&mut b, frame::to_bevy(h.home, g + BEACON_LIFT_M), 6.0, [color[0] * 2.0, color[1] * 2.0, color[2] * 2.0]);
+        octa(&mut b, frame::to_bevy(h.home, g + BEACON_LIFT_M), 8.0, [2.0, 0.36, 0.24]);
     }
     let n = b.pos.len();
     if let Some(m) = meshes.get_mut(&assets.beacons) {
