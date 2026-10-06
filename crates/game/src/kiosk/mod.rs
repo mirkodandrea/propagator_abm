@@ -1,7 +1,7 @@
 //! The kiosk demo (`docs/demo-spec.md`): a session shell around the same model
 //! and views the workbench uses.
 //!
-//! Enabled with `DEMO=1` (or `--kiosk`). It replaces the menus, panels and every
+//! This is the only mode the game has. It replaces the menus, panels and every
 //! single-key shortcut with a state machine -- attract, briefing, play, outcome,
 //! compare -- and a small Italian UI. The rendering systems are shared with the
 //! workbench, so a fix to the terrain or the fire reaches both.
@@ -54,10 +54,6 @@ const PLAY_IDLE_GRACE_S: f32 = 30.0;
 const OPERATOR_HOLD_S: f32 = 3.0;
 /// Most steps one frame may run; at the demo speed this never binds.
 const MAX_STEPS_PER_FRAME: u32 = 5;
-
-pub fn enabled() -> bool {
-    std::env::var("DEMO").is_ok_and(|v| v != "0") || std::env::args().any(|a| a == "--kiosk")
-}
 
 pub fn window_mode() -> WindowMode {
     if std::env::var("KIOSK_WINDOWED").is_ok() {

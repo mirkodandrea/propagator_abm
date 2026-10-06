@@ -91,7 +91,7 @@ fn main() -> anyhow::Result<()> {
             resolution: (1280.0, 720.0).into(),
             #[cfg(not(target_arch = "wasm32"))]
             resolution: (1600.0, 1000.0).into(),
-            mode: if kiosk::enabled() { kiosk::window_mode() } else { bevy::window::WindowMode::Windowed },
+            mode: kiosk::window_mode(),
             ..default()
         }),
         ..default()
@@ -163,11 +163,7 @@ fn main() -> anyhow::Result<()> {
     )
     .add_systems(OnExit(AppState::Playing), teardown_scene);
 
-    if kiosk::enabled() {
-        kiosk_systems(&mut app);
-    } else {
-        workbench_systems(&mut app);
-    }
+    kiosk_systems(&mut app);
 
     // Unattended exercise of the wildfire controls. Runs after the resets so
     // it observes the state the views will actually see.
@@ -212,124 +208,6 @@ fn main() -> anyhow::Result<()> {
     app.run();
 
     Ok(())
-}
-
-fn workbench_systems(app: &mut App) {
-    // Build panels first, then finalize input ownership before shortcuts and
-    // map tools. A search field can acquire focus during this very frame.
-    // Docked panels also precede `sync_viewport`, which reserves map space;
-    // and the restart resets have to land before the views that would
-    // otherwise read the stale state they are clearing.
-        app.add_systems(
-        Update,
-        (
-            scenario_selector::handle_launch_selection
-                .run_if(in_state(AppState::SelectingScenario))
-                .before(scenario_selector::show_selector_ui),
-            scenario_selector::show_selector_ui,
-            (
-                menu::menubar,
-                ui::panel,
-                ui::help_panel,
-                ui::shortcuts_panel,
-                ui::dock,
-                inspect::panel,
-                interview::settings_window,
-                ui::sync_viewport,
-                ui::finalize_input_focus,
-            )
-                .chain()
-                .run_if(in_state(AppState::Playing)),
-            (
-                camera::validate_mode,
-                camera::controls,
-                map2d::sync_camera,
-                ignition_edit::hover,
-                ignition_edit::place,
-                command::sync_selection,
-                command::hover,
-                command::place,
-                inspect::hover_map,
-                ui::map_hud,
-                inspect::pick_click,
-                buildings::hover,
-            )
-                .chain()
-                .after(ui::finalize_input_focus)
-                .run_if(in_state(AppState::Playing)),
-        ),
-    )
-    .add_systems(
-        Update,
-        (
-            // Shortcuts see focus from every panel, including a newly clicked search field.
-            (
-                controls.before(camera::controls).before(command::controls),
-                browser::toggle,
-                fire_view::layer_controls,
-                command::controls.before(command::hover),
-                interview::shortcut,
-            )
-                .after(ui::finalize_input_focus)
-                .run_if(in_state(AppState::Playing)),
-            // Draining the worker's channel is not a shortcut and not a panel:
-            // it runs whether or not the window is open, so an answer that
-            // lands after the panel was closed is still filed against the
-            // transcript rather than lost.
-            interview::poll
-                .before(ui::panel)
-                .run_if(in_state(AppState::Playing)),
-            // Inert unless `SPOTORNO_INTERVIEW=selftest` asked for it, and
-            // after `poll` so it reads a transcript the worker has already
-            // been drained into.
-            interview::selftest
-                .after(interview::poll)
-                .run_if(in_state(AppState::Playing)),
-            sim::step_fire
-                .after(ui::dock)
-                .run_if(in_state(AppState::Playing)),
-            (
-                fire_view::reset,
-                buildings::reset,
-                people::reset,
-                inspect::reset,
-                units::reset,
-                command::reset,
-                camera::reset,
-                interview::reset,
-            )
-                .after(ui::dock)
-                .run_if(in_state(AppState::Playing)),
-            (
-                fire_view::update_overlay.run_if(map2d::scene3d),
-                fire_view::update_flames.run_if(map2d::scene3d),
-                vegetation::burn,
-                buildings::damage,
-                people::spawn_vehicles,
-                people::update_people,
-                people::update_vehicles,
-                ignition_edit::sync_markers,
-                ignition_edit::show_markers.after(ignition_edit::sync_markers),
-                ignition_edit::update_hover,
-                inspect::update_ring,
-                units::update_units,
-                units::sync_orders,
-                units::update_work_overlay,
-                command::update_cursor,
-                command::evacuation_preview,
-            )
-                .after(fire_view::reset)
-                .after(buildings::reset)
-                .after(people::reset)
-                .after(inspect::reset)
-                .after(units::reset)
-                .after(command::reset)
-                .run_if(in_state(AppState::Playing)),
-            map2d::update.run_if(in_state(AppState::Playing)),
-            map2d::share_markers.run_if(in_state(AppState::Playing)),
-            capture::manual.run_if(in_state(AppState::Playing)),
-        ),
-    );
 }
 
 fn setup_scene(

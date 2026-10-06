@@ -68,7 +68,7 @@ Ideas, not decisions. Each is a replacement for "press a button":
   Compare), idle reset (60 s; 90 s + 30 s in play), operator corner (hold
   top-right 3 s), fixed 6 s steps shared with `demo::Run` so COMPARE is the same
   fire, all strings in `strings_it.rs`, camera limits in `view.rs`.
-- Run with `DEMO=1 cargo run --release -p game` (`KIOSK_WINDOWED=1` for a window,
+- Run with `cargo run --release -p game` (`KIOSK_WINDOWED=1` for a window,
   `KIOSK_TOWN=borgo|valle|porto`, `KIOSK_PLAY_S=<s>` to shorten a session,
   `KIOSK_SHOT=<dir>` to walk one session and photograph each screen).
 - No keyboard shortcut is registered and `UiFocus::keyboard` is held true, so none
@@ -103,7 +103,7 @@ Ideas, not decisions. Each is a replacement for "press a button":
   lighting pass, `scripts/run_demo.sh`, operator doc: not started.
 - `KIOSK_SHOT` screenshots are taken from the render, UI included; the first
   frame of a phase can show the previous phase's UI (wait ≥1 s).
-- Counterfactual runs once per scenario load on a thread (~1 s); Compare shows a
+- Counterfactual runs once per session (town + seed) on a thread (~1 s); Compare shows a
   spinner until it lands.
 - The towns' names are placeholders in Roman-region style ("Rocca Ventosa", "Due
   Casali", "Porto Pineta"); copy needs a native-speaker read.

@@ -7,6 +7,10 @@ the first playable loop; event about a week out. Companion: `docs/demo-notes.md`
 constraints), keeping in mind it still describes the workbench, composer and live
 debugger, which are removed or about to be (§4).
 
+**There is one mode.** The game *is* the kiosk: `cargo run --release -p game`, no
+`DEMO` flag, no workbench. Env vars that remain are test/ops harnesses only
+(`KIOSK_SHOT`, `KIOSK_TOWN`, `KIOSK_WINDOWED`, `KIOSK_PLAY_S`).
+
 Legend: ✅ done · 🔲 to do · ✂ cut-list item (drop first if days slip).
 
 ## 1. Goal
@@ -71,7 +75,7 @@ debrief; control API in the kiosk; persistent leaderboard.
   "households with burnt ground within 150 m" (`LOST_RADIUS_M`, measured in
   `tests/lost.rs`): 54 / 15 / 47 on borgo / valle / porto. UI label "case colpite".
   An order never changes it; only suppression does — a lesson, not a bug.
-- ✅ **Kiosk shell** (`crates/game/src/kiosk/`, `DEMO=1`): attract / briefing /
+- ✅ **Kiosk shell** (`crates/game/src/kiosk/`): attract / briefing /
   play / outcome / compare; idle reset (60 s; 90 s + 30 s in play); hidden
   operator corner (hold top-right 3 s); fixed 6 s steps shared with `demo::Run`;
   counterfactual twin computed on a thread at load; clamped camera; all strings in
@@ -80,16 +84,27 @@ debrief; control API in the kiosk; persistent leaderboard.
   action bar (Evacuazione · Squadra · Autobotte · Canadair · Pausa), outcome and
   compare cards, CIMA mark. Screenshot harness `KIOSK_SHOT=<dir>`,
   `KIOSK_PLAY_S`, `KIOSK_TOWN`, `KIOSK_WINDOWED`.
-- ✅ **Removed** the composer, behaviour/debug tabs, `egui-snarl`.
+- ✅ **Removed** the composer, behaviour/debug tabs, `egui-snarl`, and the `DEMO`
+  flag (kiosk mode is unconditional; `workbench_systems` is deleted, its modules are
+  now unreferenced and go in §4).
+- ✅ **§6.4 opening fire** at the 60 m floor, beats re-measured, borgo forestry road.
+- ✅ **§6.1 v1**: seeded weather draw per session, calibrated two-issue forecast,
+  forecast card in briefing and play (`demo::weather`, `tests/forecast.rs`).
+- ✅ `demo::Run` takes unit orders (`Order::Attack`, `Order::Drop`) so the twin can
+  price them.
 
 ## 4. Clean-up: delete everything that is not the demo 🔲 (in progress)
 
-Done so far: real-data scripts (kept `generate_demo_scenarios.py`, `bake_fuels.py`,
-`build_models.py`), `tools/mcp`, `web/`, the Pages workflow, and the docs for
-removed tools (`web`, `behavior-workspace`, `renderers`, `ux-playtest`, `il-gioco`).
-Remaining: real/lab scenario data and the tests that load them, the workbench
-modules in `crates/game`, `telemetry`, wasm profile, far terrain/sea/sky,
-CLAUDE.md rewrite.
+Status:
+- ✅ real-data scripts (kept `generate_demo_scenarios.py`, `bake_fuels.py`,
+  `build_models.py`), `tools/mcp`, `web/`, Pages workflow, docs for removed tools
+  (`web`, `behavior-workspace`, `renderers`, `ux-playtest`, `il-gioco`); the `DEMO`
+  flag and `workbench_systems`.
+- 🔲 real/lab scenario data and the tests that load them (port to `demo_*` or
+  delete; keep pins for findings 5, 17–19, 34, 39–42).
+- 🔲 the now-unreferenced workbench modules in `crates/game` (list below).
+- 🔲 `crates/telemetry`, wasm profile, far terrain/sea/sky clock, CLAUDE.md rewrite,
+  crate layout.
 
 The branch ends as a demo-only codebase. Do this **before** new features so
 nothing new is built on code about to be removed. Do it in small commits, tests
@@ -347,7 +362,7 @@ stays green.
   pure function of the action log (§6.5), good scripted commander beats "no orders"
   on families safe **and** money spent is plausible, idle commander still reaches
   OUTCOME (playability), refuge/haven/mast coverage per town (findings 9, 34).
-- 🔲 `DEMO_SELFTEST=1` for the Bevy side: state machine, reset fan-out, order
+- 🔲 A `KIOSK_SELFTEST=1` harness (not a mode) for the Bevy side: state machine, reset fan-out, order
   buttons, "no key does anything", idle-reset leaks nothing.
 - 🔲 Screenshots at T+10 / T+60 / end, reviewed by eye (✅ harness exists).
 - 🔲 Frame-rate measurement on the real machine: 30 fps floor.
@@ -364,9 +379,9 @@ sentence each, staff talking points).
 
 | Step | Deliverable | Gate |
 |---|---|---|
-| 1 | §4 clean-up: demo-only repo, CLAUDE.md rewritten, tests green | `cargo test --release` green, `cargo build` small |
-| 2 | §6.4 small fire + re-measured beats; §6.3 spot-fire visible | early action visibly works; ≥1 spot per town |
-| 3 | §6.1 weather draw + forecast card; §6.2 trust/anger | forecast useful-but-wrong test; cry-wolf test |
+| 1 | §4 clean-up: demo-only repo, CLAUDE.md rewritten, tests green (**partly done**, §4 status) | `cargo test --release` green, `cargo build` small |
+| 2 | §6.4 small fire + re-measured beats ✅; §6.3 spot-fire visible 🔲 | ≥1 spot per town; early action visibly works 🔲 (needs a model decision, §6.4) |
+| 3 | §6.1 draw + forecast card ✅; §6.2 trust/anger 🔲 | forecast useful-but-wrong test (needs §6.5); cry-wolf test |
 | 4 | §6.5 cost accounting, outcome card with money | twin and live price identically |
 | 5 | §8 diorama pass: fixed light, plinth, tilt-shift, buildings, people, cars | screenshot beside the reference; 30 fps |
 | 6 | Advisors, overlays, Italian review, operator doc, supervisor script | **playtest with 3–5 new people**, no one stuck >60 s |
