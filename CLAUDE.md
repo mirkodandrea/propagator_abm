@@ -28,7 +28,7 @@ asking.
 | Player role | Incident commander, RTS-style |
 | Time model | Real-time play, plus a turn-based after-action debrief (debrief deferred) |
 | Place | **Multiple scenarios supported** — Spotorno, Liguria is the default (44.2265 N, 8.4176 E, UTM 32N). Others can be added. |
-| Agent types | Civilians (individual humans), ground crews on foot, engines/vehicles. **No aircraft.** |
+| Agent types | Civilians (individual humans), ground crews on foot, engines/vehicles, and two air tankers (requested, 25 min to arrive). |
 | Population | ~500–2,000 people, each individually inspectable |
 | Scenario length | 1–3 h simulated (initial attack) |
 | Civilian model | Wildfire-specific, **built from scratch** — not a port of igad's flood sentiment model |
