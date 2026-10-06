@@ -12,6 +12,17 @@ pub struct WindShift {
     pub weather: Weather,
 }
 
+/// The odds a town's weather is drawn from.
+#[derive(Debug, Clone, Copy)]
+pub struct Climate {
+    /// Per-session chance of a wind shift is drawn uniformly from this range;
+    /// the forecast reports it, the draw then rolls against it.
+    pub shift_p: (f32, f32),
+    /// Earliest and latest simulated second a shift can arrive.
+    pub shift_window_s: (i64, i64),
+    pub shift_to: Weather,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Spec {
     pub id: &'static str,
@@ -20,6 +31,10 @@ pub struct Spec {
     pub ignition: Pos,
     pub radius_m: f32,
     pub shift: Option<WindShift>,
+    /// What a *drawn* session may do (spec 6.1): the chance range of a wind
+    /// shift, when it can arrive, and what the wind becomes. `shift` above is the
+    /// pinned script the beat tests use; a draw replaces it.
+    pub climate: Climate,
     /// Simulated length of the mission. ~3 min real time at the demo speed.
     pub duration_s: i64,
 }
@@ -36,6 +51,8 @@ pub fn spec(id: &str) -> Option<Spec> {
         "demo_borgo" => Spec {
             id: "demo_borgo", weather: w(180.0, 35.0, 7.0),
             ignition: Pos { x: 2050.0, y: 1300.0 }, radius_m: 60.0, shift: None,
+            // A shift to an east wind drives the fire away from the village.
+            climate: Climate { shift_p: (0.15, 0.85), shift_window_s: (15 * 60, 40 * 60), shift_to: w(90.0, 35.0, 7.0) },
             duration_s: 75 * 60,
         },
         // Lit on the valley floor between two hamlets. The east wind drives it
@@ -45,6 +62,7 @@ pub fn spec(id: &str) -> Option<Spec> {
             id: "demo_valle", weather: w(90.0, 25.0, 6.0),
             ignition: Pos { x: 2200.0, y: 2400.0 }, radius_m: 60.0,
             shift: Some(WindShift { at_s: 30 * 60, weather: w(270.0, 45.0, 6.0) }),
+            climate: Climate { shift_p: (0.6, 0.95), shift_window_s: (20 * 60, 40 * 60), shift_to: w(270.0, 45.0, 6.0) },
             duration_s: 90 * 60,
         },
         // Wind from the north, the pines behind the town alight, one road out
@@ -52,6 +70,7 @@ pub fn spec(id: &str) -> Option<Spec> {
         "demo_porto" => Spec {
             id: "demo_porto", weather: w(0.0, 35.0, 7.0),
             ignition: Pos { x: 2000.0, y: 2000.0 }, radius_m: 60.0, shift: None,
+            climate: Climate { shift_p: (0.15, 0.85), shift_window_s: (15 * 60, 40 * 60), shift_to: w(90.0, 35.0, 7.0) },
             duration_s: 75 * 60,
         },
         _ => return None,

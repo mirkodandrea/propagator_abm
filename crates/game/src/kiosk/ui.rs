@@ -235,6 +235,26 @@ fn compass(p: &egui::Painter, c: Pos2, r: f32, to_deg: f32, yaw: f32, kmh: f32, 
     let _ = kmh;
 }
 
+/// The forecast, as a card: the wind with its uncertainty and the chance of a
+/// change. Honest by layout -- it is labelled a forecast and shows odds, not a
+/// verdict -- and kept apart from the compass, which shows what the wind *is*.
+fn forecast_card(p: &egui::Painter, rect: Rect, f: &demo::Forecast) {
+    p.rect_filled(rect.translate(vec2(0.0, 5.0)), Rounding::same(20.0), Color32::from_black_alpha(80));
+    p.rect_filled(rect, Rounding::same(20.0), PANEL);
+    p.rect_stroke(rect, Rounding::same(20.0), Stroke::new(2.0, alpha(SKY, 160)));
+    let x = rect.left() + 20.0;
+    let title = if f.issue > 1 { t::FORECAST_UPDATED } else { t::FORECAST };
+    txt(p, pos2(x, rect.top() + 24.0), Align2::LEFT_CENTER, title, 22.0, SKY);
+    txt(p, pos2(rect.right() - 18.0, rect.top() + 24.0), Align2::RIGHT_CENTER, t::FORECAST_CAVEAT, 14.0, MUTED);
+    txt(p, pos2(x, rect.top() + 56.0), Align2::LEFT_CENTER, &t::forecast_wind(bearing_name(f.wind_from_deg), f.wind_kmh, f.cone_deg), 20.0, INK);
+    txt(p, pos2(x, rect.top() + 90.0), Align2::LEFT_CENTER, t::SHIFT_CHANCE, 17.0, MUTED);
+    let bar = Rect::from_min_size(pos2(x, rect.top() + 106.0), vec2(rect.width() - 110.0, 14.0));
+    p.rect_filled(bar, Rounding::same(7.0), Color32::from_white_alpha(26));
+    p.rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * f.shift_p, bar.height())), Rounding::same(7.0), AMBER);
+    big(p, pos2(bar.right() + 12.0, bar.center().y), Align2::LEFT_CENTER, &format!("{:.0}%", f.shift_p * 100.0), 26.0, INK);
+    txt(p, pos2(x, rect.top() + 138.0), Align2::LEFT_CENTER, &t::forecast_shift(bearing_name(f.shift_to_deg), f.shift_eta_min.0, f.shift_eta_min.1), 17.0, GREY);
+}
+
 fn bearing_name(deg: f32) -> &'static str {
     const N: [&str; 8] = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
     N[(((deg % 360.0 + 360.0) % 360.0 + 22.5) / 45.0) as usize % 8]
@@ -341,6 +361,8 @@ fn briefing(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32) {
     let slide = 1.0 - ((kiosk.phase_t / 0.5).min(1.0) - 1.0).powi(2);
     let size = vec2(860.0f32.min(screen.width() - 40.0), 330.0);
     let rect = Rect::from_center_size(pos2(screen.center().x, screen.bottom() - size.y * 0.5 - 40.0 + (1.0 - slide) * 80.0), size);
+    let fc = Rect::from_min_size(pos2(rect.left(), rect.top() - 176.0 + (1.0 - slide) * 80.0), vec2(rect.width().min(560.0), 160.0));
+    forecast_card(&layer(ctx, "forecast_brief"), fc, &kiosk.forecast_at(0));
     egui::Area::new("briefing".into()).fixed_pos(rect.min).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.set_min_size(size);
         let p = ui.painter().clone();
@@ -410,6 +432,9 @@ fn play(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &mut Sim, tool: &mut OrderT
     let wc = pos2(screen.right() - 110.0, screen.top() + 190.0);
     compass(&p, wc, 80.0, to, yaw, w.wind_speed_kmh as f32, k);
     txt(&p, wc + vec2(0.0, 98.0), Align2::CENTER_CENTER, &format!("{} {} · {:.0} km/h", t::WIND_FROM, bearing_name(w.wind_dir_deg as f32), w.wind_speed_kmh), 20.0, INK);
+
+    let fc = Rect::from_min_size(pos2(screen.right() - 20.0 - 380.0, wc.y + 124.0), vec2(380.0, 160.0));
+    forecast_card(&p, fc, &kiosk.forecast_at(sim.time_s()));
 
     // Banner: a pending order, or the last refusal.
     let banner_y = screen.bottom() - 220.0;

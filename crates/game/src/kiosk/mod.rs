@@ -25,7 +25,7 @@ use std::sync::Mutex;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::{MonitorSelection, WindowMode};
-use demo::{Outcome, Spec, Tally, STEP_S};
+use demo::{Draw, Forecast, Outcome, Spec, Tally, STEP_S};
 
 use crate::scenario_selector::DataPath;
 use crate::sim::{Sim, SimRestarted};
@@ -96,6 +96,14 @@ pub struct Kiosk {
     pub phase_t: f32,
     pub town: usize,
     pub spec: Spec,
+    /// This session's seed: weather, forecast and fire all come from it, so a
+    /// retry replays the same session and a new visitor gets a new one.
+    pub session: u64,
+    /// The realised weather and the forecast made from it (spec 6.1).
+    pub draw: Draw,
+    data_dir: std::path::PathBuf,
+    /// Which (town, seed) the running twin was started for.
+    twin_for: Option<(&'static str, u64)>,
     pub tally: Tally,
     /// Real seconds since the last mouse input.
     pub idle_s: f32,
@@ -106,6 +114,7 @@ pub struct Kiosk {
     accumulator: f32,
     shift_pending: bool,
     pub ordered_at_s: Option<i64>,
+    forecast_said: bool,
     /// What the mission would have come to with nobody giving an order.
     pub counterfactual: Option<Outcome>,
     cf_rx: Option<Mutex<Receiver<Outcome>>>,
@@ -126,12 +135,17 @@ pub struct Kiosk {
 
 impl Kiosk {
     pub fn new(town: usize) -> Kiosk {
-        let spec = demo::spec(demo::ALL[town]).expect("demo town has a spec");
+        let draw = demo::draw(demo::ALL[town], SEED).expect("demo town has a spec");
+        let spec = draw.spec;
         Kiosk {
             phase: Phase::Attract,
             phase_t: 0.0,
             town,
             spec,
+            session: SEED,
+            draw,
+            data_dir: std::path::PathBuf::new(),
+            twin_for: None,
             tally: Tally::new(0),
             idle_s: 0.0,
             paused: false,
@@ -140,6 +154,7 @@ impl Kiosk {
             accumulator: 0.0,
             shift_pending: spec.shift.is_some(),
             ordered_at_s: None,
+            forecast_said: false,
             counterfactual: None,
             cf_rx: None,
             result: None,
@@ -170,6 +185,40 @@ impl Kiosk {
         self.banner = Some((text.into(), 6.0));
     }
 
+    /// Draw this town's weather for `seed` and make it the session.
+    fn redraw(&mut self, seed: u64) {
+        self.session = seed;
+        self.draw = demo::draw(demo::ALL[self.town], seed).expect("demo town has a spec");
+        self.spec = self.draw.spec;
+        self.shift_pending = self.spec.shift.is_some();
+    }
+
+    /// The forecast on show at this simulated time: the briefing's until the
+    /// second issue is due.
+    pub fn forecast_at(&self, time_s: i64) -> Forecast {
+        self.draw.forecast(if time_s >= demo::ISSUE_2_AT_S { 2 } else { 1 })
+    }
+
+    /// Start the headless no-orders twin for this session unless it is already
+    /// running for it. Long finished by the time anyone has played three minutes.
+    fn ensure_twin(&mut self) {
+        let key = (self.spec.id, self.session);
+        if self.twin_for == Some(key) && self.cf_rx.is_some() {
+            return;
+        }
+        let (tx, rx) = channel();
+        let (dir, spec, seed) = (self.data_dir.clone(), self.spec, self.session);
+        std::thread::spawn(move || match demo::Run::new(&dir, spec, seed).and_then(|mut r| r.play(&[])) {
+            Ok(o) => {
+                let _ = tx.send(o);
+            }
+            Err(e) => eprintln!("kiosk: counterfactual failed: {e:#}"),
+        });
+        self.cf_rx = Some(Mutex::new(rx));
+        self.counterfactual = None;
+        self.twin_for = Some(key);
+    }
+
     fn enter(&mut self, phase: Phase) {
         self.phase = phase;
         self.phase_t = 0.0;
@@ -193,8 +242,9 @@ pub fn launch(
         return;
     }
     let spec = kiosk.spec;
+    kiosk.data_dir = data.0.clone();
     let built = scenario::Scenario::load_by_id(&data.0, spec.id).and_then(|scn| {
-        Sim::at_ignition(scn, spec.weather, spec.ignition, spec.radius_m, SEED, library.lib.clone())
+        Sim::at_ignition(scn, spec.weather, spec.ignition, spec.radius_m, kiosk.session, library.lib.clone())
     });
     let sim = match built {
         Ok(sim) => sim,
@@ -207,20 +257,7 @@ pub fn launch(
     if let Ok(mut w) = windows.get_single_mut() {
         w.title = strings_it::TITLE.into();
     }
-    // The twin runs while the town is being looked at; it is long finished by
-    // the time anyone has played three minutes.
-    let (tx, rx) = channel();
-    let dir = data.0.clone();
-    std::thread::spawn(move || {
-        let outcome = demo::Run::new(&dir, spec, SEED).and_then(|mut r| r.play(&[]));
-        match outcome {
-            Ok(o) => {
-                let _ = tx.send(o);
-            }
-            Err(e) => eprintln!("kiosk: counterfactual failed: {e:#}"),
-        }
-    });
-    kiosk.cf_rx = Some(Mutex::new(rx));
+    kiosk.ensure_twin();
     kiosk.counterfactual = None;
     kiosk.tally = Tally::new(sim.agents.households.len());
     kiosk.shift_pending = spec.shift.is_some();
@@ -237,6 +274,8 @@ pub fn launch(
 /// A clean run of the current town: same fire, same seed, nothing ordered.
 fn restart_session(sim: &mut Sim, kiosk: &mut Kiosk, restarted: &mut EventWriter<SimRestarted>) {
     sim.weather = kiosk.spec.weather;
+    sim.seed = kiosk.session;
+    kiosk.ensure_twin();
     match sim.restart() {
         Ok(()) => {
             restarted.send(SimRestarted);
@@ -247,6 +286,7 @@ fn restart_session(sim: &mut Sim, kiosk: &mut Kiosk, restarted: &mut EventWriter
     kiosk.tally = Tally::new(sim.agents.households.len());
     kiosk.shift_pending = kiosk.spec.shift.is_some();
     kiosk.ordered_at_s = None;
+    kiosk.forecast_said = false;
     kiosk.result = None;
     kiosk.accumulator = 0.0;
     kiosk.paused = false;
@@ -304,6 +344,9 @@ pub fn step(
     if let Some(cmd) = kiosk.cmd.take() {
         match cmd {
             Cmd::Begin => {
+                // A new visitor gets a new draw; a retry (below) replays this one.
+                let next = kiosk.session.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                kiosk.redraw(next);
                 restart_session(&mut sim, &mut kiosk, &mut restarted);
                 kiosk.enter(Phase::Briefing);
             }
@@ -316,7 +359,8 @@ pub fn step(
                 if !kiosk.pinned {
                     let next = (kiosk.town + 1) % demo::ALL.len();
                     kiosk.town = next;
-                    kiosk.spec = demo::spec(demo::ALL[next]).expect("demo town has a spec");
+                    let seed = kiosk.session;
+                    kiosk.redraw(seed);
                 }
                 if kiosk.spec.id != sim.scenario.metadata.id {
                     kiosk.reload = true;
@@ -359,6 +403,10 @@ pub fn step(
                     kiosk.shift_pending = false;
                 }
             }
+        }
+        if !kiosk.forecast_said && sim.time_s() >= demo::ISSUE_2_AT_S && kiosk.phase == Phase::Play {
+            kiosk.forecast_said = true;
+            kiosk.say(strings_it::FORECAST_NEW);
         }
         if let Err(e) = sim.advance(STEP_S) {
             error!("fire core failed: {e:#}");

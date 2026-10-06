@@ -26,6 +26,21 @@ pub const FIRE_GOES: &str = "il fuoco va verso";
 pub const TIME_LEFT: &str = "Tempo rimasto";
 pub const PAUSED: &str = "In pausa";
 
+// --- Forecast (spec 6.1) ---------------------------------------------------
+pub const FORECAST: &str = "Previsioni";
+pub const FORECAST_UPDATED: &str = "Previsioni aggiornate";
+pub const FORECAST_NEW: &str = "Nuove previsioni del vento: guardale!";
+pub const SHIFT_CHANCE: &str = "Probabilità che il vento cambi";
+pub const FORECAST_CAVEAT: &str = "Sono previsioni: possono sbagliare";
+
+pub fn forecast_wind(dir: &str, kmh: f32, cone: f32) -> String {
+    format!("Vento da {dir} · {kmh:.0} km/h (±{cone:.0}°)")
+}
+
+pub fn forecast_shift(to: &str, a: u32, b: u32) -> String {
+    format!("poi da {to}, tra {a} e {b} min")
+}
+
 // --- Action bar ----------------------------------------------------------
 pub const ACT_EVACUATE: &str = "Evacuazione";
 pub const ACT_EVACUATE_SUB: &str = "avvisa tutte le famiglie";

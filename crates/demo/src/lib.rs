@@ -10,6 +10,8 @@
 
 pub mod mission;
 pub mod run;
+pub mod weather;
 
-pub use mission::{spec, Spec, WindShift, ALL};
+pub use mission::{spec, Climate, Spec, WindShift, ALL};
+pub use weather::{draw, Draw, Forecast, ISSUE_2_AT_S};
 pub use run::{Order, Outcome, Run, Tally, STEP_S};

@@ -151,7 +151,7 @@ The first loop is "press buttons, watch" (see `demo-notes.md`). The next step gi
 the player *uncertainty, consequences and cost*. All six items below are in scope;
 they interact, so build them in the order given.
 
-### 6.1 Varying weather and imperfect forecasts 🔲
+### 6.1 Varying weather and imperfect forecasts ✅ (v1: draw, forecast card), 🔲 (usefulness test needs §6.5 cost)
 - Each session draws its weather from a **seeded distribution per town** (wind
   direction and speed, fuel moisture, and *when/whether* a shift happens), seed
   recorded so the COMPARE twin and tests reproduce it.
@@ -167,6 +167,17 @@ they interact, so build them in the order given.
   on every seed).
 - Replaces the single scripted `demo_valle` shift with a drawn one (valle keeps a
   high shift probability).
+- **Done** (`demo::weather`, `tests/forecast.rs`, kiosk `forecast_card`): per-session seed
+  (new visitor = new draw, Riprova = same one); wind ±15° / ±5 km/h / ±1.5 % moisture;
+  shift chance drawn per session (borgo/porto 15–85 %, valle 60–95 %), rolled against.
+  Issue 1 at the briefing reports that chance in 5 % steps; issue 2 at T+15 leans
+  toward the truth but still contradicts issue 1 in some sessions. Measured
+  calibration: mean forecast 0.50 vs 0.51 real; sessions rated ≥60 % shift 73 %,
+  ≤40 % shift 28 %. In borgo/porto a shift turns the fire off the town (caught
+  0 vs 29–37), which is what makes the forecast a real decision. The COMPARE twin
+  uses the same draw and seed.
+- **Not done:** "following the forecast beats ignoring it" needs a price on acting
+  (§6.5) — with orders free, evacuating at T+0 always wins.
 
 ### 6.2 Population anger / trust 🔲
 - A **needless** evacuation order (the fire would not have reached the household,
