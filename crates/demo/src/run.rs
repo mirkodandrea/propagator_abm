@@ -4,10 +4,11 @@
 //! Steps with the same fire-then-agents order `game::Sim::advance` uses, at the
 //! 6 s decision interval, so a figure taken here is the figure the kiosk shows.
 
+use abm::suppression::{Suppression, Task, UnitKind};
 use abm::Abm;
 use anyhow::Result;
 use fire::FireSim;
-use scenario::Scenario;
+use scenario::{Pos, Scenario};
 
 use crate::mission::Spec;
 
@@ -23,6 +24,10 @@ pub const LOST_RADIUS_M: f32 = 150.0;
 pub enum Order {
     /// Every household, whatever the distance.
     EvacuateAll,
+    /// Send the best free unit of this (ground) kind at the fire edge nearest `at`.
+    Attack { kind: UnitKind, at: Pos },
+    /// Request the aircraft if not yet asked, and send a load at `at`.
+    Drop { at: Pos },
 }
 
 /// The four facts the outcome card shows (spec §6.5). Facts, not a score.
@@ -126,6 +131,7 @@ pub struct Run {
     pub scn: Scenario,
     pub fire: FireSim,
     pub agents: Abm,
+    pub crews: Suppression,
     pub spec: Spec,
     pub tally: Tally,
     shift_pending: bool,
@@ -139,7 +145,12 @@ impl Run {
         fire.ignite_patch(centre, spec.radius_m, &scn)?;
         let agents = Abm::new(&scn, seed)?;
         let tally = Tally::new(agents.households.len());
-        Ok(Run { scn, fire, agents, spec, tally, shift_pending: spec.shift.is_some() })
+        let ig = scn.world.centre_of(centre);
+        let mut staging: Vec<Pos> = agents.refuges.iter().map(|r| r.pos).collect();
+        let d = |p: &Pos| (p.x - ig.x).powi(2) + (p.y - ig.y).powi(2);
+        staging.sort_by(|a, b| d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal));
+        let crews = Suppression::new(&scn, &staging)?;
+        Ok(Run { scn, fire, agents, crews, spec, tally, shift_pending: spec.shift.is_some() })
     }
 
     pub fn time_s(&self) -> i64 {
@@ -155,7 +166,30 @@ impl Run {
             Order::EvacuateAll => {
                 self.agents.order_evacuation_all();
             }
+            Order::Attack { kind, at } => {
+                if let Some(id) = self.best_unit(kind) {
+                    let _ = self.crews.assign(id, Task::Attack { at });
+                }
+            }
+            Order::Drop { at } => {
+                self.crews.request_air();
+                if let Some(id) = self.best_unit(UnitKind::AirTanker) {
+                    let _ = self.crews.assign(id, Task::Drop { at });
+                }
+            }
         }
+    }
+
+    /// The unit the kiosk's button would send: a free one of this kind, preferring
+    /// whichever is closest to being ready.
+    fn best_unit(&self, kind: UnitKind) -> Option<usize> {
+        use abm::suppression::UnitState as S;
+        self.crews.units.iter().filter(|u| u.kind == kind && u.assignable()).min_by_key(|u| match u.state {
+            S::Staged => 0,
+            S::Inbound => 1,
+            S::Moving | S::Working | S::Refilling => 2,
+            _ => 3,
+        }).map(|u| u.id)
     }
 
     /// One step: scripted weather, then fire, then agents.
@@ -168,6 +202,9 @@ impl Run {
         }
         self.fire.advance(STEP_S)?;
         self.agents.step(STEP_S as f32, &self.fire, &self.scn);
+        for a in self.crews.step(STEP_S as f32, &self.agents.network, &self.agents.traffic, &self.fire, &self.scn) {
+            self.fire.queue(a);
+        }
         self.tally.note(&self.agents, &self.fire);
         Ok(())
     }

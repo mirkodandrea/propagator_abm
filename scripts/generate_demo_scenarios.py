@@ -135,6 +135,9 @@ def borgo_roads():
     add("Via Bassa", [(1550, 2450), (2000, 2450), (2450, 2450)], road_class="residential")
     add("Via Bassa O", [(1550, 2450), (1550, 2650), (1550, 2850)], road_class="residential")
     add("Via Bassa E", [(2450, 2450), (2450, 2650), (2450, 2850)], road_class="residential")
+    # A forestry road down through the pines to where the fire starts: without it
+    # an engine cannot reach the opening fire at all (spec 6.4, early action).
+    add("Strada Forestale", [(2000, 2400), (2000, 1900), (2000, 1300)], road_class="unclassified")
     add("Sentiero del Crinale", [(2000, 2900), (2100, 3300), (2300, 3800)],
         drivable=False, track=True, road_class="path")
     return r

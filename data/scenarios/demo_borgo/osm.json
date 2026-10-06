@@ -7025,6 +7025,28 @@
     },
     {
       "id": 10,
+      "class": "unclassified",
+      "drivable": true,
+      "track": false,
+      "name": "Strada Forestale",
+      "oneway": false,
+      "line": [
+        [
+          2000.0,
+          2400.0
+        ],
+        [
+          2000.0,
+          1900.0
+        ],
+        [
+          2000.0,
+          1300.0
+        ]
+      ]
+    },
+    {
+      "id": 11,
       "class": "path",
       "drivable": false,
       "track": true,

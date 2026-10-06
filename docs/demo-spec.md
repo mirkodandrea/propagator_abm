@@ -192,7 +192,7 @@ they interact, so build them in the order given.
   in `tests/towns.rs`; `demo_porto` is built around it).
 - Spot fires are a reason to **split units**: the player must prioritise.
 
-### 6.4 Start with a very small fire 🔲
+### 6.4 Start with a very small fire ✅ (fire), 🔲 (suppression)
 - Opening fire becomes small (a few hectares, radius ~40–60 m) so that **early
   action visibly works**: a crew or an engine at T+3 min can stop it, a late one
   cannot. Today's radius is 120–150 m, already a going fire.
@@ -204,6 +204,20 @@ they interact, so build them in the order given.
   floor (then "very small" means ~1–2 ha) or **seed-filter** (reject draws that do
   not establish, deterministically). Measure which; do not ship a coin flip.
 - Re-measure every beat test (§3) — they were taken on the larger fire.
+- **Done:** all three towns open at the 60 m floor (~1 ha at T+3, 18–55 ha at the end;
+  establishes on 24/24 seed-town runs, so no seed filter). Beats re-measured
+  (`tests/small.rs`, five-seed means, caught at home): borgo 38 / 14 / 17 / 38 for
+  none / T+0 / T+10 / **T+40**; porto 30 / 10 / 11 / 27; valle hamlet B 18 → 4. A small
+  fire arrives later, so the "late order" is now T+40, not T+20. Valle's shift is at
+  T+30, 45 km/h, ignition x=2200. Borgo gained a forestry road to its fire.
+- **Finding, not done:** a crew or engine at T+3 does *not* stop the fire in this model.
+  Measured at 10 km/h with all six ground units: 3.8 ha against 4.0 untouched. The
+  engine works 14 m from the front, but pumps 6 min then spends ~10 on a hydrant
+  round trip; the front is dozens of 20 m cells; crews cut ~0 m (120 m/h, withdraw
+  under heat). That follows from findings 15, 16 and 41, not from the demo. Making
+  early action visible needs a deliberate change in `abm` (spec §10 forbids it for
+  this step): a demo-only effectiveness knob, inert by default, is the candidate.
+  `Run` now takes `Order::Attack`/`Order::Drop` so the twin can price them.
 
 ### 6.5 Extinction cost (money) 🔲
 - Every intervention costs money; a small running total ("Spesa: 18.400 €") is

@@ -58,15 +58,15 @@ fn caught(id: &str, order_at: Option<i64>, only: impl Fn(Pos) -> bool + Copy) ->
 #[test]
 fn borgo_and_porto_the_earlier_the_order_the_fewer_families() {
     for id in ["demo_borgo", "demo_porto"] {
-        let (none, t0, t10, t20) = (
+        let (none, t0, t10, t40) = (
             caught(id, None, |_| true),
             caught(id, Some(0), |_| true),
             caught(id, Some(600), |_| true),
-            caught(id, Some(1200), |_| true),
+            caught(id, Some(2400), |_| true),
         );
-        println!("{id}: none {none}  T+0 {t0}  T+10 {t10}  T+20 {t20}");
-        assert!(t0 <= t10 + 1.0 && t10 + 5.0 < t20, "{id}: a late order should cost families ({t0}/{t10}/{t20})");
-        assert!(t0 + 5.0 < t20, "{id}: T+0 ({t0}) should clearly beat T+20 ({t20})");
+        println!("{id}: none {none}  T+0 {t0}  T+10 {t10}  T+40 {t40}");
+        assert!(t0 <= t10 + 1.0 && t10 + 5.0 < t40, "{id}: a late order should cost families ({t0}/{t10}/{t40})");
+        assert!(t0 + 5.0 < t40, "{id}: T+0 ({t0}) should clearly beat T+40 ({t40})");
         assert!(t0 * 1.5 < none, "{id}: the counterfactual is too close to the player's best ({t0} vs {none})");
     }
 }
