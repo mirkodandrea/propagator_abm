@@ -100,6 +100,59 @@ margin an asserted test pins, on every town's mean; units at T+30 reduce them by
 clearly less (so timing matters); no unit order is worth more than its §6.5 cost on
 the seeds where the fire never threatens anyone. Report the sweep, not a single seed.
 
+### 4.1 Sweep results (2026-10-06, 16 drawn seeds x 3 towns, paired on the same draw)
+
+Harness: `demo::policy` (scripted commanders, units sent to `Run::head()` as it is
+*when ordered*), `demo::sweep` (parallel grid, mean/sd, paired difference +- s.e.,
+regret), `abm::suppression::UnitEffect` and `demo::Variant` (all inert at default,
+pinned by `tests/units.rs`). Reports: `tests/units_sweep.rs`, `tests/units_diag.rs`
+(`cargo test -p demo --release --test units_sweep -- --ignored <name> --nocapture`).
+
+**Why units did nothing (units_diag):** crews cut 0 m — they withdraw because the head
+is over `WORK_LIMIT` (the ember shadow, finding 41); aircraft "broke off: not
+survivable" on borgo/porto and drop 37 loads on valle to no effect; engines
+saturate their 4 cells at x1 already (6 L/m2 >> extinction), so a bigger dose is moot.
+The limit is *area and survivability*, not intensity.
+
+**Option A (multiplier) — fails.** Paired change vs no units, homes hit (mean +- s.e.),
+`units T+3 @+300 m`: x1 / x8 / x32 = borgo +0.2/-2.5/-1.1 (+-2-3), valle +1.2/+1.2/+1.0
+(+-1), porto -1.2/+0.8/-0.3 (+-3). Even "god mode" (line x8, water x8, hose reach x4,
+steadier nerves x0.25 or 0): borgo -0.4/-1.7, valle +3.8/+2.4, porto +3.7/+4.9, all
+within noise; hectares -2 to -6 of ~20-55 (best single cell: borgo -6.1 +- 1.6).
+Pinned: `scaling_what_a_unit_does_does_not_save_homes`. **No change to a published
+abm number was made or is proposed.**
+
+**Option C (slower opening fire) — fails.** Wind x0.6 and +3 % moisture: homes hit
+fall to 0 on borgo/porto (3.6 on valle) *before* units matter; units save 1-2 ha of
+12-18 (10 %) on a fire that threatens nobody. A slower fire removes the lesson.
+
+**Option B (protect homes) — works where the fire reaches the town in time.** Demo-side
+rule (`Tally::enable_defence`, `Variant::defend_homes`): an engine working with water
+within 80 m defends the homes there for a tank's worth of sprinkling (25 min at
+~100 L/min, restarted by a refill); a drop over homes defends them 15 min; a defended
+home is lost only to flame contact (25 m), an undefended one when burnt ground is
+within 150 m. Loss is latched at first contact, so *when* the engine is on station is
+the mechanic. Paired change in homes hit vs no units (both with defence on):
+
+| town | protect T+3 | protect T+10 | protect T+30 | protect when head <600 m | <300 m |
+|---|---|---|---|---|---|
+| valle | -4.9 +- 0.8 | -4.6 +- 0.7 | -2.9 +- 1.2 | -4.5 +- 0.7 | -1.2 +- 0.5 |
+| borgo | +1.3 +- 2.1 | +1.1 +- 1.8 | +1.1 +- 1.9 | +1.5 +- 1.7 | -1.7 +- 0.9 |
+| porto | +3.5 +- 2.9 | 0.0 +- 1.4 | 0.0 +- 0.0 | -1.7 +- 1.9 | -0.1 +- 0.1 |
+
+Hectares are unchanged by B (it protects homes, it does not stop the fire). Pinned:
+`protecting_homes_saves_homes_and_earlier_saves_more` (valle, T+3 -5.3 +- 0.8 vs T+30
+-3.2) and `home_defence_changes_nothing_until_a_unit_is_posted`.
+
+**Honest status: no option meets the §4 acceptance on every town.** B is the only
+one with a real, timed effect, on valle. Borgo/porto engines arrive ~T+13, spend their
+25-minute tank before the fire reaches the town (head 1000 m from the nearest home
+at T+25) and the effect vanishes; in those towns the fire often threatens no one
+(finding §16 #15/#16, see 5.3). **Decision needed (Mirko):** adopt B as the demo
+rule (kiosk calls `Tally::enable_defence`; `protect` becomes the unit action), and
+raise `shift_p`/threat floors (5.3) so borgo/porto reach the town; or D (cut the
+unit buttons). Option A should not be pursued.
+
 ## 5. Next gameplay steps (build in this order; they interact)
 
 ### 5.1 Cost (money) 🔲 — §6.5

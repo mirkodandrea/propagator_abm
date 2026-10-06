@@ -9,9 +9,11 @@
 //! `tests/` can measure it with no window.
 
 pub mod mission;
+pub mod policy;
+pub mod sweep;
 pub mod run;
 pub mod weather;
 
 pub use mission::{spec, Climate, Spec, WindShift, ALL};
 pub use weather::{draw, Draw, Forecast, ISSUE_2_AT_S};
-pub use run::{Order, Outcome, Run, Tally, STEP_S};
+pub use run::{Order, Outcome, Run, Tally, Variant, STEP_S};
