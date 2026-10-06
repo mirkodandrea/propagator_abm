@@ -103,8 +103,8 @@ gold, unearned dim with a one-line hint for next time), the lesson, the bill.
    splash and wet strip under a Canadair run; roofs (hip/gable mix by kind);
    district ground tint by level.
 5. **Ops.** `KIOSK_SELFTEST=1` (state machine, reset fan-out per finding 21, no
-   key does anything, idle reset leaks nothing); `scripts/run_demo.sh`
-   supervisor; operator quit button; native-speaker review of `strings_it.rs`;
+   key does anything, idle reset leaks nothing); ✅ `scripts/run_demo.sh`
+   supervisor; ✅ operator quit button; native-speaker review of `strings_it.rs`;
    dead-code warnings (`FireLayer`, `models::model`, `OrderKind::{Attack,Line}`).
 6. **Target machine:** fps (was 57 on the dev Mac before the kit; the kit adds
    ~10 k triangles per town, measure), pointer, idle timings.

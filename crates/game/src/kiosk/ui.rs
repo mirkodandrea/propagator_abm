@@ -1025,6 +1025,10 @@ fn operator(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect) {
         if ui.button("Chiudi").clicked() {
             kiosk.operator_open = false;
         }
+        ui.separator();
+        if ui.button("Esci dal programma").clicked() {
+            kiosk.cmd.push_back(Cmd::Quit);
+        }
         let _ = screen;
     });
 }

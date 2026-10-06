@@ -127,6 +127,8 @@ pub enum Cmd {
     NextTown,
     /// Give an order (the model's own vocabulary).
     Order(Order),
+    /// Operator: close the kiosk (exit code 0, so the supervisor stops).
+    Quit,
 }
 
 /// Who is speaking in an advisor bubble.
@@ -445,6 +447,7 @@ pub fn step(
     mut sim: ResMut<Sim>,
     mut restarted: EventWriter<SimRestarted>,
     mut next_state: ResMut<NextState<AppState>>,
+    mut exit: EventWriter<AppExit>,
 ) {
     let dt = time.delta_seconds().min(0.1);
     kiosk.phase_t += dt;
@@ -534,6 +537,10 @@ pub fn step(
                 if matches!(kiosk.phase, Phase::Briefing | Phase::Play) {
                     give(&mut kiosk, &mut sim, o);
                 }
+            }
+            Cmd::Quit => {
+                exit.send(AppExit::Success);
+                return;
             }
         }
     }

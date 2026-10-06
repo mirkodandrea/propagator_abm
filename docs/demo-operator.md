@@ -1,19 +1,20 @@
 # Demo — operator one-pager
 
-**Launch:** `cargo run --release -p game` from the repository root (or the built
-`target/release/game`). It opens full-screen, borderless, on the attract loop.
-Everything runs offline.
+**Launch:** `scripts/run_demo.sh` from the repository root. It builds once,
+opens the game full-screen and borderless on the attract loop, and relaunches
+it automatically if it ever crashes. Everything runs offline.
 
 **Operator corner:** hold the top-right corner of the screen for 3 s. The panel
-lets you pin the current town (stop the rotation), skip to the next town, or restart the session. Quit with the OS shortcut (Cmd+Q / Alt+F4).
+lets you pin the current town (stop the rotation), skip to the next town,
+restart the session, or quit (*Esci dal programma* — the supervisor stops too).
 No keyboard shortcut does anything, by design.
 
 **Reset:** the kiosk returns to the attract screen by itself after 60 s without
 input (outside play), or after 3 min idle in play before any order. To test the
 reset quickly start with `KIOSK_IDLE_S=10`.
 
-**Frozen screen:** quit with the OS shortcut and relaunch. (A supervisor script
-that relaunches on exit is not yet written.)
+**Frozen screen:** quit with the OS shortcut (Cmd+Q / Alt+F4); if the supervisor
+is running it relaunches the game in 3 s, otherwise run `scripts/run_demo.sh`.
 
 **Power:** disable sleep and the screensaver on the host.
 
