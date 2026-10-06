@@ -39,7 +39,7 @@ Ideas, not decisions. Each is a replacement for "press a button":
    (`command::target_preview`).
 2. **Tasks the player *watches and corrects***: units visibly drive, get stuck,
    withdraw; the player re-routes them. Needs unit status chips on the map and
-   click-to-select units (the workbench deliberately has none: three tools
+   click-to-select units (the removed workbench deliberately had none: three tools
    contend for click).
 3. **Things that ask for a decision**: a radio call ("Il Sindaco chiede: apro la
    strada per il paese vicino?") — the scripted decision pauses of spec §7.4, but

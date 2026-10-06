@@ -1,5 +1,10 @@
 # Behaviour gaps found by scenario-building against real incidents
 
+> Historical record. The real-place scenarios this was written against
+> (`mati`, `pedrogao`, `rhodes`, `spotorno`) were removed in the demo-only
+> clean-up; the mechanisms it motivated (spot fires, comms, havens, closures,
+> boats) remain in `crates/abm`. Kept as the sourced rationale for them.
+
 Scope: what building three real scenarios against documented EU wildfire
 disasters (rather than only Spotorno, which has no historical fire to check
 against) exposed about `crates/abm` and `crates/behavior`. Each gap below is

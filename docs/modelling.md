@@ -119,7 +119,7 @@ from the smoke alone, order or not.
 ## Stage 2 — Decision: the three intents
 
 This is the one stage the Agent Behaviour Composer can replace — see [Part 3
-](#part-3--authored-behaviour-the-agent-behaviour-composer). What follows is
+](#part-3--authored-behaviour-the-behaviour-graphs). What follows is
 the hand-written model, which is what runs unless a behaviour has been applied.
 
 `Intent` is a baked household trait, and it's the main behavioural policy
@@ -501,11 +501,17 @@ walking from an arbitrary point at T+0 and would just measure the map).
 useful thing the model knows about the map, and the reason it is a field rather
 than a log line.
 
-# Part 3 — Authored behaviour (the Agent Behaviour Composer)
+# Part 3 — Authored behaviour (the behaviour graphs)
+
+> The in-game node editor (the Agent Behaviour Composer) was removed with the
+> workbench UI in the demo-only clean-up. The graph model, registry, validator,
+> subtypes and shipped library in `crates/behavior` remain and are the decision
+> layer `abm` runs; this part describes them. Wherever it says "the composer" or
+> "the editor", read: the JSON files in `data/behaviours/`.
 
 Everything in Part 1 is hand-written Rust, and it is the default. This part is
 the alternative: the **decision** stage — and only that stage — can instead be a
-graph a scientist builds in the game, with `b`.
+graph, authored as data.
 
 ## What it replaces, and what it cannot
 
@@ -650,17 +656,6 @@ cargo test --release -p abm -- --ignored --nocapture     # evacuation timeline,
                                                          # routing cost, and the
                                                          # suppression comparison
 cargo test --release -p fire -- --ignored --nocapture     # fire-side calibration
-cargo test --release -p behavior                          # the composer's data
-                                                          # model: registry,
-                                                          # validation, subtypes
-SPOTORNO_SELFTEST=1 cargo run --release -p game           # the Bevy-only half:
-                                                         # orders, resets, restart
-SPOTORNO_ATTACK_AT=300 cargo run --release -p game        # unattended initial attack
+cargo test --release -p behavior                          # graph data model:
+                                                          # registry, validation, subtypes
 ```
-
-The one thing the headless tests *cannot* cover is the wiring: resources, events,
-and the reset systems that a restart depends on. That is what `SPOTORNO_SELFTEST`
-is for, and it asserts the silent failures specifically — a restart that leaves
-the previous run's water on the fire, or its cut fuel, or a unit still under
-orders — and, for the composer, an editor whose projection of its own canvas
-disagrees with what the model would run.

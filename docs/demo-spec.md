@@ -82,7 +82,14 @@ debrief; control API in the kiosk; persistent leaderboard.
   `KIOSK_PLAY_S`, `KIOSK_TOWN`, `KIOSK_WINDOWED`.
 - ✅ **Removed** the composer, behaviour/debug tabs, `egui-snarl`.
 
-## 4. Clean-up: delete everything that is not the demo 🔲 (first task)
+## 4. Clean-up: delete everything that is not the demo 🔲 (in progress)
+
+Done so far: real-data scripts (kept `generate_demo_scenarios.py`, `bake_fuels.py`,
+`build_models.py`), `tools/mcp`, `web/`, the Pages workflow, and the docs for
+removed tools (`web`, `behavior-workspace`, `renderers`, `ux-playtest`, `il-gioco`).
+Remaining: real/lab scenario data and the tests that load them, the workbench
+modules in `crates/game`, `telemetry`, wasm profile, far terrain/sea/sky,
+CLAUDE.md rewrite.
 
 The branch ends as a demo-only codebase. Do this **before** new features so
 nothing new is built on code about to be removed. Do it in small commits, tests
