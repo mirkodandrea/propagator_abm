@@ -10,6 +10,7 @@ use anyhow::Result;
 use fire::FireSim;
 use scenario::{Pos, Scenario};
 
+use crate::cost;
 use crate::mission::Spec;
 
 /// Simulated seconds per step: `DECISION_S` rounded up to the fire's quantum.
@@ -252,6 +253,10 @@ pub struct Variant {
     /// Home defence (spec §4 option B): engines on station and drops over homes
     /// protect them from all but flame contact. Off = published rule.
     pub defend_homes: bool,
+    /// Replace the town's odds of a wind shift (spec 5.3). Applied by the sweep
+    /// when it draws the session's weather (`weather::draw_with`); `Run` itself
+    /// only sees the resulting spec. `None` = shipped climate.
+    pub shift_p: Option<(f32, f32)>,
 }
 
 pub struct Run {
@@ -261,6 +266,8 @@ pub struct Run {
     pub crews: Suppression,
     pub spec: Spec,
     pub tally: Tally,
+    /// What the commander did, for [`Run::ledger`] (spec 5.1).
+    pub log: cost::Log,
     shift_pending: bool,
 }
 
@@ -286,7 +293,7 @@ impl Run {
         if variant.defend_homes {
             tally.enable_defence();
         }
-        Ok(Run { scn, fire, agents, crews, spec, tally, shift_pending: spec.shift.is_some() })
+        Ok(Run { scn, fire, agents, crews, spec, tally, log: cost::Log::default(), shift_pending: spec.shift.is_some() })
     }
 
     pub fn time_s(&self) -> i64 {
@@ -300,17 +307,24 @@ impl Run {
     pub fn order(&mut self, o: Order) {
         match o {
             Order::EvacuateAll => {
-                self.agents.order_evacuation_all();
+                let n = self.agents.order_evacuation_all();
+                if n > 0 {
+                    self.log.push(cost::Entry::Evacuation { at_s: self.fire.time_s(), households: n });
+                }
             }
             Order::Attack { kind, at } => {
                 if let Some(id) = self.best_unit(kind) {
-                    let _ = self.crews.assign(id, Task::Attack { at });
+                    if self.crews.assign(id, Task::Attack { at }).is_ok() {
+                        self.log.task(self.fire.time_s(), id, kind);
+                    }
                 }
             }
             Order::Drop { at } => {
                 self.crews.request_air();
                 if let Some(id) = self.best_unit(UnitKind::AirTanker) {
-                    let _ = self.crews.assign(id, Task::Drop { at });
+                    if self.crews.assign(id, Task::Drop { at }).is_ok() {
+                        self.log.task(self.fire.time_s(), id, UnitKind::AirTanker);
+                    }
                 }
             }
         }
@@ -343,9 +357,12 @@ impl Run {
             self.fire.queue(a);
         }
         self.tally.note(&self.agents, &self.fire);
+        let dropped: Vec<Pos> =
+            self.crews.units.iter().zip(&drops_before).filter(|(u, &b)| u.drops > b).map(|(u, _)| u.pos).collect();
+        for _ in &dropped {
+            self.log.push(cost::Entry::AirLoad { at_s: self.fire.time_s() });
+        }
         if self.tally.defence_enabled() {
-            let dropped: Vec<Pos> =
-                self.crews.units.iter().zip(&drops_before).filter(|(u, &b)| u.drops > b).map(|(u, _)| u.pos).collect();
             self.tally.note_defence(&self.crews, &self.agents, &self.fire, &self.scn.world, &dropped);
         }
         Ok(())
@@ -421,6 +438,11 @@ impl Run {
 
     pub fn caught_where(&self, f: impl Fn(scenario::Pos) -> bool) -> usize {
         self.tally.caught_where(&self.agents, f)
+    }
+
+    /// The bill so far: a pure function of [`Run::log`].
+    pub fn ledger(&self) -> cost::Ledger {
+        self.log.price(self.time_s())
     }
 
     pub fn outcome(&self) -> Outcome {

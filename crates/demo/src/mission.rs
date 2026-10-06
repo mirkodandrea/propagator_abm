@@ -65,7 +65,7 @@ pub fn spec(id: &str) -> Option<Spec> {
             id: "demo_valle", weather: w(90.0, 25.0, 6.0),
             ignition: Pos { x: 2200.0, y: 2400.0 }, radius_m: 60.0,
             shift: Some(WindShift { at_s: 30 * 60, weather: w(270.0, 45.0, 6.0) }),
-            climate: Climate { shift_p: (0.6, 0.95), shift_window_s: (20 * 60, 40 * 60), shift_to: w(270.0, 45.0, 6.0), shift_threatens: true },
+            climate: Climate { shift_p: (0.10, 0.70), shift_window_s: (20 * 60, 40 * 60), shift_to: w(270.0, 45.0, 6.0), shift_threatens: true },
             duration_s: 90 * 60,
         },
         // Wind from the north, the pines behind the town alight, one road out

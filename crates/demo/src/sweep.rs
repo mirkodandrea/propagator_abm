@@ -9,7 +9,7 @@ use std::path::Path;
 
 use crate::policy::Policy;
 use crate::run::{Outcome, Run, Variant};
-use crate::weather::draw;
+use crate::weather::draw_with;
 
 #[derive(Debug, Clone)]
 pub struct Record {
@@ -18,6 +18,8 @@ pub struct Record {
     pub variant: usize,
     pub seed: u64,
     pub out: Outcome,
+    /// Money spent by the end of the mission (cost::Log::price).
+    pub eur: f32,
 }
 
 /// Run every combination. Order of the result is unspecified; use the indices.
@@ -48,10 +50,10 @@ pub fn run_grid(
                 s.spawn(move || {
                     c.iter()
                         .map(|&(town, seed, pi, vi)| {
-                            let d = draw(town, seed).expect("demo town");
+                            let d = draw_with(town, seed, variants[vi].shift_p).expect("demo town");
                             let mut run = Run::with_variant(data_dir, d.spec, seed, variants[vi]).expect("run");
                             let out = policies[pi].play(&mut run, &d).expect("play");
-                            Record { town, policy: pi, variant: vi, seed, out }
+                            Record { town, policy: pi, variant: vi, seed, out, eur: run.ledger().total_eur() }
                         })
                         .collect::<Vec<_>>()
                 })
@@ -120,6 +122,33 @@ pub fn paired(
     }
     let s = stat(d.iter().copied());
     (s.mean, s.sd / (d.len().max(1) as f32).sqrt())
+}
+
+/// Regret on an arbitrary per-record loss (lower is better): on each (town, seed,
+/// variant), this policy's loss minus the best any policy in the grid achieved,
+/// averaged over seeds; and the share of seeds on which it was (jointly) best.
+pub fn regret_by(
+    rs: &[Record],
+    town: &str,
+    policy: usize,
+    variant: usize,
+    loss: impl Fn(&Record) -> f32,
+) -> (f32, f32) {
+    let (mut sum, mut n, mut wins) = (0.0, 0usize, 0usize);
+    for r in rs.iter().filter(|r| r.town == town && r.policy == policy && r.variant == variant) {
+        let best = rs
+            .iter()
+            .filter(|o| o.town == town && o.seed == r.seed && o.variant == variant)
+            .map(&loss)
+            .fold(f32::INFINITY, f32::min);
+        sum += loss(r) - best;
+        n += 1;
+        if loss(r) <= best + 1e-3 {
+            wins += 1;
+        }
+    }
+    let n = n.max(1) as f32;
+    (sum / n, wins as f32 / n)
 }
 
 /// Regret on `secure` families: on each (town, seed, variant), the best any
