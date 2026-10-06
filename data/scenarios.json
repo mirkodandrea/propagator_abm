@@ -820,16 +820,16 @@
     },
     {
       "id": "demo_borgo",
-      "name": "Borgo San Fiorenzo",
-      "description": "Un borgo sulla collina con due vie d'uscita. Il vento spinge il fuoco in salita verso le case: dare l'allarme in tempo cambia chi si salva.",
+      "name": "Rocca Ventosa",
+      "description": "Un borgo sulla collina e due frazioni. Il vento decide chi e in pericolo: avvisare in tempo, e solo chi serve.",
       "location": "Luogo immaginario",
       "country": "Italia",
       "nationality": "Italian",
       "region": "an invented town in central Italy",
       "localities": [
-        "Borgo San Fiorenzo",
-        "Colle Alto",
-        "Case Bassa"
+        "Il Borgo",
+        "Le Coste",
+        "Il Mulino"
       ],
       "coordinates": [
         0.0,
@@ -844,7 +844,7 @@
         200,
         200
       ],
-      "buildings_count": 250,
+      "buildings_count": 269,
       "households_count": 250,
       "people_count": 750,
       "scenario_type": "synthetic",
@@ -858,16 +858,16 @@
     },
     {
       "id": "demo_valle",
-      "name": "Valle dei Pini",
-      "description": "Due borgate in una valle. La seconda e al sicuro finche il vento non cambia: bisogna rivalutare la situazione.",
+      "name": "Due Casali",
+      "description": "Due casali e una frazione in una valle. Il secondo casale e al sicuro finche il vento non cambia: bisogna rivalutare la situazione.",
       "location": "Luogo immaginario",
       "country": "Italia",
       "nationality": "Italian",
       "region": "an invented town in central Italy",
       "localities": [
-        "Valle dei Pini",
-        "Borgata Alta",
-        "Borgata Bassa"
+        "Casale Ovest",
+        "Casale Est",
+        "Fondovalle"
       ],
       "coordinates": [
         0.0,
@@ -882,7 +882,7 @@
         200,
         200
       ],
-      "buildings_count": 300,
+      "buildings_count": 319,
       "households_count": 300,
       "people_count": 900,
       "scenario_type": "synthetic",
@@ -896,16 +896,16 @@
     },
     {
       "id": "demo_porto",
-      "name": "Porto Rosso",
-      "description": "Un paese di mare con una sola strada d'uscita. Con il fuoco alle spalle, le code e le scintille contano quanto le fiamme.",
+      "name": "Porto Pineta",
+      "description": "Un paese di mare con una sola strada d'uscita, che passa nella pineta. Con il fuoco alle spalle, la strada si puo chiudere: la spiaggia non brucia.",
       "location": "Luogo immaginario",
       "country": "Italia",
       "nationality": "Italian",
       "region": "an invented town in central Italy",
       "localities": [
-        "Porto Rosso",
-        "Lungomare",
-        "Punta del Faro"
+        "La Pineta",
+        "Centro",
+        "Il Faro"
       ],
       "coordinates": [
         0.0,
@@ -920,7 +920,7 @@
         200,
         200
       ],
-      "buildings_count": 350,
+      "buildings_count": 367,
       "households_count": 350,
       "people_count": 1050,
       "scenario_type": "synthetic",

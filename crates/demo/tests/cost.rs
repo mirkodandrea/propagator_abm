@@ -2,9 +2,8 @@
 //! forecast is a real decision -- "always evacuate" and "never" both lose to a
 //! policy that reads the forecast, and every fixed policy wins on some seeds.
 
-use demo::cost::{Action, Log, Weights, EVACUATION_PER_HOUSEHOLD_EUR};
+use demo::cost::{Action, Log, EVACUATION_PER_HOUSEHOLD_EUR};
 use demo::policy::Policy;
-use demo::sweep::{regret_by, run_grid, Record};
 use demo::weather::draw;
 use demo::{Run, ALL};
 
@@ -21,13 +20,13 @@ fn cost_is_a_pure_function_of_the_action_log() {
         let mut run = Run::new(&data_dir(), d.spec, 4).unwrap();
         Policy::evacuate_and_units(5, 3).play(&mut run, &d).unwrap();
         let mut rebuilt = Log::default();
-        for e in &run.log.entries {
+        for e in &run.referee.log.entries {
             rebuilt.push(*e);
         }
         assert_eq!(rebuilt.price(run.time_s()), run.ledger(), "{id}");
         assert!(run.ledger().total_eur() > 0.0, "{id}: a session with orders cost nothing");
         // Time moves the bill (engines are on call-out by the hour), never backwards.
-        assert!(run.log.price(run.time_s()).total_eur() >= run.log.price(run.time_s() / 2).total_eur());
+        assert!(run.referee.log.price(run.time_s()).total_eur() >= run.referee.log.price(run.time_s() / 2).total_eur());
     }
 }
 
@@ -48,32 +47,5 @@ fn doing_nothing_costs_nothing_and_an_evacuation_costs_per_household() {
     }
 }
 
-/// The gate for the forecast being a decision (5.1/5.3). At the analysis weights
-/// (EUR 20 k per family caught at home and per home reached -- see `cost::Weights`;
-/// `tests/cost_sweep.rs` reports it across 5-80 k) a forecast-follower has lower
-/// mean loss than both "evacuate at T+0 always" and "never evacuate", on every
-/// town; and every fixed policy is the best one on *some* seeds.
-#[test]
-fn the_forecast_beats_always_and_never_and_nobody_always_wins() {
-    let policies = Policy::fixed_set();
-    let (none, t0, follow) = (0, 1, 5);
-    assert_eq!(policies[none].name, "none");
-    assert_eq!(policies[t0].name, "evac T+0");
-    assert_eq!(policies[follow].name, "follow-forecast");
-    let w = Weights::ANALYSIS;
-    let rs = run_grid(&data_dir(), &ALL, &policies, &[Default::default()], 1..=24);
-    let loss = |r: &Record| w.loss(r.eur, r.out.caught, r.out.homes_lost) / 1000.0;
-    for id in ALL {
-        let mean = |p: usize| rs.iter().filter(|r| r.town == id && r.policy == p).map(&loss).sum::<f32>() / 24.0;
-        println!("{id}: never {:.0}k  always {:.0}k  follow {:.0}k", mean(none), mean(t0), mean(follow));
-        assert!(mean(follow) < mean(t0), "{id}: evacuating at T+0 always beats reading the forecast");
-        assert!(mean(follow) < mean(none), "{id}: doing nothing beats reading the forecast");
-        for p in [none, t0] {
-            let (_, wins) = regret_by(&rs, id, p, 0, loss);
-            assert!(wins > 0.0, "{id}: {} is never the best policy on any seed", policies[p].name);
-        }
-        let (regret_t0, _) = regret_by(&rs, id, t0, 0, loss);
-        let (regret_none, _) = regret_by(&rs, id, none, 0, loss);
-        assert!(regret_t0 > 5.0 && regret_none > 5.0, "{id}: a fixed policy has trivial regret ({regret_t0}, {regret_none})");
-    }
-}
+// The forecast gate (`follow-forecast` beats always/never) was a property of the
+// one-order game. The district game's equivalent is `tests/districts.rs`.

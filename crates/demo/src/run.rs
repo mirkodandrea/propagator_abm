@@ -4,13 +4,14 @@
 //! Steps with the same fire-then-agents order `game::Sim::advance` uses, at the
 //! 6 s decision interval, so a figure taken here is the figure the kiosk shows.
 
-use abm::suppression::{Suppression, Task, UnitKind, DROP_WIDTH_M};
+use abm::suppression::{Suppression, Task, UnitKind, UnitState, DROP_WIDTH_M};
 use abm::Abm;
 use anyhow::Result;
 use fire::FireSim;
 use scenario::{Pos, Scenario};
 
 use crate::cost;
+use crate::district::{self, District};
 use crate::event::{self, Event, EventKind};
 use crate::mission::Spec;
 use crate::trust;
@@ -34,6 +35,11 @@ pub enum Order {
     Attack { kind: UnitKind, at: Pos },
     /// Request the aircraft if not yet asked, and send a load at `at`.
     Drop { at: Pos },
+    /// Warn one district by name (index into `Referee::districts`).
+    EvacuateDistrict(usize),
+    /// Send the best free unit of this kind to defend a district: posted at
+    /// its edge facing the fire (spec §4 option B -- homes, not the front).
+    Defend { kind: UnitKind, district: usize },
 }
 
 /// The four facts the outcome card shows (spec §6.5). Facts, not a score.
@@ -66,7 +72,8 @@ impl Outcome {
 /// only honest if both sides of it are counted by the same code.
 #[derive(Clone)]
 pub struct Tally {
-    caught: Vec<bool>,
+    /// When the fire first reached each household while it was still at home.
+    caught_at: Vec<Option<i64>>,
     /// When the fire first reached somebody who was still at home.
     pub first_caught_s: Option<i64>,
     /// Home defence (spec §4 option B). `None` until [`Tally::enable_defence`]:
@@ -74,28 +81,33 @@ pub struct Tally {
     defence: Option<Defence>,
 }
 
-/// A home an engine is hosing down, or one a retardant drop has just wetted, is
-/// lost only to flame contact ([`DEFENDED_RADIUS_M`]); an undefended one is lost
-/// when burnt ground reaches [`LOST_RADIUS_M`]. Loss is latched at the moment of
-/// contact, so *when* the unit is on station is the whole mechanic: an engine
-/// that has withdrawn, run dry or never arrived protects nobody.
+/// A home an engine is posted to defend, or one a retardant drop has just
+/// wetted, is lost only to flame contact ([`DEFENDED_RADIUS_M`]); an undefended
+/// one is lost when burnt ground reaches [`LOST_RADIUS_M`]. Loss is latched at
+/// the moment of contact, so *when* the engine got there is the whole mechanic:
+/// one that arrives after the front protects nobody.
+///
+/// An engine defends from the moment it first starts work at its post until
+/// it is re-tasked or lost -- **not** only while it is pumping. The model
+/// rightly pulls a crew back out of lethal heat as the front passes, which is
+/// exactly when the houses need it; structure protection is the crew being
+/// there before and after, putting out what the front leaves on the roofs.
+/// Measured: tied to `Working` alone, three engines on a district changed
+/// homes lost by nothing (`district_sweep::defend_sweep`).
 #[derive(Clone)]
 struct Defence {
     /// Simulated second until which each household counts as defended.
     until_s: Vec<i64>,
     lost: Vec<bool>,
-    /// Per unit: seconds spent on station since its last refill, and the tank
-    /// level it had then (a rise means it refilled).
-    on_station_s: Vec<i64>,
-    last_water_l: Vec<f32>,
+    /// Per unit: where it took up its post, and the task that sent it there.
+    station: Vec<Option<(Pos, Task)>>,
 }
 
-/// How long an engine's tank sprinkles homes before it must go and refill: the
-/// reason sending an engine *too early* wastes it (2,500 L at ~100 L/min of sprinkler = 25 min).
-pub const SPRINKLE_BUDGET_S: i64 = 25 * 60;
-
-/// An engine within this distance of a home (working, with water) defends it.
-pub const DEFEND_REACH_M: f32 = 80.0;
+/// An engine posted within this distance of a home defends it: about a
+/// street's length either side, which is what one crew with two lines out
+/// covers. Was 80 m, under which three engines on a district of a hundred homes
+/// defended seven (`district_probe::engines_after_a_defend_order`).
+pub const DEFEND_REACH_M: f32 = 120.0;
 /// How long a retardant drop keeps the homes under it defended.
 pub const DROP_DEFENCE_S: i64 = 15 * 60;
 /// A defended home is lost only if burnt ground gets this close.
@@ -103,22 +115,22 @@ pub const DEFENDED_RADIUS_M: f32 = 25.0;
 
 impl Tally {
     pub fn new(households: usize) -> Tally {
-        Tally { caught: vec![false; households], first_caught_s: None, defence: None }
+        Tally { caught_at: vec![None; households], first_caught_s: None, defence: None }
     }
 
     /// Turn on home defence. Inert until called; the kiosk does not call it.
     pub fn enable_defence(&mut self) {
-        let n = self.caught.len();
-        self.defence.get_or_insert_with(|| Defence {
-            until_s: vec![0; n],
-            lost: vec![false; n],
-            on_station_s: vec![],
-            last_water_l: vec![],
-        });
+        let n = self.caught_at.len();
+        self.defence.get_or_insert_with(|| Defence { until_s: vec![0; n], lost: vec![false; n], station: vec![] });
     }
 
     pub fn defence_enabled(&self) -> bool {
         self.defence.is_some()
+    }
+
+    /// Whether household `i` is being defended at `now_s`.
+    pub fn defended(&self, i: usize, now_s: i64) -> bool {
+        self.defence.as_ref().is_some_and(|d| d.until_s.get(i).is_some_and(|&u| u > now_s))
     }
 
     /// Households currently defended (for a map marker or a test).
@@ -135,30 +147,26 @@ impl Tally {
         world: &scenario::World,
         dropped_at: &[Pos],
     ) {
-        use abm::suppression::{UnitKind, UnitState};
         use fire::CellFire;
         let Some(d) = self.defence.as_mut() else { return };
         let now = fire.time_s();
         let near = |a: Pos, b: Pos, r: f32| (a.x - b.x).powi(2) + (a.y - b.y).powi(2) <= r * r;
-        if d.on_station_s.len() != crews.units.len() {
-            d.on_station_s = vec![0; crews.units.len()];
-            d.last_water_l = crews.units.iter().map(|u| u.water_l).collect();
+        if d.station.len() != crews.units.len() {
+            d.station = vec![None; crews.units.len()];
         }
-        // An engine sprinkles while it is working with water, for a tank's worth
-        // of time; a refill (its level rising) starts the budget again.
-        let mut sprinkling = vec![false; crews.units.len()];
         for (k, u) in crews.units.iter().enumerate() {
-            if u.water_l > d.last_water_l[k] + 1.0 {
-                d.on_station_s[k] = 0;
+            if u.kind != UnitKind::Engine || u.state == UnitState::Lost {
+                d.station[k] = None;
+                continue;
             }
-            d.last_water_l[k] = u.water_l;
-            if u.kind == UnitKind::Engine && u.state == UnitState::Working && u.water_l > 0.0 {
-                d.on_station_s[k] += STEP_S;
-                sprinkling[k] = d.on_station_s[k] <= SPRINKLE_BUDGET_S;
+            match d.station[k] {
+                Some((_, task)) if task != u.task => d.station[k] = None,
+                None if u.state == UnitState::Working && u.water_l > 0.0 => d.station[k] = Some((u.pos, u.task)),
+                _ => {}
             }
         }
         for (i, h) in agents.households.iter().enumerate() {
-            let on_scene = crews.units.iter().enumerate().any(|(k, u)| sprinkling[k] && near(u.pos, h.home, DEFEND_REACH_M));
+            let on_scene = d.station.iter().flatten().any(|(p, _)| near(*p, h.home, DEFEND_REACH_M));
             let dropped = dropped_at.iter().any(|&p| near(p, h.home, DROP_WIDTH_M));
             if on_scene {
                 d.until_s[i] = d.until_s[i].max(now + STEP_S);
@@ -196,9 +204,9 @@ impl Tally {
 
     /// Call once after each step.
     pub fn note(&mut self, agents: &Abm, fire: &FireSim) {
-        for i in 0..self.caught.len() {
-            if !self.caught[i] && Self::endangered(i, agents, fire) {
-                self.caught[i] = true;
+        for i in 0..self.caught_at.len() {
+            if self.caught_at[i].is_none() && Self::endangered(i, agents, fire) {
+                self.caught_at[i] = Some(fire.time_s());
                 self.first_caught_s.get_or_insert(fire.time_s());
             }
         }
@@ -207,7 +215,17 @@ impl Tally {
     /// Households the fire has caught at home, by position -- lets a test ask
     /// about one hamlet rather than the whole town.
     pub fn caught_where(&self, agents: &Abm, f: impl Fn(scenario::Pos) -> bool) -> usize {
-        agents.households.iter().zip(&self.caught).filter(|(h, &c)| c && f(h.home)).count()
+        agents.households.iter().zip(&self.caught_at).filter(|(h, c)| c.is_some() && f(h.home)).count()
+    }
+
+    /// When the fire reached household `i` at home, if it ever did.
+    pub fn caught_at(&self, i: usize) -> Option<i64> {
+        self.caught_at.get(i).copied().flatten()
+    }
+
+    /// Whether household `i`'s home has been reached (only with defence on).
+    pub fn home_lost(&self, i: usize) -> Option<bool> {
+        self.defence.as_ref().map(|d| d.lost[i])
     }
 
     /// Households with burnt ground at their door: within [`LOST_RADIUS_M`] of a
@@ -238,7 +256,7 @@ impl Tally {
             safe: s.safe,
             moving: s.moving,
             in_danger,
-            caught: self.caught.iter().filter(|&&c| c).count(),
+            caught: self.caught_at.iter().filter(|c| c.is_some()).count(),
             homes_lost: match &self.defence {
                 Some(d) => d.lost.iter().filter(|&&l| l).count(),
                 None => Self::lost(agents, fire, world),
@@ -267,23 +285,326 @@ pub struct Variant {
     pub cry_wolf: Option<f32>,
 }
 
+/// What the commander can be told and judged by, kept apart from who steps the
+/// model: the headless [`Run`] and the kiosk's live `Sim` each own their fire,
+/// agents and units, and each hands them to one `Referee` before and after
+/// every step. The COMPARE screen, the cost, the trust meter, the districts'
+/// stories and the events are therefore computed by the same code on both
+/// sides, which is the only way the end card can be honest.
+pub struct Referee {
+    pub spec: Spec,
+    pub tally: Tally,
+    /// What the commander did, for [`Referee::ledger`] (spec 5.1).
+    pub log: cost::Log,
+    wolf: Option<trust::CryWolf>,
+    /// Everything notable that has happened, oldest first (spec 5.4/5.6).
+    pub events: Vec<Event>,
+    pub districts: Vec<District>,
+    /// One per district, same order.
+    pub reports: Vec<district::Report>,
+    watch: Watch,
+    shift_pending: bool,
+    drops_before: Vec<u32>,
+    /// Where engines sent to each district were posted, so the next one goes
+    /// somewhere else along the edge.
+    posts: Vec<Vec<Pos>>,
+}
+
+/// Borrowed model parts, so the same [`Referee`] methods serve the headless
+/// [`Run`] and the kiosk's `Sim`, which hold them under different names.
+pub struct Parts<'a> {
+    pub scn: &'a Scenario,
+    pub fire: &'a mut FireSim,
+    pub agents: &'a mut Abm,
+    pub crews: &'a mut Suppression,
+}
+
+impl Referee {
+    pub fn new(spec: Spec, scn: &Scenario, agents: &Abm, variant: Variant) -> Referee {
+        let mut tally = Tally::new(agents.households.len());
+        if variant.defend_homes {
+            tally.enable_defence();
+        }
+        let districts = district::of(scn, agents);
+        let reports = district::reports(&districts);
+        Referee {
+            spec,
+            tally,
+            log: cost::Log::default(),
+            wolf: variant.cry_wolf.map(|d| trust::CryWolf::new(agents, d)),
+            events: vec![],
+            districts,
+            reports,
+            watch: Watch::default(),
+            shift_pending: spec.shift.is_some(),
+            drops_before: vec![],
+            posts: vec![],
+        }
+    }
+
+    /// Call before stepping the model: applies the scripted or drawn wind
+    /// shift when it is due. Returns whether the weather changed.
+    pub fn before_step(&mut self, fire: &mut FireSim, crews: &Suppression) -> Result<bool> {
+        self.drops_before = crews.units.iter().map(|u| u.drops).collect();
+        if let (true, Some(s)) = (self.shift_pending, self.spec.shift) {
+            if fire.time_s() >= s.at_s {
+                fire.set_weather(s.weather)?;
+                self.shift_pending = false;
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Call after stepping the model: outcome, cost, trust, events, districts.
+    pub fn after_step(&mut self, m: Parts) {
+        let Parts { scn, fire, agents, crews } = m;
+        self.tally.note(agents, fire);
+        if let Some(w) = self.wolf.as_mut() {
+            w.step(agents, fire, &scn.world);
+        }
+        let dropped: Vec<Pos> = crews
+            .units
+            .iter()
+            .enumerate()
+            .filter(|(k, u)| u.drops > self.drops_before.get(*k).copied().unwrap_or(u.drops))
+            .map(|(_, u)| u.pos)
+            .collect();
+        for _ in &dropped {
+            self.log.push(cost::Entry::AirLoad { at_s: fire.time_s() });
+        }
+        if self.tally.defence_enabled() {
+            self.tally.note_defence(crews, agents, fire, &scn.world, &dropped);
+            let now = fire.time_s();
+            for (d, r) in self.districts.iter().zip(self.reports.iter_mut()) {
+                if r.defended_at_s.is_none() && d.households.iter().any(|&i| self.tally.defended(i, now)) {
+                    r.defended_at_s = Some(now);
+                }
+            }
+        }
+        district::note(&self.districts, &mut self.reports, &self.tally, agents, fire, scn);
+        self.collect_events(fire, agents, crews, scn);
+    }
+
+    /// Give an order. Everything the player can do goes through here.
+    pub fn order(&mut self, o: Order, m: Parts) {
+        let Parts { scn, fire, agents, crews } = m;
+        let now = fire.time_s();
+        let before: Vec<bool> = agents.households.iter().map(|h| h.ordered).collect();
+        match o {
+            Order::EvacuateAll => {
+                agents.order_evacuation_all();
+            }
+            Order::EvacuateZone { centre, radius_m } => {
+                agents.order_evacuation(centre, radius_m);
+            }
+            Order::EvacuateDistrict(d) => {
+                if let Some(d) = self.districts.get(d) {
+                    agents.order_evacuation_of(&d.households);
+                }
+            }
+            Order::Attack { kind, at } => {
+                if let Some(id) = best_unit(crews, kind) {
+                    if crews.assign(id, Task::Attack { at }).is_ok() {
+                        self.log.task(now, id, kind);
+                    }
+                }
+            }
+            Order::Defend { kind, district } => {
+                if let Some(d) = self.districts.get(district) {
+                    if self.posts.len() < self.districts.len() {
+                        self.posts.resize(self.districts.len(), vec![]);
+                    }
+                    let at = d.post_facing(agents, head_of(fire, scn, self.spec.ignition), &self.posts[district], 2.0 * DEFEND_REACH_M);
+                    if let Some(id) = best_unit(crews, kind) {
+                        if crews.assign(id, Task::Attack { at }).is_ok() {
+                            self.log.task(now, id, kind);
+                            self.posts[district].push(at);
+                        }
+                    }
+                }
+            }
+            Order::Drop { at } => {
+                crews.request_air();
+                if let Some(id) = best_unit(crews, UnitKind::AirTanker) {
+                    if crews.assign(id, Task::Drop { at }).is_ok() {
+                        self.log.task(now, id, UnitKind::AirTanker);
+                    }
+                }
+            }
+        }
+        if matches!(o, Order::EvacuateAll | Order::EvacuateZone { .. } | Order::EvacuateDistrict(_)) {
+            let moved: Vec<usize> = (0..before.len()).filter(|&i| !before[i] && agents.households[i].ordered).collect();
+            if !moved.is_empty() {
+                for (d, r) in self.districts.iter().zip(self.reports.iter_mut()) {
+                    if r.warned_at_s.is_none() && d.households.iter().any(|i| moved.contains(i)) {
+                        r.warned_at_s = Some(now);
+                    }
+                }
+                self.log.push(cost::Entry::Evacuation { at_s: now, households: moved.len() });
+                if let Some(w) = self.wolf.as_mut() {
+                    w.note_order(now, moved);
+                }
+            }
+        }
+    }
+
+    /// Trust and anger for the HUD (spec 5.2). Constant while cry-wolf is off.
+    pub fn trust(&self, agents: &Abm) -> trust::Trust {
+        match &self.wolf {
+            Some(w) => w.trust(agents),
+            None => trust::CryWolf::new(agents, 0.0).trust(agents),
+        }
+    }
+
+    /// Engines posted to defend district `d` so far.
+    pub fn posted(&self, d: usize) -> usize {
+        self.posts.get(d).map_or(0, |p| p.len())
+    }
+
+    /// Orders the town has judged false alarms so far (cry-wolf on only).
+    pub fn needless_orders(&self) -> usize {
+        self.wolf.as_ref().map_or(0, |w| w.needless_orders)
+    }
+
+    /// The bill so far: a pure function of [`Referee::log`].
+    pub fn ledger(&self, now_s: i64) -> cost::Ledger {
+        self.log.price(now_s)
+    }
+
+    pub fn outcome(&self, m: &Parts) -> Outcome {
+        self.tally.outcome(m.agents, m.fire, &m.scn.world)
+    }
+
+    /// The moments `why` is built from, as this run saw them.
+    pub fn facts(&self) -> crate::why::Facts {
+        let first = |f: &dyn Fn(&EventKind) -> bool| self.events.iter().find(|e| f(&e.kind)).map(|e| e.at_s);
+        crate::why::Facts {
+            order_at_s: self
+                .log
+                .entries
+                .iter()
+                .find_map(|e| if let cost::Entry::Evacuation { at_s, .. } = e { Some(*at_s) } else { None }),
+            shift_at_s: first(&|k| matches!(k, EventKind::WindShifted { .. })),
+            near_town_s: first(&|k| *k == EventKind::FireNearTown),
+            first_caught_s: self.tally.first_caught_s,
+        }
+    }
+
+    /// Derive this step's events from the model's state (one pass, no text).
+    fn collect_events(&mut self, fire: &FireSim, agents: &Abm, crews: &Suppression, scn: &Scenario) {
+        use abm::suppression::UnitState as S;
+        let now = fire.time_s();
+        let w = &mut self.watch;
+        let mut out: Vec<Event> = vec![];
+        let seen_to = w.last_spot_s;
+        for s in agents.spot_fires().spots().filter(|s| s.at_s > seen_to) {
+            out.push(Event { at_s: s.at_s as i64, kind: EventKind::SpotFire, pos: Some(s.pos) });
+            w.last_spot_s = w.last_spot_s.max(s.at_s);
+        }
+        let wind = fire.weather().wind_dir_deg;
+        if let Some(prev) = w.wind_from {
+            if (prev - wind).abs() > 1.0 {
+                out.push(Event { at_s: now, kind: EventKind::WindShifted { from_deg: prev as f32, to_deg: wind as f32 }, pos: None });
+            }
+        }
+        w.wind_from = Some(wind);
+        if w.unit_states.len() != crews.units.len() {
+            w.unit_states = crews.units.iter().map(|u| u.state).collect();
+        }
+        for (k, u) in crews.units.iter().enumerate() {
+            if u.state != w.unit_states[k] {
+                match u.state {
+                    S::Withdrawing => out.push(Event { at_s: now, kind: EventKind::UnitWithdrew { unit: u.id, kind: u.kind }, pos: Some(u.pos) }),
+                    S::Lost => out.push(Event { at_s: now, kind: EventKind::UnitLost { unit: u.id, kind: u.kind }, pos: Some(u.pos) }),
+                    _ => {}
+                }
+                w.unit_states[k] = u.state;
+            }
+        }
+        let down = agents.comms().down();
+        if down > w.masts_down {
+            out.push(Event { at_s: now, kind: EventKind::MastDown, pos: None });
+        }
+        w.masts_down = down;
+        // District transitions: the moments an advisor speaks about.
+        if w.levels.len() != self.reports.len() {
+            w.levels = vec![district::Level::Calm; self.reports.len()];
+        }
+        for (k, r) in self.reports.iter().enumerate() {
+            let level = r.level();
+            if level > w.levels[k] {
+                if level >= district::Level::Threatened {
+                    let kind = if level == district::Level::Reached { EventKind::DistrictReached { district: k } } else { EventKind::DistrictThreatened { district: k } };
+                    out.push(Event { at_s: now, kind, pos: Some(self.districts[k].centre) });
+                }
+                w.levels[k] = level;
+            }
+        }
+        if let Some(wolf) = &self.wolf {
+            if wolf.needless_orders > w.needless_seen {
+                w.needless_seen = wolf.needless_orders;
+                out.push(Event { at_s: now, kind: EventKind::FalseAlarm, pos: None });
+            }
+        }
+        self.events.extend(out);
+        let head = head_of(fire, scn, self.spec.ignition);
+        let near = agents
+            .households
+            .iter()
+            .map(|x| ((x.home.x - head.x).powi(2) + (x.home.y - head.y).powi(2)).sqrt())
+            .fold(f32::INFINITY, f32::min);
+        if !self.watch.near_town && near <= event::NEAR_TOWN_M {
+            self.watch.near_town = true;
+            self.events.push(Event { at_s: now, kind: EventKind::FireNearTown, pos: Some(head) });
+        }
+    }
+}
+
+/// The unit the kiosk's button would send: a free one of this kind, preferring
+/// whichever is closest to being ready.
+pub fn best_unit(crews: &Suppression, kind: UnitKind) -> Option<usize> {
+    use abm::suppression::UnitState as S;
+    crews.units.iter().filter(|u| u.kind == kind && u.assignable()).min_by_key(|u| match u.state {
+        S::Staged => 0,
+        S::Inbound => 1,
+        S::Moving | S::Working | S::Refilling => 2,
+        _ => 3,
+    }).map(|u| u.id)
+}
+
+/// Where the fire is going: the burning cell furthest downwind of the opening
+/// ignition (current wind, so it follows a shift).
+pub fn head_of(fire: &FireSim, scn: &Scenario, ignition: Pos) -> Pos {
+    let (ux, uy) = downwind(fire);
+    fire.active_cells()
+        .iter()
+        .map(|c| scn.world.centre_of(*c))
+        .max_by(|a, b| {
+            let pa = (a.x - ignition.x) * ux + (a.y - ignition.y) * uy;
+            let pb = (b.x - ignition.x) * ux + (b.y - ignition.y) * uy;
+            pa.partial_cmp(&pb).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(ignition)
+}
+
+/// Unit vector the wind blows *toward*.
+fn downwind(fire: &FireSim) -> (f32, f32) {
+    // `wind_dir_deg` is where the wind blows FROM (finding 1).
+    let to = (fire.weather().wind_dir_deg as f32 + 180.0).to_radians();
+    (to.sin(), to.cos())
+}
+
 pub struct Run {
     pub scn: Scenario,
     pub fire: FireSim,
     pub agents: Abm,
     pub crews: Suppression,
     pub spec: Spec,
-    pub tally: Tally,
-    /// What the commander did, for [`Run::ledger`] (spec 5.1).
-    pub log: cost::Log,
-    wolf: Option<trust::CryWolf>,
-    /// Everything notable that has happened, oldest first (spec 5.4/5.6).
-    pub events: Vec<Event>,
-    watch: Watch,
-    shift_pending: bool,
+    pub referee: Referee,
 }
 
-/// What [`Run::step`] compared against last time, to turn state into events.
+/// What [`Referee::after_step`] compared against last time, to turn state into events.
 #[derive(Default)]
 struct Watch {
     last_spot_s: f32,
@@ -291,6 +612,8 @@ struct Watch {
     unit_states: Vec<abm::suppression::UnitState>,
     masts_down: usize,
     near_town: bool,
+    levels: Vec<district::Level>,
+    needless_seen: usize,
 }
 
 impl Run {
@@ -304,19 +627,10 @@ impl Run {
         let centre = scn.world.cell_of(spec.ignition);
         fire.ignite_patch(centre, spec.radius_m, &scn)?;
         let agents = Abm::new(&scn, seed)?;
-        let tally = Tally::new(agents.households.len());
-        let ig = scn.world.centre_of(centre);
-        let mut staging: Vec<Pos> = agents.refuges.iter().map(|r| r.pos).collect();
-        let d = |p: &Pos| (p.x - ig.x).powi(2) + (p.y - ig.y).powi(2);
-        staging.sort_by(|a, b| d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal));
-        let wolf = variant.cry_wolf.map(|d| trust::CryWolf::new(&agents, d));
-        let mut crews = Suppression::new(&scn, &staging)?;
+        let mut crews = Suppression::new(&scn, &staging(&agents, scn.world.centre_of(centre)))?;
         crews.effect = variant.unit_effect;
-        let mut tally = tally;
-        if variant.defend_homes {
-            tally.enable_defence();
-        }
-        Ok(Run { scn, fire, agents, crews, spec, tally, log: cost::Log::default(), wolf, events: vec![], watch: Watch::default(), shift_pending: spec.shift.is_some() })
+        let referee = Referee::new(spec, &scn, &agents, variant);
+        Ok(Run { scn, fire, agents, crews, spec, referee })
     }
 
     pub fn time_s(&self) -> i64 {
@@ -324,108 +638,30 @@ impl Run {
     }
 
     pub fn first_caught_s(&self) -> Option<i64> {
-        self.tally.first_caught_s
+        self.referee.tally.first_caught_s
     }
 
     pub fn order(&mut self, o: Order) {
-        let before: Vec<bool> = self.agents.households.iter().map(|h| h.ordered).collect();
-        self.order_inner(o);
-        if matches!(o, Order::EvacuateAll | Order::EvacuateZone { .. }) {
-            let moved: Vec<usize> = (0..before.len()).filter(|&i| !before[i] && self.agents.households[i].ordered).collect();
-            if !moved.is_empty() {
-                self.log.push(cost::Entry::Evacuation { at_s: self.fire.time_s(), households: moved.len() });
-                if let Some(w) = self.wolf.as_mut() {
-                    w.note_order(self.fire.time_s(), moved);
-                }
-            }
-        }
+        let Run { scn, fire, agents, crews, referee, .. } = self;
+        referee.order(o, Parts { scn, fire, agents, crews });
     }
 
     /// Trust and anger for the HUD (spec 5.2). Constant while cry-wolf is off.
     pub fn trust(&self) -> trust::Trust {
-        match &self.wolf {
-            Some(w) => w.trust(&self.agents),
-            None => trust::CryWolf::new(&self.agents, 0.0).trust(&self.agents),
-        }
+        self.referee.trust(&self.agents)
     }
 
-    fn order_inner(&mut self, o: Order) {
-        match o {
-            Order::EvacuateAll => {
-                self.agents.order_evacuation_all();
-            }
-            Order::EvacuateZone { centre, radius_m } => {
-                self.agents.order_evacuation(centre, radius_m);
-            }
-            Order::Attack { kind, at } => {
-                if let Some(id) = self.best_unit(kind) {
-                    if self.crews.assign(id, Task::Attack { at }).is_ok() {
-                        self.log.task(self.fire.time_s(), id, kind);
-                    }
-                }
-            }
-            Order::Drop { at } => {
-                self.crews.request_air();
-                if let Some(id) = self.best_unit(UnitKind::AirTanker) {
-                    if self.crews.assign(id, Task::Drop { at }).is_ok() {
-                        self.log.task(self.fire.time_s(), id, UnitKind::AirTanker);
-                    }
-                }
-            }
-        }
-    }
-
-    /// The unit the kiosk's button would send: a free one of this kind, preferring
-    /// whichever is closest to being ready.
-    fn best_unit(&self, kind: UnitKind) -> Option<usize> {
-        use abm::suppression::UnitState as S;
-        self.crews.units.iter().filter(|u| u.kind == kind && u.assignable()).min_by_key(|u| match u.state {
-            S::Staged => 0,
-            S::Inbound => 1,
-            S::Moving | S::Working | S::Refilling => 2,
-            _ => 3,
-        }).map(|u| u.id)
-    }
-
-    /// One step: scripted weather, then fire, then agents.
+    /// One step: scripted weather, then fire, then agents, then units, then the books.
     pub fn step(&mut self) -> Result<()> {
-        if let (true, Some(s)) = (self.shift_pending, self.spec.shift) {
-            if self.fire.time_s() >= s.at_s {
-                self.fire.set_weather(s.weather)?;
-                self.shift_pending = false;
-            }
-        }
+        self.referee.before_step(&mut self.fire, &self.crews)?;
         self.fire.advance(STEP_S)?;
         self.agents.step(STEP_S as f32, &self.fire, &self.scn);
-        let drops_before: Vec<u32> = self.crews.units.iter().map(|u| u.drops).collect();
         for a in self.crews.step(STEP_S as f32, &self.agents.network, &self.agents.traffic, &self.fire, &self.scn) {
             self.fire.queue(a);
         }
-        self.tally.note(&self.agents, &self.fire);
-        if let Some(w) = self.wolf.as_mut() {
-            w.step(&mut self.agents, &self.fire, &self.scn.world);
-        }
-        self.collect_events();
-        let dropped: Vec<Pos> =
-            self.crews.units.iter().zip(&drops_before).filter(|(u, &b)| u.drops > b).map(|(u, _)| u.pos).collect();
-        for _ in &dropped {
-            self.log.push(cost::Entry::AirLoad { at_s: self.fire.time_s() });
-        }
-        if self.tally.defence_enabled() {
-            self.tally.note_defence(&self.crews, &self.agents, &self.fire, &self.scn.world, &dropped);
-        }
+        let Run { scn, fire, agents, crews, referee, .. } = self;
+        referee.after_step(Parts { scn, fire, agents, crews });
         Ok(())
-    }
-
-    /// Where the fire is going: the burning cell furthest downwind of the
-    /// opening ignition (current wind, so it follows a shift). This is where a
-    /// commander sends units, and it moves, which is why policies resolve it at
-    /// the moment they act rather than carrying a fixed point.
-    fn downwind(&self) -> (f32, f32) {
-        let w = self.fire.weather();
-        // `wind_dir_deg` is where the wind blows FROM (finding 1).
-        let to = (w.wind_dir_deg as f32 + 180.0).to_radians();
-        (to.sin(), to.cos())
     }
 
     /// `d` metres downwind of [`Run::head`], clamped to the world.
@@ -434,15 +670,14 @@ impl Run {
         if d == 0.0 {
             return h;
         }
-        let (ux, uy) = self.downwind();
+        let (ux, uy) = downwind(&self.fire);
         let w = &self.scn.world;
         Pos { x: (h.x + ux * d).clamp(0.0, w.width_m), y: (h.y + uy * d).clamp(0.0, w.height_m) }
     }
 
     /// Up to `n` homes nearest the head of the fire that are at least
     /// [`DEFEND_REACH_M`]`* 2` apart: where "protect the town" posts its engines,
-    /// one to a cluster rather than three on the same doorstep. Homes the fire has
-    /// already burnt up to are skipped (nothing left to save there).
+    /// one to a cluster rather than three on the same doorstep.
     pub fn clusters_near_head(&self, n: usize) -> Vec<Pos> {
         let h = self.head();
         let d2 = |a: Pos| (a.x - h.x).powi(2) + (a.y - h.y).powi(2);
@@ -462,7 +697,7 @@ impl Run {
 
     /// Where the most recent spot fire started, if there has been one.
     pub fn latest_spot(&self) -> Option<Pos> {
-        self.events.iter().rev().find(|e| e.kind == EventKind::SpotFire).and_then(|e| e.pos)
+        self.referee.events.iter().rev().find(|e| e.kind == EventKind::SpotFire).and_then(|e| e.pos)
     }
 
     /// Distance from the head of the fire to the nearest home, metres.
@@ -475,82 +710,35 @@ impl Run {
             .fold(f32::INFINITY, f32::min)
     }
 
-    pub fn head(&self) -> Pos {
-        let (ux, uy) = self.downwind();
+    /// The district lying most nearly along `bearing_to_deg` (the way the wind
+    /// blows *toward*) from the opening ignition.
+    pub fn district_toward(&self, bearing_to_deg: f32) -> Option<usize> {
+        let a = bearing_to_deg.to_radians();
+        let (ux, uy) = (a.sin(), a.cos());
         let o = self.spec.ignition;
-        self.fire
-            .active_cells()
+        self.referee
+            .districts
             .iter()
-            .map(|c| self.scn.world.centre_of(*c))
-            .max_by(|a, b| {
-                let pa = (a.x - o.x) * ux + (a.y - o.y) * uy;
-                let pb = (b.x - o.x) * ux + (b.y - o.y) * uy;
-                pa.partial_cmp(&pb).unwrap_or(std::cmp::Ordering::Equal)
+            .enumerate()
+            .map(|(k, d)| {
+                let (dx, dy) = (d.centre.x - o.x, d.centre.y - o.y);
+                let len = (dx * dx + dy * dy).sqrt().max(1.0);
+                (k, (dx * ux + dy * uy) / len)
             })
-            .unwrap_or(o)
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(k, _)| k)
+    }
+
+    pub fn head(&self) -> Pos {
+        head_of(&self.fire, &self.scn, self.spec.ignition)
     }
 
     pub fn caught_where(&self, f: impl Fn(scenario::Pos) -> bool) -> usize {
-        self.tally.caught_where(&self.agents, f)
+        self.referee.tally.caught_where(&self.agents, f)
     }
 
-    /// Derive this step's events from the model's state (one pass, no text).
-    fn collect_events(&mut self) {
-        use abm::suppression::UnitState as S;
-        let now = self.fire.time_s();
-        let w = &mut self.watch;
-        let mut out: Vec<Event> = vec![];
-        let seen_to = w.last_spot_s;
-        for s in self.agents.spot_fires().spots().filter(|s| s.at_s > seen_to) {
-            out.push(Event { at_s: s.at_s as i64, kind: EventKind::SpotFire, pos: Some(s.pos) });
-            w.last_spot_s = w.last_spot_s.max(s.at_s);
-        }
-        let wind = self.fire.weather().wind_dir_deg;
-        if let Some(prev) = w.wind_from {
-            if (prev - wind).abs() > 1.0 {
-                out.push(Event { at_s: now, kind: EventKind::WindShifted { from_deg: prev as f32, to_deg: wind as f32 }, pos: None });
-            }
-        }
-        w.wind_from = Some(wind);
-        if w.unit_states.len() != self.crews.units.len() {
-            w.unit_states = self.crews.units.iter().map(|u| u.state).collect();
-        }
-        for (k, u) in self.crews.units.iter().enumerate() {
-            if u.state != w.unit_states[k] {
-                match u.state {
-                    S::Withdrawing => out.push(Event { at_s: now, kind: EventKind::UnitWithdrew { unit: u.id, kind: u.kind }, pos: Some(u.pos) }),
-                    S::Lost => out.push(Event { at_s: now, kind: EventKind::UnitLost { unit: u.id, kind: u.kind }, pos: Some(u.pos) }),
-                    _ => {}
-                }
-                w.unit_states[k] = u.state;
-            }
-        }
-        let down = self.agents.comms().down();
-        if down > w.masts_down {
-            out.push(Event { at_s: now, kind: EventKind::MastDown, pos: None });
-        }
-        w.masts_down = down;
-        self.events.extend(out);
-        if !self.watch.near_town && self.head_to_town_m() <= event::NEAR_TOWN_M {
-            self.watch.near_town = true;
-            let pos = self.head();
-            self.events.push(Event { at_s: now, kind: EventKind::FireNearTown, pos: Some(pos) });
-        }
-    }
-
-    /// The moments `why` is built from, as this run saw them.
     pub fn facts(&self) -> crate::why::Facts {
-        let first = |f: &dyn Fn(&EventKind) -> bool| self.events.iter().find(|e| f(&e.kind)).map(|e| e.at_s);
-        crate::why::Facts {
-            order_at_s: self
-                .log
-                .entries
-                .iter()
-                .find_map(|e| if let cost::Entry::Evacuation { at_s, .. } = e { Some(*at_s) } else { None }),
-            shift_at_s: first(&|k| matches!(k, EventKind::WindShifted { .. })),
-            near_town_s: first(&|k| *k == EventKind::FireNearTown),
-            first_caught_s: self.tally.first_caught_s,
-        }
+        self.referee.facts()
     }
 
     /// Why it went the way it did: the end card's one sentence.
@@ -558,13 +746,13 @@ impl Run {
         crate::why::why(&self.outcome(), self.facts())
     }
 
-    /// The bill so far: a pure function of [`Run::log`].
+    /// The bill so far: a pure function of the referee's log.
     pub fn ledger(&self) -> cost::Ledger {
-        self.log.price(self.time_s())
+        self.referee.ledger(self.time_s())
     }
 
     pub fn outcome(&self) -> Outcome {
-        self.tally.outcome(&self.agents, &self.fire, &self.scn.world)
+        self.referee.tally.outcome(&self.agents, &self.fire, &self.scn.world)
     }
 
     /// Run to the end of the mission, giving each order at its time.
@@ -579,4 +767,14 @@ impl Run {
         }
         Ok(self.outcome())
     }
+}
+
+/// Where suppression units stage: the refuges, closest to the fire first --
+/// out of the fuel and reachable by road, which is what a staging area needs.
+/// The kiosk's `Sim` uses the same order, so unit ids match the twin's.
+pub fn staging(agents: &Abm, ignition: Pos) -> Vec<Pos> {
+    let mut v: Vec<Pos> = agents.refuges.iter().map(|r| r.pos).collect();
+    let d = |p: &Pos| (p.x - ignition.x).powi(2) + (p.y - ignition.y).powi(2);
+    v.sort_by(|a, b| d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal));
+    v
 }

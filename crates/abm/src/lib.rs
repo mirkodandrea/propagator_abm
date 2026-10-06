@@ -783,6 +783,27 @@ impl Abm {
         n
     }
 
+    /// Order these households out (by index), wherever they are: a district
+    /// warned by name rather than by a circle on the map.
+    pub fn order_evacuation_of(&mut self, ids: &[usize]) -> usize {
+        let now = self.time_s;
+        let mut n = 0;
+        for &i in ids {
+            if let Some(h) = self.households.get_mut(i) {
+                if !h.ordered {
+                    h.ordered = true;
+                    h.ordered_at_s = now;
+                    n += 1;
+                }
+            }
+        }
+        if n > 0 {
+            self.order_at_s = self.order_at_s.min(now);
+        }
+        self.generation += 1;
+        n
+    }
+
     /// Order everyone out, whatever the distance.
     pub fn order_evacuation_all(&mut self) -> usize {
         let now = self.time_s;

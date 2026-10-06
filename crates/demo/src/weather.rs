@@ -45,7 +45,7 @@ pub struct Draw {
 /// What the commander is shown. Never the truth.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Forecast {
-    /// 1 at the briefing, 2 about fifteen minutes in.
+    /// 1 at the briefing, 2 eight minutes in.
     pub issue: u8,
     pub wind_from_deg: f32,
     pub wind_kmh: f32,
@@ -59,8 +59,11 @@ pub struct Forecast {
     pub shift_eta_min: (u32, u32),
 }
 
-/// Simulated second at which forecast issue 2 is shown.
-pub const ISSUE_2_AT_S: i64 = 15 * 60;
+/// Simulated second at which forecast issue 2 is shown. Eight minutes, not
+/// fifteen: a warning at T+10 still saves about half the families a shift puts
+/// in danger and one at T+15 hardly any (`district_sweep::warning_decay`), so
+/// a later update would announce a decision that can no longer be taken.
+pub const ISSUE_2_AT_S: i64 = 8 * 60;
 
 pub fn draw(id: &str, seed: u64) -> Option<Draw> {
     draw_with(id, seed, None)

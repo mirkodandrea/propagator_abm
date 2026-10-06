@@ -9,7 +9,7 @@ fn data_dir() -> std::path::PathBuf {
 }
 
 fn count(run: &Run, f: impl Fn(&EventKind) -> bool) -> usize {
-    run.events.iter().filter(|e| f(&e.kind)).count()
+    run.referee.events.iter().filter(|e| f(&e.kind)).count()
 }
 
 /// 5.4: a typical session produces spot fires, as events with a time and a place.
@@ -24,7 +24,7 @@ fn a_typical_session_has_spot_fires_and_says_so() {
             let d = draw(id, seed).unwrap();
             let mut r = Run::new(&data_dir(), d.spec, seed).unwrap();
             Policy::none().play(&mut r, &d).unwrap();
-            let spots: Vec<_> = r.events.iter().filter(|e| e.kind == EventKind::SpotFire).collect();
+            let spots: Vec<_> = r.referee.events.iter().filter(|e| e.kind == EventKind::SpotFire).collect();
             with += (!spots.is_empty()) as usize;
             for e in spots {
                 let p = e.pos.expect("a spot fire has a place");
@@ -38,7 +38,7 @@ fn a_typical_session_has_spot_fires_and_says_so() {
         let mut r = Run::new(&data_dir(), spec, seed).unwrap();
         r.play(&[]).unwrap();
         assert!(count(&r, |k| *k == EventKind::SpotFire) > 0, "valle seed {seed}: the shift did not throw an ember");
-        assert!(r.events.iter().any(|e| matches!(e.kind, EventKind::WindShifted { .. })), "valle seed {seed}: the shift was not reported");
+        assert!(r.referee.events.iter().any(|e| matches!(e.kind, EventKind::WindShifted { .. })), "valle seed {seed}: the shift was not reported");
     }
 }
 
@@ -49,7 +49,7 @@ fn events_are_deterministic() {
     let go = || {
         let mut r = Run::new(&data_dir(), d.spec, 5).unwrap();
         Policy::units(3).play(&mut r, &d).unwrap();
-        r.events
+        r.referee.events
     };
     assert_eq!(go(), go());
 }
@@ -94,7 +94,7 @@ fn event_report() {
             with_spot += (s > 0) as usize;
             shifts += count(&r, |k| matches!(k, EventKind::WindShifted { .. }));
             near += count(&r, |k| *k == EventKind::FireNearTown);
-            if let Some(e) = r.events.iter().find(|e| e.kind == EventKind::SpotFire) {
+            if let Some(e) = r.referee.events.iter().find(|e| e.kind == EventKind::SpotFire) {
                 first_spot.push(e.at_s / 60);
             }
         }

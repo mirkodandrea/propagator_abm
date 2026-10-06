@@ -34,7 +34,7 @@ fn defence_diag() {
                         "  {id} T+{:>2}: head->town {:>5.0} m  defended {:>3}  engines {}",
                         r.time_s() / 60,
                         r.head_to_town_m(),
-                        r.tally.defended_now(r.time_s()),
+                        r.referee.tally.defended_now(r.time_s()),
                         eng.join(" ")
                     );
                 }

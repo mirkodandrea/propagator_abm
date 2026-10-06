@@ -24,11 +24,15 @@
 use abm::Abm;
 use fire::FireSim;
 
-/// How long after an order it is judged.
-pub const JUDGE_AFTER_S: i64 = 30 * 60;
+/// How long after an order it is judged. Ten minutes, not thirty: in the
+/// district towns every warning that still saves anyone is given by about T+12
+/// (`district_sweep::warning_decay`), so a false alarm judged at T+30 could
+/// never cost the commander the next order -- the mechanism was inert in play.
+pub const JUDGE_AFTER_S: i64 = 10 * 60;
 /// Fire this close to a home, at any point before the judgment, justifies having
-/// moved that household.
-pub const NEEDLESS_RADIUS_M: f32 = 800.0;
+/// moved that household. Was 800 m, which in the district towns justified a
+/// warning to every district at T+0 (`district::THREATENED_M`).
+pub const NEEDLESS_RADIUS_M: f32 = 300.0;
 /// An order is needless when more than this share of the households it moved were
 /// never threatened.
 pub const NEEDLESS_SHARE: f32 = 0.5;

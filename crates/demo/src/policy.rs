@@ -31,6 +31,16 @@ pub enum Act {
     /// This many free ground units of this kind at the most recent spot fire
     /// (does nothing if there has not been one).
     AtSpot(UnitKind, usize),
+    /// Warn one district by name.
+    WarnDistrict(usize),
+    /// Warn the district the wind is blowing the fire toward *now*.
+    WarnDownwind,
+    /// Warn the district the forecast shift would turn the fire onto.
+    WarnShiftSide,
+    /// This many engines to defend the district downwind now.
+    DefendDownwind(usize),
+    /// This many engines to defend this district.
+    DefendDistrict(usize, usize),
 }
 
 /// How a policy reads the forecast, if it does.
@@ -40,6 +50,15 @@ pub enum Rule {
     /// (issue 1) if it already says so, otherwise when issue 2 does. Never
     /// otherwise -- it trusts the forecast blindly, which is the point.
     FollowForecast,
+    /// Districts: warn the downwind district at once; warn the district the
+    /// forecast shift would threaten when a forecast issue puts the shift at
+    /// 50 % or more.
+    DistrictForecast,
+    /// Districts: when the wind shifts, warn the district it now blows toward.
+    ReactToShift,
+    /// Districts: warn each district when fire comes within
+    /// `district::THREATENED_M` of it (a commander who waits to see).
+    WarnWhenThreatened,
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +66,8 @@ pub struct Policy {
     pub name: String,
     pub script: Vec<(i64, Act)>,
     pub rule: Option<Rule>,
+    /// Further rules, all applied (the district rules combine).
+    pub rules: Vec<Rule>,
     /// Acts held back until the head of the fire is within this many metres of
     /// the nearest home -- a commander who waits to see where it is going.
     pub when_near: Vec<(f32, Act)>,
@@ -56,7 +77,7 @@ pub struct Policy {
 
 impl Policy {
     pub fn named(name: impl Into<String>) -> Policy {
-        Policy { name: name.into(), script: vec![], rule: None, when_near: vec![], on_spot: vec![] }
+        Policy { name: name.into(), script: vec![], rule: None, rules: vec![], when_near: vec![], on_spot: vec![] }
     }
 
     /// Everything on the roster at the head at `min`, but each spot fire gets one
@@ -147,6 +168,31 @@ impl Policy {
         p
     }
 
+    pub fn with(mut self, r: Rule) -> Policy {
+        self.rules.push(r);
+        self
+    }
+
+    /// Warn the districts the town was built to put at risk -- 0, the one the
+    /// opening wind drives the fire at, and 1, the one a forecast shift would --
+    /// at `min` minutes. District 2 is upwind in every forecast, by design.
+    pub fn warn_at_risk(min: i64) -> Policy {
+        Policy::named(format!("at-risk T+{min}")).at(min * 60, Act::WarnDistrict(0)).at(min * 60, Act::WarnDistrict(1))
+    }
+
+    /// The district commanders (spec §2): who to warn, not just when.
+    pub fn district_set() -> Vec<Policy> {
+        vec![
+            Policy::none(),
+            Policy::evacuate(0),
+            Policy::named("downwind T+0").at(0, Act::WarnDownwind),
+            Policy::named("downwind T+0 + react to shift").at(0, Act::WarnDownwind).with(Rule::ReactToShift),
+            Policy::named("district forecast").with(Rule::DistrictForecast),
+            Policy::named("both sides T+0").at(0, Act::WarnDownwind).at(0, Act::WarnShiftSide),
+            Policy::named("warn when threatened").with(Rule::WarnWhenThreatened),
+        ]
+    }
+
     /// The fixed policies a good design must make lose on average (spec §0).
     pub fn fixed_set() -> Vec<Policy> {
         vec![
@@ -191,6 +237,32 @@ impl Policy {
                     run.order(Order::Attack { kind, at });
                 }
             }
+            Act::WarnDistrict(d) => run.order(Order::EvacuateDistrict(d)),
+            Act::WarnDownwind => {
+                let to = (run.fire.weather().wind_dir_deg as f32 + 180.0) % 360.0;
+                if let Some(d) = run.district_toward(to) {
+                    run.order(Order::EvacuateDistrict(d));
+                }
+            }
+            Act::WarnShiftSide => {
+                let to = (run.spec.climate.shift_to.wind_dir_deg as f32 + 180.0) % 360.0;
+                if let Some(d) = run.district_toward(to) {
+                    run.order(Order::EvacuateDistrict(d));
+                }
+            }
+            Act::DefendDistrict(d, n) => {
+                for _ in 0..n {
+                    run.order(Order::Defend { kind: UnitKind::Engine, district: d });
+                }
+            }
+            Act::DefendDownwind(n) => {
+                let to = (run.fire.weather().wind_dir_deg as f32 + 180.0) % 360.0;
+                if let Some(d) = run.district_toward(to) {
+                    for _ in 0..n {
+                        run.order(Order::Defend { kind: UnitKind::Engine, district: d });
+                    }
+                }
+            }
         }
     }
 
@@ -208,6 +280,7 @@ impl Policy {
         let mut fired: Vec<usize> = vec![];
         let mut seen_events = 0usize;
         let mut judged_issue2 = false;
+        let mut seen_shift = 0usize;
         let threatens = draw.spec.climate.shift_threatens;
         let says_risk = |p: f32| if threatens { p >= 0.5 } else { p < 0.5 };
         while run.time_s() < run.spec.duration_s {
@@ -216,8 +289,8 @@ impl Policy {
                 next += 1;
             }
             if !self.on_spot.is_empty() {
-                while seen_events < run.events.len() {
-                    let e = run.events[seen_events];
+                while seen_events < run.referee.events.len() {
+                    let e = run.referee.events[seen_events];
                     seen_events += 1;
                     if e.kind == crate::event::EventKind::SpotFire {
                         for a in &self.on_spot {
@@ -244,6 +317,44 @@ impl Policy {
                 }
                 if ruled {
                     Self::act(run, Act::Evacuate);
+                }
+            }
+            for r in &self.rules {
+                match r {
+                    Rule::DistrictForecast => {
+                        if run.time_s() == 0 {
+                            Self::act(run, Act::WarnDownwind);
+                            if draw.forecast(1).shift_p >= 0.5 {
+                                Self::act(run, Act::WarnShiftSide);
+                            }
+                        } else if run.time_s() >= ISSUE_2_AT_S && !judged_issue2 {
+                            judged_issue2 = true;
+                            if draw.forecast(2).shift_p >= 0.5 {
+                                Self::act(run, Act::WarnShiftSide);
+                            }
+                        }
+                    }
+                    Rule::ReactToShift => {
+                        let shifted = run.referee.events[seen_shift..].iter().any(|e| matches!(e.kind, crate::event::EventKind::WindShifted { .. }));
+                        seen_shift = run.referee.events.len();
+                        if shifted {
+                            Self::act(run, Act::WarnDownwind);
+                        }
+                    }
+                    Rule::WarnWhenThreatened => {
+                        let due: Vec<usize> = run
+                            .referee
+                            .reports
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, r)| r.warned_at_s.is_none() && r.level() >= crate::district::Level::Threatened)
+                            .map(|(k, _)| k)
+                            .collect();
+                        for d in due {
+                            Self::act(run, Act::WarnDistrict(d));
+                        }
+                    }
+                    Rule::FollowForecast => {}
                 }
             }
             run.step()?;

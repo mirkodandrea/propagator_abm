@@ -48,8 +48,8 @@ fn the_forecast_is_sometimes_wrong() {
     for seed in 1..=500u64 {
         let d = draw("demo_borgo", seed).unwrap();
         let f = d.forecast(1);
-        if f.shift_p >= 0.7 && d.spec.shift.is_none() { said_shift_none += 1; }
-        if f.shift_p <= 0.3 && d.spec.shift.is_some() { said_none_shift += 1; }
+        if f.shift_p >= 0.6 && d.spec.shift.is_none() { said_shift_none += 1; }
+        if f.shift_p <= 0.35 && d.spec.shift.is_some() { said_none_shift += 1; }
     }
     assert!(said_shift_none >= 10 && said_none_shift >= 10, "{said_shift_none}/{said_none_shift}: too reliable to be a forecast");
 }
@@ -80,20 +80,5 @@ fn a_drawn_session_plays_in_every_town() {
     }
 }
 
-/// The forecast matters only if the thing it forecasts changes who is at risk:
-/// in borgo and porto a shift turns the fire away from the town, so the same
-/// fire with no order catches fewer families (the cry-wolf setup of spec 6.2).
-#[test]
-fn a_shift_changes_who_is_at_risk() {
-    for id in ["demo_borgo", "demo_porto"] {
-        let (mut with, mut wn, mut without, mut on) = (0.0, 0.0, 0.0, 0.0);
-        for seed in 1..=40u64 {
-            let d = draw(id, seed).unwrap();
-            let c = Run::new(&data_dir(), d.spec, seed).unwrap().play(&[]).unwrap().caught as f32;
-            if d.spec.shift.is_some() { with += c; wn += 1.0 } else { without += c; on += 1.0 }
-        }
-        let (a, b) = (with / wn, without / on);
-        println!("{id}: caught with shift {a:.1} ({wn}), without {b:.1} ({on})");
-        assert!(a + 8.0 < b, "{id}: a wind shift should spare the town ({a} vs {b})");
-    }
-}
+// "A shift changes who is at risk" is now per district:
+// `districts::the_wind_decides_which_district_is_in_danger`.

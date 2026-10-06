@@ -1,15 +1,15 @@
 {
   "id": "demo_borgo",
-  "name": "Borgo San Fiorenzo",
-  "description": "Un borgo sulla collina con due vie d'uscita. Il vento spinge il fuoco in salita verso le case: dare l'allarme in tempo cambia chi si salva.",
+  "name": "Rocca Ventosa",
+  "description": "Un borgo sulla collina e due frazioni. Il vento decide chi e in pericolo: avvisare in tempo, e solo chi serve.",
   "location": "Luogo immaginario",
   "country": "Italia",
   "nationality": "Italian",
   "region": "an invented town in central Italy",
   "localities": [
-    "Borgo San Fiorenzo",
-    "Colle Alto",
-    "Case Bassa"
+    "Il Borgo",
+    "Le Coste",
+    "Il Mulino"
   ],
   "coordinates": [
     0.0,
@@ -24,7 +24,7 @@
     200,
     200
   ],
-  "buildings_count": 250,
+  "buildings_count": 269,
   "households_count": 250,
   "people_count": 750,
   "scenario_type": "synthetic",

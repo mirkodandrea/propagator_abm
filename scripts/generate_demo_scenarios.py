@@ -5,9 +5,12 @@ Unlike the ABM labs these are *designed for a teaching beat*, not to isolate a
 model question, and they are real scenario directories the game loads like any
 other.  Nothing here is clipped from data and nothing models a real place.
 
-  demo_borgo   warn early       hillside village, uphill fire, two exits
-  demo_valle   the wind changes two hamlets, the second is safe until the shift
-  demo_porto   one road out     coastal town, single exit, a beach, spotting
+  demo_borgo   warn early, and only who needs it   a village and two hamlets, three bearings
+  demo_valle   the wind changes                    two hamlets either side of the fire, one crosswind
+  demo_porto   one road out                        a seaside town, the exit through the pines, a beach
+
+Every town is three *districts* (a household's `locality`), at different
+bearings from the fire, so which one the wind threatens is the decision.
 
 Frame: x east, y north, metres, SW corner origin; raster row 0 is the north edge.
 Fuel classes are `eu_fuel12` ids: 0 non-vegetated, 1-2 grass, 5-6 conifer,
@@ -82,6 +85,7 @@ class Demo:
     roads: callable
     homes: callable
     water: list[dict] = field(default_factory=list)
+    landmarks: list = field(default_factory=list)
 
 
 def grid_xy():
@@ -103,10 +107,76 @@ def blob(X, Y, cx, cy, rx, ry):
     return ((X - cx) / rx) ** 2 + ((Y - cy) / ry) ** 2 < 1.0
 
 
+# --------------------------------------------------------------------------- helpers
+def along(line, spacing, offset, skip_ends=25.0):
+    """House anchors on both sides of a street, every `spacing` metres."""
+    pts = []
+    for (ax, ay), (bx, by) in zip(line, line[1:]):
+        L = math.dist((ax, ay), (bx, by))
+        ux, uy = (bx - ax) / L, (by - ay) / L
+        nx, ny = -uy, ux
+        t = skip_ends
+        while t <= L - skip_ends:
+            for side in (-1, 1):
+                pts.append((ax + ux * t + nx * offset * side, ay + uy * t + ny * offset * side))
+            t += spacing
+    return pts
+
+
+def district(name, streets, kinds=None, spacing=34.0, offset=17.0):
+    """A named district: its streets (residential roads) and the homes along
+    them. `kinds[k]` is the building mix on street k, as (kind, weight) pairs:
+    a main street of shops with flats above, a lane of villas with gardens."""
+    homes = []
+    for k, line in enumerate(streets):
+        mix = (kinds or {}).get(k, [("house", 1.0)])
+        for i, (x, y) in enumerate(along(line, spacing, offset)):
+            # deterministic, so the same street always gets the same frontage
+            h = (i * 2654435761 + k * 40503 + len(name) * 97) % 1000 / 1000.0
+            acc, kind = 0.0, mix[-1][0]
+            for kd, w in mix:
+                acc += w
+                if h < acc:
+                    kind = kd
+                    break
+            homes.append((x, y, kind))
+    return name, streets, homes
+
+
+def ring(X, Y, cx, cy, rx, ry, w):
+    return blob(X, Y, cx, cy, rx + w, ry + w) & ~blob(X, Y, cx, cy, rx, ry)
+
+
 # --------------------------------------------------------------------------- borgo
+# Three districts at three bearings from a fire lit in the pines below the
+# village. A south wind drives it at Il Borgo; if the wind backs to the east the
+# fire turns onto Le Coste; Il Mulino is upwind either way, so warning it is a
+# false alarm (cry-wolf bait).
+MAIN = {1: [("shop", .55), ("apartments", .45)]}
+VILLAS = {0: [("house", .7), ("villa", .3)], 1: [("villa", .6), ("house", .4)]}
+BORGO = [
+    district("Il Borgo", [[(1760, 2150), (2240, 2150)], [(1760, 2280), (2240, 2280)], [(1800, 2400), (2200, 2400)]],
+             {0: [("terrace", .6), ("house", .4)], 1: [("shop", .5), ("apartments", .5)], 2: [("villa", .5), ("house", .5)]}),
+    district("Le Coste", [[(1050, 1650), (1450, 1650)], [(1100, 1770), (1400, 1770)]], VILLAS),
+    district("Il Mulino", [[(2850, 1500), (3250, 1500)], [(2900, 1620), (3200, 1620)]], {0: [("house", .8), ("terrace", .2)], 1: [("house", 1.0)]}),
+]
+# Things a town has besides homes: (kind, x, y, width, depth, name). Placed in
+# the gaps between the house rows; homes that would overlap one are dropped.
+BORGO_LANDMARKS = [
+    ("plaza", 2000, 2215, 70, 44, "Piazza"), ("church", 2075, 2215, 30, 18, "Chiesa"), ("townhall", 1915, 2215, 26, 18, "Municipio"),
+    ("school", 2140, 2340, 40, 22, "Scuola"),
+    ("fire_station", 1860, 2340, 28, 18, "Vigili del fuoco"), ("fuel", 2560, 2490, 22, 14, "Distributore"),
+    ("water_tower", 2300, 2640, 10, 10, "Serbatoio"), ("substation", 1560, 2600, 26, 18, "Cabina elettrica"),
+    ("cemetery", 1550, 2380, 50, 36, "Cimitero"), ("parking", 2120, 2470, 40, 24, "Parcheggio"),
+    ("assembly", 2000, 2900, 160, 110, "Area di attesa"), ("pitch", 1880, 2930, 70, 44, "Stadio"), ("parking", 2120, 2850, 60, 40, "Parcheggio"),
+    ("chapel", 1150, 1710, 14, 10, "Cappella"), ("farm", 1520, 1860, 24, 14, "Cascina"), ("barn", 1560, 1880, 18, 12, "Fienile"),
+    ("mill", 3130, 1560, 22, 16, "Mulino"), ("industrial", 2950, 1560, 34, 20, "Officina"), ("silo", 3260, 1560, 8, 8, "Silo"),
+]
+
+
 def borgo_dem(rng):
     X, Y = grid_xy()
-    # a gentle hill that rises to the north, a shoulder under the village
+    # a hill that rises to the north, a shoulder under the village
     z = 120 + 0.055 * Y + 25 * np.exp(-((X - 2000) / 1500) ** 2) + 12 * np.sin(X / 700)
     return smooth(z + rng.normal(0, .6, z.shape), 4)
 
@@ -114,94 +184,121 @@ def borgo_dem(rng):
 def borgo_fuel(rng, roads):
     X, Y = grid_xy()
     f = np.full((GRID, GRID), 9, dtype=np.int32)             # maquis everywhere
-    f[(Y < 2100)] = 11                                       # pine below the village
-    f[blob(X, Y, 1500, 1500, 700, 450)] = 12                 # dense pine stand: the fire's fuel
-    f[blob(X, Y, 2800, 1700, 500, 400)] = 3                  # grass patch east
+    f[(Y < 2050)] = 11                                       # pine below the village
+    f[blob(X, Y, 1900, 1450, 650, 520)] = 12                 # dense pine stand: the fire's fuel
+    f[blob(X, Y, 1450, 1500, 450, 380)] = 12                 # and toward Le Coste
+    f[blob(X, Y, 2750, 1900, 380, 300)] = 3                  # grass patch east
     f[(Y > 3200)] = 8                                        # maquis ridge behind
-    f[blob(X, Y, 2050, 2650, 560, 300)] = 0                  # the village core
-    for g in (blob(X, Y, 2050, 2650, 760, 440) & ~blob(X, Y, 2050, 2650, 560, 300),):
-        f[g & (rng.random(f.shape) < .45)] = 1               # gardens, patchy
+    f[blob(X, Y, 2000, 2900, 330, 330)] = 0                  # area di attesa: sports ground and car parks
+    for cx, cy, rx, ry in ((2000, 2275, 300, 175), (1250, 1710, 230, 110), (3050, 1560, 230, 110)):
+        f[ring(X, Y, cx, cy, rx, ry, 140) & (rng.random(f.shape) < .45)] = 1   # gardens, patchy
+        f[blob(X, Y, cx, cy, rx, ry)] = 0                    # the built-up core
     return f
 
 
 def borgo_roads():
     r = []
     def add(name, pts, **k): r.append(road(len(r) + 1, name, pts, **k))
-    add("Via Aurelia Ovest", [(0, 2650), (900, 2650), (1500, 2650), (2000, 2650)], road_class="secondary")
-    add("Via Aurelia Est", [(2000, 2650), (2600, 2650), (3200, 2650), (4000, 2650)], road_class="secondary")
-    for x in (1700, 2000, 2300):
-        add(f"Via {x}", [(x, 2400), (x, 2650), (x, 2900)], road_class="residential")
-    add("Via Alta", [(1550, 2850), (2000, 2850), (2450, 2850)], road_class="residential")
-    add("Via Bassa", [(1550, 2450), (2000, 2450), (2450, 2450)], road_class="residential")
-    add("Via Bassa O", [(1550, 2450), (1550, 2650), (1550, 2850)], road_class="residential")
-    add("Via Bassa E", [(2450, 2450), (2450, 2650), (2450, 2850)], road_class="residential")
-    # A forestry road down through the pines to where the fire starts: without it
-    # an engine cannot reach the opening fire at all (spec 6.4, early action).
-    add("Strada Forestale", [(2000, 2400), (2000, 1900), (2000, 1300)], road_class="unclassified")
-    add("Sentiero del Crinale", [(2000, 2900), (2100, 3300), (2300, 3800)],
-        drivable=False, track=True, road_class="path")
+    add("Via Aurelia", [(0, 2520), (1000, 2520), (2000, 2520), (3000, 2520), (4000, 2520)], road_class="secondary")
+    add("Via del Borgo", [(2000, 2050), (2000, 2150), (2000, 2280), (2000, 2400), (2000, 2520)], road_class="tertiary")
+    add("Via Vecchia", [(1760, 2150), (1760, 2280), (1800, 2400), (1800, 2520)], road_class="residential")
+    add("Via Nuova", [(2240, 2150), (2240, 2280), (2200, 2400), (2200, 2520)], road_class="residential")
+    add("Strada delle Coste", [(1250, 1650), (1250, 1770), (1250, 2100), (1250, 2520)], road_class="tertiary")
+    add("Strada del Mulino", [(3050, 1500), (3050, 1620), (3050, 2100), (3050, 2520)], road_class="tertiary")
+    for name, streets, _ in BORGO:
+        for k, line in enumerate(streets):
+            add(f"{name} {k}", line, road_class="residential")
+    # A forestry road down through the pines to where the fire starts.
+    add("Strada Forestale", [(2000, 2050), (2000, 1600), (2000, 1100)], road_class="unclassified")
+    add("Via del Campo", [(2000, 2520), (2000, 2900)], road_class="tertiary")
+    add("Sentiero del Crinale", [(2000, 2900), (2100, 3300), (2300, 3800)], drivable=False, track=True, road_class="path")
     return r
 
 
-def borgo_homes():
-    pts = []
-    for y in (2480, 2530, 2780, 2820, 2880):
-        pts += [(x, y) for x in np.linspace(1580, 2430, 18)]
-    pts += [(x, 2700) for x in np.linspace(1580, 2430, 18)]
-    return pts
-
-
 # --------------------------------------------------------------------------- valle
+# A fire on the valley road between two hamlets. The east wind drives it at
+# Casale Ovest; if the wind swings round to the west it turns on Casale Est,
+# which had no reason to worry. Fondovalle is crosswind in both.
+VALLE = [
+    district("Casale Ovest", [[(1100, 1950), (1450, 1950)], [(1130, 2080), (1420, 2080)]], {0: [("shop", .3), ("terrace", .7)], 1: [("house", .6), ("villa", .4)]}),
+    district("Casale Est", [[(2580, 1900), (2930, 1900)], [(2610, 2030), (2900, 2030)]], {0: [("shop", .3), ("terrace", .7)], 1: [("house", .6), ("villa", .4)]}),
+    district("Fondovalle", [[(1800, 950), (2200, 950)], [(1850, 1070), (2150, 1070)]], {0: [("shop", .4), ("apartments", .6)], 1: [("house", 1.0)]}),
+]
+VALLE_LANDMARKS = [
+    ("chapel", 1210, 2015, 16, 11, "Chiesetta"), ("plaza", 1340, 2015, 40, 30, "Piazzetta"),
+    ("chapel", 2690, 1965, 16, 11, "Chiesetta"), ("plaza", 2820, 1965, 40, 30, "Piazzetta"),
+    ("church", 2080, 1010, 30, 18, "Chiesa"), ("townhall", 1920, 1010, 26, 16, "Municipio"), ("school", 2200, 1010, 36, 20, "Scuola"),
+    ("fire_station", 2060, 1160, 28, 18, "Vigili del fuoco"), ("fuel", 2050, 1500, 22, 14, "Distributore"),
+    ("water_tower", 1650, 1250, 10, 10, "Serbatoio"), ("substation", 2350, 1250, 26, 18, "Cabina elettrica"),
+    ("farm", 1600, 2350, 26, 14, "Agriturismo"), ("barn", 1640, 2380, 18, 12, "Fienile"),
+    ("farm", 2450, 2350, 26, 14, "Cascina"), ("barn", 2410, 2380, 18, 12, "Fienile"), ("cemetery", 1700, 900, 44, 30, "Cimitero"),
+    ("pitch", 2350, 900, 60, 36, "Campo sportivo"),
+    ("assembly", 2000, 3300, 160, 110, "Area di attesa"), ("parking", 2120, 3250, 60, 40, "Parcheggio"),
+]
+
+
 def valle_dem(rng):
     X, Y = grid_xy()
-    # a shallow valley running N-S between two flanks, hamlets on the flanks
+    # a shallow valley running N-S, hamlets on the flanks
     z = 150 + 0.025 * Y + 40 * (1 - np.exp(-((X - 2000) / 800) ** 2)) + 6 * np.sin(Y / 500)
     return smooth(z + rng.normal(0, .6, z.shape), 4)
 
 
 def valle_fuel(rng, roads):
     X, Y = grid_xy()
-    f = np.full((GRID, GRID), 9, dtype=np.int32)
-    f[blob(X, Y, 1200, 1500, 650, 600)] = 12                 # pines where the fire starts
-    f[blob(X, Y, 2000, 2000, 700, 900)] = 3                  # grassy valley floor: fast carrier
-    f[blob(X, Y, 2900, 2800, 750, 650)] = 8                  # maquis around the far hamlet
-    f[blob(X, Y, 1050, 2550, 380, 300)] = 0                  # hamlet A (near the fire)
-    f[blob(X, Y, 3050, 2350, 380, 300)] = 0                  # hamlet B (safe, until the shift)
-    for cx, cy in ((1050, 2550), (3050, 2350)):
-        ring = blob(X, Y, cx, cy, 540, 440) & ~blob(X, Y, cx, cy, 380, 300)
-        f[ring & (rng.random(f.shape) < .4)] = 1
+    f = np.full((GRID, GRID), 9, dtype=np.int32)              # maquis on the flanks
+    f[blob(X, Y, 2000, 2000, 450, 1400)] = 3                  # grassy valley floor
+    f[blob(X, Y, 1550, 2050, 380, 420)] = 12                  # pines toward Casale Ovest
+    f[blob(X, Y, 2450, 1980, 380, 420)] = 12                  # and toward Casale Est
+    f[blob(X, Y, 2000, 1450, 300, 250)] = 2                   # meadow above Fondovalle
+    f[blob(X, Y, 2000, 3300, 330, 330)] = 0                   # area di attesa up the valley
+    for cx, cy, rx, ry in ((1275, 2015, 210, 110), (2755, 1965, 210, 110), (2000, 1010, 230, 110)):
+        f[ring(X, Y, cx, cy, rx, ry, 140) & (rng.random(f.shape) < .4)] = 1
+        f[blob(X, Y, cx, cy, rx, ry)] = 0
     return f
 
 
 def valle_roads():
     r = []
     def add(name, pts, **k): r.append(road(len(r) + 1, name, pts, **k))
-    add("Strada Provinciale", [(0, 2550), (1050, 2550), (2000, 2450), (3050, 2350), (4000, 2350)], road_class="secondary")
-    add("Via del Fondovalle", [(1050, 2550), (1050, 3300), (1050, 4000)], road_class="tertiary")
-    add("Via del Colle", [(3050, 2350), (3050, 1500), (3050, 0)], road_class="tertiary")
-    for cx, cy in ((1050, 2550), (3050, 2350)):
-        add(f"Via Centro {cx}", [(cx - 300, cy + 130), (cx, cy + 130), (cx + 300, cy + 130)], road_class="residential")
-        add(f"Via Sotto {cx}", [(cx - 300, cy - 130), (cx, cy - 130), (cx + 300, cy - 130)], road_class="residential")
-        add(f"Via Nord {cx}", [(cx - 300, cy - 130), (cx - 300, cy), (cx - 300, cy + 130)], road_class="residential")
-        add(f"Via Sud {cx}", [(cx + 300, cy - 130), (cx + 300, cy), (cx + 300, cy + 130)], road_class="residential")
+    add("Strada Provinciale", [(0, 2000), (1100, 2000), (1450, 2010), (2000, 2000), (2580, 1960), (2930, 1960), (4000, 1960)], road_class="secondary")
+    add("Strada di Fondovalle", [(2000, 0), (2000, 950), (2000, 1070), (2000, 2000), (2000, 3300), (2000, 4000)], road_class="tertiary")
+    add("Via Ovest", [(1275, 1950), (1275, 2080)], road_class="residential")
+    add("Via Est", [(2755, 1900), (2755, 2030)], road_class="residential")
+    for name, streets, _ in VALLE:
+        for k, line in enumerate(streets):
+            add(f"{name} {k}", line, road_class="residential")
     return r
 
 
-def valle_homes():
-    pts = []
-    for cx, cy in ((1050, 2550), (3050, 2350)):
-        for dy in (-160, -100, 100, 160):
-            pts += [(x, cy + dy) for x in np.linspace(cx - 290, cx + 290, 10)]
-    return pts
-
-
 # --------------------------------------------------------------------------- porto
+# A seaside town with one road out, north through the pines. The fire starts in
+# the pines and a north wind drives it at La Pineta, the houses built among the
+# trees beside that road, then at the centre. Il Faro, out on the headland, is
+# upwind of all of it. The beach does not burn.
+PORTO = [
+    district("La Pineta", [[(2500, 1600), (2850, 1600)], [(2530, 1730), (2820, 1730)]], {0: [("villa", .7), ("house", .3)], 1: [("villa", 1.0)]}),
+    district("Centro", [[(1650, 1000), (2350, 1000)], [(1700, 1130), (2300, 1130)]], {0: [("shop", .45), ("apartments", .35), ("hotel", .2)], 1: [("terrace", .5), ("apartments", .5)]}),
+    district("Il Faro", [[(800, 1080), (1150, 1080)], [(830, 1200), (1120, 1200)]], {0: [("house", .6), ("terrace", .4)], 1: [("house", .5), ("villa", .5)]}),
+]
+PORTO_LANDMARKS = [
+    ("plaza", 2000, 1065, 60, 40, "Piazza"), ("church", 2090, 1065, 30, 18, "Chiesa"), ("townhall", 1900, 1065, 26, 16, "Municipio"),
+    ("school", 1700, 1250, 40, 22, "Scuola"), ("fire_station", 2200, 1250, 28, 18, "Vigili del fuoco"),
+    ("fuel", 2380, 1350, 22, 14, "Distributore"), ("water_tower", 1850, 1330, 10, 10, "Serbatoio"),
+    ("substation", 2600, 1300, 26, 18, "Cabina elettrica"), ("harbour", 2000, 760, 120, 26, "Porto"),
+    ("lido", 1500, 820, 90, 30, "Lido"), ("lido", 2550, 780, 90, 30, "Lido"), ("lighthouse", 640, 1180, 10, 10, "Faro"),
+    ("campsite", 3000, 1900, 140, 90, "Campeggio"), ("parking", 1600, 930, 40, 24, "Parcheggio"),
+    ("assembly", 2200, 900, 120, 40, "Area di attesa"),
+    ("chapel", 975, 1140, 14, 10, "Cappella"), ("cemetery", 1350, 1300, 44, 30, "Cimitero"),
+]
+
+
 def porto_dem(rng):
     X, Y = grid_xy()
     # land rises from the sea (south) to hills in the north; a headland to the west
     shore = 700 + 120 * np.sin(X / 600)
     z = np.where(Y < shore, -3.0, 4 + 0.06 * (Y - shore))
-    z = z + 22 * np.exp(-((X - 500) / 450) ** 2 - ((Y - 1200) / 500) ** 2)
+    z = z + 22 * np.exp(-((X - 900) / 450) ** 2 - ((Y - 1200) / 400) ** 2)
     return smooth(z + rng.normal(0, .5, z.shape), 3)
 
 
@@ -209,60 +306,61 @@ def porto_fuel(rng, roads):
     X, Y = grid_xy()
     shore = 700 + 120 * np.sin(X / 600)
     f = np.full((GRID, GRID), 8, dtype=np.int32)
-    f[Y > 2600] = 11
-    f[blob(X, Y, 1100, 1900, 800, 650)] = 12                 # pine behind the town
-    f[blob(X, Y, 3100, 2000, 600, 550)] = 9                  # dense maquis east
+    f[Y > 1300] = 11                                         # pines behind the town
+    f[blob(X, Y, 2400, 2300, 700, 800)] = 12                 # dense pine where it starts
+    f[blob(X, Y, 3300, 1300, 500, 400)] = 9                  # maquis east
+    for cx, cy, rx, ry in ((2675, 1665, 210, 110), (2000, 1065, 380, 120), (975, 1140, 210, 110)):
+        f[ring(X, Y, cx, cy, rx, ry, 140) & (rng.random(f.shape) < .5)] = 1
+        f[blob(X, Y, cx, cy, rx, ry)] = 0
+    f[(Y >= shore) & (Y < shore + 110)] = 0                  # beach / promenade
+    f[blob(X, Y, 2000, 800, 520, 300)] = 0                   # area di attesa: seafront, car parks, harbour
     f[Y < shore] = 0                                         # sea
-    f[(Y >= shore) & (Y < shore + 90)] = 0                   # beach / promenade
-    f[blob(X, Y, 2000, 1050, 800, 230)] = 0                  # the town
-    for g in (blob(X, Y, 2000, 1050, 1000, 330) & ~blob(X, Y, 2000, 1050, 800, 230),):
-        f[g & (rng.random(f.shape) < .5)] = 1
-    f[(Y < shore) ] = 0
     return f
 
 
 def porto_roads():
     r = []
     def add(name, pts, **k): r.append(road(len(r) + 1, name, pts, **k))
-    # One way out of town: a single residential-class road north through the pines.
-    add("Via dell'Unica Uscita", [(2000, 1000), (2000, 1700), (2000, 2600), (2000, 4000)], road_class="residential")
-    add("Lungomare", [(1250, 880), (1650, 880), (2000, 880), (2350, 880), (2750, 880)], road_class="tertiary")
-    add("Via Mercato", [(1250, 1000), (1650, 1000), (2000, 1000), (2350, 1000), (2750, 1000)], road_class="residential")
-    add("Via Chiesa", [(1250, 1130), (1650, 1130), (2000, 1130), (2350, 1130), (2750, 1130)], road_class="residential")
-    for x in (1250, 1650, 2350, 2750):
-        add(f"Vicolo {x}", [(x, 880), (x, 1000), (x, 1130)], road_class="residential")
-    add("Sentiero del Faro", [(1250, 900), (700, 1100), (400, 1400)],
-        drivable=False, track=True, road_class="path")
+    # One way out of town: north through the pines, past La Pineta.
+    add("Via dell'Unica Uscita", [(2350, 1000), (2350, 1130), (2420, 1600), (2420, 1730), (2450, 2600), (2500, 4000)], road_class="residential")
+    add("Lungomare", [(700, 900), (975, 890), (1200, 880), (1650, 880), (2000, 880), (2350, 880), (2900, 880)], road_class="tertiary")
+    add("Via del Porto", [(2000, 880), (2000, 1000), (2000, 1130)], road_class="residential")
+    add("Via del Faro", [(975, 890), (975, 1080), (975, 1200)], road_class="residential")
+    add("Viale dei Pini", [(2420, 1600), (2500, 1600)], road_class="residential")
+    add("Viale dei Pini Alto", [(2420, 1730), (2530, 1730)], road_class="residential")
+    for name, streets, _ in PORTO:
+        for k, line in enumerate(streets):
+            add(f"{name} {k}", line, road_class="residential")
+    add("Sentiero del Faro", [(800, 1200), (500, 1400), (300, 1700)], drivable=False, track=True, road_class="path")
     return r
 
 
-def porto_homes():
-    pts = []
-    for y in (930, 1060, 1180):
-        pts += [(x, y) for x in np.linspace(1270, 2730, 24)]
-    return pts
+def homes_of(districts):
+    return [(x, y, name, kind) for name, _, homes in districts for (x, y, kind) in homes]
 
 
 DEMOS = (
-    Demo("demo_borgo", "Borgo San Fiorenzo",
-         "Un borgo sulla collina con due vie d'uscita. Il vento spinge il fuoco in salita verso le case: "
-         "dare l'allarme in tempo cambia chi si salva.",
-         ["Borgo San Fiorenzo", "Colle Alto", "Case Bassa"], 250, 101,
-         borgo_dem, borgo_fuel, borgo_roads, borgo_homes,
-         [{"id": 1, "kind": "hydrant", "pos": [1980, 2640]}, {"id": 2, "kind": "hydrant", "pos": [2320, 2640]}]),
-    Demo("demo_valle", "Valle dei Pini",
-         "Due borgate in una valle. La seconda e al sicuro finche il vento non cambia: "
+    Demo("demo_borgo", "Rocca Ventosa",
+         "Un borgo sulla collina e due frazioni. Il vento decide chi e in pericolo: "
+         "avvisare in tempo, e solo chi serve.",
+         [d[0] for d in BORGO], 250, 101,
+         borgo_dem, borgo_fuel, borgo_roads, lambda: homes_of(BORGO),
+         [{"id": 1, "kind": "hydrant", "pos": [2000, 2280]}, {"id": 2, "kind": "hydrant", "pos": [1250, 1710]},
+          {"id": 3, "kind": "hydrant", "pos": [3050, 1560]}], BORGO_LANDMARKS),
+    Demo("demo_valle", "Due Casali",
+         "Due casali e una frazione in una valle. Il secondo casale e al sicuro finche il vento non cambia: "
          "bisogna rivalutare la situazione.",
-         ["Valle dei Pini", "Borgata Alta", "Borgata Bassa"], 300, 102,
-         valle_dem, valle_fuel, valle_roads, valle_homes,
-         [{"id": 1, "kind": "hydrant", "pos": [1040, 2540]}, {"id": 2, "kind": "hydrant", "pos": [3040, 2340]}]),
-    Demo("demo_porto", "Porto Rosso",
-         "Un paese di mare con una sola strada d'uscita. Con il fuoco alle spalle, "
-         "le code e le scintille contano quanto le fiamme.",
-         ["Porto Rosso", "Lungomare", "Punta del Faro"], 350, 103,
-         porto_dem, porto_fuel, porto_roads, porto_homes,
-         [{"id": 1, "kind": "hydrant", "pos": [1990, 1010]}, {"id": 2, "kind": "hydrant", "pos": [2010, 1140]},
-          {"id": 3, "kind": "open_water", "pos": [2000, 400]}]),
+         [d[0] for d in VALLE], 300, 102,
+         valle_dem, valle_fuel, valle_roads, lambda: homes_of(VALLE),
+         [{"id": 1, "kind": "hydrant", "pos": [1275, 2015]}, {"id": 2, "kind": "hydrant", "pos": [2755, 1965]},
+          {"id": 3, "kind": "hydrant", "pos": [2000, 1010]}], VALLE_LANDMARKS),
+    Demo("demo_porto", "Porto Pineta",
+         "Un paese di mare con una sola strada d'uscita, che passa nella pineta. Con il fuoco alle spalle, "
+         "la strada si puo chiudere: la spiaggia non brucia.",
+         [d[0] for d in PORTO], 350, 103,
+         porto_dem, porto_fuel, porto_roads, lambda: homes_of(PORTO),
+         [{"id": 1, "kind": "hydrant", "pos": [2000, 1065]}, {"id": 2, "kind": "hydrant", "pos": [2675, 1665]},
+          {"id": 3, "kind": "open_water", "pos": [2000, 600]}], PORTO_LANDMARKS),
 )
 
 
@@ -316,6 +414,11 @@ def crossings(roads: list[dict]) -> None:
             r["line"].insert(idx + 1, [round(pt[0], 2), round(pt[1], 2)])
 
 
+# Minutes a household takes to get going once it has decided. 12-35 left a
+# third of the town caught however early the warning came (district_sweep).
+PREP_MIN = (6, 18)
+
+
 def demo_traits(hid: int, rng: np.random.Generator) -> dict:
     """A village that underrates the fire, and trusts the people who tell it otherwise.
 
@@ -335,7 +438,7 @@ def demo_traits(hid: int, rng: np.random.Generator) -> dict:
         "vehicles": vehicles, "risk_perception": float(rng.uniform(.08, .30)),
         "prior_fire_experience": False, "warning_channel": channel,
         "trust_authority": float(rng.uniform(.55, .95)), "intent": intent,
-        "prep_time_min": float(rng.uniform(12, 35)), "defensible_space": float(rng.uniform(.1, .6)),
+        "prep_time_min": float(rng.uniform(PREP_MIN[0], PREP_MIN[1])), "defensible_space": float(rng.uniform(.1, .6)),
         "has_pets_livestock": hid % 6 == 0,
     }
 
@@ -355,20 +458,21 @@ def create(d: Demo) -> dict:
             for a, b in zip(item["line"], item["line"][1:]):
                 paint_segment(fuel, a, b, WORLD, 0)
 
-    anchors = d.homes()
+    def clear_of_landmarks(x, y):
+        return all(abs(x - lx) > lw / 2 + 12 or abs(y - ly) > lh / 2 + 10 for _, lx, ly, lw, lh, _ in d.landmarks)
+    anchors = [a for a in d.homes() if clear_of_landmarks(a[0], a[1])]
     spec = type("S", (), {"population": "mixed"})  # `traits` only reads .population
     people_total = int(d.households * 3.0)
     sizes = distribute_people(people_total, d.households)
     buildings, dwellings, households, people = [], [], [], []
     for hid, count in enumerate(sizes):
-        ax, ay = anchors[hid % len(anchors)]
+        ax, ay, locality, bkind = anchors[hid % len(anchors)]
         ring_no = hid // len(anchors)
-        x = float(np.clip(ax + rng.uniform(-6, 6) + ring_no * 13, 12, WORLD - 32))
-        y = float(np.clip(ay + rng.uniform(-3, 3), 12, WORLD - 28))
+        x = float(np.clip(ax + rng.uniform(-3, 3) + (ring_no % 2) * 15 * (1 if hid % 2 else -1), 12, WORLD - 32))
+        y = float(np.clip(ay + rng.uniform(-3, 3) + (ring_no // 2) * 9, 12, WORLD - 28))
         bid = hid + 1
         ring = [[x - 7, y - 5], [x + 7, y - 5], [x + 7, y + 5], [x - 7, y + 5]]
-        locality = d.localities[hid % len(d.localities)]
-        buildings.append({"id": bid, "kind": "residential", "name": f"Casa {bid}", "centroid": [x, y], "ring": ring})
+        buildings.append({"id": bid, "kind": bkind, "name": f"Casa {bid}", "centroid": [x, y], "ring": ring, "locality": locality})
         col = int(np.clip(x // cs, 0, GRID - 1))
         row = int(np.clip((WORLD - y) // cs, 0, GRID - 1))
         fuel[row, col] = 0
@@ -385,6 +489,15 @@ def create(d: Demo) -> dict:
                            "walk_speed": 0.85 if needs_help else 1.35 + (pid % 4) * .08,
                            "needs_assistance": needs_help, "at_home": pid % 7 != 0})
 
+    # Landmarks: buildings nobody lives in, and the open spaces a town has.
+    for k, (kind, lx, ly, lw, lh, name) in enumerate(d.landmarks):
+        bid = 100000 + k
+        ring = [[lx - lw / 2, ly - lh / 2], [lx + lw / 2, ly - lh / 2], [lx + lw / 2, ly + lh / 2], [lx - lw / 2, ly + lh / 2]]
+        buildings.append({"id": bid, "kind": kind, "name": name, "centroid": [float(lx), float(ly)], "ring": ring})
+        if kind not in ("harbour", "lido"):
+            for gx in np.arange(lx - lw / 2, lx + lw / 2 + 1, cs / 2):
+                for gy in np.arange(ly - lh / 2, ly + lh / 2 + 1, cs / 2):
+                    fuel[int(np.clip((WORLD - gy) // cs, 0, GRID - 1)), int(np.clip(gx // cs, 0, GRID - 1))] = 0
     vectors = {"world_size_m": [float(WORLD)] * 2,
                "fire_grid": {"rows": GRID, "cols": GRID, "cellsize": cs},
                "buildings": buildings, "roads": roads, "water": d.water}

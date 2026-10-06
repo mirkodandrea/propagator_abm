@@ -25,6 +25,12 @@ pub enum EventKind {
     /// The fire has come within `NEAR_TOWN_M` of the nearest home for the first
     /// time (a natural moment to ask for a decision).
     FireNearTown,
+    /// Fire came within `district::THREATENED_M` of this district for the first time.
+    DistrictThreatened { district: usize },
+    /// The fire reached this district's homes.
+    DistrictReached { district: usize },
+    /// The town judged an earlier warning a false alarm (cry-wolf on only).
+    FalseAlarm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -9,6 +9,7 @@
 //! `tests/` can measure it with no window.
 
 pub mod cost;
+pub mod district;
 pub mod event;
 pub mod mission;
 pub mod policy;
@@ -23,4 +24,5 @@ pub use mission::{spec, Climate, Spec, WindShift, ALL};
 pub use weather::{draw, draw_with, Draw, Forecast, ISSUE_2_AT_S};
 pub use event::{Event, EventKind};
 pub use why::{Facts, Why, WhyKind};
-pub use run::{Order, Outcome, Run, Tally, Variant, STEP_S};
+pub use run::{Order, Outcome, Parts, Referee, Run, Tally, Variant, STEP_S};
+pub use district::{District, Level};

@@ -20,6 +20,10 @@ pub struct Record {
     pub out: Outcome,
     /// Money spent by the end of the mission (cost::Log::price).
     pub eur: f32,
+    /// Districts warned that the fire never came near (`district::Report::needless`).
+    pub false_alarms: usize,
+    /// Each district's story, in the town's order.
+    pub districts: Vec<crate::district::Report>,
 }
 
 /// Run every combination. Order of the result is unspecified; use the indices.
@@ -53,7 +57,16 @@ pub fn run_grid(
                             let d = draw_with(town, seed, variants[vi].shift_p).expect("demo town");
                             let mut run = Run::with_variant(data_dir, d.spec, seed, variants[vi]).expect("run");
                             let out = policies[pi].play(&mut run, &d).expect("play");
-                            Record { town, policy: pi, variant: vi, seed, out, eur: run.ledger().total_eur() }
+                            Record {
+                                town,
+                                policy: pi,
+                                variant: vi,
+                                seed,
+                                out,
+                                eur: run.ledger().total_eur(),
+                                false_alarms: run.referee.reports.iter().filter(|r| r.needless()).count(),
+                                districts: run.referee.reports.clone(),
+                            }
                         })
                         .collect::<Vec<_>>()
                 })

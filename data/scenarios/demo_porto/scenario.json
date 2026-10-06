@@ -1,15 +1,15 @@
 {
   "id": "demo_porto",
-  "name": "Porto Rosso",
-  "description": "Un paese di mare con una sola strada d'uscita. Con il fuoco alle spalle, le code e le scintille contano quanto le fiamme.",
+  "name": "Porto Pineta",
+  "description": "Un paese di mare con una sola strada d'uscita, che passa nella pineta. Con il fuoco alle spalle, la strada si puo chiudere: la spiaggia non brucia.",
   "location": "Luogo immaginario",
   "country": "Italia",
   "nationality": "Italian",
   "region": "an invented town in central Italy",
   "localities": [
-    "Porto Rosso",
-    "Lungomare",
-    "Punta del Faro"
+    "La Pineta",
+    "Centro",
+    "Il Faro"
   ],
   "coordinates": [
     0.0,
@@ -24,7 +24,7 @@
     200,
     200
   ],
-  "buildings_count": 350,
+  "buildings_count": 367,
   "households_count": 350,
   "people_count": 1050,
   "scenario_type": "synthetic",

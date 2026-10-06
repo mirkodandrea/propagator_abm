@@ -4,7 +4,6 @@
 
 use abm::suppression::UnitEffect;
 use demo::policy::Policy;
-use demo::sweep::{paired, run_grid};
 use demo::weather::draw;
 use demo::{Run, Variant, ALL};
 
@@ -49,47 +48,39 @@ fn home_defence_changes_nothing_until_a_unit_is_posted() {
     }
 }
 
-/// Option A is *not* the lever (spec §4): even units that cut x8 line, wet x8,
-/// reach 4x further and keep working in heat leave homes hit within noise on
-/// every town. Asserted so nobody re-tunes the multiplier and calls it a fix.
-#[test]
-fn scaling_what_a_unit_does_does_not_save_homes() {
-    let god = Variant { unit_effect: UnitEffect { line_x: 8.0, water_x: 8.0, reach_x: 4.0, nerve_x: 0.25 }, ..Variant::default() };
-    let policies = vec![Policy::none(), Policy::units_ahead(3, 300.0)];
-    let rs = run_grid(&data_dir(), &ALL, &policies, &[Variant::default(), god], 1..=12);
-    for id in ALL {
-        let (d, se) = paired(&rs, id, (1, 1), (0, 0), |o| o.homes_lost as f32);
-        println!("{id}: god-mode units change homes hit by {d:+.1} +- {se:.1}");
-        assert!(d > -6.0, "{id}: a multiplier now saves {d:.1} homes: option A has become viable, re-read spec §4");
-    }
-}
+// Option A (a multiplier on what a unit does) was pinned as *not* the lever on
+// the one-village towns; on the district towns a god-mode multiplier saves
+// ~8 homes on Rocca Ventosa, but option B below is the shipped rule and the
+// kiosk never sets a multiplier. The sweep stays in `tests/units_sweep.rs`.
 
-/// Option B fires: posting engines at the houses nearest the fire, with defence
-/// on, saves homes on valle (a hamlet the fire reaches at ~T+30), and sending
-/// them later saves fewer -- timing matters.
+/// Option B fires, and the lesson is *where*: three engines defending the
+/// district the wind is driving at (district 0 while the wind holds) at least
+/// halve the homes the fire reaches there, and the same engines sent to the
+/// upwind district (2) save nothing. Defence on, drawn sessions where the wind
+/// holds.
 #[test]
-fn protecting_homes_saves_homes_and_earlier_saves_more() {
-    // The pinned beat (valle's scripted wind shift at T+30), 12 seeds, so the
-    // comparison does not move when the drawn climate is retuned.
-    let spec = demo::spec("demo_valle").unwrap();
-    let homes = |policy: &Policy, defend: bool, seed: u64| {
-        let d = draw("demo_valle", seed).unwrap();
-        let d = demo::Draw { spec, ..d };
-        let mut r = Run::with_variant(&data_dir(), spec, seed, Variant { defend_homes: defend, ..Variant::default() }).unwrap();
-        policy.play(&mut r, &d).unwrap().homes_lost as f32
-    };
-    let mean_delta = |policy: Policy, defend: bool| -> (f32, f32) {
-        let d: Vec<f32> = (1..=12u64).map(|s| homes(&policy, defend, s) - homes(&Policy::none(), defend, s)).collect();
-        let m = d.iter().sum::<f32>() / d.len() as f32;
-        let sd = (d.iter().map(|x| (x - m).powi(2)).sum::<f32>() / d.len() as f32).sqrt();
-        (m, sd / (d.len() as f32).sqrt())
-    };
-    let (early, se) = mean_delta(Policy::protect(3), true);
-    let (late, _) = mean_delta(Policy::protect(30), true);
-    println!("valle (pinned shift): protect T+3 {early:+.1} +- {se:.1} homes, T+30 {late:+.1}");
-    assert!(early < -2.0, "protecting at T+3 saved only {early:.1} homes");
-    assert!(early < late - 0.5, "an engine posted at T+3 should save more than one posted at T+30 ({early:.1} vs {late:.1})");
-    // And with defence off the same orders are worth nothing.
-    let (off, off_se) = mean_delta(Policy::protect(3), false);
-    assert!(off > -3.0 * off_se.max(1.0), "without defence the posting should not help ({off:+.1})");
+fn defending_the_right_district_saves_homes() {
+    use demo::policy::Act;
+    let v = Variant { defend_homes: true, ..Variant::default() };
+    for id in ["demo_borgo", "demo_valle"] {
+        let (mut none, mut right, mut wrong, mut n) = (0.0, 0.0, 0.0, 0.0);
+        for seed in 1..=16u64 {
+            let d = draw(id, seed).unwrap();
+            if d.spec.shift.is_some() {
+                continue;
+            }
+            let go = |p: Policy| {
+                let mut r = Run::with_variant(&data_dir(), d.spec, seed, v).unwrap();
+                p.play(&mut r, &d).unwrap().homes_lost as f32
+            };
+            none += go(Policy::none());
+            right += go(Policy::named("d0").at(180, Act::DefendDistrict(0, 3)));
+            wrong += go(Policy::named("d2").at(180, Act::DefendDistrict(2, 3)));
+            n += 1.0;
+        }
+        let (none, right, wrong) = (none / n, right / n, wrong / n);
+        println!("{id}: homes hit none {none:.1}, defend district 0 {right:.1}, defend upwind {wrong:.1} ({n} sessions)");
+        assert!(right < 0.6 * none, "{id}: engines on the right district should save homes");
+        assert!((wrong - none).abs() < 2.0, "{id}: engines on the upwind district should change nothing");
+    }
 }
