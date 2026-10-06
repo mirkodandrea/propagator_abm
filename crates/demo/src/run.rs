@@ -11,6 +11,7 @@ use fire::FireSim;
 use scenario::{Pos, Scenario};
 
 use crate::cost;
+use crate::event::{self, Event, EventKind};
 use crate::mission::Spec;
 use crate::trust;
 
@@ -276,7 +277,20 @@ pub struct Run {
     /// What the commander did, for [`Run::ledger`] (spec 5.1).
     pub log: cost::Log,
     wolf: Option<trust::CryWolf>,
+    /// Everything notable that has happened, oldest first (spec 5.4/5.6).
+    pub events: Vec<Event>,
+    watch: Watch,
     shift_pending: bool,
+}
+
+/// What [`Run::step`] compared against last time, to turn state into events.
+#[derive(Default)]
+struct Watch {
+    last_spot_s: f32,
+    wind_from: Option<f64>,
+    unit_states: Vec<abm::suppression::UnitState>,
+    masts_down: usize,
+    near_town: bool,
 }
 
 impl Run {
@@ -302,7 +316,7 @@ impl Run {
         if variant.defend_homes {
             tally.enable_defence();
         }
-        Ok(Run { scn, fire, agents, crews, spec, tally, log: cost::Log::default(), wolf, shift_pending: spec.shift.is_some() })
+        Ok(Run { scn, fire, agents, crews, spec, tally, log: cost::Log::default(), wolf, events: vec![], watch: Watch::default(), shift_pending: spec.shift.is_some() })
     }
 
     pub fn time_s(&self) -> i64 {
@@ -391,6 +405,7 @@ impl Run {
         if let Some(w) = self.wolf.as_mut() {
             w.step(&mut self.agents, &self.fire, &self.scn.world);
         }
+        self.collect_events();
         let dropped: Vec<Pos> =
             self.crews.units.iter().zip(&drops_before).filter(|(u, &b)| u.drops > b).map(|(u, _)| u.pos).collect();
         for _ in &dropped {
@@ -445,6 +460,11 @@ impl Run {
         out
     }
 
+    /// Where the most recent spot fire started, if there has been one.
+    pub fn latest_spot(&self) -> Option<Pos> {
+        self.events.iter().rev().find(|e| e.kind == EventKind::SpotFire).and_then(|e| e.pos)
+    }
+
     /// Distance from the head of the fire to the nearest home, metres.
     pub fn head_to_town_m(&self) -> f32 {
         let h = self.head();
@@ -472,6 +492,70 @@ impl Run {
 
     pub fn caught_where(&self, f: impl Fn(scenario::Pos) -> bool) -> usize {
         self.tally.caught_where(&self.agents, f)
+    }
+
+    /// Derive this step's events from the model's state (one pass, no text).
+    fn collect_events(&mut self) {
+        use abm::suppression::UnitState as S;
+        let now = self.fire.time_s();
+        let w = &mut self.watch;
+        let mut out: Vec<Event> = vec![];
+        let seen_to = w.last_spot_s;
+        for s in self.agents.spot_fires().spots().filter(|s| s.at_s > seen_to) {
+            out.push(Event { at_s: s.at_s as i64, kind: EventKind::SpotFire, pos: Some(s.pos) });
+            w.last_spot_s = w.last_spot_s.max(s.at_s);
+        }
+        let wind = self.fire.weather().wind_dir_deg;
+        if let Some(prev) = w.wind_from {
+            if (prev - wind).abs() > 1.0 {
+                out.push(Event { at_s: now, kind: EventKind::WindShifted { from_deg: prev as f32, to_deg: wind as f32 }, pos: None });
+            }
+        }
+        w.wind_from = Some(wind);
+        if w.unit_states.len() != self.crews.units.len() {
+            w.unit_states = self.crews.units.iter().map(|u| u.state).collect();
+        }
+        for (k, u) in self.crews.units.iter().enumerate() {
+            if u.state != w.unit_states[k] {
+                match u.state {
+                    S::Withdrawing => out.push(Event { at_s: now, kind: EventKind::UnitWithdrew { unit: u.id, kind: u.kind }, pos: Some(u.pos) }),
+                    S::Lost => out.push(Event { at_s: now, kind: EventKind::UnitLost { unit: u.id, kind: u.kind }, pos: Some(u.pos) }),
+                    _ => {}
+                }
+                w.unit_states[k] = u.state;
+            }
+        }
+        let down = self.agents.comms().down();
+        if down > w.masts_down {
+            out.push(Event { at_s: now, kind: EventKind::MastDown, pos: None });
+        }
+        w.masts_down = down;
+        self.events.extend(out);
+        if !self.watch.near_town && self.head_to_town_m() <= event::NEAR_TOWN_M {
+            self.watch.near_town = true;
+            let pos = self.head();
+            self.events.push(Event { at_s: now, kind: EventKind::FireNearTown, pos: Some(pos) });
+        }
+    }
+
+    /// The moments `why` is built from, as this run saw them.
+    pub fn facts(&self) -> crate::why::Facts {
+        let first = |f: &dyn Fn(&EventKind) -> bool| self.events.iter().find(|e| f(&e.kind)).map(|e| e.at_s);
+        crate::why::Facts {
+            order_at_s: self
+                .log
+                .entries
+                .iter()
+                .find_map(|e| if let cost::Entry::Evacuation { at_s, .. } = e { Some(*at_s) } else { None }),
+            shift_at_s: first(&|k| matches!(k, EventKind::WindShifted { .. })),
+            near_town_s: first(&|k| *k == EventKind::FireNearTown),
+            first_caught_s: self.tally.first_caught_s,
+        }
+    }
+
+    /// Why it went the way it did: the end card's one sentence.
+    pub fn why(&self) -> crate::why::Why {
+        crate::why::why(&self.outcome(), self.facts())
     }
 
     /// The bill so far: a pure function of [`Run::log`].

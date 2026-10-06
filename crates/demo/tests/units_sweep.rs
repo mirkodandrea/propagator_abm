@@ -26,6 +26,24 @@ fn units_where() {
     table(&policies, &[1.0, 8.0, 32.0]);
 }
 
+/// Spec 5.4: spot fires are the reason to split units. "All units at the head"
+/// against "one engine and one crew at the head, then one of each at every spot".
+#[test]
+#[ignore = "report"]
+fn units_spot_split() {
+    let policies = vec![Policy::none(), Policy::units_ahead(3, 300.0), Policy::head_and_spots(3, 300.0), Policy::units_ahead(15, 300.0)];
+    let rs = run_grid(&data_dir(), &ALL, &policies, &[Variant::default()], 1..=16);
+    for town in ALL {
+        println!("\n== {town}");
+        for (pi, p) in policies.iter().enumerate() {
+            let s = summarise(&rs, town, pi, 0);
+            let (h, hs) = paired(&rs, town, (pi, 0), (0, 0), |o| o.homes_lost as f32);
+            let (a, as_) = paired(&rs, town, (pi, 0), (0, 0), |o| o.hectares);
+            println!("  {:<24} homes {:>5.1} ha {:>5.1} | vs none: homes {:>+5.1} +-{:.1}  ha {:>+5.1} +-{:.1}", p.name, s.homes_lost.mean, s.hectares.mean, h, hs, a, as_);
+        }
+    }
+}
+
 /// Option C: a slower opening fire, so units at T+3 face a front of a few cells.
 /// Paired against `none` on the *same* slowed fire.
 #[test]

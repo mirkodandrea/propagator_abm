@@ -28,6 +28,9 @@ pub enum Act {
     Protect(UnitKind, usize),
     /// Aircraft loads on the house clusters nearest the head.
     ProtectDrop(usize),
+    /// This many free ground units of this kind at the most recent spot fire
+    /// (does nothing if there has not been one).
+    AtSpot(UnitKind, usize),
 }
 
 /// How a policy reads the forecast, if it does.
@@ -47,11 +50,22 @@ pub struct Policy {
     /// Acts held back until the head of the fire is within this many metres of
     /// the nearest home -- a commander who waits to see where it is going.
     pub when_near: Vec<(f32, Act)>,
+    /// Acts taken each time a new spot fire is reported (spec 5.4).
+    pub on_spot: Vec<Act>,
 }
 
 impl Policy {
     pub fn named(name: impl Into<String>) -> Policy {
-        Policy { name: name.into(), script: vec![], rule: None, when_near: vec![] }
+        Policy { name: name.into(), script: vec![], rule: None, when_near: vec![], on_spot: vec![] }
+    }
+
+    /// Everything on the roster at the head at `min`, but each spot fire gets one
+    /// engine and one crew sent to it (spec 5.4's split).
+    pub fn head_and_spots(min: i64, ahead_m: f32) -> Policy {
+        let mut p = Policy::named(format!("head T+{min} + spots"));
+        p = p.at(min * 60, Act::Send(UnitKind::Engine, 1, ahead_m)).at(min * 60, Act::Send(UnitKind::HandCrew, 1, ahead_m));
+        p.on_spot = vec![Act::AtSpot(UnitKind::Engine, 1), Act::AtSpot(UnitKind::HandCrew, 1)];
+        p
     }
 
     pub fn when_head_within(mut self, metres: f32, a: Act) -> Policy {
@@ -160,6 +174,13 @@ impl Policy {
                     run.order(Order::Drop { at });
                 }
             }
+            Act::AtSpot(kind, n) => {
+                if let Some(at) = run.latest_spot() {
+                    for _ in 0..n {
+                        run.order(Order::Attack { kind, at });
+                    }
+                }
+            }
             Act::ProtectDrop(n) => {
                 for at in run.clusters_near_head(n) {
                     run.order(Order::Drop { at });
@@ -185,6 +206,7 @@ impl Policy {
         let mut next = 0;
         let mut ruled = false;
         let mut fired: Vec<usize> = vec![];
+        let mut seen_events = 0usize;
         let mut judged_issue2 = false;
         let threatens = draw.spec.climate.shift_threatens;
         let says_risk = |p: f32| if threatens { p >= 0.5 } else { p < 0.5 };
@@ -192,6 +214,17 @@ impl Policy {
             while next < self.script.len() && self.script[next].0 <= run.time_s() {
                 Self::act(run, self.script[next].1);
                 next += 1;
+            }
+            if !self.on_spot.is_empty() {
+                while seen_events < run.events.len() {
+                    let e = run.events[seen_events];
+                    seen_events += 1;
+                    if e.kind == crate::event::EventKind::SpotFire {
+                        for a in &self.on_spot {
+                            Self::act(run, *a);
+                        }
+                    }
+                }
             }
             if !self.when_near.is_empty() {
                 let d = run.head_to_town_m();
