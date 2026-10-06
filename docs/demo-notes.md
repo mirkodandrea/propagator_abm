@@ -1,7 +1,8 @@
 # Demo — notes for the next pass
 
 Written 2026-10-06, while the first kiosk loop was being built. Companion to
-`demo-spec.md`; this file is what the spec does *not* yet say.
+`demo-spec.md` (shared) and its halves `demo-spec-gameplay.md` (§1 here is mostly
+theirs) and `demo-spec-presentation.md` (§4 rough edges); this file is what the spec does *not* yet say.
 
 ## 1. The big gap: it is buttons, not a game
 
