@@ -10,7 +10,7 @@ use bevy_egui::egui::{self, pos2, vec2, Align2, Color32, FontId, Pos2, Rect, Rou
 use bevy_egui::{EguiContexts, EguiSettings};
 
 use super::strings_it as t;
-use super::{Cmd, Kiosk, Phase, OPERATOR_HOLD_S, PLAY_IDLE_GRACE_S, PLAY_IDLE_WARN_S};
+use super::{Cmd, Kiosk, Phase, OPERATOR_HOLD_S};
 use crate::command::{OrderKind, OrderTool};
 use crate::sim::Sim;
 
@@ -348,12 +348,19 @@ fn attract(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32, clicked
     flame(&p, c - vec2(half + 56.0, 0.0), 40.0, k);
     flame(&p, c + vec2(half + 56.0, 0.0), 40.0, k + 1.3);
     big(&p, c, Align2::CENTER_CENTER, t::TITLE, 64.0, INK);
-    txt(&p, c + vec2(0.0, 52.0), Align2::CENTER_CENTER, t::SUBTITLE, 26.0, AMBER);
+    let sub = c + vec2(0.0, 66.0);
+    let sw = p.layout_no_wrap(t::SUBTITLE.to_string(), FontId::proportional(26.0), AMBER).size().x;
+    p.rect_filled(Rect::from_center_size(sub, vec2(sw + 48.0, 40.0)), Rounding::same(20.0), alpha(NAVY, 200));
+    txt(&p, sub, Align2::CENTER_CENTER, t::SUBTITLE, 26.0, AMBER);
     let town = t::town(kiosk.spec.id);
-    txt(&p, pos2(screen.center().x, screen.bottom() - screen.height() * 0.2), Align2::CENTER_CENTER, &format!("{} · {}", town.name, town.place), 28.0, INK);
+    let cap = format!("{} · {}", town.name, town.place);
+    let cp = pos2(screen.center().x, screen.bottom() - screen.height() * 0.255);
+    let cw = p.layout_no_wrap(cap.clone(), FontId::proportional(28.0), INK).size().x;
+    p.rect_filled(Rect::from_center_size(cp, vec2(cw + 48.0, 44.0)), Rounding::same(22.0), alpha(NAVY, 200));
+    txt(&p, cp, Align2::CENTER_CENTER, &cap, 28.0, INK);
     let bob = (k * 3.0).sin() * 5.0;
     let grow = 1.0 + (k * 3.0).sin() * 0.03;
-    pill(&p, pos2(screen.center().x, screen.bottom() - screen.height() * 0.12 + bob), t::START, 40.0 * grow, FLAME, Color32::WHITE);
+    pill(&p, pos2(screen.center().x, screen.bottom() - screen.height() * 0.125 + bob), t::START, 40.0 * grow, FLAME, Color32::WHITE);
     if clicked {
         kiosk.cmd = Some(Cmd::Begin);
     }
@@ -362,27 +369,28 @@ fn attract(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32, clicked
 fn briefing(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32) {
     let town = t::town(kiosk.spec.id);
     let slide = 1.0 - ((kiosk.phase_t / 0.5).min(1.0) - 1.0).powi(2);
-    let size = vec2(860.0f32.min(screen.width() - 40.0), 330.0);
+    let size = vec2(860.0f32.min(screen.width() - 40.0), 270.0);
     let rect = Rect::from_center_size(pos2(screen.center().x, screen.bottom() - size.y * 0.5 - 40.0 + (1.0 - slide) * 80.0), size);
-    let fc = Rect::from_min_size(pos2(rect.left(), rect.top() - 202.0 + (1.0 - slide) * 80.0), vec2(rect.width().min(560.0), 186.0));
+    // Top-left, clear of the town at the centre of the frame.
+    let fc = Rect::from_min_size(pos2(28.0 - (1.0 - slide) * 80.0, 24.0), vec2(520.0f32.min(screen.width() - 56.0), 186.0));
     forecast_card(&layer(ctx, "forecast_brief"), fc, &kiosk.forecast_at(0));
     egui::Area::new("briefing".into()).fixed_pos(rect.min).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.set_min_size(size);
         let p = ui.painter().clone();
         card(&p, rect, FLAME);
         // Banner strip.
-        let strip = Rect::from_min_size(rect.min + vec2(0.0, 0.0), vec2(rect.width(), 86.0));
+        let strip = Rect::from_min_size(rect.min + vec2(0.0, 0.0), vec2(rect.width(), 76.0));
         p.rect_filled(strip.shrink(2.0), Rounding { nw: 24.0, ne: 24.0, sw: 0.0, se: 0.0 }, mix(FLAME, NAVY, 0.55));
         flame(&p, strip.left_center() + vec2(54.0, 0.0), 26.0, k);
-        big(&p, strip.left_center() + vec2(96.0, -12.0), Align2::LEFT_CENTER, town.name, 40.0, INK);
-        txt(&p, strip.left_center() + vec2(96.0, 22.0), Align2::LEFT_CENTER, town.place, 22.0, AMBER);
+        big(&p, strip.left_center() + vec2(96.0, -10.0), Align2::LEFT_CENTER, town.name, 36.0, INK);
+        txt(&p, strip.left_center() + vec2(96.0, 20.0), Align2::LEFT_CENTER, town.place, 20.0, AMBER);
         // Body.
-        let body = Rect::from_min_max(rect.min + vec2(36.0, 104.0), rect.max - vec2(36.0, 100.0));
-        let g = p.layout(town.brief.to_string(), FontId::proportional(26.0), INK, body.width());
+        let body = Rect::from_min_max(rect.min + vec2(36.0, 88.0), rect.max - vec2(36.0, 84.0));
+        let g = p.layout(town.brief.to_string(), FontId::proportional(22.0), INK, body.width());
         p.galley(body.min, g, INK);
-        p.rect_filled(Rect::from_min_size(pos2(rect.left() + 36.0, rect.bottom() - 92.0), vec2(8.0, 30.0)), Rounding::same(4.0), GREEN);
-        txt(&p, pos2(rect.left() + 58.0, rect.bottom() - 77.0), Align2::LEFT_CENTER, town.mission, 26.0, GREEN);
-        let mut ui2 = ui.child_ui(Rect::from_min_size(pos2(rect.right() - 300.0, rect.bottom() - 84.0), vec2(280.0, 64.0)), egui::Layout::right_to_left(egui::Align::Center), None);
+        p.rect_filled(Rect::from_min_size(pos2(rect.left() + 36.0, rect.bottom() - 70.0), vec2(8.0, 26.0)), Rounding::same(4.0), GREEN);
+        txt(&p, pos2(rect.left() + 58.0, rect.bottom() - 57.0), Align2::LEFT_CENTER, town.mission, 24.0, GREEN);
+        let mut ui2 = ui.child_ui(Rect::from_min_size(pos2(rect.right() - 300.0, rect.bottom() - 82.0), vec2(280.0, 64.0)), egui::Layout::right_to_left(egui::Align::Center), None);
         if pill_button(&mut ui2, t::GO, 30.0, FLAME, Color32::WHITE) {
             kiosk.cmd = Some(Cmd::Go);
         }
@@ -485,8 +493,8 @@ fn play(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &mut Sim, tool: &mut OrderT
     action_bar(ctx, kiosk, sim, tool, screen, k);
 
     // "Are you still there?"
-    if kiosk.idle_s >= PLAY_IDLE_WARN_S && kiosk.ordered_at_s.is_none() && !kiosk.paused {
-        let left = (PLAY_IDLE_WARN_S + PLAY_IDLE_GRACE_S - kiosk.idle_s).max(0.0);
+    if kiosk.idle_s >= super::play_idle_warn_s() && kiosk.ordered_at_s.is_none() && !kiosk.paused {
+        let left = (super::play_idle_warn_s() + super::play_idle_grace_s() - kiosk.idle_s).max(0.0);
         let q = layer(ctx, "still");
         q.rect_filled(screen, Rounding::ZERO, Color32::from_black_alpha(150));
         big(&q, screen.center() - vec2(0.0, 30.0), Align2::CENTER_CENTER, t::STILL_THERE, 72.0, INK);
@@ -671,8 +679,8 @@ fn stat_row(p: &egui::Painter, at: Pos2, width: f32, label: &str, value: String,
 fn outcome(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32) {
     let Some(res) = kiosk.result else { return };
     let size = vec2(900.0f32.min(screen.width() - 40.0), 520.0);
-    let rect = Rect::from_center_size(screen.center(), size);
-    layer(ctx, "dim").rect_filled(screen, Rounding::ZERO, Color32::from_black_alpha(120));
+    let rect = Rect::from_center_size(pos2(screen.center().x, screen.bottom() - size.y * 0.5 - 24.0), size);
+    layer(ctx, "dim").rect_filled(screen, Rounding::ZERO, Color32::from_black_alpha(50));
     egui::Area::new("outcome".into()).fixed_pos(rect.min).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.set_min_size(size);
         let p = ui.painter().clone();
@@ -688,7 +696,7 @@ fn outcome(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32) {
         let frac = res.secure() as f32 / res.households.max(1) as f32;
         // The headline pops in with a little overshoot.
         let pop = 1.0 + (1.0 - (kiosk.phase_t * 3.0).min(1.0)).powi(2) * 0.25;
-        big(&p, rect.min + vec2(size.x * 0.5, 120.0), Align2::CENTER_CENTER, &t::safe_of(res.secure(), res.households), 44.0 * pop, GREEN);
+        let _ = pop;
         stat_row(&p, left + vec2(0.0, 30.0), col_w, t::FAMILIES_SAFE, t::safe_of(res.secure(), res.households), Some(frac), GREEN);
         stat_row(&p, right + vec2(0.0, 30.0), col_w, t::STILL_IN_DANGER, res.in_danger.to_string(), None, AMBER);
         stat_row(&p, left + vec2(0.0, 150.0), col_w, t::HOMES_LOST_LC, res.homes_lost.to_string(), None, RED);
@@ -705,8 +713,8 @@ fn outcome(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32) {
 fn compare(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32) {
     let Some(you) = kiosk.result else { return };
     let size = vec2(960.0f32.min(screen.width() - 40.0), 620.0);
-    let rect = Rect::from_center_size(screen.center(), size);
-    layer(ctx, "dim").rect_filled(screen, Rounding::ZERO, Color32::from_black_alpha(140));
+    let rect = Rect::from_center_size(pos2(screen.center().x, screen.bottom() - size.y * 0.5 - 24.0), size);
+    layer(ctx, "dim").rect_filled(screen, Rounding::ZERO, Color32::from_black_alpha(60));
     egui::Area::new("compare".into()).fixed_pos(rect.min).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.set_min_size(size);
         let p = ui.painter().clone();
@@ -766,7 +774,6 @@ fn operator(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect) {
         }
         if ui.button("Ricomincia").clicked() {
             kiosk.cmd = Some(Cmd::Begin);
-            kiosk.pinned = true;
         }
         if ui.button("Chiudi").clicked() {
             kiosk.operator_open = false;

@@ -18,7 +18,7 @@
 //! has to be findable, and there are eight of them against 1,577 people.
 //!
 //! The one thing worth knowing before editing: the work overlay sits at
-//! [`crate::ignition_edit::RING_LIFT_M`] above the ground like every other
+//! [`crate::rings::RING_LIFT_M`] above the ground like every other
 //! symbol here, *not* on it. Vegetation on this map is 5–15 m of real plants, so
 //! a cut line painted on the terrain is rendered perfectly and seen never.
 
@@ -31,7 +31,7 @@ use scenario::{Cell, Pos, Scenario};
 use crate::frame;
 use crate::retro;
 use crate::retro::RetroMaterial;
-use crate::ignition_edit::{ring_mesh, RING_LIFT_M};
+use crate::rings::{ring_mesh, RING_LIFT_M};
 use crate::sim::Sim;
 
 /// How far above life size units are drawn.
@@ -62,6 +62,13 @@ pub struct OrderMarker;
 /// The cut-line and wetted-ground overlay.
 #[derive(Component)]
 pub struct WorkOverlay;
+
+/// A hand crew drives to the job in a van and works on foot.
+#[derive(Resource)]
+pub struct CrewMeshes {
+    van: Handle<Mesh>,
+    squad: Handle<Mesh>,
+}
 
 #[derive(Resource)]
 pub struct UnitAssets {
@@ -100,9 +107,13 @@ pub fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
-    let engine = meshes.add(crate::models::mesh("fire_engine"));
-    let crew = meshes.add(crate::models::mesh("firefighter"));
-    let tanker = meshes.add(tanker_mesh());
+    let engine = meshes.add(crate::toy::engine());
+    let crew = meshes.add(crate::toy::van());
+    let tanker = meshes.add(crate::toy::tanker());
+    commands.insert_resource(CrewMeshes {
+        van: crew.clone(),
+        squad: meshes.add(crate::toy::crew()),
+    });
 
     let vr = sim.scenario.vr_palette().is_some();
     let symbol_scale = symbol_scale(vr);
@@ -200,18 +211,20 @@ pub fn reset(
 
 pub fn update_units(
     sim: Res<Sim>,
+    crew_meshes: Res<CrewMeshes>,
     mut materials: ResMut<Assets<RetroMaterial>>,
     mut query: Query<(
         &UnitView,
         &mut Transform,
         &mut Visibility,
         &Handle<RetroMaterial>,
+        &mut Handle<Mesh>,
     )>,
 ) {
     if !sim.is_changed() {
         return;
     }
-    for (view, mut tf, mut vis, mat) in &mut query {
+    for (view, mut tf, mut vis, mat, mut mesh) in &mut query {
         let Some(u) = sim.crews.units.get(view.id) else {
             continue;
         };
@@ -227,6 +240,12 @@ pub fn update_units(
             continue;
         }
 
+        if u.kind == UnitKind::HandCrew {
+            let want = if u.state == UnitState::Working { &crew_meshes.squad } else { &crew_meshes.van };
+            if *mesh != *want {
+                *mesh = want.clone();
+            }
+        }
         let ground = sim.scenario.terrain.height_at(u.pos);
         let lift = if u.kind.is_air() {
             AIR_ALTITUDE_M

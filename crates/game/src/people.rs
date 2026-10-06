@@ -29,7 +29,7 @@ use crate::sim::Sim;
 /// How far above life size people and cars are drawn. See the module note.
 /// `pub(crate)` so [`crate::inspect`] can pick at the same height these are
 /// actually drawn at, rather than duplicating the constant and drifting.
-pub(crate) const FIGURE_SCALE: f32 = 3.0;
+pub(crate) const FIGURE_SCALE: f32 = 5.5;
 
 pub(crate) fn figure_scale(vr: bool) -> f32 {
     // A person is an operational map symbol in a lab scenario. At the fitted
@@ -53,7 +53,7 @@ pub struct PeopleAssets {
     car: Handle<Mesh>,
     /// Indexed by [`Status`].
     status: Vec<Handle<RetroMaterial>>,
-    car_normal: Handle<RetroMaterial>,
+    car_normal: Vec<Handle<RetroMaterial>>,
     car_stuck: Handle<RetroMaterial>,
     /// Vehicles already given an entity, so new departures can be picked up
     /// without rescanning.
@@ -66,8 +66,8 @@ pub fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
-    let person = meshes.add(crate::models::mesh("pedestrian"));
-    let car = meshes.add(crate::models::mesh("car"));
+    let person = meshes.add(crate::toy::person());
+    let car = meshes.add(crate::toy::car());
 
     // VR-training dev scenarios render everyone flat and unlit — the status
     // colours themselves stay meaningful (they are what the ABM testing
@@ -101,13 +101,27 @@ pub fn setup(
     })
     .collect();
 
-    let car_normal = add(StandardMaterial {
-        base_color: Color::srgb(0.88, 0.90, 0.94),
-        emissive: LinearRgba::rgb(0.20, 0.24, 0.32),
-        perceptual_roughness: 0.4,
-        unlit: vr,
-        ..default()
-    });
+    // Toy cars come in pastel paint so a queue reads as individual cars.
+    let car_normal: Vec<Handle<RetroMaterial>> = [
+        [0.93, 0.93, 0.95],
+        [0.55, 0.78, 0.95],
+        [0.98, 0.85, 0.40],
+        [0.60, 0.85, 0.62],
+        [0.95, 0.65, 0.65],
+        [0.75, 0.70, 0.92],
+    ]
+    .iter()
+    .map(|c| {
+        let col = Color::srgb(c[0], c[1], c[2]);
+        add(StandardMaterial {
+            base_color: col,
+            emissive: col.to_linear() * 0.18,
+            perceptual_roughness: 0.35,
+            unlit: vr,
+            ..default()
+        })
+    })
+    .collect();
     let car_stuck = add(StandardMaterial {
         base_color: Color::srgb(0.95, 0.35, 0.20),
         emissive: LinearRgba::rgb(0.9, 0.22, 0.05),
@@ -182,7 +196,7 @@ pub fn spawn_vehicles(mut commands: Commands, sim: Res<Sim>, mut assets: ResMut<
         commands.spawn((
             MaterialMeshBundle::<RetroMaterial> {
                 mesh: assets.car.clone(),
-                material: assets.car_normal.clone(),
+                material: assets.car_normal[i % assets.car_normal.len()].clone(),
                 transform: Transform::from_translation(frame::to_bevy(t.pos, ground + 0.05))
                     .with_scale(Vec3::splat(scale * 0.8)),
                 ..default()
@@ -287,7 +301,7 @@ pub fn update_vehicles(
         let m = if t.state == TravelState::Cutoff {
             &assets.car_stuck
         } else {
-            &assets.car_normal
+            &assets.car_normal[view.traveller % assets.car_normal.len()]
         };
         if *mat != *m {
             *mat = m.clone();
@@ -303,13 +317,15 @@ pub fn mark_refuges(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
-    let mesh = meshes.add(Cylinder::new(12.0, 60.0));
+    // A refuge is a place: a piazza disc, a blue sign on a post. Drawn at 1.4x
+    // so the sign clears the canopy and the town.
+    let mesh = meshes.add(crate::toy::refuge_sign());
     let mat = materials.add(retro::material(StandardMaterial {
-        base_color: Color::srgba(0.30, 0.85, 0.95, 0.55),
-        emissive: LinearRgba::rgb(0.15, 0.9, 1.1),
-        alpha_mode: AlphaMode::Blend,
+        base_color: Color::WHITE,
+        emissive: LinearRgba::rgb(0.05, 0.08, 0.12),
+        perceptual_roughness: 0.6,
         ..default()
-    }, sim.scenario.vr_palette().is_some()));
+    }, false));
     for r in &sim.agents.refuges {
         let p = Pos {
             x: r.pos.x,
@@ -319,8 +335,26 @@ pub fn mark_refuges(
         commands.spawn(MaterialMeshBundle::<RetroMaterial> {
             mesh: mesh.clone(),
             material: mat.clone(),
-            transform: Transform::from_translation(frame::to_bevy(p, ground + 30.0)),
+            transform: Transform::from_translation(frame::to_bevy(p, ground + 0.3))
+                .with_scale(Vec3::splat(1.4)),
             ..default()
         });
+    }
+}
+
+/// Walking bob: figures hop and squash a little, so a column of evacuees reads
+/// as people walking rather than as sliding pins. Every frame, cheap.
+pub fn bob_people(
+    time: Res<Time>,
+    mut query: Query<(&PersonView, &mut Transform, &Visibility)>,
+) {
+    let t = time.elapsed_seconds();
+    for (view, mut tf, vis) in &mut query {
+        if *vis == Visibility::Hidden {
+            continue;
+        }
+        let ph = t * 9.0 + view.id as f32 * 1.7;
+        let k = FIGURE_SCALE;
+        tf.scale = Vec3::new(k * (1.0 - 0.05 * ph.sin()), k * (1.0 + 0.10 * ph.sin()), k * (1.0 - 0.05 * ph.sin()));
     }
 }

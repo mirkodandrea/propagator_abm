@@ -24,10 +24,10 @@ use std::sync::Mutex;
 
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
-use bevy::window::{MonitorSelection, WindowMode};
+use bevy::window::WindowMode;
 use demo::{Draw, Forecast, Outcome, Spec, Tally, STEP_S};
 
-use crate::scenario_selector::DataPath;
+use crate::DataPath;
 use crate::sim::{Sim, SimRestarted};
 use crate::AppState;
 
@@ -46,10 +46,20 @@ const ATTRACT_SPEED: f32 = 90.0;
 /// How long the finished attract fire is left on screen before it relights.
 const ATTRACT_HOLD_S: f32 = 5.0;
 /// Idle on any screen but PLAY, then back to ATTRACT (spec §5).
-const IDLE_RESET_S: f32 = 60.0;
+const IDLE_RESET_BASE_S: f32 = 60.0;
 /// Idle during PLAY before "Sei ancora lì?", and how long that waits.
-const PLAY_IDLE_WARN_S: f32 = 150.0;
-const PLAY_IDLE_GRACE_S: f32 = 30.0;
+const PLAY_IDLE_WARN_BASE_S: f32 = 150.0;
+const PLAY_IDLE_GRACE_BASE_S: f32 = 30.0;
+
+/// `KIOSK_IDLE_S=<s>` sets the idle reset (default 60) and scales the in-play
+/// warning with it, so the reset path can be tested in seconds.
+fn idle_scale() -> f32 {
+    static S: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *S.get_or_init(|| std::env::var("KIOSK_IDLE_S").ok().and_then(|v| v.parse::<f32>().ok()).map_or(1.0, |s| (s / 60.0).max(0.02)))
+}
+pub(crate) fn idle_reset_s() -> f32 { IDLE_RESET_BASE_S * idle_scale() }
+pub(crate) fn play_idle_warn_s() -> f32 { PLAY_IDLE_WARN_BASE_S * idle_scale() }
+pub(crate) fn play_idle_grace_s() -> f32 { PLAY_IDLE_GRACE_BASE_S * idle_scale() }
 /// Hold the top-right corner this long for the operator panel.
 const OPERATOR_HOLD_S: f32 = 3.0;
 /// Most steps one frame may run; at the demo speed this never binds.
@@ -331,8 +341,8 @@ pub fn step(
     let idle_out = match phase {
         Phase::Attract => false,
         // Watching the fire after an order is playing, not idling; pause suspends it.
-        Phase::Play => !kiosk.paused && kiosk.ordered_at_s.is_none() && idle >= PLAY_IDLE_WARN_S + PLAY_IDLE_GRACE_S,
-        _ => idle >= IDLE_RESET_S,
+        Phase::Play => !kiosk.paused && kiosk.ordered_at_s.is_none() && idle >= play_idle_warn_s() + play_idle_grace_s(),
+        _ => idle >= idle_reset_s(),
     };
     if idle_out {
         kiosk.cmd = Some(Cmd::NextTown);
@@ -436,22 +446,6 @@ pub fn step(
     }
 }
 
-/// Reload the scenario when a town switch asked for it. Runs in the selecting
-/// state, where `launch` picks up the (new) `Kiosk::spec`.
-pub fn wants_reload(kiosk: Res<Kiosk>) -> bool {
-    kiosk.reload || kiosk.cf_rx.is_none()
-}
-
-pub fn fullscreen(mut windows: Query<&mut Window>) {
-    if let Ok(mut w) = windows.get_single_mut() {
-        w.mode = window_mode();
-        if w.mode != WindowMode::Windowed {
-            w.cursor.visible = true;
-        }
-        let _ = MonitorSelection::Current;
-    }
-}
-
 /// `KIOSK_SHOT=<dir>`: walk one session unattended and photograph each screen.
 /// The only way to review the kiosk without a person at the mouse.
 #[allow(clippy::too_many_arguments)]
@@ -476,7 +470,8 @@ pub fn shots(
         0 if stage.1 > 4.0 => { snap("1_attract"); kiosk.cmd = Some(Cmd::Begin); *stage = (1, 0.0); }
         1 if stage.1 > 4.0 => { snap("2_briefing"); kiosk.cmd = Some(Cmd::Go); *stage = (2, 0.0); }
         2 if stage.1 > 2.0 => { sim.agents.order_evacuation_all(); kiosk.ordered_at_s = Some(sim.time_s()); *stage = (3, 0.0); }
-        3 if stage.1 > 6.0 => { snap("3_play"); *stage = (4, 0.0); }
+        3 if stage.1 > 6.0 => { snap("3_play"); *stage = (7, 0.0); }
+        7 if stage.1 > 8.0 => { snap("3b_play_late"); *stage = (4, 0.0); }
         4 if kiosk.phase == Phase::Outcome && kiosk.phase_t > 1.0 => { snap("4_outcome"); kiosk.enter(Phase::Compare); *stage = (5, 0.0); }
         5 if stage.1 > 2.5 && kiosk.counterfactual.is_some() => { snap("5_compare"); *stage = (6, 0.0); }
         6 if stage.1 > 1.0 => { exit.send(AppExit::Success); }

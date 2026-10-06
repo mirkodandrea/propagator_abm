@@ -35,12 +35,43 @@ const VR_GRID_LIFT_M: f32 = 0.8;
 #[derive(Component)]
 pub struct TerrainChunk;
 
+/// Land-cover tint at `p`, bilinear between fire-cell centres so the 20 m raster
+/// reads as soft pastel meadows rather than pixels.
+fn cover_tint(scn: &Scenario, p: Pos) -> [f32; 3] {
+    let w = &scn.world;
+    let fx = p.x / w.cellsize - 0.5;
+    let fy = (w.height_m - p.y) / w.cellsize - 0.5;
+    let (x0, y0) = (fx.floor(), fy.floor());
+    let (tx, ty) = (fx - x0, fy - y0);
+    let tint = |dx: f32, dy: f32| -> [f32; 3] {
+        let c = Cell {
+            row: (y0 + dy).clamp(0.0, (w.fire_rows - 1) as f32) as usize,
+            col: (x0 + dx).clamp(0.0, (w.fire_cols - 1) as f32) as usize,
+        };
+        match scn.fuel_at(c) {
+            1..=3 => [0.74, 0.66, 0.38],
+            4..=6 => [0.42, 0.60, 0.30],
+            7..=9 => [0.52, 0.55, 0.30],
+            10..=12 => [0.28, 0.48, 0.30],
+            _ => [0.68, 0.62, 0.50],
+        }
+    };
+    let mut out = [0.0; 3];
+    for (dx, dy, k) in [(0.0, 0.0, (1.0 - tx) * (1.0 - ty)), (1.0, 0.0, tx * (1.0 - ty)), (0.0, 1.0, (1.0 - tx) * ty), (1.0, 1.0, tx * ty)] {
+        let c = tint(dx, dy);
+        for i in 0..3 {
+            out[i] += c[i] * k;
+        }
+    }
+    out
+}
+
 /// Ground colour from elevation, steepness and noise.
 ///
 /// `slope_cos` is the vertical component of the surface normal: 1 on the flat,
 /// falling toward 0 on a cliff. Ligurian ground is dry pale limestone soil,
 /// with bare rock showing wherever it is too steep to hold any.
-fn ground_color(elev: f32, slope_cos: f32, p: Pos) -> [f32; 3] {
+fn ground_color(scn: &Scenario, elev: f32, slope_cos: f32, p: Pos) -> [f32; 3] {
     if elev <= 0.5 {
         return [0.07, 0.13, 0.26]; // sea
     }
@@ -54,8 +85,16 @@ fn ground_color(elev: f32, slope_cos: f32, p: Pos) -> [f32; 3] {
     // Grey-olive, not red-brown: this is limestone karst with a thin dry duff
     // over it. Saturated soil colour reads as Mars from altitude, especially
     // under a warm sun.
-    let soil = [0.30, 0.28, 0.22];
-    let duff = [0.25, 0.25, 0.19];
+    // Toy-diorama ground: the land cover is painted here as a pastel tint
+    // (a few hundred chunky props stand on top, see `vegetation`), warped by
+    // noise so the 20 m fuel cells do not show.
+    let warp = Pos {
+        x: p.x + 38.0 * (noise(p.x / 55.0, p.y / 55.0, 0x71) - 0.5),
+        y: p.y + 38.0 * (noise(p.x / 55.0, p.y / 55.0, 0x72) - 0.5),
+    };
+    let cover = cover_tint(scn, warp);
+    let soil = cover;
+    let duff = [cover[0] * 0.92, cover[1] * 0.95, cover[2] * 0.92];
     let rock = [0.46, 0.45, 0.42];
     let sand = [0.60, 0.56, 0.46];
 
@@ -159,7 +198,7 @@ pub fn build(
 
                     let col = match pal {
                         Some(pal) => vr_floor_color(pal, p),
-                        None => ground_color(elev, n[1], p),
+                        None => ground_color(scn, elev, n[1], p),
                     };
                     let col = Color::srgb(col[0], col[1], col[2]).to_linear();
                     colors.push([col.red, col.green, col.blue, 1.0]);
@@ -380,10 +419,6 @@ impl VrGridBuilder {
     }
 }
 
-/// Height lookup used when placing anything on the ground.
-pub fn ground(scn: &Scenario, p: Pos) -> f32 {
-    scn.terrain.height_at(p)
-}
 
 /// Centre of a fire cell, lifted onto the terrain.
 pub fn cell_ground(scn: &Scenario, c: Cell) -> (Pos, f32) {
