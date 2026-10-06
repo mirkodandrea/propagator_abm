@@ -135,10 +135,12 @@ pins one at a time.
 
 ## 4. Work needed (priority order)
 
-1. **Porto balance.** "At-risk T+0" (La Pineta + Centro) leaves 9.8 caught against
-   6.9 for "everyone": Il Faro's families are caught on the road in shift sessions.
-   Either move Il Faro so it is truly upwind of both winds, or give it its own exit
-   along the coast; re-run `district_sweep`.
+1. **Porto is the contrast town (decided).** Its geometry puts Centro at risk in
+   every session, La Pineta when the wind holds, Il Faro when it turns NE (caught
+   6–12 in shift sessions, 0 otherwise). "At-risk T+0" (Pineta + Centro) leaves 9.8
+   caught against 6.9 for "everyone", so here warning everyone early *is* the right
+   play — a deliberate contrast with borgo and valle ("it depends on the place, the
+   road and the sea"). Re-check after the playtest whether visitors read it so.
 2. **Valle residual.** Best play leaves ~8 caught (borgo ~4). Check who (the
    `who_is_caught_after_a_t0_warning` probe) before tuning.
 3. **Cost (W3).** Replace placeholder tariffs with sourced ones; decide whether the
@@ -173,7 +175,6 @@ in `CLAUDE.md`): `NEEDLESS_RADIUS_M` 800→300, `DEFEND_REACH_M` 80→120,
 
 ## 7. Open questions
 
-- Should Porto keep a bait district, given its geometry (4.1)?
 - Money: real unit costs and sources (W3).
 - Session seeding: random per visitor (now), seed of the day, or operator switch.
 - Should *Allerta generale* stay? It ties on families and teaches false alarms by

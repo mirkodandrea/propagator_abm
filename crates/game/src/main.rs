@@ -211,6 +211,7 @@ fn kiosk_systems(app: &mut App) {
                 units::update_units,
                 overlays::update_markers,
                 overlays::update_wind,
+                overlays::update_orders,
                 units::sync_orders,
                 units::update_work_overlay,
                 command::update_cursor,

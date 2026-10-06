@@ -88,13 +88,13 @@ const OVERLAY_SUBDIV_MAX_SPAN: usize = 280;
 /// a cell alight for 20 minutes (`fire::BURNOUT_S`), which is residence time
 /// including smouldering; the flaming zone of a real fire is a band of tens of
 /// metres, not the whole burnt area.
-const FLAMING_S: f32 = 400.0;
+const FLAMING_S: f32 = 900.0;
 
 /// How long ground stays visibly incandescent after the front passes. Much
 /// shorter than the burn-out window: past this it is a scar with smoke over
 /// it, not a glowing surface. Keeping this tight is what stops the overlay
 /// from looking like orange fog painted over the hillside.
-const GLOWING_S: f32 = 420.0;
+const GLOWING_S: f32 = 1100.0;
 
 /// Caps, all of them per-frame geometry budgets rather than physical limits.
 const MAX_FLAME_CELLS: usize = 3_500;
@@ -403,7 +403,10 @@ fn sample_color(
             // Incandescent only just behind the front, then straight to scar.
             // The glow is squared twice so the bright band is genuinely a
             // band, not a gradient across the whole burn.
-            let glow = (1.0 - age / GLOWING_S).clamp(0.0, 1.0).powi(3);
+            // Squared, over ~18 minutes: at the play camera's 2-3 km a band
+            // of a few minutes (cubed, 7 min; tried) is under a pixel and the
+            // front read as a smudge.
+            let glow = (1.0 - age / GLOWING_S).clamp(0.0, 1.0).powi(2);
             let embers = (1.0 - age / (GLOWING_S * 4.0)).clamp(0.0, 1.0);
             // Char and ash, at a scale the CA has no opinion about: a burn is
             // never one flat tone, and without this the scar reads as paint.
@@ -639,7 +642,10 @@ pub fn update_flames(
         // Byram flame length, with a floor: a metre-high creeping flame is
         // physically right and visually nothing, and the player still has to
         // be able to see where the fire is.
-        let flame_m = (flame_length_m(fli) * 1.6).clamp(9.0, 60.0) * (0.45 + 0.55 * flaming);
+        // Toy scale, like the houses (`buildings::TOY_SCALE`): from the play
+        // camera a true-height flame is a few pixels and the fire read as a
+        // dark smudge; the front has to be the brightest thing on the table.
+        let flame_m = (flame_length_m(fli) * 2.8).clamp(18.0, 90.0) * (0.45 + 0.55 * flaming);
         // A hot cell carries several tongues, a creeping one carries a single
         // flicker. Sub-cell placement is what stops them lining up on a grid.
         let tongues = (1.0 + (fli / 700.0).min(4.0) * flaming).round() as usize;
@@ -661,7 +667,7 @@ pub fn update_flames(
             // across the cell, so tongues differ within one cell too.
             let local = field.intensity(p).max(fli * 0.4);
             let h_m = flame_m * flicker * (0.6 + 0.4 * (local / fli.max(1.0)).min(1.5));
-            let half_w = (h_m * 0.45).min(scn.world.cellsize * 0.95);
+            let half_w = (h_m * 0.42).min(scn.world.cellsize * 1.3);
             let sway = (t * 2.6 + phase).sin() * h_m * 0.16;
 
             // Additive light competing with a daylit hillside: the multiplier
@@ -685,12 +691,14 @@ pub fn update_flames(
         let k = (puff.age / puff.life).clamp(0.0, 1.0);
         // Grows as it disperses, darkest and densest near the fire.
         let size = puff.size * (0.6 + 1.9 * k);
-        let shade = 0.40 + 0.38 * k;
+        // Pale, toy smoke: grey near the fire, near-white as it disperses, so
+        // the plume shows the wind without burying the flames under it.
+        let shade = 0.58 + 0.34 * k;
         // Fade in fast, out slowly: a puff should never pop into existence.
         // Kept thin — hundreds of puffs overlap, and at 0.55 each the plume
         // turned into a white wall as soon as the camera dropped into it.
-        let alpha = (k * 6.0).min(1.0) * (1.0 - k).powf(1.4) * 0.42;
-        let spin = puff.phase * 6.28 + k * 0.6;
+        let alpha = (k * 4.0).min(1.0) * (1.0 - k).powf(1.4) * 0.34;
+        let spin = puff.phase * std::f32::consts::TAU + k * 0.6;
         let (s, c) = spin.sin_cos();
         let r = (right * c + up * s) * size;
         let u = (up * c - right * s) * size;
@@ -852,7 +860,7 @@ fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
             // Smouldering ground smokes too — often more visibly than flame.
             let plume = (fli / 1200.0).clamp(0.3, 3.0);
             view.smoke.push(Particle {
-                pos: Vec3::new(p.x, ground + 4.0 + 10.0 * flaming, -p.y),
+                pos: Vec3::new(p.x, ground + 25.0 + 20.0 * flaming, -p.y),
                 vel: Vec3::Y * (4.0 + 8.0 * plume * flaming) + drift * 0.3,
                 age: 0.0,
                 life: 22.0 + phase * 20.0,

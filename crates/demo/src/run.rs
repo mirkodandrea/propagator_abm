@@ -462,6 +462,11 @@ impl Referee {
         self.posts.get(d).map_or(0, |p| p.len())
     }
 
+    /// Where those engines were posted (each defends [`DEFEND_REACH_M`] around it).
+    pub fn posts(&self, d: usize) -> &[Pos] {
+        self.posts.get(d).map_or(&[], |p| p.as_slice())
+    }
+
     /// Orders the town has judged false alarms so far (cry-wolf on only).
     pub fn needless_orders(&self) -> usize {
         self.wolf.as_ref().map_or(0, |w| w.needless_orders)

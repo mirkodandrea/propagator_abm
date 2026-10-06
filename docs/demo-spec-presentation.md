@@ -88,14 +88,14 @@ gold, unearned dim with a one-line hint for next time), the lesson, the bill.
 
 ## 3. Work needed (priority order)
 
-1. **Fire read.** From the play camera the fire is a dark smudge with small
-   flames; it should be the brightest, most animated thing on the table: taller
-   flame billboards on the front, a glowing edge line, ember sparks toward the
-   wind, smoke columns leaning with it.
-2. **Order feedback on the map.** When *Avvisa* is pressed: a ring pulse over the
-   district and a siren icon; when *Difendi*: a ring at the engine's post (data:
-   `Referee::posted` count today; needs the post positions exposed —
-   **request to gameplay**: `Referee::posts(d) -> &[Pos]`).
+1. 🔶 **Fire read.** Done: toy-scale flames (×2.8 Byram, 18–90 m), an 18-minute
+   glowing band behind the front (was 7 min cubed — sub-pixel at the play
+   camera), pale thinner smoke lofted higher, the *Incendio* label at the centre
+   of the burning area. Open: ember sparks leaning with the wind are faint; a
+   flame-front line shader would read better than billboards at 3 km.
+2. ✅ **Order feedback on the map.** A sky-blue ring round each warned district;
+   a green ring of `DEFEND_REACH_M` at each engine post (`Referee::posts`).
+   Open: a one-shot pulse when the order is given.
 3. **Chip density.** Three chips with two buttons each is the whole UI; check in
    the playtest whether a collapsed chip (name + status) that expands on hover
    reads better at 2 m.

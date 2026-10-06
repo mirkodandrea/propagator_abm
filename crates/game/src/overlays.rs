@@ -29,6 +29,10 @@ pub struct DynamicMarker;
 #[derive(Component)]
 pub struct BeaconLayer;
 
+/// Rings for the player's own orders: a warned district, an engine's post.
+#[derive(Component)]
+pub struct OrderRing;
+
 #[derive(Resource)]
 pub struct OverlayAssets {
     unlit_white: Handle<RetroMaterial>,
@@ -36,6 +40,10 @@ pub struct OverlayAssets {
     ring_orange: Handle<RetroMaterial>,
     beacons: Handle<Mesh>,
     key: (usize, usize, i64),
+    /// What the order rings were built for: (warned districts, engine posts).
+    order_key: (usize, usize),
+    ring_blue: Handle<RetroMaterial>,
+    ring_green: Handle<RetroMaterial>,
 }
 
 fn glow(c: [f32; 3], a: f32, boost: f32) -> StandardMaterial {
@@ -99,13 +107,71 @@ pub fn setup(
         },
         WindArrow,
     ));
-    commands.insert_resource(OverlayAssets { unlit_white, ring_red, ring_orange, beacons, key: (usize::MAX, 0, 0) });
+    let ring_blue = mat([0.35, 0.75, 1.0], 0.85, 1.6);
+    let ring_green = mat([0.35, 1.0, 0.6], 0.85, 1.4);
+    commands.insert_resource(OverlayAssets {
+        unlit_white,
+        ring_red,
+        ring_orange,
+        beacons,
+        key: (usize::MAX, 0, 0),
+        order_key: (usize::MAX, 0),
+        ring_blue,
+        ring_green,
+    });
+}
+
+/// The player's orders, on the ground: a sky-blue ring round each warned
+/// district, and a green ring for the homes each posted engine protects
+/// (`demo::run::DEFEND_REACH_M`). Rebuilt only when an order is added.
+/// Rings sit +20 m like the others (finding 13).
+pub fn update_orders(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    kiosk: Res<crate::kiosk::Kiosk>,
+    mut assets: ResMut<OverlayAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    old: Query<Entity, With<OrderRing>>,
+) {
+    let Some(r) = kiosk.referee.as_ref() else { return };
+    let warned = r.reports.iter().filter(|x| x.warned_at_s.is_some()).count();
+    let posts: usize = (0..r.districts.len()).map(|d| r.posted(d)).sum();
+    if (warned, posts) == assets.order_key {
+        return;
+    }
+    assets.order_key = (warned, posts);
+    for e in &old {
+        commands.entity(e).despawn();
+    }
+    for (k, d) in r.districts.iter().enumerate() {
+        if r.reports[k].warned_at_s.is_some() {
+            commands.spawn((
+                MaterialMeshBundle::<RetroMaterial> {
+                    mesh: meshes.add(ring_mesh(&sim.scenario, d.centre, d.radius_m + 45.0)),
+                    material: assets.ring_blue.clone(),
+                    ..default()
+                },
+                OrderRing,
+            ));
+        }
+        for p in r.posts(k) {
+            commands.spawn((
+                MaterialMeshBundle::<RetroMaterial> {
+                    mesh: meshes.add(ring_mesh(&sim.scenario, *p, demo::run::DEFEND_REACH_M)),
+                    material: assets.ring_green.clone(),
+                    ..default()
+                },
+                OrderRing,
+            ));
+        }
+    }
 }
 
 pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut assets: ResMut<OverlayAssets>) {
     if !restarted.is_empty() {
         restarted.clear();
         assets.key = (usize::MAX, 0, 0);
+        assets.order_key = (usize::MAX, 0);
     }
 }
 

@@ -175,7 +175,9 @@ impl Policy {
 
     /// Warn the districts the town was built to put at risk -- 0, the one the
     /// opening wind drives the fire at, and 1, the one a forecast shift would --
-    /// at `min` minutes. District 2 is upwind in every forecast, by design.
+    /// at `min` minutes. On borgo and valle district 2 is upwind in every
+    /// forecast; on porto it is not (Il Faro is caught when the wind turns),
+    /// which is why "everyone" wins there (gameplay spec §2.3).
     pub fn warn_at_risk(min: i64) -> Policy {
         Policy::named(format!("at-risk T+{min}")).at(min * 60, Act::WarnDistrict(0)).at(min * 60, Act::WarnDistrict(1))
     }

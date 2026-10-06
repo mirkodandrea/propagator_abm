@@ -550,7 +550,16 @@ fn district_chips(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &Sim, project: &d
     let mut orders: Vec<Order> = vec![];
     // The fire gets a label too: the first thing a newcomer has to find.
     {
-        let head = if sim.fire.active_cells().is_empty() { kiosk.spec.ignition } else { demo::run::head_of(&sim.fire, &sim.scenario, kiosk.spec.ignition) };
+        // The middle of what is burning, not the head: the head is often a spot
+        // fire ahead of the front, which has its own ring and "!".
+        let active = sim.fire.active_cells();
+        let head = if active.is_empty() {
+            kiosk.spec.ignition
+        } else {
+            let n = active.len() as f32;
+            let (sx, sy) = active.iter().map(|c| sim.scenario.world.centre_of(*c)).fold((0.0, 0.0), |(a, b), p| (a + p.x, b + p.y));
+            scenario::Pos { x: sx / n, y: sy / n }
+        };
         if let Some(a) = project(head, 40.0) {
             let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("fire_tag")));
             let tag = pos2(a.x, (a.y - 54.0).max(screen.top() + 70.0));
