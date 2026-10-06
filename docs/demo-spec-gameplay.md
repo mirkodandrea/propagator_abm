@@ -60,6 +60,32 @@ presentation agent reads this table rather than the model.
 | `Variant { unit_effect, defend_homes, shift_p, cry_wolf }`, `Run::with_variant` | sweep switches, all inert at `Default` (pinned) | ✅ |
 | `policy::Policy` (scripted commanders), `sweep::{run_grid, summarise, paired, regret_by}` | A/B harness (headless only) | ✅ |
 
+## 1b. Work needed (priority order, 2026-10-06)
+
+1. **Decision W1 (units).** Once Mirko picks B or D: B → pin the final rules in
+   `tests/units.rs`, re-run the §4 sweep on the merged build, and settle borgo/porto
+   (engines spend their tank before the fire arrives there — try a staged engine, a
+   hydrant-adjacent station, or a later fire arrival; measure, do not guess). D → remove
+   the unit orders from the delivered API and delete `Tally::enable_defence` etc.
+2. **Decision W2 (clean-up).** On approval, do §3: unregister `spotorno`, delete the
+   three real windows, retarget ~40 tests, port the finding pins; small commits, green
+   after each.
+3. **Support the wiring (X in the shared spec).** Expose what the kiosk needs without it
+   re-deriving logic: a `Run`-independent live-game entry point for `cost::Log`,
+   `CryWolf` and defence stepping (the live `Sim` has no `Run`); a per-household threat
+   level (`Intact | Threatened | AtRisk | Alight | Charred`, graded by distance/time to
+   fire, not "within 2.5 km of embers") for the presentation agent's building colours;
+   a `Run`-vs-`Sim` equality test with orders and ledger.
+4. **Balance.** (a) shift-probability floors for borgo/porto; (b) a cost scale a robust
+   follower margin can sit on — sweep the evacuation price and print the margin ± s.e.
+   per town, replace placeholder tariffs with sourced ones (Protezione Civile / regional
+   tariffs, source in code); (c) cry-wolf: needs zone orders or a repeat order to bite —
+   A/B a two-order session; (d) twin-hindsight vs forward estimate of "needless".
+5. **Remaining 5.x.** `HoldRoad` (+ A/B on porto), road-cut event and decision prompts
+   (5.6), seed-of-day, CPU per model step (the kiosk is CPU-bound at ~17 ms/frame in
+   play; profile `Sim::advance` before the 2,000-person range matters).
+6. **Re-run regret test and acceptance 9/10** on the final build; record the tables.
+
 ## 2. Done
 
 - ✅ Three towns (`scripts/generate_demo_scenarios.py` → `data/scenarios/demo_*`).

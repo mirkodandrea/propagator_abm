@@ -223,3 +223,33 @@ evacuation chevrons, selection ring, inverted-hull outlines, tilt-shift is still
 DepthOfField, advisors, decision pauses, twin robustness, `KIOSK_SELFTEST`, supervisor
 script. The outcome/compare cards still cover most of the map. Requests to gameplay:
 none; HUD slots for money/trust not laid out.
+
+## 12. Work needed (priority order, 2026-10-06)
+
+1. **Wire the delivered model (X in the shared spec; gameplay's rows are ✅).** Money
+   counter (HUD + outcome/compare, "senza ordini: 0 €"), trust meter, the "perché?" line
+   from `why::Why`, `Refusal` → Italian with an every-variant test, `Event` → markers and
+   later advisors. Build the layout slots first (empty-state safe), then fill.
+2. **Unit buttons follow decision W1.** B: subtitle says what the action does, map
+   feedback (a ring on the defended cluster, an icon on the home). D: remove buttons and
+   unit art. Don't polish either until Mirko decides.
+3. **Legibility from 2 m (acceptance 11).** Beacons too small; threatened ≈ intact
+   (needs gameplay's graded threat level, §1b item 3 there — meanwhile tint by alight/
+   charred only); civic buildings (church, town hall, school, fire station) and distinct
+   gardens; evacuation chevrons; selection ring; closed-road ring never seen on screen —
+   force a case and look.
+4. **End cards must show the scar.** Outcome/compare still cover most of the map: shrink
+   the cards or add the ghost no-orders perimeter on COMPARE so one picture says "same
+   fire".
+5. **Polish.** Vertex-sine sway (custom vertex shader), family groups, headlight blink,
+   ember flash, water-drop cloud/wet strip, hose stream, outlines only if cheap; an
+   operator `quality` low/medium/high.
+6. **Read the unread screenshots** (final borgo briefing and compare, valle attract) and
+   re-shoot all three towns after every item above.
+7. **Robustness and ops.** Twin spinner `Err` variant + 10 s timeout + cancel on
+   `Cmd::Begin`; operator quit button; `KIOSK_SELFTEST=1` (state machine, reset fan-out
+   per finding 21, no key does anything, idle reset leaks nothing, live `Sim` == `Run`);
+   `scripts/run_demo.sh` supervisor; native-speaker Italian review; dead-code warnings
+   (`FireLayer` in `fire_view.rs`).
+8. **Needs a real pointer/target machine:** 57 fps on the real GPU, unit tasking, operator
+   corner, idle timings, beacon legibility, overlays during a wind shift.

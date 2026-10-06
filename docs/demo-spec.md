@@ -116,6 +116,45 @@ Cut order if days slip: LLM bubbles, outline shader, `demo_porto`, advisors (pla
 ticker instead), custom assets. **Never cut**: kiosk shell, idle reset, outcome +
 counterfactual, the wind arrow, the forecast.
 
+## 4b. Work needed next (as of the merge, 2026-10-06)
+
+Ordered. **W** = waits on a Mirko decision (§ State); **G** gameplay; **P** presentation;
+**X** crosses the contract, so do it as one small PR with both specs touched.
+
+1. **X — Wire the delivered model into the kiosk.** None of the new `demo::` types is
+   used by `crates/game` yet, so nothing from the gameplay work is visible.
+   - Live `cost::Log` built from the orders the kiosk issues and the drops it sees;
+     money counter in the HUD and on the outcome/compare cards ("senza ordini: 0 €").
+   - `trust::CryWolf` stepped in `Sim::advance` (off unless the variant is on) + trust
+     meter. `Tally::enable_defence` called each step iff decision W1 = B.
+   - `Event` stream consumed for map markers (spot ring already exists) and, later,
+     advisors; `why::Why` rendered as the "perché?" line (Italian in `strings_it.rs`).
+   - `refusal::Refusal` replaces the English `target_preview` strings in the kiosk, with
+     the "every variant has an Italian line" test.
+   - Test (selftest/headless): the live `Sim` and `demo::Run` give the same outcome and
+     the same ledger for the same orders (COMPARE honesty).
+2. **W1 → G/P — Units.** If B: ship it as the unit action, rewrite the unit buttons'
+   subtitles to say what they now do, add the "protect this cluster" feedback on the map,
+   and re-run the §4 sweep on the final build. If D: delete the unit buttons, the unit
+   art and the suppression orders from the kiosk. Either way close gameplay §4.
+3. **W2 → G — Model-side clean-up.** Delete `mati`/`pedrogao`/`rhodes`, keep `spotorno`
+   as an unregistered test fixture, port the pins for findings 5, 17–19, 34, 39–42 to the
+   demo towns (gameplay §3). Then acceptance 8 passes.
+4. **G — Balance remaining.** Borgo/porto shift floors so ≥ ~75 % of sessions threaten
+   the town (today valle only); settle the cost scale (W3) with a sweep where the
+   follower's margin is robust, not 4–8 %; make cry-wolf matter (zone orders / a repeat
+   order); decide twin-hindsight vs forward estimate for "needless"; `HoldRoad`; road-cut
+   events; seed-of-day.
+5. **P — Legibility.** A graded "threatened" state so a town 2.5 km from embers is not
+   uniformly threatened (needs a gameplay row: a per-household threat level in `demo::`);
+   beacons large enough to read; civic buildings; evacuation chevrons; selection ring;
+   outcome/compare cards must not hide the burnt scar (ghost perimeter, §presentation).
+6. **P — Polish and ops.** Vertex sway, family groups, headlight blink, ember/water
+   effects, advisors, decision pauses, twin spinner robustness, `KIOSK_SELFTEST`,
+   supervisor script, operator quit button, native Italian review.
+7. **Both — Playtest with 3–5 new people** (milestone 5) on a real display with a real
+   mouse: fps on the target machine, operator corner, idle timings, unit tasking.
+
 ## 5. Acceptance
 
 1. Cold start to PLAY ≤ 30 s with no staff explanation. — not timed; likely passes.
