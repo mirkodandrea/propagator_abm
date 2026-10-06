@@ -19,12 +19,27 @@ Companion: `docs/demo-notes.md` (gameplay critique and ideas; mostly gameplay's)
 `DEMO` flag, no workbench. Env vars that remain are test/ops harnesses only
 (`KIOSK_SHOT`, `KIOSK_TOWN`, `KIOSK_WINDOWED`, `KIOSK_PLAY_S`).
 
-**State (2026-10-06, branch `settimana-protezione-civile`).** The kiosk plays a full
-session in all three towns; the first playtest's UI blockers are fixed. What remains
-is that the loop *works but does not yet teach*: evacuating at T+0 wins everywhere
-because nothing costs anything, the forecast has nothing to decide, three of five
-action buttons change nothing measurable (gameplay), and the town is tiny and dark
-(presentation).
+**State (2026-10-06, branch `settimana-protezione-civile`; gameplay and presentation
+agent branches merged, full `cargo test --release` green).**
+- *Presentation:* game-side clean-up done (kiosk-only `crates/game`, `CLAUDE.md`
+  rewritten, `docs/demo-operator.md` written); diorama pass (plinth, fixed sun,
+  depth of field); ~4k toy vegetation props instead of ~230k plants (57 fps vs
+  20-30 on the dev Mac); toy people/cars/units; overlays (wind arrow, spot ring,
+  beacons, closures); briefing/attract/end-screen layout. Still open: civic
+  buildings, sway, family groups, ember/water effects, chevrons, selection ring,
+  money/trust/event HUD slots, advisors, `KIOSK_SELFTEST`, supervisor script.
+- *Gameplay:* A/B harness (`demo::{policy,sweep,Variant}`), cost, cry-wolf trust,
+  events, typed refusals, `why`, zone evacuation, valle shift range. Unit
+  effectiveness measured: multiplier (A) and slower fire (C) fail; protecting homes
+  (B) works on valle only. Model-side clean-up blocked on deleting scenarios.
+- **Not yet wired:** the new `demo::` fields (ledger, trust, events, refusals, why)
+  are not called by `crates/game`; that integration is the next cross-agent step.
+
+**Decisions waiting on Mirko:** (1) unit effectiveness: adopt B (kiosk calls
+`Tally::enable_defence()`) or cut the unit buttons; (2) delete `mati`, `pedrogao`,
+`rhodes` and keep `spotorno` on disk as a test fixture, then port the finding pins;
+(3) agree the cost scale (tariffs are placeholders; follower beats always/never by
+only 4-8 % because a general evacuation is priced high).
 
 ## 1. Goal
 
@@ -86,11 +101,11 @@ announces an interface change by editing the §1 table first.
 
 | Step | Deliverable | Gate | Owner |
 |---|---|---|---|
-| 1 | Clean-up to a demo-only repo, CLAUDE.md rewritten | `cargo test --release` green, acceptance 8 | both (gameplay §3, presentation §2) |
+| 1 | Clean-up to a demo-only repo, CLAUDE.md rewritten | `cargo test --release` green, acceptance 8 | game side ✅, model side 🔲 (blocked on decision 2) |
 | 2 ✅ | Small fire + draw + forecast card; playtest UI fixes | done | both |
-| 2b | **Decide and build unit effectiveness**; spot fires; shift probability floors | units at T+3 beat T+30 by an asserted margin on every town | gameplay |
-| 3 | Cost accounting + trust/anger; money and trust in the HUD | twin and live price identically; "evacuate always" and "never" both lose to the forecast-follower on average; cry-wolf test | gameplay → presentation slots |
-| 4 | Diorama pass: light, plinth, tilt-shift, buildings, people, cars; overlays incl. forecast ghost | screenshot beside the reference; 30 fps measured; town legible at 2 m | presentation |
+| 2b 🔶 | **Decide and build unit effectiveness** (measured, awaiting decision 1); spot-fire events ✅; valle shift range ✅; borgo/porto shift floors 🔲 | units at T+3 beat T+30 by an asserted margin on every town | gameplay |
+| 3 🔶 | Cost accounting ✅ + trust/anger ✅ in `demo`; wiring into the HUD and outcome card 🔲 | twin and live price identically; "evacuate always" and "never" both lose to the forecast-follower on average; cry-wolf test | gameplay → presentation slots |
+| 4 🔶 | Diorama pass (mostly done; buildings, effects, overlays partial): light, plinth, tilt-shift, buildings, people, cars; overlays incl. forecast ghost | screenshot beside the reference; 30 fps measured; town legible at 2 m | presentation |
 | 5 | Advisors, Italian review, operator doc, supervisor script, `KIOSK_SELFTEST` | **playtest with 3–5 new people**, nobody stuck > 60 s | both |
 | 6 | Buffer, fixes only; LLM bubbles if time | | both |
 

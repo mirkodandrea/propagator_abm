@@ -40,7 +40,7 @@ now, fill them when the field lands.
   shows "Tempo rimasto", bearings spelled out, camera frames the households'
   centroid (Porto), logo moved off the action bar.
 
-## 2. Clean-up (game side) 🔲 — do before new features
+## 2. Clean-up (game side) ✅ (done in round 1)
 
 Delete what is not the demo from `crates/game`: `menu.rs`, `ui.rs` panels (keep
 `UiFocus`), `browser.rs`, `scenario_selector.rs`, `ignition_edit.rs`, `inspect.rs`
@@ -134,7 +134,7 @@ orange dashes (§16 #20) — this is the largest remaining quality gap.
   samples, MSAA→FXAA. Never disable: fire glow, beacons, wind arrow, the tilt-shift
   read. Operator `quality` low/medium/high.
 
-## 5. Assets 🔲
+## 5. Assets 🔶 (props/toys built in Rust in `toy.rs`; the Blender pipeline is unused)
 
 Reuse `assets/models/emergency_assets.blend` → `scripts/build_models.py` →
 `meshes.json` (embedded, vertex colours; read `assets/models/README.md`). Low-poly
