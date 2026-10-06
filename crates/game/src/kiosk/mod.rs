@@ -48,7 +48,7 @@ const ATTRACT_HOLD_S: f32 = 5.0;
 /// Idle on any screen but PLAY, then back to ATTRACT (spec §5).
 const IDLE_RESET_S: f32 = 60.0;
 /// Idle during PLAY before "Sei ancora lì?", and how long that waits.
-const PLAY_IDLE_WARN_S: f32 = 90.0;
+const PLAY_IDLE_WARN_S: f32 = 150.0;
 const PLAY_IDLE_GRACE_S: f32 = 30.0;
 /// Hold the top-right corner this long for the operator panel.
 const OPERATOR_HOLD_S: f32 = 3.0;
@@ -330,7 +330,8 @@ pub fn step(
     let (phase, idle) = (kiosk.phase, kiosk.idle_s);
     let idle_out = match phase {
         Phase::Attract => false,
-        Phase::Play => idle >= PLAY_IDLE_WARN_S + PLAY_IDLE_GRACE_S,
+        // Watching the fire after an order is playing, not idling; pause suspends it.
+        Phase::Play => !kiosk.paused && kiosk.ordered_at_s.is_none() && idle >= PLAY_IDLE_WARN_S + PLAY_IDLE_GRACE_S,
         _ => idle >= IDLE_RESET_S,
     };
     if idle_out {

@@ -245,18 +245,21 @@ fn forecast_card(p: &egui::Painter, rect: Rect, f: &demo::Forecast) {
     let x = rect.left() + 20.0;
     let title = if f.issue > 1 { t::FORECAST_UPDATED } else { t::FORECAST };
     txt(p, pos2(x, rect.top() + 24.0), Align2::LEFT_CENTER, title, 22.0, SKY);
-    txt(p, pos2(rect.right() - 18.0, rect.top() + 24.0), Align2::RIGHT_CENTER, t::FORECAST_CAVEAT, 14.0, MUTED);
+    txt(p, pos2(x, rect.bottom() - 18.0), Align2::LEFT_CENTER, t::FORECAST_CAVEAT, 18.0, MUTED);
     txt(p, pos2(x, rect.top() + 56.0), Align2::LEFT_CENTER, &t::forecast_wind(bearing_name(f.wind_from_deg), f.wind_kmh, f.cone_deg), 20.0, INK);
     txt(p, pos2(x, rect.top() + 90.0), Align2::LEFT_CENTER, t::SHIFT_CHANCE, 17.0, MUTED);
     let bar = Rect::from_min_size(pos2(x, rect.top() + 106.0), vec2(rect.width() - 110.0, 14.0));
     p.rect_filled(bar, Rounding::same(7.0), Color32::from_white_alpha(26));
     p.rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * f.shift_p, bar.height())), Rounding::same(7.0), AMBER);
     big(p, pos2(bar.right() + 12.0, bar.center().y), Align2::LEFT_CENTER, &format!("{:.0}%", f.shift_p * 100.0), 26.0, INK);
-    txt(p, pos2(x, rect.top() + 138.0), Align2::LEFT_CENTER, &t::forecast_shift(bearing_name(f.shift_to_deg), f.shift_eta_min.0, f.shift_eta_min.1), 17.0, GREY);
+    txt(p, pos2(x, rect.top() + 134.0), Align2::LEFT_CENTER, &t::forecast_shift(bearing_name(f.shift_to_deg), f.shift_eta_min.0, f.shift_eta_min.1), 17.0, GREY);
 }
 
+/// Distance from the screen's bottom edge to the top of the action bar.
+const ACTION_BAR_TOP: f32 = 148.0 + 56.0;
+
 fn bearing_name(deg: f32) -> &'static str {
-    const N: [&str; 8] = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
+    const N: [&str; 8] = ["nord", "nord-est", "est", "sud-est", "sud", "sud-ovest", "ovest", "nord-ovest"];
     N[(((deg % 360.0 + 360.0) % 360.0 + 22.5) / 45.0) as usize % 8]
 }
 
@@ -361,7 +364,7 @@ fn briefing(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32) {
     let slide = 1.0 - ((kiosk.phase_t / 0.5).min(1.0) - 1.0).powi(2);
     let size = vec2(860.0f32.min(screen.width() - 40.0), 330.0);
     let rect = Rect::from_center_size(pos2(screen.center().x, screen.bottom() - size.y * 0.5 - 40.0 + (1.0 - slide) * 80.0), size);
-    let fc = Rect::from_min_size(pos2(rect.left(), rect.top() - 176.0 + (1.0 - slide) * 80.0), vec2(rect.width().min(560.0), 160.0));
+    let fc = Rect::from_min_size(pos2(rect.left(), rect.top() - 202.0 + (1.0 - slide) * 80.0), vec2(rect.width().min(560.0), 186.0));
     forecast_card(&layer(ctx, "forecast_brief"), fc, &kiosk.forecast_at(0));
     egui::Area::new("briefing".into()).fixed_pos(rect.min).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.set_min_size(size);
@@ -423,8 +426,8 @@ fn play(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &mut Sim, tool: &mut OrderT
     p.rect_filled(bar, Rounding::same(4.0), Color32::from_white_alpha(24));
     p.rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * frac, bar.height())), Rounding::same(4.0), mix(AMBER, FLAME, frac));
     txt(&p, strip.min + vec2(24.0, 19.0), Align2::LEFT_CENTER, &format!("{} · {}", town.name, town.mission), 22.0, INK);
-    let t_s = sim.time_s();
-    txt(&p, strip.right_top() + vec2(-24.0, 19.0), Align2::RIGHT_CENTER, &format!("{:02}:{:02}", t_s / 3600 * 60 + (t_s / 60) % 60, t_s % 60), 26.0, AMBER);
+    let left_s = (kiosk.spec.duration_s - sim.time_s()).max(0);
+    txt(&p, strip.right_top() + vec2(-24.0, 19.0), Align2::RIGHT_CENTER, &format!("{} {:02}:{:02}", t::TIME_LEFT, left_s / 60, left_s % 60), 24.0, AMBER);
 
     // Wind, top-right, under the operator corner.
     let w = sim.fire.weather();
@@ -433,11 +436,11 @@ fn play(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &mut Sim, tool: &mut OrderT
     compass(&p, wc, 80.0, to, yaw, w.wind_speed_kmh as f32, k);
     txt(&p, wc + vec2(0.0, 98.0), Align2::CENTER_CENTER, &format!("{} {} · {:.0} km/h", t::WIND_FROM, bearing_name(w.wind_dir_deg as f32), w.wind_speed_kmh), 20.0, INK);
 
-    let fc = Rect::from_min_size(pos2(screen.right() - 20.0 - 380.0, wc.y + 124.0), vec2(380.0, 160.0));
+    let fc = Rect::from_min_size(pos2(screen.right() - 20.0 - 380.0, wc.y + 124.0), vec2(380.0, 186.0));
     forecast_card(&p, fc, &kiosk.forecast_at(sim.time_s()));
 
     // Banner: a pending order, or the last refusal.
-    let banner_y = screen.bottom() - 220.0;
+    let banner_y = screen.bottom() - ACTION_BAR_TOP - 70.0;
     let action_label = |kind: UnitKind| match kind {
         UnitKind::HandCrew => t::ACT_CREW,
         UnitKind::Engine => t::ACT_ENGINE,
@@ -478,11 +481,11 @@ fn play(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &mut Sim, tool: &mut OrderT
         tool.disarm();
     }
 
-    logo(&p, kiosk.logo, screen.left_bottom() + vec2(24.0, -92.0), 68.0, false);
+    logo(&p, kiosk.logo, screen.left_top() + vec2(24.0, 176.0), 60.0, false);
     action_bar(ctx, kiosk, sim, tool, screen, k);
 
     // "Are you still there?"
-    if kiosk.idle_s >= PLAY_IDLE_WARN_S {
+    if kiosk.idle_s >= PLAY_IDLE_WARN_S && kiosk.ordered_at_s.is_none() && !kiosk.paused {
         let left = (PLAY_IDLE_WARN_S + PLAY_IDLE_GRACE_S - kiosk.idle_s).max(0.0);
         let q = layer(ctx, "still");
         q.rect_filled(screen, Rounding::ZERO, Color32::from_black_alpha(150));
@@ -588,7 +591,7 @@ fn free_count(sim: &Sim, kind: UnitKind) -> usize {
 fn action_bar(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &mut Sim, tool: &mut OrderTool, screen: Rect, k: f32) {
     let btn = (190.0, 148.0);
     let total = 5.0 * btn.0 + 4.0 * 16.0 + 48.0;
-    let pos = pos2(screen.center().x - total * 0.5, screen.bottom() - btn.1 - 56.0);
+    let pos = pos2(screen.center().x - total * 0.5, screen.bottom() - ACTION_BAR_TOP);
     egui::Area::new("actions".into()).fixed_pos(pos).order(egui::Order::Foreground).show(ctx, |ui| {
         let bar = Rect::from_min_size(pos, vec2(total, btn.1 + 40.0));
         card(ui.painter(), bar, SKY);
@@ -682,11 +685,11 @@ fn outcome(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32) {
         let col_w = (size.x - 120.0) / 2.0;
         let left = rect.min + vec2(40.0, 150.0);
         let right = left + vec2(col_w + 40.0, 0.0);
-        let frac = res.safe as f32 / res.households.max(1) as f32;
+        let frac = res.secure() as f32 / res.households.max(1) as f32;
         // The headline pops in with a little overshoot.
         let pop = 1.0 + (1.0 - (kiosk.phase_t * 3.0).min(1.0)).powi(2) * 0.25;
-        big(&p, rect.min + vec2(size.x * 0.5, 120.0), Align2::CENTER_CENTER, &format!("{} {}", t::safe_of(res.safe, res.households), t::FAMILIES_SAFE), 40.0 * pop, GREEN);
-        stat_row(&p, left + vec2(0.0, 30.0), col_w, t::FAMILIES_SAFE, t::safe_of(res.safe, res.households), Some(frac), GREEN);
+        big(&p, rect.min + vec2(size.x * 0.5, 120.0), Align2::CENTER_CENTER, &t::safe_of(res.secure(), res.households), 44.0 * pop, GREEN);
+        stat_row(&p, left + vec2(0.0, 30.0), col_w, t::FAMILIES_SAFE, t::safe_of(res.secure(), res.households), Some(frac), GREEN);
         stat_row(&p, right + vec2(0.0, 30.0), col_w, t::STILL_IN_DANGER, res.in_danger.to_string(), None, AMBER);
         stat_row(&p, left + vec2(0.0, 150.0), col_w, t::HOMES_LOST_LC, res.homes_lost.to_string(), None, RED);
         stat_row(&p, right + vec2(0.0, 150.0), col_w, t::HECTARES, format!("{:.0}", res.hectares), None, FLAME);
@@ -722,9 +725,11 @@ fn compare(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32) {
             big(&p, col_rect.center_top() + vec2(0.0, 28.0), Align2::CENTER_CENTER, name, 32.0, *col);
             match o {
                 Some(o) => {
-                    let f = o.safe as f32 / o.households.max(1) as f32;
-                    stat_row(&p, col_rect.min + vec2(28.0, 90.0), w - 56.0, t::FAMILIES_SAFE, t::safe_of(o.safe, o.households), Some(f), *col);
-                    stat_row(&p, col_rect.min + vec2(28.0, 190.0), w - 56.0, t::CAUGHT, o.caught.to_string(), None, AMBER);
+                    let f = o.secure() as f32 / o.households.max(1) as f32;
+                    let hw = (w - 72.0) / 2.0;
+                    stat_row(&p, col_rect.min + vec2(28.0, 90.0), w - 56.0, t::FAMILIES_SAFE, t::safe_of(o.secure(), o.households), Some(f), *col);
+                    stat_row(&p, col_rect.min + vec2(28.0, 190.0), hw, t::CAUGHT_SHORT, o.caught.to_string(), None, AMBER);
+                    stat_row(&p, col_rect.min + vec2(44.0 + hw, 190.0), hw, t::HECTARES_SHORT, format!("{:.0}", o.hectares), None, FLAME);
                     stat_row(&p, col_rect.min + vec2(28.0, 270.0), w - 56.0, t::HOMES_LOST_LC, o.homes_lost.to_string(), None, RED);
                 }
                 None => {
@@ -738,7 +743,7 @@ fn compare(ctx: &egui::Context, kiosk: &mut Kiosk, screen: Rect, k: f32) {
             }
         }
         if let Some(cf) = cf {
-            let msg = t::takeaway(you.caught, cf.caught, you.safe, cf.safe);
+            let msg = t::takeaway(you.caught, cf.caught);
             let g = p.layout(msg, FontId::proportional(23.0), AMBER, size.x - 80.0);
             p.galley(pos2(rect.min.x + 40.0, rect.min.y + 462.0), g, AMBER);
         }

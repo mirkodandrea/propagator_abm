@@ -28,10 +28,13 @@ fn ease(t: f32) -> f32 {
 
 /// What the camera looks at: the middle of town, nudged toward the fire.
 fn home_focus(sim: &Sim, kiosk: &Kiosk) -> Vec3 {
-    let w = &sim.scenario.world;
-    let centre = scenario::Pos { x: w.width_m * 0.5, y: w.height_m * 0.5 };
+    // The households' centroid, not the window's: Porto's town sits at one edge
+    // and framing the middle of the map put it under the HUD (playtest §16 #4).
+    let hs = &sim.agents.households;
+    let n = hs.len().max(1) as f32;
+    let centre = scenario::Pos { x: hs.iter().map(|h| h.home.x).sum::<f32>() / n, y: hs.iter().map(|h| h.home.y).sum::<f32>() / n };
     let ig = kiosk.spec.ignition;
-    let p = scenario::Pos { x: centre.x * 0.75 + ig.x * 0.25, y: centre.y * 0.75 + ig.y * 0.25 };
+    let p = scenario::Pos { x: centre.x * 0.7 + ig.x * 0.3, y: centre.y * 0.7 + ig.y * 0.3 };
     crate::frame::to_bevy(p, sim.scenario.terrain.height_at(p))
 }
 

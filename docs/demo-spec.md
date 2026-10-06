@@ -167,11 +167,11 @@ ATTRACT ──click──▶ BRIEFING ──▶ PLAY ──▶ OUTCOME ──▶
   "Sei ancora lì?", reset after 30 s more. Restart goes through the reset path
   (finding 21).
 - ✅ The briefing includes the **forecast** (§6.1).
-- 🔲 **Play idle must not fire while the player is watching** (§16 #3): today
+- ✅ (idle only before the first order, warn at 150 s, pause suspends; `KIOSK_IDLE_S` still to do) **Play idle must not fire while the player is watching** (§16 #3): today
   90 s warn + 30 s grace = reset at 120 s of no mouse movement in a 180 s session.
   Count idle in PLAY only before the first order, or warn at ≥150 s; pause must
   suspend it; add `KIOSK_IDLE_S` so the reset is testable in seconds.
-- 🔲 **Outcome card** (§16 #5–7, #18, #30): "al sicuro" must include families the fire
+- ✅ **Outcome card** (`Outcome::secure()` = households − in danger; same rows on both cards; one headline; takeaway no longer praises needless evacuation) (§16 #5–7, #18, #30): "al sicuro" must include families the fire
   never touched, both cards show the same rows (safe · in pericolo · case colpite ·
   ettari), the takeaway stops praising needless evacuations, one headline not two.
 - 🔲 COMPARE must still be *the same fire*: with random weather (§6.1) the twin
@@ -403,7 +403,7 @@ sentence each, staff talking points).
 |---|---|---|
 | 1 | §4 clean-up: demo-only repo, CLAUDE.md rewritten, tests green (**partly done**, §4 status) | `cargo test --release` green, `cargo build` small, acceptance 8 |
 | 2 ✅ | §6.4 small fire + re-measured beats; §6.1 draw + forecast card | done; early action does not yet work (§6.4) |
-| **2a** 🔲 | **Playtest fixes (§16 #1–5, #9–10, #21)**: banner above the action bar, forecast card title/caveat, idle reset, porto framing, outcome-card semantics and copy | re-run `KIOSK_SHOT` on all three towns, read every PNG; no half-hidden text |
+| **2a** ✅ (code; Mirko to eyeball) | **Playtest fixes (§16 #1–5, #9–10, #21)**: banner above the action bar, forecast card title/caveat, idle reset, porto framing, outcome-card semantics and copy | re-run `KIOSK_SHOT` on all three towns, read every PNG; no half-hidden text |
 | 2b 🔲 | **Decide and build unit effectiveness** (§6.4, §15); §6.3 spot fires visible; shift probability floors so ≥~75 % of sessions threaten the town (§16 #15–16) | units at T+3 reduce houses hit and hectares by a margin a test asserts; every town's beat shows in most seeds |
 | 3 | §6.5 cost accounting + outcome card with money; §6.2 trust/anger | twin and live price identically; "evacuate always" and "never" both lose to the forecast-follower on average; cry-wolf test |
 | 4 | §8 diorama pass: fixed light, plinth, tilt-shift, buildings, people, cars; overlays (§7.6) incl. forecast ghost arrow | screenshot beside the reference; 30 fps measured; town legible at 2 m |

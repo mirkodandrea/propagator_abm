@@ -46,6 +46,15 @@ pub struct Outcome {
     pub hectares: f32,
 }
 
+impl Outcome {
+    /// Families not in danger: the ones who reached a refuge *and* the ones the
+    /// fire never came near. Counting evacuees alone made doing nothing in a
+    /// harmless session read as a disaster (playtest §16 #5).
+    pub fn secure(&self) -> usize {
+        self.households.saturating_sub(self.in_danger)
+    }
+}
+
 /// The outcome bookkeeping, separate from who steps the model so the headless
 /// [`Run`] and the kiosk's live `Sim` count identically -- the COMPARE screen is
 /// only honest if both sides of it are counted by the same code.

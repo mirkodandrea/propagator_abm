@@ -28,8 +28,8 @@ pub const PAUSED: &str = "In pausa";
 
 // --- Forecast (spec 6.1) ---------------------------------------------------
 pub const FORECAST: &str = "Previsioni";
-pub const FORECAST_UPDATED: &str = "Previsioni aggiornate";
-pub const FORECAST_NEW: &str = "Nuove previsioni del vento: guardale!";
+pub const FORECAST_UPDATED: &str = "Nuove previsioni";
+pub const FORECAST_NEW: &str = "Nuove previsioni del vento";
 pub const SHIFT_CHANCE: &str = "Probabilità che il vento cambi";
 pub const FORECAST_CAVEAT: &str = "Sono previsioni: possono sbagliare";
 
@@ -38,7 +38,7 @@ pub fn forecast_wind(dir: &str, kmh: f32, cone: f32) -> String {
 }
 
 pub fn forecast_shift(to: &str, a: u32, b: u32) -> String {
-    format!("poi da {to}, tra {a} e {b} min")
+    format!("Se cambia: da {to}, tra {a} e {b} min")
 }
 
 // --- Action bar ----------------------------------------------------------
@@ -78,29 +78,28 @@ pub const STILL_THERE_SUB: &str = "Tocca per continuare, altrimenti si ricominci
 
 // --- Outcome -------------------------------------------------------------
 pub const OUTCOME_TITLE: &str = "Fine dell'incidente";
-pub const COMPARE_TITLE: &str = "Con i tuoi ordini e senza";
+pub const COMPARE_TITLE: &str = "Con i tuoi ordini / Senza ordini";
 pub const YOU: &str = "Tu";
 pub const NO_ORDERS: &str = "Nessun ordine";
 pub const FAMILIES_SAFE: &str = "famiglie al sicuro";
 pub const STILL_IN_DANGER: &str = "ancora in pericolo";
 pub const HOMES_LOST_LC: &str = "case colpite dal fuoco";
 pub const HECTARES: &str = "ettari bruciati";
-pub const CAUGHT: &str = "sorprese dal fuoco in casa";
+pub const CAUGHT_SHORT: &str = "in casa col fuoco";
+pub const HECTARES_SHORT: &str = "ettari";
+pub const CAUGHT: &str = "raggiunte dal fuoco in casa";
 
 pub fn safe_of(safe: usize, total: usize) -> String {
     format!("{safe}/{total}")
 }
 
 /// One takeaway, chosen from the difference between the run and its twin.
-pub fn takeaway(you_caught: usize, cf_caught: usize, you_safe: usize, cf_safe: usize) -> String {
+pub fn takeaway(you_caught: usize, cf_caught: usize) -> String {
     if you_caught + 3 <= cf_caught {
         let n = cf_caught - you_caught;
-        format!(
-            "Le tue decisioni hanno cambiato le cose: {n} famiglie non sono state sorprese dal fuoco in casa. Avvisare presto è ciò che conta di più."
-        )
-    } else if you_safe > cf_safe + 2 {
-        let n = you_safe - cf_safe;
-        format!("Grazie ai tuoi ordini {n} famiglie in più sono arrivate al sicuro.")
+        format!("Le tue decisioni hanno cambiato le cose: {n} famiglie in meno sono state sorprese dal fuoco in casa.")
+    } else if cf_caught == 0 {
+        "Questa volta il fuoco non ha minacciato nessuno in casa, anche senza ordini. Avvisare tutti subito non era necessario: capire dove va il vento fa la differenza.".to_string()
     } else {
         "Questa volta i tuoi ordini non hanno cambiato molto. Prova ad avvisare prima: il fuoco va dove soffia il vento e il tempo è la cosa che manca.".to_string()
     }
