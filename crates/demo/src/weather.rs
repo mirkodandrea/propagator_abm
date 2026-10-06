@@ -63,10 +63,20 @@ pub struct Forecast {
 pub const ISSUE_2_AT_S: i64 = 15 * 60;
 
 pub fn draw(id: &str, seed: u64) -> Option<Draw> {
+    draw_with(id, seed, None)
+}
+
+/// [`draw`] with the town's odds of a wind shift replaced (a sweep variant, spec 5.3);
+/// `None` is the shipped climate.
+pub fn draw_with(id: &str, seed: u64, shift_p: Option<(f32, f32)>) -> Option<Draw> {
     let base = spec(id)?;
     let mut r = Rng(seed ^ 0xA076_1D64_78BD_642F);
-    let c = base.climate;
+    let mut c = base.climate;
+    if let Some(p) = shift_p {
+        c.shift_p = p;
+    }
     let mut s = base;
+    s.climate = c;
     s.weather = Weather {
         wind_dir_deg: (base.weather.wind_dir_deg + r.range(-15.0, 15.0) as f64).rem_euclid(360.0),
         wind_speed_kmh: (base.weather.wind_speed_kmh + r.range(-5.0, 5.0) as f64).max(8.0),

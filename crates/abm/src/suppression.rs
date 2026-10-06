@@ -339,8 +339,44 @@ pub struct SuppressionStats {
     pub drops: u32,
 }
 
+/// How much each unit's work is worth, as a multiplier on the calibrated
+/// physics. `ONE` is the model as published (findings 14-16, 41) and is
+/// **bit-identical** to the code before this existed: every use is `x * 1.0`.
+/// A demo-only dial (docs/demo-spec-gameplay.md §4, option A); nothing in the
+/// shipped game sets it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UnitEffect {
+    /// Metres of line a crew cuts per hour of work, relative to `LINE_M_PER_H`.
+    pub line_x: f32,
+    /// Litres per square metre a hose or a drop lays on the cells it reaches,
+    /// relative to the calibrated delivery (the tank and the load do not change).
+    pub water_x: f32,
+    /// How far the hose reaches, relative to `ENGINE_REACH_M` (more cells wet).
+    pub reach_x: f32,
+    /// Scales the danger a unit's policy *sees* (below 1 = steadier nerves:
+    /// units keep working in heat they would pull out of). Burn-over physics is
+    /// untouched.
+    pub nerve_x: f32,
+}
+
+impl UnitEffect {
+    pub const ONE: UnitEffect = UnitEffect { line_x: 1.0, water_x: 1.0, reach_x: 1.0, nerve_x: 1.0 };
+    /// Line and water scaled together; reach and nerve left alone.
+    pub fn all(x: f32) -> UnitEffect {
+        UnitEffect { line_x: x, water_x: x, ..UnitEffect::ONE }
+    }
+}
+
+impl Default for UnitEffect {
+    fn default() -> Self {
+        UnitEffect::ONE
+    }
+}
+
 pub struct Suppression {
     pub units: Vec<Unit>,
+    /// See [`UnitEffect`]; `ONE` unless a variant says otherwise.
+    pub effect: UnitEffect,
     /// Hydrants and open water, split because they mean different things: an
     /// engine fills from a hydrant, an aircraft scoops from open water.
     hydrants: Vec<Pos>,
@@ -466,6 +502,7 @@ impl Suppression {
 
         Ok(Suppression {
             units,
+            effect: UnitEffect::ONE,
             hydrants,
             open_water,
             time_s: 0.0,
@@ -726,7 +763,7 @@ impl Suppression {
         };
 
         let work_available = match u.kind {
-            UnitKind::Engine => !self.reachable_targets(u.pos, ENGINE_REACH_M, fire, scn).is_empty(),
+            UnitKind::Engine => !self.reachable_targets(u.pos, ENGINE_REACH_M * self.effect.reach_x, fire, scn).is_empty(),
             // A crew's work is the line it was given, so "something to do" is
             // "the line is not finished".
             UnitKind::HandCrew => match u.task {
@@ -925,7 +962,7 @@ impl Suppression {
         }
 
         // --- the unit's own decision ---------------------------------------
-        let outcome = self.unit_outcome(i, danger, Some(net), fire, scn);
+        let outcome = self.unit_outcome(i, danger * self.effect.nerve_x, Some(net), fire, scn);
         if self.apply_outcome(i, outcome) {
             return;
         }
@@ -1018,7 +1055,7 @@ impl Suppression {
         }
 
         let short_by = dist(pos, at);
-        let cells = self.reachable_targets(pos, ENGINE_REACH_M, fire, scn);
+        let cells = self.reachable_targets(pos, ENGINE_REACH_M * self.effect.reach_x, fire, scn);
         if cells.is_empty() {
             let u = &mut self.units[i];
             u.state = UnitState::Working;
@@ -1044,7 +1081,7 @@ impl Suppression {
                 ""
             };
         }
-        out.push(Intervention::water(cells, lpm2 as f64));
+        out.push(Intervention::water(cells, (lpm2 * self.effect.water_x) as f64));
         if self.units[i].water_l <= 0.0 {
             self.begin_refill(i, Task::Attack { at });
         }
@@ -1078,7 +1115,7 @@ impl Suppression {
         }
 
         let before = self.units[i].line_done_m;
-        let cut = LINE_M_PER_H / 3600.0 * dt;
+        let cut = LINE_M_PER_H * self.effect.line_x / 3600.0 * dt;
         let after = (before + cut).min(total);
         {
             let u = &mut self.units[i];
@@ -1329,7 +1366,7 @@ impl Suppression {
         // normally answers "carry on", while other policies can author "come
         // home when the fire is out" or "scoop before you are empty".
         let danger = fire.threat().at(self.units[i].pos);
-        let outcome = self.unit_outcome(i, danger, None, fire, scn);
+        let outcome = self.unit_outcome(i, danger * self.effect.nerve_x, None, fire, scn);
         if self.apply_outcome(i, outcome) {
             return;
         }
@@ -1405,7 +1442,7 @@ impl Suppression {
         }
         let cell_m2 = scn.world.cellsize * scn.world.cellsize;
         let lpm2 = load / (cells.len() as f32 * cell_m2);
-        out.push(Intervention::water(cells, lpm2 as f64));
+        out.push(Intervention::water(cells, (lpm2 * self.effect.water_x) as f64));
         let u = &mut self.units[i];
         u.water_used_l += load;
         u.water_l = 0.0;
