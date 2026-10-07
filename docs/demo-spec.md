@@ -21,15 +21,16 @@ A fire starts in the pines south of **Rocca Ventosa**, a small Lazio town of
 three districts. The student is the incident commander and plays **five turns
 of eight simulated minutes**. Each turn the clock stops: they read the wind and
 the forecast, then give orders by **picking a resource and then a target** — a
-district, the fire's head or flanks, a spot fire. The resources are few and
-each has a catch: **one police patrol** that warns a district only when it gets
-there, **one IT-alert** that warns everyone (including the district that did not
-need it), **two fire engines** (+1 at turn 3) that save homes but run dry in six
-minutes, **one hand crew** that cuts line slower than the fire runs, and **one
-Canadair** that comes only if called, 25 minutes later. *Avanti* plays the
+district, the fire's head or flanks. Spot fires appear on the map and in the
+reports, but cannot be targeted. The resources are few and each has a catch:
+**one police patrol**, the only way to warn people, which warns one district
+when it gets there — so a needless stop costs the districts at risk time;
+**two fire engines** (+1 at turn 3) that save homes only on the fire's path;
+**one hand crew** that clears a firebreak around a district, slow to arrive;
+and **one Canadair** that comes only if called, 25 minutes later. *Avanti* plays the
 turn; a three-line report says what happened. After turn 5 the fire runs to
-T+60 and each district is stamped. The verdict counts **families safe** and
-**homes saved**, each against the same fire with no orders, and names the
+T+60 and each district is stamped. The verdict counts **families caught** and
+**homes hit**, each against the same fire with no orders, and names the
 firefighting rules the student kept or broke.
 
 ## 1. Goal and lessons
@@ -44,13 +45,16 @@ The lessons (each a headless test that must *fire*, gameplay §5):
 
 1. **The wind decides who is at risk.** The forecast says where it may go next.
 2. **Warn early.** Families need time to leave; a late warning saves few.
-3. **Don't warn everyone.** A needless warning is a cost, not a safe default.
-4. **Never attack the head.** Units sent there pull back and the turn is lost.
-5. **Defend where the fire is going.** Engines save homes only on its path.
-6. **Water runs out.** An engine committed too early is refilling when the
-   front arrives.
-7. **Call aircraft early.** A 25-minute response is a decision about the future.
-8. **People first.** Warnings save people; units save homes. Counted apart.
+3. **Don't warn everyone.** The patrol is one car: a stop where nobody is at
+   risk is time lost for the districts that are.
+4. **Never attack the head.** Units sent there save nothing.
+5. **Defend where the fire is going.** Engines, crew and drops save homes only
+   on its path.
+6. **Call aircraft early.** A 25-minute response is a decision about the future.
+7. **People first.** Warnings save people; units save homes. Counted apart.
+
+(A "water runs out" lesson was measured and dropped: posting engines early
+costs nothing in this model — gameplay §7.5.)
 
 The lessons are **never shown to a playtester** (playtest spec §3): whether a
 blind player states them unprompted is the measure.
@@ -64,6 +68,12 @@ blind player states them unprompted is the measure.
   on/off decision.
 - **One interaction grammar:** resource → target. The only other action is
   *Avanti*.
+- **No mass alert.** The IT-alert was cut (2026-10-07): it warned everyone at
+  no cost and beat every careful plan. Warning is the patrol's job alone.
+- **Spot fires are shown, not targeted** (2026-10-07): nothing the player has
+  measurably stops one (gameplay §7.3).
+- **The hand crew is boosted** beyond the published model (approved by Mirko,
+  2026-10-07): unboosted it changed nothing anywhere (gameplay §7.1, §7.7).
 - **Judged on what the player knew.** A warning the forecast justified is never
   a false alarm, even if the wind held.
 - **No numeric score.** Facts against a counterfactual (no orders, same fire).
@@ -110,9 +120,8 @@ exact words the kiosk will show.
 | 4 | Human playtest (3–5 people), operator doc, `KIOSK_SELFTEST`, Italian review | first order ≤ 30 s; nobody stuck > 60 s | 🔲 |
 | 5 | Buffer, fixes only | | 🔲 |
 
-Cut order if days slip: the hand crew, the reinforcement, the spot-fire target,
-the rule notes on the verdict, visual polish. **Never cut:** turns, patrol +
-IT-alert, engines, the Canadair call, wind and forecast on the map, the verdict
+Cut order if days slip: the hand crew, the reinforcement, the rule notes on
+the verdict, visual polish. **Never cut:** turns, the patrol, engines, the Canadair call, wind and forecast on the map, the verdict
 against no orders, idle reset.
 
 ## 6. Acceptance
@@ -131,7 +140,4 @@ against no orders, idle reset.
 
 ## 7. Open (Mirko)
 
-- If a sweep shows a resource cannot change anything on Rocca Ventosa: cut it,
-  or play with a `unit_effect` variant (flag: more effective than the published
-  model).
 - Seed: random per visitor (default) or a fixed seed of the day.

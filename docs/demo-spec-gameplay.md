@@ -34,14 +34,14 @@ Names are proposals; the shape is binding.
 | `Referee` (one set of books) + `turn() -> Turn`, `tokens() -> &[Token]`, `targets() -> Vec<Target>`, `preview(token, target) -> Option<Preview>`, `assign(token, target)`, `unassign(token)`, `end_turn()`, `report() -> &TurnReport`, `verdict() -> Verdict` | the turn engine; kiosk and twin call the same methods in the same order | 🔲 |
 | `Turn { index, at_s, last: bool }`, `TURN_S` (8 min), `TURNS` (5), `MISSION_S` (60 min) | the clock | 🔲 |
 | `Token { id, kind: TokenKind, state: TokenState, water: Option<f32>, at: Pos, order: Option<TargetId> }` | the tray and the units on the map | 🔲 |
-| `TokenKind::{Pattuglia, ItAlert, Autobotte, Squadra, Canadair}` | §3 | 🔲 |
-| `TokenState::{Libero, InViaggio{eta_s}, AlLavoro, Rifornimento{eta_s}, Ritirato, Perso, Usato, InArrivo{eta_s}, NonChiamato}` | badge on the token and the unit | 🔲 |
-| `Target { id, kind: TargetKind, pos, label_pos }`, `TargetKind::{District(d), Head, Flank(Side), SpotFire(n), Sky}` | §4; `Sky` is the Canadair call | 🔲 |
-| `Preview { eta_s, effect: Effect }`, `Effect::{Avvisa{families}, AvvisaTutti, Difende{homes}, Linea, Spegne, Ritirata, Chiamata{eta_s}, Inutile}` | what the target says before you commit (§4) | 🔲 |
+| `TokenKind::{Pattuglia, Autobotte, Squadra, Canadair}` | §3 | 🔲 |
+| `TokenState::{Libero, InViaggio{eta_s}, AlLavoro, Rifornimento{eta_s}, Ritirato, Perso, InArrivo{eta_s}, NonChiamato}` | badge on the token and the unit | 🔲 |
+| `Target { id, kind: TargetKind, pos, label_pos }`, `TargetKind::{District(d), Head, Flank(Side), Sky}` | §4; `Sky` is the Canadair call; spot fires are map features, not targets | 🔲 |
+| `Preview { eta_s, effect: Effect }`, `Effect::{Avvisa{families}, Difende{homes}, Fascia{homes}, Bagna, NonSalvaCase, Lontano, Ritirata, Chiamata{eta_s}, Inutile}` | what the target says before you commit (§4) | 🔲 |
 | `TurnReport { lines: Vec<ReportLine> }` (≤ 3, ranked), `ReportLine { kind, district: Option<usize>, pos: Option<Pos>, n: Option<u32> }` | the between-turn report (§6) | 🔲 |
-| `Verdict { districts: Vec<DistrictVerdict>, families_safe, families_caught, homes_hit, none: Counterfactual, notes: Vec<Note> }` | the end card (§6) | 🔲 |
+| `Verdict { districts: Vec<DistrictVerdict>, families_caught, homes_hit, none: Counterfactual, notes: Vec<Note> }` | the end card (§6); families are shown **caught**, never "safe out of 250" | 🔲 |
 | `DistrictVerdict { district, people: Stamp, homes_hit, homes_hit_none }`, `Stamp::{InTempo, Tardi, MaiAvvisati, GiustoNonAvvisare, Prudente, AllarmeInutile}` | one row per district | 🔲 |
-| `Note::{TestaRitirata, CanadairInTempo, CanadairTardi, CanadairMaiChiamato, AutobotteASecco, FocolaioSpento, ItAlertSprecato, …}` | doctrine kept or broken, ≤ 3 on the card | 🔲 |
+| `Note::{TestaInutile, CanadairInTempo, CanadairTardi, CanadairMaiChiamato, PattugliaSprecata, …}` | doctrine kept or broken, ≤ 3 on the card | 🔲 |
 | `Forecast` + `Draw::forecast(issue)`, issue 2 at turn 2 | the forecast | ✅ |
 | `District { name, households, centre, radius_m }`, `Report` | district facts | ✅ |
 | `Event` (existing kinds) | raw material for report lines | ✅ |
@@ -72,16 +72,21 @@ T+0/5/10/15. Homes hit when the wind holds: none 68.4, three engines on Il Borgo
 | Token | Qty | Order | Model | Catch |
 |---|---|---|---|---|
 | 🚓 **Pattuglia** (Polizia Locale) | 1 | warn district *d* | 🔲 new: the car drives from staging by road; `EvacuateDistrict(d)` is applied **when it arrives**; free again the turn after | one district at a time; the order you warn them in matters |
-| 📢 **IT-alert** | 1 use | warn every district | `EvacuateAll`, immediate; households out of mast coverage are not reached (`abm::comms`) | Il Mulino gets a needless warning; spent for good |
-| 🚒 **Autobotte** | 2, **+1 at turn 3** | defend district *d* · attack a spot fire · (head / flank) | `Defend` (option B, `defend_homes`), `Attack` | roads only, 60 m hose; 2,500 L = ~6 min pumping, then drives to a hydrant and back (`Refilling`); withdraws from lethal heat |
-| 👷 **Squadra AIB** | 1 | cut line on a flank · line on a district's fire edge | `Attack` (crew: line) | 120 m/h; at the head it withdraws; ember shadow jumps a line 300 m ahead (finding 41) |
-| ✈️ **Canadair** | 1 | call (turn *k*) · then one drop per turn on head / flank / spot fire / district edge | `request_air` then `Drop` | arrives `AIR_RESPONSE_S` (25 min ≈ 3 turns) after the call; a drop wets fuel, wears off (`DROP_DEFENCE_S`) |
+| 🚒 **Autobotte** | 2, **+1 at turn 3** | defend district *d* · (head / flank) | `Defend` (option B, `defend_homes`), `Attack` | roads only, 60 m hose; refills at a hydrant (shown, costs no homes — §7.5) |
+| 👷 **Squadra AIB** (boosted) | 1 | clear a firebreak (*fascia di protezione*) on district *d*'s fire-facing side · (head / flank) | `Attack` (crew: line) placed in the **burnable** fuel outside the houses, with a crew `unit_effect` variant — **more effective than the published model, approved by Mirko 2026-10-07** | slow: ~14′ to Il Borgo; useless anywhere but on the fire's path (§7.7) |
+| ✈️ **Canadair** | 1 | call (turn *k*) · then one drop per turn on head / flank / district edge | `request_air` then `Drop` | arrives `AIR_RESPONSE_S` (25 min ≈ 3 turns) after the call; only a drop on the threatened district's edge saves homes (§7.2) |
+
+The IT-alert was cut (demo-spec §2): it warned every district at once at no
+cost and beat every careful plan on families (§8). Warning is the patrol's
+job alone, so a stop at a district nobody threatens is a turn of the only car
+lost to the districts that are — the cost lesson 3 needs.
 
 Rules:
 - **Reassign any time a turn opens.** A unit at work that is reassigned leaves
   its post and drives to the new one; travel time is the price, shown as the ETA.
-- A token that is `Rifornimento`, `Ritirato` (one turn), `InArrivo` or `Perso`
-  cannot be given an order that turn. `Usato` is the spent IT-alert.
+- A token that is `Rifornimento`, `Ritirato` (one turn) or `Perso` cannot be
+  given an order that turn. The Canadair `InArrivo` may be briefed in the turn
+  it arrives (a standing order: one drop per turn on its target).
 - The reinforcement engine appears in the tray at turn 3 at staging.
 - Units are placed by the model's own logic around the target (`post_facing`,
   nearest reachable road — finding 17); the player picks *what*, never *where to
@@ -94,12 +99,18 @@ selected token and shows `preview` on hover.
 
 | Target | Where | Valid for | Preview effect |
 |---|---|---|---|
-| **District d** | the district's fire-facing edge (`District::post_facing`) | Pattuglia, Autobotte, Squadra, Canadair | *Avvisa N famiglie* / *Difende N case* / *Linea* / *Bagna il bordo* |
-| **Testa** | `run::head_of` | Autobotte, Squadra, Canadair | *Si ritirerà* (ground units — lesson 4); drop: *Rallenta poco* |
-| **Fianco sx / dx** | perpendicular to the spread direction, 1/3 back from the head | Autobotte (if a road reaches), Squadra, Canadair | *Linea* / *Bagna* / *Strada troppo lontana* |
-| **Focolaio n** | each spot fire (`SpotFire` events, finding 37), until out or merged | Autobotte, Squadra, Canadair | *Spegne* |
+| **District d** | the district's fire-facing edge (`District::post_facing`) | Pattuglia, Autobotte, Squadra, Canadair | *Avvisa N famiglie* / *Difende N case* / *Fascia: protegge N case* / *Bagna il bordo* |
+| **Testa** | `run::head_of` | Autobotte, Squadra, Canadair | *Non salva case: col vento la testa non si ferma* (lesson 4) |
+| **Fianco sx / dx** | perpendicular to the spread direction, 1/3 back from the head | Autobotte, Squadra, Canadair | what the model does there (measured: saves no home) / *Strada troppo lontana* |
 | **Cielo** | the tray slot itself | Canadair (when `NonChiamato`) | *Arriva al turno k* |
-| — | everywhere | IT-alert | *Avvisa tutti (anche chi non serve)* |
+
+Spot fires (`SpotFire` events, finding 37) are drawn on the map and named in
+the report; they are not targets.
+
+**Previews must be true.** A preview states what the model will do with that
+order: `Lontano` ⇔ the unit never starts work there; `Difende N` / `Fascia N`
+match what the verdict credits; `Ritirata` only where withdrawal follows.
+Pinned by a test over every token × target × turn on seeds 1–10.
 
 A target never valid for a token is not lit. `Effect::Inutile` is shown, not
 refused: the player may still send an engine to Il Mulino and learn from it.
@@ -110,14 +121,13 @@ refused: the player may still send an engine to Il Mulino and learn from it.
 |---|---|---|
 | 1 | The wind decides who | no orders: wind holds → Il Borgo caught ≫ Le Coste; shift → Le Coste caught > 0; Il Mulino 0 |
 | 2 | Warn early | patrol to Il Borgo at turn 1 ≪ at turn 3 in families caught |
-| 3 | Don't warn everyone | IT-alert at turn 1 = patrol policy ± s.e. on families, and always stamps Il Mulino *AllarmeInutile* |
-| 4 | Never the head | engine or crew to `Head` ⇒ `Ritirato` within the turn, homes hit = no units |
-| 5 | Defend where it goes | 2 engines on Il Borgo vs on Il Mulino: homes hit halved vs unchanged |
-| 6 | Water runs out | engines posted at turn 1 vs turn 2: fewer working when the front reaches Il Borgo (if the sweep confirms, §7.5) |
-| 7 | Call aircraft early | Canadair called turn 1 delivers ≥ 2 drops before T+40; called turn 3 ≤ 1; and a drop matters (§7.2) |
-| 8 | People first | units alone (no warning) change homes hit, not families caught; warnings alone the reverse |
+| 3 | Don't warn everyone | patrol to Il Mulino at turn 1, then the forecast plan one turn late, catches more families than the forecast plan; Il Mulino stamps *AllarmeInutile* |
+| 4 | Never the head | engine, crew or drop on `Head`: homes hit = no units (± s.e.) |
+| 5 | Defend where it goes | 2 engines on Il Borgo vs on Il Mulino: homes hit halved vs unchanged; boosted crew on Il Borgo's fire side saves ≥ 5 homes, on Il Mulino none |
+| 6 | Call aircraft early | Canadair called turn 1 delivers ≥ 2 drops before T+40; called turn 3 ≤ 1; and a drop matters (§7.2) |
+| 7 | People first | units alone (no warning) change homes hit, not families caught; warnings alone the reverse |
 
-### Measured (2026-10-07, seeds 1–40; `cargo test --release -p demo --test lessons`)
+### Measured (2026-10-07, seeds 1–40, before the IT-alert cut and crew boost; lessons renumbered since — re-measure)
 
 | # | Fires? | Numbers |
 |---|---|---|
@@ -148,14 +158,16 @@ formatted in `crates/text`.
 
 | Stamp | Rule |
 |---|---|
-| `InTempo` | warned, and the warning landed ≥ `IN_TIME_MIN` before the fire reached the district |
+| `InTempo` | warned, and the warning landed ≥ `IN_TIME_MIN` before the fire first **threatened or reached** the district, whichever is earlier; never for a warning that lands after the district is threatened |
 | `Tardi` | warned, landed later than that |
 | `MaiAvvisati` | reached, never warned |
 | `GiustoNonAvvisare` | not warned, never threatened |
 | `Prudente` | warned while the forecast in force pointed at it; never threatened. **Not a mistake.** |
 | `AllarmeInutile` | warned, never threatened, and no forecast pointed at it |
 
-**Counterfactual:** the same draw, no orders, from the twin.
+**Counterfactual:** the same draw, no orders, from the twin. Families are
+reported as **caught** ("Famiglie bloccate dal fuoco: 5 (senza ordini: 10)"),
+never as safe out of the whole town, where a halving reads as 245 vs 240.
 **Notes:** at most three, from the order log and unit history (§1 `Note`), the
 broken rule first.
 
@@ -275,16 +287,20 @@ every minute) is left for the lead.
 
 ## 8. Balance targets (`tests/balance.rs`)
 
-Policies: `none`; `patrol-borgo-t1`; `it-alert-t1`; `patrol-borgo-t1 +
-patrol-coste-t2`; `engines-borgo-t1`; `engines-head` (wrong); `all-in` (IT-alert
-t1, engines Borgo t1, Canadair t1); `forecast-player` (patrol Borgo t1, Canadair
-t1, engines Borgo t1→Coste on shift, patrol Coste t2 if the forecast says
-likely); `wait-and-see` (everything on threat).
+Policies: `none`; `patrol-borgo-t1`; `patrol-borgo-t1 + patrol-coste-t2`;
+`patrol-coste-t1 + patrol-borgo-t2`; `patrol-everyone` (Borgo, Coste, Mulino in
+turns 1–3); `patrol-mulino-first`; `engines-borgo-t1`; `engines-head` (wrong);
+`crew-borgo-t1`; `crew-mulino-t1` (wrong); `forecast-player` (patrol to the
+district the forecast makes most likely to be hit first, then the other; Canadair
+t1 on that district; engines and crew on Il Borgo t1, engines → Le Coste on the
+shift); `wait-and-see` (everything on threat).
 
 Targets: `forecast-player` is best or tied on families **and** homes;
-`all-in` ties on families but always loses a stamp (*AllarmeInutile*);
-`engines-head` = `none` on homes; `wait-and-see` loses on families; no single
-policy beats `forecast-player` on both counts in more than a third of seeds.
+`patrol-everyone` and `patrol-mulino-first` lose on families and a stamp;
+`engines-head` = `none` on homes; `crew-borgo-t1` beats `crew-mulino-t1` by ≥ 5
+homes; `wait-and-see` loses on families; no single policy beats
+`forecast-player` on both counts in more than a third of seeds. Whether Borgo
+or Coste first is right should **depend on the forecast** — report the split.
 
 ### Measured (2026-10-07, seeds 1–40)
 
@@ -307,6 +323,27 @@ within 300 m of Il Mulino and the warning stamps *In tempo*); `engines-head` =
 families — the IT-alert at turn 1 (alone or in `all-in`) catches 3.2 ± 0.4
 fewer families, because warning Le Coste at T+0 is worth more than anything a
 patrol can do and the needless warning to Il Mulino costs nothing but the stamp.
+
+### 7.7 Boosted crew (to run, 2026-10-07)
+
+The crew stays, boosted (demo-spec §2). 7.1 showed why it did nothing: the
+district post is a house, so the line ran over non-burnable village ground,
+and on a flank the crew arrived after ~20′ and pulled back. Measure, on Il
+Borgo with the wind holding and on Le Coste with it shifting, crew sent at
+turn 1 vs none:
+
+1. **Firebreak in the fuel.** The crew cuts a *fascia* along the district's
+   fire-facing perimeter **in the burnable cells just outside the houses**
+   (30–100 m out), with a crew `unit_effect` (`line_x`, and walk-in speed if
+   needed) chosen as the smallest boost that passes.
+2. **Fallback — off-road home defence.** If (1) cannot pass at any reasonable
+   boost (state the largest tried), the crew defends homes like an engine
+   (`defend_homes` within `DEFEND_REACH_M`) but with no road needed and no
+   water, arriving slower.
+
+Pass: ≥ 5 homes fewer on the district the fire reaches; ~0 on Il Mulino. Record
+the table here, with the boost used. The boost is a kiosk variant: published
+model numbers in `CLAUDE.md` do not change.
 
 ## 9. Model rules (binding)
 

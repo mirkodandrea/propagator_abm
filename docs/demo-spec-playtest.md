@@ -24,8 +24,8 @@ one command per kiosk interaction, with the kiosk's own Italian text
 | `./play riprova` | *Riprova* | turn 1 of the same fire |
 | `./play aiuto` | — | the commands, in Italian, in five lines |
 
-`<risorsa>` is the short id printed in the tray (`P`, `I`, `E1`, `E2`, `E3`,
-`S`, `K`); `<bersaglio>` is the target number printed on the map. Unknown or
+`<risorsa>` is the short id printed in the tray (`P`, `E1`, `E2`, `E3`, `S`,
+`K`); `<bersaglio>` is the target number printed on the map. Unknown or
 invalid input prints one Italian line saying what is valid — never a stack
 trace, never English.
 
@@ -54,11 +54,11 @@ Meteo: il vento potrebbe girare e soffiare da Est (probabile, 60 %), tra T+12 e 
      |"""""""""""".......=...CCCC....................."""""""""""""""|
      |......MMM...........=.....................BBBBBBBBB.............|
      |......MMM....A.......=====================BBBB[1]BBB.............|
-     |.....................=......7.............BBBBBBBBB.....E1......|
+     |.....................=......o.............BBBBBBBBB.....E1......|
      |""""""""""""""""""xxxxxx[5]**********[4]"""""""""""""""""""""""""|
      ...
      +----------------------------------------------------------------+
-Legenda: " bosco/macchia  . campi  = strada  ~ acqua  * fuoco  x bruciato
+Legenda: " bosco/macchia  . campi  = strada  ~ acqua  * fuoco  x bruciato  o focolaio
          B Il Borgo  C Le Coste  M Il Mulino  A area di attesa
          [n] bersaglio  P pattuglia  E autobotte  S squadra  K canadair
 
@@ -69,13 +69,12 @@ QUARTIERI
 
 RISORSE
   P   Pattuglia     libera
-  I   IT-alert      1 uso
   E1  Autobotte 1   al lavoro a Il Borgo · acqua 40 %
   E2  Autobotte 2   libera
   S   Squadra AIB   libera
   K   Canadair      non chiamato
 
-BERSAGLI  [4] Testa  [5] Fianco ovest  [6] Fianco est  [7] Focolaio
+BERSAGLI  [4] Testa  [5] Fianco ovest  [6] Fianco est
 
 RAPPORTO (turno 1)
   · Il Borgo: 90 famiglie in viaggio verso l'area di attesa.
@@ -103,7 +102,7 @@ play.
 
 ### 1.4 Verdict screen
 
-Headline; families safe and homes hit, each against *senza ordini*; one row per
+Headline; families caught and homes hit, each against *senza ordini*; one row per
 district with its stamp; ≤ 3 rule notes; `./play riprova`. Exactly the kiosk's
 words (presentation §5).
 

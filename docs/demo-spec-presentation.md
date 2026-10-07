@@ -45,7 +45,7 @@ Attract. Session target 3–4 min.
 │        ┌──────────┐  ░░░ forecast cone          da Est (60 %)     │
 │        │ LE COSTE │ ░░░░                                          │
 │        │ 64 fam.  │                    ┌────────────┐             │
-│        │ 1,4 km   │   ◎ Focolaio       │ IL BORGO   │             │
+│        │ 1,4 km   │   ◎ focolaio       │ IL BORGO   │             │
 │        └──────────┘                    │ 148 fam.   │             │
 │              ◯ fianco  🔥━━━▶ Testa ✕  │ 700 m  ✓🚓 │             │
 │   ┌──────────┐            ◯ fianco     │ 🚒 al lavoro│            │
@@ -54,7 +54,7 @@ Attract. Session target 3–4 min.
 │   └──────────┘                                                    │
 │                                                                   │
 │ ┌────────────────────────────────────────────────────┐ ┌────────┐ │
-│ │ 🚓 libera │ 📢 1 │ 🚒 al lavoro │ 🚒 libera │ 👷 │ ✈️ │ │AVANTI ▸│ │
+│ │ 🚓 libera │ 🚒 al lavoro │ 🚒 libera │ 👷 │ ✈️ │       │AVANTI ▸│ │
 │ └────────────────────────────────────────────────────┘ └────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -67,7 +67,7 @@ Attract. Session target 3–4 min.
   left), 🚒/👷 units posted.
 - **Token tray** (bottom): one card per token — icon, name, state badge
   (*libera*, *in viaggio 3′*, *al lavoro*, *rifornimento*, *ritirata*, *in
-  arrivo turno 4*, *non chiamato*, *usato*), water gauge on engines. The
+  arrivo turno 4*, *non chiamato*), water gauge on engines. The
   reinforcement card slides in at turn 3.
 - **Avanti** (bottom-right), always enabled. Giving no orders is a legal turn.
 
@@ -79,9 +79,7 @@ Attract. Session target 3–4 min.
    famiglie"*, *"Arriva al turno 4"*).
 2. Click a target → a dashed route line from the unit to the target, the card
    shows the pending order. Click the card again to cancel before *Avanti*.
-3. IT-alert has no target: clicking it shows a confirm tag over the whole town
-   (*"Avvisa tutti, anche chi non serve"*) — click again to send.
-4. Canadair: first use is the call (*Cielo*); once on station it targets like
+3. Canadair: first use is the call (*Cielo*); once on station it targets like
    the others.
 
 Hover on a target shows its preview; there is nothing to drag, type or
@@ -95,7 +93,7 @@ available within the `view.rs` limits but are never needed.
 | Wind | a **large arrow on the terrain** through the fire, length ∝ speed | lesson 1 at a glance; the compass column is gone |
 | Forecast | a translucent **cone** from the fire toward the shift bearing, opacity ∝ probability; sharpens or fades at issue 2 | the odds as a place, not a percentage |
 | Head / flanks | markers on the fire at `Head` / `Flank`; the head carries a red ✕ hint once any unit has withdrawn from it | targets and lesson 4 |
-| Spot fires | ring + *Focolaio* label at each (`SpotFire` target) | |
+| Spot fires | ring + *focolaio* label at each; not clickable | the fire jumps; named in the report |
 | Units | kit vehicles on the roads (engines, crew van, police car), plane on station; state badge above each | the tray, on the map |
 | Warned district | sky-blue ring; cars leaving toward the *area di attesa* | |
 | Engine post | green ring of `DEFEND_REACH_M` | |
@@ -112,7 +110,7 @@ The camera slides the burnt town into the left half; the card on the right:
 1. **Headline** from families caught: *"Tutti al sicuro!"* / *"Ottimo lavoro"* /
    *"Hai fatto la differenza"* / *"Il fuoco è stato più veloce"*.
 2. Two facts, each against **senza ordini** (spinner, then *non disponibile*
-   after 20 s): **famiglie in salvo** and **case colpite**.
+   after 20 s): **famiglie bloccate dal fuoco** and **case colpite**.
 3. **One row per district:** name, its stamp (✅ *In tempo* · ⚠️ *Tardi* · ❌ *Mai
    avvisati* · ✅ *Giusto non avvisare* · ✅ *Prudente* · ⚠️ *Allarme inutile*),
    homes hit vs without orders.
@@ -163,5 +161,5 @@ glow, the wind arrow, the forecast cone, target markers, the tray.
 - Every `ReportLine` kind, `Stamp`, `Note`, `Effect` and `TokenState` has an
   Italian string (exhaustive match + a test).
 - `models::tests` (kit winding) for the new vehicles.
-- Real pointer: token select/cancel, every target kind, IT-alert confirm,
+- Real pointer: token select/cancel, every target kind,
   auto-*Avanti*, operator corner.
