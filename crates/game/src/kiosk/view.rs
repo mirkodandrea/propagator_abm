@@ -95,6 +95,9 @@ pub fn camera(
     let home = home_focus(&sim, &kiosk);
     let t = kiosk.phase_t;
     let pd = play_dist(&sim, &kiosk) * shot_zoom();
+    // A lower view lets the hill village, tree silhouettes and layered ridges
+    // read as a landscape; analytical stages retain their overhead framing.
+    let scene_pitch = if sim.scenario.metadata.id == "demo_borgo" { -0.68 } else { -0.86 };
 
     // The user took the wheel: remember it for the rest of this phase.
     let touched = delta.length_squared() > 0.0 && (buttons.pressed(MouseButton::Left) || buttons.pressed(MouseButton::Right))
@@ -111,14 +114,14 @@ pub fn camera(
         Phase::Attract => {
             orbit.focus = home;
             orbit.yaw = 0.45 * (time.elapsed_seconds() * 0.07).sin();
-            orbit.pitch = -0.86;
+            orbit.pitch = scene_pitch;
             orbit.distance = pd;
         }
         Phase::Briefing if !user_has_it && t < FLY_IN_S => {
             let k = ease(t / FLY_IN_S);
             orbit.focus = home;
             orbit.yaw = -0.45 * (1.0 - k);
-            orbit.pitch = -1.15 + (1.15 - 0.86) * k;
+            orbit.pitch = -1.15 + (1.15 + scene_pitch) * k;
             orbit.distance = 4600.0 + (pd - 4600.0) * k;
         }
         Phase::Outcome if !user_has_it => {
@@ -170,7 +173,7 @@ pub fn camera(
             if kiosk.phase == Phase::Play && t < 0.05 && !user_has_it {
                 orbit.focus = home;
                 orbit.yaw = 0.0;
-                orbit.pitch = -0.86;
+                orbit.pitch = scene_pitch;
                 orbit.distance = pd;
             }
         }

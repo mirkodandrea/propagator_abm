@@ -138,6 +138,19 @@ def plant(kind):
             a=i*2.4
             ico('Macchia crown',(math.cos(a)*.48,math.sin(a)*.40,.52+(i%2)*.13),(.66,.58,.52),leaf if i%2 else leaf2)
         return
+    if kind == 'cypress':
+        rod('Cypress trunk', (0,0,0), (0,0,.75), .025, wood, 5, top=.012)
+        rod('Cypress lower crown', (0,0,.20), (.015,0,.83), .15, leaf, 7, top=.07)
+        rod('Cypress spire', (.015,0,.60), (.035,.015,1.12), .11, leaf2, 7, top=0)
+        return
+    if kind == 'olive':
+        rod('Gnarled olive trunk', (0,0,0), (.06,0,.43), .065, wood, 5, top=.033)
+        for i in range(4):
+            a=i*2.4
+            end=(math.cos(a)*.26,math.sin(a)*.22,.60+(i%2)*.08)
+            rod('Olive bough',(.06,0,.25),end,.022,wood,4,top=.009)
+            ico('Silver olive crown',end,(.30,.27,.23),leaf if i%2 else leaf2)
+        return
     rod('Tapered trunk',(0,0,0),(.025,0,.69),.036 if kind=='pine' else .055,wood,5,top=.019)
     for i in range(3):
         a=i*2.4
@@ -152,7 +165,7 @@ def plant(kind):
             a=i*2.4
             ico('Oak crown',(math.cos(a)*.21,math.sin(a)*.21,.64+(i%2)*.16),(.32,.30,.28),leaf if i%2 else leaf2)
 
-builders = {'pedestrian':lambda:person(), 'firefighter':lambda:person(True), 'car':lambda:vehicle(), 'fire_engine':lambda:vehicle(True), 'pine':lambda:plant('pine'), 'oak':lambda:plant('oak'), 'bush':lambda:plant('bush')}
+builders = {'pedestrian':lambda:person(), 'firefighter':lambda:person(True), 'car':lambda:vehicle(), 'fire_engine':lambda:vehicle(True), 'pine':lambda:plant('pine'), 'oak':lambda:plant('oak'), 'bush':lambda:plant('bush'), 'olive':lambda:plant('olive'), 'cypress':lambda:plant('cypress')}
 baked={}
 for name, build in builders.items():
     current=bpy.data.collections.new(name)
@@ -179,7 +192,7 @@ for name, build in builders.items():
                 wood_flags.append(material==wood)
                 indices.append(len(indices))
         o.to_mesh_clear()
-    if name in ('pine', 'oak', 'bush'):
+    if name in ('pine', 'oak', 'bush', 'olive', 'cypress'):
         # Weld the vegetation bake to keep large forests compact. The chunk
         # builder computes area-weighted normals after placement.
         lookup = {}; remap = []; ps = []; ns = []; cs = []; ws = []
@@ -198,9 +211,9 @@ for name, build in builders.items():
 bpy.context.preferences.filepaths.save_version = 0
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'emergency_assets.blend'))
 # Contact sheet staged only after saving the reusable source.
-layout={'pedestrian':(-6,-3,0),'firefighter':(-4.5,-3,0),'car':(-.8,-1.5,0),'fire_engine':(4.1,0,0),'pine':(-5,5,0),'oak':(-.7,5.6,0),'bush':(3.4,5.2,0)}
+layout={'pedestrian':(-6,-3,0),'firefighter':(-4.5,-3,0),'car':(-.8,-1.5,0),'fire_engine':(4.1,0,0),'pine':(-5,5,0),'oak':(-.7,5.6,0),'bush':(3.4,5.2,0),'olive':(-3,8.8,0),'cypress':(2,8.8,0)}
 for name,pos in layout.items():
-    scale=4 if name in ('pine','oak') else 1.5 if name=='bush' else 1
+    scale=4 if name in ('pine','oak','olive','cypress') else 1.5 if name=='bush' else 1
     for o in bpy.data.collections[name].objects:
         o.location=Vector(pos)+o.location*scale
         o.scale*=scale

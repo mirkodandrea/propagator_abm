@@ -13,7 +13,7 @@ Every town is three *districts* (a household's `locality`), at different
 bearings from the fire, so which one the wind threatens is the decision.
 
 Frame: x east, y north, metres, SW corner origin; raster row 0 is the north edge.
-Fuel classes are `eu_fuel12` ids: 0 non-vegetated, 1-2 grass, 5-6 conifer,
+Fuel classes are `eu_fuel12` ids: 0 non-vegetated, 1-3 grass, 4-6 broadleaves, 10-12 conifers,
 7-9 shrub/maquis (the spotters, finding 41).
 
 The registry is *derived from the directory* (finding 39a): this script only
@@ -154,12 +154,45 @@ def ring(X, Y, cx, cy, rx, ry, w):
 # false alarm (cry-wolf bait).
 MAIN = {1: [("shop", .55), ("apartments", .45)]}
 VILLAS = {0: [("house", .7), ("villa", .3)], 1: [("villa", .6), ("house", .4)]}
+# Curving streets follow the hill shoulders; the centre is compact while the
+# two rural districts consist of small clusters and isolated field houses.
 BORGO = [
-    district("Il Borgo", [[(1760, 2150), (2240, 2150)], [(1760, 2280), (2240, 2280)], [(1800, 2400), (2200, 2400)]],
-             {0: [("terrace", .6), ("house", .4)], 1: [("shop", .5), ("apartments", .5)], 2: [("villa", .5), ("house", .5)]}),
-    district("Le Coste", [[(1050, 1650), (1450, 1650)], [(1100, 1770), (1400, 1770)]], VILLAS),
-    district("Il Mulino", [[(2850, 1500), (3250, 1500)], [(2900, 1620), (3200, 1620)]], {0: [("house", .8), ("terrace", .2)], 1: [("house", 1.0)]}),
+    district("Il Borgo", [
+        [(1760, 2150), (1850, 2125), (2000, 2150), (2130, 2140), (2240, 2190)],
+        [(1760, 2280), (1860, 2300), (2000, 2280), (2140, 2290), (2240, 2280)],
+        [(1800, 2400), (1930, 2420), (2080, 2390), (2200, 2400)]],
+        {0: [("terrace", .6), ("house", .4)],
+         1: [("shop", .65), ("apartments", .35)],
+         2: [("house", .8), ("villa", .2)]}, spacing=42, offset=23),
+    district("Le Coste", [
+        [(990, 1620), (1120, 1660), (1250, 1650), (1360, 1690), (1490, 1720)],
+        [(1060, 1800), (1160, 1780), (1250, 1770), (1380, 1820)]],
+        VILLAS, spacing=92, offset=29),
+    district("Il Mulino", [
+        [(2860, 1460), (2950, 1480), (3050, 1500), (3150, 1500), (3280, 1470)],
+        [(2880, 1630), (2970, 1650), (3050, 1620), (3200, 1620)]],
+        {0: [("house", 1.0)], 1: [("house", .8), ("villa", .2)]}, spacing=100, offset=27),
 ]
+# Each remote home has a lane joining a real road, so its occupants still
+# participate in routing, exposure and evacuation rather than being scenery.
+BORGO_FIELDS = [
+    ("Le Coste", (1250, 2100), [(1070, 2170), (910, 2100), (740, 2200)]),
+    ("Le Coste", (1250, 1770), [(1000, 1900), (820, 1820), (630, 1930)]),
+    ("Le Coste", (1250, 1650), [(1110, 1430), (940, 1350), (770, 1470)]),
+    ("Il Mulino", (3050, 2100), [(3240, 2240), (3440, 2170), (3610, 2300)]),
+    ("Il Mulino", (3050, 1620), [(3260, 1850), (3460, 1780), (3650, 1920)]),
+    ("Il Mulino", (3050, 1500), [(3210, 1270), (3430, 1180), (3610, 1280)]),
+    ("Il Borgo", (2200, 2520), [(2370, 2700), (2520, 2820)]),
+]
+
+
+def borgo_homes():
+    homes = homes_of(BORGO)
+    for locality, _, lane in BORGO_FIELDS:
+        for i, (x, y) in enumerate(lane):
+            homes.append((x + 22, y - 26, locality, "villa" if i % 3 == 0 else "house"))
+    return homes
+
 # Things a town has besides homes: (kind, x, y, width, depth, name). Placed in
 # the gaps between the house rows; homes that would overlap one are dropped.
 BORGO_LANDMARKS = [
@@ -176,38 +209,61 @@ BORGO_LANDMARKS = [
 
 def borgo_dem(rng):
     X, Y = grid_xy()
-    # a hill that rises to the north, a shoulder under the village
-    z = 120 + 0.055 * Y + 25 * np.exp(-((X - 2000) / 1500) ** 2) + 12 * np.sin(X / 700)
-    return smooth(z + rng.normal(0, .6, z.shape), 4)
+    # Separate rounded hills, a village shoulder and a low mill valley. The
+    # foreground folds are visible from the command camera, not just a ramp.
+    z = 100 + .028 * Y
+    for cx, cy, rx, ry, height in [
+        (1940, 2420, 760, 900, 185), (850, 2820, 520, 650, 380),
+        (3250, 3130, 580, 520, 430), (500, 900, 430, 520, 210),
+        (2600, 650, 620, 420, 180), (3650, 700, 400, 420, 200)]:
+        z += height * np.exp(-((X-cx)/rx)**2 - ((Y-cy)/ry)**2)
+    z -= 42 * np.exp(-((X - (3000 + 90*np.sin(Y/330)))/230)**2)
+    z += 9*np.sin(X/170 + Y/340)*np.sin(Y/220)
+    return smooth(z + rng.normal(0, .5, z.shape), 4)
 
 
 def borgo_fuel(rng, roads):
     X, Y = grid_xy()
-    f = np.full((GRID, GRID), 9, dtype=np.int32)             # maquis everywhere
-    f[(Y < 2050)] = 11                                       # pine below the village
-    f[blob(X, Y, 1900, 1450, 650, 520)] = 12                 # dense pine stand: the fire's fuel
-    f[blob(X, Y, 1450, 1500, 450, 380)] = 12                 # and toward Le Coste
-    f[blob(X, Y, 2750, 1900, 380, 300)] = 3                  # grass patch east
-    f[(Y > 3200)] = 8                                        # maquis ridge behind
-    f[blob(X, Y, 2000, 2900, 330, 330)] = 0                  # area di attesa: sports ground and car parks
-    for cx, cy, rx, ry in ((2000, 2275, 300, 175), (1250, 1710, 230, 110), (3050, 1560, 230, 110)):
-        f[ring(X, Y, cx, cy, rx, ry, 140) & (rng.random(f.shape) < .45)] = 1   # gardens, patchy
-        f[blob(X, Y, cx, cy, rx, ry)] = 0                    # the built-up core
+    # Interlocking woodland, silver olive groves, ochre meadows and macchia.
+    wave = np.sin(X/280 + .8*np.sin(Y/370)) + .6*np.cos(Y/240-X/530)
+    f = np.where(wave > .65, 5, np.where(wave < -.75, 11, 8)).astype(np.int32)
+    f[blob(X, Y, 1900, 1450, 650, 520)] = 12  # ignition / teaching corridor
+    f[blob(X, Y, 1450, 1500, 450, 380)] = 12
+    # Irregular fields are separated by narrow woody hedgerows. Keep the fire
+    # corridor continuous while opening the countryside on either side.
+    for cx, cy, rx, ry in [(690, 2100, 600, 530), (930, 1180, 460, 310),
+                          (3370, 2080, 550, 560), (3430, 1170, 430, 350),
+                          (2630, 2740, 400, 350)]:
+        dx = X-cx + 28*np.sin(Y/105)
+        dy = Y-cy + 24*np.sin(X/130)
+        fields = (dx/rx)**2 + (dy/ry)**2 < 1
+        parcels = np.sin((X+.3*Y)/115)*np.sin((Y-.15*X)/150)
+        f[fields] = np.where(parcels[fields] > .12, 2, 4)
+        f[fields & (np.abs(parcels) < .09)] = 7
+    # Limestone outcrops near the two high ridges.
+    f[blob(X, Y, 650, 3020, 130, 220)] = 0
+    f[blob(X, Y, 3310, 3270, 160, 150)] = 0
+    f[blob(X, Y, 2000, 2900, 330, 330)] = 0
+    for cx, cy, rx, ry in ((2000, 2275, 280, 160), (1250, 1710, 170, 90), (3050, 1560, 170, 90)):
+        f[ring(X, Y, cx, cy, rx, ry, 100) & (rng.random(f.shape) < .45)] = 1
+        f[blob(X, Y, cx, cy, rx, ry)] = 0
     return f
 
 
 def borgo_roads():
     r = []
     def add(name, pts, **k): r.append(road(len(r) + 1, name, pts, **k))
-    add("Via Aurelia", [(0, 2520), (1000, 2520), (2000, 2520), (3000, 2520), (4000, 2520)], road_class="secondary")
+    add("Via Aurelia", [(0, 2580), (420, 2690), (850, 2590), (1250, 2520), (1600, 2570), (1800, 2520), (2000, 2520), (2200, 2520), (2570, 2610), (2830, 2530), (3050, 2520), (3530, 2620), (4000, 2520)], road_class="secondary")
     add("Via del Borgo", [(2000, 2050), (2000, 2150), (2000, 2280), (2000, 2400), (2000, 2520)], road_class="tertiary")
     add("Via Vecchia", [(1760, 2150), (1760, 2280), (1800, 2400), (1800, 2520)], road_class="residential")
     add("Via Nuova", [(2240, 2150), (2240, 2280), (2200, 2400), (2200, 2520)], road_class="residential")
-    add("Strada delle Coste", [(1250, 1650), (1250, 1770), (1250, 2100), (1250, 2520)], road_class="tertiary")
-    add("Strada del Mulino", [(3050, 1500), (3050, 1620), (3050, 2100), (3050, 2520)], road_class="tertiary")
+    add("Strada delle Coste", [(1250, 1650), (1250, 1770), (1390, 1930), (1250, 2100), (1110, 2270), (1250, 2520)], road_class="tertiary")
+    add("Strada del Mulino", [(3050, 1500), (3050, 1620), (2900, 1850), (3050, 2100), (3200, 2320), (3050, 2520)], road_class="tertiary")
     for name, streets, _ in BORGO:
         for k, line in enumerate(streets):
             add(f"{name} {k}", line, road_class="residential")
+    for locality, junction, lane in BORGO_FIELDS:
+        add(f"Podere {locality} {len(r)}", [junction, *lane], road_class="unclassified")
     # A forestry road down through the pines to where the fire starts.
     add("Strada Forestale", [(2000, 2050), (2000, 1600), (2000, 1100)], road_class="unclassified")
     add("Via del Campo", [(2000, 2520), (2000, 2900)], road_class="tertiary")
@@ -344,7 +400,7 @@ DEMOS = (
          "Un borgo sulla collina e due frazioni. Il vento decide chi e in pericolo: "
          "avvisare in tempo, e solo chi serve.",
          [d[0] for d in BORGO], 250, 101,
-         borgo_dem, borgo_fuel, borgo_roads, lambda: homes_of(BORGO),
+         borgo_dem, borgo_fuel, borgo_roads, borgo_homes,
          [{"id": 1, "kind": "hydrant", "pos": [2000, 2280]}, {"id": 2, "kind": "hydrant", "pos": [1250, 1710]},
           {"id": 3, "kind": "hydrant", "pos": [3050, 1560]}], BORGO_LANDMARKS),
     Demo("demo_valle", "Due Casali",
@@ -479,6 +535,25 @@ def create(d: Demo) -> dict:
             y = float(np.clip(ay + rng.uniform(-1.5, 1.5), 12, WORLD - 28))
             bid = len(buildings) + 1
             ring = [[x - bw / 2, y - bd / 2], [x + bw / 2, y - bd / 2], [x + bw / 2, y + bd / 2], [x - bw / 2, y + bd / 2]]
+            if d.id == "demo_borgo":
+                # Turn each frontage toward its nearest lane, including field
+                # houses. The footprint itself remains the simulation geometry.
+                candidates = []
+                for item in roads:
+                    if not item["drivable"]:
+                        continue
+                    for a, b in zip(item["line"], item["line"][1:]):
+                        dx, dy = b[0]-a[0], b[1]-a[1]
+                        length2 = dx*dx + dy*dy
+                        if length2 == 0:
+                            continue
+                        t = np.clip(((x-a[0])*dx + (y-a[1])*dy)/length2, 0, 1)
+                        distance2 = (x-a[0]-t*dx)**2 + (y-a[1]-t*dy)**2
+                        candidates.append((distance2, math.atan2(dy, dx)))
+                angle = min(candidates)[1]
+                ca, sa = math.cos(angle), math.sin(angle)
+                ring = [[x+u*ca-v*sa, y+u*sa+v*ca]
+                        for u, v in [(-bw/2, -bd/2), (bw/2, -bd/2), (bw/2, bd/2), (-bw/2, bd/2)]]
             buildings.append({"id": bid, "kind": bkind, "name": f"Casa {bid}", "centroid": [x, y], "ring": ring, "locality": locality})
             col = int(np.clip(x // cs, 0, GRID - 1))
             row = int(np.clip((WORLD - y) // cs, 0, GRID - 1))
@@ -556,6 +631,10 @@ def rebuild_registry():
 
 
 if __name__ == "__main__":
+    selected = sys.argv[1:]
+    if any(t not in [d.id for d in DEMOS] for t in selected):
+        raise SystemExit("Usage: generate_demo_scenarios.py [demo_borgo demo_valle demo_porto]")
     for d in DEMOS:
-        create(d)
+        if not selected or d.id in selected:
+            create(d)
     rebuild_registry()

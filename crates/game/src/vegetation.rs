@@ -223,12 +223,27 @@ pub fn spawn(
             for r in cy * CHUNK_CELLS..((cy + 1) * CHUNK_CELLS).min(rows) {
                 for c in cx * CHUNK_CELLS..((cx + 1) * CHUNK_CELLS).min(cols) {
                     let cell = Cell { row: r, col: c };
+                    // Static limestone clusters on the authored exposed
+                    // ridges. Their vertices are outside every plant's burn
+                    // range, so rocks never flare or turn into charcoal.
+                    if scn.metadata.id == "demo_borgo" {
+                        let p = scn.world.centre_of(cell);
+                        let ridge = ((p.x - 650.0) / 135.0).powi(2) + ((p.y - 3020.0) / 225.0).powi(2) < 1.0
+                            || ((p.x - 3310.0) / 165.0).powi(2) + ((p.y - 3270.0) / 155.0).powi(2) < 1.0;
+                        let mut rock_rng = Rng::seeded(r as u64 * 65_536 + c as u64 + 0xB01D);
+                        if ridge && rock_rng.unit() < 0.45 {
+                            let base = Vec3::new(p.x, scn.terrain.height_at(p) - 1.0, -p.y);
+                            let size = 8.0 + rock_rng.unit() * 12.0;
+                            builder.boulder(base, size, 0.6 + rock_rng.unit() * 0.6, rock_rng.unit() * 6.28);
+                        }
+                    }
                     let Some(species) = Species::of_fuel(scn.fuel_at(cell)) else {
                         continue;
                     };
                     let mut rng = Rng::seeded(r as u64 * 65_536 + c as u64);
                     let centre = scn.world.centre_of(cell);
-                    let expected = DENSITY[species as usize] * density * patchiness(centre);
+                    let stand_density = if scn.fuel_at(cell) == 4 { 1.4 } else { DENSITY[species as usize] };
+                    let expected = stand_density * density * patchiness(centre);
                     let n = expected.floor() as u32 + u32::from(rng.unit() < expected.fract());
 
                     for _ in 0..n {
@@ -247,7 +262,7 @@ pub fn spawn(
                 }
             }
 
-            if plants.is_empty() {
+            if builder.positions.is_empty() {
                 continue;
             }
             plant_count += plants.len();
@@ -321,9 +336,24 @@ fn scatter_plant(
     let wood = mul(species.wood(), shade);
 
     match species {
+        Species::Conifer if rng.unit() < 0.18 => {
+            let height = (15.0 + rng.unit() * 12.0) * scale;
+            out.model("cypress", base, Vec3::new(height * 0.8, height, height * 0.8), yaw, foliage, wood);
+        }
         Species::Conifer => conifer(out, base, scale, yaw, foliage, wood, rng),
+        Species::Broadleaf if scn.fuel_at(cell) == 4 || rng.unit() < 0.25 => {
+            let height = (6.0 + rng.unit() * 5.0) * scale;
+            let silver = [0.30 + t * 0.08, 0.36 + t * 0.07, 0.23 + t * 0.06];
+            out.model("olive", base, Vec3::new(height * 1.2, height, height * 1.2), yaw, silver, wood);
+        }
         Species::Broadleaf => broadleaf(out, base, scale, yaw, foliage, wood, rng),
         Species::Shrub => shrub(out, base, scale, yaw, foliage, rng),
+        Species::Grass if scn.vr_palette().is_none() && rng.unit() < 0.025 => {
+            // Lone field trees break the meadow silhouette without changing
+            // its simulation fuel; they share the same interpolated burn field.
+            let height = (7.0 + rng.unit() * 5.0) * scale;
+            out.model("olive", base, Vec3::splat(height), yaw, [0.33, 0.40, 0.26], wood);
+        }
         Species::Grass => grass(out, base, scale, yaw, foliage, rng),
     }
     Some(p)
@@ -409,8 +439,30 @@ impl Builder {
         let i = self.positions.len() as u32;
         self.positions.push([p.x, p.y, p.z]);
         self.normals.push([0.0, 1.0, 0.0]); // replaced in `finish`
-        self.colors.push([c[0], c[1], c[2], 1.0]);
+        // Vertex colours are linear in Bevy. Ecological palettes above are
+        // sRGB; without conversion dark foliage washes out to pastel mint.
+        let linear = Color::srgb(c[0], c[1], c[2]).to_linear();
+        self.colors.push([linear.red, linear.green, linear.blue, 1.0]);
         i
+    }
+
+    fn boulder(&mut self, base: Vec3, radius: f32, aspect: f32, yaw: f32) {
+        let start = self.positions.len() as u32;
+        for level in 0..2 {
+            for i in 0..6 {
+                let a = yaw + i as f32 * std::f32::consts::TAU / 6.0;
+                let r = radius * if level == 0 { 1.0 } else { 0.65 + 0.12 * a.sin() };
+                let h = if level == 0 { 0.0 } else { radius * aspect * (0.75 + 0.15 * a.cos()) };
+                self.vertex(base + Vec3::new(a.cos()*r, h, a.sin()*r),
+                    if level == 0 { [0.39, 0.38, 0.33] } else { [0.64, 0.63, 0.56] });
+            }
+        }
+        let cap = self.vertex(base + Vec3::Y * radius * aspect, [0.70, 0.68, 0.61]);
+        for i in 0..6u32 {
+            let a = start+i;
+            let b = start+(i+1)%6;
+            self.indices.extend_from_slice(&[a, a+6, b, b, a+6, b+6, cap, b+6, a+6]);
+        }
     }
 
     /// Low, irregular dome for the remaining procedural grass tussocks.

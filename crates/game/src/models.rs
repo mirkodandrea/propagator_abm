@@ -142,6 +142,8 @@ mod tests {
             "pine",
             "oak",
             "bush",
+            "olive",
+            "cypress",
         ] {
             let m = model(name);
             assert!(!m.positions.is_empty(), "{name}");
@@ -170,7 +172,7 @@ mod tests {
                 );
             }
             // Vegetation is copied many thousands of times: enforce its budget.
-            if matches!(name, "pine" | "oak" | "bush") {
+            if matches!(name, "pine" | "oak" | "bush" | "olive" | "cypress") {
                 assert!(
                     m.positions.len() <= 120 && m.indices.len() / 3 <= 160,
                     "{name}"
