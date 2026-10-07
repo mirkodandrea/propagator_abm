@@ -222,10 +222,33 @@ release checks and preview consistency green. If forecast interpretation
 changes policy outcomes, rerun the affected lesson/balance checks and report
 any change; never weaken a failing assertion to hide it.
 
+Implementation checkpoint: `031b19e` delivers the accepted factual and CLI
+changes. The final release suite passed 294 tests (60 existing ignored
+measurements/external tests); the seven balance lessons and preview consistency
+checks remain green. Independent CLI replays of all three recorded order
+sequences preserve the previous family/home/drop totals. Seed 261793 reproduces
+a Canadair arrival at T+33 and unsafe break-off at T+33:36, not a scheduling
+failure. The fresh blind Codex report scores usability 3/5, fun 2/5, interest 4/5;
+the gate remains open (see `playtests/2026-10-07-codex-iteration.md`).
+
 Contract clarification during this iteration: the existing engine classifies
 an unwarned, threatened-but-unreached district as `MaiAvvisati`. The earlier
 table omitted that case. Preserve this classification and state *threatened*
 in its explanation, rather than claiming that fire arrived at homes.
+
+### Next factual iteration from the new blind report (pending)
+
+The fresh report's accepted bounded follow-ups are separate from the completed
+build: show low-probability forecast percentages/window rather than implying
+zero risk outside the advised path; prioritize observed threat in short order
+feedback; use job-specific reassignment reasons for non-district fire targets;
+show continuing aircraft drops/counts on fire targets as well as district
+orders; explain automatic post allocation and order-sequence effects; and state
+the actual aircraft drop cycle unit. Approximate distance text must not imply
+an exact contradiction at rounded thresholds. No suppression, flight safety,
+turn count or individual-resource causal credit changes are authorized by these
+wording requirements. Conditional fire-target benefits and causal debriefs
+require fresh controlled measurements first.
 
 ## 7. Milestone 0 — sweeps that decide which tokens ship
 

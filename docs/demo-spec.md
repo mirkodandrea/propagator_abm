@@ -124,11 +124,14 @@ Cut order if days slip: the hand crew, the reinforcement, the rule notes on
 the verdict, visual polish. **Never cut:** turns, the patrol, engines, the Canadair call, wind and forecast on the map, the verdict
 against no orders, idle reset.
 
-Two blind rounds are filed in `docs/playtests/2026-10-07-resumed-round1.md`
-and `docs/playtests/2026-10-07-resumed-round2.md`, with wording fixes between
-them. Both score usability 3/5, fun 3/5, interest 4/5, so milestone 2 remains
-open. The next design work is specific warning explanations and meaningful
-late turns; the kiosk migration has not started.
+Three recovered/follow-up Codex reports scored usability 3/5, fun 3/5,
+interest 4/5. The factual feedback and compact-screen iteration is implemented
+in `031b19e`, with 294 release tests passing and the three recorded trajectories
+unchanged. The fresh report is
+[`2026-10-07-codex-iteration.md`](playtests/2026-10-07-codex-iteration.md):
+usability 3/5, fun 2/5, interest 4/5. Milestone 2 remains open; shorter decision
+output, risk/timeline wording, and meaningful choices still need work. The
+kiosk migration has not started.
 
 ## 6. Acceptance
 

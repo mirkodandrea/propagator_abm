@@ -69,6 +69,15 @@ repeated intermediate map printouts is a presentation change only. Keep help
 at five lines, explain the jobs before the first order, and keep Italian text
 within 100 columns. Relevant arrivals and decisions must be easy to spot.
 
+The fresh `031b19e` blind evaluation shows that omitting maps alone did not
+make order output short enough. The next accepted presentation pass (pending)
+should show an order/cancellation acknowledgement plus pending queue, keep
+inspection available via `mostra`/`scegli`, and put changed threats, weather and
+arrivals first after `avanti`. Display `./play ordina K` before selection and
+separate command turns through T+40 from autonomous continuation to T+60.
+Preserve indentation on wrapped details. A small automatic change-map needs
+comparison before replacing the accepted map-on-demand design.
+
 ```
 ROCCA VENTOSA · Turno 2 di 5 · T+08
 Vento: da Sud, 35 km/h — spinge il fuoco verso Nord
@@ -122,9 +131,9 @@ Map rules:
 - After `scegli`, the lit targets are listed under the map with their preview;
   unlit ones are shown as `[n]` but not listed.
 
-`avanti` prints two map frames during the turn (T+k+4, T+k+8), then the
-report, then the next screen — the textual equivalent of watching the turn
-play.
+The initial screen design printed two intermediate map frames per turn.
+The accepted follow-up iteration above supersedes this: `avanti` prints the
+report and compact next-turn summary, and `mostra` remains the full-map view.
 
 ### 1.4 Verdict screen
 
