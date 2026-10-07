@@ -84,7 +84,7 @@ pub const ACT_FAST_ON: &str = "x3";
 pub const ACT_FAST_SUB: &str = "avanti veloce";
 pub const ACT_AIR_ASK: &str = "arrivo in 25 min";
 pub const ACT_AIR_READY: &str = "clicca un quartiere";
-pub const ACT_ENGINE_HINT: &str = "usa «Difendi» sui quartieri";
+pub const PENDING_ENGINE: &str = "Autobotte: clicca vicino a una strada o usa «Difendi» sui quartieri";
 
 pub fn free_engines(n: usize) -> String {
     match n {

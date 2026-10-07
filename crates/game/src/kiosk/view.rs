@@ -4,6 +4,8 @@
 //! (spec §8). Replaces `camera::controls`, which is a free orbit. Any mouse
 //! input cancels the scripted fly-in.
 
+use bevy::ecs::system::SystemParam;
+use bevy::input::gestures::{PinchGesture, RotationGesture};
 use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -66,6 +68,24 @@ fn play_dist(sim: &Sim, kiosk: &Kiosk) -> f32 {
 pub struct Drag {
     left: bool,
     right: bool,
+    middle: bool,
+}
+
+#[derive(SystemParam)]
+pub struct ViewInput<'w, 's> {
+    buttons: Res<'w, ButtonInput<MouseButton>>,
+    keys: Res<'w, ButtonInput<KeyCode>>,
+    motion: EventReader<'w, 's, MouseMotion>,
+    wheel: EventReader<'w, 's, MouseWheel>,
+    pinch: EventReader<'w, 's, PinchGesture>,
+    rotation: EventReader<'w, 's, RotationGesture>,
+}
+
+fn pan(orbit: &mut OrbitCamera, delta: Vec2, viewport_height: f32) {
+    let scale = orbit.distance * 0.83 / viewport_height.max(1.0);
+    let rot = Quat::from_rotation_y(orbit.yaw);
+    let tilt = orbit.pitch.sin().abs().max(0.3);
+    orbit.focus += rot * Vec3::new(-delta.x, 0.0, -delta.y / tilt) * scale;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -74,23 +94,29 @@ pub fn camera(
     sim: Res<Sim>,
     focus: Res<crate::ui::UiFocus>,
     order: Res<crate::command::OrderTool>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut motion: EventReader<MouseMotion>,
-    mut wheel: EventReader<MouseWheel>,
+    mut input: ViewInput,
     windows: Query<&Window, With<PrimaryWindow>>,
     mut query: Query<(&mut OrbitCamera, &mut Transform, &Camera, &mut bevy::core_pipeline::dof::DepthOfFieldSettings)>,
     time: Res<Time>,
     mut drag: Local<Drag>,
     mut released: Local<Option<(Phase, f32)>>,
 ) {
-    let delta = motion.read().fold(Vec2::ZERO, |s, e| s + e.delta);
-    let scroll: f32 = wheel
-        .read()
-        .map(|e| match e.unit {
-            MouseScrollUnit::Line => e.y,
-            MouseScrollUnit::Pixel => e.y / 50.0,
-        })
-        .sum();
+    let delta = input.motion.read().fold(Vec2::ZERO, |s, e| s + e.delta);
+    let shift = input.keys.pressed(KeyCode::ShiftLeft) || input.keys.pressed(KeyCode::ShiftRight);
+    let zoom_modifier = input.keys.pressed(KeyCode::ControlLeft) || input.keys.pressed(KeyCode::ControlRight)
+        || input.keys.pressed(KeyCode::SuperLeft) || input.keys.pressed(KeyCode::SuperRight);
+    let mut scroll = 0.0;
+    let mut trackpad = Vec2::ZERO;
+    for event in input.wheel.read() {
+        match event.unit {
+            MouseScrollUnit::Line => scroll += event.y,
+            MouseScrollUnit::Pixel if zoom_modifier => scroll += event.y / 50.0,
+            MouseScrollUnit::Pixel => trackpad += Vec2::new(event.x, event.y),
+        }
+    }
+    let pinch: f32 = input.pinch.read().map(|e| e.0).sum();
+    let rotation: f32 = input.rotation.read().map(|e| e.0).sum();
+    let buttons = &input.buttons;
     let Ok((mut orbit, mut tf, camera, mut dof)) = query.get_single_mut() else { return };
     let home = home_focus(&sim, &kiosk);
     let t = kiosk.phase_t;
@@ -99,16 +125,34 @@ pub fn camera(
     // read as a landscape; analytical stages retain their overhead framing.
     let scene_pitch = if sim.scenario.metadata.id == "demo_borgo" { -0.68 } else { -0.86 };
 
-    // The user took the wheel: remember it for the rest of this phase.
-    let touched = delta.length_squared() > 0.0 && (buttons.pressed(MouseButton::Left) || buttons.pressed(MouseButton::Right))
-        || scroll != 0.0;
-    if touched && released.map(|(p, _)| p) != Some(kiosk.phase) {
-        *released = Some((kiosk.phase, t));
+    let window = windows.get_single().ok();
+    let over_map = window.is_some_and(|w| w.focused)
+        && !focus.pointer
+        && window.and_then(|w| crate::pick::cursor_position(camera, w)).is_some();
+    if buttons.just_pressed(MouseButton::Left) {
+        // Shift-drag rotates even while choosing an order, on one-button trackpads.
+        drag.left = over_map && (!order.is_armed() || shift);
     }
-    let user_has_it = released.map(|(p, _)| p) == Some(kiosk.phase);
+    if buttons.just_pressed(MouseButton::Right) {
+        drag.right = over_map;
+    }
+    if buttons.just_pressed(MouseButton::Middle) {
+        drag.middle = over_map;
+    }
+    drag.left &= buttons.pressed(MouseButton::Left) && window.is_some_and(|w| w.focused);
+    drag.right &= buttons.pressed(MouseButton::Right) && window.is_some_and(|w| w.focused);
+    drag.middle &= buttons.pressed(MouseButton::Middle) && window.is_some_and(|w| w.focused);
+
+    // Only a gesture that actually controls the map cancels its scripted view.
     if kiosk.phase_t < 0.05 {
         *released = None;
     }
+    let touched = delta.length_squared() > 0.0 && (drag.left || drag.right || drag.middle)
+        || over_map && (scroll != 0.0 || trackpad != Vec2::ZERO || pinch != 0.0 || rotation != 0.0);
+    if touched {
+        *released = Some((kiosk.phase, t));
+    }
+    let user_has_it = released.map(|(p, _)| p) == Some(kiosk.phase);
 
     match kiosk.phase {
         Phase::Attract => {
@@ -136,38 +180,25 @@ pub fn camera(
             orbit.yaw += (0.0 - orbit.yaw) * k;
         }
         _ => {
-            let window = windows.get_single().ok();
-            let over_map = window.is_some_and(|w| w.focused)
-                && !focus.pointer
-                && window.and_then(|w| crate::pick::cursor_position(camera, w)).is_some();
-            let left_free = !order.is_armed();
-            if buttons.just_pressed(MouseButton::Left) {
-                drag.left = over_map && left_free;
+            let height = camera.logical_viewport_size().map_or(1000.0, |s| s.y);
+            if (drag.left && !shift) || drag.middle {
+                pan(&mut orbit, delta, height);
             }
-            if buttons.just_pressed(MouseButton::Right) {
-                drag.right = over_map;
-            }
-            if !buttons.pressed(MouseButton::Left) {
-                drag.left = false;
-            }
-            if !buttons.pressed(MouseButton::Right) {
-                drag.right = false;
-            }
-            // Left-drag grabs the ground and pans; right-drag turns the table.
-            // (Left stays free of the map while an order tool is armed.)
-            if drag.left {
-                let h = camera.logical_viewport_size().map_or(1000.0, |s| s.y).max(1.0);
-                let scale = orbit.distance * 0.83 / h;
-                let rot = Quat::from_rotation_y(orbit.yaw);
-                let tilt = orbit.pitch.sin().abs().max(0.3);
-                orbit.focus += rot * Vec3::new(-delta.x, 0.0, -delta.y / tilt) * scale;
-            }
-            if drag.right {
+            if drag.right || (drag.left && shift) {
                 orbit.yaw -= delta.x * 0.005;
                 orbit.pitch -= delta.y * 0.004;
             }
-            if over_map && scroll != 0.0 {
-                orbit.distance *= (-scroll.clamp(-6.0, 6.0) * 0.1).exp();
+            if over_map {
+                // macOS delivers two-finger scrolling in pixels, including x.
+                // Keep mouse wheel zoom; trackpad pinch provides native zoom.
+                if shift {
+                    orbit.yaw -= trackpad.x * 0.005;
+                    orbit.pitch -= trackpad.y * 0.004;
+                } else {
+                    pan(&mut orbit, trackpad, height);
+                }
+                orbit.yaw += rotation.to_radians();
+                orbit.distance *= (-scroll.clamp(-6.0, 6.0) * 0.1 - pinch.clamp(-1.0, 1.0)).exp();
             }
             // First frame of play after the fly-in: settle on the home framing.
             if kiosk.phase == Phase::Play && t < 0.05 && !user_has_it {

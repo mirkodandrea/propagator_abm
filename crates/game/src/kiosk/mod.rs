@@ -405,11 +405,15 @@ pub fn activity(
     mut kiosk: ResMut<Kiosk>,
     mut motion: EventReader<MouseMotion>,
     mut wheel: EventReader<MouseWheel>,
+    mut pinch: EventReader<bevy::input::gestures::PinchGesture>,
+    mut rotation: EventReader<bevy::input::gestures::RotationGesture>,
     buttons: Res<ButtonInput<MouseButton>>,
 ) {
     let moved = motion.read().any(|m| m.delta.length_squared() > 0.0);
     let scrolled = wheel.read().count() > 0;
-    if moved || scrolled || buttons.get_just_pressed().next().is_some() {
+    let pinched = pinch.read().count() > 0;
+    let rotated = rotation.read().count() > 0;
+    if moved || scrolled || pinched || rotated || buttons.get_just_pressed().next().is_some() {
         kiosk.idle_s = 0.0;
     }
 }

@@ -195,22 +195,39 @@ pub fn setup(
             ..default()
         },
         FireOverlay,
+        bevy::render::view::NoFrustumCulling,
+        bevy::pbr::NotShadowCaster,
     ));
-    commands.spawn(MaterialMeshBundle {
-        mesh: flames.clone(),
-        material: flame_mat,
-        ..default()
-    });
-    commands.spawn(MaterialMeshBundle {
-        mesh: sparks.clone(),
-        material: spark_mat,
-        ..default()
-    });
-    commands.spawn(PbrBundle {
-        mesh: smoke_mesh.clone(),
-        material: smoke_mat,
-        ..default()
-    });
+    commands.spawn((
+        MaterialMeshBundle {
+            mesh: flames.clone(),
+            material: flame_mat,
+            ..default()
+        },
+        // Mesh vertices change every frame; Bevy's cached bounds do not.
+        bevy::render::view::NoFrustumCulling,
+        bevy::pbr::NotShadowCaster,
+    ));
+    commands.spawn((
+        MaterialMeshBundle {
+            mesh: sparks.clone(),
+            material: spark_mat,
+            ..default()
+        },
+        // Mesh vertices change every frame; Bevy's cached bounds do not.
+        bevy::render::view::NoFrustumCulling,
+        bevy::pbr::NotShadowCaster,
+    ));
+    commands.spawn((
+        PbrBundle {
+            mesh: smoke_mesh.clone(),
+            material: smoke_mat,
+            ..default()
+        },
+        // Mesh vertices change every frame; Bevy's cached bounds do not.
+        bevy::render::view::NoFrustumCulling,
+        bevy::pbr::NotShadowCaster,
+    ));
 
     commands.init_resource::<FireLayer>();
     commands.insert_resource(FireView {
@@ -753,7 +770,7 @@ pub fn update_flames(
         // Fade in fast, out slowly: a puff should never pop into existence.
         // Kept thin — hundreds of puffs overlap, and at 0.55 each the plume
         // turned into a white wall as soon as the camera dropped into it.
-        let alpha = (k * 4.0).min(1.0) * (1.0 - k).powf(1.4) * 0.34;
+        let alpha = (k * 4.0).min(1.0) * (1.0 - k).powf(1.4) * 0.22;
         let spin = puff.phase * std::f32::consts::TAU + k * 0.6;
         let (s, c) = spin.sin_cos();
         let r = (right * c + up * s) * size;

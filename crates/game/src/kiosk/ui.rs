@@ -477,7 +477,7 @@ fn briefing(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &Sim, screen: Rect, k: 
     // Town card, bottom left, clear of the districts at the centre of the frame.
     let size = vec2(430.0f32.min(screen.width() - 32.0), 236.0);
     let rect = Rect::from_min_size(pos2(16.0 - (1.0 - slide) * 80.0, screen.bottom() - size.y - 16.0), size);
-    egui::Area::new("briefing".into()).fixed_pos(rect.min).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new("briefing".into()).movable(false).fixed_pos(rect.min).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.set_min_size(size);
         let p = ui.painter().clone();
         card(&p, rect, FLAME, 20.0);
@@ -580,7 +580,7 @@ fn district_chips(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &Sim, project: &d
         let rect = Rect::from_min_size(pos2(left, top), size);
         let (col, status) = level_style(&r);
         let pulse = if r.level() >= Level::Threatened { 0.5 + 0.5 * (k * 6.0).sin() } else { 0.0 };
-        egui::Area::new(egui::Id::new(("district", i))).fixed_pos(rect.min).order(egui::Order::Middle).show(ctx, |ui| {
+        egui::Area::new(egui::Id::new(("district", i))).movable(false).fixed_pos(rect.min).order(egui::Order::Middle).show(ctx, |ui| {
             ui.set_min_size(size);
             let p = ui.painter().clone();
             // Stem down to the district, and a dot on it.
@@ -716,10 +716,10 @@ fn play(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &Sim, tool: &mut OrderTool,
     }
     let banner_y = screen.bottom() - BAR_H - 46.0;
     let mut cancel = false;
-    egui::Area::new("banner".into()).fixed_pos(pos2(screen.center().x - 300.0, banner_y - 24.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new("banner".into()).movable(false).fixed_pos(pos2(screen.center().x - 300.0, banner_y - 24.0)).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.set_width(600.0);
         let (text, col) = if tool.is_armed() {
-            (Some(t::PENDING_DROP.to_string()), SKY)
+            (Some(if tool.armed == Some(OrderKind::Drop) { t::PENDING_DROP } else { t::PENDING_ENGINE }.to_string()), SKY)
         } else if let Some((m, _)) = &kiosk.banner {
             (Some(m.clone()), AMBER)
         } else {
@@ -727,8 +727,10 @@ fn play(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &Sim, tool: &mut OrderTool,
         };
         if let Some(text) = text {
             let r = pill(ui.painter(), pos2(screen.center().x, banner_y), &text, 18.0, col, NAVY);
+            ui.expand_to_include_rect(r);
             if tool.is_armed() {
                 let x = Rect::from_center_size(pos2(r.right() + 28.0, r.center().y), vec2(40.0, 40.0));
+                ui.expand_to_include_rect(x);
                 let resp = ui.interact(x, egui::Id::new("cancel"), egui::Sense::click());
                 ui.painter().circle_filled(x.center(), 17.0, if resp.hovered() { RED } else { mix(RED, NAVY, 0.4) });
                 let s = Stroke::new(3.0, Color32::WHITE);
@@ -816,8 +818,9 @@ fn action_bar(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &Sim, tool: &mut Orde
     let total = widths.iter().sum::<f32>() + gap * (widths.len() as f32 - 1.0) + 28.0;
     let pos = pos2(screen.center().x - total * 0.5, screen.bottom() - BAR_H);
     let all_warned = kiosk.referee.as_ref().is_some_and(|r| r.reports.iter().all(|r| r.warned_at_s.is_some()));
-    egui::Area::new("actions".into()).fixed_pos(pos).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new("actions".into()).movable(false).fixed_pos(pos).order(egui::Order::Foreground).show(ctx, |ui| {
         let bar = Rect::from_min_size(pos, vec2(total, 96.0));
+        ui.set_min_size(bar.size());
         card(ui.painter(), bar, SKY, 20.0);
         let mut inner = ui.child_ui(bar.shrink2(vec2(14.0, 10.0)), egui::Layout::left_to_right(egui::Align::Min), None);
         inner.spacing_mut().item_spacing = vec2(gap, 0.0);
@@ -830,11 +833,18 @@ fn action_bar(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &Sim, tool: &mut Orde
             tool.disarm();
         }
 
-        // Engines: the count; the order itself is "Difendi" on a district.
+        // Engines can target the map, or defend a district using its chip.
         let free = sim.crews.units.iter().filter(|u| u.kind == UnitKind::Engine && u.assignable() && matches!(u.state, UnitState::Staged | UnitState::Inbound)).count();
-        let state = if free > 0 { Btn::Ready } else { Btn::Off };
+        let engine_armed = tool.armed == Some(OrderKind::Attack);
+        let state = if engine_armed { Btn::Armed } else if free > 0 { Btn::Ready } else { Btn::Off };
         if action_button(ui, widths[1], t::ACT_ENGINE, &t::free_engines(free), state, FLAME, k, |p, c, s| engine(p, c, s, Color32::WHITE)) {
-            kiosk.say(t::ACT_ENGINE_HINT);
+            if engine_armed {
+                tool.disarm();
+            } else if let Some(id) = demo::run::best_unit(&sim.crews, UnitKind::Engine) {
+                tool.disarm();
+                tool.selected = Some(id);
+                tool.toggle(OrderKind::Attack);
+            }
         }
 
         // Canadair: asking and tasking are one gesture, and the 25 minutes are the cost.
@@ -850,7 +860,7 @@ fn action_bar(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &Sim, tool: &mut Orde
         if action_button(ui, widths[2], t::ACT_AIR, &sub, state, SKY, k, |p, c, s| plane(p, c, s, Color32::WHITE)) {
             if armed {
                 tool.disarm();
-            } else if let Some(id) = demo::run::best_unit(&sim.crews, UnitKind::AirTanker).or_else(|| sim.crews.units.iter().find(|u| u.kind.is_air()).map(|u| u.id)) {
+            } else if let Some(id) = demo::run::best_unit(&sim.crews, UnitKind::AirTanker).or_else(|| sim.crews.units.iter().find(|u| u.kind.is_air() && u.state == UnitState::Unavailable).map(|u| u.id)) {
                 tool.disarm();
                 tool.selected = Some(id);
                 tool.toggle(OrderKind::Drop);
@@ -866,6 +876,9 @@ fn action_bar(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &Sim, tool: &mut Orde
         if action_button(ui, widths[4], t::ACT_FAST, if fast { t::ACT_FAST_ON } else { t::ACT_FAST_SUB }, if fast { Btn::Armed } else { Btn::Ready }, PANEL_HI, k, |p, c, s| fast_icon(p, c, s, Color32::WHITE)) {
             kiosk.fast = !fast;
         }
+        txt(ui.painter(), pos2(bar.center().x, bar.bottom() - 2.0), Align2::CENTER_BOTTOM,
+            "Trascina: sposta · Tasto destro / ⇧ trascina: ruota · Rotella / pizzica: zoom · Trackpad: due dita per spostare",
+            10.0, GREY);
     });
 }
 
@@ -884,7 +897,7 @@ fn outcome(ctx: &egui::Context, kiosk: &mut Kiosk, sim: &Sim, screen: Rect, k: f
     let twin = kiosk.twin.clone();
     let saved = twin.as_ref().map(|tw| tw.outcome.caught as i64 - res.caught as i64);
     let mut cmd: Option<Cmd> = None;
-    egui::Area::new("outcome".into()).fixed_pos(rect.min).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new("outcome".into()).movable(false).fixed_pos(rect.min).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.set_min_size(rect.size());
         let p = ui.painter().clone();
         card(&p, rect, GREEN, 22.0);

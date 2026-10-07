@@ -228,6 +228,15 @@ struct TargetPreview {
     reason: Option<&'static str>,
 }
 
+// A first drop requests the aircraft through Referee::order; it must be
+// previewable before request_air changes Unavailable to Inbound.
+fn can_target(kind: UnitKind, state: abm::suppression::UnitState, order: OrderKind) -> bool {
+    use abm::suppression::UnitState;
+    order.allowed_for(kind)
+        && state != UnitState::Lost
+        && (state != UnitState::Unavailable || (kind.is_air() && order == OrderKind::Drop))
+}
+
 fn target_preview(
     sim: &Sim,
     p: Pos,
@@ -240,7 +249,7 @@ fn target_preview(
         return preview;
     };
     let Some(order) = order else { return preview };
-    if !u.assignable() || !order.allowed_for(u.kind) {
+    if !can_target(u.kind, u.state, order) {
         return preview;
     }
     if !sim.scenario.world.contains(p) {
@@ -302,7 +311,11 @@ pub fn place(
     mut sim: ResMut<Sim>,
     mut tool: ResMut<OrderTool>,
     buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
 ) {
+    if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
+        return;
+    }
     if !tool.is_armed() || !buttons.just_pressed(MouseButton::Left) {
         return;
     }
@@ -323,9 +336,14 @@ pub fn place(
         return;
     }
 
-    // A drop is a kiosk order: it is priced and logged like any other.
-    if tool.armed == Some(OrderKind::Drop) {
-        tool.issued = Some(demo::Order::Drop { at: p });
+    // Map orders use the same ledger and session activity as district buttons.
+    let issued = match tool.armed {
+        Some(OrderKind::Drop) => Some(demo::Order::Drop { at: p }),
+        Some(OrderKind::Attack) => Some(demo::Order::Attack { kind: sim.crews.units[id].kind, at: p }),
+        _ => None,
+    };
+    if let Some(order) = issued {
+        tool.issued = Some(order);
         tool.refusal = None;
         tool.confirmation = Some(String::new());
         tool.disarm();
@@ -479,4 +497,84 @@ pub fn reset(
     tool.disarm();
     tool.refusal = None;
     tool.confirmation = None;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use abm::suppression::UnitState;
+
+    #[test]
+    fn map_click_requests_air_and_assigns_its_first_drop() -> anyhow::Result<()> {
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let spec = demo::draw(demo::ALL[0], 42).unwrap().spec;
+        let sim = Sim::at_ignition(
+            scenario::Scenario::load_by_id(&data, spec.id)?, spec.weather,
+            spec.ignition, spec.radius_m, 42, behavior::defaults::default_library(),
+        )?;
+        let mut referee = demo::Referee::new(spec, &sim.scenario, &sim.agents, demo::Variant::default());
+        let air = sim.crews.units.iter().find(|u| u.kind.is_air()).unwrap().id;
+        let p = sim.scenario.world.centre_of(fire::cells_in_radius(&sim.scenario.world, spec.ignition, 200.0)
+            .into_iter().find(|c| sim.fire.is_suppressible(*c, &sim.scenario)).unwrap());
+        let mut app = App::new();
+        app.insert_resource(sim)
+            .insert_resource(OrderTool { selected: Some(air), armed: Some(OrderKind::Drop), hover: Some((p, true)), ..default() })
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_systems(Update, place);
+        app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Left);
+        app.update();
+        let order = app.world_mut().resource_mut::<OrderTool>().issued.take().expect("first request emits a drop");
+        let mut sim = app.world_mut().resource_mut::<Sim>();
+        let Sim { scenario, fire, agents, crews, .. } = &mut *sim;
+        referee.order(order, demo::Parts { scn: scenario, fire, agents, crews });
+        assert_eq!(crews.units[air].state, UnitState::Inbound);
+        assert!(matches!(crews.units[air].task, Task::Drop { .. }));
+        Ok(())
+    }
+
+    #[test]
+    fn engine_map_click_is_logged_and_shift_drag_does_not_place() -> anyhow::Result<()> {
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let spec = demo::draw(demo::ALL[0], 42).unwrap().spec;
+        let sim = Sim::at_ignition(
+            scenario::Scenario::load_by_id(&data, spec.id)?, spec.weather,
+            spec.ignition, spec.radius_m, 42, behavior::defaults::default_library(),
+        )?;
+        let id = demo::run::best_unit(&sim.crews, UnitKind::Engine).unwrap();
+        let p = sim.agents.network.nodes.iter().copied()
+            .find(|p| target_preview(&sim, *p, Some(OrderKind::Attack), Some(id)).reason.is_none())
+            .expect("a reachable road with fuel in hose range");
+        let mut referee = demo::Referee::new(spec, &sim.scenario, &sim.agents, demo::Variant::default());
+        let mut app = App::new();
+        app.insert_resource(sim)
+            .insert_resource(OrderTool { selected: Some(id), armed: Some(OrderKind::Attack), hover: Some((p, true)), ..default() })
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_systems(Update, place);
+        app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Left);
+        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::ShiftLeft);
+        app.update();
+        assert!(app.world().resource::<OrderTool>().issued.is_none());
+        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(KeyCode::ShiftLeft);
+        app.update();
+        let order = app.world_mut().resource_mut::<OrderTool>().issued.take().expect("map attack emitted");
+        assert!(matches!(order, demo::Order::Attack { kind: UnitKind::Engine, .. }));
+        let mut sim = app.world_mut().resource_mut::<Sim>();
+        let Sim { scenario, fire, agents, crews, .. } = &mut *sim;
+        referee.order(order, demo::Parts { scn: scenario, fire, agents, crews });
+        assert!(matches!(crews.units[id].task, Task::Attack { .. }));
+        assert!(!referee.log.entries.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn first_air_request_can_be_placed_but_lost_units_cannot() {
+        assert!(can_target(UnitKind::AirTanker, UnitState::Unavailable, OrderKind::Drop));
+        assert!(can_target(UnitKind::AirTanker, UnitState::Inbound, OrderKind::Drop));
+        assert!(!can_target(UnitKind::AirTanker, UnitState::Lost, OrderKind::Drop));
+        assert!(!can_target(UnitKind::Engine, UnitState::Unavailable, OrderKind::Attack));
+        assert!(can_target(UnitKind::Engine, UnitState::Staged, OrderKind::Attack));
+        assert!(!can_target(UnitKind::Engine, UnitState::Staged, OrderKind::Drop));
+    }
 }
