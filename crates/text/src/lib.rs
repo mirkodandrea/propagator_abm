@@ -320,7 +320,19 @@ fn district_name(d: Option<usize>, districts: &[String]) -> String {
 }
 
 fn token_or(t: Option<TokenId>, fallback: &str) -> String {
-    t.map(token_name).unwrap_or_else(|| fallback.into())
+    t.map(token_subject).unwrap_or_else(|| fallback.into())
+}
+
+/// A token as the subject of a sentence: `Il Canadair`, `La pattuglia`,
+/// `Autobotte 1` (a call sign takes no article).
+pub fn token_subject(t: TokenId) -> String {
+    match t.kind() {
+        TokenKind::Canadair => "Il Canadair".into(),
+        TokenKind::Pattuglia => "La pattuglia".into(),
+        TokenKind::Squadra => "La squadra AIB".into(),
+        TokenKind::ItAlert => "L'IT-alert".into(),
+        TokenKind::Autobotte => token_name(t),
+    }
 }
 
 pub fn report_line(l: &ReportLine, districts: &[String]) -> String {
@@ -335,6 +347,7 @@ pub fn report_line(l: &ReportLine, districts: &[String]) -> String {
         ReportKind::VentoGirato => format!("Il vento è girato: ora soffia da {}.", compass(n as f32)),
         ReportKind::NuovoFocolaio if n > 1 => format!("{n} nuovi focolai: le scintille accendono il fuoco più avanti."),
         ReportKind::NuovoFocolaio => "Un nuovo focolaio: le scintille accendono il fuoco più avanti.".into(),
+        ReportKind::Ritirata if l.token == Some(TokenId::K) => "Il Canadair ha interrotto il volo: sopra il fuoco il calore era troppo forte.".into(),
         ReportKind::Ritirata => format!("{} si è ritirat{a}: lì il calore era troppo forte.", tok()),
         ReportKind::PattugliaArrivata => format!("La pattuglia è arrivata {} e ha avvisato {}.", con("a", &d()), households(n as usize)),
         ReportKind::FamiglieInViaggio => format!("{}: {} in viaggio verso l'area di attesa.", d(), households(n as usize)),
@@ -401,9 +414,9 @@ pub fn headline(h: Headline) -> &'static str {
 pub fn note(n: &Note, districts: &[String]) -> String {
     let d = |k: usize| districts.get(k).cloned().unwrap_or_default();
     match *n {
-        Note::UnitaPersa { token } => format!("{} è rimast{} intrappolat{} nel fuoco: i mezzi vanno tenuti lontani dalla testa.", token_name(token), gender(token), gender(token)),
+        Note::UnitaPersa { token } => format!("{} è rimast{} intrappolat{} nel fuoco: i mezzi vanno tenuti lontani dalla testa.", token_subject(token), gender(token), gender(token)),
         Note::TestaRitirata { token } => {
-            format!("{}, mandat{} sulla testa del fuoco, si è ritirat{}: col vento la testa non si ferma.", token_name(token), gender(token), gender(token))
+            format!("{}, mandat{} sulla testa del fuoco, si è ritirat{}: col vento la testa non si ferma.", token_subject(token), gender(token), gender(token))
         }
         Note::AutobotteASecco { token, district } => {
             format!("{} era senza acqua quando il fuoco è arrivato {}: l'acqua dura pochi minuti.", token_name(token), con("a", &d(district)))

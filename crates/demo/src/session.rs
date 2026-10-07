@@ -112,6 +112,12 @@ pub struct Session {
     pub draw: Draw,
     /// See [`HeadOrder`]. `Fixed` unless a sweep sets it.
     pub head_order: HeadOrder,
+    /// The hand crew is in the tray. On (the spec's tray); milestone 0
+    /// measured it changing nothing (gameplay §7.1), so the lead may cut it.
+    pub crew: bool,
+    /// Spot fires are targets. On (the spec's map); milestone 0 measured
+    /// attacking one changing nothing (gameplay §7.3), so the lead may cut it.
+    pub spot_targets: bool,
     /// The cells the opening ignition lights. The core only lights them on
     /// its first advance, so at T+0 nothing is burning yet; until then these
     /// stand for the fire (the map draws them, the head and flanks are on them).
@@ -192,6 +198,8 @@ impl Session {
         };
         let mut s = Session {
             head_order: HeadOrder::Fixed,
+            crew: true,
+            spot_targets: true,
             patch,
             unit_prev: run.crews.units.iter().map(|u| (u.state, u.drops)).collect(),
             run,
@@ -277,7 +285,7 @@ impl Session {
 
     /// The reinforcement joins the tray at turn 3.
     pub fn in_tray(&self, t: TokenId) -> bool {
-        t != TokenId::E3 || self.turn >= REINFORCEMENT_TURN
+        (t != TokenId::E3 || self.turn >= REINFORCEMENT_TURN) && (t != TokenId::S || self.crew)
     }
 
     pub fn token(&self, id: TokenId) -> Token {
@@ -466,7 +474,7 @@ impl Session {
             }
         }
         for (n, s) in self.spots.iter().enumerate() {
-            if s.gone.is_none() {
+            if s.gone.is_none() && self.spot_targets {
                 out.push(Target { id: TargetId(0), kind: TargetKind::SpotFire(n), pos: s.now, label_pos: s.now, facing_deg: None });
             }
         }
@@ -1040,8 +1048,25 @@ impl Session {
             };
             let (prev, prev_drops) = self.unit_prev[k];
             let i = token.index();
+            // An aircraft has no retreat to drive: when its policy finds the
+            // air it is flying through not survivable it breaks off to Staged
+            // with no task (`Suppression::apply_outcome`). That is its
+            // withdrawal, and the tray says so rather than "al lavoro".
+            let broke_off = token == TokenId::K
+                && state == UnitState::Staged
+                && matches!(prev, UnitState::Moving | UnitState::Working)
+                && task == Task::Hold
+                && drops == prev_drops;
             if state != prev {
                 match state {
+                    _ if broke_off => {
+                        self.happenings.push(Happening::Withdrew(token, pos));
+                        self.withdrew[i] = Some(self.turn);
+                        if self.doing[i].is_some_and(|g| g.kind == TargetKind::Head) && !self.head_withdrew.contains(&token) {
+                            self.head_withdrew.push(token);
+                        }
+                        self.doing[i] = None;
+                    }
                     UnitState::Withdrawing => {
                         self.happenings.push(Happening::Withdrew(token, pos));
                         self.withdrew[i] = Some(self.turn);
@@ -1314,8 +1339,11 @@ impl Session {
                     Stamp::AllarmeInutile
                 }
             }
-            (None, _) if r.reached_at_s.is_some() || r.threatened_at_s.is_some() => Stamp::MaiAvvisati,
-            (None, _) => Stamp::GiustoNonAvvisare,
+            // The spec's rule: reached, never warned. A district the fire only
+            // came near (within the threat distance) without reaching a home
+            // or catching a family is not "mai avvisati": nothing arrived.
+            (None, Some(_)) => Stamp::MaiAvvisati,
+            (None, None) => Stamp::GiustoNonAvvisare,
         }
     }
 
