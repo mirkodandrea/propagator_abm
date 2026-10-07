@@ -1,11 +1,14 @@
 # propagator_abm — wildfire incident-commander kiosk demo
 
 An interactive kiosk for the *Settimana della Protezione Civile* (Rome): students
-act as incident commander in a small fictional Lazio town while individual
-families respond to a real second-scale wildfire model (CIMA PROPAGATOR). One
-mode only: `cargo run --release -p game`. Specs: `docs/demo-spec.md` (index and
-contract), `docs/demo-spec-gameplay.md`, `docs/demo-spec-presentation.md`;
-operator one-pager: `docs/demo-operator.md`.
+act as incident commander of one fictional Lazio town, Rocca Ventosa, in a
+turn-based game of scarce resources, while individual families respond to a
+real second-scale wildfire model (CIMA PROPAGATOR). The kiosk is
+`cargo run --release -p game`; the headless `play` binary plays the same game in
+text for blind agent playtests. Specs: `docs/demo-spec.md` (index and
+contract), `docs/demo-spec-gameplay.md`, `docs/demo-spec-playtest.md`,
+`docs/demo-spec-presentation.md`. Earlier designs are scrapped; the specs are
+the only version.
 
 ## Layout
 
@@ -14,7 +17,9 @@ crates/scenario/   baked assets + coordinate frames (no Bevy)
 crates/fire/       PROPAGATOR integration, exposure, threat, interventions
 crates/behavior/   authored behaviour graphs (the decision layer abm runs on)
 crates/abm/        civilians, roads, traffic queues, suppression units
-crates/demo/       the session model: towns, weather draw, forecast, Run, Outcome
+crates/demo/       the session model: turns, resources, targets, Referee, Run, verdict
+crates/text/       all player-facing Italian, shared by play and game (to build)
+crates/play/       headless text front end for blind playtests (to build)
 crates/game/       Bevy kiosk: shell (kiosk/), terrain, buildings, people, fire
 data/              the baked demo towns and the behaviour library
 assets/            CIMA brand mark, embedded meshes
@@ -43,9 +48,9 @@ Ownership: gameplay owns the model crates and `data/`; presentation owns
   `KIOSK_PLAY_S=<s>`, `KIOSK_SHOT_ZOOM=<k>`, `KIOSK_SHOT_FOCUS=x,y`;
   `KIOSK_FPS=1` logs the frame rate; `KIOSK_IDLE_S=<s>` sets the idle reset
   (default 60).
-- **The game is districts.** Each town is three districts (a household's
-  `locality`); the kiosk's controls are chips pinned over them; every number
-  the player sees comes from one `demo::Referee` that the twin also keeps.
+- **The game is turns of resource → target orders** on Rocca Ventosa's three
+  districts (a household's `locality`); every number the player sees, in the
+  kiosk or in `play`, comes from one `demo::Referee` that the twin also keeps.
 - Assets: `scripts/build_town_models.py` (Blender) bakes the town kit to
   `assets/models/town.json`; `scripts/generate_demo_scenarios.py` builds the
   towns.

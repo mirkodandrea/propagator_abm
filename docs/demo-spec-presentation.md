@@ -1,4 +1,4 @@
-# Demo — presentation spec (graphics, GUI, kiosk shell)
+# Demo — presentation spec (kiosk: screens, tray, map signals, shell)
 
 Read `docs/demo-spec.md` first and `CLAUDE.md` (findings 11–13, 21–23, 25 bind
 rendering and input). The model side is `docs/demo-spec-gameplay.md`.
@@ -7,137 +7,161 @@ Legend: ✅ done · 🔶 partly · 🔲 to do · ✂ cut-list item.
 
 ## 0. How this side works
 
-**Owns:** `crates/game`, `assets/`, shaders, `scripts/build_models.py`,
-`scripts/build_town_models.py`, `strings_it.rs`, the screenshot harness. Never
-computes game logic: levels, reached/needless, medals, costs come from `demo::`.
+**Owns:** `crates/game`, `assets/`, shaders, `scripts/build_town_models.py`,
+`scripts/build_models.py`, `crates/text` (all player-facing Italian, shared with
+`play`), the screenshot harness. **Never
+computes game logic:** target validity, ETAs, previews, report lines, stamps
+and notes come from `demo::` (gameplay §1).
 
-**Method:** screenshot, read every PNG, fix, repeat. `KIOSK_SHOT=<dir>` walks a
-session as a sensible commander (district 0 warned and defended at the
-briefing), shooting attract, briefing (before/after orders), play (early/late)
-and the outcome panel. `KIOSK_SHOT_ZOOM=<k>` and `KIOSK_SHOT_FOCUS=x,y` for
-close-ups. Check **all three towns** and read the image — a correct overlay
-nobody can see looks broken (finding 13), a back-facing mesh draws nothing
-(finding 11).
+**Method:** screenshot, read every PNG, fix, repeat. A correct overlay nobody
+can see looks broken (finding 13); a back-facing mesh draws nothing (finding 11).
 
-## 1. Screens (v2) ✅
+## 1. Screens
 
-**Attract.** Title, tagline ("Un incendio, tre quartieri, il vento che decide.
-Tocca a te."), the town's name, the fire playing at speed behind. Click anywhere.
-
-**Briefing = planning, clock stopped.** Short fly-in (4 s) onto the whole town.
-Bottom-left card: town, one-paragraph situation, how to play, **Via!**. Right
-column: compass (with a dashed ghost arrow where the wind may turn) and forecast
-card. Bottom-right strip: the lesson in one line ("avvisare presto… falso
-allarme…"). The district chips are live: orders given here happen at T+0.
-Starts by itself after 75 s.
-
-**Play.** Top-left: town, `T+mm`, time left, progress; the bill under it. Top
-strip: four counters (al sicuro / in viaggio / in pericolo / case colpite).
-Right column: compass + wind in words + forecast card (pulses amber when issue 2
-lands). **On the map:** one chip per district — name, households, status in
-colour (green calm / amber watch / orange threatened, pulsing / red reached) with
-"Fuoco a 650 m", and two buttons: **Avvisa** (turns into "✓ Avvisati 34/148 via"
-with a progress fill) and **Difendi** (shows "2 autobotti"; disabled when none
-is free). An **Incendio** label rides the fire's head. Bottom-left: advisor
-bubble (Capo squadra VVF / Sindaco / Meteo, portrait, one line, 7 s, queued).
-Bottom: action bar — *Allerta generale*, *Autobotti* (count; pressing it says
-"usa «Difendi» sui quartieri"), *Canadair* (arm, click the map), *Pausa*,
-*Veloce* (×3). Chips keep out of the right column and the advisor band.
-
-**Outcome.** Camera slides the burnt town into the left half; a panel on the
-right: headline ("Tutti al sicuro!" / "Ottimo lavoro!" / "Hai fatto la
-differenza" / "Il fuoco è stato più veloce"), families safe with bar, families
-caught vs **senza ordini** (from the twin; spinner, then "non disponibile" after
-20 s), "Hai salvato N famiglie rispetto a nessun ordine", **one row per
-district** (its story, caught vs without orders), **three medals** (earned in
-gold, unearned dim with a one-line hint for next time), the lesson, the bill.
-*Riprova* replays the same draw from the briefing; *Un altro paese*.
-
-## 2. Town kit and look ✅ / 🔶
-
-- **Blender kit** (`scripts/build_town_models.py` → `assets/models/town.json`,
-  contact sheet `town_preview.png`, source `town_assets.blend`): church with
-  campanile, chapel, town hall with clock and tricolore, school, fire station
-  with red bay doors and hose tower, petrol station, water tower, substation
-  with pylon, farmhouse, barn, silo, mill with water wheel, workshop with sawtooth
-  roof, lighthouse; props (cypress, street tree, fountain, bench, umbrellas,
-  loungers, beach hut, boat, sailboat, pier, Protezione Civile tent and *area di
-  attesa* sign, camping tents, caravan, goal, streetlight); cars (hatchback,
-  saloon, SUV, van, Ape, bus, camper); figures (man, woman, child, elder with a
-  stick). Paint and clothes are pure white in the bake so the game's tint (car
-  paint, status colour) shows through. Test: every face's winding agrees with
-  its normal (`models::tests`).
-- **Landmarks** (`town_kit.rs`, a child of `buildings`): a building whose kind
-  is modelled is drawn with its kit model scaled to the footprint on a paved lot;
-  open spaces (piazza, pitch, car park, *area di attesa*, lido, campsite,
-  harbour, cemetery) are draped on the terrain and dressed with props. All in
-  the building chunks' merged mesh.
-- **Houses**: one per street slot, kind-sized (villa 12×10 … hotel 21×13), pastel
-  Italian palette (ochre, apricot, cream, rose, pale yellow, Ligurian blue, mint,
-  terracotta), shop awnings and sign boards, garden trees and cypresses behind
-  about half the houses. Ground: lawn green in gardens, pale paving in the cores.
-- **House states follow the books**: a home the referee counts as hit burns
-  (8 simulated minutes) then chars; a threatened district takes a warm cast. Not
-  the exposure layer (its 2.5 km ember reach tinted every house in these towns).
-- **People and cars**: figure by age from the population; car body by household
-  (mostly hatchbacks and saloons, the odd Ape and camper), eight paints.
-- **Beacons** only over families the fire is on (trapped, or alarming threat at
-  a home still occupied). Spot-fire rings and closures unchanged.
-- Camera frames the districts and the fire (bounding box), not the households'
-  centroid; zoom and pan stay free within limits.
-
-## 3. Work needed (priority order)
-
-1. 🔶 **Fire read.** Done: toy-scale flames (×2.8 Byram, 18–90 m), an 18-minute
-   glowing band behind the front (was 7 min cubed — sub-pixel at the play
-   camera), pale thinner smoke lofted higher, the *Incendio* label at the centre
-   of the burning area. Open: ember sparks leaning with the wind are faint; a
-   flame-front line shader would read better than billboards at 3 km.
-2. ✅ **Order feedback on the map.** A sky-blue ring round each warned district;
-   a green ring of `DEFEND_REACH_M` at each engine post (`Referee::posts`).
-   Open: a one-shot pulse when the order is given.
-3. **Chip density.** Three chips with two buttons each is the whole UI; check in
-   the playtest whether a collapsed chip (name + status) that expands on hover
-   reads better at 2 m.
-4. **Polish.** Vertex sway on trees; headlight blink in queues; water drop
-   splash and wet strip under a Canadair run; roofs (hip/gable mix by kind);
-   district ground tint by level.
-5. **Ops.** `KIOSK_SELFTEST=1` (state machine, reset fan-out per finding 21, no
-   key does anything, idle reset leaks nothing); ✅ `scripts/run_demo.sh`
-   supervisor; ✅ operator quit button; native-speaker review of `strings_it.rs`;
-   dead-code warnings (`FireLayer`, `models::model`, `OrderKind::{Attack,Line}`).
-6. **Target machine:** fps (was 57 on the dev Mac before the kit; the kit adds
-   ~10 k triangles per town, measure), pointer, idle timings.
-
-## 4. Frame budget
-
-30 fps floor, measured on the real machine. Disable in order: shadow
-resolution, cascades, bloom quality, depth-of-field samples, MSAA→FXAA. Never
-disable: fire glow, the district chips, the wind arrow.
-
-## 5. Assets pipeline
-
-```sh
-/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build_town_models.py
-/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build_models.py   # trees, old figures
-python3 scripts/generate_demo_scenarios.py   # towns: districts, houses, landmarks
-cargo test -p game models::tests
+```
+ATTRACT ─► TURN 1 ─► PLAY ─► REPORT ─► TURN 2 ─► … ─► TURN 5 ─► PLAY ─► FINALE ─► VERDICT
 ```
 
-Landmark footprints in the generator (`*_LANDMARKS`) and the kit's authored
-footprints (`BUILDERS` in the Blender script) should match; the game scales one
-to the other.
+| Screen | Shows | Player does | Ends |
+|---|---|---|---|
+| **Attract** | the town, a fire playing at speed, title *"Rocca Ventosa brucia. Tocca a te."* | click anywhere | click |
+| **Turn 1** (= briefing) | 4 s fly-in onto the town; a three-line card that fades on first interaction: *"Sei il comandante. Ogni turno: scegli una risorsa, poi un punto sulla mappa. Poi Avanti."* | token → target, *Avanti* | *Avanti* |
+| **Turn 2–5** | the same layout, the report lines still pinned on the map | token → target, *Avanti* | *Avanti* |
+| **Play** | the fire runs 8 simulated min in ~10 s; units drive, cars leave, nothing clickable | — | automatic |
+| **Report** | ≤ 3 lines (gameplay §6), each with a pulse at its place on the map; portrait (Capo squadra VVF / Sindaco / Meteo) | — | 4 s, then the next turn opens |
+| **Finale** | after turn 5 the fire runs T+40→T+60 at ~1 s per simulated min; each district gets its **stamp** as the verdict for it becomes final | — | automatic |
+| **Verdict** | the card (§5) beside the burnt town | *Riprova* (same fire) | 60 s idle → Attract |
 
-## 6. Testing (presentation)
+Timers: a turn auto-advances after **45 s with no input** (reset by any
+interaction), so an abandoned kiosk keeps moving. 60 s idle on Verdict →
+Attract. Session target 3–4 min.
 
-- ✅ `sim::tests::the_live_session_and_its_headless_twin_agree` (COMPARE honesty).
-- ✅ `models::tests` (bakes valid, kit winding).
-- 🔲 `KIOSK_SELFTEST` (above). 🔲 Every `EventKind` has an advisor line or a
-  deliberate `None` (exhaustive match today; a test would pin it).
-- 🔲 Real pointer: operator corner, pause/fast, Canadair arming, chip clicks.
+## 2. Turn layout
 
-## 7. History
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ ROCCA VENTOSA       Turno 2 di 5 · T+08       📻 Meteo: il vento  │
+│                                                potrebbe girare    │
+│        ┌──────────┐  ░░░ forecast cone          da Est (60 %)     │
+│        │ LE COSTE │ ░░░░                                          │
+│        │ 64 fam.  │                    ┌────────────┐             │
+│        │ 1,4 km   │   ◎ Focolaio       │ IL BORGO   │             │
+│        └──────────┘                    │ 148 fam.   │             │
+│              ◯ fianco  🔥━━━▶ Testa ✕  │ 700 m  ✓🚓 │             │
+│   ┌──────────┐            ◯ fianco     │ 🚒 al lavoro│            │
+│   │IL MULINO │                         └────────────┘             │
+│   │ 38 fam.  │       ⟹⟹  wind arrow on the ground                │
+│   └──────────┘                                                    │
+│                                                                   │
+│ ┌────────────────────────────────────────────────────┐ ┌────────┐ │
+│ │ 🚓 libera │ 📢 1 │ 🚒 al lavoro │ 🚒 libera │ 👷 │ ✈️ │ │AVANTI ▸│ │
+│ └────────────────────────────────────────────────────┘ └────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+```
 
-v1 status, playtest findings (#1–#42) and the first two presentation passes are in
-git at `1eb263c` (this file). v2: districts on the map, merged outcome panel,
-town kit — `523c14a`.
+- **Top bar:** town, *Turno n di 5*, `T+mm`, the forecast in one line (pulses
+  amber the turn issue 2 lands).
+- **District chips** are **information only** — no buttons. Name, families,
+  distance to the fire, status colour (calm / watch / threatened, pulsing /
+  reached), and badges for what is there: ✓🚓 warned (with a fill of families
+  left), 🚒/👷 units posted.
+- **Token tray** (bottom): one card per token — icon, name, state badge
+  (*libera*, *in viaggio 3′*, *al lavoro*, *rifornimento*, *ritirata*, *in
+  arrivo turno 4*, *non chiamato*, *usato*), water gauge on engines. The
+  reinforcement card slides in at turn 3.
+- **Avanti** (bottom-right), always enabled. Giving no orders is a legal turn.
+
+## 3. The interaction: token → target
+
+1. Click a token card → it lifts; the map dims slightly; **only valid targets
+   light up**, each with its preview on a tag: ETA and effect in words
+   (*"arriva in 4′ · difende 60 case"*, *"Testa: si ritirerà"*, *"Avvisa 148
+   famiglie"*, *"Arriva al turno 4"*).
+2. Click a target → a dashed route line from the unit to the target, the card
+   shows the pending order. Click the card again to cancel before *Avanti*.
+3. IT-alert has no target: clicking it shows a confirm tag over the whole town
+   (*"Avvisa tutti, anche chi non serve"*) — click again to send.
+4. Canadair: first use is the call (*Cielo*); once on station it targets like
+   the others.
+
+Hover on a target shows its preview; there is nothing to drag, type or
+scroll. Camera: frames the whole town and fire at every turn; pan/zoom stay
+available within the `view.rs` limits but are never needed.
+
+## 4. Signals on the map
+
+| Signal | Form | Why |
+|---|---|---|
+| Wind | a **large arrow on the terrain** through the fire, length ∝ speed | lesson 1 at a glance; the compass column is gone |
+| Forecast | a translucent **cone** from the fire toward the shift bearing, opacity ∝ probability; sharpens or fades at issue 2 | the odds as a place, not a percentage |
+| Head / flanks | markers on the fire at `Head` / `Flank`; the head carries a red ✕ hint once any unit has withdrawn from it | targets and lesson 4 |
+| Spot fires | ring + *Focolaio* label at each (`SpotFire` target) | |
+| Units | kit vehicles on the roads (engines, crew van, police car), plane on station; state badge above each | the tray, on the map |
+| Warned district | sky-blue ring; cars leaving toward the *area di attesa* | |
+| Engine post | green ring of `DEFEND_REACH_M` | |
+| Drop | a wet strip on the ground for `DROP_DEFENCE_S` | |
+| Report line | a pulse at its `pos` / district for the report's 4 s | links words to places |
+
+All markers obey the canopy rule (finding 13: ≥ +20 m) and the winding rule
+(finding 11).
+
+## 5. Verdict card
+
+The camera slides the burnt town into the left half; the card on the right:
+
+1. **Headline** from families caught: *"Tutti al sicuro!"* / *"Ottimo lavoro"* /
+   *"Hai fatto la differenza"* / *"Il fuoco è stato più veloce"*.
+2. Two facts, each against **senza ordini** (spinner, then *non disponibile*
+   after 20 s): **famiglie in salvo** and **case colpite**.
+3. **One row per district:** name, its stamp (✅ *In tempo* · ⚠️ *Tardi* · ❌ *Mai
+   avvisati* · ✅ *Giusto non avvisare* · ✅ *Prudente* · ⚠️ *Allarme inutile*),
+   homes hit vs without orders.
+4. **≤ 3 notes** on the firefighting rules (gameplay §1 `Note`), broken first:
+   *"Un'autobotte mandata sulla testa si è ritirata"*, *"Canadair chiamato in
+   tempo: 3 lanci"*.
+5. *Riprova* (same draw from turn 1).
+
+No medals, no money, no score.
+
+## 6. Town kit and look
+
+Blender kit (`scripts/build_town_models.py` → `assets/models/town.json`),
+landmarks, pastel houses, people and cars, house states from the books (a home
+the referee counts as hit burns then chars; finding 43), vegetation, plinth,
+tilt-shift: already built and reused. Still needed from the kit: a **police car**, a
+**crew van**, a **Canadair** model and a hydrant marker (for *rifornimento*).
+
+## 7. Existing kiosk UI to delete
+
+The action bar (*Allerta generale*, *Autobotti*, *Canadair*, *Pausa*,
+*Veloce*), the *Avvisa*/*Difendi* buttons on chips, the four counters, the
+bill, medals, the compass column and forecast card, the advisor queue, the
+town rotation and town selector (the kiosk loads Rocca Ventosa only). Delete
+them; do not hide them.
+
+## 8. Ops
+
+- Idle: 45 s per turn (auto-*Avanti*), 60 s on Attract/Verdict.
+- Operator corner (hold top-right 3 s): restart, pause, quit. No key does
+  anything (finding 25).
+- `KIOSK_SHOT=<dir>` walks a session as `forecast-player` (gameplay §8) and
+  shoots: attract, turn 1 before/with a token selected/after orders, a play
+  frame, a report, turn 3 with the reinforcement, finale, verdict.
+- `KIOSK_SELFTEST=1`: state machine round trip, reset fan-out (finding 21), no
+  key acts, idle reset leaks nothing.
+- `scripts/run_demo.sh` supervisor ✅; operator one-pager to rewrite.
+
+## 9. Frame budget
+
+30 fps floor on the target machine. Disable in order: shadow resolution,
+cascades, bloom quality, depth-of-field samples, MSAA→FXAA. Never disable: fire
+glow, the wind arrow, the forecast cone, target markers, the tray.
+
+## 10. Tests
+
+- `the_live_session_and_its_headless_twin_agree` re-pinned on turn orders.
+- Every `ReportLine` kind, `Stamp`, `Note`, `Effect` and `TokenState` has an
+  Italian string (exhaustive match + a test).
+- `models::tests` (kit winding) for the new vehicles.
+- Real pointer: token select/cancel, every target kind, IT-alert confirm,
+  auto-*Avanti*, operator corner.
