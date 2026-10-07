@@ -118,7 +118,10 @@ fn play(p: &TurnPolicy, seed: u64) -> Rec {
         homes: f.homes_hit as f32,
         borgo_homes: f.districts[BORGO].1 as f32,
         caught_by: [f.districts[0].0 as f32, f.districts[1].0 as f32, f.districts[2].0 as f32],
-        stamps: (0..3).map(|d| s.stamp(d)).collect(),
+        stamps: {
+            let none = Session::counterfactual_of(&data_dir(), s.draw).unwrap();
+            s.verdict_against(none).districts.iter().map(|d| d.people).collect()
+        },
         drops_by_last_turn: s.drops().1,
         head_withdrew_in_turn: withdrew_in_turn,
         working_at_threat: working,
@@ -407,4 +410,28 @@ fn refusals_are_typed() {
     assert_eq!(s.assign(TokenId::I, borgo), Err(Refusal::Occupato(TokenState::Usato)));
     s.finish().unwrap();
     assert_eq!(s.assign(TokenId::E1, borgo), Err(Refusal::Finita));
+}
+
+/// A warning is *in time* only if it lands IN_TIME_MIN before the fire first
+/// threatens or reaches the district and it saved somebody against no orders:
+/// a warning at T+24 to the district the wind is driving at, on the sessions
+/// where it holds, is *Tardi* (on seeds 30, 34, 39 it lands 15-19 minutes
+/// before the threat and still saves nobody).
+#[test]
+fn a_late_warning_is_stamped_late() {
+    let seeds: Vec<u64> = (1..=N).filter(|s| !shifts(*s)).collect();
+    let r = grid(&seeds, 1, |seed, _| {
+        let mut s = Session::new(&data_dir(), seed).unwrap();
+        while s.turn().index < 4 {
+            s.end_turn().unwrap();
+        }
+        assert_eq!(s.time_s(), 24 * 60);
+        s.run.order(Order::EvacuateDistrict(BORGO));
+        s.finish().unwrap();
+        let none = Session::counterfactual_of(&data_dir(), s.draw).unwrap();
+        s.verdict_against(none).districts[BORGO].people
+    });
+    for (seed, _, stamp) in r {
+        assert_eq!(stamp, Stamp::Tardi, "seed {seed}: a T+24 warning to Il Borgo");
+    }
 }

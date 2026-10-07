@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use abm::network;
 use abm::suppression::{
     Task, UnitKind, UnitState, AIR_RESPONSE_S, CREW_SPEED, CREW_WALK_SPEED, DROP_WIDTH_M, ENGINE_REACH_M, ENGINE_SPEED,
-    HYDRANT_LPM, SCOOP_S, TANKER_SPEED,
+    HYDRANT_LPM, SCOOP_S, TANKER_SPEED, WORK_LIMIT,
 };
 use anyhow::Result;
 use fire::CellFire;
@@ -98,7 +98,6 @@ struct SpotTrack {
 #[derive(Debug, Clone, Copy)]
 enum Happening {
     Arrived(TokenId, Pos),
-    Dry(TokenId, Pos),
     Withdrew(TokenId, Pos),
     Lost(TokenId, Pos),
     PatrolArrived(usize, u32),
@@ -147,11 +146,9 @@ pub struct Session {
     pointed: Vec<Option<bool>>,
     happenings: Vec<Happening>,
     unit_prev: Vec<(UnitState, u32)>,
-    reached_prev: Vec<bool>,
     ev_cursor: usize,
     drops: u32,
     drops_by_last_turn: u32,
-    dry_at_reach: Vec<(TokenId, usize)>,
     head_withdrew: Vec<TokenId>,
     lost: Vec<TokenId>,
     none: Option<Counterfactual>,
@@ -221,11 +218,9 @@ impl Session {
             needless_defence: vec![],
             pointed: vec![None; nd],
             happenings: vec![],
-            reached_prev: vec![false; nd],
             ev_cursor: 0,
             drops: 0,
             drops_by_last_turn: 0,
-            dry_at_reach: vec![],
             head_withdrew: vec![],
             lost: vec![],
             none: None,
@@ -748,13 +743,28 @@ impl Session {
             }
             TokenKind::Autobotte | TokenKind::Squadra => {
                 let k = token.unit().expect("unit");
-                let (eta_s, gap) = self.ground_eta(k, t.pos);
+                let at = self.order_point(token, &t);
+                let (eta_s, park) = self.ground_eta(k, at);
                 let engine = token.kind() == TokenKind::Autobotte;
+                // Where the unit will actually stand: an engine at the road
+                // node the model drives it to, a crew at the point itself.
+                let stand = if engine { park } else { at };
+                let gap = dist(park, at);
                 let effect = match t.kind {
-                    TargetKind::Head => Effect::Ritirata,
+                    // Withdrawal is promised only where it will follow: the
+                    // ground it will stand on is already past the unit's
+                    // working limit and it gets there within the turn.
+                    TargetKind::Head if eta_s <= TURN_S && self.run.fire.threat().at(stand) >= WORK_LIMIT => Effect::Ritirata,
+                    TargetKind::Head if engine && gap > ENGINE_REACH_M => Effect::Lontano,
+                    TargetKind::Head => Effect::NienteCase,
                     TargetKind::District(d) if !self.at_risk(d) => Effect::Inutile,
+                    // Home defence credits every home within DEFEND_REACH_M of
+                    // where the engine works (`run::Tally`): the same count.
+                    TargetKind::District(_) if engine => match homes_near(park, DEFEND_REACH_M) {
+                        0 => Effect::Lontano,
+                        n => Effect::Difende { homes: n },
+                    },
                     _ if engine && gap > ENGINE_REACH_M => Effect::Lontano,
-                    TargetKind::District(_) if engine => Effect::Difende { homes: homes_near(t.pos, DEFEND_REACH_M) },
                     TargetKind::District(_) | TargetKind::Flank(_) => Effect::Linea,
                     TargetKind::SpotFire(_) => Effect::Spegne,
                     TargetKind::Sky | TargetKind::Town => return None,
@@ -783,16 +793,17 @@ impl Session {
         })
     }
 
-    /// Drive time for ground unit `k` to `to`, and the gap the road leaves
-    /// (what an engine's hose has to bridge).
-    fn ground_eta(&self, k: usize, to: Pos) -> (i64, f32) {
+    /// Drive time for ground unit `k` to `to`, and where the road ends: the
+    /// drivable node `Suppression::drive_toward` routes an engine to
+    /// (`nearest_reachable`, finding 17) -- where it will park and work.
+    fn ground_eta(&self, k: usize, to: Pos) -> (i64, Pos) {
         let u = &self.run.crews.units[k];
         let engine = u.kind == UnitKind::Engine;
         let net = &self.run.agents.network;
         let from = net.nearest(u.pos, engine);
         let end = from.and_then(|a| net.nearest_reachable(to, engine, a));
         let (Some(a), Some(b)) = (from, end) else {
-            return ((dist(u.pos, to) / if engine { ENGINE_SPEED } else { CREW_WALK_SPEED }).ceil() as i64, dist(u.pos, to));
+            return ((dist(u.pos, to) / if engine { ENGINE_SPEED } else { CREW_WALK_SPEED }).ceil() as i64, u.pos);
         };
         let path = network::route(net, a, b, self.run.fire.threat(), engine).unwrap_or_default();
         let mut at = u.pos;
@@ -803,7 +814,36 @@ impl Session {
         }
         let gap = dist(net.pos(b), to);
         let s = if engine { m / ENGINE_SPEED } else { m / CREW_SPEED + gap / CREW_WALK_SPEED };
-        (s.ceil() as i64, gap)
+        (s.ceil() as i64, net.pos(b))
+    }
+
+    /// Where an order of `token` to `t` sends the unit: for a district, the
+    /// next free post along its fire-facing edge (`District::post_facing`),
+    /// skipping posts other units already hold or are being sent to this turn
+    /// (in token order, which is the order `end_turn` applies them in). The
+    /// preview and the order both use this, so they cannot disagree.
+    fn order_point(&self, token: TokenId, t: &Target) -> Pos {
+        let TargetKind::District(d) = t.kind else { return t.pos };
+        if token.kind() == TokenKind::Canadair || token.unit().is_none() {
+            return t.pos;
+        }
+        let mut taken: Vec<Pos> = TokenId::ALL
+            .iter()
+            .filter(|o| **o != token && !self.pending.iter().any(|(p, _)| p == *o))
+            .filter_map(|o| self.doing[o.index()])
+            .filter(|g| g.kind == t.kind)
+            .map(|g| g.pos)
+            .collect();
+        for (o, g) in &self.pending {
+            if *o >= token || o.kind() == TokenKind::Canadair || o.unit().is_none() {
+                continue;
+            }
+            if let Some(og) = self.target(*g).filter(|x| x.kind == t.kind) {
+                taken.push(self.order_point(*o, og));
+            }
+        }
+        let head = self.target_of(TargetKind::Head).map_or_else(|| self.head(), |h| h.pos);
+        self.run.referee.districts[d].post_facing(&self.run.agents, head, &taken, 2.0 * DEFEND_REACH_M)
     }
 
     /// The patrol's road from where it is to `to`: polyline and length.
@@ -914,8 +954,9 @@ impl Session {
     fn begin(&mut self) {
         let now = self.run.time_s();
         let turn = self.turn;
+        let points: Vec<Option<Pos>> = self.pending.iter().map(|(k, g)| self.target(*g).map(|t| self.order_point(*k, t))).collect();
         let orders = std::mem::take(&mut self.pending);
-        for (token, tid) in orders {
+        for ((token, tid), point) in orders.into_iter().zip(points) {
             let Some(t) = self.target(tid).copied() else { continue };
             self.log.push((turn, token, t.kind));
             self.started[token.index()] = false;
@@ -956,20 +997,7 @@ impl Session {
                 }
                 _ => {
                     let k = token.unit().expect("unit token");
-                    let pos = match t.kind {
-                        TargetKind::District(d) if token.kind() != TokenKind::Canadair => {
-                            let taken: Vec<Pos> = TokenId::ALL
-                                .iter()
-                                .filter(|o| **o != token)
-                                .filter_map(|o| self.doing[o.index()])
-                                .filter(|g| g.kind == t.kind)
-                                .map(|g| g.pos)
-                                .collect();
-                            let head = self.target_of(TargetKind::Head).map_or_else(|| self.head(), |h| h.pos);
-                            self.run.referee.districts[d].post_facing(&self.run.agents, head, &taken, 2.0 * DEFEND_REACH_M)
-                        }
-                        _ => t.pos,
-                    };
+                    let pos = point.unwrap_or(t.pos);
                     if let TargetKind::SpotFire(n) = t.kind {
                         if let Some(s) = self.spots.get_mut(n) {
                             s.worked = true;
@@ -1080,7 +1108,6 @@ impl Session {
                         self.lost.push(token);
                         self.doing[i] = None;
                     }
-                    UnitState::Refilling if token.kind() == TokenKind::Autobotte => self.happenings.push(Happening::Dry(token, pos)),
                     UnitState::Working if !self.started[i] && token != TokenId::K => {
                         self.started[i] = true;
                         self.happenings.push(Happening::Arrived(token, pos));
@@ -1105,20 +1132,6 @@ impl Session {
             }
             let u = &self.run.crews.units[k];
             self.unit_prev[k] = (u.state, u.drops);
-        }
-        // An engine refilling at the moment the fire reaches the district it defends.
-        for (d, r) in self.run.referee.reports.iter().enumerate() {
-            let reached = r.reached_at_s.is_some();
-            if reached && !self.reached_prev[d] {
-                for token in [TokenId::E1, TokenId::E2, TokenId::E3] {
-                    let k = token.unit().expect("unit");
-                    let u = &self.run.crews.units[k];
-                    if self.doing[token.index()].is_some_and(|g| g.kind == TargetKind::District(d)) && u.state == UnitState::Refilling {
-                        self.dry_at_reach.push((token, d));
-                    }
-                }
-            }
-            self.reached_prev[d] = reached;
         }
     }
 
@@ -1186,7 +1199,6 @@ impl Session {
                 Happening::PatrolArrived(d, n) => {
                     c.push(line(ReportKind::PattugliaArrivata, Some(d), Some(self.run.referee.districts[d].centre), Some(n), Some(TokenId::P)))
                 }
-                Happening::Dry(t, p) => c.push(line(ReportKind::AutobotteASecco, None, Some(p), None, Some(t))),
                 Happening::SpotOut(p) => c.push(line(ReportKind::FocolaioSpento, None, Some(p), None, None)),
                 Happening::OnStation(p) => c.push(line(ReportKind::CanadairInZona, None, Some(p), None, Some(TokenId::K))),
                 Happening::Drop(p) => c.push(line(ReportKind::Lancio, district_of(p), Some(p), None, Some(TokenId::K))),
@@ -1320,10 +1332,38 @@ impl Session {
         Ok(self.none.clone().expect("just set"))
     }
 
-    /// The people stamp on district `d`, as things stand.
+    /// The people stamp on district `d` against the counterfactual: a
+    /// warning is *In tempo* only if it landed in time **and** the district
+    /// lost fewer families than it would have with no orders (or would have
+    /// lost none anyway). A warning that changed nothing is *Tardi*, however
+    /// early the clock says it was -- by T+24 the families who would leave
+    /// have left on their own, and the stamp must not say otherwise.
+    pub fn stamp_against(&self, d: usize, none: &Counterfactual) -> Stamp {
+        let s = self.stamp(d);
+        if s != Stamp::InTempo {
+            return s;
+        }
+        let caught = self.run.referee.districts[d].households.iter().filter(|&&i| self.run.referee.tally.caught_at(i).is_some()).count() as u32;
+        let caught_none = none.districts.get(d).map_or(0, |x| x.0);
+        if caught < caught_none || caught_none == 0 {
+            Stamp::InTempo
+        } else {
+            Stamp::Tardi
+        }
+    }
+
+    /// The people stamp on district `d` by the clock alone, as things stand
+    /// (no counterfactual yet): the in-session view.
     pub fn stamp(&self, d: usize) -> Stamp {
         let r = &self.run.referee.reports[d];
-        match (r.warned_at_s, r.reached_at_s) {
+        // The danger came when the fire first threatened or reached the
+        // district, whichever was first. A warning is in time only if it
+        // landed IN_TIME_MIN before that; one landing after the threat is late.
+        let danger = match (r.threatened_at_s, r.reached_at_s) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        match (r.warned_at_s, danger) {
             (Some(w), Some(a)) => {
                 if a - w >= IN_TIME_S {
                     Stamp::InTempo
@@ -1331,7 +1371,6 @@ impl Session {
                     Stamp::Tardi
                 }
             }
-            (Some(_), None) if r.threatened_at_s.is_some() => Stamp::InTempo,
             (Some(_), None) => {
                 if self.pointed[d] == Some(true) {
                     Stamp::Prudente
@@ -1360,7 +1399,7 @@ impl Session {
         let districts: Vec<DistrictVerdict> = (0..nd)
             .map(|d| DistrictVerdict {
                 district: d,
-                people: self.stamp(d),
+                people: self.stamp_against(d, &none),
                 homes_hit: me.districts[d].1,
                 homes_hit_none: none.districts.get(d).map_or(0, |x| x.1),
                 caught: me.districts[d].0,
@@ -1374,11 +1413,9 @@ impl Session {
         for t in &self.head_withdrew {
             notes.push(Note::TestaRitirata { token: *t });
         }
-        let mut dry_districts: Vec<usize> = vec![];
-        for (t, d) in &self.dry_at_reach {
-            if !dry_districts.contains(d) {
-                dry_districts.push(*d);
-                notes.push(Note::AutobotteASecco { token: *t, district: *d });
+        for (_, t, k) in &self.log {
+            if *k == TargetKind::Head && t.kind() != TokenKind::Canadair && !self.head_withdrew.contains(t) && !self.lost.contains(t) {
+                notes.push(Note::TestaInutile { token: *t });
             }
         }
         if self.it_alert.is_some() && districts.iter().any(|v| v.people == Stamp::AllarmeInutile) {

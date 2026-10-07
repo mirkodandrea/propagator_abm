@@ -36,7 +36,8 @@ fn results() -> &'static Vec<Vec<Rec>> {
             let mut s = Session::new(&dir, seed).unwrap();
             ps[j].play(&mut s).unwrap();
             let f = s.facts();
-            let stamps = (0..3).map(|d| s.stamp(d)).collect();
+            let none = Session::counterfactual_of(&dir, s.draw).unwrap();
+            let stamps = s.verdict_against(none).districts.iter().map(|d| d.people).collect();
             Rec { caught: f.families_caught as f32, homes: f.homes_hit as f32, stamps }
         });
         let mut out = vec![vec![]; seeds.len()];

@@ -257,6 +257,7 @@ pub fn effect(token: TokenId, e: Effect) -> String {
         },
         Effect::Spegne => "prova a spegnerlo".into(),
         Effect::Ritirata => "si ritirerà: lì il calore è troppo forte".into(),
+        Effect::NienteCase => "lavora, ma non salva case: col vento la testa non si ferma".into(),
         Effect::Chiamata { turn, .. } => {
             if turn > TURNS {
                 "arriva dopo l'ultimo turno".into()
@@ -351,7 +352,6 @@ pub fn report_line(l: &ReportLine, districts: &[String]) -> String {
         ReportKind::Ritirata => format!("{} si è ritirat{a}: lì il calore era troppo forte.", tok()),
         ReportKind::PattugliaArrivata => format!("La pattuglia è arrivata {} e ha avvisato {}.", con("a", &d()), households(n as usize)),
         ReportKind::FamiglieInViaggio => format!("{}: {} in viaggio verso l'area di attesa.", d(), households(n as usize)),
-        ReportKind::AutobotteASecco => format!("{} ha finito l'acqua: va a riempire.", tok()),
         ReportKind::FocolaioSpento => "Un focolaio si è spento.".into(),
         ReportKind::CanadairInZona => "Il Canadair è arrivato sopra il paese.".into(),
         ReportKind::Lancio => match l.district {
@@ -385,7 +385,7 @@ pub fn stamp(s: Stamp) -> &'static str {
 pub fn stamp_why(s: Stamp) -> &'static str {
     match s {
         Stamp::InTempo => "avvisati prima che arrivasse il fuoco",
-        Stamp::Tardi => "avvisati quando il fuoco era già vicino",
+        Stamp::Tardi => "avvisati troppo tardi: non ha cambiato nulla per loro",
         Stamp::MaiAvvisati => "il fuoco è arrivato e nessuno li aveva avvisati",
         Stamp::GiustoNonAvvisare => "il fuoco non è arrivato: giusto non allarmarli",
         Stamp::Prudente => "avvisati perché il vento o le previsioni li indicavano: prudente",
@@ -418,9 +418,11 @@ pub fn note(n: &Note, districts: &[String]) -> String {
         Note::TestaRitirata { token } => {
             format!("{}, mandat{} sulla testa del fuoco, si è ritirat{}: col vento la testa non si ferma.", token_subject(token), gender(token), gender(token))
         }
-        Note::AutobotteASecco { token, district } => {
-            format!("{} era senza acqua quando il fuoco è arrivato {}: l'acqua dura pochi minuti.", token_name(token), con("a", &d(district)))
-        }
+        Note::TestaInutile { token } => format!(
+            "{}, mandat{} sulla testa del fuoco, non ha salvato case: col vento la testa non si ferma, le case si difendono dove il fuoco sta andando.",
+            token_subject(token),
+            gender(token)
+        ),
         Note::ItAlertSprecato => "L'IT-alert ha avvisato anche chi non era in pericolo.".into(),
         Note::DifesaInutile { district } => format!("Autobotti mandate {}, dove né il vento né le previsioni portavano il fuoco.", con("a", &d(district))),
         Note::CanadairTardi => "Canadair chiamato tardi: non ha fatto in tempo a lanciare.".into(),
@@ -662,6 +664,7 @@ mod tests {
             Effect::Linea,
             Effect::Spegne,
             Effect::Ritirata,
+            Effect::NienteCase,
             Effect::Chiamata { eta_s: 1500, turn: 4 },
             Effect::Chiamata { eta_s: 1500, turn: 6 },
             Effect::Bagna { homes: 12 },
@@ -683,7 +686,6 @@ mod tests {
             Ritirata,
             PattugliaArrivata,
             FamiglieInViaggio,
-            AutobotteASecco,
             FocolaioSpento,
             CanadairInZona,
             Lancio,
@@ -698,7 +700,7 @@ mod tests {
         vec![
             Note::UnitaPersa { token: TokenId::E1 },
             Note::TestaRitirata { token: TokenId::S },
-            Note::AutobotteASecco { token: TokenId::E2, district: 0 },
+            Note::TestaInutile { token: TokenId::E2 },
             Note::ItAlertSprecato,
             Note::DifesaInutile { district: 2 },
             Note::CanadairTardi,

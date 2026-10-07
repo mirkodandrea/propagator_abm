@@ -200,8 +200,12 @@ pub enum Effect {
     Linea,
     /// A unit on a spot fire.
     Spegne,
-    /// A ground unit at the head will pull back (lesson 4).
+    /// A ground unit at the head will pull back: it will stand in heat past
+    /// its working limit within the turn.
     Ritirata,
+    /// A ground unit at the head will work there and save no homes (what
+    /// milestone 0 measured it doing, §7.6).
+    NienteCase,
     /// The Canadair call: overhead in `eta_s`, during turn `turn`.
     Chiamata { eta_s: i64, turn: u8 },
     /// A drop on a district's edge or a flank, wetting this many homes' ground.
@@ -259,8 +263,6 @@ pub enum ReportKind {
     PattugliaArrivata,
     /// Families of a warned district on the road (`n`).
     FamiglieInViaggio,
-    /// An engine ran dry and went to refill.
-    AutobotteASecco,
     /// A spot fire went out.
     FocolaioSpento,
     /// The Canadair arrived over the town.
@@ -311,8 +313,8 @@ pub enum Note {
     UnitaPersa { token: TokenId },
     /// A ground unit sent at the head pulled back.
     TestaRitirata { token: TokenId },
-    /// An engine was refilling when the fire reached the district it defended.
-    AutobotteASecco { token: TokenId, district: usize },
+    /// A ground unit was sent at the head and worked there: it saved no homes.
+    TestaInutile { token: TokenId },
     /// The IT-alert warned a district that never needed it.
     ItAlertSprecato,
     /// Engines defended a district the fire never came near.

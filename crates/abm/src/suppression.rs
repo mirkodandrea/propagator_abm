@@ -1313,6 +1313,14 @@ impl Suppression {
             let to = from.and_then(|a| net.nearest_reachable(target, drivable_only, a));
             if let (Some(a), Some(b)) = (from, to) {
                 match network::route(net, a, b, fire.threat(), drivable_only) {
+                    // `route(b, b)` is empty, which reads as "arrived": but a
+                    // unit re-planning on its last edge is nearest to the node
+                    // it is driving to, not at it, and used to stop mid-edge
+                    // wherever the re-plan caught it. Finish the edge.
+                    Some(path) if drivable_only && path.is_empty() && a == b && dist(pos, net.pos(b)) > ARRIVE_M => {
+                        self.units[i].route = vec![b];
+                        self.units[i].note = "";
+                    }
                     Some(path) => {
                         self.units[i].route = path;
                         self.units[i].note = "";
