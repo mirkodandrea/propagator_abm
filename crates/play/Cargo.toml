@@ -1,0 +1,20 @@
+[package]
+name = "play"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Headless text front end of the kiosk game: one command per kiosk gesture, the kiosk's Italian, replayed from partita.json"
+
+[[bin]]
+name = "play"
+path = "src/main.rs"
+
+[dependencies]
+demo = { path = "../demo" }
+text = { path = "../text" }
+scenario.workspace = true
+fire.workspace = true
+abm.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
