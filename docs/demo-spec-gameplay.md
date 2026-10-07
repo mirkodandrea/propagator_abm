@@ -166,7 +166,7 @@ formatted in `crates/text`.
 |---|---|
 | `InTempo` | warned ≥ `IN_TIME_MIN` before the first **threat or reach**, whichever is earlier; on the final card, caught families must also be fewer than with no orders (unless none would be caught anyway) |
 | `Tardi` | warned later than that, or the final caught-family count did not improve against no orders |
-| `MaiAvvisati` | reached, never warned |
+| `MaiAvvisati` | threatened or reached, never warned; the explanation distinguishes threat near homes from fire actually reaching them |
 | `GiustoNonAvvisare` | not warned, never threatened |
 | `Prudente` | warned while the forecast in force pointed at it; never threatened. **Not a mistake.** |
 | `AllarmeInutile` | warned, never threatened, and no forecast pointed at it |
@@ -221,6 +221,11 @@ and read by front ends. Pin reproduced defects with focused tests, and keep
 release checks and preview consistency green. If forecast interpretation
 changes policy outcomes, rerun the affected lesson/balance checks and report
 any change; never weaken a failing assertion to hide it.
+
+Contract clarification during this iteration: the existing engine classifies
+an unwarned, threatened-but-unreached district as `MaiAvvisati`. The earlier
+table omitted that case. Preserve this classification and state *threatened*
+in its explanation, rather than claiming that fire arrived at homes.
 
 ## 7. Milestone 0 — sweeps that decide which tokens ship
 
