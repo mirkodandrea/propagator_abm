@@ -25,6 +25,7 @@ mod kiosk;
 mod library;
 mod models;
 mod overlays;
+mod life;
 mod people;
 mod plinth;
 mod pick;
@@ -92,6 +93,7 @@ fn main() -> anyhow::Result<()> {
             people::setup,
             overlays::setup,
             people::mark_refuges,
+            life::setup,
             units::setup,
         ),
     )
@@ -208,6 +210,7 @@ fn kiosk_systems(app: &mut App) {
                 people::update_people,
                 people::update_vehicles,
                 people::bob_people.after(people::update_people),
+                life::update.run_if(resource_exists::<life::LifeAssets>),
                 units::update_units,
                 overlays::update_markers,
                 overlays::update_wind,

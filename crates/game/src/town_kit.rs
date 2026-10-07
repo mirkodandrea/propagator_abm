@@ -79,8 +79,11 @@ pub(super) fn emit(scn: &Scenario, b: &Building, out: &mut Builder) -> bool {
             }
         }
         "parking" => {
+            // Magnified like every other building (`TOY_SCALE`), and bayed to
+            // the toy car: the lot is the size of the cars that park in it.
+            let (w, d) = (w * TOY_SCALE, d * TOY_SCALE);
             drape(scn, out, c, w, d, [0.36, 0.37, 0.39], 0.3);
-            let bays = ((w / 7.0) as i32).max(2);
+            let bays = ((w / 6.5) as i32).max(2);
             for row in [-1.0f32, 1.0] {
                 for i in 0..bays {
                     let x = c.x - w * 0.5 + (i as f32 + 0.5) * w / bays as f32;
@@ -89,7 +92,7 @@ pub(super) fn emit(scn: &Scenario, b: &Building, out: &mut Builder) -> bool {
                     if hash01(b.id as u64 + i as u64 * 31 + (row > 0.0) as u64 * 7, 0x51) < 0.7 {
                         let car = ["car_hatch", "car_sedan", "car_suv", "car_van"][(hash01(b.id as u64 + i as u64, 0x52) * 4.0) as usize % 4];
                         let paint = PAINT[(hash01(b.id as u64 + i as u64 * 3 + row as u64, 0x53) * 7.0) as usize % 7];
-                        put(scn, out, car, Pos { x, y }, 1.25, if row < 0.0 { 0.0 } else { std::f32::consts::PI }, Some(paint));
+                        put(scn, out, car, Pos { x, y }, crate::people::CAR_TOY, if row < 0.0 { 0.0 } else { std::f32::consts::PI }, Some(paint));
                     }
                 }
             }

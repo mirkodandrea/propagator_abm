@@ -29,7 +29,15 @@ use crate::sim::Sim;
 /// How far above life size people and cars are drawn. See the module note.
 /// `pub(crate)` so [`crate::inspect`] can pick at the same height these are
 /// actually drawn at, rather than duplicating the constant and drifting.
-pub(crate) const FIGURE_SCALE: f32 = 5.5;
+pub(crate) const FIGURE_SCALE: f32 = 3.5;
+
+/// One scale for every car in the scene — parked in a lot (`town_kit`), driving
+/// the network, or ambient (`life`) — so a queue of evacuees is made of the
+/// same cars the car park is. Houses are drawn at `TOY_SCALE` (1.5, footprint)
+/// and 1.7 tall; a kit hatchback is 4 m, so ×2 is an 8 m toy car against a
+/// 15 m toy house: bigger than life against the house, because it has to read
+/// at play altitude, but not bigger than the house.
+pub(crate) const CAR_TOY: f32 = 2.0;
 
 pub(crate) fn figure_scale(vr: bool) -> f32 {
     // A person is an operational map symbol in a lab scenario. At the fitted
@@ -211,13 +219,12 @@ pub fn spawn_vehicles(mut commands: Commands, sim: Res<Sim>, mut assets: ResMut<
             continue;
         }
         let ground = sim.scenario.terrain.height_at(t.pos);
-        let scale = figure_scale(sim.scenario.vr_palette().is_some());
         commands.spawn((
             MaterialMeshBundle::<RetroMaterial> {
                 mesh: assets.cars[(t.household.wrapping_mul(2654435761) >> 7) % assets.cars.len()].clone(),
                 material: assets.car_normal[i % assets.car_normal.len()].clone(),
                 transform: Transform::from_translation(frame::to_bevy(t.pos, ground + 0.05))
-                    .with_scale(Vec3::splat(scale * 0.8)),
+                    .with_scale(Vec3::splat(CAR_TOY * if sim.scenario.vr_palette().is_some() { 2.4 } else { 1.0 })),
                 ..default()
             },
             VehicleView { traveller: i },
