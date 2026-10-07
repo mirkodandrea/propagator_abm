@@ -190,7 +190,7 @@ pub fn kind_what(k: TokenKind) -> &'static str {
     match k {
         TokenKind::Pattuglia => "Polizia Locale, l'unica che può avvisare: va in un quartiere e avvisa le famiglie quando arriva, un quartiere alla volta",
         TokenKind::Autobotte => "Vigili del Fuoco: difende le case di un quartiere dalla strada",
-        TokenKind::Squadra => "squadra antincendio a piedi: apre una fascia di protezione intorno alle case di un quartiere, ma è lenta ad arrivare",
+        TokenKind::Squadra => "AIB (Antincendio Boschivo): difende le case a piedi, senza acqua; è lenta ad arrivare",
         TokenKind::Canadair => "aereo: va chiamato, arriva dopo 25 minuti; poi un lancio d'acqua a turno, utile solo sul bordo del quartiere minacciato",
     }
 }
@@ -244,7 +244,7 @@ pub fn effect(_token: TokenId, e: Effect) -> String {
     match e {
         Effect::Avvisa { families } => format!("avvisa {}", households(families as usize)),
         Effect::Difende { homes: n } => format!("difende {}", homes(n)),
-        Effect::Fascia { homes: n } => format!("fascia di protezione: protegge {}", homes(n)),
+        Effect::Fascia { homes: n } => format!("difende {} senza acqua", homes(n)),
         Effect::Ritirata => "si ritirerà: lì il calore è troppo forte".into(),
         Effect::NonSalvaCase => "non salva case: lì il fuoco non si ferma".into(),
         Effect::Chiamata { turn, .. } => {
@@ -255,7 +255,7 @@ pub fn effect(_token: TokenId, e: Effect) -> String {
             }
         }
         Effect::Bagna { homes: n } => format!("bagna il bordo del quartiere: protegge {}", homes(n)),
-        Effect::Lontano => "strada troppo lontana: non ci arriva".into(),
+        Effect::Lontano => "si ferma sulla strada: bersaglio fuori portata".into(),
         Effect::Inutile => "inutile adesso".into(),
     }
 }
@@ -371,7 +371,7 @@ pub fn stamp(s: Stamp) -> &'static str {
 pub fn stamp_why(s: Stamp) -> &'static str {
     match s {
         Stamp::InTempo => "avvisati prima che arrivasse il fuoco",
-        Stamp::Tardi => "avvisati troppo tardi: non ha cambiato nulla per loro",
+        Stamp::Tardi => "avviso tardivo o senza riduzione delle famiglie bloccate",
         Stamp::MaiAvvisati => "il fuoco è arrivato e nessuno li aveva avvisati",
         Stamp::GiustoNonAvvisare => "il fuoco non è arrivato: giusto non allarmarli",
         Stamp::Prudente => "avvisati perché il vento o le previsioni li indicavano: prudente",
@@ -410,7 +410,7 @@ pub fn note(n: &Note, districts: &[String]) -> String {
             gender(token)
         ),
         Note::PattugliaSprecata { district } => format!(
-            "La pattuglia si è fermata {}, dove il fuoco non andava: intanto i quartieri in pericolo aspettavano.",
+            "La pattuglia si è fermata {}, senza un pericolo indicato dal vento o dalle previsioni.",
             con("a", &d(district))
         ),
         Note::DifesaInutile { district } => format!("Autobotti mandate {}, dove né il vento né le previsioni portavano il fuoco.", con("a", &d(district))),
@@ -439,7 +439,7 @@ pub const HOMES_HIT: &str = "case colpite";
 pub const WITHOUT_ORDERS: &str = "senza ordini";
 pub const RETRY: &str = "Riprova";
 pub const AVANTI: &str = "Avanti";
-pub const BRIEFING: &str = "Sei il comandante. Ogni turno: scegli una risorsa, poi un punto sulla mappa. Poi Avanti.";
+pub const BRIEFING: &str = "Sei il comandante: 5 turni da 8 minuti. Scegli una risorsa, poi un punto sulla mappa.\nGli ordini proseguono da soli: i mezzi lavorano e si riforniscono; la pattuglia avvisa.\nIl Canadair ripete i lanci sul bersaglio fino a T+60. Puoi cambiare gli ordini a ogni turno.\n./play annulla <risorsa> cancella un ordine di questo turno; ./play avanti lo esegue.";
 
 /// Why a token cannot take an order now (shown after `scegli`).
 pub fn token_state_why(t: TokenId, s: TokenState, now_s: i64) -> String {
@@ -490,7 +490,7 @@ pub mod play {
 
     #[allow(clippy::too_many_arguments)]
     pub fn district_row(id: u8, name: &str, n: u32, fire_m: f32, lvl: Level, warned: bool, moving: u32, safe: u32, units: &[&str]) -> String {
-        let u = if units.is_empty() { String::new() } else { format!(" · qui: {}", units.join(" ")) };
+        let u = if units.is_empty() { String::new() } else { format!(" · assegnati: {}", units.join(" ")) };
         format!(
             "  [{id}] {name:<10} {:>12} · fuoco a {} · {} · {}{u}",
             households(n as usize),
@@ -541,8 +541,9 @@ pub mod play {
         format!("  ./play ordina {code}  → {target}: {line}")
     }
 
-    pub fn prompt_after_choice(code: &str) -> String {
-        format!("> ./play ordina {code} <bersaglio> · ./play scegli <altra risorsa> · ./play avanti")
+    pub fn prompt_after_choice(code: &str, call: bool) -> String {
+        let target = if call { "" } else { " <bersaglio>" };
+        format!("> ./play ordina {code}{target} · ./play scegli <altra risorsa> · ./play avanti")
     }
 
     pub fn frame_title(at_s: i64) -> String {
@@ -554,7 +555,7 @@ pub mod play {
     }
 
     pub fn finale_title() -> String {
-        "=== Ultimo turno finito. Il fuoco corre fino a T+60: vediamo com'è andata. ===".into()
+        "=== Ultimo turno finito. Fuoco e mezzi continuano fino a T+60 con gli ordini già dati. ===".into()
     }
 
     pub fn stamp_frame(name: &str, mark: &str, stamp: &str, why: &str) -> String {

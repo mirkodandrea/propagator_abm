@@ -237,7 +237,10 @@ pub fn screen(s: &Session, base: &Base, chosen: Option<TokenId>) -> String {
         o.extend(choice(s, tok));
     }
     o.push(String::new());
-    o.push(if chosen.is_some() { t::prompt_after_choice(text::token_code(chosen.expect("some"))) } else { t::PROMPT.into() });
+    o.push(match chosen {
+        Some(tok) => t::prompt_after_choice(text::token_code(tok), tok == TokenId::K && s.token_state(tok) == TokenState::NonChiamato),
+        None => t::PROMPT.into(),
+    });
     o.join("\n")
 }
 
@@ -288,6 +291,7 @@ pub fn verdict(s: &Session, v: &Verdict) -> String {
     o.push(t::SEZ_QUARTIERI.into());
     for d in &v.districts {
         o.push(t::verdict_district_row(&ds[d.district], text::stamp_mark(d.people), text::stamp(d.people), text::stamp_why(d.people), d.homes_hit, d.homes_hit_none));
+        o.push(format!("    {}", t::families_row(d.caught, d.caught_none).trim()));
     }
     if !v.notes.is_empty() {
         o.push(String::new());

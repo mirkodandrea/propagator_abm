@@ -43,6 +43,21 @@ in `aiuto` and the playtest harness does not allow it (§3).
 
 Plain text, ≤ 100 columns, no colour codes. Layout, top to bottom:
 
+First-round wording corrections (2026-10-07): the opening states five
+eight-minute turns, cancellation, and that orders persist. Engines work and
+refill automatically, the crew continues, and the Canadair repeats drops on
+its assigned target through the T+60 finale. District resource lists say
+**assigned**, not physically **here**; the resource badge supplies travel
+status. Expand AIB as *Antincendio Boschivo* on selection. Verdict rows show
+families caught against no orders per district, separately from homes hit.
+A late-warning explanation must not claim zero benefit in every case, and
+a needless-patrol note must not claim that already-warned districts waited.
+An out-of-road-reach preview distinguishes ETA to the road from hose access
+to the target. These are factual wording corrections, with no rule changes.
+After round 2, selecting an uncalled Canadair must show `./play ordina K`
+in both its action and footer; after it is called, target orders use
+`./play ordina K <bersaglio>`.
+
 ```
 ROCCA VENTOSA · Turno 2 di 5 · T+08
 Vento: da Sud, 35 km/h — spinge il fuoco verso Nord

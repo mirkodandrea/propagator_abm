@@ -18,7 +18,7 @@ fn data_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data").canonicalize().unwrap()
 }
 
-const TOKENS: [TokenId; 4] = [TokenId::P, TokenId::E1, TokenId::S, TokenId::K];
+const TOKENS: [TokenId; 6] = TokenId::ALL;
 
 #[derive(Debug)]
 #[allow(dead_code)] // seed and turn are read through Debug in failure messages
@@ -58,7 +58,7 @@ fn cases() -> Vec<Case> {
         let mut out = vec![];
         let probe: Vec<(TargetKind, Effect)> = {
             let s = at_turn(seed, turn);
-            if !s.token(token).orderable {
+            if !s.in_tray(token) || !s.token(token).orderable {
                 return out;
             }
             s.valid_targets(token).into_iter().filter(|t| t.kind != TargetKind::Sky).map(|t| (t.kind, s.preview(token, t.id).unwrap().effect)).collect()

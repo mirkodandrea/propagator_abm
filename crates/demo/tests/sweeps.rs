@@ -106,7 +106,7 @@ fn s1_hand_crew() {
     // Variants: the same crew-borgo-t1 with faster line production.
     let dir = data_dir();
     for x in [4.0f32, 10.0] {
-        let v = Variant { unit_effect: abm::suppression::UnitEffect { line_x: x, ..abm::suppression::UnitEffect::ONE }, ..demo::session::variant() };
+        let v = Variant { crews_defend: false, unit_effect: abm::suppression::UnitEffect { line_x: x, ..abm::suppression::UnitEffect::ONE }, ..demo::session::variant() };
         let r = grid(&seeds(), 2, |seed, j| {
             let d = demo::draw(TOWN, seed).unwrap();
             let mut s = Session::with_variant(&dir, d, v).unwrap();
@@ -378,10 +378,10 @@ fn s7_boosted_crew() {
     let none: HashMap<u64, Counterfactual> = demo::turn_policy::counterfactuals(&dir, &seeds());
     let mut configs: Vec<(String, CrewMode, Variant)> = vec![];
     for x in [1.0f32, 4.0, 10.0, 20.0, 40.0] {
-        let v = Variant { unit_effect: abm::suppression::UnitEffect { line_x: x, ..abm::suppression::UnitEffect::ONE }, ..demo::session::variant() };
+        let v = Variant { crews_defend: false, unit_effect: abm::suppression::UnitEffect { line_x: x, ..abm::suppression::UnitEffect::ONE }, ..demo::session::variant() };
         configs.push((format!("fascia line_x={x}"), CrewMode::Fascia, v));
     }
-    configs.push(("defence (no water)".into(), CrewMode::Post, Variant { crews_defend: true, ..demo::session::variant() }));
+    configs.push(("defence (no water)".into(), CrewMode::Difesa, demo::session::variant()));
     println!("\n§7.7 boosted crew (N={N}), crew at turn 1. Δ homes in that district vs none (paired): Il Borgo, wind holds | Le Coste, shifts | Il Mulino, all | line cut (m) | minutes to start work");
     for (name, mode, v) in &configs {
         let r = grid(&seeds(), 3, |seed, d| {

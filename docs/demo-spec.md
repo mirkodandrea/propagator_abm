@@ -26,7 +26,7 @@ reports, but cannot be targeted. The resources are few and each has a catch:
 **one police patrol**, the only way to warn people, which warns one district
 when it gets there — so a needless stop costs the districts at risk time;
 **two fire engines** (+1 at turn 3) that save homes only on the fire's path;
-**one hand crew** that clears a firebreak around a district, slow to arrive;
+**one hand crew** that defends homes off-road without water, slow to arrive;
 and **one Canadair** that comes only if called, 25 minutes later. *Avanti* plays the
 turn; a three-line report says what happened. After turn 5 the fire runs to
 T+60 and each district is stamped. The verdict counts **families caught** and
@@ -113,9 +113,9 @@ exact words the kiosk will show.
 
 | # | Deliverable | Gate | State |
 |---|---|---|---|
-| 0 | **Sweeps** on Rocca Ventosa (gameplay §7) | each resource has a right and a wrong use that differ measurably; resources that fail are cut | 🔲 |
-| 1 | Turn engine in `demo`; `crates/text`; `play` binary; `scripts/playtest.sh` | gameplay §5 lessons pinned; `play` walks a full session in < 1 min of commands | 🔲 |
-| 2 | **Blind playtest rounds** (≥ 2, changes between them) | playtester scores clarity and fun ≥ 4/5; states ≥ 4 lessons unprompted | 🔲 |
+| 0 | **Sweeps** on Rocca Ventosa (gameplay §7) | each resource has a right and a wrong use that differ measurably; resources that fail are cut | ✅ |
+| 1 | Turn engine in `demo`; `crates/text`; `play` binary; `scripts/playtest.sh` | gameplay §5 lessons pinned; `play` walks a full session in < 1 min of commands | ✅ |
+| 2 | **Blind playtest rounds** (≥ 2, changes between them) | playtester scores clarity and fun ≥ 4/5; states ≥ 4 lessons unprompted | 🔶 |
 | 3 | Kiosk: tray, targets, turn loop, report, finale, verdict | screenshot of every screen; twin test green | 🔲 |
 | 4 | Human playtest (3–5 people), operator doc, `KIOSK_SELFTEST`, Italian review | first order ≤ 30 s; nobody stuck > 60 s | 🔲 |
 | 5 | Buffer, fixes only | | 🔲 |
@@ -123,6 +123,12 @@ exact words the kiosk will show.
 Cut order if days slip: the hand crew, the reinforcement, the rule notes on
 the verdict, visual polish. **Never cut:** turns, the patrol, engines, the Canadair call, wind and forecast on the map, the verdict
 against no orders, idle reset.
+
+Two blind rounds are filed in `docs/playtests/2026-10-07-resumed-round1.md`
+and `docs/playtests/2026-10-07-resumed-round2.md`, with wording fixes between
+them. Both score usability 3/5, fun 3/5, interest 4/5, so milestone 2 remains
+open. The next design work is specific warning explanations and meaningful
+late turns; the kiosk migration has not started.
 
 ## 6. Acceptance
 

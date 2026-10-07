@@ -35,8 +35,12 @@ fn a_whole_session_by_commands() {
     let (o, ok) = play(&dir, &["nuova", "--seme", "3"]);
     assert!(ok, "{o}");
     assert!(o.contains("Turno 1 di 5") && o.contains("RISORSE") && o.contains("QUARTIERI"), "{o}");
+    assert!(o.contains("ordini proseguono da soli") && o.contains("fino a T+60") && o.contains("annulla"), "{o}");
     assert!(o.lines().all(|l| l.chars().count() <= 100), "a line wider than 100 columns");
     italian(&o);
+
+    let (o, ok) = play(&dir, &["scegli", "K"]);
+    assert!(ok && o.lines().last() == Some("> ./play ordina K · ./play scegli <altra risorsa> · ./play avanti"), "{o}");
 
     for bad in [&["scegli", "X"][..], &["ordina", "E1", "abc"], &["ordina", "E3", "1"], &["ordina", "P", "4"], &["vola"]] {
         let (o, ok) = play(&dir, bad);
@@ -58,7 +62,9 @@ fn a_whole_session_by_commands() {
         italian(&o);
         assert!(o.contains("RAPPORTO") || turn == 5, "turn {turn}: no report\n{o}");
         if turn == 5 {
-            assert!(o.contains("FINE DELL'INCENDIO") && o.contains("senza ordini") && o.contains("Famiglie in salvo"), "{o}");
+            assert!(o.contains("FINE DELL'INCENDIO") && o.contains("senza ordini") && o.contains("Famiglie bloccate dal fuoco"), "{o}");
+            assert!(!o.contains("Famiglie in salvo"), "the verdict must show the caught-family comparison: {o}");
+            assert_eq!(o.matches("Famiglie bloccate dal fuoco:").count(), 4, "overall and per-district comparisons: {o}");
         }
     }
     let (o, ok) = play(&dir, &["avanti"]);

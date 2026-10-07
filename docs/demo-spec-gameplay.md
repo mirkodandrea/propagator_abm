@@ -31,20 +31,24 @@ Names are proposals; the shape is binding.
 
 | Delivered by `demo::` | Meaning | Status |
 |---|---|---|
-| `Referee` (one set of books) + `turn() -> Turn`, `tokens() -> &[Token]`, `targets() -> Vec<Target>`, `preview(token, target) -> Option<Preview>`, `assign(token, target)`, `unassign(token)`, `end_turn()`, `report() -> &TurnReport`, `verdict() -> Verdict` | the turn engine; kiosk and twin call the same methods in the same order | 🔲 |
-| `Turn { index, at_s, last: bool }`, `TURN_S` (8 min), `TURNS` (5), `MISSION_S` (60 min) | the clock | 🔲 |
-| `Token { id, kind: TokenKind, state: TokenState, water: Option<f32>, at: Pos, order: Option<TargetId> }` | the tray and the units on the map | 🔲 |
-| `TokenKind::{Pattuglia, Autobotte, Squadra, Canadair}` | §3 | 🔲 |
-| `TokenState::{Libero, InViaggio{eta_s}, AlLavoro, Rifornimento{eta_s}, Ritirato, Perso, InArrivo{eta_s}, NonChiamato}` | badge on the token and the unit | 🔲 |
-| `Target { id, kind: TargetKind, pos, label_pos }`, `TargetKind::{District(d), Head, Flank(Side), Sky}` | §4; `Sky` is the Canadair call; spot fires are map features, not targets | 🔲 |
-| `Preview { eta_s, effect: Effect }`, `Effect::{Avvisa{families}, Difende{homes}, Fascia{homes}, Bagna, NonSalvaCase, Lontano, Ritirata, Chiamata{eta_s}, Inutile}` | what the target says before you commit (§4) | 🔲 |
-| `TurnReport { lines: Vec<ReportLine> }` (≤ 3, ranked), `ReportLine { kind, district: Option<usize>, pos: Option<Pos>, n: Option<u32> }` | the between-turn report (§6) | 🔲 |
-| `Verdict { districts: Vec<DistrictVerdict>, families_caught, homes_hit, none: Counterfactual, notes: Vec<Note> }` | the end card (§6); families are shown **caught**, never "safe out of 250" | 🔲 |
-| `DistrictVerdict { district, people: Stamp, homes_hit, homes_hit_none }`, `Stamp::{InTempo, Tardi, MaiAvvisati, GiustoNonAvvisare, Prudente, AllarmeInutile}` | one row per district | 🔲 |
-| `Note::{TestaInutile, CanadairInTempo, CanadairTardi, CanadairMaiChiamato, PattugliaSprecata, …}` | doctrine kept or broken, ≤ 3 on the card | 🔲 |
+| `Session` on `Run` / `Referee` (one set of books) + `turn() -> Turn`, `tokens() -> Vec<Token>`, `targets() -> Vec<Target>`, `preview(token, target) -> Option<Preview>`, `assign(token, target)`, `unassign(token)`, `end_turn()`, `report() -> &TurnReport`, `verdict() -> Verdict` | the turn engine; kiosk and twin call the same methods in the same order | ✅ |
+| `Turn { index, at_s, last: bool }`, `TURN_S` (8 min), `TURNS` (5), `MISSION_S` (60 min) | the clock | ✅ |
+| `Token { id, kind: TokenKind, state: TokenState, water: Option<f32>, at: Pos, order: Option<TargetId> }` | the tray and the units on the map | ✅ |
+| `TokenKind::{Pattuglia, Autobotte, Squadra, Canadair}` | §3 | ✅ |
+| `TokenState::{Libero, InViaggio{eta_s}, AlLavoro, Rifornimento{eta_s}, Ritirato, Perso, InArrivo{eta_s}, NonChiamato}` | badge on the token and the unit | ✅ |
+| `Target { id, kind: TargetKind, pos, label_pos }`, `TargetKind::{District(d), Head, Flank(Side), Sky}` | §4; `Sky` is the Canadair call; spot fires are map features, not targets | ✅ |
+| `Preview { eta_s, effect: Effect }`, `Effect::{Avvisa{families}, Difende{homes}, Fascia{homes}, Bagna, NonSalvaCase, Lontano, Ritirata, Chiamata{eta_s}, Inutile}` | what the target says before you commit (§4) | ✅ |
+| `TurnReport { lines: Vec<ReportLine> }` (≤ 3, ranked), `ReportLine { kind, district: Option<usize>, pos: Option<Pos>, n: Option<u32> }` | the between-turn report (§6) | ✅ |
+| `Verdict { districts: Vec<DistrictVerdict>, families_caught, homes_hit, none: Counterfactual, notes: Vec<Note> }` | the end card (§6); families are shown **caught**, never "safe out of 250" | ✅ |
+| `DistrictVerdict { district, people: Stamp, homes_hit, homes_hit_none }`, `Stamp::{InTempo, Tardi, MaiAvvisati, GiustoNonAvvisare, Prudente, AllarmeInutile}` | one row per district | ✅ |
+| `Note::{TestaInutile, CanadairInTempo, CanadairTardi, CanadairMaiChiamato, PattugliaSprecata, …}` | doctrine kept or broken, ≤ 3 on the card | ✅ |
 | `Forecast` + `Draw::forecast(issue)`, issue 2 at turn 2 | the forecast | ✅ |
 | `District { name, households, centre, radius_m }`, `Report` | district facts | ✅ |
 | `Event` (existing kinds) | raw material for report lines | ✅ |
+
+The headless contract is implemented and used by `play`. Migrating the
+kiosk to this turn API is still presentation milestone 3; a compiling kiosk
+is not evidence that the new turn UI has shipped.
 
 ## 2. The scenario: Rocca Ventosa (`demo_borgo`)
 
@@ -71,9 +75,9 @@ T+0/5/10/15. Homes hit when the wind holds: none 68.4, three engines on Il Borgo
 
 | Token | Qty | Order | Model | Catch |
 |---|---|---|---|---|
-| 🚓 **Pattuglia** (Polizia Locale) | 1 | warn district *d* | 🔲 new: the car drives from staging by road; `EvacuateDistrict(d)` is applied **when it arrives**; free again the turn after | one district at a time; the order you warn them in matters |
+| 🚓 **Pattuglia** (Polizia Locale) | 1 | warn district *d* | the car drives from staging by road; `EvacuateDistrict(d)` is applied **when it arrives**; free again the turn after | one district at a time; the order you warn them in matters |
 | 🚒 **Autobotte** | 2, **+1 at turn 3** | defend district *d* · (head / flank) | `Defend` (option B, `defend_homes`), `Attack` | roads only, 60 m hose; refills at a hydrant (shown, costs no homes — §7.5) |
-| 👷 **Squadra AIB** (boosted) | 1 | clear a firebreak (*fascia di protezione*) on district *d*'s fire-facing side · (head / flank) | `Attack` (crew: line) placed in the **burnable** fuel outside the houses, with a crew `unit_effect` variant — **more effective than the published model, approved by Mirko 2026-10-07** | slow: ~14′ to Il Borgo; useless anywhere but on the fire's path (§7.7) |
+| 👷 **Squadra AIB** (boosted) | 1 | defend homes at district *d*'s fire-facing side · (head / flank) | off-road home-defence fallback (`crews_defend`), with a line starting at the post — **more effective than the published model, approved by Mirko 2026-10-07** | no water or road needed, but slow: ~14′ to Il Borgo; useless off the fire's path (§7.7) |
 | ✈️ **Canadair** | 1 | call (turn *k*) · then one drop per turn on head / flank / district edge | `request_air` then `Drop` | arrives `AIR_RESPONSE_S` (25 min ≈ 3 turns) after the call; only a drop on the threatened district's edge saves homes (§7.2) |
 
 The IT-alert was cut (demo-spec §2): it warned every district at once at no
@@ -99,7 +103,7 @@ selected token and shows `preview` on hover.
 
 | Target | Where | Valid for | Preview effect |
 |---|---|---|---|
-| **District d** | the district's fire-facing edge (`District::post_facing`) | Pattuglia, Autobotte, Squadra, Canadair | *Avvisa N famiglie* / *Difende N case* / *Fascia: protegge N case* / *Bagna il bordo* |
+| **District d** | the district's fire-facing edge (`District::post_facing`) | Pattuglia, Autobotte, Squadra, Canadair | *Avvisa N famiglie* / *Difende N case* / *Difende N case senza acqua* / *Bagna il bordo* |
 | **Testa** | `run::head_of` | Autobotte, Squadra, Canadair | *Non salva case: col vento la testa non si ferma* (lesson 4) |
 | **Fianco sx / dx** | perpendicular to the spread direction, 1/3 back from the head | Autobotte, Squadra, Canadair | what the model does there (measured: saves no home) / *Strada troppo lontana* |
 | **Cielo** | the tray slot itself | Canadair (when `NonChiamato`) | *Arriva al turno k* |
@@ -127,18 +131,20 @@ refused: the player may still send an engine to Il Mulino and learn from it.
 | 6 | Call aircraft early | Canadair called turn 1 delivers ≥ 2 drops before T+40; called turn 3 ≤ 1; and a drop matters (§7.2) |
 | 7 | People first | units alone (no warning) change homes hit, not families caught; warnings alone the reverse |
 
-### Measured (2026-10-07, seeds 1–40, before the IT-alert cut and crew boost; lessons renumbered since — re-measure)
+### Measured after triage (2026-10-07, seeds 1–40)
 
-| # | Fires? | Numbers |
+Reproduce: `cargo test --release -p demo --test lessons -- --ignored
+--nocapture`. All seven lessons retain active assertions.
+
+| # | Result | Numbers |
 |---|---|---|
-| 1 | yes | no orders, wind holds: Il Borgo 12.1 ± 1.5 caught, Le Coste 0.0; shift: Le Coste 13.8 ± 0.8; Il Mulino 0.0 |
-| 2 | yes | wind holds, Il Borgo caught: patrol t1 7.4 ± 1.4, t3 12.1 ± 1.5 |
-| 3 | stamp yes, families **no** | Il Mulino *Allarme inutile* 39/40 (seed 15: fire within 300 m, *In tempo*); IT-alert t1 4.6 ± 0.4 caught vs patrol Borgo t1 + Coste t2 7.8 ± 0.5 |
-| 4 | homes yes, withdrawal **no** | engine at the head t2: homes 68.4 vs 66.2 none; withdrew within the turn 0/40 (engine), 0/40 (crew) — §7.6 |
-| 5 | yes | wind holds: two engines on Il Borgo 22.6 homes hit vs 60.0; on Il Mulino no change |
-| 6 | **no** (dropped by §7.5) | engines working at the threat, posted t1 vs t2: 1.7 vs 1.6 |
-| 7 | yes | called t1: ≥ 2 drops by T+40 in 39/40 (seed 9: the first run broke off over the fire); called t3: ≤ 1 in 40/40; homes −6.5 ± 1.2 |
-| 8 | yes | engines alone: homes −17.8, families 0.0; patrol Borgo + Coste alone: families −5.4, homes 0.0 |
+| 1 | Wind changes risk | no orders, holds: Borgo 12.1 ± 1.5 caught, Coste 0.0; shifts: Coste 13.8 ± 0.8; Mulino 0.0 |
+| 2 | Early warnings help | holds: patrol Borgo t1 7.4 ± 1.4 caught, t3 12.1 ± 1.5 |
+| 3 | An early needless stop costs time | forecast patrol 6.8 ± 0.6 caught, Mulino-first 11.3 ± 0.6; Mulino false-alarm stamp 39/40 |
+| 4 | Head attacks save no homes | paired Δ vs none: engine +2.2 ± 2.3, crew +0.4 ± 0.5, Canadair −1.2 ± 1.4 |
+| 5 | Units help on the fire's path | holds: two engines Borgo 23.5 homes hit vs 61.4 none; crew Borgo 34.6 vs 60.0 in that district; either on Mulino changes nothing |
+| 6 | Call aircraft early | t1 mean 2.0 ± 0.1 drops by T+40, homes −6.5 ± 1.2; t3 no drops by T+40 and no mean home saving |
+| 7 | Count people and homes apart | engines alone: homes −17.5 ± 2.7, families unchanged; patrol Borgo + Coste: families 7.8 vs 13.2, homes unchanged |
 
 ## 6. Turn, report, verdict
 
@@ -158,8 +164,8 @@ formatted in `crates/text`.
 
 | Stamp | Rule |
 |---|---|
-| `InTempo` | warned, and the warning landed ≥ `IN_TIME_MIN` before the fire first **threatened or reached** the district, whichever is earlier; never for a warning that lands after the district is threatened |
-| `Tardi` | warned, landed later than that |
+| `InTempo` | warned ≥ `IN_TIME_MIN` before the first **threat or reach**, whichever is earlier; on the final card, caught families must also be fewer than with no orders (unless none would be caught anyway) |
+| `Tardi` | warned later than that, or the final caught-family count did not improve against no orders |
 | `MaiAvvisati` | reached, never warned |
 | `GiustoNonAvvisare` | not warned, never threatened |
 | `Prudente` | warned while the forecast in force pointed at it; never threatened. **Not a mistake.** |
@@ -195,6 +201,10 @@ token (demo-spec §6 for the `unit_effect` question).
    every drawn session (lesson 4 depends on it never "working").
 
 ### Measured (milestone 0, 2026-10-07)
+
+The tables in §§7.1–7.6 preserve the **pre-triage** measurements, including
+resources and flags subsequently removed. Current lessons and balance are in
+§§5 and 8; the isolated crew comparison and shipped fallback are in §7.7.
 
 Rocca Ventosa, drawn seeds 1–40 (the wind turns in 26, holds in 14), every
 policy played through `demo::Session` as a player would; mean ± s.e., Δ is the
@@ -302,48 +312,76 @@ homes; `wait-and-see` loses on families; no single policy beats
 `forecast-player` on both counts in more than a third of seeds. Whether Borgo
 or Coste first is right should **depend on the forecast** — report the split.
 
-### Measured (2026-10-07, seeds 1–40)
+### Measured after triage (2026-10-07, seeds 1–40)
+
+Reproduce: `cargo test --release -p demo --test balance -- --ignored
+--nocapture`. IT-alert and spot-fire targets are removed; crew home defence
+is on. Mean ± s.e.; differences pair the same seed.
 
 | Policy | Families caught | Homes hit | Δ caught vs forecast-player | Δ homes | Il Mulino *Allarme inutile* | Beats forecast-player on both |
 |---|---|---|---|---|---|---|
-| none | 13.2 ± 0.7 | 66.2 ± 2.7 | +5.4 ± 0.7 | +36.8 ± 1.5 | 0/40 | 0/40 |
-| patrol-borgo-t1 | 11.6 ± 0.9 | 66.2 ± 2.7 | +3.8 ± 0.8 | +36.8 ± 1.5 | 0/40 | 0/40 |
-| it-alert-t1 | 4.6 ± 0.4 | 66.2 ± 2.7 | −3.2 ± 0.4 | +36.8 ± 1.5 | 39/40 | 0/40 |
-| patrol-borgo-t1 + patrol-coste-t2 | 7.8 ± 0.5 | 66.2 ± 2.7 | +0.1 ± 0.1 | +36.8 ± 1.5 | 0/40 | 0/40 |
-| engines-borgo-t1 | 13.2 ± 0.7 | 47.7 ± 3.4 | +5.4 ± 0.7 | +18.2 ± 2.5 | 0/40 | 0/40 |
-| engines-head | 13.7 ± 0.8 | 66.4 ± 3.1 | +5.9 ± 0.8 | +37.0 ± 2.2 | 0/40 | 0/40 |
-| all-in | 4.6 ± 0.4 | 47.7 ± 3.4 | −3.2 ± 0.4 | +18.2 ± 2.5 | 39/40 | 2/40 |
-| forecast-player | 7.8 ± 0.6 | 29.5 ± 2.8 | — | — | 0/40 | — |
-| wait-and-see | 13.2 ± 0.7 | 45.8 ± 3.3 | +5.5 ± 0.7 | +16.4 ± 2.3 | 0/40 | 0/40 |
+| none | 13.2 ± 0.7 | 66.2 ± 2.7 | +6.5 ± 0.7 | +36.3 ± 1.5 | 0/40 | 0/40 |
+| patrol-borgo-t1 | 11.6 ± 0.9 | 66.2 ± 2.7 | +4.8 ± 0.9 | +36.3 ± 1.5 | 0/40 | 0/40 |
+| patrol-borgo-t1 + patrol-coste-t2 | 7.8 ± 0.5 | 66.2 ± 2.7 | +1.1 ± 0.4 | +36.3 ± 1.5 | 0/40 | 0/40 |
+| patrol-coste-t1 + patrol-borgo-t2 | 6.9 ± 0.7 | 66.2 ± 2.7 | +0.2 ± 0.5 | +36.3 ± 1.5 | 0/40 | 0/40 |
+| patrol-everyone | 7.8 ± 0.5 | 66.2 ± 2.7 | +1.1 ± 0.4 | +36.3 ± 1.5 | 39/40 | 0/40 |
+| patrol-mulino-first | 11.3 ± 0.6 | 66.2 ± 2.7 | +4.6 ± 0.5 | +36.3 ± 1.5 | 39/40 | 0/40 |
+| engines-borgo-t1 | 13.2 ± 0.7 | 48.0 ± 3.4 | +6.5 ± 0.7 | +18.0 ± 2.4 | 0/40 | 0/40 |
+| engines-head | 13.6 ± 0.7 | 67.2 ± 3.1 | +6.9 ± 0.7 | +37.3 ± 2.2 | 0/40 | 0/40 |
+| crew-borgo-t1 | 13.2 ± 0.7 | 53.8 ± 2.7 | +6.5 ± 0.7 | +23.8 ± 1.7 | 0/40 | 0/40 |
+| crew-mulino-t1 | 13.2 ± 0.7 | 66.2 ± 2.7 | +6.5 ± 0.7 | +36.3 ± 1.5 | 0/40 | 0/40 |
+| forecast-player | 6.7 ± 0.5 | 29.9 ± 2.9 | — | — | 0/40 | — |
+| wait-and-see | 13.2 ± 0.7 | 45.9 ± 3.3 | +6.5 ± 0.7 | +15.9 ± 2.1 | 0/40 | 0/40 |
 
-Met: best on homes; `all-in` loses the stamp (39/40 — on seed 15 the fire came
-within 300 m of Il Mulino and the warning stamps *In tempo*); `engines-head` =
-`none` on homes; `wait-and-see` loses on families; nothing beats
-`forecast-player` on both in more than 2/40 seeds. **Not met:** best or tied on
-families — the IT-alert at turn 1 (alone or in `all-in`) catches 3.2 ± 0.4
-fewer families, because warning Le Coste at T+0 is worth more than anything a
-patrol can do and the needless warning to Il Mulino costs nothing but the stamp.
+All seven balance assertions pass. Forecast-player is best or statistically
+tied on both counts; no tested policy beats it on both in any of the 40 seeds.
+The crew on Il Borgo saves 12.4 homes on average; on Il Mulino it saves none.
 
-### 7.7 Boosted crew (to run, 2026-10-07)
+Patrol order, split by the opening forecast (Borgo-first minus Coste-first;
+negative means Borgo-first is better):
 
-The crew stays, boosted (demo-spec §2). 7.1 showed why it did nothing: the
-district post is a house, so the line ran over non-burnable village ground,
-and on a flank the crew arrived after ~20′ and pulled back. Measure, on Il
-Borgo with the wind holding and on Le Coste with it shifting, crew sent at
-turn 1 vs none:
+| Shift probability | Seeds | Wind turned | Δ families caught |
+|---|---|---|---|
+| <30 % | 3 | 1 | −1.3 ± 0.9 |
+| 30–49 % | 19 | 11 | +0.0 ± 1.0 |
+| 50–59 % | 5 | 4 | +2.6 ± 1.6 |
+| ≥60 % | 13 | 10 | +2.2 ± 0.8 |
 
-1. **Firebreak in the fuel.** The crew cuts a *fascia* along the district's
-   fire-facing perimeter **in the burnable cells just outside the houses**
-   (30–100 m out), with a crew `unit_effect` (`line_x`, and walk-in speed if
-   needed) chosen as the smallest boost that passes.
-2. **Fallback — off-road home defence.** If (1) cannot pass at any reasonable
-   boost (state the largest tried), the crew defends homes like an engine
-   (`defend_homes` within `DEFEND_REACH_M`) but with no road needed and no
-   water, arriving slower.
+The low-probability group is too small for a strong conclusion; high shift
+probability favours Le Coste first in this sample. The cost of a needless
+stop is demonstrated by **Il Mulino first**, which delays the useful warnings.
+Visiting Il Mulino *after* Borgo and Coste leaves families caught unchanged
+(7.8 in both policies), and costs only the stamp. Do not teach that a third,
+late stop necessarily traps extra families.
 
-Pass: ≥ 5 homes fewer on the district the fire reaches; ~0 on Il Mulino. Record
-the table here, with the boost used. The boost is a kiosk variant: published
-model numbers in `CLAUDE.md` do not change.
+### 7.7 Boosted crew — measured (2026-10-07)
+
+The approved fallback ships: **off-road home defence, no water, slow arrival**.
+The published suppression numbers stay unchanged. `Variant::crews_defend`
+is false by default outside the kiosk variant and inert without a crew order.
+
+The corrected sweep isolates the mechanisms: home defence is **off** for all
+perimeter-firebreak runs, and the fallback uses the actual game order
+(`CrewMode::Difesa`). Reproduce: `cargo test --release -p demo --test sweeps
+s7_boosted_crew -- --ignored --nocapture`.
+
+Crew sent at turn 1, mean ± s.e.; paired change in homes hit in the target
+district against no orders. Negative means homes saved.
+
+| Crew | Il Borgo, wind holds | Le Coste, wind shifts | Il Mulino, all | Line cut (m, Borgo) | Starts work (min, Borgo) |
+|---|---|---|---|---|---|
+| perimeter firebreak, line ×1 | −0.1 ± 0.1 | +0.2 ± 0.3 | 0.0 | 85.6 ± 1.8 | 15.0 |
+| perimeter firebreak, line ×4 | −0.1 ± 2.8 | +0.5 ± 0.9 | 0.0 | 336.4 ± 9.9 | 15.0 |
+| perimeter firebreak, line ×10 | +0.2 ± 2.7 | −0.6 ± 1.1 | 0.0 | 484.6 ± 8.1 | 15.0 |
+| perimeter firebreak, line ×20 | −0.3 ± 2.7 | +0.2 ± 1.4 | 0.0 | 494.2 ± 6.2 | 15.0 |
+| perimeter firebreak, line ×40 | −0.1 ± 2.5 | +0.4 ± 1.4 | 0.0 | 502.9 ± 1.3 | 15.0 |
+| home defence (game order) | **−25.4 ± 1.4** | **−13.8 ± 0.3** | **0.0** | 92.4 ± 0.7 | 13.4 ± 0.1 |
+
+A firebreak alone still fails the five-home gate at the largest boost tried
+(×40); the fallback passes on both threatened districts and stays inert on
+Il Mulino. The game crew reaches its post on foot and covers homes within
+`DEFEND_REACH_M`, using the same tally as engine defence. Its cut line alone
+is not the source of the measured saving.
 
 ## 9. Model rules (binding)
 

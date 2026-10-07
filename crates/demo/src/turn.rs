@@ -67,8 +67,7 @@ impl TokenId {
     }
 
     /// The model unit this token drives (`abm::suppression` roster order:
-    /// three engines, three crews, two aircraft). The patrol and the IT-alert
-    /// are not units.
+    /// three engines, three crews, two aircraft). The patrol is not a unit.
     pub fn unit(self) -> Option<usize> {
         match self {
             TokenId::E1 => Some(0),
@@ -137,7 +136,7 @@ pub struct Token {
 }
 
 /// A target's number on the map. Stable through a session for districts,
-/// head and flanks; spot fires keep theirs until they go out or merge.
+/// head and flanks. Spot fires are shown without target numbers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TargetId(pub u8);
 
@@ -174,7 +173,7 @@ pub struct Target {
 /// What a target says before you commit (gameplay §4).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Preview {
-    /// Simulated seconds until the unit is there (0 for the IT-alert).
+    /// Simulated seconds until the unit is there.
     pub eta_s: i64,
     pub effect: Effect,
 }
