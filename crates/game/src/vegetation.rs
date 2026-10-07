@@ -41,9 +41,6 @@ use crate::sim::Sim;
 /// so a burning front dirties a similar number of both.
 const CHUNK_CELLS: usize = 32;
 
-/// Props are toys: at command altitude a real 15 m tree is four pixels.
-const PROP_SCALE: f32 = 2.6;
-
 /// Expected plants per 20 m fire cell (400 m²), per archetype, before the
 /// patchiness modulation below. Scaled by `SPOTORNO_VEG_DENSITY` for machines
 /// that would rather not draw several million triangles of macchia.
@@ -57,7 +54,7 @@ const PROP_SCALE: f32 = 2.6;
 ///
 /// Set by measurement, not by taste: 10.5 M triangles rendered at 119 fps in
 /// release on an M4 Pro, so there was room for roughly another half.
-const DENSITY: [f32; 4] = [0.03, 0.05, 0.05, 0.05];
+const DENSITY: [f32; 4] = [11.0, 3.4, 6.5, 3.8];
 
 /// Vegetation does not honour cell boundaries, and it is not uniform inside
 /// one either: real stands are patchy at tens of metres. Two octaves of value
@@ -112,18 +109,18 @@ impl Species {
             // draws. This is also the fuel that carries fire fastest. The dry
             // end sits close to the soil colour on purpose — grassland should
             // read as continuous cover, not as green dots on tan.
-            Species::Grass => ([0.80, 0.70, 0.36], [0.62, 0.64, 0.30]),
-            Species::Broadleaf => ([0.52, 0.66, 0.26], [0.30, 0.55, 0.28]),
+            Species::Grass => ([0.42, 0.36, 0.19], [0.26, 0.29, 0.15]),
+            Species::Broadleaf => ([0.19, 0.24, 0.12], [0.09, 0.17, 0.09]),
             // Macchia is a mix of species by definition; the widest range.
-            Species::Shrub => ([0.66, 0.60, 0.28], [0.40, 0.50, 0.26]),
-            Species::Conifer => ([0.20, 0.42, 0.26], [0.12, 0.34, 0.24]),
+            Species::Shrub => ([0.30, 0.27, 0.14], [0.13, 0.20, 0.10]),
+            Species::Conifer => ([0.12, 0.18, 0.11], [0.06, 0.13, 0.09]),
         }
     }
 
     fn wood(self) -> [f32; 3] {
         match self {
             Species::Grass => [0.32, 0.29, 0.17],
-            _ => [0.45, 0.30, 0.20],
+            _ => [0.21, 0.17, 0.13],
         }
     }
 }
@@ -305,7 +302,7 @@ fn scatter_plant(
 
     // A stand of one species is not a stand of clones: size, tint and yaw all
     // jitter, which is most of what stops merged geometry looking stamped.
-    let scale = (0.75 + rng.unit() * 0.5) * PROP_SCALE;
+    let scale = 0.75 + rng.unit() * 0.5;
     let yaw = rng.unit() * std::f32::consts::TAU;
 
     // Where this plant sits between the dry and vigorous ends of its species,
@@ -338,48 +335,53 @@ fn mul(c: [f32; 3], k: f32) -> [f32; 3] {
 
 // --- archetypes ------------------------------------------------------------
 //
-// Chunky toy props, built procedurally: round crowns, stubby trunks, a darker
-// underside baked into the vertex colours. A few thousand of them replace the
-// 230 k plants the first version scattered; the ground tint carries the cover.
+// Blender archetypes retain chunk batching, species palettes and burn ranges.
+// Normalized trees scale to the existing ecological height distributions.
 fn conifer(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
     foliage: [f32; 3], wood: [f32; 3], rng: &mut Rng) {
-    let h = (16.0 + rng.unit() * 6.0) * scale;
-    out.cylinder(base, h * 0.05, h * 0.22, wood, 0.8);
-    // Three stacked rounded cones, narrowing upwards: the pine read.
-    for i in 0..3 {
-        let f = i as f32;
-        let r = h * (0.27 - 0.06 * f);
-        out.cone(base + Vec3::Y * (h * (0.12 + 0.24 * f)), r, h * 0.40, foliage, yaw);
-    }
+    let height = (12.0 + rng.unit() * 9.0) * scale;
+    out.model("pine", base, Vec3::splat(height), yaw, foliage, wood);
 }
 
 fn broadleaf(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
     foliage: [f32; 3], wood: [f32; 3], rng: &mut Rng) {
-    let h = (11.0 + rng.unit() * 5.0) * scale;
-    out.cylinder(base, h * 0.06, h * 0.45, wood, 0.8);
-    let r = h * 0.36;
-    out.sphere(base + Vec3::Y * (h * 0.62), Vec3::new(r, r * 0.85, r), yaw, foliage);
-    // a second lobe off-centre: the cloud silhouette
-    let (s, c) = yaw.sin_cos();
-    out.sphere(base + Vec3::new(c * r * 0.7, h * 0.50, s * r * 0.7), Vec3::splat(r * 0.62), yaw, mul(foliage, 0.93));
+    let height = (7.0 + rng.unit() * 6.0) * scale;
+    out.model("oak", base, Vec3::splat(height), yaw, foliage, wood);
 }
 
 fn shrub(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
     foliage: [f32; 3], rng: &mut Rng) {
-    let r = (5.0 + rng.unit() * 3.0) * scale;
-    out.sphere(base + Vec3::Y * (r * 0.30), Vec3::new(r, r * 0.62, r), yaw, foliage);
-    let (s, c) = yaw.sin_cos();
-    out.sphere(base + Vec3::new(c * r * 0.8, r * 0.2, s * r * 0.8), Vec3::new(r * 0.6, r * 0.42, r * 0.6), yaw, mul(foliage, 1.08));
+    let r = (2.6 + rng.unit() * 2.2) * scale;
+    out.model("bush", base, Vec3::new(r, r * 0.8, r), yaw, foliage, foliage);
 }
 
 fn grass(out: &mut Builder, base: Vec3, scale: f32, yaw: f32, foliage: [f32; 3], rng: &mut Rng) {
-    // a haystack-like tuft: a flat round dome of dry grass
-    let r = (4.0 + rng.unit() * 3.0) * scale;
-    out.sphere(base + Vec3::Y * (r * 0.1), Vec3::new(r, r * 0.38, r), yaw, foliage);
+    // A tussock, not a blade: the unit of grassland at this scale is a clump
+    // half a metre high and a couple of metres across. Drawn as a low fan plus
+    // a few upright blades, so it holds a silhouette from a low camera angle
+    // and still covers ground when seen from above.
+    let spread = (1.5 + rng.unit() * 1.4) * scale;
+    let h = (0.5 + rng.unit() * 0.6) * scale;
+
+    // Ground fan: what actually closes the cover from altitude.
+    out.dome(base, spread, h * 0.55, yaw, mul(foliage, 0.9));
+
+    for i in 0..2 {
+        let a = yaw + i as f32 * (std::f32::consts::TAU / 3.0) + rng.unit() * 0.5;
+        out.blade(
+            base + Vec3::new(a.cos() * spread * 0.3, 0.0, a.sin() * spread * 0.3),
+            spread * 0.45,
+            h * (1.2 + rng.unit() * 1.0),
+            a,
+            mul(foliage, 1.0 + rng.unit() * 0.2),
+        );
+    }
 }
 
 // --- mesh building ---------------------------------------------------------
 
+/// No UV attribute: the vegetation material carries no texture, and at these
+/// vertex counts eight bytes each is tens of megabytes of nothing.
 #[derive(Default)]
 struct Builder {
     positions: Vec<[f32; 3]>,
@@ -389,6 +391,20 @@ struct Builder {
 }
 
 impl Builder {
+    fn model(&mut self, name: &str, base: Vec3, scale: Vec3, yaw: f32,
+        foliage: [f32; 3], wood: [f32; 3]) {
+        let model = crate::models::model(name);
+        let start = self.positions.len() as u32;
+        let rotation = Quat::from_rotation_y(yaw);
+        for (i, p) in model.positions.iter().enumerate() {
+            let color = if model.wood[i] { wood } else { foliage };
+            // Preserve species colour and the authored crown's tonal variation.
+            let shade = if model.wood[i] { 1.0 } else { model.colors[i][1] / 0.38 };
+            self.vertex(base + rotation * (Vec3::from(*p) * scale), mul(color, shade));
+        }
+        self.indices.extend(model.indices.iter().map(|i| start + i));
+    }
+
     fn vertex(&mut self, p: Vec3, c: [f32; 3]) -> u32 {
         let i = self.positions.len() as u32;
         self.positions.push([p.x, p.y, p.z]);
@@ -397,84 +413,46 @@ impl Builder {
         i
     }
 
-    /// Low-poly ellipsoid, lit from above in the vertex colours (dark belly).
-    fn sphere(&mut self, centre: Vec3, radii: Vec3, yaw: f32, color: [f32; 3]) {
-        const SEG: usize = 8;
-        const RINGS: usize = 4;
+    /// Low, irregular dome for the remaining procedural grass tussocks.
+    fn dome(&mut self, base: Vec3, radius: f32, height: f32, yaw: f32, color: [f32; 3]) {
+        const SEGMENTS: usize = 5;
+        // The tip leans, so a clump of domes does not read as a row of cones.
+        let (ls, lc) = yaw.sin_cos();
+        let apex = self.vertex(
+            base + Vec3::new(lc * radius * 0.18, height, ls * radius * 0.18),
+            color,
+        );
+        let ring = self.positions.len() as u32;
+        for i in 0..SEGMENTS {
+            let a = yaw + i as f32 / SEGMENTS as f32 * std::f32::consts::TAU;
+            let (s, c) = a.sin_cos();
+            // Deterministic rim wobble, and a darker skirt where the lobe
+            // meets the ground.
+            let r = radius * (0.78 + 0.44 * ((a * 2.7).sin() * 0.5 + 0.5));
+            let skirt = [color[0] * 0.72, color[1] * 0.72, color[2] * 0.72];
+            self.vertex(base + Vec3::new(c * r, height * 0.06, s * r), skirt);
+        }
+        for i in 0..SEGMENTS {
+            let a = ring + i as u32;
+            let b = ring + ((i + 1) % SEGMENTS) as u32;
+            self.indices.extend_from_slice(&[apex, a, b]);
+        }
+    }
+
+    /// Single upright quad, leaning slightly: one blade of a grass tuft.
+    fn blade(&mut self, base: Vec3, width: f32, height: f32, yaw: f32, color: [f32; 3]) {
+        let (s, c) = yaw.sin_cos();
+        let across = Vec3::new(c, 0.0, s) * width * 0.5;
+        let lean = Vec3::new(-s, 0.0, c) * height * 0.25;
         let start = self.positions.len() as u32;
-        let rot = Quat::from_rotation_y(yaw);
-        for ring in 0..=RINGS {
-            let v = ring as f32 / RINGS as f32;
-            let phi = v * std::f32::consts::PI;
-            let (sp, cp) = phi.sin_cos();
-            let shade = 0.68 + 0.42 * (cp * 0.5 + 0.5);
-            let n = if ring == 0 || ring == RINGS { 1 } else { SEG };
-            for i in 0..n {
-                let a = i as f32 / SEG as f32 * std::f32::consts::TAU + 0.4 * (ring % 2) as f32;
-                let (sa, ca) = a.sin_cos();
-                let local = Vec3::new(sp * ca * radii.x, cp * radii.y, sp * sa * radii.z);
-                self.vertex(centre + rot * local, mul(color, shade));
-            }
-        }
-        // ring layout: [top], ring1..ringN-1 (SEG each), [bottom]
-        let top = start;
-        let first = |r: usize| start + 1 + ((r - 1) * SEG) as u32;
-        let bottom = start + 1 + ((RINGS - 1) * SEG) as u32;
-        for i in 0..SEG {
-            let j = (i + 1) % SEG;
-            self.indices.extend_from_slice(&[top, first(1) + j as u32, first(1) + i as u32]);
-            for r in 1..RINGS - 1 {
-                let (a, b) = (first(r), first(r + 1));
-                let (i, j) = (i as u32, j as u32);
-                self.indices.extend_from_slice(&[a + i, a + j, b + i, a + j, b + j, b + i]);
-            }
-            let l = first(RINGS - 1);
-            self.indices.extend_from_slice(&[bottom, l + i as u32, l + j as u32]);
-        }
-    }
-
-    /// A rounded-ish cone: wide skirt ring, apex, chunky.
-    fn cone(&mut self, base: Vec3, radius: f32, height: f32, color: [f32; 3], yaw: f32) {
-        const SEG: usize = 8;
-        let apex = self.vertex(base + Vec3::Y * height, mul(color, 1.12));
-        let ring0 = self.positions.len() as u32;
-        let mid = self.positions.len() as u32 + SEG as u32;
-        for i in 0..SEG {
-            let a = yaw + i as f32 / SEG as f32 * std::f32::consts::TAU;
-            let (s, c) = a.sin_cos();
-            self.vertex(base + Vec3::new(c * radius, 0.0, s * radius), mul(color, 0.62));
-        }
-        for i in 0..SEG {
-            let a = yaw + i as f32 / SEG as f32 * std::f32::consts::TAU;
-            let (s, c) = a.sin_cos();
-            self.vertex(base + Vec3::new(c * radius * 0.62, height * 0.42, s * radius * 0.62), mul(color, 0.92));
-        }
-        for i in 0..SEG as u32 {
-            let j = (i + 1) % SEG as u32;
-            self.indices.extend_from_slice(&[ring0 + i, ring0 + j, mid + i, ring0 + j, mid + j, mid + i]);
-            self.indices.extend_from_slice(&[apex, mid + i, mid + j]);
-        }
-    }
-
-    fn cylinder(&mut self, base: Vec3, radius: f32, height: f32, color: [f32; 3], taper: f32) {
-        const SEG: usize = 5;
-        let r0 = self.positions.len() as u32;
-        for i in 0..SEG {
-            let a = i as f32 / SEG as f32 * std::f32::consts::TAU;
-            let (s, c) = a.sin_cos();
-            self.vertex(base + Vec3::new(c * radius, 0.0, s * radius), mul(color, 0.7));
-        }
-        for i in 0..SEG {
-            let a = i as f32 / SEG as f32 * std::f32::consts::TAU;
-            let (s, c) = a.sin_cos();
-            self.vertex(base + Vec3::new(c * radius * taper, height, s * radius * taper), color);
-        }
-        for i in 0..SEG as u32 {
-            let j = (i + 1) % SEG as u32;
-            let (a, b) = (r0 + i, r0 + SEG as u32 + i);
-            let (a2, b2) = (r0 + j, r0 + SEG as u32 + j);
-            self.indices.extend_from_slice(&[a, a2, b, a2, b2, b]);
-        }
+        // Root colour is darker: a lit blade should not read as a flat card.
+        let root = mul(color, 0.65);
+        self.vertex(base - across, root);
+        self.vertex(base + across, root);
+        self.vertex(base + across * 0.35 + lean + Vec3::Y * height, color);
+        self.vertex(base - across * 0.35 + lean + Vec3::Y * height, color);
+        self.indices
+            .extend_from_slice(&[start, start + 1, start + 2, start, start + 2, start + 3]);
     }
 
     /// Area-weighted vertex normals from the faces, then the mesh.
