@@ -337,10 +337,8 @@ fn forecast_card(p: &egui::Painter, rect: Rect, f: &demo::Forecast, fresh: f32) 
     txt(p, pos2(x, rect.bottom() - 13.0), Align2::LEFT_CENTER, t::FORECAST_CAVEAT, 12.0, MUTED);
 }
 
-pub(crate) fn bearing_name(deg: f32) -> &'static str {
-    const N: [&str; 8] = ["nord", "nord-est", "est", "sud-est", "sud", "sud-ovest", "ovest", "nord-ovest"];
-    N[(((deg % 360.0 + 360.0) % 360.0 + 22.5) / 45.0) as usize % 8]
-}
+/// Moved to `crates/text`, shared with the `play` binary.
+pub(crate) use text::bearing_name;
 
 /// Width of the wind-and-forecast column on the right; map chips keep out of it.
 const RIGHT_COL: f32 = 270.0;

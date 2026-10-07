@@ -55,13 +55,8 @@ pub const FIRE_HERE: &str = "Il fuoco è qui!";
 pub const CALM: &str = "Tranquillo";
 pub const FIRE_TAG: &str = "Incendio";
 
-pub fn fire_at(m: f32) -> String {
-    if m >= 1000.0 {
-        format!("Fuoco a {:.1} km", m / 1000.0)
-    } else {
-        format!("Fuoco a {:.0} m", (m / 50.0).round() * 50.0)
-    }
-}
+/// Moved to `crates/text`, shared with the `play` binary.
+pub use text::{fire_at, households};
 
 pub fn leaving(out: usize, total: usize) -> String {
     format!("{out}/{total} via")
@@ -74,9 +69,6 @@ pub fn engines_posted(n: usize) -> String {
     }
 }
 
-pub fn households(n: usize) -> String {
-    format!("{n} famiglie")
-}
 
 // --- Action bar ----------------------------------------------------------
 pub const ACT_EVACUATE: &str = "Allerta generale";
