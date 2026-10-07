@@ -14,10 +14,10 @@ use super::{Kiosk, Phase};
 use crate::camera::OrbitCamera;
 use crate::sim::Sim;
 
-const MIN_PITCH: f32 = -0.96;
-const MAX_PITCH: f32 = -0.78;
-const MAX_YAW: f32 = 0.52;
-const MIN_DIST: f32 = 800.0;
+const MIN_PITCH: f32 = -1.30;
+const MAX_PITCH: f32 = -0.55;
+const MAX_YAW: f32 = 1.75;
+const MIN_DIST: f32 = 90.0;
 const MAX_DIST: f32 = 4600.0;
 const PAN_RADIUS_M: f32 = 1500.0;
 const PLAY_DIST: f32 = 1900.0;
@@ -150,16 +150,18 @@ pub fn camera(
             if !buttons.pressed(MouseButton::Right) {
                 drag.right = false;
             }
+            // Left-drag grabs the ground and pans; right-drag turns the table.
+            // (Left stays free of the map while an order tool is armed.)
             if drag.left {
-                orbit.yaw -= delta.x * 0.004;
-                orbit.pitch -= delta.y * 0.003;
-            }
-            if drag.right {
                 let h = camera.logical_viewport_size().map_or(1000.0, |s| s.y).max(1.0);
                 let scale = orbit.distance * 0.83 / h;
                 let rot = Quat::from_rotation_y(orbit.yaw);
                 let tilt = orbit.pitch.sin().abs().max(0.3);
-                orbit.focus += rot * Vec3::new(-delta.x, 0.0, delta.y / tilt) * scale;
+                orbit.focus += rot * Vec3::new(-delta.x, 0.0, -delta.y / tilt) * scale;
+            }
+            if drag.right {
+                orbit.yaw -= delta.x * 0.005;
+                orbit.pitch -= delta.y * 0.004;
             }
             if over_map && scroll != 0.0 {
                 orbit.distance *= (-scroll.clamp(-6.0, 6.0) * 0.1).exp();
