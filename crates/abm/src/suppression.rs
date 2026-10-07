@@ -103,13 +103,13 @@ pub const SCOOP_S: f32 = 90.0;
 pub const AIR_RESPONSE_S: f32 = 25.0 * 60.0;
 
 /// Engine road speed, m/s (~45 km/h): blue lights on a coast road with hairpins.
-const ENGINE_SPEED: f32 = 12.0;
+pub const ENGINE_SPEED: f32 = 12.0;
 /// Hand crew network speed, m/s. A blend, deliberately: they ride a light
 /// vehicle where there is a track and walk where there is not, and modelling
 /// the transfer explicitly would add a state nobody would ever look at.
-const CREW_SPEED: f32 = 3.0;
+pub const CREW_SPEED: f32 = 3.0;
 /// Crew speed off the network, m/s, before the slope correction.
-const CREW_WALK_SPEED: f32 = 1.1;
+pub const CREW_WALK_SPEED: f32 = 1.1;
 
 // --- safety -----------------------------------------------------------------
 
@@ -616,6 +616,44 @@ impl Suppression {
             self.generation += 1;
         }
         n
+    }
+
+    /// Call for one aircraft only (the kiosk game has a single Canadair).
+    /// Returns whether it started inbound. Same delay and arrival point as
+    /// [`Suppression::request_air`]; the other aircraft are left unrequested.
+    pub fn request_air_unit(&mut self, id: usize) -> bool {
+        let now = self.time_s;
+        let water = self.open_water.clone();
+        let Some(u) = self.units.get_mut(id) else { return false };
+        if !(u.kind.is_air() && u.state == UnitState::Unavailable) {
+            return false;
+        }
+        u.state = UnitState::Inbound;
+        u.arrives_at_s = now + AIR_RESPONSE_S;
+        if let Some(w) = nearest(&water, u.base) {
+            u.pos = w;
+        }
+        self.generation += 1;
+        true
+    }
+
+    /// Metres of road still to drive on a ground unit's current route
+    /// (0 for a unit that has arrived, is parked, or flies).
+    pub fn route_remaining_m(&self, id: usize, net: &RoadNetwork) -> f32 {
+        let Some(u) = self.units.get(id) else { return 0.0 };
+        let mut at = u.pos;
+        let mut m = 0.0;
+        for &n in &u.route {
+            let p = net.pos(n);
+            m += dist(at, p);
+            at = p;
+        }
+        m
+    }
+
+    /// The hydrant an engine at `p` would refill from, if the map has one.
+    pub fn nearest_hydrant(&self, p: Pos) -> Option<Pos> {
+        nearest(&self.hydrants, p)
     }
 
     /// Seconds until the next aircraft is overhead, if any is inbound.

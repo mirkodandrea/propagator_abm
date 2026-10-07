@@ -101,6 +101,11 @@ struct Defence {
     lost: Vec<bool>,
     /// Per unit: where it took up its post, and the task that sent it there.
     station: Vec<Option<(Pos, Task)>>,
+    /// Per household, the fire-grid indices within [`DEFENDED_RADIUS_M`] and
+    /// [`LOST_RADIUS_M`] of the home. Homes do not move, so this is computed
+    /// once on the first step rather than re-derived for 250 homes every 6 s
+    /// (it was most of a session's cost). Same cells, same answer.
+    near_cells: Vec<(Vec<u32>, Vec<u32>)>,
 }
 
 /// An engine posted within this distance of a home defends it: about a
@@ -121,7 +126,7 @@ impl Tally {
     /// Turn on home defence. Inert until called; the kiosk does not call it.
     pub fn enable_defence(&mut self) {
         let n = self.caught_at.len();
-        self.defence.get_or_insert_with(|| Defence { until_s: vec![0; n], lost: vec![false; n], station: vec![] });
+        self.defence.get_or_insert_with(|| Defence { until_s: vec![0; n], lost: vec![false; n], station: vec![], near_cells: vec![] });
     }
 
     pub fn defence_enabled(&self) -> bool {
@@ -175,13 +180,20 @@ impl Tally {
                 d.until_s[i] = d.until_s[i].max(now + DROP_DEFENCE_S);
             }
         }
+        if d.near_cells.len() != agents.households.len() {
+            let idx = |p: Pos, r: f32| -> Vec<u32> {
+                fire::cells_in_radius(world, p, r).iter().map(|c| (c.row * world.fire_cols + c.col) as u32).collect()
+            };
+            d.near_cells = agents.households.iter().map(|h| (idx(h.home, DEFENDED_RADIUS_M), idx(h.home, LOST_RADIUS_M))).collect();
+        }
         let state = fire.state();
-        for (i, h) in agents.households.iter().enumerate() {
+        for i in 0..agents.households.len() {
             if d.lost[i] {
                 continue;
             }
-            let r = if d.until_s[i] > now { DEFENDED_RADIUS_M } else { LOST_RADIUS_M };
-            if fire::cells_in_radius(world, h.home, r).iter().any(|c| state[c.row * world.fire_cols + c.col] != CellFire::Unburnt) {
+            let (near, far) = &d.near_cells[i];
+            let cells = if d.until_s[i] > now { near } else { far };
+            if cells.iter().any(|&c| state[c as usize] != CellFire::Unburnt) {
                 d.lost[i] = true;
             }
         }
@@ -283,6 +295,10 @@ pub struct Variant {
     /// Cry-wolf (spec 5.2): the most trust a fully needless order costs the
     /// households still to be ordered. `None` = off, nothing runs.
     pub cry_wolf: Option<f32>,
+    /// The turn game (gameplay spec §2): every unit starts at one fire station
+    /// ([`station`]) instead of round-robin over the refuges, so a token's ETA
+    /// is a drive from one place. Off = the published staging.
+    pub station: bool,
 }
 
 /// What the commander can be told and judged by, kept apart from who steps the
@@ -632,7 +648,8 @@ impl Run {
         let centre = scn.world.cell_of(spec.ignition);
         fire.ignite_patch(centre, spec.radius_m, &scn)?;
         let agents = Abm::new(&scn, seed)?;
-        let mut crews = Suppression::new(&scn, &staging(&agents, scn.world.centre_of(centre)))?;
+        let bases = if variant.station { vec![station(&agents, scn.world.centre_of(centre))] } else { staging(&agents, scn.world.centre_of(centre)) };
+        let mut crews = Suppression::new(&scn, &bases)?;
         crews.effect = variant.unit_effect;
         let referee = Referee::new(spec, &scn, &agents, variant);
         Ok(Run { scn, fire, agents, crews, spec, referee })
@@ -772,6 +789,19 @@ impl Run {
         }
         Ok(self.outcome())
     }
+}
+
+/// The turn game's fire station: the map-edge exit nearest the fire, where
+/// the road comes in from the next town. Measured in `tests/sweeps.rs`
+/// (`station_drive_times`): from here the patrol reaches Il Borgo's
+/// fire-facing edge in a few minutes, which is the delay the patrol token is
+/// about (gameplay spec §7.4). Falls back to the nearest refuge of any kind.
+pub fn station(agents: &Abm, ignition: Pos) -> Pos {
+    let d = |p: &Pos| (p.x - ignition.x).powi(2) + (p.y - ignition.y).powi(2);
+    let pick = |exit: bool| {
+        agents.refuges.iter().filter(|r| r.is_exit == exit).map(|r| r.pos).min_by(|a, b| d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal))
+    };
+    pick(true).or_else(|| pick(false)).unwrap_or(ignition)
 }
 
 /// Where suppression units stage: the refuges, closest to the fire first --
