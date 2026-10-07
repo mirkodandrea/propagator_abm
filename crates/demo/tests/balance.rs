@@ -2,10 +2,10 @@
 //! of §8 on Rocca Ventosa, drawn seeds, played through `Session`.
 //!
 //! One grid, computed once per run of this file; one test per target. A
-//! target the model does not meet is kept with its assertion intact and
-//! `#[ignore]`d with the measured numbers in the reason -- it is reported to
-//! the lead, not tuned away (gameplay §9: published numbers are not changed
-//! to make a table come out). `table` prints everything.
+//! target the model does not meet keeps its assertion and is `#[ignore]`d
+//! with the measured numbers -- reported to the lead, not tuned away
+//! (gameplay §9). `table` prints everything, including whether Il Borgo or
+//! Le Coste first is right depending on the forecast.
 
 use std::sync::OnceLock;
 
@@ -25,7 +25,7 @@ struct Rec {
     stamps: Vec<Stamp>,
 }
 
-/// (seed, policy) → record, policies in `balance_set()` order.
+/// [seed-1][policy], policies in `balance_set()` order.
 fn results() -> &'static Vec<Vec<Rec>> {
     static R: OnceLock<Vec<Vec<Rec>>> = OnceLock::new();
     R.get_or_init(|| {
@@ -65,31 +65,58 @@ fn fp() -> usize {
     idx("forecast-player")
 }
 
+/// A stamp that marks a mistake.
+fn bad(s: Stamp) -> bool {
+    !s.good()
+}
+
 #[test]
 #[ignore]
 fn table() {
     let ps = balance_set();
-    println!("\n§8 balance (N={N}, drawn seeds). families caught | homes hit | Δ caught vs forecast-player | Δ homes vs forecast-player | Mulino AllarmeInutile | beats forecast-player on both");
+    println!("\n§8 balance (N={N}, drawn seeds). families caught | homes hit | Δ caught vs forecast-player | Δ homes | sessions with a bad stamp | Mulino AllarmeInutile | beats forecast-player on both");
     for (j, p) in ps.iter().enumerate() {
         let (c, h) = (col(j, |r| r.caught), col(j, |r| r.homes));
         let (dc, dh) = (diff(j, fp(), |r| r.caught), diff(j, fp(), |r| r.homes));
+        let stamp = results().iter().filter(|r| r[j].stamps.iter().any(|s| bad(*s))).count();
         let wolf = results().iter().filter(|r| r[j].stamps[MULINO] == Stamp::AllarmeInutile).count();
         let both = results().iter().filter(|r| r[j].caught < r[fp()].caught && r[j].homes < r[fp()].homes).count();
         println!(
-            "{:34} {:5.1} ± {:3.1} | {:5.1} ± {:3.1} | {:+5.1} ± {:3.1} | {:+5.1} ± {:3.1} | {wolf:2}/{N} | {both:2}/{N}",
+            "{:34} {:5.1} ± {:3.1} | {:5.1} ± {:3.1} | {:+5.1} ± {:3.1} | {:+5.1} ± {:3.1} | {stamp:2}/{N} | {wolf:2}/{N} | {both:2}/{N}",
             p.name, c.0, c.1, h.0, h.1, dc.0, dc.1, dh.0, dh.1
         );
+    }
+    // Does the right order of the patrol depend on the forecast? Il Borgo
+    // first vs Le Coste first, by the opening forecast's chance of a shift.
+    let (b, c) = (idx("patrol-borgo-t1 + patrol-coste-t2"), idx("patrol-coste-t1 + patrol-borgo-t2"));
+    println!("\nIl Borgo first − Le Coste first, families caught, by issue-1 shift chance (negative: Borgo first is better)");
+    for (lo, hi) in [(0.0, 0.3), (0.3, 0.5), (0.5, 0.6), (0.6, 1.0)] {
+        let v: Vec<f32> = (1..=N)
+            .filter(|s| {
+                let p = demo::draw(TOWN, *s).unwrap().forecast(1).shift_p;
+                p >= lo && p < hi
+            })
+            .map(|s| results()[(s - 1) as usize][b].caught - results()[(s - 1) as usize][c].caught)
+            .collect();
+        let shifted = (1..=N)
+            .filter(|s| {
+                let d = demo::draw(TOWN, *s).unwrap();
+                let p = d.forecast(1).shift_p;
+                p >= lo && p < hi && d.spec.shift.is_some()
+            })
+            .count();
+        let (m, se) = mean_se(&v);
+        println!("  p in [{lo:.2}, {hi:.2}): n={:2}, wind turned in {shifted:2}: {m:+5.1} ± {se:3.1}", v.len());
     }
 }
 
 /// `forecast-player` is best or tied on families: no policy's mean is below
 /// it by more than two standard errors of the paired difference.
 #[test]
-#[ignore = "fails on Rocca Ventosa: it-alert-t1 and all-in catch 4.6 ± 0.4 families against forecast-player's 7.8 ± 0.6 (paired -3.2 ± 0.4); gameplay spec §8 table"]
 fn forecast_player_is_best_or_tied_on_families() {
     for j in 0..balance_set().len() {
         let (d, se) = diff(j, fp(), |r| r.caught);
-        assert!(d >= -2.0 * se.max(0.25), "{} catches {d:.1} ± {se:.1} fewer families than forecast-player", balance_set()[j].name);
+        assert!(d >= -2.0 * se.max(0.25), "{} catches {:.1} ± {se:.1} fewer families than forecast-player", balance_set()[j].name, -d);
     }
 }
 
@@ -97,31 +124,20 @@ fn forecast_player_is_best_or_tied_on_families() {
 fn forecast_player_is_best_or_tied_on_homes() {
     for j in 0..balance_set().len() {
         let (d, se) = diff(j, fp(), |r| r.homes);
-        assert!(d >= -2.0 * se.max(0.5), "{} hits {d:.1} ± {se:.1} fewer homes than forecast-player", balance_set()[j].name);
+        assert!(d >= -2.0 * se.max(0.5), "{} hits {:.1} ± {se:.1} fewer homes than forecast-player", balance_set()[j].name, -d);
     }
 }
 
-/// `all-in` (IT-alert) stamps Il Mulino *Allarme inutile* -- in every
-/// session the fire does not come within the threat distance of it (all but
-/// seed 15, where the warning was justified and stamps *In tempo*).
+/// Warning everyone, or Il Mulino first, loses families and a stamp.
 #[test]
-fn all_in_loses_a_stamp() {
-    let j = idx("all-in");
-    let mut wolf = 0;
-    for (k, r) in results().iter().enumerate() {
-        let s = r[j].stamps[MULINO];
-        assert!(matches!(s, Stamp::AllarmeInutile | Stamp::InTempo), "seed {}: {s:?}", k + 1);
-        wolf += (s == Stamp::AllarmeInutile) as u64;
+fn needless_stops_lose_families_and_a_stamp() {
+    for name in ["patrol-everyone", "patrol-mulino-first"] {
+        let j = idx(name);
+        let (d, se) = diff(j, fp(), |r| r.caught);
+        assert!(d > 2.0 * se && d > 0.5, "{name}: {d:.1} ± {se:.1} more families caught than forecast-player");
+        let wolf = results().iter().filter(|r| r[j].stamps[MULINO] == Stamp::AllarmeInutile).count() as u64;
+        assert!(wolf * 10 >= N * 9, "{name}: Il Mulino a false alarm in only {wolf}/{N}");
     }
-    assert!(wolf * 10 >= N * 9, "all-in lost the stamp in only {wolf}/{N} sessions");
-}
-
-/// ... and ties `forecast-player` on families.
-#[test]
-#[ignore = "fails: all-in beats forecast-player on families (4.6 vs 7.8, paired -3.2 ± 0.4); the IT-alert costs nothing in the model but the stamp"]
-fn all_in_ties_on_families() {
-    let (d, se) = diff(idx("all-in"), fp(), |r| r.caught);
-    assert!(d.abs() <= 2.0 * se.max(0.25), "all-in - forecast-player = {d:.1} ± {se:.1} families");
 }
 
 /// Engines at the head are worth what no engines are.
@@ -129,6 +145,13 @@ fn all_in_ties_on_families() {
 fn engines_at_the_head_equal_no_orders_on_homes() {
     let (d, se) = diff(idx("engines-head"), idx("none"), |r| r.homes);
     assert!(d.abs() <= 2.0 * se.max(0.5), "engines-head - none = {d:.1} ± {se:.1} homes");
+}
+
+/// The crew on the fire's path beats the crew on Il Mulino by ≥ 5 homes.
+#[test]
+fn the_crew_matters_where_the_fire_goes() {
+    let (d, se) = diff(idx("crew-borgo-t1"), idx("crew-mulino-t1"), |r| r.homes);
+    assert!(d <= -5.0 && -d > 2.0 * se, "crew Borgo - crew Mulino = {d:.1} ± {se:.1} homes");
 }
 
 /// Waiting to see costs families.

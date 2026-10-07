@@ -198,12 +198,11 @@ fn ordina(code: Option<&String>, target: Option<&String>) -> Result<String, Msg>
         return Err(t::ERR_OVER.into());
     }
     let tk = parse_token(&s, code)?;
-    // The IT-alert and the Canadair call need no map target.
+    // The Canadair call needs no map target.
     let id = match target {
         Some(x) => TargetId(x.trim_matches(|c| c == '[' || c == ']').parse::<u8>().map_err(|_| Msg(t::ERR_BAD_NUMBER.into()))?),
         None => {
             let own = match tk {
-                TokenId::I => s.target_of(TargetKind::Town),
                 TokenId::K if s.token_state(TokenId::K) == TokenState::NonChiamato => s.target_of(TargetKind::Sky),
                 _ => None,
             };

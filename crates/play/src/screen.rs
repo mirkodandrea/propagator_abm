@@ -97,12 +97,12 @@ fn char_of(p: Pos, cw: f32, ch: f32, height: f32) -> Option<usize> {
 
 /// Which targets to draw: all of them except the tray-only ones.
 fn on_map(k: TargetKind) -> bool {
-    !matches!(k, TargetKind::Sky | TargetKind::Town)
+    k != TargetKind::Sky
 }
 
 /// Whether a unit is on the map now.
 fn unit_shown(s: &Session, id: TokenId) -> bool {
-    if !s.in_tray(id) || id == TokenId::I {
+    if !s.in_tray(id) {
         return false;
     }
     !matches!(s.token_state(id), TokenState::NonChiamato | TokenState::InArrivo { .. } | TokenState::Perso)
@@ -121,6 +121,12 @@ pub fn map(s: &Session, base: &Base) -> Vec<String> {
             g[k] = '*';
         } else if cs.iter().filter(|&&i| state[i] != CellFire::Unburnt).count() >= 3 {
             g[k] = 'x';
+        }
+    }
+    // Spot fires: an `o` where each still burns on its own (not a target).
+    for p in s.live_spots() {
+        if let Some((r, c)) = base.at(p) {
+            g[r * COLS + c] = 'o';
         }
     }
     // Labels never overwrite one another: try the spot itself, then the rows
@@ -254,7 +260,7 @@ pub fn choice(s: &Session, tok: TokenId) -> Vec<String> {
         let Some(p) = s.preview(tok, tg.id) else { continue };
         let line = text::preview(tok, &p);
         match tg.kind {
-            TargetKind::Sky | TargetKind::Town => o.push(t::choice_no_target(text::token_code(tok), &text::target_name(tg, &ds), &line)),
+            TargetKind::Sky => o.push(t::choice_no_target(text::token_code(tok), &text::target_name(tg, &ds), &line)),
             _ => o.push(format!("  [{}] {} — {}", tg.id.0, text::target_name(tg, &ds), line)),
         }
     }
@@ -276,7 +282,7 @@ pub fn frame(s: &Session, base: &Base) -> String {
 pub fn verdict(s: &Session, v: &Verdict) -> String {
     let ds = names(s);
     let mut o = vec![t::verdict_title(s.time_s()), String::new(), format!("  {}", text::headline(v.headline)), String::new()];
-    o.push(t::families_row(v.families_safe, v.households, v.none.families_safe));
+    o.push(t::families_row(v.families_caught, v.none.families_caught));
     o.push(t::homes_row(v.homes_hit, v.none.homes_hit));
     o.push(String::new());
     o.push(t::SEZ_QUARTIERI.into());

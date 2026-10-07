@@ -156,7 +156,6 @@ pub fn forecast_line(f: &Forecast, turned: bool, issue_new: bool) -> String {
 pub fn token_code(t: TokenId) -> &'static str {
     match t {
         TokenId::P => "P",
-        TokenId::I => "I",
         TokenId::E1 => "E1",
         TokenId::E2 => "E2",
         TokenId::E3 => "E3",
@@ -180,7 +179,6 @@ pub fn token_name(t: TokenId) -> String {
 pub fn kind_name(k: TokenKind) -> &'static str {
     match k {
         TokenKind::Pattuglia => "Pattuglia",
-        TokenKind::ItAlert => "IT-alert",
         TokenKind::Autobotte => "Autobotte",
         TokenKind::Squadra => "Squadra AIB",
         TokenKind::Canadair => "Canadair",
@@ -190,11 +188,10 @@ pub fn kind_name(k: TokenKind) -> &'static str {
 /// What each resource is, in one line (the tray's tooltip, `play`'s legend).
 pub fn kind_what(k: TokenKind) -> &'static str {
     match k {
-        TokenKind::Pattuglia => "Polizia Locale: va in un quartiere e avvisa le famiglie quando arriva",
-        TokenKind::ItAlert => "messaggio su tutti i telefoni: avvisa subito tutti i quartieri; si usa una volta",
-        TokenKind::Autobotte => "Vigili del Fuoco: difende le case dalla strada; l'acqua dura circa 6 minuti, poi va a riempire",
-        TokenKind::Squadra => "squadra antincendio a piedi: taglia la vegetazione per fermare il fuoco, ma è lenta",
-        TokenKind::Canadair => "aereo: va chiamato, arriva dopo 25 minuti; poi un lancio d'acqua a turno",
+        TokenKind::Pattuglia => "Polizia Locale, l'unica che può avvisare: va in un quartiere e avvisa le famiglie quando arriva, un quartiere alla volta",
+        TokenKind::Autobotte => "Vigili del Fuoco: difende le case di un quartiere dalla strada",
+        TokenKind::Squadra => "squadra antincendio a piedi: apre una fascia di protezione intorno alle case di un quartiere, ma è lenta ad arrivare",
+        TokenKind::Canadair => "aereo: va chiamato, arriva dopo 25 minuti; poi un lancio d'acqua a turno, utile solo sul bordo del quartiere minacciato",
     }
 }
 
@@ -212,7 +209,6 @@ pub fn token_state(t: TokenId, s: TokenState, now_s: i64) -> String {
         TokenState::Rifornimento { eta_s } => format!("a riempire l'acqua ({})", minutes(eta_s)),
         TokenState::Ritirato => format!("ritirat{a}: salta un turno"),
         TokenState::Perso => format!("pers{a}"),
-        TokenState::Usato => "usato".into(),
         TokenState::InArrivo { eta_s } => {
             let turn = ((now_s + eta_s) / demo::TURN_S) as u8 + 1;
             if turn > TURNS {
@@ -239,25 +235,18 @@ pub fn target_name(t: &Target, districts: &[String]) -> String {
                 Side::Right => "Fianco destro".into(),
             },
         },
-        TargetKind::SpotFire(n) => format!("Focolaio {}", n + 1),
         TargetKind::Sky => "Chiama il Canadair".into(),
-        TargetKind::Town => "Tutto il paese".into(),
     }
 }
 
 /// What a target would do for a token, in words.
-pub fn effect(token: TokenId, e: Effect) -> String {
+pub fn effect(_token: TokenId, e: Effect) -> String {
     match e {
         Effect::Avvisa { families } => format!("avvisa {}", households(families as usize)),
-        Effect::AvvisaTutti { families } => format!("avvisa tutti, anche chi non serve ({})", households(families as usize)),
         Effect::Difende { homes: n } => format!("difende {}", homes(n)),
-        Effect::Linea => match token.kind() {
-            TokenKind::Squadra => "taglia una linea nella vegetazione".into(),
-            _ => "bagna il bordo del fuoco dalla strada".into(),
-        },
-        Effect::Spegne => "prova a spegnerlo".into(),
+        Effect::Fascia { homes: n } => format!("fascia di protezione: protegge {}", homes(n)),
         Effect::Ritirata => "si ritirerà: lì il calore è troppo forte".into(),
-        Effect::NienteCase => "lavora, ma non salva case: col vento la testa non si ferma".into(),
+        Effect::NonSalvaCase => "non salva case: lì il fuoco non si ferma".into(),
         Effect::Chiamata { turn, .. } => {
             if turn > TURNS {
                 "arriva dopo l'ultimo turno".into()
@@ -265,9 +254,7 @@ pub fn effect(token: TokenId, e: Effect) -> String {
                 format!("arriva al turno {turn}")
             }
         }
-        Effect::Bagna { homes: 0 } => "bagna la vegetazione davanti al fuoco".into(),
-        Effect::Bagna { homes: n } => format!("bagna la vegetazione vicino a {}", homes(n)),
-        Effect::RallentaPoco => "rallenta poco il fuoco".into(),
+        Effect::Bagna { homes: n } => format!("bagna il bordo del quartiere: protegge {}", homes(n)),
         Effect::Lontano => "strada troppo lontana: non ci arriva".into(),
         Effect::Inutile => "inutile adesso".into(),
     }
@@ -276,7 +263,7 @@ pub fn effect(token: TokenId, e: Effect) -> String {
 /// The preview tag: `arriva in 4′ · difende 60 case`.
 pub fn preview(token: TokenId, p: &Preview) -> String {
     match p.effect {
-        Effect::Chiamata { .. } | Effect::AvvisaTutti { .. } => effect(token, p.effect),
+        Effect::Chiamata { .. } => effect(token, p.effect),
         _ => format!("arriva in {} · {}", minutes(p.eta_s), effect(token, p.effect)),
     }
 }
@@ -331,7 +318,6 @@ pub fn token_subject(t: TokenId) -> String {
         TokenKind::Canadair => "Il Canadair".into(),
         TokenKind::Pattuglia => "La pattuglia".into(),
         TokenKind::Squadra => "La squadra AIB".into(),
-        TokenKind::ItAlert => "L'IT-alert".into(),
         TokenKind::Autobotte => token_name(t),
     }
 }
@@ -423,7 +409,10 @@ pub fn note(n: &Note, districts: &[String]) -> String {
             token_subject(token),
             gender(token)
         ),
-        Note::ItAlertSprecato => "L'IT-alert ha avvisato anche chi non era in pericolo.".into(),
+        Note::PattugliaSprecata { district } => format!(
+            "La pattuglia si è fermata {}, dove il fuoco non andava: intanto i quartieri in pericolo aspettavano.",
+            con("a", &d(district))
+        ),
         Note::DifesaInutile { district } => format!("Autobotti mandate {}, dove né il vento né le previsioni portavano il fuoco.", con("a", &d(district))),
         Note::CanadairTardi => "Canadair chiamato tardi: non ha fatto in tempo a lanciare.".into(),
         Note::CanadairMaiChiamato => "Canadair mai chiamato: ci mette 25 minuti, va chiamato prima che serva.".into(),
@@ -431,7 +420,6 @@ pub fn note(n: &Note, districts: &[String]) -> String {
             1 => "Canadair chiamato in tempo: 1 lancio.".into(),
             n => format!("Canadair chiamato in tempo: {n} lanci."),
         },
-        Note::FocolaioSpento => "Un focolaio attaccato subito si è spento.".into(),
         Note::CaseDifese { district, homes: n } => format!("Autobotti {} prima del fuoco: {} in meno colpite.", con("a", &d(district)), homes(n)),
     }
 }
@@ -446,7 +434,7 @@ fn gender(t: TokenId) -> &'static str {
 
 // --- labels of the verdict card and the screens -------------------------------------------------
 
-pub const FAMILIES_SAFE: &str = "famiglie in salvo";
+pub const FAMILIES_CAUGHT: &str = "famiglie bloccate dal fuoco";
 pub const HOMES_HIT: &str = "case colpite";
 pub const WITHOUT_ORDERS: &str = "senza ordini";
 pub const RETRY: &str = "Riprova";
@@ -494,7 +482,7 @@ pub mod play {
     pub fn legend(water: bool) -> Vec<String> {
         let w = if water { "  ~ acqua" } else { "" };
         vec![
-            format!("Legenda: \" bosco/macchia  . campi  = strada{w}  * fuoco  x bruciato"),
+            format!("Legenda: \" bosco/macchia  . campi  = strada{w}  * fuoco  x bruciato  o focolaio"),
             "         B Il Borgo  C Le Coste  M Il Mulino  A area di attesa".into(),
             "         [n] bersaglio  P pattuglia  E1 E2 E3 autobotti  S squadra  K canadair".into(),
         ]
@@ -514,7 +502,6 @@ pub mod play {
 
     pub fn token_row(id: TokenId, s: TokenState, now_s: i64, doing: Option<&str>, water: Option<f32>, pending: Option<(&str, &str)>) -> String {
         let mut state = match (id, s) {
-            (TokenId::I, TokenState::Libero) => "1 uso".to_string(),
             _ => token_state(id, s, now_s),
         };
         if let Some(d) = doing {
@@ -578,12 +565,13 @@ pub mod play {
         format!("FINE DELL'INCENDIO · {}", clock(at_s))
     }
 
-    pub fn families_row(safe: u32, total: u32, none: u32) -> String {
-        format!("  Famiglie in salvo:  {safe} su {total}   ({WITHOUT_ORDERS}: {none})")
+    /// Families shown **caught**, never "safe out of 250" (gameplay §6).
+    pub fn families_row(caught: u32, none: u32) -> String {
+        format!("  Famiglie bloccate dal fuoco: {caught}   ({WITHOUT_ORDERS}: {none})")
     }
 
     pub fn homes_row(hit: u32, none: u32) -> String {
-        format!("  Case colpite:       {hit}   ({WITHOUT_ORDERS}: {none})")
+        format!("  Case colpite:                {hit}   ({WITHOUT_ORDERS}: {none})")
     }
 
     pub fn verdict_district_row(name: &str, mark: &str, stamp: &str, why: &str, homes: u32, homes_none: u32) -> String {
@@ -636,7 +624,6 @@ mod tests {
             TokenState::Rifornimento { eta_s: 90 },
             TokenState::Ritirato,
             TokenState::Perso,
-            TokenState::Usato,
             TokenState::InArrivo { eta_s: 600 },
             TokenState::NonChiamato,
         ];
@@ -648,7 +635,6 @@ mod tests {
                 | TokenState::Rifornimento { .. }
                 | TokenState::Ritirato
                 | TokenState::Perso
-                | TokenState::Usato
                 | TokenState::InArrivo { .. }
                 | TokenState::NonChiamato => {}
             }
@@ -659,17 +645,14 @@ mod tests {
     fn all_effects() -> Vec<Effect> {
         vec![
             Effect::Avvisa { families: 148 },
-            Effect::AvvisaTutti { families: 250 },
             Effect::Difende { homes: 60 },
-            Effect::Linea,
-            Effect::Spegne,
+            Effect::Fascia { homes: 30 },
             Effect::Ritirata,
-            Effect::NienteCase,
+            Effect::NonSalvaCase,
             Effect::Chiamata { eta_s: 1500, turn: 4 },
             Effect::Chiamata { eta_s: 1500, turn: 6 },
             Effect::Bagna { homes: 12 },
             Effect::Bagna { homes: 0 },
-            Effect::RallentaPoco,
             Effect::Lontano,
             Effect::Inutile,
         ]
@@ -701,12 +684,11 @@ mod tests {
             Note::UnitaPersa { token: TokenId::E1 },
             Note::TestaRitirata { token: TokenId::S },
             Note::TestaInutile { token: TokenId::E2 },
-            Note::ItAlertSprecato,
+            Note::PattugliaSprecata { district: 2 },
             Note::DifesaInutile { district: 2 },
             Note::CanadairTardi,
             Note::CanadairMaiChiamato,
             Note::CanadairInTempo { drops: 3 },
-            Note::FocolaioSpento,
             Note::CaseDifese { district: 0, homes: 30 },
         ]
     }
@@ -748,9 +730,7 @@ mod tests {
             TargetKind::Head,
             TargetKind::Flank(Side::Left),
             TargetKind::Flank(Side::Right),
-            TargetKind::SpotFire(0),
             TargetKind::Sky,
-            TargetKind::Town,
         ] {
             for facing in [None, Some(270.0)] {
                 let t = Target { id: demo::TargetId(1), kind, pos: p, label_pos: p, facing_deg: facing };

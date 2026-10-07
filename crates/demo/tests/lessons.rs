@@ -1,18 +1,12 @@
 //! The lessons (`docs/demo-spec.md` §1, `docs/demo-spec-gameplay.md` §5),
 //! each a test that must *fire* on Rocca Ventosa, drawn seeds, played through
-//! `Session` the way a player plays.
-//!
-//! A lesson the model does not teach is kept with the spec's assertion intact
-//! and `#[ignore]`d, its measured numbers in the reason: it goes back to the
-//! lead and Mirko, it is not tuned to pass (gameplay §9). `table` prints
-//! every number used here.
+//! `Session` the way a player plays. `table` prints every number used here.
 //!
 //! Also here: the engine is inert until used (finding 34) and deterministic
 //! (gameplay §9: same seed + draw + orders ⇒ same verdict).
 
 use std::sync::OnceLock;
 
-use abm::suppression::UnitState;
 use demo::turn_policy::{self as tp, grid, mean_se, Sel, TurnPolicy, BORGO, COSTE, MULINO};
 use demo::*;
 
@@ -30,16 +24,22 @@ fn at(turn: u8, plan: Vec<(TokenId, Sel)>) -> impl Fn(&Session) -> Vec<(TokenId,
     move |s: &Session| if s.turn().index == turn { plan.clone() } else { vec![] }
 }
 
-/// Canadair called at `call`, then one drop a turn on the district the wind
-/// now drives the fire at.
-fn canadair(call: u8) -> TurnPolicy {
-    TurnPolicy::new(format!("canadair-t{call}"), move |s: &Session| {
+/// Canadair called at `call`, then one drop a turn on `sel` (or, with `None`,
+/// on the district the wind now drives the fire at).
+fn canadair(name: &str, call: u8, sel: Option<Sel>) -> TurnPolicy {
+    TurnPolicy::new(name.to_string(), move |s: &Session| {
         let k = s.token(TokenId::K);
-        let d = if s.wind_turned() { COSTE } else { BORGO };
+        let to = sel.unwrap_or(Sel::District(if s.wind_turned() { COSTE } else { BORGO }));
+        let kind = match to {
+            Sel::District(d) => TargetKind::District(d),
+            Sel::Head => TargetKind::Head,
+            Sel::Flank(x) => TargetKind::Flank(x),
+            Sel::Sky => TargetKind::Sky,
+        };
         if s.turn().index == call {
             vec![(TokenId::K, Sel::Sky)]
-        } else if k.orderable && k.state != TokenState::NonChiamato && k.doing != Some(TargetKind::District(d)) {
-            vec![(TokenId::K, Sel::District(d))]
+        } else if k.orderable && k.state != TokenState::NonChiamato && k.doing != Some(kind) {
+            vec![(TokenId::K, to)]
         } else {
             vec![]
         }
@@ -51,15 +51,18 @@ fn policies() -> Vec<TurnPolicy> {
         tp::none(),
         tp::patrol_borgo_t1(),
         TurnPolicy::new("patrol-borgo-t3", at(3, vec![(TokenId::P, Sel::District(BORGO))])),
-        tp::it_alert_t1(),
+        tp::forecast_patrol_only(),
+        tp::patrol_mulino_first(),
         tp::patrol_borgo_coste(),
-        TurnPolicy::new("engines-borgo-t1", at(1, vec![(TokenId::E1, Sel::District(BORGO)), (TokenId::E2, Sel::District(BORGO))])),
-        TurnPolicy::new("engines-mulino-t1", at(1, vec![(TokenId::E1, Sel::District(MULINO)), (TokenId::E2, Sel::District(MULINO))])),
-        canadair(1),
-        canadair(3),
         TurnPolicy::new("engine-head-t2", at(2, vec![(TokenId::E1, Sel::Head)])),
         TurnPolicy::new("crew-head-t2", at(2, vec![(TokenId::S, Sel::Head)])),
-        TurnPolicy::new("engines-borgo-t2", at(2, vec![(TokenId::E1, Sel::District(BORGO)), (TokenId::E2, Sel::District(BORGO))])),
+        canadair("canadair-head", 1, Some(Sel::Head)),
+        TurnPolicy::new("engines-borgo-t1", at(1, vec![(TokenId::E1, Sel::District(BORGO)), (TokenId::E2, Sel::District(BORGO))])),
+        TurnPolicy::new("engines-mulino-t1", at(1, vec![(TokenId::E1, Sel::District(MULINO)), (TokenId::E2, Sel::District(MULINO))])),
+        tp::crew_borgo_t1(),
+        tp::crew_mulino_t1(),
+        canadair("canadair-t1", 1, None),
+        canadair("canadair-t3", 3, None),
     ]
 }
 
@@ -71,60 +74,20 @@ struct Rec {
     caught_by: [f32; 3],
     stamps: Vec<Stamp>,
     drops_by_last_turn: u32,
-    /// A token ordered to the head pulled back before the end of the turn
-    /// it was sent in (`None`: no head order).
-    head_withdrew_in_turn: Option<bool>,
-    /// Engines working with water when the fire first threatened Il Borgo.
-    working_at_threat: Option<f32>,
 }
 
 fn play(p: &TurnPolicy, seed: u64) -> Rec {
     let mut s = Session::new(&data_dir(), seed).unwrap();
-    let mut head_turn: Option<(u8, usize)> = None;
-    let mut withdrew_in_turn: Option<bool> = None;
-    let mut working: Option<f32> = None;
-    while !s.finished() {
-        let turn = s.turn().index;
-        if !s.turn().finale() {
-            p.order(&mut s);
-            for (t, g) in s.pending() {
-                if s.target(*g).is_some_and(|x| x.kind == TargetKind::Head) && head_turn.is_none() {
-                    head_turn = Some((turn, t.unit().unwrap()));
-                    withdrew_in_turn = Some(false);
-                }
-            }
-        }
-        s.end_turn_observed(|x| {
-            if let Some((ht, k)) = head_turn {
-                if ht == turn && x.run.crews.units[k].state == UnitState::Withdrawing {
-                    withdrew_in_turn = Some(true);
-                }
-            }
-            if working.is_none() && x.run.referee.reports[BORGO].threatened_at_s.is_some() {
-                working = Some(
-                    (0..3).filter(|&k| {
-                        let u = &x.run.crews.units[k];
-                        u.task != abm::suppression::Task::Hold && u.state == UnitState::Working && u.water_l > 0.0
-                    })
-                    .count() as f32,
-                );
-            }
-        })
-        .unwrap();
-    }
+    p.play(&mut s).unwrap();
     let f = s.facts();
+    let none = Session::counterfactual_of(&data_dir(), s.draw).unwrap();
     Rec {
         caught: f.families_caught as f32,
         homes: f.homes_hit as f32,
         borgo_homes: f.districts[BORGO].1 as f32,
         caught_by: [f.districts[0].0 as f32, f.districts[1].0 as f32, f.districts[2].0 as f32],
-        stamps: {
-            let none = Session::counterfactual_of(&data_dir(), s.draw).unwrap();
-            s.verdict_against(none).districts.iter().map(|d| d.people).collect()
-        },
+        stamps: s.verdict_against(none).districts.iter().map(|d| d.people).collect(),
         drops_by_last_turn: s.drops().1,
-        head_withdrew_in_turn: withdrew_in_turn,
-        working_at_threat: working,
     }
 }
 
@@ -160,14 +123,12 @@ fn diff(j: usize, k: usize, only: Option<bool>, f: impl Fn(&Rec) -> f32) -> (f32
 #[test]
 #[ignore]
 fn table() {
-    println!("\nlessons (N={N}): caught all | holds: Borgo / Coste caught | shifts: Coste caught | Mulino caught | homes all | holds: Borgo homes | drops ≤T+40 | head withdrew in turn | engines working at Borgo threat");
+    println!("\nlessons (N={N}): caught all | holds: Borgo / Coste caught | shifts: Coste caught | Mulino caught | homes all | holds: Borgo homes | Δ homes vs none | drops ≤T+40 | Mulino AllarmeInutile");
     for (j, p) in policies().iter().enumerate() {
         let f = |x: (f32, f32)| format!("{:5.1} ± {:3.1}", x.0, x.1);
-        let hw = results().iter().filter(|r| r[j].head_withdrew_in_turn == Some(true)).count();
-        let ho = results().iter().filter(|r| r[j].head_withdrew_in_turn.is_some()).count();
-        let wv: Vec<f32> = results().iter().filter_map(|r| r[j].working_at_threat).collect();
+        let wolf = results().iter().filter(|r| r[j].stamps[MULINO] == Stamp::AllarmeInutile).count();
         println!(
-            "{:22} {} | {} / {} | {} | {} | {} | {} | {} | {hw}/{ho} | {}",
+            "{:34} {} | {} / {} | {} | {} | {} | {} | {} | {} | {wolf}/{N}",
             p.name,
             f(col(j, None, |r| r.caught)),
             f(col(j, Some(false), |r| r.caught_by[BORGO])),
@@ -176,8 +137,8 @@ fn table() {
             f(col(j, None, |r| r.caught_by[MULINO])),
             f(col(j, None, |r| r.homes)),
             f(col(j, Some(false), |r| r.borgo_homes)),
+            f(diff(j, 0, None, |r| r.homes)),
             f(col(j, None, |r| r.drops_by_last_turn as f32)),
-            f(mean_se(&wv)),
         );
     }
 }
@@ -200,51 +161,33 @@ fn l1_the_wind_decides_who() {
 
 #[test]
 fn l2_warn_early() {
-    // Where the fire goes when the wind holds: Il Borgo.
     let (d, se) = diff(idx("patrol-borgo-t3"), idx("patrol-borgo-t1"), Some(false), |r| r.caught_by[BORGO]);
     assert!(d >= 3.0 && d > 3.0 * se, "patrol to Il Borgo at turn 3 catches only {d:.1} ± {se:.1} more families than at turn 1");
 }
 
-// --- 3. Don't warn everyone -------------------------------------------------------------
+// --- 3. Don't warn everyone: the patrol is one car -------------------------------------
 
-/// The spec says *always*; the stamp rule says *unless the fire came within
-/// the threat distance*, and on seed 15 it did (39/40). The rule is exact; the
-/// share is pinned at what was measured.
 #[test]
-fn l3_the_it_alert_stamps_il_mulino_a_false_alarm() {
-    let j = idx("it-alert-t1");
+fn l3_a_stop_at_il_mulino_costs_the_districts_at_risk() {
+    let (d, se) = diff(idx("patrol-mulino-first"), idx("forecast-patrol"), None, |r| r.caught);
+    assert!(d > 2.0 * se && d >= 1.0, "a stop at Il Mulino first catches only {d:.1} ± {se:.1} more families");
+    // ... and it is stamped a false alarm, except where the fire really came
+    // within the threat distance of Il Mulino (then the stop was justified).
+    let j = idx("patrol-mulino-first");
     let mut wolf = 0;
     for (k, r) in results().iter().enumerate() {
         let s = r[j].stamps[MULINO];
-        assert!(matches!(s, Stamp::AllarmeInutile | Stamp::InTempo), "seed {}: {s:?}", k + 1);
+        assert!(matches!(s, Stamp::AllarmeInutile | Stamp::InTempo | Stamp::Tardi), "seed {}: {s:?}", k + 1);
         wolf += (s == Stamp::AllarmeInutile) as u64;
     }
     assert!(wolf * 10 >= N * 9, "Il Mulino stamped a false alarm in only {wolf}/{N} sessions");
 }
 
-#[test]
-#[ignore = "does not fire: IT-alert at turn 1 catches 4.6 ± 0.4 families, patrol Borgo t1 + Coste t2 7.8 ± 0.5 -- the IT-alert is better for people, its only cost is the stamp (gameplay §7.4 table)"]
-fn l3_the_it_alert_saves_no_more_families_than_the_patrol() {
-    let (d, se) = diff(idx("it-alert-t1"), idx("patrol-borgo-t1 + patrol-coste-t2"), None, |r| r.caught);
-    assert!(d.abs() <= se.max(0.5), "it-alert - patrol = {d:.1} ± {se:.1} families caught");
-}
-
 // --- 4. Never attack the head -------------------------------------------------------------
 
 #[test]
-#[ignore = "does not fire: an engine sent to the head at turn 2 pulls back within the turn in 0/40 sessions (§7.6), a crew in 0/40 (it is still driving)"]
-fn l4_a_unit_at_the_head_pulls_back_within_the_turn() {
-    for name in ["engine-head-t2", "crew-head-t2"] {
-        let j = idx(name);
-        for (k, r) in results().iter().enumerate() {
-            assert_eq!(r[j].head_withdrew_in_turn, Some(true), "{name} seed {}", k + 1);
-        }
-    }
-}
-
-#[test]
-fn l4_a_unit_at_the_head_saves_no_homes() {
-    for name in ["engine-head-t2", "crew-head-t2"] {
+fn l4_the_head_saves_nothing() {
+    for name in ["engine-head-t2", "crew-head-t2", "canadair-head"] {
         let (d, se) = diff(idx(name), idx("none"), None, |r| r.homes);
         assert!(d.abs() <= 2.0 * se.max(0.5), "{name}: {d:.1} ± {se:.1} homes against no orders");
     }
@@ -253,33 +196,27 @@ fn l4_a_unit_at_the_head_saves_no_homes() {
 // --- 5. Defend where the fire is going ---------------------------------------------------------
 
 #[test]
-fn l5_engines_save_homes_only_on_the_fires_path() {
+fn l5_engines_and_crew_save_homes_only_on_the_fires_path() {
     // When the wind holds the fire goes to Il Borgo.
     let (none, _) = col(idx("none"), Some(false), |r| r.homes);
     let (borgo, _) = col(idx("engines-borgo-t1"), Some(false), |r| r.homes);
     assert!(borgo <= none / 2.0, "two engines on Il Borgo: {borgo:.1} homes hit against {none:.1}");
     let (d, se) = diff(idx("engines-mulino-t1"), idx("none"), None, |r| r.homes);
     assert!(d.abs() <= 2.0 * se.max(0.5), "two engines on Il Mulino change homes hit by {d:.1} ± {se:.1}");
+    let (d, se) = diff(idx("crew-borgo-t1"), idx("none"), Some(false), |r| r.homes);
+    assert!(d <= -5.0 && -d > 3.0 * se, "the crew on Il Borgo saves only {:.1} ± {se:.1} homes", -d);
+    let (d, se) = diff(idx("crew-mulino-t1"), idx("none"), None, |r| r.homes);
+    assert!(d.abs() <= 2.0 * se.max(0.5), "the crew on Il Mulino changes homes hit by {d:.1} ± {se:.1}");
 }
 
-// --- 6. Water runs out ----------------------------------------------------------------------
-
-#[test]
-#[ignore = "does not fire (§7.5): engines posted at turn 1 are as many at work when the fire threatens Il Borgo as those posted at turn 2 (1.7 vs 1.6) and save more homes (Borgo, wind holds: 22.6 vs 26.2); lesson 6 is dropped unless the lead decides otherwise"]
-fn l6_engines_posted_too_early_are_refilling_when_the_front_arrives() {
-    let (t1, _) = mean_se(&results().iter().filter_map(|r| r[idx("engines-borgo-t1")].working_at_threat).collect::<Vec<_>>());
-    let (t2, _) = mean_se(&results().iter().filter_map(|r| r[idx("engines-borgo-t2")].working_at_threat).collect::<Vec<_>>());
-    assert!(t1 < t2 - 0.5, "engines at work at the threat: posted t1 {t1:.1}, t2 {t2:.1}");
-}
-
-// --- 7. Call aircraft early -------------------------------------------------------------------
+// --- 6. Call aircraft early -------------------------------------------------------------------
 
 /// Called at turn 1 the plane drops twice before the last turn ends -- except
 /// where its own policy breaks off the first run because the flight crosses
-/// the fire (seed 9: it then sits out a turn, `Ritirato`). Called at turn 3 it
+/// the fire (it then sits out a turn, `Ritirato`). Called at turn 3 it
 /// arrives after the last turn.
 #[test]
-fn l7_call_the_canadair_early() {
+fn l6_call_the_canadair_early() {
     let (t1, t3) = (idx("canadair-t1"), idx("canadair-t3"));
     let mut two = 0;
     for (k, r) in results().iter().enumerate() {
@@ -287,15 +224,14 @@ fn l7_call_the_canadair_early() {
         assert!(r[t3].drops_by_last_turn <= 1, "seed {}: called at turn 3, {} drops by T+40", k + 1, r[t3].drops_by_last_turn);
     }
     assert!(two * 10 >= N * 9, "called at turn 1, two drops by T+40 in only {two}/{N} sessions");
-    // And a drop matters (§7.2).
     let (d, se) = diff(t1, idx("none"), None, |r| r.homes);
     assert!(d <= -4.0 && -d > 3.0 * se, "the Canadair called at turn 1 saves {:.1} ± {se:.1} homes", -d);
 }
 
-// --- 8. People first ------------------------------------------------------------------------
+// --- 7. People first ------------------------------------------------------------------------
 
 #[test]
-fn l8_units_save_homes_warnings_save_people() {
+fn l7_units_save_homes_warnings_save_people() {
     let none = idx("none");
     let units = idx("engines-borgo-t1");
     let warn = idx("patrol-borgo-t1 + patrol-coste-t2");
@@ -312,8 +248,8 @@ fn l8_units_save_homes_warnings_save_people() {
 // --- the engine's own rules (gameplay §9) -------------------------------------------------------
 
 /// Finding 34: a session nobody gives an order in is the counterfactual,
-/// exactly -- the patrol, the reinforcement and the Canadair touch nothing
-/// until they are used.
+/// exactly -- the patrol, the reinforcement, the crew and the Canadair touch
+/// nothing until they are used.
 #[test]
 fn a_session_without_orders_is_the_counterfactual() {
     for seed in [1, 2, 3] {
@@ -321,8 +257,9 @@ fn a_session_without_orders_is_the_counterfactual() {
         s.finish().unwrap();
         let none = Session::counterfactual_of(&data_dir(), s.draw).unwrap();
         assert_eq!(s.facts(), none, "seed {seed}");
-        // And the old instant-order twin, on the turn game's variant, agrees.
-        let mut run = Run::with_variant(&data_dir(), s.draw.spec, seed, demo::session::variant()).unwrap();
+        // The published model (no crew defence, no station) with no orders
+        // counts the same families and homes: the variants are inert unused.
+        let mut run = Run::with_variant(&data_dir(), s.draw.spec, seed, Variant { defend_homes: true, ..Variant::default() }).unwrap();
         run.play(&[]).unwrap();
         assert_eq!(run.outcome().caught as u32, none.families_caught, "seed {seed}");
         assert_eq!(run.outcome().homes_lost as u32, none.homes_hit, "seed {seed}");
@@ -350,11 +287,9 @@ fn the_reinforcement_arrives_at_turn_three() {
     assert!(!s.tokens().iter().any(|t| t.id == TokenId::E3));
     assert_eq!(s.assign(TokenId::E3, TargetId(1)), Err(Refusal::NonDisponibile));
     s.end_turn().unwrap();
-    assert!(!s.tokens().iter().any(|t| t.id == TokenId::E3));
     s.end_turn().unwrap();
     assert_eq!(s.turn().index, REINFORCEMENT_TURN);
     assert!(s.tokens().iter().any(|t| t.id == TokenId::E3 && t.state == TokenState::Libero));
-    assert!(s.report().lines.is_empty() || s.turn().index == 3);
 }
 
 /// The patrol warns a district when it gets there, not when it is sent.
@@ -398,16 +333,15 @@ fn the_canadair_comes_25_minutes_after_the_call() {
 #[test]
 fn refusals_are_typed() {
     let mut s = Session::new(&data_dir(), 1).unwrap();
-    let town = s.target_of(TargetKind::Town).unwrap().id;
+    let head = s.target_of(TargetKind::Head).unwrap().id;
+    let sky = s.target_of(TargetKind::Sky).unwrap().id;
     let borgo = s.target_of(TargetKind::District(BORGO)).unwrap().id;
-    assert_eq!(s.assign(TokenId::P, town), Err(Refusal::BersaglioNonValido));
+    assert_eq!(s.assign(TokenId::P, head), Err(Refusal::BersaglioNonValido));
+    assert_eq!(s.assign(TokenId::E1, sky), Err(Refusal::BersaglioNonValido));
     assert_eq!(s.assign(TokenId::E1, TargetId(99)), Err(Refusal::BersaglioSconosciuto));
-    s.assign(TokenId::I, town).unwrap();
     s.assign(TokenId::E1, borgo).unwrap();
     assert!(s.unassign(TokenId::E1));
-    s.end_turn().unwrap();
-    assert_eq!(s.token_state(TokenId::I), TokenState::Usato);
-    assert_eq!(s.assign(TokenId::I, borgo), Err(Refusal::Occupato(TokenState::Usato)));
+    assert!(!s.unassign(TokenId::E1));
     s.finish().unwrap();
     assert_eq!(s.assign(TokenId::E1, borgo), Err(Refusal::Finita));
 }

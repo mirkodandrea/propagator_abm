@@ -22,10 +22,7 @@ pub enum Sel {
     District(usize),
     Head,
     Flank(Side),
-    /// The oldest spot fire still burning.
-    FirstSpot,
     Sky,
-    Town,
 }
 
 pub type Plan = Vec<(TokenId, Sel)>;
@@ -83,10 +80,6 @@ pub fn resolve(s: &Session, sel: Sel) -> Option<TargetId> {
         Sel::Head => TargetKind::Head,
         Sel::Flank(side) => TargetKind::Flank(side),
         Sel::Sky => TargetKind::Sky,
-        Sel::Town => TargetKind::Town,
-        Sel::FirstSpot => {
-            return s.targets().iter().filter(|t| matches!(t.kind, TargetKind::SpotFire(_))).min_by_key(|t| t.id).map(|t| t.id)
-        }
     };
     s.target_of(kind).map(|t| t.id)
 }
@@ -111,10 +104,6 @@ pub fn none() -> TurnPolicy {
 
 pub fn patrol_borgo_t1() -> TurnPolicy {
     TurnPolicy::new("patrol-borgo-t1", |s| if on(1, s) { vec![(TokenId::P, Sel::District(BORGO))] } else { vec![] })
-}
-
-pub fn it_alert_t1() -> TurnPolicy {
-    TurnPolicy::new("it-alert-t1", |s| if on(1, s) { vec![(TokenId::I, Sel::Town)] } else { vec![] })
 }
 
 pub fn patrol_borgo_coste() -> TurnPolicy {
@@ -147,42 +136,94 @@ pub fn engines_head() -> TurnPolicy {
     })
 }
 
-pub fn all_in() -> TurnPolicy {
-    TurnPolicy::new("all-in", |s| {
-        let mut p = vec![];
-        if on(1, s) {
-            p.extend([(TokenId::I, Sel::Town), (TokenId::E1, Sel::District(BORGO)), (TokenId::E2, Sel::District(BORGO)), (TokenId::K, Sel::Sky)]);
-        }
-        if on(REINFORCEMENT_TURN, s) {
-            p.push((TokenId::E3, Sel::District(BORGO)));
-        }
-        p
+pub fn patrol_coste_borgo() -> TurnPolicy {
+    TurnPolicy::new("patrol-coste-t1 + patrol-borgo-t2", |s| match s.turn().index {
+        1 => vec![(TokenId::P, Sel::District(COSTE))],
+        2 => vec![(TokenId::P, Sel::District(BORGO))],
+        _ => vec![],
     })
 }
 
-/// Reads the wind and the forecast (gameplay §8): patrol to Il Borgo and the
-/// Canadair called at turn 1, engines on Il Borgo, then on Le Coste once the
-/// wind has turned; the patrol to Le Coste at turn 2 if issue 2 says likely.
-/// The plane drops on whichever district the wind now drives the fire at.
+/// Il Borgo, Le Coste, Il Mulino in turns 1-3: warns everyone, one stop a turn.
+pub fn patrol_everyone() -> TurnPolicy {
+    TurnPolicy::new("patrol-everyone", |s| match s.turn().index {
+        1 => vec![(TokenId::P, Sel::District(BORGO))],
+        2 => vec![(TokenId::P, Sel::District(COSTE))],
+        3 => vec![(TokenId::P, Sel::District(MULINO))],
+        _ => vec![],
+    })
+}
+
+/// The district the opening forecast makes most likely to be hit first: Le
+/// Coste when a shift is *probabile* (the wind would turn the fire onto it
+/// before it reaches Il Borgo), else Il Borgo.
+pub fn first_at_risk(s: &Session) -> usize {
+    if s.draw.forecast(1).shift_p >= LIKELY_P {
+        COSTE
+    } else {
+        BORGO
+    }
+}
+
+fn other(d: usize) -> usize {
+    if d == BORGO {
+        COSTE
+    } else {
+        BORGO
+    }
+}
+
+/// The forecast player's patrol, from turn `start`: the first district at
+/// risk, then the other.
+fn forecast_patrol(s: &Session, start: u8) -> Vec<(TokenId, Sel)> {
+    let first = first_at_risk(s);
+    match s.turn().index {
+        t if t == start => vec![(TokenId::P, Sel::District(first))],
+        t if t == start + 1 => vec![(TokenId::P, Sel::District(other(first)))],
+        _ => vec![],
+    }
+}
+
+/// The forecast player's patrol plan alone (lesson 3's baseline).
+pub fn forecast_patrol_only() -> TurnPolicy {
+    TurnPolicy::new("forecast-patrol", |s| forecast_patrol(s, 1))
+}
+
+/// A stop at Il Mulino first (nothing ever points the fire there), then the
+/// forecast player's patrol plan one turn late (lesson 3).
+pub fn patrol_mulino_first() -> TurnPolicy {
+    TurnPolicy::new("patrol-mulino-first", |s| {
+        if s.turn().index == 1 {
+            vec![(TokenId::P, Sel::District(MULINO))]
+        } else {
+            forecast_patrol(s, 2)
+        }
+    })
+}
+
+pub fn crew_borgo_t1() -> TurnPolicy {
+    TurnPolicy::new("crew-borgo-t1", |s| if on(1, s) { vec![(TokenId::S, Sel::District(BORGO))] } else { vec![] })
+}
+
+pub fn crew_mulino_t1() -> TurnPolicy {
+    TurnPolicy::new("crew-mulino-t1", |s| if on(1, s) { vec![(TokenId::S, Sel::District(MULINO))] } else { vec![] })
+}
+
+/// Reads the wind and the forecast (gameplay §8): the patrol to the district
+/// the forecast makes most likely to be hit first, then the other; the
+/// Canadair called at turn 1 and dropping on the district the wind drives the
+/// fire at; engines and crew on Il Borgo at turn 1, engines to Le Coste once
+/// the wind has turned.
 pub fn forecast_player() -> TurnPolicy {
     TurnPolicy::new("forecast-player", |s| {
-        let mut p = vec![];
+        let mut p = forecast_patrol(s, 1);
         let at = if s.wind_turned() { COSTE } else { BORGO };
         if on(1, s) {
-            p.extend([(TokenId::P, Sel::District(BORGO)), (TokenId::K, Sel::Sky), (TokenId::E1, Sel::District(BORGO)), (TokenId::E2, Sel::District(BORGO))]);
-        }
-        if on(2, s) && s.forecast().shift_p >= LIKELY_P {
-            p.push((TokenId::P, Sel::District(COSTE)));
-        }
-        if s.wind_turned() && free(s, TokenId::P) && !s.districts()[COSTE].warned {
-            p.push((TokenId::P, Sel::District(COSTE)));
+            p.extend([(TokenId::K, Sel::Sky), (TokenId::E1, Sel::District(BORGO)), (TokenId::E2, Sel::District(BORGO)), (TokenId::S, Sel::District(BORGO))]);
         }
         for e in [TokenId::E1, TokenId::E2, TokenId::E3] {
             let t = s.token(e);
-            if !t.orderable {
-                continue;
-            }
-            if t.doing != Some(TargetKind::District(at)) {
+            if t.orderable && t.doing != Some(TargetKind::District(at)) && !(on(1, s) && e != TokenId::E3) {
                 p.push((e, Sel::District(at)));
             }
         }
@@ -213,6 +254,10 @@ pub fn wait_and_see() -> TurnPolicy {
                     p.push((e, Sel::District(d)));
                 }
             }
+            let c = s.token(TokenId::S);
+            if c.orderable && c.doing.is_none() {
+                p.push((TokenId::S, Sel::District(d)));
+            }
             let k = s.token(TokenId::K);
             if k.state == TokenState::NonChiamato {
                 p.push((TokenId::K, Sel::Sky));
@@ -226,7 +271,20 @@ pub fn wait_and_see() -> TurnPolicy {
 
 /// The balance set (gameplay §8), in a fixed order.
 pub fn balance_set() -> Vec<TurnPolicy> {
-    vec![none(), patrol_borgo_t1(), it_alert_t1(), patrol_borgo_coste(), engines_borgo_t1(), engines_head(), all_in(), forecast_player(), wait_and_see()]
+    vec![
+        none(),
+        patrol_borgo_t1(),
+        patrol_borgo_coste(),
+        patrol_coste_borgo(),
+        patrol_everyone(),
+        patrol_mulino_first(),
+        engines_borgo_t1(),
+        engines_head(),
+        crew_borgo_t1(),
+        crew_mulino_t1(),
+        forecast_player(),
+        wait_and_see(),
+    ]
 }
 
 /// Run `f(seed, job)` for every seed × job on all cores. Results in input order.

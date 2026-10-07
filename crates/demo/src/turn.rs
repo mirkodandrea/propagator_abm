@@ -47,7 +47,6 @@ impl Turn {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TokenId {
     P,
-    I,
     E1,
     E2,
     E3,
@@ -56,12 +55,11 @@ pub enum TokenId {
 }
 
 impl TokenId {
-    pub const ALL: [TokenId; 7] = [TokenId::P, TokenId::I, TokenId::E1, TokenId::E2, TokenId::E3, TokenId::S, TokenId::K];
+    pub const ALL: [TokenId; 6] = [TokenId::P, TokenId::E1, TokenId::E2, TokenId::E3, TokenId::S, TokenId::K];
 
     pub fn kind(self) -> TokenKind {
         match self {
             TokenId::P => TokenKind::Pattuglia,
-            TokenId::I => TokenKind::ItAlert,
             TokenId::E1 | TokenId::E2 | TokenId::E3 => TokenKind::Autobotte,
             TokenId::S => TokenKind::Squadra,
             TokenId::K => TokenKind::Canadair,
@@ -78,7 +76,7 @@ impl TokenId {
             TokenId::E3 => Some(2),
             TokenId::S => Some(3),
             TokenId::K => Some(6),
-            TokenId::P | TokenId::I => None,
+            TokenId::P => None,
         }
     }
 
@@ -100,7 +98,6 @@ impl TokenId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TokenKind {
     Pattuglia,
-    ItAlert,
     Autobotte,
     Squadra,
     Canadair,
@@ -116,8 +113,6 @@ pub enum TokenState {
     /// Pulled back from heat it could not work in; sits out the next turn.
     Ritirato,
     Perso,
-    /// The IT-alert, sent.
-    Usato,
     /// The Canadair, called and on its way.
     InArrivo { eta_s: i64 },
     NonChiamato,
@@ -159,12 +154,8 @@ pub enum TargetKind {
     District(usize),
     Head,
     Flank(Side),
-    /// Index into the session's spot-fire list (oldest first).
-    SpotFire(usize),
     /// The Canadair call: the tray slot itself.
     Sky,
-    /// The IT-alert: the whole town.
-    Town,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -192,28 +183,25 @@ pub struct Preview {
 pub enum Effect {
     /// The patrol warns this many families when it arrives.
     Avvisa { families: u32 },
-    /// The IT-alert reaches everyone not yet warned, needed or not.
-    AvvisaTutti { families: u32 },
-    /// An engine posted here covers this many homes.
+    /// An engine posted here covers this many homes (the homes within
+    /// `DEFEND_REACH_M` of the road node it will work from: what the verdict
+    /// credits).
     Difende { homes: u32 },
-    /// A crew cuts line; an engine wets a line from the road.
-    Linea,
-    /// A unit on a spot fire.
-    Spegne,
-    /// A ground unit at the head will pull back: it will stand in heat past
-    /// its working limit within the turn.
-    Ritirata,
-    /// A ground unit at the head will work there and save no homes (what
-    /// milestone 0 measured it doing, §7.6).
-    NienteCase,
-    /// The Canadair call: overhead in `eta_s`, during turn `turn`.
-    Chiamata { eta_s: i64, turn: u8 },
-    /// A drop on a district's edge or a flank, wetting this many homes' ground.
+    /// The crew's firebreak protects this many homes (the homes within
+    /// `DEFEND_REACH_M` of its post: what the verdict credits).
+    Fascia { homes: u32 },
+    /// A drop on a district's edge, over this many homes' ground.
     Bagna { homes: u32 },
-    /// A drop on the head: it slows the fire very little.
-    RallentaPoco,
+    /// The unit works there and saves no home (the head, the flanks, a drop
+    /// anywhere but the threatened district: milestone 0, §7.2, §7.6).
+    NonSalvaCase,
     /// No road gets an engine within hose reach of it.
     Lontano,
+    /// The unit will pull back: the ground it will stand on is already past
+    /// its working limit and it gets there within the turn.
+    Ritirata,
+    /// The Canadair call: overhead in `eta_s`, during turn `turn`.
+    Chiamata { eta_s: i64, turn: u8 },
     /// Valid but pointless now (a district nothing points the fire at, a
     /// district already warned). Shown, never refused.
     Inutile,
@@ -315,8 +303,9 @@ pub enum Note {
     TestaRitirata { token: TokenId },
     /// A ground unit was sent at the head and worked there: it saved no homes.
     TestaInutile { token: TokenId },
-    /// The IT-alert warned a district that never needed it.
-    ItAlertSprecato,
+    /// The patrol stopped at a district nothing threatened and nothing
+    /// pointed at, while the districts at risk waited (lesson 3).
+    PattugliaSprecata { district: usize },
     /// Engines defended a district the fire never came near.
     DifesaInutile { district: usize },
     /// Called too late to drop before the last turn ended.
@@ -324,8 +313,6 @@ pub enum Note {
     CanadairMaiChiamato,
     /// Called in time: this many drops.
     CanadairInTempo { drops: u32 },
-    /// A spot fire with a unit on it went out.
-    FocolaioSpento,
     /// Engines were posted before the fire arrived and saved homes.
     CaseDifese { district: usize, homes: u32 },
 }
@@ -333,7 +320,7 @@ pub enum Note {
 impl Note {
     /// A rule broken (shown first).
     pub fn broken(&self) -> bool {
-        !matches!(self, Note::CanadairInTempo { .. } | Note::FocolaioSpento | Note::CaseDifese { .. })
+        !matches!(self, Note::CanadairInTempo { .. } | Note::CaseDifese { .. })
     }
 }
 
@@ -349,7 +336,6 @@ pub enum Headline {
 /// The same fire, with no orders (the twin).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Counterfactual {
-    pub families_safe: u32,
     pub families_caught: u32,
     pub homes_hit: u32,
     /// Per district: (families caught, homes hit).
@@ -370,7 +356,8 @@ pub struct DistrictVerdict {
 pub struct Verdict {
     pub headline: Headline,
     pub districts: Vec<DistrictVerdict>,
-    pub families_safe: u32,
+    /// Families the fire caught at home or on the road (shown against
+    /// `none.families_caught`; never as "safe out of the whole town").
     pub families_caught: u32,
     pub homes_hit: u32,
     pub households: u32,

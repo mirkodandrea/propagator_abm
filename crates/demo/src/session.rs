@@ -43,10 +43,12 @@ pub const TOWN: &str = "demo_borgo";
 /// in time (the end card's rule since v1: about the median family's preparation).
 pub const IN_TIME_S: i64 = crate::district::IN_TIME_MIN * 60;
 
-/// The model options the turn game runs with: home defence (option B) and one
-/// fire station. Both are existing, inert-by-default variants.
+/// The model options the turn game runs with: home defence (option B), one
+/// fire station, and the boosted hand crew that defends homes without water
+/// or road (gameplay §7.7: more effective than the published model, approved
+/// by Mirko 2026-10-07; a kiosk variant, inert by default everywhere else).
 pub fn variant() -> Variant {
-    Variant { defend_homes: true, station: true, ..Variant::default() }
+    Variant { defend_homes: true, station: true, crews_defend: true, ..Variant::default() }
 }
 
 /// What "the head" means as an order (gameplay §7.6 sweep).
@@ -61,6 +63,25 @@ pub enum HeadOrder {
     /// not the default.
     Track,
 }
+
+/// What the hand crew does when sent to a district (gameplay §7.7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CrewMode {
+    /// The game's crew (§7.7 fallback): it walks to the district's post and
+    /// works there, cutting a line that starts at the post, and with the
+    /// `crews_defend` variant it defends the homes within `DEFEND_REACH_M`.
+    #[default]
+    Difesa,
+    /// The published order: attack at the district's post (a house), which
+    /// cuts a line across the village's non-burnable ground (§7.1).
+    Post,
+    /// A *fascia*: a line along the district's fire-facing perimeter, in the
+    /// burnable fuel just outside the houses ([`FASCIA_OUT_M`] out).
+    Fascia,
+}
+
+/// How far outside the fire-facing houses the crew's firebreak runs, metres.
+pub const FASCIA_OUT_M: f32 = 60.0;
 
 /// How often a unit ordered to the head is re-tasked under [`HeadOrder::Track`].
 pub const HEAD_TRACK_S: i64 = 60;
@@ -90,8 +111,6 @@ struct SpotTrack {
     now: Pos,
     /// When it went out (`false`) or joined the main fire (`true`).
     gone: Option<(i64, bool)>,
-    /// A token was ordered onto it.
-    worked: bool,
 }
 
 /// Something that happened during the turn being played, for the report.
@@ -111,12 +130,11 @@ pub struct Session {
     pub draw: Draw,
     /// See [`HeadOrder`]. `Fixed` unless a sweep sets it.
     pub head_order: HeadOrder,
+    /// See [`CrewMode`].
+    pub crew_mode: CrewMode,
     /// The hand crew is in the tray. On (the spec's tray); milestone 0
     /// measured it changing nothing (gameplay §7.1), so the lead may cut it.
     pub crew: bool,
-    /// Spot fires are targets. On (the spec's map); milestone 0 measured
-    /// attacking one changing nothing (gameplay §7.3), so the lead may cut it.
-    pub spot_targets: bool,
     /// The cells the opening ignition lights. The core only lights them on
     /// its first advance, so at T+0 nothing is burning yet; until then these
     /// stand for the fire (the map draws them, the head and flanks are on them).
@@ -126,7 +144,6 @@ pub struct Session {
     pending: Vec<(TokenId, TargetId)>,
     doing: [Option<Doing>; 7],
     patrol: Patrol,
-    it_alert: Option<u8>,
     called: Option<u8>,
     /// The turn each token last pulled back in.
     withdrew: [Option<u8>; 7],
@@ -195,8 +212,8 @@ impl Session {
         };
         let mut s = Session {
             head_order: HeadOrder::Fixed,
+            crew_mode: CrewMode::Difesa,
             crew: true,
-            spot_targets: true,
             patch,
             unit_prev: run.crews.units.iter().map(|u| (u.state, u.drops)).collect(),
             run,
@@ -206,7 +223,6 @@ impl Session {
             pending: vec![],
             doing: [None; 7],
             patrol: Patrol { at: station, path: vec![], depart_s: 0, arrive_s: 0, to: None, delivered: true, pointed: false },
-            it_alert: None,
             called: None,
             withdrew: [None; 7],
             started: [false; 7],
@@ -288,7 +304,6 @@ impl Session {
         let unit = id.unit().map(|k| &self.run.crews.units[k]);
         let at = match id {
             TokenId::P => self.patrol.at,
-            TokenId::I => self.town_centre(),
             _ => unit.map(|u| u.pos).unwrap_or(self.station()),
         };
         Token {
@@ -310,25 +325,12 @@ impl Session {
         self.run.crews.units[0].base
     }
 
-    fn town_centre(&self) -> Pos {
-        let ds = &self.run.referee.districts;
-        let n = ds.len().max(1) as f32;
-        Pos { x: ds.iter().map(|d| d.centre.x).sum::<f32>() / n, y: ds.iter().map(|d| d.centre.y).sum::<f32>() / n }
-    }
-
     pub fn token_state(&self, id: TokenId) -> TokenState {
         let now = self.run.time_s();
         match id {
             TokenId::P => {
                 if self.patrol.to.is_some() && !self.patrol.delivered {
                     TokenState::InViaggio { eta_s: (self.patrol.arrive_s - now).max(0) }
-                } else {
-                    TokenState::Libero
-                }
-            }
-            TokenId::I => {
-                if self.it_alert.is_some() {
-                    TokenState::Usato
                 } else {
                     TokenState::Libero
                 }
@@ -367,7 +369,7 @@ impl Session {
             // briefed on the way in (`Suppression::assign` allows it); one
             // that will not cannot be given anything yet.
             TokenState::InArrivo { eta_s } => eta_s <= TURN_S,
-            TokenState::Rifornimento { .. } | TokenState::Ritirato | TokenState::Perso | TokenState::Usato => false,
+            TokenState::Rifornimento { .. } | TokenState::Ritirato | TokenState::Perso => false,
         }
     }
 
@@ -421,35 +423,27 @@ impl Session {
         use TargetKind as K;
         match token.kind() {
             TokenKind::Pattuglia => matches!(kind, K::District(_)),
-            TokenKind::ItAlert => kind == K::Town,
-            TokenKind::Autobotte | TokenKind::Squadra => matches!(kind, K::District(_) | K::Head | K::Flank(_) | K::SpotFire(_)),
+            TokenKind::Autobotte | TokenKind::Squadra => matches!(kind, K::District(_) | K::Head | K::Flank(_)),
             TokenKind::Canadair => {
                 if self.run.crews.units[6].state == UnitState::Unavailable {
                     kind == K::Sky
                 } else {
-                    matches!(kind, K::District(_) | K::Head | K::Flank(_) | K::SpotFire(_))
+                    matches!(kind, K::District(_) | K::Head | K::Flank(_))
                 }
             }
         }
     }
 
-    fn target_ids(&self) -> (u8, u8) {
-        let nd = self.run.referee.districts.len() as u8;
-        (nd, nd + 4)
-    }
-
-    /// Target numbering: districts 1..=n, then head, left flank, right flank,
-    /// then spot fires; the Canadair call and the IT-alert have their own.
+    /// Target numbering: districts 1..=n, then head, left flank, right flank;
+    /// the Canadair call has its own.
     fn id_of(&self, kind: TargetKind) -> TargetId {
-        let (nd, spot0) = self.target_ids();
+        let nd = self.run.referee.districts.len() as u8;
         TargetId(match kind {
             TargetKind::District(d) => 1 + d as u8,
             TargetKind::Head => nd + 1,
             TargetKind::Flank(Side::Left) => nd + 2,
             TargetKind::Flank(Side::Right) => nd + 3,
-            TargetKind::SpotFire(n) => spot0 + n as u8,
             TargetKind::Sky => 200,
-            TargetKind::Town => 201,
         })
     }
 
@@ -468,18 +462,9 @@ impl Session {
                 out.push(Target { id: TargetId(0), kind: TargetKind::Flank(Side::Right), pos: r, label_pos: r, facing_deg: Some(rd) });
             }
         }
-        for (n, s) in self.spots.iter().enumerate() {
-            if s.gone.is_none() && self.spot_targets {
-                out.push(Target { id: TargetId(0), kind: TargetKind::SpotFire(n), pos: s.now, label_pos: s.now, facing_deg: None });
-            }
-        }
         if self.run.crews.units[6].state == UnitState::Unavailable {
             let p = self.station();
             out.push(Target { id: TargetId(0), kind: TargetKind::Sky, pos: p, label_pos: p, facing_deg: None });
-        }
-        if self.it_alert.is_none() {
-            let c = self.town_centre();
-            out.push(Target { id: TargetId(0), kind: TargetKind::Town, pos: c, label_pos: c, facing_deg: None });
         }
         for t in &mut out {
             t.id = self.id_of(t.kind);
@@ -659,7 +644,7 @@ impl Session {
             self.spot_cursor += 1;
             if e.kind == EventKind::SpotFire {
                 if let Some(p) = e.pos {
-                    self.spots.push(SpotTrack { first: p, now: p, gone: None, worked: false });
+                    self.spots.push(SpotTrack { first: p, now: p, gone: None });
                 }
             }
         }
@@ -709,6 +694,12 @@ impl Session {
         }
     }
 
+    /// Spot fires still burning on their own, where they burn now (the map
+    /// draws them; they are not targets).
+    pub fn live_spots(&self) -> Vec<Pos> {
+        self.spots.iter().filter(|s| s.gone.is_none()).map(|s| s.now).collect()
+    }
+
     /// Spot fires seen so far: (where it started, gone: Some(merged)).
     pub fn spot_fires(&self) -> Vec<(Pos, Option<bool>)> {
         self.spots.iter().map(|s| (s.first, s.gone.map(|g| g.1))).collect()
@@ -737,10 +728,6 @@ impl Session {
                     effect: if unwarned == 0 || en_route { Effect::Inutile } else { Effect::Avvisa { families: unwarned } },
                 }
             }
-            TokenKind::ItAlert => {
-                let n = agents.households.iter().filter(|h| !h.ordered).count() as u32;
-                Preview { eta_s: 0, effect: Effect::AvvisaTutti { families: n } }
-            }
             TokenKind::Autobotte | TokenKind::Squadra => {
                 let k = token.unit().expect("unit");
                 let at = self.order_point(token, &t);
@@ -751,23 +738,25 @@ impl Session {
                 let stand = if engine { park } else { at };
                 let gap = dist(park, at);
                 let effect = match t.kind {
-                    // Withdrawal is promised only where it will follow: the
-                    // ground it will stand on is already past the unit's
-                    // working limit and it gets there within the turn.
-                    TargetKind::Head if eta_s <= TURN_S && self.run.fire.threat().at(stand) >= WORK_LIMIT => Effect::Ritirata,
-                    TargetKind::Head if engine && gap > ENGINE_REACH_M => Effect::Lontano,
-                    TargetKind::Head => Effect::NienteCase,
                     TargetKind::District(d) if !self.at_risk(d) => Effect::Inutile,
                     // Home defence credits every home within DEFEND_REACH_M of
-                    // where the engine works (`run::Tally`): the same count.
+                    // where the unit first works (`run::Tally`): the same count.
                     TargetKind::District(_) if engine => match homes_near(park, DEFEND_REACH_M) {
                         0 => Effect::Lontano,
                         n => Effect::Difende { homes: n },
                     },
+                    TargetKind::District(_) => match self.crew_mode {
+                        CrewMode::Difesa => Effect::Fascia { homes: homes_near(at, DEFEND_REACH_M) },
+                        _ => Effect::NonSalvaCase,
+                    },
+                    // Withdrawal is promised only where it will follow: the
+                    // ground it will stand on is already past the unit's
+                    // working limit and it gets there within the turn.
+                    _ if eta_s <= TURN_S && self.run.fire.threat().at(stand) >= WORK_LIMIT => Effect::Ritirata,
                     _ if engine && gap > ENGINE_REACH_M => Effect::Lontano,
-                    TargetKind::District(_) | TargetKind::Flank(_) => Effect::Linea,
-                    TargetKind::SpotFire(_) => Effect::Spegne,
-                    TargetKind::Sky | TargetKind::Town => return None,
+                    // The head and the flanks: measured to save no home (§7.1, §7.6).
+                    TargetKind::Head | TargetKind::Flank(_) => Effect::NonSalvaCase,
+                    TargetKind::Sky => return None,
                 };
                 Preview { eta_s, effect }
             }
@@ -781,12 +770,13 @@ impl Session {
                 let wait = if u.state == UnitState::Inbound { (u.arrives_at_s - self.run.crews.time_s()).max(0.0) } else { 0.0 };
                 let eta = wait + dist(u.pos, t.pos) / TANKER_SPEED + if u.water_l <= 0.0 { SCOOP_S } else { 0.0 };
                 let effect = match t.kind {
-                    TargetKind::Head => Effect::RallentaPoco,
                     TargetKind::District(d) if !self.at_risk(d) => Effect::Inutile,
+                    // A drop credits the homes within DROP_WIDTH_M of where it
+                    // falls (`run::Tally`), and only on the threatened
+                    // district's edge does that save any (§7.2).
                     TargetKind::District(_) => Effect::Bagna { homes: homes_near(t.pos, DROP_WIDTH_M) },
-                    TargetKind::Flank(_) => Effect::Bagna { homes: homes_near(t.pos, DROP_WIDTH_M) },
-                    TargetKind::SpotFire(_) => Effect::Spegne,
-                    TargetKind::Sky | TargetKind::Town => return None,
+                    TargetKind::Head | TargetKind::Flank(_) => Effect::NonSalvaCase,
+                    TargetKind::Sky => return None,
                 };
                 Preview { eta_s: eta.ceil() as i64, effect }
             }
@@ -815,6 +805,23 @@ impl Session {
         let gap = dist(net.pos(b), to);
         let s = if engine { m / ENGINE_SPEED } else { m / CREW_SPEED + gap / CREW_WALK_SPEED };
         (s.ceil() as i64, net.pos(b))
+    }
+
+    /// The crew's firebreak for district `d`: a straight line across the
+    /// direction the fire comes from, [`FASCIA_OUT_M`] beyond the district's
+    /// outermost house on that side, as wide as the district plus 40 m.
+    pub fn fascia(&self, d: usize) -> (Pos, Pos) {
+        let dd = &self.run.referee.districts[d];
+        let head = self.target_of(TargetKind::Head).map_or_else(|| self.head(), |h| h.pos);
+        let c = dd.centre;
+        let len = dist(head, c).max(1.0);
+        let (ux, uy) = ((head.x - c.x) / len, (head.y - c.y) / len);
+        let (px, py) = (-uy, ux);
+        let homes: Vec<Pos> = dd.households.iter().map(|&i| self.run.agents.households[i].home).collect();
+        let out = homes.iter().map(|h| (h.x - c.x) * ux + (h.y - c.y) * uy).fold(0.0, f32::max) + FASCIA_OUT_M;
+        let half = homes.iter().map(|h| ((h.x - c.x) * px + (h.y - c.y) * py).abs()).fold(0.0, f32::max) + 40.0;
+        let m = Pos { x: c.x + ux * out, y: c.y + uy * out };
+        (Pos { x: m.x - px * half, y: m.y - py * half }, Pos { x: m.x + px * half, y: m.y + py * half })
     }
 
     /// Where an order of `token` to `t` sends the unit: for a district, the
@@ -980,17 +987,6 @@ impl Session {
                         pointed,
                     };
                 }
-                TokenId::I => {
-                    let flags: Vec<bool> = (0..self.pointed.len()).map(|d| self.points_at(d, now)).collect();
-                    let before: Vec<bool> = self.run.referee.reports.iter().map(|r| r.warned_at_s.is_some()).collect();
-                    self.run.order(Order::EvacuateAll);
-                    self.it_alert = Some(turn);
-                    for (d, r) in self.run.referee.reports.iter().enumerate() {
-                        if !before[d] && r.warned_at_s.is_some() && self.pointed[d].is_none() {
-                            self.pointed[d] = Some(flags[d]);
-                        }
-                    }
-                }
                 TokenId::K if t.kind == TargetKind::Sky => {
                     self.run.crews.request_air_unit(6);
                     self.called = Some(turn);
@@ -998,12 +994,25 @@ impl Session {
                 _ => {
                     let k = token.unit().expect("unit token");
                     let pos = point.unwrap_or(t.pos);
-                    if let TargetKind::SpotFire(n) = t.kind {
-                        if let Some(s) = self.spots.get_mut(n) {
-                            s.worked = true;
+                    let task = match (token, t.kind) {
+                        (TokenId::K, _) => Task::Drop { at: pos },
+                        (TokenId::S, TargetKind::District(d)) if self.crew_mode == CrewMode::Fascia => {
+                            let (from, to) = self.fascia(d);
+                            Task::Line { from, to }
                         }
-                    }
-                    let task = if token == TokenId::K { Task::Drop { at: pos } } else { Task::Attack { at: pos } };
+                        (TokenId::S, TargetKind::District(_)) if self.crew_mode == CrewMode::Difesa => {
+                            // A line that *starts* at the post, across the
+                            // direction the fire comes from: the crew works
+                            // from the post first, so that is where the tally
+                            // credits its defence (the preview's count).
+                            let head = self.target_of(TargetKind::Head).map_or_else(|| self.head(), |h| h.pos);
+                            let len = dist(head, pos).max(1.0);
+                            let (px, py) = (-(head.y - pos.y) / len, (head.x - pos.x) / len);
+                            let half = abm::suppression::LINE_M_PER_H * 1.5;
+                            Task::Line { from: pos, to: Pos { x: pos.x + px * half, y: pos.y + py * half } }
+                        }
+                        _ => Task::Attack { at: pos },
+                    };
                     if self.run.crews.assign(k, task).is_ok() {
                         self.doing[token.index()] = Some(Doing { kind: t.kind, pos });
                     }
@@ -1297,7 +1306,6 @@ impl Session {
         let caught = (0..n).filter(|&i| tally.caught_at(i).is_some()).count() as u32;
         let homes = (0..n).filter(|&i| tally.home_lost(i) == Some(true)).count() as u32;
         Counterfactual {
-            families_safe: n as u32 - caught,
             families_caught: caught,
             homes_hit: homes,
             districts: r
@@ -1418,8 +1426,12 @@ impl Session {
                 notes.push(Note::TestaInutile { token: *t });
             }
         }
-        if self.it_alert.is_some() && districts.iter().any(|v| v.people == Stamp::AllarmeInutile) {
-            notes.push(Note::ItAlertSprecato);
+        for (_, t, k) in &self.log {
+            if let (TokenId::P, TargetKind::District(d)) = (t, k) {
+                if districts[*d].people == Stamp::AllarmeInutile && !notes.contains(&Note::PattugliaSprecata { district: *d }) {
+                    notes.push(Note::PattugliaSprecata { district: *d });
+                }
+            }
         }
         let defended: Vec<usize> = (0..nd)
             .filter(|d| self.log.iter().any(|(_, t, k)| t.kind() == TokenKind::Autobotte && *k == TargetKind::District(*d)))
@@ -1433,9 +1445,6 @@ impl Session {
             (None, _) => notes.push(Note::CanadairMaiChiamato),
             (Some(_), 0) => notes.push(Note::CanadairTardi),
             (Some(_), n) => notes.push(Note::CanadairInTempo { drops: n }),
-        }
-        if self.spots.iter().any(|s| s.worked && s.gone.is_some_and(|g| !g.1)) {
-            notes.push(Note::FocolaioSpento);
         }
         for &d in &defended {
             let v = &districts[d];
@@ -1458,7 +1467,6 @@ impl Session {
         Verdict {
             headline,
             districts,
-            families_safe: me.families_safe,
             families_caught: me.families_caught,
             homes_hit: me.homes_hit,
             households: self.run.agents.households.len() as u32,

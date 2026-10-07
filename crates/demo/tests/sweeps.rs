@@ -44,9 +44,6 @@ fn sweep<R: Send>(policies: &[TurnPolicy], probe: impl Fn(&mut Session) -> R + S
     .collect()
 }
 
-fn homes(s: &mut Session) -> f32 {
-    s.facts().homes_hit as f32
-}
 
 /// Mean ± s.e. of `f` over seeds (optionally only shift / hold sessions) for policy `j`.
 fn col<R>(rs: &HashMap<(u64, usize), R>, j: usize, only: Option<bool>, f: impl Fn(&R) -> f32) -> (f32, f32) {
@@ -149,7 +146,6 @@ fn s2_canadair() {
         TurnPolicy::new("K borgo edge", drop_on(Sel::District(BORGO))),
         TurnPolicy::new("K flank left", drop_on(Sel::Flank(Side::Left))),
         TurnPolicy::new("K flank right", drop_on(Sel::Flank(Side::Right))),
-        TurnPolicy::new("K first spot", drop_on(Sel::FirstSpot)),
         TurnPolicy::new("K head", drop_on(Sel::Head)),
         TurnPolicy::new("K at-risk edge", |s: &Session| {
             let k = s.token(TokenId::K);
@@ -186,80 +182,8 @@ fn s2_canadair() {
     }
 }
 
-/// §7.3 An engine to the first spot fire within a turn of it appearing vs
-/// never; and whether Rocca Ventosa produces spot fires at all.
-#[test]
-#[ignore]
-fn s3_engine_on_spot() {
-    // The engine goes to the oldest live spot fire at the first turn one is on
-    // the map, and stays on it.
-    let on_spot = |s: &Session| {
-        let e = s.token(TokenId::E1);
-        let any = s.targets().iter().any(|t| matches!(t.kind, TargetKind::SpotFire(_)));
-        if any && e.orderable && e.doing.is_none() {
-            vec![(TokenId::E1, Sel::FirstSpot)]
-        } else {
-            vec![]
-        }
-    };
-    let crew_spot = |s: &Session| {
-        let e = s.token(TokenId::S);
-        let any = s.targets().iter().any(|t| matches!(t.kind, TargetKind::SpotFire(_)));
-        if any && e.orderable && e.doing.is_none() {
-            vec![(TokenId::S, Sel::FirstSpot)]
-        } else {
-            vec![]
-        }
-    };
-    let ps = vec![tp::none(), TurnPolicy::new("E1 first spot", on_spot), TurnPolicy::new("S first spot", crew_spot)];
-    // Per session: spots in total, spots on the map at a turn opening (≤ T+40),
-    // first spot target's fate (out=1, merged=0, live=0.5, none=-1), homes hit.
-    let rs = sweep(&ps, |s| {
-        let spots = s.spot_fires();
-        let first = s.log().iter().find_map(|(_, _, k)| if let TargetKind::SpotFire(n) = k { Some(*n) } else { None });
-        let fate = match first.map(|n| spots[n].1) {
-            Some(Some(false)) => 1.0,
-            Some(Some(true)) => 0.0,
-            Some(None) => 0.5,
-            None => -1.0,
-        };
-        let out_any = spots.iter().filter(|x| x.1 == Some(false)).count() as f32;
-        (spots.len() as f32, fate, out_any, homes(s))
-    });
-    // How many sessions show a spot-fire target to the player during the turns.
-    let shown: Vec<f32> = grid(&seeds(), 1, |seed, _| {
-        let mut s = Session::new(&data_dir(), seed).unwrap();
-        let mut n = 0;
-        while !s.turn().finale() {
-            if s.targets().iter().any(|t| matches!(t.kind, TargetKind::SpotFire(_))) {
-                n += 1;
-            }
-            s.end_turn().unwrap();
-        }
-        n as f32
-    })
-    .into_iter()
-    .map(|r| r.2)
-    .collect();
-    let with_any = shown.iter().filter(|&&n| n > 0.0).count();
-    println!("\n§7.3 spot fires (N={N}): sessions with a spot-fire target at some turn opening: {with_any}/{N}; turns showing one: {}", fmt(mean_se(&shown)));
-    println!("policy            | spots/session | spots out | homes hit | Δ homes | first spot attacked: out / merged / live (n)");
-    for (j, p) in ps.iter().enumerate() {
-        let fates: Vec<f32> = seeds().iter().map(|s| rs[&(*s, j)].1).filter(|f| *f >= 0.0).collect();
-        let out = fates.iter().filter(|f| **f == 1.0).count();
-        let merged = fates.iter().filter(|f| **f == 0.0).count();
-        let live = fates.iter().filter(|f| **f == 0.5).count();
-        println!(
-            "{:17} | {} | {} | {} | {} | {out} / {merged} / {live} ({})",
-            p.name,
-            fmt(col(&rs, j, None, |r| r.0)),
-            fmt(col(&rs, j, None, |r| r.2)),
-            fmt(col(&rs, j, None, |r| r.3)),
-            fmt(diff(&rs, j, 0, None, |r| r.3)),
-            fates.len()
-        );
-    }
-}
+// §7.3 (engines and crews on spot fires) was measured on 2026-10-07 and the
+// spot-fire target cut; the table is in the gameplay spec.
 
 /// §7.4 Patrol to Il Borgo at turn 1 vs an instant warning at T+0 vs none:
 /// families caught. Pass: the patrol still ≤ half of none. And the Borgo →
@@ -270,13 +194,13 @@ fn s4_patrol_delay() {
     let dir = data_dir();
     // Job 0..: none, patrol Borgo t1, instant Borgo T+0, patrol B t1 + C t2,
     // IT-alert t1, instant Borgo + Coste T+0, patrol Coste t1 + Borgo t2.
-    let names = ["none", "patrol-borgo-t1", "instant-borgo-T0", "patrol-borgo-t1+coste-t2", "it-alert-t1", "instant-borgo+coste-T0", "patrol-coste-t1+borgo-t2", "patrol-borgo-t3"];
+    let names = ["none", "patrol-borgo-t1", "instant-borgo-T0", "patrol-borgo-t1+coste-t2", "(IT-alert, cut)", "instant-borgo+coste-T0", "patrol-coste-t1+borgo-t2", "patrol-borgo-t3"];
     let rs: HashMap<(u64, usize), (f32, f32, f32, f32, f32)> = grid(&seeds(), names.len(), |seed, j| {
         let mut s = Session::new(&dir, seed).unwrap();
         let p: TurnPolicy = match j {
             1 => tp::patrol_borgo_t1(),
             3 => tp::patrol_borgo_coste(),
-            4 => tp::it_alert_t1(),
+            4 => tp::none(),
             6 => TurnPolicy::new("", |s: &Session| match s.turn().index {
                 1 => vec![(TokenId::P, Sel::District(COSTE))],
                 2 => vec![(TokenId::P, Sel::District(BORGO))],
@@ -439,4 +363,61 @@ fn s6_head_attack() {
         }
     }
     let _ = Level::Calm;
+}
+
+/// §7.7 The boosted crew: a *fascia* in the fuel outside the fire-facing
+/// houses at increasing `line_x`, and the fallback (the crew defends homes
+/// like an engine, no water, no road). Il Borgo with the wind holding, Le
+/// Coste with it shifting, Il Mulino (never reached) as the control; crew sent
+/// at turn 1 vs no orders.
+#[test]
+#[ignore]
+fn s7_boosted_crew() {
+    use demo::session::CrewMode;
+    let dir = data_dir();
+    let none: HashMap<u64, Counterfactual> = demo::turn_policy::counterfactuals(&dir, &seeds());
+    let mut configs: Vec<(String, CrewMode, Variant)> = vec![];
+    for x in [1.0f32, 4.0, 10.0, 20.0, 40.0] {
+        let v = Variant { unit_effect: abm::suppression::UnitEffect { line_x: x, ..abm::suppression::UnitEffect::ONE }, ..demo::session::variant() };
+        configs.push((format!("fascia line_x={x}"), CrewMode::Fascia, v));
+    }
+    configs.push(("defence (no water)".into(), CrewMode::Post, Variant { crews_defend: true, ..demo::session::variant() }));
+    println!("\n§7.7 boosted crew (N={N}), crew at turn 1. Δ homes in that district vs none (paired): Il Borgo, wind holds | Le Coste, shifts | Il Mulino, all | line cut (m) | minutes to start work");
+    for (name, mode, v) in &configs {
+        let r = grid(&seeds(), 3, |seed, d| {
+            let draw = demo::draw(TOWN, seed).unwrap();
+            let mut s = Session::with_variant(&dir, draw, *v).unwrap();
+            s.crew_mode = *mode;
+            let p = TurnPolicy::new("", at(1, vec![(TokenId::S, Sel::District(d))]));
+            let mut started: Option<i64> = None;
+            while !s.finished() {
+                if !s.turn().finale() {
+                    p.order(&mut s);
+                }
+                s.end_turn_observed(|x| {
+                    if started.is_none() && x.run.crews.units[3].state == abm::suppression::UnitState::Working {
+                        started = Some(x.time_s());
+                    }
+                })
+                .unwrap();
+            }
+            let f = s.facts();
+            (f.districts[d].1 as f32 - none[&seed].districts[d].1 as f32, s.run.crews.units[3].line_cut_m, started.map(|t| t as f32 / 60.0))
+        });
+        let pick = |d: usize, only: Option<bool>| {
+            let v: Vec<f32> = r.iter().filter(|x| x.1 == d && only.map_or(true, |w| shifts(x.0) == w)).map(|x| x.2 .0).collect();
+            mean_se(&v)
+        };
+        let line: Vec<f32> = r.iter().filter(|x| x.1 == BORGO).map(|x| x.2 .1).collect();
+        let start: Vec<f32> = r.iter().filter(|x| x.1 == BORGO).filter_map(|x| x.2 .2).collect();
+        println!(
+            "{:22} {} | {} | {} | {} | {}",
+            name,
+            fmt(pick(BORGO, Some(false))),
+            fmt(pick(COSTE, Some(true))),
+            fmt(pick(demo::turn_policy::MULINO, None)),
+            fmt(mean_se(&line)),
+            fmt(mean_se(&start)),
+        );
+    }
 }

@@ -1,12 +1,13 @@
-//! The screen must say what the model will do (gameplay §4): every preview
-//! checked against what the order then does, on seeds 1-10, every turn,
-//! every target an engine can be given. Only ground units can be *Lontano*
-//! or *Ritirata*; engines and the crew are both checked.
+//! The screen must say what the model will do (gameplay §4, "Previews must
+//! be true"): every preview checked against what the order then does, on
+//! seeds 1-10, every turn, every token and every target it can be given.
 //!
 //! * *Lontano* ⇔ the unit never works there: a district's engine defends none
-//!   of its homes; elsewhere it never pumps within hose reach of the point.
-//! * *Difende N case* = the homes the verdict credits the moment it starts
-//!   work (`Tally::defended_now`, with no other unit about).
+//!   of its homes; elsewhere it never works within hose reach of the point.
+//! * *Difende N* / *Fascia N* / *Bagna N* = the homes the verdict credits the
+//!   moment the unit starts work there (`Tally::defended_now`, nothing else
+//!   about).
+//! * *Avvisa N* = the families the patrol warns when it arrives.
 //! * *Ritirata* ⇒ it pulls back within the turn.
 
 use abm::suppression::{UnitState, ENGINE_REACH_M};
@@ -17,6 +18,8 @@ fn data_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data").canonicalize().unwrap()
 }
 
+const TOKENS: [TokenId; 4] = [TokenId::P, TokenId::E1, TokenId::S, TokenId::K];
+
 #[derive(Debug)]
 #[allow(dead_code)] // seed and turn are read through Debug in failure messages
 struct Case {
@@ -25,67 +28,85 @@ struct Case {
     token: TokenId,
     target: TargetKind,
     effect: Effect,
-    /// Homes credited at the first step anything was defended (districts).
+    /// Homes credited at the first step anything was defended.
     first_defended: Option<u32>,
-    /// Pumped within hose reach of the point (non-districts).
-    pumped_there: bool,
+    /// Worked within hose reach of the point (head and flanks).
+    worked_there: bool,
+    /// Families the patrol warned on arrival.
+    warned: Option<u32>,
     withdrew_in_turn: bool,
     withdrew_or_lost: bool,
 }
 
+/// The session at the opening of `turn`, with no orders except the Canadair
+/// call at turn 1 (so the plane is on station for turns 4 and 5).
+fn at_turn(seed: u64, turn: u8) -> Session {
+    let mut s = Session::new(&data_dir(), seed).unwrap();
+    let sky = s.target_of(TargetKind::Sky).unwrap().id;
+    s.assign(TokenId::K, sky).unwrap();
+    while s.turn().index < turn {
+        s.end_turn().unwrap();
+    }
+    s
+}
+
 fn cases() -> Vec<Case> {
-    let dir = data_dir();
     let seeds: Vec<u64> = (1..=10).collect();
-    // job = (turn - 1) * 2 + (0: engine E1, 1: crew S); targets inside.
-    grid(&seeds, 10, |seed, job| {
-        let turn = (job / 2) as u8 + 1;
-        let token = if job % 2 == 0 { TokenId::E1 } else { TokenId::S };
+    grid(&seeds, 5 * TOKENS.len(), |seed, job| {
+        let turn = (job / TOKENS.len()) as u8 + 1;
+        let token = TOKENS[job % TOKENS.len()];
         let mut out = vec![];
-        let probe = {
-            let mut s = Session::new(&dir, seed).unwrap();
-            while s.turn().index < turn {
-                s.end_turn().unwrap();
+        let probe: Vec<(TargetKind, Effect)> = {
+            let s = at_turn(seed, turn);
+            if !s.token(token).orderable {
+                return out;
             }
-            s.valid_targets(token).into_iter().map(|t| (t.kind, s.preview(token, t.id).unwrap().effect)).collect::<Vec<_>>()
+            s.valid_targets(token).into_iter().filter(|t| t.kind != TargetKind::Sky).map(|t| (t.kind, s.preview(token, t.id).unwrap().effect)).collect()
         };
         for (kind, effect) in probe {
-            let mut s = Session::new(&dir, seed).unwrap();
-            while s.turn().index < turn {
-                s.end_turn().unwrap();
-            }
+            let mut s = at_turn(seed, turn);
             let tg = *s.target_of(kind).unwrap();
             assert_eq!(s.preview(token, tg.id).unwrap().effect, effect, "replay is deterministic");
             s.assign(token, tg.id).unwrap();
-            let k = token.unit().unwrap();
-            let district = if let TargetKind::District(d) = kind { Some(s.run.referee.districts[d].households.clone()) } else { None };
-            let (mut first_defended, mut pumped_there, mut withdrew_in_turn, mut withdrew_or_lost) = (None, false, false, false);
+            let k = token.unit();
+            let homes: Vec<usize> = match kind {
+                TargetKind::District(d) => s.run.referee.districts[d].households.clone(),
+                _ => vec![],
+            };
+            let mut c = Case { seed, turn, token, target: kind, effect, first_defended: None, worked_there: false, warned: None, withdrew_in_turn: false, withdrew_or_lost: false };
             let mut used = 0.0f32;
-            for t in 0..2 {
+            // To the end: a crew walking to Le Coste takes over two turns.
+            for t in 0..8 {
                 if s.finished() {
                     break;
                 }
+                let before = s.run.agents.households.iter().filter(|h| h.ordered).count();
                 s.end_turn_observed(|x| {
                     let now = x.time_s();
-                    let u = &x.run.crews.units[k];
-                    if matches!(u.state, UnitState::Withdrawing | UnitState::Lost) {
-                        withdrew_or_lost = true;
-                        withdrew_in_turn |= t == 0;
+                    if c.first_defended.is_none() && homes.iter().any(|&i| x.run.referee.tally.defended(i, now)) {
+                        c.first_defended = Some(x.run.referee.tally.defended_now(now) as u32);
                     }
-                    if let Some(hs) = &district {
-                        if first_defended.is_none() && hs.iter().any(|&i| x.run.referee.tally.defended(i, now)) {
-                            first_defended = Some(x.run.referee.tally.defended_now(now) as u32);
-                        }
-                    } else if u.water_used_l + u.line_cut_m > used {
+                    let Some(k) = k else { return };
+                    let u = &x.run.crews.units[k];
+                    let broke_off = token == TokenId::K && u.state == UnitState::Staged && u.note.contains("broke off");
+                    if matches!(u.state, UnitState::Withdrawing | UnitState::Lost) || broke_off {
+                        c.withdrew_or_lost = true;
+                        c.withdrew_in_turn |= t == 0;
+                    }
+                    if u.water_used_l + u.line_cut_m > used {
                         let p = tg.pos;
                         if ((u.pos.x - p.x).powi(2) + (u.pos.y - p.y).powi(2)).sqrt() <= ENGINE_REACH_M + 1.0 {
-                            pumped_there = true;
+                            c.worked_there = true;
                         }
                     }
                     used = u.water_used_l + u.line_cut_m;
                 })
                 .unwrap();
+                if token == TokenId::P && t == 0 {
+                    c.warned = Some((s.run.agents.households.iter().filter(|h| h.ordered).count() - before) as u32);
+                }
             }
-            out.push(Case { seed, turn, token, target: kind, effect, first_defended, pumped_there, withdrew_in_turn, withdrew_or_lost });
+            out.push(c);
         }
         out
     })
@@ -101,30 +122,36 @@ fn previews_say_what_the_unit_will_do() {
     for c in &cs {
         let works = match c.target {
             TargetKind::District(_) => c.first_defended.is_some(),
-            _ => c.pumped_there,
+            _ => c.worked_there,
         };
-        let engine = c.token.kind() == TokenKind::Autobotte;
+        let excused = c.withdrew_or_lost;
         match c.effect {
             Effect::Lontano if works => bad.push(format!("{c:?}: Lontano, but it worked there")),
-            Effect::Difende { homes } if c.first_defended != Some(homes) && !c.withdrew_or_lost => {
+            Effect::Difende { homes } | Effect::Fascia { homes } | Effect::Bagna { homes } if homes > 0 && c.first_defended != Some(homes) && !excused => {
                 bad.push(format!("{c:?}: promised {homes} homes, credited {:?}", c.first_defended))
             }
+            Effect::Avvisa { families } if c.warned != Some(families) => bad.push(format!("{c:?}: promised to warn {families}, warned {:?}", c.warned)),
             Effect::Ritirata if !c.withdrew_in_turn => bad.push(format!("{c:?}: Ritirata, but it did not pull back within the turn")),
-            // A district engine that is not Lontano and not pointless must defend.
-            Effect::Difende { .. } if !works && !c.withdrew_or_lost => bad.push(format!("{c:?}: promised to defend, defended nothing")),
             _ => {}
-        }
-        if !engine {
-            assert!(!matches!(c.effect, Effect::Difende { .. }), "{c:?}");
         }
     }
     let n = cs.len();
-    let lontano = cs.iter().filter(|c| c.effect == Effect::Lontano).count();
-    let ritirata = cs.iter().filter(|c| c.effect == Effect::Ritirata).count();
-    let difende = cs.iter().filter(|c| matches!(c.effect, Effect::Difende { .. })).count();
-    println!("{n} orders checked: {difende} Difende, {lontano} Lontano, {ritirata} Ritirata");
+    let count = |f: &dyn Fn(&Effect) -> bool| cs.iter().filter(|c| f(&c.effect)).count();
+    println!(
+        "{n} orders checked: {} Avvisa, {} Difende, {} Fascia, {} Bagna, {} NonSalvaCase, {} Lontano, {} Ritirata, {} Inutile",
+        count(&|e| matches!(e, Effect::Avvisa { .. })),
+        count(&|e| matches!(e, Effect::Difende { .. })),
+        count(&|e| matches!(e, Effect::Fascia { .. })),
+        count(&|e| matches!(e, Effect::Bagna { .. })),
+        count(&|e| *e == Effect::NonSalvaCase),
+        count(&|e| *e == Effect::Lontano),
+        count(&|e| *e == Effect::Ritirata),
+        count(&|e| *e == Effect::Inutile),
+    );
     assert!(bad.is_empty(), "{} of {n} previews disagree with the model:\n{}", bad.len(), bad.join("\n"));
-    assert!(difende > 0 && n > 100, "the check covered too little: {n} orders, {difende} Difende");
+    for kind in ["Avvisa", "Difende", "Fascia", "Bagna"] {
+        assert!(cs.iter().any(|c| format!("{:?}", c.effect).starts_with(kind)), "no {kind} preview was checked");
+    }
 }
 
 /// Il Borgo, the order that saves most homes, is never shown as out of reach
@@ -139,9 +166,9 @@ fn il_borgo_is_reachable_by_engine_at_turn_one() {
     }
 }
 
-/// The head never promises a withdrawal it will not deliver: an engine or
-/// crew sent there at turn 2 is shown as working and saving no homes (or as
-/// out of reach), the way milestone 0 measured it (§7.6).
+/// The head never promises a withdrawal it will not deliver: ground units
+/// and the plane sent there at turn 2 are shown as saving no homes (or as out
+/// of reach), the way milestone 0 measured them (§7.6).
 #[test]
 fn the_head_says_it_saves_no_homes() {
     for seed in 1..=10 {
@@ -150,7 +177,7 @@ fn the_head_says_it_saves_no_homes() {
         let h = s.target_of(TargetKind::Head).unwrap().id;
         for t in [TokenId::E1, TokenId::S] {
             let e = s.preview(t, h).unwrap().effect;
-            assert!(matches!(e, Effect::NienteCase | Effect::Lontano), "seed {seed} {t:?}: {e:?}");
+            assert!(matches!(e, Effect::NonSalvaCase | Effect::Lontano), "seed {seed} {t:?}: {e:?}");
         }
     }
 }

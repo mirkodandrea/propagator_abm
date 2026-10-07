@@ -106,6 +106,9 @@ struct Defence {
     /// once on the first step rather than re-derived for 250 homes every 6 s
     /// (it was most of a session's cost). Same cells, same answer.
     near_cells: Vec<(Vec<u32>, Vec<u32>)>,
+    /// Hand crews defend homes like engines, with no water (the kiosk's
+    /// boosted crew, gameplay §7.7 fallback). Off = engines only, as published.
+    crews_defend: bool,
 }
 
 /// An engine posted within this distance of a home defends it: about a
@@ -126,7 +129,14 @@ impl Tally {
     /// Turn on home defence. Inert until called; the kiosk does not call it.
     pub fn enable_defence(&mut self) {
         let n = self.caught_at.len();
-        self.defence.get_or_insert_with(|| Defence { until_s: vec![0; n], lost: vec![false; n], station: vec![], near_cells: vec![] });
+        self.defence.get_or_insert_with(|| Defence { until_s: vec![0; n], lost: vec![false; n], station: vec![], near_cells: vec![], crews_defend: false });
+    }
+
+    /// Let hand crews defend homes too (no water needed). Needs defence on.
+    pub fn enable_crew_defence(&mut self) {
+        if let Some(d) = self.defence.as_mut() {
+            d.crews_defend = true;
+        }
     }
 
     pub fn defence_enabled(&self) -> bool {
@@ -160,13 +170,14 @@ impl Tally {
             d.station = vec![None; crews.units.len()];
         }
         for (k, u) in crews.units.iter().enumerate() {
-            if u.kind != UnitKind::Engine || u.state == UnitState::Lost {
+            let defends = u.kind == UnitKind::Engine || (d.crews_defend && u.kind == UnitKind::HandCrew);
+            if !defends || u.state == UnitState::Lost {
                 d.station[k] = None;
                 continue;
             }
             match d.station[k] {
                 Some((_, task)) if task != u.task => d.station[k] = None,
-                None if u.state == UnitState::Working && u.water_l > 0.0 => d.station[k] = Some((u.pos, u.task)),
+                None if u.state == UnitState::Working && (u.water_l > 0.0 || u.kind == UnitKind::HandCrew) => d.station[k] = Some((u.pos, u.task)),
                 _ => {}
             }
         }
@@ -288,6 +299,10 @@ pub struct Variant {
     /// Home defence (spec §4 option B): engines on station and drops over homes
     /// protect them from all but flame contact. Off = published rule.
     pub defend_homes: bool,
+    /// With `defend_homes`: hand crews defend homes as engines do, no water
+    /// or road needed (gameplay §7.7 fallback; more effective than published,
+    /// approved for the kiosk). Off = published.
+    pub crews_defend: bool,
     /// Replace the town's odds of a wind shift (spec 5.3). Applied by the sweep
     /// when it draws the session's weather (`weather::draw_with`); `Run` itself
     /// only sees the resulting spec. `None` = shipped climate.
@@ -340,6 +355,9 @@ impl Referee {
         let mut tally = Tally::new(agents.households.len());
         if variant.defend_homes {
             tally.enable_defence();
+            if variant.crews_defend {
+                tally.enable_crew_defence();
+            }
         }
         let districts = district::of(scn, agents);
         let reports = district::reports(&districts);
