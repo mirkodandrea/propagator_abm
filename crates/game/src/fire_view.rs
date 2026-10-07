@@ -601,6 +601,7 @@ pub fn update_flames(
     sim: Res<Sim>,
     time: Res<Time>,
     camera: Query<&Transform, With<Camera3d>>,
+    buildings: Res<crate::buildings::Buildings>,
     mut view: ResMut<FireView>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
@@ -685,6 +686,61 @@ pub fn update_flames(
     }
 
     step_particles(&mut view, &sim, dt, now);
+
+    // Drama where the fire meets people: a home the books count as lost burns
+    // as a column of flame with its own smoke and sparks (people react in `people::bob_people`). Read from the books, so it cannot
+    // disagree with the end card (finding 43).
+    let burning = buildings.burning(now);
+    for (i, (pos, age)) in burning.iter().enumerate() {
+        let ground = scn.terrain.height_at(*pos);
+        // Roars up in the first minute, then settles to a long burn-down.
+        let intensity = (1.0 - (*age - 60.0).max(0.0) / 400.0).clamp(0.25, 1.0);
+        for k in 0..4u64 {
+            let h = hash01(i as u64 * 977 + k * 131);
+            let phase = h * 30.0;
+            let flicker = 0.6 + 0.4 * (t * 7.0 + phase).sin() * (t * 3.1 + phase * 1.7).cos();
+            let h_m = (38.0 + 30.0 * h) * flicker * intensity;
+            let half_w = h_m * 0.38;
+            let off = Vec3::new((h - 0.5) * 16.0, 0.0, (hash01(i as u64 * 31 + k) - 0.5) * 16.0);
+            let sway = (t * 3.2 + phase).sin() * h_m * 0.18;
+            flames.billboard(
+                Vec3::new(pos.x, ground + h_m * 0.5, -pos.y) + off + right * sway,
+                right * half_w,
+                up * h_m * 0.5,
+                0.45,
+                [5.0 * intensity, 2.0 * intensity, 0.35 * intensity, 1.0],
+                [2.6 * intensity, 0.6 * intensity, 0.08 * intensity, 1.0],
+            );
+        }
+        // Dark smoke column and a steady rain of sparks.
+        if view.smoke.len() < MAX_SMOKE && hash01(view.seed.wrapping_add(i as u64) ^ (t * 60.0) as u64) < dt * 3.0 {
+            view.seed = view.seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let phase = hash01(view.seed);
+            view.smoke.push(Particle {
+                pos: Vec3::new(pos.x, ground + 30.0, -pos.y),
+                vel: Vec3::Y * 12.0,
+                age: 0.0,
+                life: 18.0 + phase * 10.0,
+                size: 14.0 + 10.0 * intensity,
+                phase,
+                flare: false,
+            });
+        }
+        if view.embers.len() < MAX_EMBERS && hash01(view.seed ^ (i as u64 * 7) ^ (t * 90.0) as u64) < dt * 5.0 {
+            view.seed = view.seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let phase = hash01(view.seed);
+            let a = phase * std::f32::consts::TAU;
+            view.embers.push(Particle {
+                pos: Vec3::new(pos.x, ground + 25.0, -pos.y),
+                vel: Vec3::new(a.cos() * 6.0, 14.0 + 10.0 * phase, a.sin() * 6.0),
+                age: 0.0,
+                life: 3.0 + 2.0 * phase,
+                size: 1.8 + phase * 1.8,
+                phase,
+                flare: false,
+            });
+        }
+    }
 
     let mut smoke = QuadBuilder::default();
     for puff in &view.smoke {

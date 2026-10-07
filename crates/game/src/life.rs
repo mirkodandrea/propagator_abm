@@ -4,7 +4,9 @@
 //! thing a student sees is a diorama of houses with nobody in it. These are the
 //! neighbours going about their day: people walking the streets in twos and
 //! ones, stopping to talk at the end of a lane, and a few cars on the local
-//! roads.
+//! roads. The people are not drawn here — [`crate::people`] owns every person
+//! on the table, in ordinary life and affected alike, and asks this module only
+//! for their beats ([`plan_walks`]); the cars are drawn here.
 //!
 //! **View only.** Nothing here is in the model and nothing here feeds back into
 //! it. Each figure belongs to a real household and is a *pure function of the
@@ -12,16 +14,18 @@
 //! restart needs no reset (finding 21). The status rule is the one thing that
 //! ties it to the books (finding 43):
 //!
-//! | household | ambient figure |
+//! | household | ambient figure (person or car) |
 //! |---|---|
 //! | `Normal` | walks its beat |
 //! | `Warned`, `Preparing` | stops where it is and stands: something is wrong |
-//! | anything else | gone — the real evacuees in [`crate::people`] take over |
+//! | anything else | gone — a person on the road is drawn at their real position |
 //!
 //! Beats are random walks along the real road network, straightish and without
 //! backtracking, walked there and back with a pause at each end.
 
 use abm::network::{NodeId, RoadNetwork, NO_NODE};
+use std::collections::HashMap;
+
 use bevy::prelude::*;
 use scenario::population::Status;
 use scenario::Pos;
@@ -31,11 +35,7 @@ use crate::models;
 use crate::retro::{self, RetroMaterial};
 use crate::sim::Sim;
 
-/// A little under the evacuees' [`crate::people::FIGURE_SCALE`], so the two
-/// never read as the same thing (muted clothes, never the status colours,
-/// finish the job), and cars share [`crate::people::CAR_TOY`] with every other
-/// car in the scene.
-const WALKER_SCALE: f32 = 3.0;
+/// Cars share [`crate::people::CAR_TOY`] with every other car in the scene.
 const CAR_SCALE: f32 = crate::people::CAR_TOY;
 /// Toy-world pace: fast enough to read as movement from table height.
 const WALK_MS: f32 = 2.6;
@@ -45,9 +45,10 @@ const PAUSE_S: f32 = 7.0;
 const WALK_LEN_M: f32 = 260.0;
 const CAR_LEN_M: f32 = 700.0;
 
-#[derive(Component)]
-pub struct Ambient {
-    household: usize,
+/// A there-and-back beat along real streets with a pause at each end: the
+/// whole of what a figure does in ordinary life. Shared by the ambient cars
+/// and by [`crate::people`], which owns every person on the table.
+pub(crate) struct Walk {
     /// Polyline in the world frame, with running distance at each vertex.
     path: Vec<Pos>,
     cum: Vec<f32>,
@@ -56,7 +57,51 @@ pub struct Ambient {
     phase_s: f32,
     /// Sideways offset (m, world frame) so a pair walks abreast.
     side_m: f32,
-    car: bool,
+}
+
+/// Where a [`Walk`] has its figure at one instant.
+pub(crate) struct Pose {
+    pub pos: Pos,
+    /// Unit direction of the segment (world frame), as walked outbound.
+    ux: f32,
+    uy: f32,
+    pub moving: bool,
+    pub outbound: bool,
+}
+
+impl Walk {
+    fn new(path: Vec<Pos>, speed: f32, phase_s: f32, side_m: f32) -> Self {
+        let cum = cumulative(&path);
+        Walk { path, cum, speed, phase_s, side_m }
+    }
+
+    /// The pose at wall-clock `t`; `frozen` pins it to the start of the beat
+    /// (a warned household's figure is at its own door, looking out).
+    pub fn pose(&self, t: f32, frozen: bool) -> Pose {
+        let (mut d, moving, outbound) = along(self, t);
+        if frozen {
+            d = 0.0;
+        }
+        let (p, ux, uy) = sample(self, d.clamp(0.0, *self.cum.last().unwrap()));
+        // Walk abreast: offset to the figure's right, whichever way it faces.
+        let sgn = if outbound { 1.0 } else { -1.0 };
+        let pos = Pos { x: p.x + uy * self.side_m * sgn, y: p.y - ux * self.side_m * sgn };
+        Pose { pos, ux, uy, moving: moving && !frozen, outbound }
+    }
+}
+
+impl Pose {
+    /// Yaw for a figure walking this pose (faces +Z at yaw 0).
+    pub fn yaw(&self, car: bool) -> f32 {
+        let (x, y) = if self.outbound { (self.ux, self.uy) } else { (-self.ux, -self.uy) };
+        if car { y.atan2(x) + std::f32::consts::FRAC_PI_2 } else { (x).atan2(-y) }
+    }
+}
+
+#[derive(Component)]
+pub struct Ambient {
+    household: usize,
+    walk: Walk,
 }
 
 /// Deterministic hash to [0,1). No `rand` in the view: two runs of the kiosk on
@@ -121,10 +166,50 @@ fn cumulative(path: &[Pos]) -> Vec<f32> {
     c
 }
 
+/// Marker: the ambient cars exist (the lab scenarios have none).
 #[derive(Resource)]
-pub struct LifeAssets {
-    walker: Vec<Handle<Mesh>>,
-    clothes: Vec<Handle<RetroMaterial>>,
+pub struct LifeAssets;
+
+/// The beats ordinary residents walk, keyed by person id: roughly one
+/// household in five has someone out on the street, one in three of those
+/// with company. Deterministic, so two runs on one town show the same people
+/// on the same streets. Nobody else is drawn until they are affected.
+pub(crate) fn plan_walks(sim: &Sim) -> HashMap<usize, Walk> {
+    let mut out = HashMap::new();
+    // The lab scenarios are flat-shaded test fixtures, not towns.
+    if sim.scenario.vr_palette().is_some() {
+        return out;
+    }
+    let net = &sim.agents.network;
+    let homes = &sim.agents.households;
+    if net.is_empty() || homes.is_empty() {
+        return out;
+    }
+    let n = homes.len();
+    let mut members: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for p in &sim.agents.people {
+        if let Some(m) = members.get_mut(p.household) {
+            m.push(p.id);
+        }
+    }
+    for k in 0..(n / 5).clamp(12, 60) {
+        // Spread across the town rather than clustered on the first ids.
+        let h = (unit(k as u64 * 7919 + 1) * n as f32) as usize % n;
+        let home = homes[h].home;
+        let Some(start) = net.nearest(home, false) else { continue };
+        let mut path = vec![home];
+        path.extend(beat(net, start, false, WALK_LEN_M, h as u64 * 31 + k as u64));
+        if path.len() < 3 {
+            continue;
+        }
+        let pair = unit(k as u64 * 131 + 5) < 0.33;
+        for (i, &person) in members[h].iter().take(1 + pair as usize).enumerate() {
+            let phase = unit(k as u64 * 17 + 3) * 60.0 + i as f32 * 0.4;
+            out.insert(person, Walk::new(path.clone(), WALK_MS, phase, if i == 1 { 1.6 } else { 0.0 }));
+        }
+    }
+    info!("ambient life: {} walkers", out.len());
+    out
 }
 
 pub fn setup(
@@ -133,7 +218,6 @@ pub fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
-    // The lab scenarios are flat-shaded test fixtures, not towns.
     if sim.scenario.vr_palette().is_some() {
         return;
     }
@@ -143,33 +227,6 @@ pub fn setup(
         return;
     }
 
-    let figure: Vec<Handle<Mesh>> = ["person_man", "person_woman", "person_child", "person_elder"]
-        .iter()
-        .map(|n| meshes.add(models::kit_mesh(n)))
-        .collect();
-    // Muted dress, deliberately off the status palette (green/amber/red).
-    let clothes: Vec<Handle<RetroMaterial>> = [
-        [0.62, 0.52, 0.42],
-        [0.45, 0.52, 0.64],
-        [0.70, 0.62, 0.48],
-        [0.55, 0.40, 0.42],
-        [0.78, 0.76, 0.70],
-        [0.36, 0.42, 0.40],
-    ]
-    .iter()
-    .map(|c| {
-        let col = Color::srgb(c[0], c[1], c[2]);
-        materials.add(retro::material(
-            StandardMaterial {
-                base_color: col,
-                emissive: col.to_linear() * 0.25,
-                perceptual_roughness: 0.8,
-                ..default()
-            },
-            false,
-        ))
-    })
-    .collect();
     let cars: Vec<Handle<Mesh>> = ["car_hatch", "car_hatch", "car_sedan", "car_van", "car_ape"]
         .iter()
         .map(|n| meshes.add(models::kit_mesh(n)))
@@ -197,55 +254,9 @@ pub fn setup(
     .collect();
 
     let n = homes.len();
-    let walkers = (n / 5).clamp(12, 60);
     let drivers = (n / 25).clamp(3, 14);
     let pop = &sim.scenario.population;
-    let mut spawned = (0, 0);
-
-    for k in 0..walkers {
-        // Spread across the town rather than clustered on the first ids.
-        let h = (unit(k as u64 * 7919 + 1) * n as f32) as usize % n;
-        let home = homes[h].home;
-        let Some(start) = net.nearest(home, false) else { continue };
-        let mut path = vec![home];
-        path.extend(beat(net, start, false, WALK_LEN_M, h as u64 * 31 + k as u64));
-        if path.len() < 3 {
-            continue;
-        }
-        // One in three goes out with company, walking abreast.
-        let pair = unit(k as u64 * 131 + 5) < 0.33;
-        for member in 0..(1 + pair as usize) {
-            let age = pop.people.get(h).map_or(40, |q| q.age);
-            let mesh = match (member, age) {
-                (_, a) if a >= 70 => &figure[3],
-                (1, _) => &figure[2],
-                _ => &figure[(h + member) % 2],
-            };
-            let cum = cumulative(&path);
-            let ground = sim.scenario.terrain.height_at(home);
-            commands.spawn((
-                MaterialMeshBundle::<RetroMaterial> {
-                    mesh: mesh.clone(),
-                    material: clothes[(h * 5 + k + member * 2) % clothes.len()].clone(),
-                    transform: Transform::from_translation(frame::to_bevy(home, ground))
-                        .with_scale(Vec3::splat(WALKER_SCALE)),
-                    visibility: Visibility::Hidden,
-                    ..default()
-                },
-                Ambient {
-                    household: h,
-                    path: path.clone(),
-                    cum,
-                    speed: WALK_MS,
-                    phase_s: unit(k as u64 * 17 + 3) * 60.0 + member as f32 * 0.4,
-                    side_m: if member == 1 { 1.6 } else { 0.0 },
-                    car: false,
-                },
-            ));
-            spawned.0 += 1;
-        }
-    }
-
+    let mut spawned = 0;
     for k in 0..drivers {
         let h = (unit(k as u64 * 104_729 + 9) * n as f32) as usize % n;
         if pop.households.get(h).map_or(true, |x| x.vehicles == 0) {
@@ -256,7 +267,6 @@ pub fn setup(
         if path.len() < 4 {
             continue;
         }
-        let cum = cumulative(&path);
         let ground = sim.scenario.terrain.height_at(path[0]);
         commands.spawn((
             MaterialMeshBundle::<RetroMaterial> {
@@ -269,24 +279,20 @@ pub fn setup(
             },
             Ambient {
                 household: h,
-                path,
-                cum,
-                speed: CAR_MS,
-                phase_s: unit(k as u64 * 29 + 11) * 90.0,
-                side_m: 0.0,
-                car: true,
+                walk: Walk::new(path, CAR_MS, unit(k as u64 * 29 + 11) * 90.0, 0.0),
             },
         ));
-        spawned.1 += 1;
+        spawned += 1;
     }
 
-    info!("ambient life: {} walkers, {} cars", spawned.0, spawned.1);
-    commands.insert_resource(LifeAssets { walker: figure, clothes });
+    info!("ambient life: {} cars", spawned);
+    commands.insert_resource(LifeAssets);
 }
 
 /// Where along `a` the figure is at `t`: there, a pause, back, a pause.
-/// Returns distance along the path and whether it is moving.
-fn along(a: &Ambient, t: f32) -> (f32, bool, bool) {
+/// Returns distance along the path, whether it is moving, and whether it is
+/// on the way out.
+fn along(a: &Walk, t: f32) -> (f32, bool, bool) {
     let len = *a.cum.last().unwrap_or(&0.0);
     let leg = len / a.speed;
     let period = 2.0 * (leg + PAUSE_S);
@@ -302,7 +308,7 @@ fn along(a: &Ambient, t: f32) -> (f32, bool, bool) {
     }
 }
 
-fn sample(a: &Ambient, d: f32) -> (Pos, f32, f32) {
+fn sample(a: &Walk, d: f32) -> (Pos, f32, f32) {
     let i = a.cum.partition_point(|&c| c <= d).clamp(1, a.cum.len() - 1);
     let (p, q) = (a.path[i - 1], a.path[i]);
     let seg = (a.cum[i] - a.cum[i - 1]).max(1e-3);
@@ -311,8 +317,8 @@ fn sample(a: &Ambient, d: f32) -> (Pos, f32, f32) {
     (Pos { x: p.x + dx * f, y: p.y + dy * f }, dx / seg, dy / seg)
 }
 
-/// Move, hide and freeze the ambient figures. Every frame: it is driven by the
-/// wall clock, and the household status it reads is a plain lookup.
+/// Move, hide and freeze the ambient cars. Every frame: driven by the wall
+/// clock and a plain lookup of the household's status.
 pub fn update(
     time: Res<Time>,
     sim: Res<Sim>,
@@ -333,39 +339,9 @@ pub fn update(
         if !show {
             continue;
         }
-
-        let (mut d, moving, outbound) = along(a, t);
-        if frozen {
-            // Stateless, so no memory of where the figure was: a warned
-            // household's figure is simply at its own door (a car, at the
-            // kerb it starts from), looking out. It reads as stepping outside.
-            d = 0.0;
-        }
-        let (p, ux, uy) = sample(a, d.clamp(0.0, *a.cum.last().unwrap()));
-        // Walk abreast: offset to the figure's right, whichever way it faces.
-        let sgn = if outbound { 1.0 } else { -1.0 };
-        let p = Pos { x: p.x + uy * a.side_m * sgn, y: p.y - ux * a.side_m * sgn };
-        let ground = sim.scenario.terrain.height_at(p);
-        let lift = if a.car { 0.05 } else { 0.0 };
-        let next = frame::to_bevy(p, ground + lift);
-
-        if a.car {
-            let heading = if outbound { uy.atan2(ux) } else { (-uy).atan2(-ux) };
-            tf.rotation = Quat::from_rotation_y(heading + std::f32::consts::FRAC_PI_2);
-        } else if moving && !frozen {
-            let m = next - tf.translation;
-            if m.x * m.x + m.z * m.z > 1e-5 {
-                tf.rotation = Quat::from_rotation_y(m.x.atan2(m.z));
-            }
-        }
-        tf.translation = next;
-
-        // Walking bob; standing figures breathe instead.
-        if !a.car {
-            let ph = t * if moving && !frozen { 8.0 } else { 1.6 } + a.household as f32 * 1.7;
-            let amp = if moving && !frozen { 0.10 } else { 0.02 };
-            let k = WALKER_SCALE;
-            tf.scale = Vec3::new(k * (1.0 - amp * 0.5 * ph.sin()), k * (1.0 + amp * ph.sin()), k * (1.0 - amp * 0.5 * ph.sin()));
-        }
+        let pose = a.walk.pose(t, frozen);
+        let ground = sim.scenario.terrain.height_at(pose.pos);
+        tf.rotation = Quat::from_rotation_y(pose.yaw(true));
+        tf.translation = frame::to_bevy(pose.pos, ground + 0.05);
     }
 }

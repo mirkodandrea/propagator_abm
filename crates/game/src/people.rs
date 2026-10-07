@@ -49,6 +49,9 @@ pub(crate) fn figure_scale(vr: bool) -> f32 {
 #[derive(Component)]
 pub struct PersonView {
     pub id: usize,
+    /// The street beat this person walks in ordinary life, if they are one of
+    /// the residents out and about. Everyone else is indoors until affected.
+    walk: Option<crate::life::Walk>,
 }
 
 #[derive(Component)]
@@ -61,8 +64,12 @@ pub struct PeopleAssets {
     /// Body types, picked per household so a queue is a street's worth of
     /// different cars (and the odd Ape) rather than one car repeated.
     cars: Vec<Handle<Mesh>>,
-    /// Indexed by [`Status`].
+    /// Indexed by [`Status`]; worn while affected.
     status: Vec<Handle<RetroMaterial>>,
+    /// Muted dress for ordinary life, deliberately off the status palette
+    /// (green/amber/red), so a person going about their day never reads as
+    /// one in trouble.
+    clothes: Vec<Handle<RetroMaterial>>,
     car_normal: Vec<Handle<RetroMaterial>>,
     car_stuck: Handle<RetroMaterial>,
     /// Vehicles already given an entity, so new departures can be picked up
@@ -120,6 +127,27 @@ pub fn setup(
     })
     .collect();
 
+    let clothes: Vec<Handle<RetroMaterial>> = [
+        [0.62, 0.52, 0.42],
+        [0.45, 0.52, 0.64],
+        [0.70, 0.62, 0.48],
+        [0.55, 0.40, 0.42],
+        [0.78, 0.76, 0.70],
+        [0.36, 0.42, 0.40],
+    ]
+    .iter()
+    .map(|c| {
+        let col = Color::srgb(c[0], c[1], c[2]);
+        add(StandardMaterial {
+            base_color: col,
+            emissive: col.to_linear() * 0.25,
+            perceptual_roughness: 0.8,
+            unlit: vr,
+            ..default()
+        })
+    })
+    .collect();
+
     // Toy cars come in pastel paint so a queue reads as individual cars.
     let car_normal: Vec<Handle<RetroMaterial>> = [
         [0.93, 0.93, 0.95],
@@ -152,6 +180,7 @@ pub fn setup(
     });
 
     // People all exist from the start; visibility is what changes.
+    let mut walks = crate::life::plan_walks(&sim);
     for p in &sim.agents.people {
         let ground = sim.scenario.terrain.height_at(p.pos);
         let age = sim.scenario.population.people.get(p.id).map_or(40, |q| q.age);
@@ -163,13 +192,13 @@ pub fn setup(
         commands.spawn((
             MaterialMeshBundle::<RetroMaterial> {
                 mesh: mesh.clone(),
-                material: status[Status::Evacuating as usize].clone(),
+                material: clothes[(p.id * 5 + p.household) % clothes.len()].clone(),
                 transform: Transform::from_translation(frame::to_bevy(p.pos, ground))
                     .with_scale(Vec3::splat(scale)),
                 visibility: Visibility::Hidden,
                 ..default()
             },
-            PersonView { id: p.id },
+            PersonView { id: p.id, walk: walks.remove(&p.id) },
         ));
     }
 
@@ -177,6 +206,7 @@ pub fn setup(
     commands.insert_resource(PeopleAssets {
         cars,
         status,
+        clothes,
         car_normal,
         car_stuck,
         spawned_vehicles: 0,
@@ -234,6 +264,7 @@ pub fn spawn_vehicles(mut commands: Commands, sim: Res<Sim>, mut assets: ResMut<
 }
 
 pub fn update_people(
+    time: Res<Time>,
     sim: Res<Sim>,
     assets: Res<PeopleAssets>,
     mut query: Query<(
@@ -243,44 +274,77 @@ pub fn update_people(
         &mut Handle<RetroMaterial>,
     )>,
 ) {
-    if !sim.is_changed() {
-        return;
-    }
+    let t = time.elapsed_seconds();
     for (view, mut tf, mut vis, mut mat) in &mut query {
         let Some(p) = sim.agents.people.get(view.id) else {
             continue;
         };
-        // Indoors, or gone: not drawn. A person riding in a car is drawn as
-        // the car.
+        // A person riding in a car is drawn as the car.
         let in_vehicle = p
             .traveller
             .and_then(|t| sim.agents.travellers.get(t))
             .map(|t| t.mode == Mode::Car && t.state != TravelState::Cutoff)
             .unwrap_or(false);
-        let outside = matches!(p.status, Status::Evacuating | Status::Trapped) && !in_vehicle;
-        let want = if outside {
-            Visibility::Inherited
+        let affected = matches!(p.status, Status::Evacuating | Status::Trapped) && !in_vehicle;
+        let hh = sim.agents.households.get(p.household).map(|h| h.status);
+
+        // One person, one rule. Affected: at their real position, in the
+        // status colour. Otherwise, if they are one of the residents out and
+        // about, the household's status decides (finding 43): normal life
+        // walks the beat, a warned household stands at its door, anything
+        // else is gone. Everyone else is indoors.
+        let (show, pos, moving, yaw, tint) = if affected {
+            (true, p.pos, true, None, Some(p.status))
+        } else if let Some(w) = view.walk.as_ref().filter(|_| !in_vehicle) {
+            match hh {
+                Some(Status::Normal | Status::Warned | Status::Preparing) => {
+                    let frozen = hh != Some(Status::Normal);
+                    let pose = w.pose(t, frozen);
+                    (true, pose.pos, pose.moving, pose.moving.then(|| pose.yaw(false)), None)
+                }
+                _ => (false, p.pos, false, None, None),
+            }
         } else {
-            Visibility::Hidden
+            (false, p.pos, false, None, None)
         };
+        let want = if show { Visibility::Inherited } else { Visibility::Hidden };
         if *vis != want {
             *vis = want;
         }
-        if !outside {
+        if !show {
             continue;
         }
 
-        let ground = sim.scenario.terrain.height_at(p.pos);
-        let next = frame::to_bevy(p.pos, ground + 0.05);
-        let movement = next - tf.translation;
-        if movement.x * movement.x + movement.z * movement.z > 0.0001 {
-            tf.rotation = Quat::from_rotation_y(movement.x.atan2(movement.z));
+        let ground = sim.scenario.terrain.height_at(pos);
+        let next = frame::to_bevy(pos, ground + 0.05);
+        if let Some(yaw) = yaw {
+            tf.rotation = Quat::from_rotation_y(yaw);
+        } else if tint.is_some() {
+            let movement = next - tf.translation;
+            if movement.x * movement.x + movement.z * movement.z > 0.0001 {
+                tf.rotation = Quat::from_rotation_y(movement.x.atan2(movement.z));
+            }
         }
         tf.translation = next;
-        let m = &assets.status[p.status as usize];
+        let m = match tint {
+            Some(s) => &assets.status[s as usize],
+            None => &assets.clothes[(view.id * 5 + p.household) % assets.clothes.len()],
+        };
         if *mat != *m {
             *mat = m.clone();
         }
+
+        // Animation: a stride bob, quicker and bigger the worse off the
+        // person is; someone standing at the door just breathes.
+        let (rate, amp) = match (tint, moving) {
+            (Some(Status::Trapped), _) => (22.0, 0.45),
+            (Some(_), _) => (13.0, 0.18),
+            (None, true) => (8.0, 0.10),
+            (None, false) => (1.6, 0.02),
+        };
+        let ph = t * rate + view.id as f32 * 1.7;
+        let k = figure_scale(sim.scenario.vr_palette().is_some());
+        tf.scale = Vec3::new(k * (1.0 - 0.5 * amp * ph.sin()), k * (1.0 + amp * ph.sin()), k * (1.0 - 0.5 * amp * ph.sin()));
     }
 }
 
@@ -365,22 +429,5 @@ pub fn mark_refuges(
                 .with_scale(Vec3::splat(1.4)),
             ..default()
         });
-    }
-}
-
-/// Walking bob: figures hop and squash a little, so a column of evacuees reads
-/// as people walking rather than as sliding pins. Every frame, cheap.
-pub fn bob_people(
-    time: Res<Time>,
-    mut query: Query<(&PersonView, &mut Transform, &Visibility)>,
-) {
-    let t = time.elapsed_seconds();
-    for (view, mut tf, vis) in &mut query {
-        if *vis == Visibility::Hidden {
-            continue;
-        }
-        let ph = t * 9.0 + view.id as f32 * 1.7;
-        let k = FIGURE_SCALE;
-        tf.scale = Vec3::new(k * (1.0 - 0.05 * ph.sin()), k * (1.0 + 0.10 * ph.sin()), k * (1.0 - 0.05 * ph.sin()));
     }
 }

@@ -770,6 +770,22 @@ fn hash01(id: u64, salt: u64) -> f32 {
 /// fire mask: the household exposure model for anything with residents, and
 /// the agent threat field for the rest. Only chunks containing a changed
 /// structure are re-uploaded.
+impl Buildings {
+    /// Structures the books count as lost and still burning down, with the
+    /// seconds since they caught. The fire view dresses these in tall flame,
+    /// smoke and embers: a flat orange tint reads as a label, not a house on
+    /// fire.
+    pub fn burning(&self, now: f32) -> Vec<(Pos, f32)> {
+        self.chunks
+            .iter()
+            .flat_map(|c| &c.structures)
+            .filter(|s| s.alight_at_s.is_finite())
+            .map(|s| (s.pos, (now - s.alight_at_s).max(0.0)))
+            .filter(|(_, age)| *age <= BURN_DOWN_S)
+            .collect()
+    }
+}
+
 /// Forget what the fire did to the town.
 ///
 /// `alight_at_s` is the one piece of state here that is *not* recomputed from

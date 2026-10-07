@@ -209,7 +209,6 @@ fn kiosk_systems(app: &mut App) {
                 people::spawn_vehicles,
                 people::update_people,
                 people::update_vehicles,
-                people::bob_people.after(people::update_people),
                 life::update.run_if(resource_exists::<life::LifeAssets>),
                 units::update_units,
                 overlays::update_markers,
