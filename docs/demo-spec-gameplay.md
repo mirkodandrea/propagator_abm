@@ -117,6 +117,19 @@ refused: the player may still send an engine to Il Mulino and learn from it.
 | 7 | Call aircraft early | Canadair called turn 1 delivers ≥ 2 drops before T+40; called turn 3 ≤ 1; and a drop matters (§7.2) |
 | 8 | People first | units alone (no warning) change homes hit, not families caught; warnings alone the reverse |
 
+### Measured (2026-10-07, seeds 1–40; `cargo test --release -p demo --test lessons`)
+
+| # | Fires? | Numbers |
+|---|---|---|
+| 1 | yes | no orders, wind holds: Il Borgo 12.1 ± 1.5 caught, Le Coste 0.0; shift: Le Coste 13.8 ± 0.8; Il Mulino 0.0 |
+| 2 | yes | wind holds, Il Borgo caught: patrol t1 7.4 ± 1.4, t3 12.1 ± 1.5 |
+| 3 | stamp yes, families **no** | Il Mulino *Allarme inutile* 39/40 (seed 15: fire within 300 m, *In tempo*); IT-alert t1 4.6 ± 0.4 caught vs patrol Borgo t1 + Coste t2 7.8 ± 0.5 |
+| 4 | homes yes, withdrawal **no** | engine at the head t2: homes 68.4 vs 66.2 none; withdrew within the turn 0/40 (engine), 0/40 (crew) — §7.6 |
+| 5 | yes | wind holds: two engines on Il Borgo 22.6 homes hit vs 60.0; on Il Mulino no change |
+| 6 | **no** (dropped by §7.5) | engines working at the threat, posted t1 vs t2: 1.7 vs 1.6 |
+| 7 | yes | called t1: ≥ 2 drops by T+40 in 39/40 (seed 9: the first run broke off over the fire); called t3: ≤ 1 in 40/40; homes −6.5 ± 1.2 |
+| 8 | yes | engines alone: homes −17.8, families 0.0; patrol Borgo + Coste alone: families −5.4, homes 0.0 |
+
 ## 6. Turn, report, verdict
 
 **Turn loop.** `end_turn()` applies the assignments, steps the model `TURN_S` in
@@ -169,6 +182,97 @@ token (demo-spec §6 for the `unit_effect` question).
 6. **Head attack.** Every ground unit sent to `Head` withdraws within one turn in
    every drawn session (lesson 4 depends on it never "working").
 
+### Measured (milestone 0, 2026-10-07)
+
+Rocca Ventosa, drawn seeds 1–40 (the wind turns in 26, holds in 14), every
+policy played through `demo::Session` as a player would; mean ± s.e., Δ is the
+paired difference per seed. The game's model options: home defence (option B)
+and one fire station, the east map-edge exit (`demo::run::station`): patrol
+2.9′ to Il Borgo, 4.6′ to Le Coste; engines 3.3′ / 5.3′; crew 13.9′ / 21.8′.
+Reproduce: `cargo test --release -p demo --test sweeps -- --ignored --nocapture
+--test-threads 1`.
+
+**7.1 Hand crew — FAIL.**
+
+| Policy | Homes hit | Line cut (m) | Δ homes vs none |
+|---|---|---|---|
+| none | 66.2 ± 2.7 | 0 | — |
+| crew on Il Borgo's edge, turn 1 | 66.2 ± 2.7 | 91.3 ± 0.9 | 0.0 ± 0.0 |
+| crew on left / right flank, turn 1 | 66.2 ± 2.7 | 0.1 / 0.0 | 0.0 ± 0.0 |
+| *variant* `line_x` = 4 / 10, Il Borgo's edge | — | 180 / 180 | 0.0 ± 0.0 |
+
+The district post is a home: the line it cuts lies across the village's
+non-burnable ground. On a flank the crew walks ~20 minutes and pulls back on
+arrival. No line production changes a single home. Left in the engine behind
+`Session::crew` (on).
+
+**7.2 Canadair — PASS (district edge only).**
+
+| Called turn 1, then one drop a turn on… | Homes hit | Δ vs none | Δ wind holds | Δ shifts | Drops ≤ T+40 |
+|---|---|---|---|---|---|
+| never called | 66.2 ± 2.7 | — | — | — | 0 |
+| Il Borgo's edge | 61.2 ± 2.7 | −5.1 ± 1.0 | −10.4 ± 2.0 | −2.2 ± 0.8 | 2.0 ± 0.0 |
+| the district the wind drives the fire at | 59.7 ± 2.9 | −6.5 ± 1.2 | −10.4 ± 2.0 | −4.4 ± 1.3 | 2.0 ± 0.1 |
+| left flank / right flank | 66.5 / 66.3 | +0.3 / +0.1 | | | 0.8 / 0.9 |
+| the first spot fire | 65.9 ± 2.6 | −0.3 ± 1.5 | | | 1.2 ± 0.1 |
+| the head | 65.0 ± 3.2 | −1.2 ± 1.4 | | | 0.6 ± 0.1 |
+
+Spot fires put out: 0.2–0.3 per session whatever the plane does. The flight is
+straight from the station; where it crosses lethal heat the aircraft's own
+policy breaks off (counted as a withdrawal, `Ritirato` next turn).
+
+**7.3 Engine on a spot fire — FAIL (spot fires do appear).** Every session
+shows a spot-fire target at some turn opening (40/40; 2.7 ± 0.1 of the five
+openings; 12.2 ± 1.0 spot fires per session). An engine sent to the first one
+the turn it appears: it went out 2/40, merged with the main fire 34/40, still
+burning 4/40; homes Δ −0.4 ± 2.3. The crew: out 3/40, Δ 0.0. Spot-fire targets
+left behind `Session::spot_targets` (on).
+
+**7.4 Patrol — FAIL (marginal).** Families caught:
+
+| Policy | All | Wind holds (Il Borgo) | Shifts (Le Coste) | Warning lands Il Borgo / Le Coste |
+|---|---|---|---|---|
+| none | 13.2 ± 0.7 | 12.1 ± 1.5 | 13.8 ± 0.8 | — |
+| patrol Il Borgo t1 | 11.6 ± 0.9 | 7.4 ± 1.4 | 13.8 ± 0.8 | T+2.9 / — |
+| instant warning Il Borgo T+0 | 11.0 ± 0.9 | 5.7 ± 1.0 | 13.8 ± 0.8 | T+0 / — |
+| patrol Il Borgo t3 | 13.2 ± 0.7 | 12.1 ± 1.5 | 13.8 ± 0.8 | T+19 / — |
+| patrol Il Borgo t1 + Le Coste t2 | 7.8 ± 0.5 | 7.4 ± 1.4 | 8.1 ± 0.4 | T+2.9 / T+10.8 |
+| patrol Le Coste t1 + Il Borgo t2 | 6.9 ± 0.7 | 10.9 ± 1.4 | 4.8 ± 0.3 | T+10.8 / T+4.6 |
+| IT-alert t1 | 4.6 ± 0.4 | 5.7 ± 1.0 | 3.9 ± 0.2 | T+0 / T+0 |
+| instant Il Borgo + Le Coste T+0 | 4.6 ± 0.4 | 5.7 ± 1.0 | 3.9 ± 0.2 | T+0 / T+0 |
+
+Patrol 7.4 against a pass line of 6.05 (half of 12.1). The three-minute drive
+costs 1.7 families against an instant warning. Warning Il Mulino changes
+nothing (the IT-alert equals instant Il Borgo + Le Coste exactly).
+
+**7.5 Tank — no early-commitment penalty; lesson 6 dropped.** Wind-holds
+sessions (14):
+
+| Engines on Il Borgo | Homes hit | Il Borgo homes | Δ vs posted t1 | At the threat: working with water / refilling |
+|---|---|---|---|---|
+| none | 61.4 ± 4.3 | 60.0 ± 3.8 | +39.4 ± 1.7 | — |
+| posted turn 1 | 22.1 ± 3.5 | 20.6 ± 2.9 | — | 2.2 ± 0.1 / 0.4 ± 0.1 |
+| posted turn 2 | 25.8 ± 3.4 | 24.2 ± 3.1 | +3.6 ± 2.1 | 2.1 ± 0.3 / 0.4 ± 0.1 |
+| posted turn 3 | 25.2 ± 3.9 | 23.8 ± 3.6 | +3.1 ± 1.9 | 2.0 ± 0.4 / 0.0 |
+
+Earlier is (weakly) better. Home defence counts an engine from the moment it
+starts work at its post until it is re-tasked, refills included
+(`demo::run::Tally`), so running dry costs no homes.
+
+**7.6 Head attack — FAIL.**
+
+| Sent to the head | Withdrew within the turn | Within two turns | Minutes to withdraw | Work done first |
+|---|---|---|---|---|
+| engine, turn 1 / 2 / 3 | 3 / 0 / 15 of 40 | 6 / 15 / 23 | 10.1 / 14.5 / 7.8 | 2,313 / 2,758 / 1,860 L |
+| crew, turn 1 / 2 / 3 | 0 / 0 / 0 of 40 | 5 / 16 / 28 | 15.6 / 15.1 / 14.9 | 0 m |
+| *`HeadOrder::Track`* engine, t1 / t2 / t3 | 3 / 2 / 21 of 40 | 6 / 21 / 23 | 7.8 / 11.4 / 5.6 | 2,298 / 2,512 / 1,517 L |
+
+An engine stops at the road nearest the head and works the roadside out of
+lethal heat; the crew is still driving at the end of the turn. Homes hit are
+nonetheless unchanged (`engines-head` 66.4 ± 3.1 vs `none` 66.2 ± 2.7).
+`Session::head_order` (`Fixed` by default; `Track` re-tasks to the moving head
+every minute) is left for the lead.
+
 ## 8. Balance targets (`tests/balance.rs`)
 
 Policies: `none`; `patrol-borgo-t1`; `it-alert-t1`; `patrol-borgo-t1 +
@@ -181,6 +285,28 @@ Targets: `forecast-player` is best or tied on families **and** homes;
 `all-in` ties on families but always loses a stamp (*AllarmeInutile*);
 `engines-head` = `none` on homes; `wait-and-see` loses on families; no single
 policy beats `forecast-player` on both counts in more than a third of seeds.
+
+### Measured (2026-10-07, seeds 1–40)
+
+| Policy | Families caught | Homes hit | Δ caught vs forecast-player | Δ homes | Il Mulino *Allarme inutile* | Beats forecast-player on both |
+|---|---|---|---|---|---|---|
+| none | 13.2 ± 0.7 | 66.2 ± 2.7 | +5.4 ± 0.7 | +36.8 ± 1.5 | 0/40 | 0/40 |
+| patrol-borgo-t1 | 11.6 ± 0.9 | 66.2 ± 2.7 | +3.8 ± 0.8 | +36.8 ± 1.5 | 0/40 | 0/40 |
+| it-alert-t1 | 4.6 ± 0.4 | 66.2 ± 2.7 | −3.2 ± 0.4 | +36.8 ± 1.5 | 39/40 | 0/40 |
+| patrol-borgo-t1 + patrol-coste-t2 | 7.8 ± 0.5 | 66.2 ± 2.7 | +0.1 ± 0.1 | +36.8 ± 1.5 | 0/40 | 0/40 |
+| engines-borgo-t1 | 13.2 ± 0.7 | 47.7 ± 3.4 | +5.4 ± 0.7 | +18.2 ± 2.5 | 0/40 | 0/40 |
+| engines-head | 13.7 ± 0.8 | 66.4 ± 3.1 | +5.9 ± 0.8 | +37.0 ± 2.2 | 0/40 | 0/40 |
+| all-in | 4.6 ± 0.4 | 47.7 ± 3.4 | −3.2 ± 0.4 | +18.2 ± 2.5 | 39/40 | 2/40 |
+| forecast-player | 7.8 ± 0.6 | 29.5 ± 2.8 | — | — | 0/40 | — |
+| wait-and-see | 13.2 ± 0.7 | 45.8 ± 3.3 | +5.5 ± 0.7 | +16.4 ± 2.3 | 0/40 | 0/40 |
+
+Met: best on homes; `all-in` loses the stamp (39/40 — on seed 15 the fire came
+within 300 m of Il Mulino and the warning stamps *In tempo*); `engines-head` =
+`none` on homes; `wait-and-see` loses on families; nothing beats
+`forecast-player` on both in more than 2/40 seeds. **Not met:** best or tied on
+families — the IT-alert at turn 1 (alone or in `all-in`) catches 3.2 ± 0.4
+fewer families, because warning Le Coste at T+0 is worth more than anything a
+patrol can do and the needless warning to Il Mulino costs nothing but the stamp.
 
 ## 9. Model rules (binding)
 
