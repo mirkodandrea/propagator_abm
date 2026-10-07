@@ -58,6 +58,17 @@ After round 2, selecting an uncalled Canadair must show `./play ordina K`
 in both its action and footer; after it is called, target orders use
 `./play ordina K <bersaglio>`.
 
+Accepted follow-up iteration (2026-10-07): use compact decision output after
+`ordina`, `annulla`, and `scegli`, and a compact report/next-turn summary after
+`avanti`. Keep the full ASCII map on `nuova`, `riprova`, and `mostra`, with a
+visible reminder that `./play mostra` inspects the map without advancing time.
+The compact output retains wind/forecast, district risk and evacuation facts,
+resources, pending/continuing orders, valid target numbers and their previews.
+`avanti` still executes the identical turn/finale stepping path; omitting
+repeated intermediate map printouts is a presentation change only. Keep help
+at five lines, explain the jobs before the first order, and keep Italian text
+within 100 columns. Relevant arrivals and decisions must be easy to spot.
+
 ```
 ROCCA VENTOSA · Turno 2 di 5 · T+08
 Vento: da Sud, 35 km/h — spinge il fuoco verso Nord

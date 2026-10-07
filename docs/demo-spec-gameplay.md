@@ -177,6 +177,51 @@ never as safe out of the whole town, where a halving reads as 245 vs 240.
 **Notes:** at most three, from the order log and unit history (§1 `Note`), the
 broken rule first.
 
+### Accepted iteration from the Codex follow-up playtest (2026-10-07)
+
+Mirko requested implementation of the playtest findings. This iteration
+improves factual feedback and the amount of repeated output; it does not add
+costs to aircraft, alter suppression effectiveness, or shorten simulated time.
+
+- Publish forecast status at the current clock: pending, shift observed, or
+  forecast window elapsed without an observed shift. Preserve the actual
+  observation; do not reveal a future drawn shift to the player. Historical
+  warning justification uses the forecast that existed when the order was
+  given, with its time window, rather than a later forecast.
+- District proximity and predicted risk are distinct facts. Show whether a
+  district is on the current fire path, in the possible shift path, or outside
+  the predicted direction. A nearby upwind district must not be presented as
+  an advised warning merely because the proximity level is *Watch*.
+- Deliver a typed warning explanation for each verdict row: warning arrival,
+  first threat/reach, the required ten-minute lead when applicable, and the
+  caught-family comparison. Distinguish insufficient lead from no improvement
+  rather than formatting both as alternatives. Threatened but never reached
+  must not be described as fire arriving at houses. Keep existing stamp rules
+  unless a reproducible contradiction requires a documented correction.
+- Reproduce seed 261793 with the third-session orders in the follow-up report.
+  Canadair feedback distinguishes call/arrival timing, no target, unsafe
+  break-off, and completed drops. Zero drops alone never proves a late call.
+  Record actual timing and history in the shared model contract. Fix a genuine
+  scheduling defect if reproduced; do not make flight safe to obtain a drop.
+- Publish the actual ongoing job and its effectiveness: a road-side head
+  attack may consume water without saving homes. Show that distinction rather
+  than suggesting that *al lavoro* means useful home defence. Explain coverage
+  as homes covered at the assigned post, not an exact guarantee of homes saved;
+  distinguish existing coverage from additional coverage where available.
+- Publish preparation after warning and notable arrivals/refills. Reinforcement
+  at turn 3 is a persistent opening notification, so a three-line incident
+  report cannot silently hide it.
+- Provide a short review of continuing orders and upcoming changes in later
+  turns. Where no new order is needed, *Avanti* explicitly maintains the orders.
+  Aircraft calling is an early preparation step, not a fabricated costly
+  tradeoff. Preserve reassignment opportunities and five playable turns.
+
+All these facts and reasons are computed in `demo::`, formatted in `text`,
+and read by front ends. Pin reproduced defects with focused tests, and keep
+release checks and preview consistency green. If forecast interpretation
+changes policy outcomes, rerun the affected lesson/balance checks and report
+any change; never weaken a failing assertion to hide it.
+
 ## 7. Milestone 0 — sweeps that decide which tokens ship
 
 Run before any UI work. Each has a pass criterion; a fail cuts or changes the

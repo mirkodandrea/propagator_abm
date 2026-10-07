@@ -148,3 +148,13 @@ The user requested a Codex agent playtest; no Claude process was used. The
 Claude builder worktree was the source of previously recovered commits, not
 this tester's working directory. This test used a fresh temporary directory
 outside the repository, with the main-workspace binary from `c68bd76`.
+
+
+### Implementation authorised
+
+Mirko requested an agent-led iteration addressing this report. The accepted
+scope is now in gameplay §6 and playtest §1.3: factual forecasts and warning /
+aircraft explanations, risk distinct from distance, truthful continuing work,
+reinforcement/preparation feedback, and compact decision output. The five-turn
+model and suppression calibration remain the baseline. A fresh blind Codex
+playtest follows implementation and verification.
