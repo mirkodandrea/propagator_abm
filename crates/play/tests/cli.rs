@@ -50,6 +50,8 @@ fn a_whole_session_by_commands() {
 
     let (o, ok) = play(&dir, &["scegli", "E1"]);
     assert!(ok && o.contains("HAI SCELTO") && o.contains("arriva in"), "{o}");
+    assert!(!o.contains("   N +") && o.contains("./play mostra"), "compact decision output: {o}");
+    assert!(o.contains("aggiuntive") && o.contains("fuori dalla direzione prevista"), "causal previews: {o}");
     for cmd in [&["ordina", "P", "1"][..], &["ordina", "E1", "1"], &["ordina", "E2", "1"], &["ordina", "K"]] {
         let (o, ok) = play(&dir, cmd);
         assert!(ok, "{cmd:?}: {o}");
@@ -60,6 +62,9 @@ fn a_whole_session_by_commands() {
         let (o, ok) = play(&dir, &["avanti"]);
         assert!(ok, "turn {turn}: {o}");
         italian(&o);
+        assert!(!o.contains("   N +"), "turn output should omit repeated maps: {o}");
+        assert!(o.lines().all(|l| l.chars().count() <= 100), "turn output wider than 100 columns: {o}");
+        if turn == 2 { assert!(o.contains("RINFORZO ARRIVATO"), "{o}"); }
         assert!(o.contains("RAPPORTO") || turn == 5, "turn {turn}: no report\n{o}");
         if turn == 5 {
             assert!(o.contains("FINE DELL'INCENDIO") && o.contains("senza ordini") && o.contains("Famiglie bloccate dal fuoco"), "{o}");

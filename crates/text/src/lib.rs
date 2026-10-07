@@ -243,8 +243,8 @@ pub fn target_name(t: &Target, districts: &[String]) -> String {
 pub fn effect(_token: TokenId, e: Effect) -> String {
     match e {
         Effect::Avvisa { families } => format!("avvisa {}", households(families as usize)),
-        Effect::Difende { homes: n } => format!("difende {}", homes(n)),
-        Effect::Fascia { homes: n } => format!("difende {} senza acqua", homes(n)),
+        Effect::Difende { homes: n } => format!("copre {} al posto assegnato", homes(n)),
+        Effect::Fascia { homes: n } => format!("copre {} senza acqua", homes(n)),
         Effect::Ritirata => "si ritirerà: lì il calore è troppo forte".into(),
         Effect::NonSalvaCase => "non salva case: lì il fuoco non si ferma".into(),
         Effect::Chiamata { turn, .. } => {
@@ -254,9 +254,9 @@ pub fn effect(_token: TokenId, e: Effect) -> String {
                 format!("arriva al turno {turn}")
             }
         }
-        Effect::Bagna { homes: n } => format!("bagna il bordo del quartiere: protegge {}", homes(n)),
+        Effect::Bagna { homes: n } => format!("bagna il bordo del quartiere: copre {}", homes(n)),
         Effect::Lontano => "si ferma sulla strada: bersaglio fuori portata".into(),
-        Effect::Inutile => "inutile adesso".into(),
+        Effect::Inutile => if _token == TokenId::P { "nessun nuovo avviso" } else { "fuori direzione prevista" }.into(),
     }
 }
 
@@ -348,6 +348,8 @@ pub fn report_line(l: &ReportLine, districts: &[String]) -> String {
             Some(_) => format!("{} è al lavoro {}.", tok(), con("a", &d())),
             None => format!("{} è al lavoro.", tok()),
         },
+        ReportKind::AttaccoStrada => format!("{} attacca dalla strada: consuma acqua, non difende case.", tok()),
+        ReportKind::Rifornita => format!("{} ha completato il rifornimento: riprende l’ordine.", tok()),
         ReportKind::RipetitoreGiu => "Il fuoco ha abbattuto un ripetitore: alcuni telefoni non ricevono più gli avvisi.".into(),
         ReportKind::Rinforzo => "Arriva un'altra autobotte: sarà disponibile al prossimo turno.".into(),
         ReportKind::NuovoBollettino => "Al prossimo turno arriva un nuovo bollettino meteo.".into(),
@@ -370,10 +372,10 @@ pub fn stamp(s: Stamp) -> &'static str {
 /// One clause saying why a district got its stamp.
 pub fn stamp_why(s: Stamp) -> &'static str {
     match s {
-        Stamp::InTempo => "avvisati prima che arrivasse il fuoco",
-        Stamp::Tardi => "avviso tardivo o senza riduzione delle famiglie bloccate",
-        Stamp::MaiAvvisati => "il fuoco è arrivato e nessuno li aveva avvisati",
-        Stamp::GiustoNonAvvisare => "il fuoco non è arrivato: giusto non allarmarli",
+        Stamp::InTempo => "avviso con anticipo sufficiente sulla prima minaccia",
+        Stamp::Tardi => "vedi tempi e confronto delle famiglie bloccate",
+        Stamp::MaiAvvisati => "il quartiere è stato minacciato senza un avviso",
+        Stamp::GiustoNonAvvisare => "mai minacciati: giusto non allarmarli",
         Stamp::Prudente => "avvisati perché il vento o le previsioni li indicavano: prudente",
         Stamp::AllarmeInutile => "avvisati, ma niente indicava che il fuoco andasse lì",
     }
@@ -414,7 +416,7 @@ pub fn note(n: &Note, districts: &[String]) -> String {
             con("a", &d(district))
         ),
         Note::DifesaInutile { district } => format!("Autobotti mandate {}, dove né il vento né le previsioni portavano il fuoco.", con("a", &d(district))),
-        Note::CanadairTardi => "Canadair chiamato tardi: non ha fatto in tempo a lanciare.".into(),
+        Note::CanadairTardi => "Canadair non arrivato entro la fine: la chiamata richiede 25 minuti.".into(),
         Note::CanadairMaiChiamato => "Canadair mai chiamato: ci mette 25 minuti, va chiamato prima che serva.".into(),
         Note::CanadairInTempo { drops } => match drops {
             1 => "Canadair chiamato in tempo: 1 lancio.".into(),
@@ -439,7 +441,7 @@ pub const HOMES_HIT: &str = "case colpite";
 pub const WITHOUT_ORDERS: &str = "senza ordini";
 pub const RETRY: &str = "Riprova";
 pub const AVANTI: &str = "Avanti";
-pub const BRIEFING: &str = "Sei il comandante: 5 turni da 8 minuti. Scegli una risorsa, poi un punto sulla mappa.\nGli ordini proseguono da soli: i mezzi lavorano e si riforniscono; la pattuglia avvisa.\nIl Canadair ripete i lanci sul bersaglio fino a T+60. Puoi cambiare gli ordini a ogni turno.\n./play annulla <risorsa> cancella un ordine di questo turno; ./play avanti lo esegue.";
+pub const BRIEFING: &str = "P avvisa le famiglie; E difende case dalla strada; S cammina al posto e difende senza acqua.\nK va chiamato presto: arriva dopo 25 minuti; assegna il bersaglio quando è vicino.\nSei il comandante: 5 turni da 8 minuti. Scegli una risorsa, poi un punto sulla mappa.\nGli ordini proseguono da soli: i mezzi lavorano e si riforniscono; la pattuglia avvisa.\nIl Canadair ripete i lanci sul bersaglio fino a T+60. Puoi cambiare gli ordini a ogni turno.\n./play annulla <risorsa> cancella un ordine di questo turno; ./play avanti lo esegue.";
 
 /// Why a token cannot take an order now (shown after `scegli`).
 pub fn token_state_why(t: TokenId, s: TokenState, now_s: i64) -> String {
@@ -674,6 +676,8 @@ mod tests {
             CanadairInZona,
             Lancio,
             Arrivato,
+            Rifornita,
+            AttaccoStrada,
             RipetitoreGiu,
             Rinforzo,
             NuovoBollettino,
@@ -782,5 +786,188 @@ mod tests {
         assert_eq!(con("da", "Il Mulino"), "dal Mulino");
         assert_eq!(con("verso", "Le Coste"), "verso le Coste");
         assert_eq!(con("a", "Rocca Ventosa"), "a Rocca Ventosa");
+    }
+}
+
+/// Exact event timing for debriefs, avoiding rounded lead-time claims.
+pub fn event_clock(at_s: i64) -> String {
+    format!("T+{:02}:{:02}", at_s / 60, at_s % 60)
+}
+
+/// Current forecast status supplied by the model.
+pub fn forecast_status_line(f: &Forecast, status: demo::ForecastStatus, fresh: bool) -> String {
+    match status {
+        demo::ForecastStatus::Pending => forecast_line(f, false, fresh),
+        demo::ForecastStatus::Observed => forecast_line(f, true, false),
+        demo::ForecastStatus::Elapsed => format!(
+            "Meteo: finestra T+{:02}–T+{:02} trascorsa, nessun cambio osservato.",
+            f.shift_eta_min.0, f.shift_eta_min.1
+        ),
+    }
+}
+pub fn risk_direction(r: demo::RiskDirection) -> &'static str {
+    match r {
+        demo::RiskDirection::CurrentPath => "rischio nella direzione attuale",
+        demo::RiskDirection::PossibleShift => "rischio se il vento gira nella finestra prevista",
+        demo::RiskDirection::Outside => "fuori dalla direzione prevista",
+    }
+}
+pub fn preparation(n: u32) -> String {
+    format!("{n} famiglie si preparano prima di partire")
+}
+pub fn ongoing_work(w: demo::OngoingWork) -> String {
+    match w {
+        demo::OngoingWork::HomeCoverage { homes: n } => {
+            format!("copertura al posto: {} (non una garanzia di salvezza)", homes(n))
+        }
+        demo::OngoingWork::RoadsideAttack => "ordine: attacco dalla strada, consuma acqua senza difendere case".into(),
+        demo::OngoingWork::AircraftDrops { drops } => {
+            format!("ordine di lanci ripetuti sul quartiere · {drops} lanci effettuati")
+        }
+        demo::OngoingWork::NoHomeBenefit => "lavoro sul fuoco: nessuna difesa di case".into(),
+    }
+}
+pub const REINFORCEMENT_NOTICE: &str = "RINFORZO ARRIVATO: E3 disponibile da questo turno.";
+pub const CONTINUING_REVIEW: &str = "Avanti mantiene gli ordini; puoi riassegnare le risorse disponibili.";
+pub const MAP_REMINDER: &str = "./play mostra: guarda la mappa senza avanzare il tempo.";
+pub const COVERAGE_HELP: &str = "Copertura: case al posto assegnato, può sovrapporsi; non sono case salvate garantite.";
+pub const AIR_PREPARATION: &str = "Preparazione: chiama K presto; servono 25 minuti, poi scegli il bersaglio.";
+pub fn warning_explanation(w: &demo::WarningExplanation) -> Vec<String> {
+    use demo::WarningReason::*;
+    let reason = match w.reason {
+        SufficientLead => "anticipo sufficiente",
+        InsufficientLead => "anticipo insufficiente",
+        NoImprovement => "famiglie bloccate non ridotte rispetto a senza ordini",
+        NeverWarned => "nessun avviso consegnato",
+        ForecastPrecaution => "avviso prudente secondo la previsione all'ordine",
+        Unsupported => "nessuna direzione prevista giustificava l'avviso",
+        NoThreat => "mai minacciato, nessun avviso necessario",
+    };
+    let mut out = vec![reason.into()];
+    if let Some(t) = w.warned_at_s {
+        out.push(format!("avviso arrivato a {}", event_clock(t)));
+    }
+    if let Some(t) = w.threatened_at_s {
+        out.push(format!("prima minaccia a {}", event_clock(t)));
+    }
+    if let Some(t) = w.reached_at_s {
+        out.push(format!("case raggiunte a {}", event_clock(t)));
+    } else if w.threatened_at_s.is_some() {
+        out.push("case mai raggiunte".into());
+    }
+    if w.threatened_at_s.is_some() || w.reached_at_s.is_some() {
+        out.push(format!("anticipo richiesto: {}", minutes(w.required_lead_s)));
+    }
+    if let Some(f) = w.forecast_at_order {
+        out.push(format!(
+            "previsione all'ordine: {} da {}, finestra T+{:02}–T+{:02}",
+            likelihood(f.shift_p),
+            compass(f.shift_to_deg),
+            f.shift_eta_min.0,
+            f.shift_eta_min.1
+        ));
+    }
+    out
+}
+pub fn aircraft_feedback(h: demo::AircraftHistory, outcome: demo::AircraftOutcome) -> Vec<String> {
+    use demo::AircraftOutcome::*;
+    let cause = match outcome {
+        NotCalled => "non chiamato",
+        AwaitingArrival => "non arrivato prima della fine",
+        NoTarget => "arrivato, nessun bersaglio assegnato",
+        UnsafeBreakOff => "volo interrotto per calore non sicuro",
+        TargetNotReached => "bersaglio non raggiunto prima della fine",
+        CompletedDrops => "lanci completati",
+    };
+    let mut out = vec![format!("Canadair: {cause} · {} lanci", h.drops)];
+    for (label, t) in [
+        ("chiamata", h.called_at_s),
+        ("arrivo in zona", h.arrived_at_s),
+        ("primo bersaglio", h.targeted_at_s),
+        ("interruzione", h.broke_off_at_s),
+        ("primo lancio", h.first_drop_at_s),
+    ] {
+        if let Some(t) = t {
+            out.push(format!("  {label}: {}", event_clock(t)));
+        }
+    }
+    out
+}
+
+pub fn coverage_explanation(c: demo::CoverageExplanation) -> Vec<String> {
+    vec![
+        format!(
+            "copertura al posto: {} case · {} aggiuntive · {} già coperte o assegnate",
+            c.homes, c.additional, c.already_covered
+        ),
+        format!(
+            "orizzonte: direzione attuale / finestra meteo; {}",
+            risk_direction(c.risk)
+        ),
+    ]
+}
+
+pub fn preview_reason(r: demo::PreviewReason) -> &'static str {
+    match r {
+        demo::PreviewReason::AlreadyWarned => "famiglie già avvisate: ripetere non anticipa la partenza",
+        demo::PreviewReason::WarningEnRoute => "pattuglia già diretta qui per consegnare l'avviso",
+        demo::PreviewReason::OutsideDirection {
+            level: Level::Threatened,
+        } => "fuori direzione vento prevista, ma minaccia vicina osservata: valuta la copertura",
+        demo::PreviewReason::OutsideDirection { level: Level::Reached } => {
+            "fuori direzione vento prevista, ma case raggiunte: valuta la copertura"
+        }
+        demo::PreviewReason::OutsideDirection { .. } => {
+            "fuori dalla direzione vento prevista: distanza e copertura sono fatti distinti"
+        }
+        demo::PreviewReason::CoveredPost => "case entro il raggio del posto; il numero non garantisce case salvate",
+        demo::PreviewReason::RoadOutOfReach => {
+            "arrivo alla strada, non al bersaglio; getto fuori portata, può consumare acqua lì"
+        }
+        demo::PreviewReason::UnsafeHeat => "il calore attuale supera il limite di lavoro",
+        demo::PreviewReason::FireAttackNoHomeBenefit => {
+            "attacco sul fuoco, senza copertura delle case: può continuare a lavorare"
+        }
+    }
+}
+pub fn decision(d: demo::Decision, districts: &[String]) -> String {
+    match d {
+        demo::Decision::AircraftArrival { eta_s, can_target } => format!(
+            "K arriva in {}: {}",
+            minutes(eta_s),
+            if can_target {
+                "puoi assegnare il bersaglio adesso"
+            } else {
+                "scegli il bersaglio quando sarà più vicino"
+            }
+        ),
+        demo::Decision::AircraftNeedsTarget => "K disponibile: scegli un bersaglio per i lanci".into(),
+        demo::Decision::Reinforcement { turn } => format!("E3 previsto al turno {turn}"),
+        demo::Decision::ForecastUpdate => "Nuovo bollettino previsto al prossimo turno".into(),
+        demo::Decision::UnwarnedRisk { district, risk } => {
+            format!("{} non avvisato: {}", districts[district], risk_direction(risk))
+        }
+        demo::Decision::Reassignable {
+            token,
+            target,
+            on_path,
+            level,
+        } => {
+            let target = match target {
+                TargetKind::District(d) => districts[d].clone(),
+                _ => "fronte del fuoco".into(),
+            };
+            format!(
+                "{} prosegue su {target}: {}",
+                token_code(token),
+                if on_path {
+                    "mantieni o riassegna"
+                } else if matches!(level, Some(Level::Threatened | Level::Reached)) {
+                    "fuori direzione vento; pericolo osservato, valuta copertura"
+                } else {
+                    "fuori direzione vento prevista, valuta riassegnazione"
+                }
+            )
+        }
     }
 }

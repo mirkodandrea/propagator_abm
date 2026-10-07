@@ -189,22 +189,43 @@ pub fn header(s: &Session) -> Vec<String> {
     let turn = s.turn();
     let (from, kmh) = s.wind();
     let fresh = turn.index == 2;
-    vec![text::turn_title(turn.index, turn.at_s), text::wind_line(from, kmh), text::forecast_line(&s.forecast(), s.wind_turned(), fresh)]
+    vec![text::turn_title(turn.index, turn.at_s), text::wind_line(from, kmh), text::forecast_status_line(&s.forecast(), s.forecast_status(), fresh)]
 }
 
 /// The whole turn screen. `chosen`: the token picked with `scegli`.
 pub fn screen(s: &Session, base: &Base, chosen: Option<TokenId>) -> String {
+    render(s, Some(base), chosen)
+}
+
+pub fn compact(s: &Session, chosen: Option<TokenId>) -> String { render(s, None, chosen) }
+
+fn render(s: &Session, base: Option<&Base>, chosen: Option<TokenId>) -> String {
     let mut o: Vec<String> = header(s);
-    o.push(String::new());
-    o.extend(map(s, base));
-    o.extend(t::legend(base.has_water));
+    if let Some(base) = base {
+        o.push(String::new());
+        o.extend(map(s, base));
+        o.extend(t::legend(base.has_water));
+    }
+    if s.reinforcement_arrived() { o.push(text::REINFORCEMENT_NOTICE.into()); }
     o.push(String::new());
     let ds = names(s);
+    if s.report().turn > 0 && !s.report().lines.is_empty() {
+        o.push(String::new());
+        o.push(t::report_title(s.report().turn));
+        for l in &s.report().lines {
+            o.push(format!("  · {}", text::report_line(l, &ds)));
+        }
+    }
+    if s.turn().index > 1 {
+        for d in s.decisions() { o.push(format!("  → {}", text::decision(d, &ds))); }
+    }
     o.push(t::SEZ_QUARTIERI.into());
     for d in s.districts() {
         let id = s.target_of(TargetKind::District(d.district)).map_or(0, |x| x.id.0);
         let units: Vec<&str> = d.units.iter().map(|u| text::token_code(*u)).collect();
         o.push(t::district_row(id, &d.name, d.households, d.fire_m, d.level, d.warned, d.moving, d.safe, &units));
+        o.push(format!("    {}", text::risk_direction(s.risk_direction(d.district))));
+        if d.warned { o.push(format!("    {}", text::preparation(s.preparing(d.district)))); }
     }
     o.push(String::new());
     o.push(t::SEZ_RISORSE.into());
@@ -216,7 +237,11 @@ pub fn screen(s: &Session, base: &Base, chosen: Option<TokenId>) -> String {
             Some((text::target_name(tg, &ds), text::preview(tk.id, &p)))
         });
         o.push(t::token_row(tk.id, tk.state, s.time_s(), doing.as_deref(), tk.water, pending.as_ref().map(|(a, b)| (a.as_str(), b.as_str()))));
+        if let Some(work) = s.ongoing_work(tk.id) { o.push(format!("      {}", text::ongoing_work(work))); }
     }
+    o.push(text::CONTINUING_REVIEW.into());
+    if s.called().is_none() { o.push(text::AIR_PREPARATION.into()); }
+    o.push(text::MAP_REMINDER.into());
     o.push(String::new());
     let others: Vec<String> = s
         .targets()
@@ -225,13 +250,6 @@ pub fn screen(s: &Session, base: &Base, chosen: Option<TokenId>) -> String {
         .map(|x| format!("[{}] {}", x.id.0, text::target_name(x, &ds)))
         .collect();
     o.push(t::targets_row(&others));
-    if s.report().turn > 0 && !s.report().lines.is_empty() {
-        o.push(String::new());
-        o.push(t::report_title(s.report().turn));
-        for l in &s.report().lines {
-            o.push(format!("  · {}", text::report_line(l, &ds)));
-        }
-    }
     if let Some(tok) = chosen {
         o.push(String::new());
         o.extend(choice(s, tok));
@@ -241,7 +259,7 @@ pub fn screen(s: &Session, base: &Base, chosen: Option<TokenId>) -> String {
         Some(tok) => t::prompt_after_choice(text::token_code(tok), tok == TokenId::K && s.token_state(tok) == TokenState::NonChiamato),
         None => t::PROMPT.into(),
     });
-    o.join("\n")
+    wrap(o).join("\n")
 }
 
 fn doing_name(k: TargetKind, ds: &[String]) -> Option<String> {
@@ -258,13 +276,20 @@ pub fn choice(s: &Session, tok: TokenId) -> Vec<String> {
         o.push(format!("  {}", text::token_state_why(tok, tk.state, s.time_s())));
         return o;
     }
+    if tok.kind() != TokenKind::Pattuglia { o.push(text::COVERAGE_HELP.into()); }
     let lit = s.valid_targets(tok);
     for tg in &lit {
         let Some(p) = s.preview(tok, tg.id) else { continue };
         let line = text::preview(tok, &p);
         match tg.kind {
             TargetKind::Sky => o.push(t::choice_no_target(text::token_code(tok), &text::target_name(tg, &ds), &line)),
-            _ => o.push(format!("  [{}] {} — {}", tg.id.0, text::target_name(tg, &ds), line)),
+            _ => {
+                o.push(format!("  [{}] {} — {}", tg.id.0, text::target_name(tg, &ds), line));
+                if let Some(r) = s.preview_reason(tok, tg.id) { o.push(format!("      {}", text::preview_reason(r))); }
+                if let Some(c) = s.coverage_explanation(tok, tg.id) {
+                    for line in text::coverage_explanation(c) { o.push(format!("      {line}")); }
+                }
+            }
         }
     }
     if lit.is_empty() {
@@ -272,13 +297,6 @@ pub fn choice(s: &Session, tok: TokenId) -> Vec<String> {
     }
     let _ = TokenKind::Pattuglia;
     o
-}
-
-/// The between-turn frames: the map with a one-line header.
-pub fn frame(s: &Session, base: &Base) -> String {
-    let mut o = vec![t::frame_title(s.time_s())];
-    o.extend(map(s, base));
-    o.join("\n")
 }
 
 /// The finale's stamp frames and the verdict card.
@@ -290,9 +308,11 @@ pub fn verdict(s: &Session, v: &Verdict) -> String {
     o.push(String::new());
     o.push(t::SEZ_QUARTIERI.into());
     for d in &v.districts {
-        o.push(t::verdict_district_row(&ds[d.district], text::stamp_mark(d.people), text::stamp(d.people), text::stamp_why(d.people), d.homes_hit, d.homes_hit_none));
+        o.push(t::verdict_district_row(&ds[d.district], text::stamp_mark(d.people), text::stamp(d.people), &text::warning_explanation(&d.warning)[0], d.homes_hit, d.homes_hit_none));
         o.push(format!("    {}", t::families_row(d.caught, d.caught_none).trim()));
+        for line in text::warning_explanation(&d.warning).into_iter().skip(1) { o.push(format!("    {line}")); }
     }
+    o.extend(text::aircraft_feedback(v.aircraft, v.aircraft_outcome));
     if !v.notes.is_empty() {
         o.push(String::new());
         o.push(t::SEZ_REGOLE.into());
@@ -302,20 +322,20 @@ pub fn verdict(s: &Session, v: &Verdict) -> String {
     }
     o.push(String::new());
     o.push(t::PROMPT_END.into());
-    o.join("\n")
+    wrap(o).join("\n")
 }
 
-/// One finale frame per district stamp, in the order the fire reached them.
-pub fn stamps(s: &Session, v: &Verdict) -> Vec<String> {
-    let ds = names(s);
-    let mut order: Vec<usize> = (0..v.districts.len()).collect();
-    let r = &s.run.referee.reports;
-    order.sort_by_key(|&d| r[d].reached_at_s.or(r[d].threatened_at_s).unwrap_or(i64::MAX));
-    order
-        .into_iter()
-        .map(|d| {
-            let x = &v.districts[d];
-            t::stamp_frame(&ds[d], text::stamp_mark(x.people), text::stamp(x.people), text::stamp_why(x.people))
-        })
-        .collect()
+fn wrap(lines: Vec<String>) -> Vec<String> {
+    let mut out = vec![];
+    for line in lines.into_iter().flat_map(|s| s.split('\n').map(str::to_owned).collect::<Vec<_>>()) {
+        if line.chars().count() <= 100 { out.push(line); continue; }
+        let mut part = String::new();
+        for word in line.split_whitespace() {
+            if part.chars().count() + word.chars().count() + 1 > 100 { out.push(part); part = "    ".into(); }
+            if !part.is_empty() { part.push(' '); }
+            part.push_str(word);
+        }
+        out.push(part);
+    }
+    out
 }

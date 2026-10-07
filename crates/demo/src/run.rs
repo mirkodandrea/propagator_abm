@@ -148,6 +148,11 @@ impl Tally {
         self.defence.as_ref().is_some_and(|d| d.until_s.get(i).is_some_and(|&u| u > now_s))
     }
 
+    /// The model's latched defence post, retained through automatic refills.
+    pub fn defence_post(&self, unit: usize) -> Option<Pos> {
+        self.defence.as_ref()?.station.get(unit)?.map(|(p, _)| p)
+    }
+
     /// Households currently defended (for a map marker or a test).
     pub fn defended_now(&self, now_s: i64) -> usize {
         self.defence.as_ref().map_or(0, |d| d.until_s.iter().filter(|&&u| u > now_s).count())

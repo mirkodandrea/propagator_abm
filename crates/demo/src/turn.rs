@@ -258,6 +258,10 @@ pub enum ReportKind {
     Lancio,
     /// A unit reached its target and started work.
     Arrivato,
+    /// Automatic refill finished; standing orders resume.
+    Rifornita,
+    /// An engine started roadside fire attack, without home defence.
+    AttaccoStrada,
     /// A warning mast went down.
     RipetitoreGiu,
     /// The reinforcement engine joins next turn.
@@ -345,6 +349,7 @@ pub struct Counterfactual {
 pub struct DistrictVerdict {
     pub district: usize,
     pub people: Stamp,
+    pub warning: WarningExplanation,
     pub homes_hit: u32,
     pub homes_hit_none: u32,
     pub caught: u32,
@@ -362,6 +367,8 @@ pub struct Verdict {
     pub households: u32,
     pub none: Counterfactual,
     pub notes: Vec<Note>,
+    pub aircraft: AircraftHistory,
+    pub aircraft_outcome: AircraftOutcome,
 }
 
 /// How a district stands now, for its chip / the QUARTIERI rows.
@@ -379,4 +386,106 @@ pub struct DistrictView {
     pub caught: u32,
     /// Tokens working here.
     pub units: Vec<TokenId>,
+}
+
+/// Observations only: no future weather draw is exposed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForecastStatus {
+    Pending,
+    Observed,
+    Elapsed,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RiskDirection {
+    CurrentPath,
+    PossibleShift,
+    Outside,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WarningReason {
+    SufficientLead,
+    InsufficientLead,
+    NoImprovement,
+    NeverWarned,
+    ForecastPrecaution,
+    Unsupported,
+    NoThreat,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct WarningExplanation {
+    pub reason: WarningReason,
+    pub warned_at_s: Option<i64>,
+    pub threatened_at_s: Option<i64>,
+    pub reached_at_s: Option<i64>,
+    pub required_lead_s: i64,
+    pub caught: u32,
+    pub caught_none: u32,
+    pub forecast_at_order: Option<crate::Forecast>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AircraftOutcome {
+    NotCalled,
+    AwaitingArrival,
+    NoTarget,
+    UnsafeBreakOff,
+    TargetNotReached,
+    CompletedDrops,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AircraftHistory {
+    pub called_at_s: Option<i64>,
+    pub arrived_at_s: Option<i64>,
+    pub targeted_at_s: Option<i64>,
+    pub broke_off_at_s: Option<i64>,
+    pub first_drop_at_s: Option<i64>,
+    pub drops: u32,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OngoingWork {
+    HomeCoverage { homes: u32 },
+    RoadsideAttack,
+    NoHomeBenefit,
+    AircraftDrops { drops: u32 },
+}
+
+/// Coverage is geometric, additional homes exclude coverage of other continuing/pending posts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoverageExplanation {
+    pub homes: u32,
+    pub additional: u32,
+    pub already_covered: u32,
+    pub risk: RiskDirection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewReason {
+    AlreadyWarned,
+    WarningEnRoute,
+    OutsideDirection { level: crate::Level },
+    CoveredPost,
+    RoadOutOfReach,
+    UnsafeHeat,
+    FireAttackNoHomeBenefit,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decision {
+    AircraftArrival {
+        eta_s: i64,
+        can_target: bool,
+    },
+    AircraftNeedsTarget,
+    Reinforcement {
+        turn: u8,
+    },
+    ForecastUpdate,
+    UnwarnedRisk {
+        district: usize,
+        risk: RiskDirection,
+    },
+    Reassignable {
+        token: TokenId,
+        target: TargetKind,
+        on_path: bool,
+        level: Option<crate::Level>,
+    },
 }

@@ -96,6 +96,7 @@ struct Patrol {
     delivered: bool,
     /// Whether the forecast pointed at the district when the order was given.
     pointed: bool,
+    forecast: Forecast,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -117,6 +118,7 @@ struct SpotTrack {
 #[derive(Debug, Clone, Copy)]
 enum Happening {
     Arrived(TokenId, Pos),
+    Refilled(TokenId, Pos),
     Withdrew(TokenId, Pos),
     Lost(TokenId, Pos),
     PatrolArrived(usize, u32),
@@ -145,6 +147,7 @@ pub struct Session {
     doing: [Option<Doing>; 7],
     patrol: Patrol,
     called: Option<u8>,
+    aircraft: AircraftHistory,
     /// The turn each token last pulled back in.
     withdrew: [Option<u8>; 7],
     /// The token has started work on its current order (for "arrived").
@@ -161,6 +164,7 @@ pub struct Session {
     /// Per district: whether the forecast pointed at it when the order that
     /// first warned it was given.
     pointed: Vec<Option<bool>>,
+    warning_forecasts: Vec<Option<Forecast>>,
     happenings: Vec<Happening>,
     unit_prev: Vec<(UnitState, u32)>,
     ev_cursor: usize,
@@ -222,8 +226,9 @@ impl Session {
             turn: 1,
             pending: vec![],
             doing: [None; 7],
-            patrol: Patrol { at: station, path: vec![], depart_s: 0, arrive_s: 0, to: None, delivered: true, pointed: false },
+            patrol: Patrol { at: station, path: vec![], depart_s: 0, arrive_s: 0, to: None, delivered: true, pointed: false, forecast: draw.forecast(1) },
             called: None,
+            aircraft: AircraftHistory::default(),
             withdrew: [None; 7],
             started: [false; 7],
             targets: vec![],
@@ -233,6 +238,7 @@ impl Session {
             log: vec![],
             needless_defence: vec![],
             pointed: vec![None; nd],
+            warning_forecasts: vec![None; nd],
             happenings: vec![],
             ev_cursor: 0,
             drops: 0,
@@ -881,8 +887,269 @@ impl Session {
         let f = self.forecast_at(t);
         let (from, _) = self.wind();
         let downwind = self.run.district_toward((from + 180.0) % 360.0) == Some(d);
-        let shift = f.shift_p >= POINTS_AT_P && self.run.district_toward((f.shift_to_deg + 180.0) % 360.0) == Some(d);
+        let shift = !self.wind_turned() && t <= f.shift_eta_min.1 as i64 * 60 && f.shift_p >= POINTS_AT_P && self.run.district_toward((f.shift_to_deg + 180.0) % 360.0) == Some(d);
         downwind || shift
+    }
+
+
+    pub fn forecast_status(&self) -> ForecastStatus {
+        if self.wind_turned() {
+            ForecastStatus::Observed
+        } else if self.time_s() > self.forecast().shift_eta_min.1 as i64 * 60 {
+            ForecastStatus::Elapsed
+        } else {
+            ForecastStatus::Pending
+        }
+    }
+
+    pub fn risk_direction(&self, d: usize) -> RiskDirection {
+        if self.run.district_toward((self.wind().0 + 180.0) % 360.0) == Some(d) {
+            RiskDirection::CurrentPath
+        } else if self.at_risk(d) {
+            RiskDirection::PossibleShift
+        } else {
+            RiskDirection::Outside
+        }
+    }
+
+    pub fn preparing(&self, d: usize) -> u32 {
+        self.run.referee.districts[d]
+            .households
+            .iter()
+            .filter(|&&i| self.run.agents.households[i].status == scenario::population::Status::Preparing)
+            .count() as u32
+    }
+
+    /// Persistent for the whole reinforcement opening, independently of report ranking.
+    pub fn reinforcement_arrived(&self) -> bool {
+        self.turn == REINFORCEMENT_TURN
+    }
+
+    pub fn preview_reason(&self, token: TokenId, target: TargetId) -> Option<PreviewReason> {
+        let t = self.target(target)?;
+        let preview = self.preview(token, target)?;
+        Some(match preview.effect {
+            Effect::Inutile if token == TokenId::P => {
+                let TargetKind::District(d) = t.kind else { return None };
+                if self.patrol.to == Some(d) && !self.patrol.delivered {
+                    PreviewReason::WarningEnRoute
+                } else {
+                    PreviewReason::AlreadyWarned
+                }
+            }
+            Effect::Inutile => {
+                let TargetKind::District(d) = t.kind else { return None };
+                PreviewReason::OutsideDirection {
+                    level: self.run.referee.reports[d].level(),
+                }
+            }
+            Effect::Lontano => PreviewReason::RoadOutOfReach,
+            Effect::Ritirata => PreviewReason::UnsafeHeat,
+            Effect::NonSalvaCase => PreviewReason::FireAttackNoHomeBenefit,
+            Effect::Difende { .. } | Effect::Fascia { .. } | Effect::Bagna { .. } => PreviewReason::CoveredPost,
+            _ => return None,
+        })
+    }
+
+    /// Action opportunities and scheduled changes known at this opening.
+    pub fn decisions(&self) -> Vec<Decision> {
+        let mut out = vec![];
+        if self.turn < REINFORCEMENT_TURN {
+            out.push(Decision::Reinforcement {
+                turn: REINFORCEMENT_TURN,
+            });
+        }
+        if self.turn == 1 {
+            out.push(Decision::ForecastUpdate);
+        }
+        if let TokenState::InArrivo { eta_s } = self.token_state(TokenId::K) {
+            out.push(Decision::AircraftArrival {
+                eta_s,
+                can_target: self.token(TokenId::K).orderable,
+            });
+        } else if self.called.is_some()
+            && self.doing[TokenId::K.index()].is_none()
+            && self.token(TokenId::K).orderable
+            && !self.pending.iter().any(|(k, _)| *k == TokenId::K)
+        {
+            out.push(Decision::AircraftNeedsTarget);
+        }
+        for d in 0..self.run.referee.districts.len() {
+            let risk = self.risk_direction(d);
+            if risk != RiskDirection::Outside
+                && self.run.referee.reports[d].warned_at_s.is_none()
+                && !(self.patrol.to == Some(d) && !self.patrol.delivered)
+                && !self.pending.iter().any(|(k, g)| {
+                    *k == TokenId::P && self.target(*g).is_some_and(|t| t.kind == TargetKind::District(d))
+                })
+            {
+                out.push(Decision::UnwarnedRisk { district: d, risk });
+            }
+        }
+        for token in self.tokens() {
+            if token.orderable && token.order.is_none() {
+                if let Some(target) = token.doing {
+                    let (on_path, level) = match target {
+                        TargetKind::District(d) => (self.at_risk(d), Some(self.run.referee.reports[d].level())),
+                        _ => (false, None),
+                    };
+                    out.push(Decision::Reassignable {
+                        token: token.id,
+                        target,
+                        on_path,
+                        level,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    pub fn coverage_explanation(&self, token: TokenId, target: TargetId) -> Option<CoverageExplanation> {
+        let t = self.target(target)?;
+        let TargetKind::District(d) = t.kind else { return None };
+        if token.kind() == TokenKind::Pattuglia {
+            return None;
+        }
+        let post = self.order_point(token, t);
+        let (post, reach) = match token.kind() {
+            TokenKind::Autobotte => (self.ground_eta(token.unit()?, post).1, DEFEND_REACH_M),
+            TokenKind::Squadra => (post, DEFEND_REACH_M),
+            TokenKind::Canadair => (post, DROP_WIDTH_M),
+            TokenKind::Pattuglia => return None,
+        };
+        let others: Vec<Pos> = TokenId::ALL
+            .iter()
+            .copied()
+            .filter(|&other| {
+                other != token && other.kind() != TokenKind::Pattuglia && other.kind() != TokenKind::Canadair
+            })
+            .filter_map(|other| {
+                if let Some((_, g)) = self.pending.iter().find(|(k, _)| *k == other) {
+                    let tg = self.target(*g)?;
+                    if !matches!(tg.kind, TargetKind::District(_)) {
+                        return None;
+                    }
+                    let p = self.order_point(other, tg);
+                    Some(if other.kind() == TokenKind::Autobotte {
+                        self.ground_eta(other.unit()?, p).1
+                    } else {
+                        p
+                    })
+                } else {
+                    self.run.referee.tally.defence_post(other.unit()?).or_else(|| {
+                        let doing = self.doing[other.index()]?;
+                        if !matches!(doing.kind, TargetKind::District(_)) {
+                            return None;
+                        }
+                        Some(if other.kind() == TokenKind::Autobotte {
+                            self.ground_eta(other.unit()?, doing.pos).1
+                        } else {
+                            doing.pos
+                        })
+                    })
+                }
+            })
+            .collect();
+        let homes: Vec<_> = self
+            .run
+            .agents
+            .households
+            .iter()
+            .filter(|h| dist(h.home, post) <= reach)
+            .collect();
+        let already_covered = homes
+            .iter()
+            .filter(|h| others.iter().any(|&p| dist(h.home, p) <= DEFEND_REACH_M))
+            .count() as u32;
+        Some(CoverageExplanation {
+            homes: homes.len() as u32,
+            additional: homes.len() as u32 - already_covered,
+            already_covered,
+            risk: self.risk_direction(d),
+        })
+    }
+
+    pub fn ongoing_work(&self, token: TokenId) -> Option<OngoingWork> {
+        let doing = self.doing[token.index()]?;
+        if !matches!(
+            self.token_state(token),
+            TokenState::AlLavoro | TokenState::Rifornimento { .. }
+        ) {
+            return None;
+        }
+        match doing.kind {
+            TargetKind::District(_) if token.kind() == TokenKind::Canadair => {
+                Some(OngoingWork::AircraftDrops { drops: self.drops })
+            }
+            TargetKind::District(_) => {
+                let at = self.run.referee.tally.defence_post(token.unit()?)?;
+                let homes = self
+                    .run
+                    .agents
+                    .households
+                    .iter()
+                    .filter(|h| dist(h.home, at) <= DEFEND_REACH_M)
+                    .count() as u32;
+                Some(OngoingWork::HomeCoverage { homes })
+            }
+            _ if token.kind() == TokenKind::Autobotte => Some(OngoingWork::RoadsideAttack),
+            _ => Some(OngoingWork::NoHomeBenefit),
+        }
+    }
+
+    pub fn aircraft_history(&self) -> AircraftHistory {
+        self.aircraft
+    }
+    pub fn aircraft_outcome(&self) -> AircraftOutcome {
+        let h = self.aircraft;
+        if h.called_at_s.is_none() {
+            AircraftOutcome::NotCalled
+        } else if h.drops > 0 {
+            AircraftOutcome::CompletedDrops
+        } else if h.broke_off_at_s.is_some() {
+            AircraftOutcome::UnsafeBreakOff
+        } else if h.arrived_at_s.is_none() {
+            AircraftOutcome::AwaitingArrival
+        } else if h.targeted_at_s.is_none() {
+            AircraftOutcome::NoTarget
+        } else {
+            AircraftOutcome::TargetNotReached
+        }
+    }
+
+    pub fn warning_explanation(&self, d: usize, none: &Counterfactual) -> WarningExplanation {
+        let r = &self.run.referee.reports[d];
+        let caught = self.facts().districts[d].0;
+        let caught_none = none.districts.get(d).map_or(0, |x| x.0);
+        let reason = match self.stamp_against(d, none) {
+            Stamp::InTempo => WarningReason::SufficientLead,
+            Stamp::Tardi => {
+                let danger = match (r.threatened_at_s, r.reached_at_s) {
+                    (Some(a), Some(b)) => Some(a.min(b)),
+                    (a, b) => a.or(b),
+                };
+                if r.warned_at_s.zip(danger).is_some_and(|(w, t)| t - w < IN_TIME_S) {
+                    WarningReason::InsufficientLead
+                } else {
+                    WarningReason::NoImprovement
+                }
+            }
+            Stamp::MaiAvvisati => WarningReason::NeverWarned,
+            Stamp::Prudente => WarningReason::ForecastPrecaution,
+            Stamp::AllarmeInutile => WarningReason::Unsupported,
+            Stamp::GiustoNonAvvisare => WarningReason::NoThreat,
+        };
+        WarningExplanation {
+            reason,
+            warned_at_s: r.warned_at_s,
+            threatened_at_s: r.threatened_at_s,
+            reached_at_s: r.reached_at_s,
+            required_lead_s: IN_TIME_S,
+            caught,
+            caught_none,
+            forecast_at_order: self.warning_forecasts[d],
+        }
     }
 
     // --- orders --------------------------------------------------------------------
@@ -985,11 +1252,13 @@ impl Session {
                         to: Some(d),
                         delivered: false,
                         pointed,
+                        forecast: self.forecast_at(now),
                     };
                 }
                 TokenId::K if t.kind == TargetKind::Sky => {
                     self.run.crews.request_air_unit(6);
                     self.called = Some(turn);
+                    self.aircraft.called_at_s = Some(now);
                 }
                 _ => {
                     let k = token.unit().expect("unit token");
@@ -1015,6 +1284,7 @@ impl Session {
                     };
                     if self.run.crews.assign(k, task).is_ok() {
                         self.doing[token.index()] = Some(Doing { kind: t.kind, pos });
+                        if token == TokenId::K { self.aircraft.targeted_at_s.get_or_insert(now); }
                     }
                 }
             }
@@ -1056,6 +1326,7 @@ impl Session {
                 self.patrol.at = *self.patrol.path.last().unwrap_or(&self.patrol.at);
                 if !had && self.run.referee.reports[d].warned_at_s.is_some() && self.pointed[d].is_none() {
                     self.pointed[d] = Some(self.patrol.pointed);
+                    self.warning_forecasts[d] = Some(self.patrol.forecast);
                 }
                 self.happenings.push(Happening::PatrolArrived(d, n as u32));
             } else {
@@ -1094,10 +1365,14 @@ impl Session {
                 && matches!(prev, UnitState::Moving | UnitState::Working)
                 && task == Task::Hold
                 && drops == prev_drops;
+            if prev == UnitState::Refilling && state != prev {
+                self.happenings.push(Happening::Refilled(token, pos));
+            }
             if state != prev {
                 match state {
                     _ if broke_off => {
                         self.happenings.push(Happening::Withdrew(token, pos));
+                        if token == TokenId::K { self.aircraft.broke_off_at_s = Some(now); }
                         self.withdrew[i] = Some(self.turn);
                         if self.doing[i].is_some_and(|g| g.kind == TargetKind::Head) && !self.head_withdrew.contains(&token) {
                             self.head_withdrew.push(token);
@@ -1106,6 +1381,7 @@ impl Session {
                     }
                     UnitState::Withdrawing => {
                         self.happenings.push(Happening::Withdrew(token, pos));
+                        if token == TokenId::K { self.aircraft.broke_off_at_s = Some(now); }
                         self.withdrew[i] = Some(self.turn);
                         if self.doing[i].is_some_and(|g| g.kind == TargetKind::Head) && !self.head_withdrew.contains(&token) {
                             self.head_withdrew.push(token);
@@ -1125,10 +1401,13 @@ impl Session {
                 }
                 if token == TokenId::K && prev == UnitState::Inbound {
                     self.happenings.push(Happening::OnStation(pos));
+                    self.aircraft.arrived_at_s.get_or_insert(now);
                 }
             }
             if drops > prev_drops {
                 self.drops += drops - prev_drops;
+                self.aircraft.drops = self.drops;
+                self.aircraft.first_drop_at_s.get_or_insert(now);
                 if now <= TURNS as i64 * TURN_S {
                     self.drops_by_last_turn += drops - prev_drops;
                 }
@@ -1203,6 +1482,7 @@ impl Session {
         };
         for h in &self.happenings {
             match *h {
+                Happening::Refilled(t, p) => c.push(line(ReportKind::Rifornita, None, Some(p), None, Some(t))),
                 Happening::Lost(t, p) => c.push(line(ReportKind::MezzoPerso, None, Some(p), None, Some(t))),
                 Happening::Withdrew(t, p) => c.push(line(ReportKind::Ritirata, None, Some(p), None, Some(t))),
                 Happening::PatrolArrived(d, n) => {
@@ -1211,7 +1491,10 @@ impl Session {
                 Happening::SpotOut(p) => c.push(line(ReportKind::FocolaioSpento, None, Some(p), None, None)),
                 Happening::OnStation(p) => c.push(line(ReportKind::CanadairInZona, None, Some(p), None, Some(TokenId::K))),
                 Happening::Drop(p) => c.push(line(ReportKind::Lancio, district_of(p), Some(p), None, Some(TokenId::K))),
-                Happening::Arrived(t, p) => c.push(line(ReportKind::Arrivato, district_of(p), Some(p), None, Some(t))),
+                Happening::Arrived(t, p) => {
+                    let roadside = t.kind() == TokenKind::Autobotte && self.doing[t.index()].is_some_and(|g| !matches!(g.kind, TargetKind::District(_)));
+                    c.push(line(if roadside { ReportKind::AttaccoStrada } else { ReportKind::Arrivato }, district_of(p), Some(p), None, Some(t)));
+                }
             }
         }
         for (d, r) in self.run.referee.reports.iter().enumerate() {
@@ -1386,9 +1669,8 @@ impl Session {
                     Stamp::AllarmeInutile
                 }
             }
-            // The spec's rule: reached, never warned. A district the fire only
-            // came near (within the threat distance) without reaching a home
-            // or catching a family is not "mai avvisati": nothing arrived.
+            // Preserve the stamp for an unwarned observed threat or reach.
+            // The explanation distinguishes proximity threat from reached homes.
             (None, Some(_)) => Stamp::MaiAvvisati,
             (None, None) => Stamp::GiustoNonAvvisare,
         }
@@ -1408,6 +1690,7 @@ impl Session {
             .map(|d| DistrictVerdict {
                 district: d,
                 people: self.stamp_against(d, &none),
+                warning: self.warning_explanation(d, &none),
                 homes_hit: me.districts[d].1,
                 homes_hit_none: none.districts.get(d).map_or(0, |x| x.1),
                 caught: me.districts[d].0,
@@ -1443,7 +1726,8 @@ impl Session {
         }
         match (self.called, self.drops) {
             (None, _) => notes.push(Note::CanadairMaiChiamato),
-            (Some(_), 0) => notes.push(Note::CanadairTardi),
+            (Some(_), 0) if self.aircraft.arrived_at_s.is_none() => notes.push(Note::CanadairTardi),
+            (Some(_), 0) => {},
             (Some(_), n) => notes.push(Note::CanadairInTempo { drops: n }),
         }
         for &d in &defended {
@@ -1472,6 +1756,8 @@ impl Session {
             households: self.run.agents.households.len() as u32,
             none,
             notes,
+            aircraft: self.aircraft_history(),
+            aircraft_outcome: self.aircraft_outcome(),
         }
     }
 

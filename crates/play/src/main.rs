@@ -187,8 +187,7 @@ fn scegli(code: Option<&String>) -> Result<String, Msg> {
         return Err(t::ERR_OVER.into());
     }
     let tk = parse_token(&s, code)?;
-    let base = screen::Base::new(&s);
-    Ok(screen::screen(&s, &base, Some(tk)))
+    Ok(screen::compact(&s, Some(tk)))
 }
 
 fn ordina(code: Option<&String>, target: Option<&String>) -> Result<String, Msg> {
@@ -214,8 +213,7 @@ fn ordina(code: Option<&String>, target: Option<&String>) -> Result<String, Msg>
     p.ordini.retain(|(c, _)| *c != code);
     p.ordini.push((code, id.0));
     save(&p)?;
-    let base = screen::Base::new(&s);
-    Ok(screen::screen(&s, &base, None))
+    Ok(screen::compact(&s, Some(tk)))
 }
 
 fn annulla(code: Option<&String>) -> Result<String, Msg> {
@@ -231,8 +229,7 @@ fn annulla(code: Option<&String>) -> Result<String, Msg> {
     let code = text::token_code(tk).to_string();
     p.ordini.retain(|(c, _)| *c != code);
     save(&p)?;
-    let base = screen::Base::new(&s);
-    Ok(screen::screen(&s, &base, None))
+    Ok(screen::compact(&s, Some(tk)))
 }
 
 fn avanti() -> Result<String, Msg> {
@@ -241,32 +238,21 @@ fn avanti() -> Result<String, Msg> {
     if s.finished() || s.turn().finale() {
         return Err(t::ERR_OVER.into());
     }
-    let base = screen::Base::new(&s);
     let turn = s.turn().index;
-    let mid = s.time_s() + demo::TURN_S / 2;
     let mut out = vec![t::playing_title(turn), t::orders_sent(s.pending().len())];
-    let mut frames = vec![];
-    s.end_turn_observed(|x| {
-        if x.time_s() == mid {
-            frames.push(screen::frame(x, &base));
-        }
-    })?;
-    frames.push(screen::frame(&s, &base));
-    out.extend(frames);
+    s.end_turn()?;
     p.turni.push(std::mem::take(&mut p.ordini));
     if turn >= TURNS {
         out.push(String::new());
         out.push(t::finale_title());
         s.finish()?;
-        out.push(screen::frame(&s, &base));
         let v = s.verdict()?;
         out.push(String::new());
-        out.extend(screen::stamps(&s, &v));
         out.push(String::new());
         out.push(screen::verdict(&s, &v));
     } else {
         out.push(String::new());
-        out.push(screen::screen(&s, &base, None));
+        out.push(screen::compact(&s, None));
     }
     save(&p)?;
     Ok(out.join("\n"))
