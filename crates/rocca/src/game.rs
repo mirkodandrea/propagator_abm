@@ -340,10 +340,17 @@ impl Game {
             UnitState::Lost => "fuori servizio".into(),
             UnitState::Withdrawing => "si ritira: troppo pericoloso".into(),
             UnitState::Refilling => "va a rifornirsi d'acqua".into(),
-            UnitState::Working => match post {
-                Some(p) => format!("difende {}", place(p)),
-                None => "al lavoro".into(),
-            },
+            UnitState::Working => {
+                let what = match post {
+                    Some(p) => format!("difende {}", place(p)),
+                    None => "finisce il lavoro in corso, poi rientra".into(),
+                };
+                // how close the fire is, so a withdrawal does not come out of nowhere
+                let near = self.fire.active_cells().iter().map(|c| dist(self.scn.world.centre_of(*c), u.pos)).fold(f32::INFINITY, f32::min);
+                let fire = if near < 250.0 { format!(", fuoco a {:.0} m", (near / 10.0).round() * 10.0) } else { String::new() };
+                let water = if u.kind == UnitKind::Engine { format!(", acqua {:.0}%", u.water_frac() * 100.0) } else { String::new() };
+                format!("{what}{fire}{water}")
+            }
             UnitState::Moving if self.time_s() - self.moved[k].1 >= STUCK_S => "bloccato: strada tagliata dal fuoco".into(),
             UnitState::Moving => match post {
                 Some(p) => {

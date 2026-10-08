@@ -23,7 +23,7 @@ use rocca::Civil;
 use scenario::population::Status;
 use scenario::Pos;
 
-use super::{close_crisis, commit, new_game, Kiosk, Phase, CRISIS_S};
+use super::{close_crisis, commit, new_game, Kiosk, Phase};
 use crate::sim::{Sim, SimRestarted};
 
 const PANEL: Color32 = Color32::from_rgba_premultiplied(18, 20, 24, 242);
@@ -39,6 +39,8 @@ const EVACUA: &str = "Evacua: le famiglie ricevono l'ordine di partire subito ve
 /// Room a district chip is given on screen, for placing chips apart.
 const CHIP_W: f32 = 290.0;
 const CHIP_H: f32 = 190.0;
+/// What the simulated families do is not what to do: said where it shows.
+const REAL_LIFE: &str = "Nella realtà, quando arriva l'ordine di evacuazione si parte subito, seguendo le indicazioni. Aspettare di vedere il fuoco o restare a difendere la casa sono tra gli errori più pericolosi.";
 const GREY: Color32 = Color32::from_rgb(205, 208, 212);
 
 fn clock(s: i64) -> String {
@@ -150,9 +152,10 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
                 ui.label(RichText::new(format!("{} di {}", clock(sim.time_s()), clock(sim.case.duration_s()).trim_start_matches("T+"))).size(20.0).color(Color32::WHITE).monospace());
                 ui.separator();
                 let (text, colour) = match k.phase {
+                    Phase::Pianifica if sim.time_s() > rocca::STEP_S => ("IN PAUSA · puoi cambiare il piano".to_string(), AMBER),
                     Phase::Pianifica => ("PIANIFICA · tempo fermo".to_string(), GREY),
                     Phase::Esegui => (format!("IN CORSO · tempo accelerato ×{:.0}", k.speed), GREEN),
-                    Phase::Crisi => (format!("CRISI · ×1 · {:.0} s", (CRISIS_S - k.phase_t).max(0.0).ceil()), ORANGE),
+                    Phase::Crisi => (format!("CRISI · ×1 · {:.0} s", (k.crisis_s - k.phase_t).max(0.0).ceil()), ORANGE),
                     Phase::Fine => ("FINE".to_string(), GREY),
                 };
                 ui.label(RichText::new(text).size(20.0).strong().color(colour));
@@ -198,9 +201,9 @@ fn crisis_banner(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, top: f32) ->
             ui.set_max_width(780.0);
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Decisione critica").size(22.0).strong().color(ORANGE));
-                ui.label(RichText::new(format!("{:.0} s", (CRISIS_S - k.phase_t).max(0.0).ceil())).size(22.0).strong().color(Color32::WHITE));
+                ui.label(RichText::new(format!("{:.0} s", (k.crisis_s - k.phase_t).max(0.0).ceil())).size(22.0).strong().color(Color32::WHITE));
             });
-            ui.add(egui::ProgressBar::new((1.0 - k.phase_t / CRISIS_S).clamp(0.0, 1.0)).desired_height(8.0).fill(ORANGE));
+            ui.add(egui::ProgressBar::new((1.0 - k.phase_t / k.crisis_s).clamp(0.0, 1.0)).desired_height(8.0).fill(ORANGE));
             ui.label(RichText::new(&c.text).size(19.0).color(Color32::WHITE));
             if let Some(d) = d {
                 let name = sim.districts[d].name.clone();
@@ -274,9 +277,12 @@ fn view_controls(ctx: &egui::Context, k: &mut Kiosk) {
 
 /// What the marks on the map mean.
 fn legend(ctx: &egui::Context) {
-    egui::Area::new(egui::Id::new("legenda")).anchor(Align2::LEFT_TOP, [12.0, 12.0]).show(ctx, |ui| {
+    // below the operator bar when that is open; closed at first on a small screen
+    let below = ctx.memory(|m| m.area_rect(egui::Id::new("operatore"))).filter(|_| ctx.memory(|m| m.areas().visible_last_frame(&egui::LayerId::new(egui::Order::Foreground, egui::Id::new("operatore"))))).map_or(12.0, |r| r.bottom() + 8.0);
+    let roomy = ctx.screen_rect().width() >= 1500.0;
+    egui::Area::new(egui::Id::new("legenda")).anchor(Align2::LEFT_TOP, [12.0, below]).show(ctx, |ui| {
         panel().show(ui, |ui| {
-            egui::CollapsingHeader::new(RichText::new("Legenda").size(15.0).strong().color(Color32::WHITE)).default_open(true).show(ui, |ui| {
+            egui::CollapsingHeader::new(RichText::new("Legenda").size(15.0).strong().color(Color32::WHITE)).default_open(roomy).show(ui, |ui| {
                 #[derive(Clone, Copy)]
                 enum Mark {
                     Fill(Color32),
@@ -543,7 +549,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     .map(|(n, w)| format!("{n} {w}"))
                     .collect();
                     if !parts.is_empty() {
-                        ui.label(RichText::new(format!("a casa: {}", parts.join(", "))).size(15.0).color(GREY));
+                        ui.label(RichText::new(format!("a casa: {}", parts.join(", "))).size(15.0).color(GREY)).on_hover_text(REAL_LIFE);
                     }
                 }
             });
@@ -577,7 +583,7 @@ fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
         let status = sim.unit_status(i);
         let trouble = if status.starts_with("bloccato") || status.starts_with("fuori") {
             Some(RED)
-        } else if status.starts_with("si ritira") {
+        } else if status.starts_with("si ritira") || status.contains(", fuoco a") {
             Some(ORANGE)
         } else {
             None
@@ -644,6 +650,7 @@ fn proposal(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
 fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
     let pending = k.proposed != sim.active;
     let label = match k.phase {
+        Phase::Pianifica if sim.time_s() > rocca::STEP_S => Some("Conferma e riprendi"),
         Phase::Pianifica => Some("Conferma e avvia"),
         Phase::Esegui if pending => Some("Conferma il nuovo piano"),
         Phase::Crisi => return,
@@ -778,6 +785,9 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                     ui.label(RichText::new(o).size(15.0).color(GREY));
                 }
             }
+            egui::Frame::none().fill(Color32::from_rgb(20, 40, 70)).rounding(6.0).inner_margin(8.0).show(ui, |ui| {
+                ui.label(RichText::new(format!("Da ricordare: {REAL_LIFE}")).size(15.0).color(Color32::WHITE));
+            });
             egui::CollapsingHeader::new(RichText::new("Che cosa vogliono dire queste parole").size(15.0).color(GREY)).default_open(false).show(ui, |ui| {
                 ui.label(
                     RichText::new("Casa «colpita»: raggiunta dal fuoco nella simulazione, non per forza distrutta. Famiglia «colta in casa»: era ancora in casa quando il fuoco è arrivato. «Evacuate»: famiglie arrivate in un'area sicura, anche dove il fuoco poi non è arrivato.")
@@ -805,29 +815,49 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
 
 /// The operator bar (F2): any case, seed and speed, a new game, a pause.
 fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+    let now = ctx.input(|i| i.time);
+    if k.reset_armed.is_some_and(|t| now - t > 5.0) {
+        k.reset_armed = None;
+    }
     egui::Area::new(egui::Id::new("operatore")).anchor(Align2::LEFT_TOP, [10.0, 10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         panel().show(ui, |ui| {
-            ui.label(RichText::new("Operatore (F2)").strong().color(Color32::WHITE));
+            ui.label(RichText::new("Operatore (F2 per chiudere)").strong().color(Color32::WHITE));
+            ui.label(RichText::new(format!("Partita in corso: {} · {}", sim.case.name, clock(sim.time_s()))).color(GREY));
             ui.horizontal(|ui| {
-                egui::ComboBox::from_id_source("caso").selected_text(k.case.clone()).show_ui(ui, |ui| {
+                ui.label("Prossima partita:");
+                egui::ComboBox::from_id_source("caso").selected_text(k.pick.clone()).show_ui(ui, |ui| {
                     let featured = k.territory.playlist();
                     for c in k.territory.cases.clone() {
                         let star = if featured.contains(&c.name) { " (chiosco)" } else { "" };
-                        ui.selectable_value(&mut k.case, c.name.clone(), format!("{} (vicino a {}){star}", c.name, c.near));
+                        ui.selectable_value(&mut k.pick, c.name.clone(), format!("{} (vicino a {}){star}", c.name, c.near));
                     }
                 });
                 ui.label("seme");
                 ui.add(egui::DragValue::new(&mut k.seed).range(1..=999));
-                if ui.button("Nuova partita").clicked() {
-                    new_game(k, sim, restarted);
+            });
+            ui.horizontal(|ui| {
+                // a game under way is thrown away only on a second press
+                let started = sim.time_s() > rocca::STEP_S && k.phase != Phase::Fine;
+                let label = if k.reset_armed.is_some() { "Sicuro? Premi di nuovo: la partita in corso si perde" } else { "Nuova partita" };
+                if ui.add(secondary(label)).clicked() {
+                    if started && k.reset_armed.is_none() {
+                        k.reset_armed = Some(now);
+                    } else {
+                        k.reset_armed = None;
+                        k.case = k.pick.clone();
+                        new_game(k, sim, restarted);
+                    }
+                }
+                if k.phase == Phase::Esegui && ui.add(secondary("Pausa")).clicked() {
+                    k.enter(Phase::Pianifica);
                 }
             });
             ui.horizontal(|ui| {
                 ui.label("velocità ×");
                 ui.add(egui::DragValue::new(&mut k.speed).range(1.0..=300.0));
-                match k.phase {
-                    Phase::Esegui if ui.button("Pausa").clicked() => k.enter(Phase::Pianifica),
-                    _ => {}
+                ui.label("secondi per le crisi");
+                for s in [25.0, 40.0, 60.0] {
+                    ui.selectable_value(&mut k.crisis_s, s, format!("{s:.0}"));
                 }
             });
             if let Some(e) = &k.error {

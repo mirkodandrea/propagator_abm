@@ -81,6 +81,14 @@ pub struct Kiosk {
     pub operator: bool,
     /// «Vista iniziale» was pressed: the camera goes back to the home view.
     pub reset_view: bool,
+    /// Real seconds the player has at a crisis; the operator can lengthen it
+    /// for slow readers.
+    pub crisis_s: f32,
+    /// The case chosen in the operator bar for the next game.
+    pub pick: String,
+    /// Real time «Nuova partita» was first pressed, waiting for the second
+    /// press that confirms throwing away a game in progress.
+    pub reset_armed: Option<f64>,
     /// Zoom asked from the on-screen buttons, as a distance factor; the
     /// camera takes it and puts it back to 1.
     pub zoom: f32,
@@ -113,6 +121,9 @@ impl Kiosk {
             operator: false,
             reset_view: false,
             zoom: 1.0,
+            crisis_s: CRISIS_S,
+            pick: String::new(),
+            reset_armed: None,
             #[cfg(target_arch = "wasm32")]
             run: None,
             data,
@@ -204,6 +215,7 @@ pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<Next
     match built {
         Ok((mut k, sim)) => {
             k.proposed = Plan::new(sim.districts.len());
+            k.pick = k.case.clone();
             k.start_baseline();
             commands.insert_resource(k);
             commands.insert_resource(sim);
@@ -278,7 +290,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
                 kiosk.enter(Phase::Crisi);
             }
         }
-        if kiosk.phase == Phase::Crisi && kiosk.phase_t >= CRISIS_S {
+        if kiosk.phase == Phase::Crisi && kiosk.phase_t >= kiosk.crisis_s {
             let now = sim.time_s();
             let what = if kiosk.proposed != sim.active { "tempo scaduto: si applica il piano proposto" } else { "tempo scaduto: resta il piano attuale" };
             sim.log.push(rocca::game::LogEntry { at_s: now, text: what.into() });

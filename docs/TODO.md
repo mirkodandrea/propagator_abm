@@ -110,6 +110,20 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - **crisi:** in un solo riquadro (testo, «Metti X per primo», «Preallerta/Evacua X», effetto sui mezzi, Conferma) e quartiere evidenziato;
   - **camera:** trascinamento ricavato dal cursore (prima nel browser non funzionava), pulsanti + e −, istruzioni;
   - **debrief:** opaco, due numeri grandi in testa, definizioni richiudibili.
+- [x] 2026-10-09 Roast a tema, sei personaggi in sequenza (`docs/fase5/playtest_gpt/p*`).
+  - Completati: volontario AIB (realismo), studente daltonico (accessibilità), volontario al chiosco (gestione).
+  - Rifatti, perché il profilo Chrome era occupato dalle mie schede di prova: min-maxer, quattordicenne, insegnante.
+  - Corretti:
+    - stato dei mezzi con «fuoco a N m» e «acqua N%», in arancione prima della ritirata;
+    - «finisce il lavoro in corso, poi rientra» al posto di «al lavoro» senza postazione;
+    - nota «Da ricordare» su cosa fare davvero all'ordine di evacuazione (debrief e passando sulla riga «a casa»);
+    - pausa: «IN PAUSA» e «Conferma e riprendi»;
+    - operatore:
+      - «Prossima partita» distinta dalla partita in corso;
+      - «Nuova partita» chiede una seconda pressione;
+      - secondi delle crisi regolabili (25/40/60);
+      - la legenda va sotto la barra F2, chiusa sugli schermi piccoli.
+- [ ] Dai roast, ancora aperto: navigazione da tastiera (egui sul canvas), forme oltre ai colori per gli anelli, layout a finestra stretta (900×600), stato perso con la ricarica della pagina, verifica dei percorsi verso le aree di attesa, supporto ai ritardatari dell'evacuazione (scelta di design).
 - [ ] Dal playtest GPT, ancora aperto: icone dei mezzi leggibili nella vista generale (oggi si leggono le etichette); indicatori aggregati per le evacuazioni sulla mappa; click che a volte sembrano non rispondere (forse solo per l'input automatizzato, da verificare con persone vere); distinguere mezzi assegnati / in viaggio / sul posto; mostrare sulla mappa perché una postazione è irraggiungibile.
 - [ ] **Checkpoint umano 5.**
 - [x] 2026-10-08 Schede dei quartieri separate quando si sovrappongono sullo schermo; etichette dei mezzi impilate e spostate sotto la scheda che le copre. Resta: una scheda può coprire il fuoco.
