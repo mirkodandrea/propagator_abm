@@ -67,18 +67,68 @@ def pick_ignitions(fuel: np.ndarray, n: int, margin_m: float, radius_m: float) -
     return out
 
 
+def pick_ignitions_around(fuel: np.ndarray, localities: dict, radius_m: float, dist_m: float = 1000.0,
+                          per_locality: int = 3, clear_m: float = 400.0) -> list[dict]:
+    """Starts that matter for a town: for each locality, `per_locality` starts
+    about `dist_m` from its centre at evenly spaced bearings (rotated per
+    locality so they do not align), each the nearest mostly-fuel patch to the
+    target point that is at least `clear_m` from every household. Chosen from
+    geometry and fuel only, never from how the fire then behaves."""
+    r = int(np.ceil(radius_m / CELL_M))
+    homes = np.array([p for pts in localities.values() for p in pts])
+    burn = (fuel >= 1) & (fuel <= 12)
+    rows, cols = np.mgrid[0:N, 0:N]
+    X, Y = (cols + 0.5) * CELL_M, N * CELL_M - (rows + 0.5) * CELL_M
+    out = []
+    for li, (loc, pts) in enumerate(sorted(localities.items())):
+        cx, cy = np.mean(pts, axis=0)
+        for k in range(per_locality):
+            b = np.radians(li * 40 + k * 360 / per_locality)
+            tx, ty = cx + dist_m * np.sin(b), cy + dist_m * np.cos(b)
+            order = np.argsort(((X - tx) ** 2 + (Y - ty) ** 2).ravel())
+            for flat in order[:20000]:
+                row, col = divmod(int(flat), N)
+                if not burn[row, col] or row < r or col < r or row >= N - r or col >= N - r:
+                    continue
+                x, y = X[row, col], Y[row, col]
+                d = np.hypot(homes[:, 0] - x, homes[:, 1] - y).min()
+                if d < clear_m or burn[row - r:row + r + 1, col - r:col + r + 1].mean() <= 0.8:
+                    continue
+                out.append({"name": f"{loc.split()[-1][:5]}{k + 1}", "row": row, "col": col, "x": float(x),
+                            "y": float(y), "fuel": int(fuel[row, col]), "near": loc,
+                            "bearing_deg": int(np.degrees(b)) % 360, "dist_to_homes_m": round(float(d))})
+                break
+    return out
+
+
 def job_name(ign: str, wind: str, seed: int) -> str:
     return f"{ign}_w{wind}_s{seed}"
 
 
-def run(cid: str, fuel: np.ndarray, sweep: dict | None = None) -> Path:
+def reuse_ignitions(src: str, fuel: np.ndarray, radius_m: float) -> list[dict]:
+    """The ignitions of an earlier sweep (the natural terrain), so the built
+    world is compared on the same starts. One that now sits mostly on cleared
+    ground (a village, a field) is dropped, not moved."""
+    meta = json.loads((fires_dir(src) / "sweep.json").read_text())
+    r = int(np.ceil(radius_m / CELL_M))
+    keep = []
+    for ig in meta["ignitions"]:
+        patch = fuel[ig["row"] - r:ig["row"] + r + 1, ig["col"] - r:ig["col"] + r + 1]
+        if ((patch >= 1) & (patch <= 12)).mean() > 0.8:
+            keep.append({**ig, "fuel": int(fuel[ig["row"], ig["col"]])})
+    return keep
+
+
+def run(cid: str, fuel: np.ndarray, sweep: dict | None = None, ignitions_from: str | None = None,
+        ignitions: list[dict] | None = None, out_name: str | None = None) -> Path:
     s = {**SWEEP, **(sweep or {})}
     # Always build: a no-op when current, and never a stale binary.
     subprocess.run(["cargo", "build", "--release", "-q", "-p", "fire", "--bin", "fire_sweep"],
                    cwd=ROOT, check=True)
-    out = fires_dir(cid)
+    out = fires_dir(out_name or cid)
     out.mkdir(parents=True, exist_ok=True)
-    igns = pick_ignitions(fuel, s["ignitions"], s["core_margin_m"], s["ignition_radius_m"])
+    igns = ignitions or (reuse_ignitions(ignitions_from, fuel, s["ignition_radius_m"]) if ignitions_from
+            else pick_ignitions(fuel, s["ignitions"], s["core_margin_m"], s["ignition_radius_m"]))
     lines = []
     for ig in igns:
         for seed in s["seeds"]:

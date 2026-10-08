@@ -21,6 +21,7 @@ class Candidate:
     archetype: str
     seed: int
     notes: str = ""
+    detail: dict = field(default_factory=dict)  # overrides of DETAIL for this candidate
     params: dict = field(default_factory=dict)
 
 
@@ -32,7 +33,9 @@ CANDIDATES = [
     Candidate("t3", "Conca con colle", "conca", 33,
               "conca chiusa da crinali, sbocco a E, colle isolato con sommita piana"),
     Candidate("t4", "Crinale e sella", "crinale", 44,
-              "crinale NO-SE con una sella; versanti di lunghezza diversa"),
+              "crinale NO-SE con una sella; versanti di lunghezza diversa",
+              # chosen at checkpoint 1 (2026-10-08): lighter erosion, no comb-like rills
+              detail={"erosion_iterations": 12, "erosion_k": 0.4, "erosion_diffusion": 2.0}),
 ]
 
 
@@ -91,7 +94,7 @@ DETAIL = {"warp_m": 260.0, "broad_m": 22.0, "broad_relief_m": 40.0, "fine_m": 6.
 
 
 def generate(c: Candidate, detail: dict | None = None) -> np.ndarray:
-    k = {**DETAIL, **(detail or {})}
+    k = {**DETAIL, **c.detail, **(detail or {})}
     rng = np.random.default_rng(c.seed)
     X0, Y0 = xy()
     # Archetypes are drawn in core coordinates (0..CORE_M); domain warp bends
@@ -126,7 +129,8 @@ def generate(c: Candidate, detail: dict | None = None) -> np.ndarray:
         dem = 120 + H * (1 - smoothstep(0.0, 1.0, d / L))
         dem = dem + 120 * np.exp(-(polyline_distance(X, Y, [(2500, 1700), (3400, 2700)])[0] / 230) ** 2) \
             * smoothstep(0, 1, 1 - np.hypot(X - 2500, Y - 1700) / 1500)
-        dem = _carve(dem, X, Y, [(400, 300), (1000, 1300), (1700, 2000)], 0.35, 170, 130)
+        # SW side valley: stops short of the crest, so it does not leave a cliff
+        dem = _carve(dem, X, Y, [(300, 100), (800, 1000), (1250, 1550)], 0.25, 260, 130)
     else:
         raise ValueError(c.archetype)
 

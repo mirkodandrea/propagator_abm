@@ -22,7 +22,7 @@ import time
 
 import numpy as np
 
-from factory import atlas, export, fires, terrain, vegetation
+from factory import atlas, export, fires, terrain, town, vegetation
 from factory.grid import slope_aspect
 
 
@@ -40,11 +40,11 @@ def cmd_nature(ids):
         print(f"{cid}: {c.name}, quota {params['elev_m']}, pendenza p50/p95 {params['slope_deg_p50_p95']} -> {out}")
 
 
-def cmd_fires(ids):
+def cmd_fires(ids, ignitions_from=None):
     for cid in ids:
         _, fuel, _ = export.load(cid)
         t = time.time()
-        out = fires.run(cid, fuel)
+        out = fires.run(cid, fuel, ignitions_from=ignitions_from)
         n = sum(1 for _ in (out / "results.csv").open()) - 1
         print(f"{cid}: {n} incendi in {time.time() - t:.1f} s -> {out}")
 
@@ -64,8 +64,13 @@ def cmd_atlas(ids):
         atlas.figure_shift(cid, dem, meta, arrivals, atlas.DOCS / f"{cid}_cambio_vento.png", picks)
         table[cid] = {"name": c.name, "params": params, **atlas.metrics(meta, rows, arrivals)}
         print(f"{cid}: atlante scritto")
-    atlas.overview(cands, atlas.DOCS / "candidati.png")
-    (atlas.DOCS / "metriche.json").write_text(json.dumps(table, indent=2, default=float) + "\n")
+    if len(cands) == len(terrain.CANDIDATES):
+        atlas.overview(cands, atlas.DOCS / "candidati.png")
+    # merge, so re-running one candidate keeps the others' rows
+    path = atlas.DOCS / "metriche.json"
+    table = {**(json.loads(path.read_text()) if path.exists() else {}), **json.loads(json.dumps(table, default=float))}
+    table = dict(sorted(table.items()))
+    path.write_text(json.dumps(table, indent=2) + "\n")
     first = next(iter(table.values()))
     marks = list(first["median_ha"])
     hdr = ("| | inneschi attecchiti (>=5 ha a 1 h) | " + " | ".join(f"ha a {k[3:-3]}' (mediana)" for k in marks)
@@ -82,16 +87,80 @@ def cmd_atlas(ids):
     print("\n".join(lines))
 
 
+def cmd_build_town(terrain_id, layout_n):
+    lay = town.LAYOUTS[(terrain_id, layout_n)]
+    dem, fuel, params = export.load(terrain_id)
+    t = time.time()
+    out = town.build(lay, dem, fuel)
+    town.write(lay, dem, out, {**params, "layout": layout_n, "town_id": lay.id, "town_seed": lay.seed,
+                                "town_notes": out["notes"]})
+    print(f"{lay.id}: {len(out['buildings'])} edifici, {len(out['households'])} famiglie, "
+          f"{len(out['people'])} persone, {len(out['roads'])} strade in {time.time() - t:.1f} s")
+    print(json.dumps(out["notes"], indent=1))
+
+
+def cmd_verify(cid):
+    """The model's own checks (crates/abm/src/bin/scenario_check.rs)."""
+    import subprocess
+    subprocess.run(["cargo", "build", "--release", "-q", "-p", "abm", "--bin", "scenario_check"],
+                   cwd=export.ROOT, check=True)
+    res = subprocess.run([str(export.ROOT / "target" / "release" / "scenario_check"), str(export.DATA), cid],
+                         capture_output=True, text=True)
+    path = export.DATA / "scenarios" / cid / "check.json"
+    path.write_text(res.stdout)
+    rep = json.loads(res.stdout)
+    for c in rep.get("hard_checks", []):
+        print(f"{'OK ' if c['ok'] else 'NO '} {c['name']}: {c.get('detail', '')}")
+    print(f"-> {path} (exit {res.returncode})")
+    return res.returncode
+
+
+def cmd_town_fires(cid, nature):
+    """The built world and its natural terrain, on the same town-centred starts."""
+    built = town.load_built(cid)
+    locs = {}
+    for h in built["pop"]["households"]:
+        locs.setdefault(h["locality"], []).append(tuple(h["pos"]))
+    _, fuel_b, _ = export.load(cid)
+    _, fuel_n, _ = export.load(nature)
+    igns = fires.pick_ignitions_around(fuel_b, locs, fires.SWEEP["ignition_radius_m"])
+    # keep only starts that are fuel in both worlds, so the pair is comparable
+    igns = [ig for ig in igns if 1 <= fuel_n[ig["row"], ig["col"]] <= 12]
+    for name, f, tag in [(cid, fuel_b, cid), (nature, fuel_n, f"{nature}__per_{cid}")]:
+        t = time.time()
+        fires.run(name, f, ignitions=igns, out_name=tag)
+        print(f"{tag}: {len(igns)} inneschi, {time.time() - t:.1f} s")
+
+
+def cmd_plate(cid, nature):
+    from factory import plate
+    tt, compare, table = plate.plate(cid, nature)
+    print(table)
+    print(json.dumps(compare, indent=1))
+
+
 def main(argv):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["nature", "fires", "atlas", "all"])
+    p.add_argument("command", choices=["nature", "fires", "atlas", "all", "build-town", "verify", "town-fires", "plate"])
+    p.add_argument("--terrain", default="t4")
+    p.add_argument("--layout", type=int, default=1)
+    p.add_argument("--scenario", default="t4_paese")
+    p.add_argument("--ignitions-from", default=None, help="riusa gli inneschi dello sweep di un altro scenario")
     p.add_argument("--candidates", default=",".join(c.id for c in terrain.CANDIDATES))
     a = p.parse_args(argv)
     ids = [s.strip() for s in a.candidates.split(",") if s.strip()]
+    if a.command == "build-town":
+        return cmd_build_town(a.terrain, a.layout)
+    if a.command == "town-fires":
+        return cmd_town_fires(a.scenario, a.terrain)
+    if a.command == "plate":
+        return cmd_plate(a.scenario, a.terrain)
+    if a.command == "verify":
+        return sys.exit(cmd_verify(a.scenario))
     if a.command in ("nature", "all"):
         cmd_nature(ids)
     if a.command in ("fires", "all"):
-        cmd_fires(ids)
+        cmd_fires(ids, a.ignitions_from)
     if a.command in ("atlas", "all"):
         cmd_atlas(ids)
 

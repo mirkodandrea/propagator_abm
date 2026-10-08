@@ -13,6 +13,16 @@ Il lavoro parte **dal repository esistente** e da questi **quattro documenti agg
 
 `docs/rocca-ventosa/TECHNICAL-FINDINGS.md`, se presente, è **solo una raccolta facoltativa di note tecniche**: verificare sempre nel codice che i dettagli siano ancora validi. Non è una specifica funzionale.
 
+## Todo list: `docs/TODO.md`
+
+`docs/TODO.md` è la lista di lavoro condivisa del progetto. **Leggerla all'inizio di ogni sessione e aggiornarla alla fine di ogni iterazione**, nello stesso commit del lavoro:
+
+- spuntare ciò che è stato completato (con data e riferimento a file/commit o report);
+- aggiungere i nuovi compiti, le incognite emerse e le decisioni prese dall'utente (con data);
+- tenere in cima la fase corrente e il prossimo checkpoint umano.
+
+Non cancellare le voci completate: spostarle in fondo, nella sezione «Fatto».
+
 ## Obiettivo
 
 Realizzare un gioco strategico offline per la *Settimana della Protezione Civile*, rivolto principalmente a studenti delle superiori. Il visitatore gestisce le priorità di difesa di un territorio durante un incendio e sperimenta risorse limitate, incertezza e conseguenze delle decisioni.

@@ -28,6 +28,7 @@ dependencies = [
  "rand",
  "rand_chacha",
  "scenario",
+ "serde_json",
 ]
 
 [[package]]

@@ -244,7 +244,7 @@ def most_wind_sensitive(meta, arrivals, k=2):
 
 
 def overview(cands, path):
-    fig, axs = plt.subplots(2, len(cands), figsize=(4.2 * len(cands), 8.6))
+    fig, axs = plt.subplots(2, len(cands), figsize=(4.2 * len(cands), 8.6), squeeze=False)
     for col, (c, dem, fuel) in enumerate(cands):
         dem_image(axs[0, col], dem)
         axs[0, col].set_title(f"{c.id} {c.name}\n{dem.min():.0f}-{dem.max():.0f} m", fontsize=9)

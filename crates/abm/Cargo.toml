@@ -10,5 +10,6 @@ scenario.workspace = true
 fire.workspace = true
 behavior.workspace = true
 anyhow.workspace = true
+serde_json.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true

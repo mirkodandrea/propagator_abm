@@ -240,39 +240,39 @@
         "broad_m": 22.0,
         "broad_relief_m": 40.0,
         "fine_m": 6.0,
-        "erosion_iterations": 20,
-        "erosion_k": 0.5,
+        "erosion_iterations": 12,
+        "erosion_k": 0.4,
         "erosion_cap_m": 6.0,
-        "erosion_diffusion": 1.2,
+        "erosion_diffusion": 2.0,
         "erosion_exponent": 0.5
       },
       "elev_m": [
-        81.0,
-        702.2
+        83.2,
+        704.5
       ],
       "slope_deg_p50_p95": [
-        9.9,
-        29.9
+        9.4,
+        28.6
       ],
       "fuel_share": {
-        "0": 0.0011,
-        "1": 0.0026,
-        "2": 0.3088,
-        "3": 0.0104,
-        "4": 0.1134,
-        "5": 0.13,
-        "7": 0.0414,
-        "8": 0.0814,
-        "9": 0.0613,
-        "11": 0.1672,
-        "12": 0.0824
+        "0": 0.0012,
+        "1": 0.0015,
+        "2": 0.3133,
+        "3": 0.0113,
+        "4": 0.1044,
+        "5": 0.1303,
+        "7": 0.0387,
+        "8": 0.0824,
+        "9": 0.0626,
+        "11": 0.17,
+        "12": 0.0843
       },
       "class_share": {
-        "prato/coltivo": 0.3263,
-        "macchia": 0.1846,
-        "bosco di latifoglie": 0.2323,
-        "pineta": 0.2504,
-        "vegetazione rada": 0.0064
+        "prato/coltivo": 0.3329,
+        "macchia": 0.1853,
+        "bosco di latifoglie": 0.2231,
+        "pineta": 0.2551,
+        "vegetazione rada": 0.0036
       },
       "veg": {
         "channel_cells": 350,
@@ -282,25 +282,25 @@
       }
     },
     "runs": 210,
-    "established_60": 0.8809523809523809,
-    "ha60_p50": 25.55,
-    "ha180_p10": 79.22999999999999,
-    "ha180_p50": 549.35,
-    "ha180_p90": 959.1000000000001,
-    "edge_share": 0.6369047619047619,
+    "established_60": 0.8630952380952381,
+    "ha60_p50": 26.75,
+    "ha180_p10": 34.4,
+    "ha180_p50": 560.8,
+    "ha180_p90": 1017.22,
+    "edge_share": 0.6607142857142857,
     "edge_share_60": 0.0,
     "edge_share_180": 0.18452380952380953,
     "median_ha": {
-      "ha_30min": 8.1,
-      "ha_60min": 25.55,
-      "ha_120min": 90.4,
-      "ha_180min": 191.5,
-      "ha_240min": 310.9,
-      "ha_360min": 549.35
+      "ha_30min": 8.8,
+      "ha_60min": 26.75,
+      "ha_120min": 100.19999999999999,
+      "ha_180min": 204.60000000000002,
+      "ha_240min": 339.65,
+      "ha_360min": 560.8
     },
-    "wind_jaccard": 0.09062809044359481,
-    "ever_burnt_share": 0.88971875,
-    "seed_cv": 0.03905250013831099,
-    "shift_changed_share": 0.8351514497223808
+    "wind_jaccard": 0.09994449338810812,
+    "ever_burnt_share": 0.9149,
+    "seed_cv": 0.04900982839097438,
+    "shift_changed_share": 0.8309082607891237
   }
 }
