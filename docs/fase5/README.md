@@ -52,6 +52,7 @@ La partita scriptata (`KIOSK_SHOT`) va da pianificazione e anteprima a esecuzion
 | ![](img/coste2_gira_1_pianifica.jpg) Pianifica | ![](img/coste2_gira_2_anteprima.jpg) Anteprima: rotte tratteggiate |
 | ![](img/coste2_gira_3b_crisi.jpg) Crisi ×1 | ![](img/coste2_gira_4_fine.jpg) Debrief |
 | ![](img/piano2_4_fine.jpg) Piano2: 21 case in meno | ![](img/coste2_gira_5_altro_incendio.jpg) Dopo «Altro incendio», scena pulita |
+| ![](img/borgo2_3_esegui.jpg) Borgo2 in corso: schede separate | |
 
 **FPS** (Apple M4 Pro, finestra 1600×1000, Retina):
 
@@ -69,7 +70,7 @@ Non dipende dalla risoluzione (stessi FPS a 1 pixel per punto), ma da quanta veg
 ## 3. Non risolto
 
 - **Coordinatore alla crisi di Coste2_gira:** con Il Piano in testa, un'autobotte lascia Le Coste e rientra alla base, perché Il Piano non è raggiungibile in quel momento. Ora è spiegato a schermo. Ho provato a mandarla invece al quartiere successivo: l'effetto della crisi spariva (58 → 71 case colpite), perché è il rientro a renderla utile dopo. Ho annullato la prova.
-- **Schede sovrapposte:** possono coprirsi a vicenda o coprire il fuoco quando due luoghi sono vicini sullo schermo (Le Coste / Il Piano in Borgo2). Le etichette dei mezzi si sovrappongono alla base.
+- **Schede e fuoco:** le schede ora si separano tra loro e le etichette dei mezzi si impilano; una scheda può però ancora coprire il fuoco.
 - **FPS:** prestazioni non ottimizzate, come richiesto; da rivedere in fase 6 sulla macchina del chiosco.
 - **Non visto da una persona al mouse:** primo approccio, leggibilità delle schede a ×20 e tempo di pianificazione (oggi senza limite).
 

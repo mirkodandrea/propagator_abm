@@ -165,15 +165,54 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
     let mut order = k.proposed.priorities.clone();
     let mut civil = k.proposed.civil.clone();
     let mut changed = false;
-    for d in 0..n {
-        let dist = &sim.districts[d];
-        let Some(mut at) = screen(cam, sim, chip_anchor(sim, d), 40.0) else { continue };
-        let id = egui::Id::new(("quartiere", d));
-        // Keep the whole chip on screen and clear of the top band and the
-        // button: its size is last frame's.
-        let size = ctx.memory(|m| m.area_rect(id)).map_or(egui::vec2(260.0, 150.0), |r| r.size());
+    // Where each chip stands (bottom centre) and how big it was last frame.
+    let mut place: Vec<Option<(egui::Pos2, egui::Vec2)>> = (0..n)
+        .map(|d| {
+            let at = screen(cam, sim, chip_anchor(sim, d), 40.0)?;
+            let size = ctx.memory(|m| m.area_rect(egui::Id::new(("quartiere", d)))).map_or(egui::vec2(260.0, 150.0), |r| r.size());
+            Some((at, size))
+        })
+        .collect();
+    // Keep the whole chip on screen and clear of the top band and the button.
+    let clamp = |at: &mut egui::Pos2, size: egui::Vec2| {
         at.x = at.x.clamp(screen_rect.left() + size.x * 0.5 + 8.0, screen_rect.right() - size.x * 0.5 - 8.0);
         at.y = at.y.clamp(top + size.y + 8.0, screen_rect.bottom() - 100.0);
+    };
+    for (at, size) in place.iter_mut().flatten() {
+        clamp(at, *size);
+    }
+    // Two places close on screen: push their chips apart along the shorter
+    // overlap, a few passes.
+    for _ in 0..6 {
+        for a in 0..n {
+            for b in a + 1..n {
+                let (Some((pa, sa)), Some((pb, sb))) = (place[a], place[b]) else { continue };
+                let ox = (sa.x + sb.x) * 0.5 + 8.0 - (pa.x - pb.x).abs();
+                let oy = (sa.y + sb.y) * 0.5 + 8.0 - (pa.y - pb.y).abs();
+                if ox <= 0.0 || oy <= 0.0 {
+                    continue;
+                }
+                let (mut pa, mut pb) = (pa, pb);
+                if ox < oy {
+                    let s = if pa.x <= pb.x { -0.5 } else { 0.5 };
+                    pa.x += s * ox;
+                    pb.x -= s * ox;
+                } else {
+                    let s = if pa.y <= pb.y { -0.5 } else { 0.5 };
+                    pa.y += s * oy;
+                    pb.y -= s * oy;
+                }
+                clamp(&mut pa, sa);
+                clamp(&mut pb, sb);
+                place[a] = Some((pa, sa));
+                place[b] = Some((pb, sb));
+            }
+        }
+    }
+    for d in 0..n {
+        let dist = &sim.districts[d];
+        let Some((at, _)) = place[d] else { continue };
+        let id = egui::Id::new(("quartiere", d));
         let rank = order.iter().position(|&x| x == d);
         egui::Area::new(id).fixed_pos(at).pivot(Align2::CENTER_BOTTOM).show(ctx, |ui| {
             let border = if rank == Some(0) { AMBER } else { Color32::from_gray(90) };
@@ -253,11 +292,22 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
 
 /// A label over each ground unit: its name and what it is doing.
 fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform)) {
+    // Units standing together (at the base, on one post) stack their labels.
+    let mut shown: Vec<egui::Pos2> = vec![];
     for (i, u) in sim.crews.units.iter().enumerate() {
         if u.kind.is_air() {
             continue;
         }
-        let Some(at) = screen(cam, sim, u.pos, 35.0) else { continue };
+        let Some(ground) = screen(cam, sim, u.pos, 35.0) else { continue };
+        // Under a district's chip (last frame's): read it just below the chip.
+        let ground = (0..sim.districts.len())
+            .filter_map(|d| ctx.memory(|m| m.area_rect(egui::Id::new(("quartiere", d)))))
+            .find(|r| r.expand(4.0).intersects(egui::Rect::from_center_size(ground - egui::vec2(0.0, 9.0), egui::vec2(200.0, 18.0))))
+            .map_or(ground, |r| egui::pos2(ground.x, r.bottom() + 24.0));
+        // a label is about 200 px wide and 18 tall
+        let below = shown.iter().filter(|p| (p.x - ground.x).abs() < 200.0 && (p.y - ground.y).abs() < 18.0).count();
+        shown.push(ground);
+        let at = ground + egui::vec2(0.0, 20.0 * below as f32);
         let status = sim.unit_status(i);
         let colour = if status.starts_with("bloccato") || status.starts_with("fuori") { RED } else if status.starts_with("si ritira") { ORANGE } else { GREEN };
         egui::Area::new(egui::Id::new(("mezzo", i))).fixed_pos(at).pivot(Align2::CENTER_BOTTOM).interactable(false).order(egui::Order::Background).show(ctx, |ui| {

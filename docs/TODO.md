@@ -76,7 +76,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - [x] 2026-10-08 Crisi: «scoperto» solo se il fuoco può arrivare entro 45 min (`URGENT_S`); nessuna crisi negli ultimi 10 min (`LAST_CALL_S`).
 - [x] 2026-10-08 Inquadratura calcolata (case + innesco nella zona libera, yaw ±50°); corretto il trigger che non scattava (il gioco parte a T+6 s).
 - [ ] **Checkpoint umano 5.**
-- [ ] Schede dei quartieri che si sovrappongono tra loro o al fuoco; etichette dei mezzi sovrapposte alla base.
+- [x] 2026-10-08 Schede dei quartieri separate quando si sovrappongono sullo schermo; etichette dei mezzi impilate e spostate sotto la scheda che le copre. Resta: una scheda può coprire il fuoco.
 - [ ] Coordinatore: con la prima priorità irraggiungibile un mezzo rientra alla base (ora spiegato a schermo). Mandarlo al quartiere successivo annullava l'effetto della crisi in Coste2_gira (58 → 71): provato e annullato.
 - [ ] Tempo di pianificazione senza limite: decidere nei playtest se serve (spec: ~40 s indicativi).
 - [ ] FPS circa 40 su M4 Pro con vegetazione dimezzata: misurare sulla macchina del chiosco (fase 6).
