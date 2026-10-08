@@ -4,8 +4,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
-- **Fase corrente:** checkpoint 2 superato (layout 1 di `t4_paese` approvato il 2026-10-08). **Prossimo lavoro: risoluzione fine** (sezione sotto), poi fase 3.
-- **Prossimo checkpoint umano:** a fine lavoro sulla risoluzione fine, con tavola e confronto 20 m / risoluzione fine.
+- **Fase corrente:** risoluzione fine fatta (`docs/factory/fine/README.md`). **In attesa del checkpoint umano** sul terreno a 5 m e sul passo ritracciato.
+- **Prossimo lavoro proposto:** collegare `cover.u8` al kiosk (niente piante su strade, case e orti), poi fase 3.
 
 ## Decisioni dell'utente
 
@@ -14,23 +14,23 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - 2026-10-08: terreno scelto **t4 (Crinale e sella)**.
 - 2026-10-08: **checkpoint 2 approvato**, layout 1 di `t4_paese` così com'è. Affrontare la risoluzione fine **prima** della fase 3.
 - 2026-10-08: **DTM, strade, case e rendering andranno a risoluzione più fine dei 20 m** del propagatore (che resta a 20 m). Avrà effetto sia sulla grafica sia sui sistemi di gioco. Da pianificare nelle prossime iterazioni.
+- 2026-10-08: **il terreno fine serve solo a grafica e agenti, non all'incendio.** Il fuoco usa il DEM a 20 m approvato, invariato (non la media del terreno fine).
 
 ## Da fare
 
 ### Fase 2: insediamenti (in corso)
 
 - [x] **Checkpoint umano 2** superato (2026-10-08). Ritocchi possibili più avanti, se servono per la giocabilità: Borgo più esposto (meno orti irrigui, bosco più vicino), passo più corto.
-- [ ] Rivedere quali strade sono tagliafuoco: oggi solo la provinciale e le vie del paese sono non combustibili. Da rivedere con la risoluzione fine.
-- [ ] Rifinire la Strada del Passo: tratto rettilineo artificiale verso y ≈ 2950, pendenze p95 del 25 % sul DEM a 20 m (manca il rilevato stradale).
+- [ ] Rivedere quali strade sono tagliafuoco: oggi solo la provinciale e le vie del paese sono non combustibili (vedi Borgo2 nella sezione sulla risoluzione fine).
 - [ ] Popolazione: oggi tratti "compiacenti" copiati dal vecchio `demo_traits`. Va ripensata insieme alla preallerta (fase 3).
-- [ ] Provare `t4_paese` nel kiosk Bevy (mondo da 8 km, mai provato).
 
-### Risoluzione fine (PROSSIMO LAVORO, deciso il 2026-10-08)
+### Risoluzione fine (in attesa di checkpoint)
 
-- [ ] Separare la griglia del fuoco (20 m) dalla griglia di DTM, render, strade e case (per esempio 5 m). Il formato prevede già `render_terrain` con un proprio `posting_m`.
-- [ ] La Factory genera il DTM fine e lo ricampiona a 20 m per il propagatore. Combustibile, strade e case vanno rasterizzati coerentemente sulle due griglie.
-- [ ] Verificare gli effetti sui sistemi di gioco: rete stradale e lunghezze dei link, posizioni di case e famiglie, minaccia ed esposizione campionate a 20 m, draping di strade e marker (TECHNICAL-FINDINGS 11–13).
-- [ ] Verificare il rendering: mesh a 8 km × 5 m (2,56 M vertici) contro le prestazioni del kiosk. Valutare LOD o un render limitato al nucleo.
+- [ ] **Checkpoint umano:** terreno a 5 m, passo ritracciato (8,9 km nello stesso corridoio), Le Coste un po' più esposte.
+- [ ] Collegare `cover.u8` al kiosk: piante non su strade, case e orti; colore del suolo dalla copertura a 5 m (`vegetation.rs`, `terrain_mesh.rs`, loader in `scenario`).
+- [ ] Primo piano nel kiosk di tornanti e piazzole (draping a livello di pixel).
+- [ ] Strade come tagliafuoco: Borgo2 con vento da N supera o no la SP 12 secondo pochi metri di tracciato (spotting). Decidere se la provinciale è una fascia parafuoco più larga o solo una strada.
+- [ ] Fase 3: ritarare ETA e basi sul passo da 8,9 km. Le quote degli agenti seguono già le sedi stradali (`Terrain::height_at`).
 
 ### Fase 3: gameplay headless
 
@@ -53,6 +53,10 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - [ ] `CLAUDE.md` cita `docs/rocca-ventosa/…`, ma i documenti sono in `docs/`.
 
 ## Fatto
+
+- [x] 2026-10-08 Risoluzione fine: `tools/factory/fine.py` (terreno a 5 m, sedi stradali, piazzole, `cover.u8`), router con direzione e costo dei tornanti (`roads.py`), tavola `docs/factory/fine/`. Il DEM del fuoco resta identico.
+- [x] 2026-10-08 Strada del Passo rifinita: niente più sega di micro-tornanti, pendenza della sede al 14 % (era 25 % p95 sul DEM a 20 m).
+- [x] 2026-10-08 `t4_paese` provato nel kiosk Bevy: si carica e gira a 60 FPS, terreno a 5 m incluso. Innesco e testi restano quelli di `demo_borgo`.
 
 - [x] 2026-10-08 Fase 0, audit: `docs/audit.md` (commit `5d07e64`).
 - [x] 2026-10-08 Fase 1, ambiente naturale: 4 candidati, sweep e atlante in `docs/factory/fase1/` (commit `f699873`).

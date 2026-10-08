@@ -87,13 +87,20 @@ def cmd_atlas(ids):
     print("\n".join(lines))
 
 
-def cmd_build_town(terrain_id, layout_n):
+def cmd_build_town(terrain_id, layout_n, fine_res=True):
     lay = town.LAYOUTS[(terrain_id, layout_n)]
     dem, fuel, params = export.load(terrain_id)
     t = time.time()
     out = town.build(lay, dem, fuel)
+    extra = {}
+    if fine_res:
+        from factory import fine
+        # graphics and agents only: the fire keeps the approved 20 m DEM below
+        f = fine.build(dem, out, lay.seed)
+        extra = {"fine": f["params"], "road_profiles": f["road_stats"]}
+        print(json.dumps(f["params"]["fine_vs_fire_dem"]))
     town.write(lay, dem, out, {**params, "layout": layout_n, "town_id": lay.id, "town_seed": lay.seed,
-                                "town_notes": out["notes"]})
+                                "town_notes": out["notes"], **extra}, fine=f if fine_res else None)
     print(f"{lay.id}: {len(out['buildings'])} edifici, {len(out['households'])} famiglie, "
           f"{len(out['people'])} persone, {len(out['roads'])} strade in {time.time() - t:.1f} s")
     print(json.dumps(out["notes"], indent=1))
@@ -115,15 +122,20 @@ def cmd_verify(cid):
     return res.returncode
 
 
-def cmd_town_fires(cid, nature):
-    """The built world and its natural terrain, on the same town-centred starts."""
+def cmd_town_fires(cid, nature, ignitions_from=None):
+    """The built world and its natural terrain, on the same town-centred starts
+    (or on the starts of an earlier sweep, `ignitions_from`, to compare two
+    versions of the same town)."""
     built = town.load_built(cid)
     locs = {}
     for h in built["pop"]["households"]:
         locs.setdefault(h["locality"], []).append(tuple(h["pos"]))
     _, fuel_b, _ = export.load(cid)
     _, fuel_n, _ = export.load(nature)
-    igns = fires.pick_ignitions_around(fuel_b, locs, fires.SWEEP["ignition_radius_m"])
+    if ignitions_from:
+        igns = fires.reuse_ignitions(ignitions_from, fuel_b, fires.SWEEP["ignition_radius_m"])
+    else:
+        igns = fires.pick_ignitions_around(fuel_b, locs, fires.SWEEP["ignition_radius_m"])
     # keep only starts that are fuel in both worlds, so the pair is comparable
     igns = [ig for ig in igns if 1 <= fuel_n[ig["row"], ig["col"]] <= 12]
     for name, f, tag in [(cid, fuel_b, cid), (nature, fuel_n, f"{nature}__per_{cid}")]:
@@ -139,20 +151,30 @@ def cmd_plate(cid, nature):
     print(json.dumps(compare, indent=1))
 
 
+def cmd_fine_plate(cid, nature):
+    from factory import fineplate
+    out, diff = fineplate.make(cid, nature, f"{cid}_fase2")
+    print(json.dumps({k: v for k, v in out.items() if k != "roads"}, indent=1))
+    print(diff)
+
+
 def main(argv):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["nature", "fires", "atlas", "all", "build-town", "verify", "town-fires", "plate"])
+    p.add_argument("command", choices=["nature", "fires", "atlas", "all", "build-town", "verify", "town-fires", "plate", "fine-plate"])
     p.add_argument("--terrain", default="t4")
     p.add_argument("--layout", type=int, default=1)
     p.add_argument("--scenario", default="t4_paese")
     p.add_argument("--ignitions-from", default=None, help="riusa gli inneschi dello sweep di un altro scenario")
+    p.add_argument("--coarse", action="store_true", help="build-town senza terreno fine (render a 20 m, come in fase 2)")
     p.add_argument("--candidates", default=",".join(c.id for c in terrain.CANDIDATES))
     a = p.parse_args(argv)
     ids = [s.strip() for s in a.candidates.split(",") if s.strip()]
     if a.command == "build-town":
-        return cmd_build_town(a.terrain, a.layout)
+        return cmd_build_town(a.terrain, a.layout, not a.coarse)
     if a.command == "town-fires":
-        return cmd_town_fires(a.scenario, a.terrain)
+        return cmd_town_fires(a.scenario, a.terrain, a.ignitions_from)
+    if a.command == "fine-plate":
+        return cmd_fine_plate(a.scenario, a.terrain)
     if a.command == "plate":
         return cmd_plate(a.scenario, a.terrain)
     if a.command == "verify":

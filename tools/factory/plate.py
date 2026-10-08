@@ -119,8 +119,8 @@ def legend(ax):
     ax.legend(handles=h, fontsize=7, loc="lower left", framealpha=0.9)
 
 
-def plate(cid: str, nature: str):
-    DOCS.mkdir(parents=True, exist_ok=True)
+def plate(cid: str, nature: str, docs=DOCS):
+    docs.mkdir(parents=True, exist_ok=True)
     osm, pop, check, dem, fuel = load(cid)
     meta, rows, arrivals = fires.load(cid)
     s = meta["sweep"]
@@ -143,7 +143,7 @@ def plate(cid: str, nature: str):
     axs[0].set_title(f"{cid}: il territorio (8 km), combustibili dopo case, strade e orti", fontsize=10)
     axs[1].set_title("il nucleo (4 km): abitati, strade, aree di attesa, inneschi dello sweep", fontsize=10)
     fig.tight_layout()
-    fig.savefig(DOCS / "tavola_paese.png", dpi=100)
+    fig.savefig(docs / "tavola_paese.png", dpi=100)
     plt.close(fig)
 
     # 2. The town over the propagations, one panel per wind: how many
@@ -168,7 +168,7 @@ def plate(cid: str, nature: str):
     fig.suptitle(f"{cid}: da quanti inneschi (su {len(meta['ignitions'])}) e raggiunta ogni cella entro 2 h "
                  f"(chiaro 1 ... scuro 4+), con gli abitati", fontsize=10)
     fig.tight_layout()
-    fig.savefig(DOCS / "paese_venti.png", dpi=95)
+    fig.savefig(docs / "paese_venti.png", dpi=95)
     plt.close(fig)
 
     # 3. Nature vs built: same ignitions, same winds, same seeds.
@@ -182,7 +182,7 @@ def plate(cid: str, nature: str):
                "nature_ha_6h_p50": float(np.median(p[:, 0])), "built_ha_6h_p50": float(np.median(p[:, 1])),
                "smaller_share_6h": float(np.mean(p[:, 1] < p[:, 0] - 1)),
                "ratio_6h_p50": float(np.median(p[:, 1] / np.maximum(p[:, 0], 1)))}
-    (DOCS / "metriche_paese.json").write_text(json.dumps({"threat": tt, "nature_vs_built": compare}, indent=1) + "\n")
+    (docs / "metriche_paese.json").write_text(json.dumps({"threat": tt, "nature_vs_built": compare}, indent=1) + "\n")
 
     lines = ["| località | " + " | ".join(atlas.WIND_NAMES[w].split()[0] for w in s["wind_from_deg"]) + " |",
              "|---|" + "---|" * len(s["wind_from_deg"])]
@@ -193,5 +193,5 @@ def plate(cid: str, nature: str):
             med = f" ({v['median_min']:.0f}')" if v["median_min"] is not None and v["by_6h"] > 0 else ""
             cells.append(f"{v['by_2h'] * 100:.0f}% / {v['by_6h'] * 100:.0f}%{med}")
         lines.append(f"| {loc} | " + " | ".join(cells) + " |")
-    (DOCS / "minaccia.md").write_text("\n".join(lines) + "\n")
+    (docs / "minaccia.md").write_text("\n".join(lines) + "\n")
     return tt, compare, "\n".join(lines)

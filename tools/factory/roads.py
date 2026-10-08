@@ -23,12 +23,17 @@ _MOVES = [(dr, dc) for dr in range(-2, 3) for dc in range(-2, 3)
 
 def least_cost_path(dem: np.ndarray, a: tuple[float, float], b: tuple[float, float],
                     grade_ok: float = 0.09, grade_max: float = 0.14, avoid: np.ndarray | None = None,
-                    margin_m: float = 900.0, coarse: int = 3) -> list[tuple[float, float]]:
-    """Dijkstra between two world points on a `coarse` x 20 m grid. Cost per
-    metre grows with the square of the grade above `grade_ok`; above
-    `grade_max` a move is forbidden. Routing on 60 m cells is what makes the
-    bends hairpins of a road rather than a staircase of 20 m zigzags. `avoid`
-    (bool raster on the fire grid) adds a strong penalty, e.g. built-up cells."""
+                    margin_m: float = 900.0, coarse: int = 2, turn_m: float = 8.0,
+                    hairpin_m: float = 60.0) -> list[tuple[float, float]]:
+    """Dijkstra between two world points on a `coarse` x 20 m grid, over
+    (cell, heading) states so that turning costs something. Cost per metre
+    grows with the square of the grade above `grade_ok`; above `grade_max` a
+    move is forbidden. A bend costs `turn_m` metres per radian squared and a
+    reversal (> 90 degrees) a further `hairpin_m`: without the heading the
+    cheapest way up a slope is a saw of 40-60 m zigzags, which a 20 m DEM
+    hides and a 5 m one shows (docs/TODO.md, risoluzione fine). With it the
+    road holds long legs across the slope and turns in a few real hairpins.
+    `avoid` (bool raster on the fire grid) adds a strong penalty."""
     m = coarse
     n = N // m
     z = smooth(dem, 1.0 * m)[:n * m, :n * m].reshape(n, m, n, m).mean(axis=(1, 3))
@@ -38,16 +43,31 @@ def least_cost_path(dem: np.ndarray, a: tuple[float, float], b: tuple[float, flo
     pad = int(margin_m / step)
     r0, r1 = max(0, min(ra, rb) - pad), min(n - 1, max(ra, rb) + pad)
     c0, c1 = max(0, min(ca, cb) - pad), min(n - 1, max(ca, cb) + pad)
-    dist = {(ra, ca): 0.0}
+    nm = len(_MOVES)
+    ang = [math.atan2(dr, dc) for dr, dc in _MOVES]
+    tcost = [[0.0] * nm for _ in range(nm)]
+    for i in range(nm):
+        for j in range(nm):
+            t = abs((ang[j] - ang[i] + math.pi) % (2 * math.pi) - math.pi)
+            tcost[i][j] = turn_m * t * t + (hairpin_m if t > math.pi / 2 + 1e-6 else 0.0)
+    # edge costs depend on the cell pair only: cache them
+    dist: dict = {}
     prev: dict = {}
-    pq = [(0.0, ra, ca)]
+    pq = []
+    for k in range(nm):
+        dist[(ra, ca, k)] = 0.0
+        pq.append((0.0, ra, ca, k))
+    heapq.heapify(pq)
+    goal = None
     while pq:
-        d, r, c = heapq.heappop(pq)
+        d, r, c, k = heapq.heappop(pq)
         if (r, c) == (rb, cb):
+            goal = (r, c, k)
             break
-        if d > dist.get((r, c), math.inf):
+        if d > dist.get((r, c, k), math.inf):
             continue
-        for dr, dc in _MOVES:
+        tk = tcost[k]
+        for j, (dr, dc) in enumerate(_MOVES):
             nr, nc = r + dr, c + dc
             if not (r0 <= nr <= r1 and c0 <= nc <= c1):
                 continue
@@ -55,23 +75,24 @@ def least_cost_path(dem: np.ndarray, a: tuple[float, float], b: tuple[float, flo
             g = abs(z[nr, nc] - z[r, c]) / L
             if g > grade_max:
                 continue
-            cost = L * (1.0 + 25.0 * (max(0.0, g - grade_ok) / grade_ok) ** 2)
+            cost = L * (1.0 + 25.0 * (max(0.0, g - grade_ok) / grade_ok) ** 2) + tk[j]
             if av is not None and av[nr, nc]:
                 cost += 10 * L
             nd = d + cost
-            if nd < dist.get((nr, nc), math.inf):
-                dist[(nr, nc)] = nd
-                prev[(nr, nc)] = (r, c)
-                heapq.heappush(pq, (nd, nr, nc))
-    if (rb, cb) not in prev and (rb, cb) != (ra, ca):
+            key = (nr, nc, j)
+            if nd < dist.get(key, math.inf):
+                dist[key] = nd
+                prev[key] = (r, c, k)
+                heapq.heappush(pq, (nd, nr, nc, j))
+    if goal is None:
         raise RuntimeError(f"no road within grade {grade_max} from {a} to {b}")
-    cells = [(rb, cb)]
-    while cells[-1] != (ra, ca):
+    cells = [goal]
+    while cells[-1] in prev:
         cells.append(prev[cells[-1]])
     half = (m - 1) / 2
-    pts = [to_xy(r * m + half, c * m + half) for r, c in reversed(cells)]
+    pts = [to_xy(r * m + half, c * m + half) for r, c, _ in reversed(cells)]
     pts[0], pts[-1] = a, b
-    return chaikin(simplify(pts, 4.0), 1)
+    return chaikin(simplify(pts, 6.0), 3)
 
 
 def simplify(pts, tol):

@@ -76,7 +76,7 @@ T4_L1 = Layout(
     ],
     trunk=[
         ("SP 12 della Valle", "secondary", [(1500, 7990), "Il Borgo:-260", "Il Borgo:260", (7990, 3300)]),
-        ("Strada del Passo", "tertiary", ["Il Borgo:0", (3900, 4100), "Il Piano:220"]),
+        ("Strada del Passo", "tertiary", ["Il Borgo:0", (3900, 4100), (3350, 2950), "Il Piano:220"]),
         ("SP 9 di Fondovalle", "secondary", ["Il Piano:-220", (10, 5000)]),
         ("Strada del Monte", "unclassified", ["Il Piano:0", (2000, 10)]),
     ],
@@ -196,7 +196,7 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
     rng = np.random.default_rng(layout.seed)
     fuel = fuel_nature.copy()
     slope, _ = slope_aspect(dem)
-    roads, notes = [], {}
+    roads, notes, areas = [], {}, []
 
     def add(name, line, cls, **k):
         roads.append(road(len(roads) + 1, name, line, cls, **k))
@@ -250,8 +250,10 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
         for (cu, v0, v1) in s.cross:
             add(f"{s.name} - vicolo {cu:+.0f}", R.resample([w(cu, v0), w(cu, v1)], 40.0), "residential")
         paint_poly(fuel, rect(w, *s.core), 0)
+        areas.append({"kind": "core", "locality": s.name, "ring": rect(w, *s.core)})
         for box in s.irrigated:
             paint_poly(fuel, rect(w, *box), 0)
+            areas.append({"kind": "irrigated", "locality": s.name, "ring": rect(w, *box)})
 
     # 3. Scattered houses along a road, on gentle enough ground, each with a lane.
     for name, (road_name, (z0, z1), count, min_d) in layout.scattered.items():
@@ -365,7 +367,7 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
                                    "walk_speed": 0.85 if needs else 1.35 + (pid % 4) * .08,
                                    "needs_assistance": needs, "at_home": pid % 7 != 0})
     notes["households"] = {loc: sum(1 for h in households if h["locality"] == loc) for loc in layout.households}
-    return {"fuel": fuel, "roads": roads, "buildings": buildings, "water": water, "dwellings": dwellings,
+    return {"fuel": fuel, "roads": roads, "buildings": buildings, "water": water, "areas": areas, "dwellings": dwellings,
             "households": households, "people": people, "notes": notes}
 
 
@@ -397,15 +399,27 @@ def _same_settlement(layout, a, b):
     return False
 
 
-def write(layout: Layout, dem: np.ndarray, out: dict, params: dict) -> None:
+def write(layout: Layout, dem: np.ndarray, out: dict, params: dict, fine: dict | None = None) -> None:
+    """`dem` is the 20 m fire DEM. With `fine` (factory.fine.build), the render
+    terrain is the 5 m surface and a 5 m land cover is written beside it;
+    without it the render terrain falls back to the fire DEM."""
     d = DATA / "scenarios" / layout.id
     d.mkdir(parents=True, exist_ok=True)
     dem.astype("<f8").tofile(d / "dem.f64")
     out["fuel"].astype("<i4").tofile(d / "fuel.i32")
-    dem.astype("<f4").tofile(d / "render_terrain.f32")
+    if fine is None:
+        terr, posting = dem, CELL_M
+    else:
+        from .fine import COVER_NAMES, FINE_M, NC
+        terr, posting = fine["fine"], FINE_M
+        fine["cover"].astype("u1").tofile(d / "cover.u8")
+        (d / "cover.json").write_text(json.dumps({
+            "rows": NC, "cols": NC, "cell_m": FINE_M, "world_size_m": [WORLD_M, WORLD_M],
+            "classes": dict(enumerate(COVER_NAMES))}, indent=2) + "\n")
+    terr.astype("<f4").tofile(d / "render_terrain.f32")
     (d / "render_terrain.json").write_text(json.dumps({
-        "rows": N, "cols": N, "posting_m": CELL_M, "world_size_m": [WORLD_M, WORLD_M],
-        "elev_min": float(dem.min()), "elev_max": float(dem.max())}, indent=2) + "\n")
+        "rows": terr.shape[0], "cols": terr.shape[1], "posting_m": posting, "world_size_m": [WORLD_M, WORLD_M],
+        "elev_min": float(terr.min()), "elev_max": float(terr.max())}, indent=2) + "\n")
     (d / "osm.json").write_text(json.dumps({
         "world_size_m": [WORLD_M, WORLD_M], "fire_grid": {"rows": N, "cols": N, "cellsize": CELL_M},
         "buildings": out["buildings"], "roads": out["roads"], "water": out["water"]}, indent=1) + "\n")
