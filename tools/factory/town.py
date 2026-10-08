@@ -187,6 +187,17 @@ def road(rid, name, line, cls, drivable=True, track=False):
 PREP_MIN = (6, 18)
 
 
+def vehicles(hid: int, scattered: bool) -> int:
+    """Cars per household. In the countryside everyone drives: an isolated
+    house without a car is not a plausible household, and walking out through
+    the woods is not a plausible evacuation. In the villages about one
+    household in twelve has none (the elderly), and the assembly areas are a
+    walk away. Deterministic in `hid`, so it draws nothing from `rng`."""
+    if scattered:
+        return (1, 1, 2, 2)[hid % 4]
+    return 0 if hid % 12 == 0 else (1, 1, 2)[hid % 3]
+
+
 def traits(hid: int, rng: np.random.Generator) -> dict:
     """The complacent population of `scripts/generate_demo_scenarios.py::demo_traits`
     (wait-and-see, long preparation), kept identical so the evacuation numbers
@@ -196,7 +207,7 @@ def traits(hid: int, rng: np.random.Generator) -> dict:
     channel = str(rng.choice(["mobile_alert", "neighbour", "siren", "self_observed", "none"],
                              p=[.45, .15, .25, .10, .05]))
     return {
-        "vehicles": (0, 1, 1, 2)[hid % 4], "risk_perception": float(rng.uniform(.08, .30)),
+        "vehicles": vehicles(hid, False), "risk_perception": float(rng.uniform(.08, .30)),
         "prior_fire_experience": False, "warning_channel": channel,
         "trust_authority": float(rng.uniform(.55, .95)), "intent": intent,
         "prep_time_min": float(rng.uniform(*PREP_MIN)), "defensible_space": float(rng.uniform(.1, .6)),
@@ -408,7 +419,8 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
                 size = int(rng.choice([1, 2, 2, 3, 3, 4, 5]))
                 members = list(range(len(people), len(people) + size))
                 households.append({"id": hid, "building": bid, "pos": [hx, hy], "cell": [hr, hc], "size": size,
-                                   "dist_to_fuel_m": CELL_M, **traits(hid, rng), "status": "normal",
+                                   "dist_to_fuel_m": CELL_M, **traits(hid, rng),
+                                   "vehicles": vehicles(hid, loc in layout.scattered), "status": "normal",
                                    "members": members, "locality": loc})
                 for off, pid in enumerate(members):
                     age = (8, 17, 34, 48, 72)[(hid + off) % 5]

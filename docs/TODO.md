@@ -17,6 +17,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Decisioni dell'utente
 
+- 2026-10-08: **nessuna evacuazione a piedi dalle case isolate** («molto poco realistico»). Nei nuclei sparsi ogni famiglia ha almeno un'auto; in paese è senza auto circa 1 famiglia su 12 (`town.py::vehicles`, applicato anche a `population.json` pubblicato: nessun'altra estrazione casuale cambia).
 - 2026-10-08: **checkpoint 4 approvato** («Continua» dopo la proposta): layout 2 e i tre casi del kiosk, cioè Coste2_gira (principale), Piano2 e Borgo2 (introduttivo).
 - 2026-10-08: **prestazioni: non ottimizzare ora**, solo ridurre la densità degli alberi (fatto: metà densità, da 24 a circa 40 FPS su M4 Pro).
 - 2026-10-08: la difesa delle case deve **ridurre l'esposizione simulata**, non restare un proxy contabile (`Tally::note_defence`).
@@ -38,7 +39,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 - [x] **Checkpoint umano 2** superato (2026-10-08). Ritocchi possibili più avanti, se servono per la giocabilità: Borgo più esposto (meno orti irrigui, bosco più vicino), passo più corto.
 - [ ] Rivedere quali strade sono tagliafuoco: oggi solo la provinciale e le vie del paese sono non combustibili (vedi Borgo2 nella sezione sulla risoluzione fine).
-- [ ] Popolazione: oggi tratti "compiacenti" copiati dal vecchio `demo_traits`. Va ripensata insieme alla preallerta (fase 3).
+- [ ] Popolazione: oggi tratti "compiacenti" copiati dal vecchio `demo_traits`. Va ripensata insieme alla preallerta (fase 3). Auto sistemate il 2026-10-08: case colpite invariate, famiglie colte in casa a Le Coste un po' meno (`docs/fase4/ab_sweep.md` e `crisi.md` rigenerati).
 
 ### Risoluzione fine (approvata il 2026-10-08)
 
