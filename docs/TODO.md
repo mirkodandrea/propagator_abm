@@ -5,7 +5,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 ## Stato
 
 - **Fase corrente: fase 4, crisi e bilanciamento** (fase 3 approvata il 2026-10-08; codice vecchio rimosso: un solo motore `rocca::Game`, un solo scenario `data/scenarios/rocca_ventosa`, una sola modalità).
-- **Prossimo checkpoint umano:** fine fase 4 (replay e tabella: una decisione presa alla crisi conta, nessuna strategia sempre vincente, 2–3 casi definitivi).
+- **Prossimo checkpoint umano: checkpoint 4** (`docs/fase4/README.md`). Approvare il layout 2 del territorio e i 3 casi definitivi proposti (Coste2_gira, Piano2, Borgo2). Poi la fase 5.
 
 ## Decisioni dell'utente
 
@@ -15,6 +15,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - 2026-10-08: **checkpoint 2 approvato**, layout 1 di `t4_paese` così com'è. Affrontare la risoluzione fine **prima** della fase 3.
 - 2026-10-08: **DTM, strade, case e rendering andranno a risoluzione più fine dei 20 m** del propagatore (che resta a 20 m). Avrà effetto sia sulla grafica sia sui sistemi di gioco. Da pianificare nelle prossime iterazioni.
 - 2026-10-08: **il terreno fine serve solo a grafica e agenti, non all'incendio.** Il fuoco usa il DEM a 20 m approvato, invariato (non la media del terreno fine).
+- 2026-10-08: punto 2 del checkpoint 3: "correggiamo il territorio". Dopo la misura sui casi veri (`docs/fase4/porta.md`), il blocco «fuoco alla porta» scatta (soglia 0,35). Il territorio è stato corretto per il punto 1: layout 2.
 - 2026-10-08: **checkpoint 3 approvato.** La squadra AIB viaggia su mezzo. Le Coste indifendibile nei casi rapidi: accettato.
 - 2026-10-08: **un solo motore, un solo scenario, una sola modalità.** Non fare riferimento a versioni vecchie del codice: rimosse (`demo`, `play`, `text`, `chat`, `telemetry`, scenari reali e dev, build web, palette VR, vecchio flusso del kiosk).
 - 2026-10-08: fase 3 avviata senza aspettare gli screenshot di `cover.u8` ("segui il piano").
@@ -42,14 +43,20 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - al massimo 2 crisi, distanziate di almeno 15 min;
   - niente crisi prima del primo piano, né per un quartiere lasciato scoperto consapevolmente all'ultima conferma.
 - [x] 2026-10-08 Casi «_gira» in `game.json`: a T+45 il vento spinge il fuoco verso la località più vicina tra le altre.
-- [ ] Misura «la decisione alla crisi conta» (`examples/crisi.rs`, tabella in `docs/fase4/crisi.md`):
+- [x] 2026-10-08 **Layout 2** del territorio (`T4_L2` → `rocca_ventosa`): Il Borgo più esposto, Le Coste in 4 nuclei, casi «_gira».
+- [x] 2026-10-08 Crisi **previsione** (bollettino 20 min prima del cambio di vento) e preposizionamento per la prima priorità (`PREEMPT_M` 3,5 km).
+- [x] 2026-10-08 Report di fase 4 (`docs/fase4/README.md`): le priorità iniziali cambiano gli esiti in 4 casi; la crisi conta in Coste2_gira (58 case colpite rispondendo subito, 71 rispondendo tardi o ignorandola).
+- [ ] **Checkpoint umano 4.**
+- [ ] Bollettino meteo con incertezza (orario ± e probabilità), senza leggere il futuro dell'incendio.
+- [ ] Mezzi bloccati al rientro (strada tagliata): mostrarli come «bloccati».
+- [ ] (prima versione, superata dal layout 2) Misura «la decisione alla crisi conta» (`examples/crisi.rs`, tabella in `docs/fase4/crisi.md`):
   - effetto netto in Coste2_gira: case colpite 76 se si ignora, 61 rispondendo subito, 47 rispondendo 20 min dopo; famiglie colte in casa 24 se si ignora, 12 rispondendo subito con evacuazione;
   - nella maggior parte dei casi rispondere cambia poco: vanno scelti casi in cui la crisi è un vero dilemma, o rivisto il territorio (piano d'azione: «si torna a case/strade e inneschi»).
 - [x] 2026-10-08 Kiosk: fase **Crisi** a ×1 con countdown di 25 s. Il piano attivo prosegue; il proposto si applica alla conferma o alla scadenza (rivalidato), e se non cambia resta il piano attuale. Verificato con screenshot su Coste2_gira (crisi del vento a T+46).
 - [ ] Le fasi ×0/×N/×1 sono tempo reale del kiosk; l'headless le simula con strategie (`examples/crisi.rs`). Valutare se spostare il countdown nel `Game` per i replay.
 - [ ] Prove strategiche: una decisione alla crisi conta, nessuna strategia sempre vincente. Scegliere 2–3 casi (candidati Piano1, Borgo2, Piano3, con il vento che gira).
 - [ ] Preallerta come osservazione del grafo comportamentale (`HouseholdObs`).
-- [ ] **Scoperta (porting dei test, 2026-10-08):** sul territorio la minaccia per le persone davanti alle case vale sempre 0, perché ogni casa ha una radura di circa 13 m. Il blocco comportamentale «fuoco alla porta» non scatta mai, e con lui i rami evacua-subito, riparo e ultima risorsa. Test `incident_gaps::the_last_resort_profile…` ignorato con motivazione. Decidere se è calibrazione del comportamento o del territorio.
+- [x] **Rettificato (2026-10-08):** la «scoperta» del porting dei test era sbagliata. Sui casi veri la minaccia alla porta supera 0,35 in 9 casi su 18; non supera mai 0,55 (celle da 20 m). Il testo originale diceva: sul territorio la minaccia per le persone davanti alle case vale sempre 0, perché ogni casa ha una radura di circa 13 m. Il blocco comportamentale «fuoco alla porta» non scatta mai, e con lui i rami evacua-subito, riparo e ultima risorsa. Test `incident_gaps::the_last_resort_profile…` ignorato con motivazione. Decidere se è calibrazione del comportamento o del territorio.
 - [ ] Difesa delle strade: misurare prima l'effetto sulla percorribilità (spec).
 - [ ] Rivedere i parametri nuovi: `EMBER_DECAY_M` 700 m, `PROTECTED_EMBER` 0,85 e `PROTECTED_RADIANT` 0,5, soglie del coordinatore.
 

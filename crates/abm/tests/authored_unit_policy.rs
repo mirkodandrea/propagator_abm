@@ -283,20 +283,27 @@ fn raising_the_refill_threshold_sends_engines_for_water_earlier() {
         let p = w.crews.units[engine].pos;
         let near = w.scn.world.cell_of(scenario::Pos { x: p.x + 150.0, y: p.y });
         w.fire.ignite_patch(near, 60.0, &w.scn).unwrap();
-        // Long enough to pump, short enough that a "pump dry" engine has not
-        // yet had time to empty the tank *and* be sent back.
-        w.run(10, 10);
-        (w.crews.units[engine].state, w.crews.units[engine].water_frac())
+        // The tank level at which it first breaks off for water, if it does
+        // within the next 40 minutes.
+        for _ in 0..40 {
+            w.run(1, 10);
+            let u = &w.crews.units[engine];
+            if u.state == UnitState::Refilling {
+                return Some(u.water_frac());
+            }
+        }
+        None
     };
 
-    let (_, dry_frac) = refills_by(0.0);
-    let (early_state, early_frac) = refills_by(0.6);
+    let dry = refills_by(0.0);
+    let eager = refills_by(0.6);
 
     // The eager engine broke off with water still aboard; the shipped one did
-    // not break off until it had none.
+    // not break off until it had (nearly) none.
+    let eager_at = eager.expect("the eager engine never went for water");
     assert!(
-        early_frac > dry_frac || early_state == UnitState::Refilling,
-        "refill threshold has no effect: dry engine at {dry_frac:.2}, eager at {early_frac:.2}"
+        eager_at > 0.3 && dry.is_none_or(|d| d < eager_at),
+        "refill threshold has no effect: shipped engine left with {dry:?}, eager with {eager_at:.2}"
     );
 }
 

@@ -31,7 +31,7 @@ fn run(case: &str, s: Strategy) -> anyhow::Result<(Outcome, Vec<String>)> {
         g.step()?;
         if let Some(c) = g.take_crisis() {
             seen.push(format!("T+{} {:?}", c.at_s / 60, c.kind));
-            if let Kind::Scoperto { district } | Kind::Vento { district } = c.kind {
+            if let Kind::Scoperto { district } | Kind::Previsione { district } | Kind::Vento { district } = c.kind {
                 let delay = match s {
                     Strategy::Fermo => continue,
                     Strategy::Pronto | Strategy::Evacua => 0,

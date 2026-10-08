@@ -12,6 +12,8 @@ test (`abm::refuge`: <=12% burnable within 300 m).
 
 from __future__ import annotations
 
+import dataclasses
+
 import json
 import math
 from dataclasses import dataclass, field
@@ -107,7 +109,26 @@ T4_L1 = Layout(
            ("Il Piano", (-150, -80), (-150, -330), "Via del Campo")],
 )
 
-LAYOUTS = {("t4", 1): T4_L1}
+# Hamlets of Le Coste: centres at least this far apart, houses within this of
+# their centre (one engine's post covers ~120 m).
+HAMLET_SPACING_M = 600.0
+HAMLET_RADIUS_M = 110.0
+
+# Layout 2 (2026-10-08, after phase 4's first measurements): Il Borgo with
+# the wood up to its north edge (the irrigated belt shrinks to the block round
+# the assembly area, which must stay a refuge), and Le Coste as four hamlets
+# a unit can defend, instead of 24 farms no plan can hold.
+T4_L2 = dataclasses.replace(
+    T4_L1,
+    id="t4_paese2",
+    settlements=[
+        dataclasses.replace(T4_L1.settlements[0], irrigated=[(-320, 320, 230, 640)]),
+        T4_L1.settlements[1],
+    ],
+    scattered={"Le Coste": ("Strada del Passo", (170, 400), 24, 25.0, 4)},
+)
+
+LAYOUTS = {("t4", 1): T4_L1, ("t4", 2): T4_L2}
 
 
 # --------------------------------------------------------------------------- geometry
@@ -256,7 +277,10 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
             areas.append({"kind": "irrigated", "locality": s.name, "ring": rect(w, *box)})
 
     # 3. Scattered houses along a road, on gentle enough ground, each with a lane.
-    for name, (road_name, (z0, z1), count, min_d) in layout.scattered.items():
+    for name, spec in layout.scattered.items():
+        road_name, (z0, z1), count, min_d = spec[:4]
+        # optional: group the houses in this many hamlets (farm clusters)
+        clusters = spec[4] if len(spec) > 4 else 0
         line = [tuple(p) for p in built[road_name]["line"]]
         cands = []
         for (ax, ay), (bx, by) in zip(line[:-1], line[1:]):
@@ -269,13 +293,39 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
                     cands.append((x, y, (ax + bx) / 2, (ay + by) / 2, math.degrees(math.atan2(bx - ax, by - ay))))
         rng.shuffle(cands)
         chosen = []
-        for cnd in cands:
-            if all(math.hypot(cnd[0] - o[0], cnd[1] - o[1]) >= min_d for o in chosen):
-                chosen.append(cnd)
-            if len(chosen) == count:
-                break
-        for x, y, jx, jy, bearing in chosen:
-            j = R.nearest_vertex(line, (jx, jy))
+        if clusters:
+            # hamlet centres far apart along the road, then houses close to them
+            centres = []
+            for cnd in cands:
+                if all(math.hypot(cnd[0] - o[0], cnd[1] - o[1]) >= HAMLET_SPACING_M for o in centres):
+                    centres.append(cnd)
+                if len(centres) == clusters:
+                    break
+            per = -(-count // max(len(centres), 1))
+            for cx, cy, jx, jy, bearing in centres:
+                group = [(cx, cy, jx, jy, bearing, True)]
+                for k in range(1, per):
+                    for _ in range(40):
+                        a = rng.uniform(0, 2 * math.pi)
+                        d = rng.uniform(min_d, HAMLET_RADIUS_M)
+                        x, y = cx + d * math.cos(a), cy + d * math.sin(a)
+                        r, c = to_cell(x, y)
+                        if z0 - 40 <= dem[r, c] <= z1 + 40 and slope[r, c] < 25 and \
+                                all(math.hypot(x - o[0], y - o[1]) >= min_d for o in group):
+                            # the lane joins the hamlet's first house, not the road
+                            group.append((x, y, cx, cy, bearing, False))
+                            break
+                chosen += group[:per]
+            chosen = chosen[:count]
+        else:
+            for cnd in cands:
+                if all(math.hypot(cnd[0] - o[0], cnd[1] - o[1]) >= min_d for o in chosen):
+                    chosen.append((*cnd, True))
+                if len(chosen) == count:
+                    break
+        for x, y, jx, jy, bearing, from_road in chosen:
+            # a lane from the road, or (within a hamlet) from its first house
+            j = R.nearest_vertex(line, (jx, jy)) if from_road else (jx, jy)
             add(f"Podere {name} {len(homes)}", [j, (x, y)], "unclassified")
             homes.append((name, x, y, "villa" if rng.random() < .3 else ("farm" if rng.random() < .25 else "house"),
                           bearing))

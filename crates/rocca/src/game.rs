@@ -249,7 +249,8 @@ impl Game {
         if !(look_for_crisis && self.planned) {
             return p;
         }
-        if let Some(c) = self.detector.check(&v, &self.active, &self.posts, now) {
+        let forecast = self.territory.shifted(&self.case).map(|(at, w)| (at, w.wind_dir_deg));
+        if let Some(c) = self.detector.check(&v, &self.active, &self.posts, now, forecast) {
             self.log.push(LogEntry { at_s: now, text: format!("CRISI: {}", c.text) });
             self.crisis = Some(c);
         }

@@ -153,7 +153,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 32.9,
+    "wind_from_deg": 34.8,
     "wind_kmh": 40.0,
     "toward": "Le Coste"
    }
@@ -171,7 +171,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 68.2,
+    "wind_from_deg": 72.9,
     "wind_kmh": 40.0,
     "toward": "Le Coste"
    }
@@ -189,7 +189,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 38.3,
+    "wind_from_deg": 45.8,
     "wind_kmh": 40.0,
     "toward": "Le Coste"
    }
@@ -207,7 +207,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 235.1,
+    "wind_from_deg": 218.6,
     "wind_kmh": 40.0,
     "toward": "Le Coste"
    }
@@ -225,7 +225,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 197.8,
+    "wind_from_deg": 197.1,
     "wind_kmh": 40.0,
     "toward": "Le Coste"
    }
@@ -243,7 +243,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 245.2,
+    "wind_from_deg": 240.2,
     "wind_kmh": 40.0,
     "toward": "Le Coste"
    }

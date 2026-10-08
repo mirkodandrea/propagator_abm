@@ -6,6 +6,9 @@
 //!
 //! - a district is threatened and the plan leaves it uncovered, and a unit
 //!   could still get there before the fire does (**scoperto**);
+//! - the weather forecast announces a wind change that would drive the
+//!   present front at a district (**previsione**): a forecast is known
+//!   information, the fire's future is not;
 //! - the wind has turned and now drives the fire at a district (**vento**);
 //! - a unit has been lost (**mezzo perso**).
 //!
@@ -22,6 +25,8 @@ use crate::plan::Plan;
 
 pub const MAX_CRISES: usize = 2;
 pub const MIN_GAP_S: i64 = 15 * 60;
+/// How far ahead the forecast announces a wind change.
+pub const FORECAST_LEAD_S: i64 = 20 * 60;
 /// No crisis for a fire further than this from the district's homes.
 pub const CRISIS_M: f32 = 2000.0;
 /// Approach speed assumed until two observations exist, m/s (~1 km/h).
@@ -32,6 +37,7 @@ const APPROACH_WINDOW_S: i64 = 10 * 60;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Scoperto { district: usize },
+    Previsione { district: usize },
     Vento { district: usize },
     MezzoPerso { unit: usize },
 }
@@ -74,7 +80,9 @@ impl Detector {
 
     /// Look at the state now; return a crisis if one is due. Call at each
     /// coordinator review, after the active plan's posts are known.
-    pub fn check(&mut self, v: &View, active: &Plan, posts: &[Option<Post>], now: i64) -> Option<Crisis> {
+    /// `forecast`: a wind change the weather service has announced, as
+    /// (when, wind from, degrees).
+    pub fn check(&mut self, v: &View, active: &Plan, posts: &[Option<Post>], now: i64, forecast: Option<(i64, f64)>) -> Option<Crisis> {
         let n = v.districts.len();
         if self.seen.len() != n {
             self.seen = vec![vec![]; n];
@@ -111,6 +119,37 @@ impl Detector {
                     text: format!("{} è stato raggiunto dal fuoco ed è fuori servizio. Restano {} mezzi per gli stessi luoghi.", u.callsign,
                         v.crews.units.iter().filter(|x| x.state != UnitState::Lost && !x.kind.is_air()).count()),
                 });
+            }
+        }
+
+        // The forecast: which district the present front would be driven at.
+        if let Some((at, from)) = forecast {
+            if now < at && at - now <= FORECAST_LEAD_S {
+                let to = (from as f32 + 180.0).to_radians();
+                let (ux, uy) = (to.sin(), to.cos());
+                let target = (0..n)
+                    .filter_map(|d| known[d].map(|(e, _)| (d, e)))
+                    .map(|(d, e)| {
+                        let (dx, dy) = (v.districts[d].centre.x - e.fire_at.x, v.districts[d].centre.y - e.fire_at.y);
+                        let len = (dx * dx + dy * dy).sqrt().max(1.0);
+                        (d, e, (dx * ux + dy * uy) / len)
+                    })
+                    .filter(|(_, e, cos)| *cos > coordinator::DOWNWIND_COS && e.distance_m <= 2.0 * CRISIS_M)
+                    .min_by(|a, b| a.1.distance_m.total_cmp(&b.1.distance_m));
+                if let Some((d, e, _)) = target {
+                    let name = &v.districts[d].name;
+                    let units = posts.iter().flatten().filter(|p| p.district == d).count();
+                    candidates.push(Crisis {
+                        at_s: now,
+                        kind: Kind::Previsione { district: d },
+                        text: format!(
+                            "Previsione meteo: tra circa {} min il vento girerà e soffierà da {:.0}°. Spingerebbe il fuoco verso {name}, ora a {:.1} km. Oggi {name} ha {units} mezzi.",
+                            (at - now) / 60,
+                            from,
+                            e.distance_m / 1000.0
+                        ),
+                    });
+                }
             }
         }
 
@@ -192,7 +231,7 @@ impl Detector {
 /// Where a crisis is, for the camera and the map marker.
 pub fn place(v: &View, c: &Crisis) -> Option<Pos> {
     match c.kind {
-        Kind::Scoperto { district } | Kind::Vento { district } => Some(v.districts[district].centre),
+        Kind::Scoperto { district } | Kind::Previsione { district } | Kind::Vento { district } => Some(v.districts[district].centre),
         Kind::MezzoPerso { unit } => Some(v.crews.units[unit].pos),
     }
 }

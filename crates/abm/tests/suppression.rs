@@ -366,8 +366,11 @@ fn water_is_independent_of_step_size() {
         let e = w.crews.nearest_available(at, UnitKind::Engine).unwrap();
         let c = w.crews.nearest_available(at, UnitKind::HandCrew).unwrap();
         w.crews.assign(e, Task::Attack { at }).unwrap();
-        let line_to = Pos { x: at.x + 200.0 * -w.toward[1], y: at.y + 200.0 * w.toward[0] };
-        w.crews.assign(c, Task::Line { from: at, to: line_to }).unwrap();
+        // The line well ahead of the front, so it is cut before the fire gets
+        // there (closer in, the crew is burnt off it before it starts).
+        let line_at = w.downwind(1200.0);
+        let line_to = Pos { x: line_at.x + 200.0 * -w.toward[1], y: line_at.y + 200.0 * w.toward[0] };
+        w.crews.assign(c, Task::Line { from: line_at, to: line_to }).unwrap();
         w.run(60, dt);
         (w.crews.units[e].water_used_l, w.crews.units[c].line_cut_m)
     };

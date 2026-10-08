@@ -7,7 +7,8 @@
 //!
 //! The heuristic, in order:
 //! 1. A district *needs cover* when the known fire is within [`ENGAGE_M`] of a
-//!    home, or within [`ENGAGE_DOWNWIND_M`] with the wind blowing it there.
+//!    home, or within [`ENGAGE_DOWNWIND_M`] with the wind blowing it there;
+//!    the first-ranked district, within [`PREEMPT_M`] whatever the wind.
 //!    Ranked districts that do not need cover get nobody: a priority is a
 //!    claim on units, not a guarantee and not a waste.
 //! 2. Districts needing cover share the units by rank: the first takes two,
@@ -32,6 +33,9 @@ use crate::plan::Plan;
 pub const ENGAGE_M: f32 = 1500.0;
 /// Fire this close with the wind blowing it at the district.
 pub const ENGAGE_DOWNWIND_M: f32 = 3000.0;
+/// The player's first priority is covered in advance, whatever the wind,
+/// once the fire is this close: pre-positioning is the player's call to make.
+pub const PREEMPT_M: f32 = 3500.0;
 /// `Exposure::downwind` above this counts as blowing at the district (±60°).
 pub const DOWNWIND_COS: f32 = 0.5;
 /// Homes within this distance of a crew on its post are protected.
@@ -150,9 +154,13 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
     // 1. who needs cover, in the player's order
     let mut engaged: Vec<(usize, district::Exposure)> = vec![];
     let mut quiet = vec![];
-    for &d in &plan.priorities {
+    for (rank, &d) in plan.priorities.iter().enumerate() {
         match district::exposure(&v.districts[d], v.agents, v.fire, v.scn) {
-            Some(e) if e.distance_m < ENGAGE_M || (e.distance_m < ENGAGE_DOWNWIND_M && e.downwind > DOWNWIND_COS) => {
+            Some(e)
+                if e.distance_m < ENGAGE_M
+                    || (e.distance_m < ENGAGE_DOWNWIND_M && e.downwind > DOWNWIND_COS)
+                    || (rank == 0 && e.distance_m < PREEMPT_M) =>
+            {
                 engaged.push((d, e))
             }
             _ => quiet.push(d),

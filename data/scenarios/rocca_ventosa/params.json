@@ -49,8 +49,8 @@
     "open_max_slope_deg": 10.0,
     "rock_slope_deg": 34.0
   },
-  "layout": 1,
-  "town_id": "t4_paese",
+  "layout": 2,
+  "town_id": "t4_paese2",
   "town_seed": 401,
   "town_notes": {
     "SP 12 della Valle": {
@@ -123,7 +123,7 @@
     "fine_vs_fire_dem": {
       "mean_abs_m": 0.942,
       "p99_abs_m": 3.69,
-      "max_abs_m": 9.76
+      "max_abs_m": 17.64
     }
   },
   "road_profiles": {
@@ -278,214 +278,214 @@
       "grade_p95": 0.103,
       "ground_grade_p95": 0.237,
       "cutfill_p95_m": 2.19,
-      "cutfill_max_m": 2.35
+      "cutfill_max_m": 2.34
     },
     "18": {
       "name": "Podere Le Coste 169",
       "class": "unclassified",
-      "length_m": 46,
-      "grade_p95": 0.085,
-      "ground_grade_p95": 0.264,
-      "cutfill_p95_m": 1.97,
-      "cutfill_max_m": 1.99
+      "length_m": 107,
+      "grade_p95": 0.018,
+      "ground_grade_p95": 0.188,
+      "cutfill_p95_m": 2.76,
+      "cutfill_max_m": 2.8
     },
     "19": {
       "name": "Podere Le Coste 170",
       "class": "unclassified",
-      "length_m": 46,
-      "grade_p95": 0.157,
-      "ground_grade_p95": 0.461,
-      "cutfill_p95_m": 3.56,
-      "cutfill_max_m": 4.04
+      "length_m": 38,
+      "grade_p95": 0.043,
+      "ground_grade_p95": 0.254,
+      "cutfill_p95_m": 3.42,
+      "cutfill_max_m": 3.43
     },
     "20": {
       "name": "Podere Le Coste 171",
       "class": "unclassified",
-      "length_m": 48,
-      "grade_p95": 0.188,
-      "ground_grade_p95": 0.478,
-      "cutfill_p95_m": 4.72,
-      "cutfill_max_m": 4.82
+      "length_m": 32,
+      "grade_p95": 0.141,
+      "ground_grade_p95": 0.439,
+      "cutfill_p95_m": 6.76,
+      "cutfill_max_m": 6.79
     },
     "21": {
       "name": "Podere Le Coste 172",
       "class": "unclassified",
-      "length_m": 30,
-      "grade_p95": 0.095,
-      "ground_grade_p95": 0.29,
-      "cutfill_p95_m": 2.99,
-      "cutfill_max_m": 3.2
+      "length_m": 53,
+      "grade_p95": 0.131,
+      "ground_grade_p95": 0.25,
+      "cutfill_p95_m": 4.28,
+      "cutfill_max_m": 4.33
     },
     "22": {
       "name": "Podere Le Coste 173",
       "class": "unclassified",
-      "length_m": 32,
-      "grade_p95": 0.153,
-      "ground_grade_p95": 0.567,
-      "cutfill_p95_m": 3.44,
-      "cutfill_max_m": 3.82
+      "length_m": 60,
+      "grade_p95": 0.008,
+      "ground_grade_p95": 0.261,
+      "cutfill_p95_m": 2.03,
+      "cutfill_max_m": 2.34
     },
     "23": {
       "name": "Podere Le Coste 174",
       "class": "unclassified",
-      "length_m": 35,
-      "grade_p95": 0.116,
-      "ground_grade_p95": 0.406,
-      "cutfill_p95_m": 3.21,
-      "cutfill_max_m": 3.43
+      "length_m": 110,
+      "grade_p95": 0.187,
+      "ground_grade_p95": 0.378,
+      "cutfill_p95_m": 4.83,
+      "cutfill_max_m": 5.16
     },
     "24": {
       "name": "Podere Le Coste 175",
       "class": "unclassified",
-      "length_m": 48,
-      "grade_p95": 0.207,
-      "ground_grade_p95": 0.514,
-      "cutfill_p95_m": 5.7,
-      "cutfill_max_m": 6.51
+      "length_m": 100,
+      "grade_p95": 0.127,
+      "ground_grade_p95": 0.296,
+      "cutfill_p95_m": 2.13,
+      "cutfill_max_m": 2.34
     },
     "25": {
       "name": "Podere Le Coste 176",
       "class": "unclassified",
-      "length_m": 46,
-      "grade_p95": 0.192,
-      "ground_grade_p95": 0.474,
-      "cutfill_p95_m": 5.69,
-      "cutfill_max_m": 6.32
+      "length_m": 59,
+      "grade_p95": 0.188,
+      "ground_grade_p95": 0.403,
+      "cutfill_p95_m": 6.05,
+      "cutfill_max_m": 6.07
     },
     "26": {
       "name": "Podere Le Coste 177",
       "class": "unclassified",
-      "length_m": 32,
-      "grade_p95": 0.116,
-      "ground_grade_p95": 0.54,
-      "cutfill_p95_m": 2.4,
-      "cutfill_max_m": 3.22
+      "length_m": 105,
+      "grade_p95": 0.156,
+      "ground_grade_p95": 0.285,
+      "cutfill_p95_m": 4.13,
+      "cutfill_max_m": 4.3
     },
     "27": {
       "name": "Podere Le Coste 178",
       "class": "unclassified",
-      "length_m": 48,
-      "grade_p95": 0.105,
-      "ground_grade_p95": 0.339,
-      "cutfill_p95_m": 3.61,
-      "cutfill_max_m": 3.97
+      "length_m": 52,
+      "grade_p95": 0.138,
+      "ground_grade_p95": 0.338,
+      "cutfill_p95_m": 5.64,
+      "cutfill_max_m": 5.77
     },
     "28": {
       "name": "Podere Le Coste 179",
       "class": "unclassified",
-      "length_m": 46,
-      "grade_p95": 0.165,
-      "ground_grade_p95": 0.494,
-      "cutfill_p95_m": 4.73,
-      "cutfill_max_m": 4.77
+      "length_m": 77,
+      "grade_p95": 0.163,
+      "ground_grade_p95": 0.293,
+      "cutfill_p95_m": 4.23,
+      "cutfill_max_m": 4.32
     },
     "29": {
       "name": "Podere Le Coste 180",
       "class": "unclassified",
-      "length_m": 32,
-      "grade_p95": 0.092,
-      "ground_grade_p95": 0.381,
-      "cutfill_p95_m": 1.9,
-      "cutfill_max_m": 2.06
+      "length_m": 48,
+      "grade_p95": 0.188,
+      "ground_grade_p95": 0.478,
+      "cutfill_p95_m": 4.75,
+      "cutfill_max_m": 4.85
     },
     "30": {
       "name": "Podere Le Coste 181",
       "class": "unclassified",
-      "length_m": 45,
-      "grade_p95": 0.154,
-      "ground_grade_p95": 0.362,
-      "cutfill_p95_m": 2.9,
-      "cutfill_max_m": 3.14
+      "length_m": 64,
+      "grade_p95": 0.174,
+      "ground_grade_p95": 0.369,
+      "cutfill_p95_m": 4.63,
+      "cutfill_max_m": 4.85
     },
     "31": {
       "name": "Podere Le Coste 182",
       "class": "unclassified",
-      "length_m": 32,
-      "grade_p95": 0.149,
-      "ground_grade_p95": 0.455,
-      "cutfill_p95_m": 4.18,
-      "cutfill_max_m": 4.21
+      "length_m": 111,
+      "grade_p95": 0.177,
+      "ground_grade_p95": 0.415,
+      "cutfill_p95_m": 4.87,
+      "cutfill_max_m": 5.18
     },
     "32": {
       "name": "Podere Le Coste 183",
       "class": "unclassified",
-      "length_m": 34,
-      "grade_p95": 0.101,
-      "ground_grade_p95": 0.409,
-      "cutfill_p95_m": 2.89,
-      "cutfill_max_m": 3.07
+      "length_m": 67,
+      "grade_p95": 0.145,
+      "ground_grade_p95": 0.468,
+      "cutfill_p95_m": 4.87,
+      "cutfill_max_m": 5.01
     },
     "33": {
       "name": "Podere Le Coste 184",
       "class": "unclassified",
-      "length_m": 46,
-      "grade_p95": 0.162,
-      "ground_grade_p95": 0.448,
-      "cutfill_p95_m": 4.87,
-      "cutfill_max_m": 5.64
+      "length_m": 103,
+      "grade_p95": 0.189,
+      "ground_grade_p95": 0.477,
+      "cutfill_p95_m": 5.28,
+      "cutfill_max_m": 5.81
     },
     "34": {
       "name": "Podere Le Coste 185",
       "class": "unclassified",
-      "length_m": 45,
-      "grade_p95": 0.145,
-      "ground_grade_p95": 0.41,
-      "cutfill_p95_m": 2.99,
-      "cutfill_max_m": 3.46
+      "length_m": 37,
+      "grade_p95": 0.138,
+      "ground_grade_p95": 0.47,
+      "cutfill_p95_m": 8.26,
+      "cutfill_max_m": 8.49
     },
     "35": {
       "name": "Podere Le Coste 186",
       "class": "unclassified",
-      "length_m": 34,
-      "grade_p95": 0.097,
-      "ground_grade_p95": 0.388,
-      "cutfill_p95_m": 3.79,
-      "cutfill_max_m": 4.12
+      "length_m": 84,
+      "grade_p95": 0.093,
+      "ground_grade_p95": 0.329,
+      "cutfill_p95_m": 6.25,
+      "cutfill_max_m": 6.3
     },
     "36": {
       "name": "Podere Le Coste 187",
       "class": "unclassified",
-      "length_m": 45,
-      "grade_p95": 0.095,
-      "ground_grade_p95": 0.397,
-      "cutfill_p95_m": 2.64,
-      "cutfill_max_m": 2.66
+      "length_m": 35,
+      "grade_p95": 0.111,
+      "ground_grade_p95": 0.507,
+      "cutfill_p95_m": 7.24,
+      "cutfill_max_m": 7.64
     },
     "37": {
       "name": "Podere Le Coste 188",
       "class": "unclassified",
-      "length_m": 46,
-      "grade_p95": 0.132,
-      "ground_grade_p95": 0.372,
-      "cutfill_p95_m": 2.56,
-      "cutfill_max_m": 2.87
+      "length_m": 62,
+      "grade_p95": 0.208,
+      "ground_grade_p95": 0.501,
+      "cutfill_p95_m": 9.39,
+      "cutfill_max_m": 9.4
     },
     "38": {
       "name": "Podere Le Coste 189",
       "class": "unclassified",
-      "length_m": 47,
-      "grade_p95": 0.206,
-      "ground_grade_p95": 0.519,
-      "cutfill_p95_m": 5.13,
-      "cutfill_max_m": 5.57
+      "length_m": 89,
+      "grade_p95": 0.15,
+      "ground_grade_p95": 0.309,
+      "cutfill_p95_m": 4.42,
+      "cutfill_max_m": 4.7
     },
     "39": {
       "name": "Podere Le Coste 190",
       "class": "unclassified",
-      "length_m": 45,
-      "grade_p95": 0.165,
-      "ground_grade_p95": 0.491,
-      "cutfill_p95_m": 3.38,
-      "cutfill_max_m": 3.84
+      "length_m": 98,
+      "grade_p95": 0.235,
+      "ground_grade_p95": 0.559,
+      "cutfill_p95_m": 15.73,
+      "cutfill_max_m": 16.37
     },
     "40": {
       "name": "Podere Le Coste 191",
       "class": "unclassified",
-      "length_m": 34,
-      "grade_p95": 0.144,
-      "ground_grade_p95": 0.542,
-      "cutfill_p95_m": 5.74,
-      "cutfill_max_m": 5.98
+      "length_m": 99,
+      "grade_p95": 0.038,
+      "ground_grade_p95": 0.185,
+      "cutfill_p95_m": 5.1,
+      "cutfill_max_m": 5.36
     },
     "41": {
       "name": "Strada forestale del Crinale",
