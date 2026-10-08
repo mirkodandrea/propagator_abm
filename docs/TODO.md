@@ -45,7 +45,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - [ ] Misura «la decisione alla crisi conta» (`examples/crisi.rs`, tabella in `docs/fase4/crisi.md`):
   - effetto netto in Coste2_gira: case colpite 76 se si ignora, 61 rispondendo subito, 47 rispondendo 20 min dopo; famiglie colte in casa 24 se si ignora, 12 rispondendo subito con evacuazione;
   - nella maggior parte dei casi rispondere cambia poco: vanno scelti casi in cui la crisi è un vero dilemma, o rivisto il territorio (piano d'azione: «si torna a case/strade e inneschi»).
-- [ ] Fasi ×0/×N/×1 nel `Game` (timer reale a ×1, piano attivo che prosegue, commit o scadenza), condivise da headless e kiosk.
+- [x] 2026-10-08 Kiosk: fase **Crisi** a ×1 con countdown di 25 s. Il piano attivo prosegue; il proposto si applica alla conferma o alla scadenza (rivalidato), e se non cambia resta il piano attuale. Verificato con screenshot su Coste2_gira (crisi del vento a T+46).
+- [ ] Le fasi ×0/×N/×1 sono tempo reale del kiosk; l'headless le simula con strategie (`examples/crisi.rs`). Valutare se spostare il countdown nel `Game` per i replay.
 - [ ] Prove strategiche: una decisione alla crisi conta, nessuna strategia sempre vincente. Scegliere 2–3 casi (candidati Piano1, Borgo2, Piano3, con il vento che gira).
 - [ ] Preallerta come osservazione del grafo comportamentale (`HouseholdObs`).
 - [ ] **Scoperta (porting dei test, 2026-10-08):** sul territorio la minaccia per le persone davanti alle case vale sempre 0, perché ogni casa ha una radura di circa 13 m. Il blocco comportamentale «fuoco alla porta» non scatta mai, e con lui i rami evacua-subito, riparo e ultima risorsa. Test `incident_gaps::the_last_resort_profile…` ignorato con motivazione. Decidere se è calibrazione del comportamento o del territorio.

@@ -5,8 +5,9 @@
 //! preview, commits it on request and runs the clock. No rules live here.
 //!
 //! Flow: **Pianifica** (×0, the proposed plan is previewed on the map) →
-//! **Esegui** (×N) → **Fine** (facts per district). No inactivity reset: a new
-//! game starts only from the operator panel.
+//! **Esegui** (×N) ⇄ **Crisi** (×1 with a countdown, raised by the game) →
+//! **Fine** (facts per district). No inactivity reset: a new game starts only
+//! from the operator panel.
 
 pub mod ui;
 pub mod view;
@@ -21,6 +22,8 @@ use crate::{AppState, DataPath};
 pub const TITLE: &str = "Rocca Ventosa";
 /// Simulated seconds per real second while the game runs (spec: ~×20).
 pub const RUN_SPEED: f32 = 20.0;
+/// Real seconds the player has at a crisis (spec: ~25 s at ×1).
+pub const CRISIS_S: f32 = 25.0;
 
 pub fn window_mode() -> WindowMode {
     if std::env::var("KIOSK_WINDOWED").is_ok() {
@@ -36,6 +39,9 @@ pub enum Phase {
     Pianifica,
     /// ×N: the plan in force is being carried out.
     Esegui,
+    /// ×1: a crisis. The active plan goes on; the proposed one is applied on
+    /// confirmation or when the countdown runs out.
+    Crisi,
     /// The case has run its course.
     Fine,
 }
@@ -59,6 +65,8 @@ pub struct Kiosk {
     /// Simulated seconds per real second while running.
     pub speed: f32,
     pub error: Option<String>,
+    /// The crisis being decided, while in [`Phase::Crisi`].
+    pub crisis: Option<rocca::Crisis>,
 }
 
 impl Kiosk {
@@ -77,6 +85,7 @@ impl Kiosk {
             dirty: true,
             speed,
             error: None,
+            crisis: None,
         }
     }
 
@@ -121,6 +130,16 @@ pub fn new_game(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<Si
     }
 }
 
+/// End a crisis: the proposed plan becomes active if the player changed it
+/// (revalidated now); otherwise the active plan simply goes on.
+pub fn close_crisis(kiosk: &mut Kiosk, sim: &mut Sim) {
+    if kiosk.proposed != sim.active {
+        commit(kiosk, sim);
+    }
+    kiosk.crisis = None;
+    kiosk.enter(Phase::Esegui);
+}
+
 /// Commit the proposed plan: the game revalidates it from the state now.
 pub fn commit(kiosk: &mut Kiosk, sim: &mut Sim) {
     match sim.commit(kiosk.proposed.clone()) {
@@ -137,11 +156,26 @@ pub fn commit(kiosk: &mut Kiosk, sim: &mut Sim) {
 pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
     let dt = time.delta_seconds();
     kiosk.phase_t += dt;
-    sim.speed = if kiosk.phase == Phase::Esegui { kiosk.speed } else { 0.0 };
-    if kiosk.phase == Phase::Esegui {
+    sim.speed = match kiosk.phase {
+        Phase::Esegui => kiosk.speed,
+        Phase::Crisi => 1.0,
+        _ => 0.0,
+    };
+    if matches!(kiosk.phase, Phase::Esegui | Phase::Crisi) {
         if let Err(e) = sim.tick(dt) {
             kiosk.error = Some(format!("{e:#}"));
             kiosk.enter(Phase::Fine);
+        }
+        if let Some(c) = sim.take_crisis() {
+            if kiosk.phase == Phase::Esegui {
+                kiosk.crisis = Some(c);
+                kiosk.proposed = sim.active.clone();
+                kiosk.dirty = true;
+                kiosk.enter(Phase::Crisi);
+            }
+        }
+        if kiosk.phase == Phase::Crisi && kiosk.phase_t >= CRISIS_S {
+            close_crisis(&mut kiosk, &mut sim);
         }
         if sim.time_s() >= sim.case.duration_s() {
             kiosk.enter(Phase::Fine);
@@ -149,7 +183,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
     }
     // The preview follows the plan being composed and the world as it moves,
     // at most once a simulated review interval while running.
-    let stale = kiosk.dirty || (kiosk.phase == Phase::Esegui && sim.generation >= kiosk.preview_at.saturating_add(20));
+    let stale = kiosk.dirty || (kiosk.phase != Phase::Pianifica && sim.generation >= kiosk.preview_at.saturating_add(20));
     if stale && kiosk.phase != Phase::Fine {
         kiosk.preview = sim.preview(&kiosk.proposed).ok();
         kiosk.preview_at = sim.generation;
@@ -195,8 +229,14 @@ pub fn shots(
         }
         2 if stage.1 > 8.0 => {
             snap("3_esegui");
+            *stage = (5, 0.0);
+        }
+        5 if kiosk.phase == Phase::Crisi && kiosk.phase_t > 1.0 => {
+            snap("3b_crisi");
+            close_crisis(&mut kiosk, &mut sim);
             *stage = (3, 0.0);
         }
+        5 if kiosk.phase == Phase::Fine => *stage = (3, 0.0),
         3 if kiosk.phase == Phase::Fine && stage.1 > 1.0 => {
             snap("4_fine");
             *stage = (4, 0.0);

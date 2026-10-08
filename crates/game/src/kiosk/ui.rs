@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use rocca::Civil;
 
-use super::{commit, new_game, Kiosk, Phase};
+use super::{close_crisis, commit, new_game, Kiosk, Phase, CRISIS_S};
 use crate::sim::{Sim, SimRestarted};
 
 fn clock(s: i64) -> String {
@@ -40,10 +40,21 @@ pub fn draw(
             ui.label(match k.phase {
                 Phase::Pianifica => "Pianifica (tempo fermo)".to_string(),
                 Phase::Esegui => format!("Esegui (×{:.0})", k.speed),
+                Phase::Crisi => format!("CRISI (×1): {:.0} s per decidere", (CRISIS_S - k.phase_t).max(0.0)),
                 Phase::Fine => "Fine".to_string(),
             });
         });
     });
+
+    if let (Phase::Crisi, Some(c)) = (k.phase, &k.crisis) {
+        egui::TopBottomPanel::top("crisi").show(ctx, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.colored_label(egui::Color32::from_rgb(230, 120, 40), egui::RichText::new("Crisi").heading());
+                ui.label(egui::RichText::new(&c.text).size(18.0));
+                ui.label(format!("Il fuoco non si ferma. Hai {:.0} s: cambia priorità o ordini, poi Conferma. Se non fai nulla resta il piano attuale.", (CRISIS_S - k.phase_t).max(0.0)));
+            });
+        });
+    }
 
     egui::SidePanel::left("piano").min_width(320.0).show(ctx, |ui| {
         ui.heading("Priorità");
@@ -108,6 +119,11 @@ pub fn draw(
             Phase::Esegui => {
                 if ui.add_enabled(pending, egui::Button::new(egui::RichText::new("Conferma il nuovo piano").heading())).clicked() {
                     commit(k, &mut sim);
+                }
+            }
+            Phase::Crisi => {
+                if ui.button(egui::RichText::new("Conferma").heading()).clicked() {
+                    close_crisis(k, &mut sim);
                 }
             }
             Phase::Fine => {}
