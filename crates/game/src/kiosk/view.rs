@@ -134,8 +134,17 @@ pub fn camera(
     mut released: Local<Option<(Phase, f32)>>,
     mut settled: Local<u64>,
     mut home_view: Local<Option<(f32, f32)>>,
+    mut last_cursor: Local<Option<Vec2>>,
 ) {
-    let delta = input.motion.read().fold(Vec2::ZERO, |s, e| s + e.delta);
+    // Drag deltas from the cursor's own movement: `MouseMotion` (raw device
+    // motion) does not arrive in the browser, and dragging the map did nothing.
+    input.motion.clear();
+    let cursor = windows.get_single().ok().and_then(|w| w.cursor_position());
+    let delta = match (cursor, *last_cursor) {
+        (Some(c), Some(l)) => c - l,
+        _ => Vec2::ZERO,
+    };
+    *last_cursor = cursor;
     let shift = input.keys.pressed(KeyCode::ShiftLeft) || input.keys.pressed(KeyCode::ShiftRight);
     let zoom_modifier = input.keys.pressed(KeyCode::ControlLeft) || input.keys.pressed(KeyCode::ControlRight)
         || input.keys.pressed(KeyCode::SuperLeft) || input.keys.pressed(KeyCode::SuperRight);
@@ -219,6 +228,11 @@ pub fn camera(
                     orbit.pitch = scene_pitch;
                     orbit.distance = d * shot_zoom();
                 }
+            }
+            // the on-screen zoom buttons
+            if kiosk.zoom != 1.0 {
+                orbit.distance *= kiosk.zoom;
+                kiosk.zoom = 1.0;
             }
             // «Vista iniziale»: back to the home view of this game.
             if kiosk.reset_view {

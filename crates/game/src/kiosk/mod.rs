@@ -81,6 +81,9 @@ pub struct Kiosk {
     pub operator: bool,
     /// «Vista iniziale» was pressed: the camera goes back to the home view.
     pub reset_view: bool,
+    /// Zoom asked from the on-screen buttons, as a distance factor; the
+    /// camera takes it and puts it back to 1.
+    pub zoom: f32,
     /// In the browser (no threads) the no-orders game runs here, a few steps
     /// a frame.
     #[cfg(target_arch = "wasm32")]
@@ -109,6 +112,7 @@ impl Kiosk {
             baseline: Arc::new(Mutex::new(None)),
             operator: false,
             reset_view: false,
+            zoom: 1.0,
             #[cfg(target_arch = "wasm32")]
             run: None,
             data,

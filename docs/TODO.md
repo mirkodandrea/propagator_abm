@@ -102,7 +102,15 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - pannelli più opachi;
   - «T+0:42 di 3:00»;
   - crisi scaduta registrata.
-- [ ] Dal playtest GPT, ancora aperto: click che a volte sembrano non rispondere (forse solo per l'input automatizzato, da verificare con persone vere); distinguere mezzi assegnati / in viaggio / sul posto; mostrare sulla mappa perché una postazione è irraggiungibile.
+- [x] 2026-10-08 Terzo playtest GPT 6.1 Sol, «roast» su UX e grafica (`docs/fase5/playtest_gpt/roast_ux.md`). Ha giocato in parte su una versione vecchia rimasta nella cache del browser: ora la build mette una versione negli URL. Corretti:
+  - **pannelli e schede:** le schede evitano i pannelli fissi; linea che collega ogni scheda al suo luogo; pannelli richiudibili;
+  - **comandi:** un'unica famiglia di pulsanti (secondari grigi, ordini colorati quando attivi, giallo solo per l'azione principale);
+  - **contrasto:** distanza del fuoco e mezzi in difficoltà in etichette colorate su fondo pieno;
+  - **legenda** dei segni sulla mappa;
+  - **crisi:** in un solo riquadro (testo, «Metti X per primo», «Preallerta/Evacua X», effetto sui mezzi, Conferma) e quartiere evidenziato;
+  - **camera:** trascinamento ricavato dal cursore (prima nel browser non funzionava), pulsanti + e −, istruzioni;
+  - **debrief:** opaco, due numeri grandi in testa, definizioni richiudibili.
+- [ ] Dal playtest GPT, ancora aperto: icone dei mezzi leggibili nella vista generale (oggi si leggono le etichette); indicatori aggregati per le evacuazioni sulla mappa; click che a volte sembrano non rispondere (forse solo per l'input automatizzato, da verificare con persone vere); distinguere mezzi assegnati / in viaggio / sul posto; mostrare sulla mappa perché una postazione è irraggiungibile.
 - [ ] **Checkpoint umano 5.**
 - [x] 2026-10-08 Schede dei quartieri separate quando si sovrappongono sullo schermo; etichette dei mezzi impilate e spostate sotto la scheda che le copre. Resta: una scheda può coprire il fuoco.
 - [ ] Coordinatore: con la prima priorità irraggiungibile un mezzo rientra alla base (ora spiegato a schermo). Mandarlo al quartiere successivo annullava l'effetto della crisi in Coste2_gira (58 → 71): provato e annullato.
