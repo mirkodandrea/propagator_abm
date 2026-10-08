@@ -4,8 +4,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
-- **Fase corrente: fase 3, gameplay headless** (avviata 2026-10-08 su richiesta dell'utente: "segui il piano, dobbiamo continuare con i sistemi ed il gameplay").
-- **Prossimo checkpoint umano:** fine fase 3 (confronti A/B a parità di seed, preallerta ≠ evacuazione).
+- **Fase corrente: fase 3, gameplay headless, consegnata** (2026-10-08, `docs/fase3/README.md`, crate `crates/rocca`).
+- **Prossimo checkpoint umano: checkpoint 3.** Approvare coordinatore, preallerta, difesa fisica e le due correzioni del modello (faville a 700 m, autobotti che pre-bagnano solo con il fronte entro 300 m). Poi la fase 4.
 
 ## Decisioni dell'utente
 
@@ -15,6 +15,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - 2026-10-08: **checkpoint 2 approvato**, layout 1 di `t4_paese` così com'è. Affrontare la risoluzione fine **prima** della fase 3.
 - 2026-10-08: **DTM, strade, case e rendering andranno a risoluzione più fine dei 20 m** del propagatore (che resta a 20 m). Avrà effetto sia sulla grafica sia sui sistemi di gioco. Da pianificare nelle prossime iterazioni.
 - 2026-10-08: **il terreno fine serve solo a grafica e agenti, non all'incendio.** Il fuoco usa il DEM a 20 m approvato, invariato (non la media del terreno fine).
+- 2026-10-08: fase 3 avviata senza aspettare gli screenshot di `cover.u8` ("segui il piano").
 - 2026-10-08: **niente altro lavoro grafico ora**: seguire il piano, proseguire con sistemi e gameplay (fase 3).
 - 2026-10-08: **risoluzione fine approvata** ("commit and push … continua"): terreno a 5 m e passo ritracciato a 8,9 km nello stesso corridoio. Avanti con `cover.u8` nel kiosk.
 
@@ -31,16 +32,16 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - [ ] Verificare in fase 5 il colore del suolo da `cover.u8`: il kiosk mostra `t4_paese` travestito da `demo_borgo`, scenario dev con palette VR, che non usa `ground_color`. Le macchie chiare attorno alle case de Le Coste restano: vengono da un altro livello, da individuare.
 - [ ] Primo piano nel kiosk di tornanti e piazzole (draping a livello di pixel).
 - [ ] Strade come tagliafuoco: Borgo2 con vento da N supera o no la SP 12 secondo pochi metri di tracciato (spotting). Decidere se la provinciale è una fascia parafuoco più larga o solo una strada.
-- [ ] Fase 3: ritarare ETA e basi sul passo da 8,9 km. Le quote degli agenti seguono già le sedi stradali (`Terrain::height_at`).
 
-### Fase 3: gameplay headless
+### Fase 3: gameplay headless (consegnata, in attesa del checkpoint)
 
-- [ ] Unificare il runner (una sola autorità, `demo::Run` come base). Rimuovere il driver duplicato `game::sim.rs`.
-- [ ] Roster configurabile: 2 autobotti + 1 squadra AIB. Oggi è fisso a 3 + 3 + 2 tanker e le basi coincidono con i rifugi, cioè anche con le uscite a bordo mappa.
-- [ ] Coordinatore minimo: postazioni, ETA, inerzia, traccia del motivo.
-- [ ] Difesa che riduce l'esposizione reale (decisione 2026-10-08).
-- [ ] Preallerta distinta dall'evacuazione in `abm` + `behavior`.
-- [ ] Piano attivo e piano proposto, comparatore A/B a parità di seed.
+- [ ] **Checkpoint umano 3** (`docs/fase3/README.md`).
+- [ ] Kiosk su `rocca::Game`: rimuovere `game::sim.rs`, `demo::Session`, i turni e `demo::Referee` insieme alla nuova UX (fase 5).
+- [ ] Squadra AIB: oggi viaggia a `CREW_SPEED` 3 m/s anche sulla provinciale, quindi arriva in circa 60 min dal bordo est. Decidere se si sposta su mezzo.
+- [ ] Le Coste (cascine sparse) è indifendibile nei casi rapidi (Coste2), e 3 casi su 9 minacciano poco: scegliere i casi in fase 4.
+- [ ] Preallerta come osservazione del grafo comportamentale (`HouseholdObs`): oggi agisce tramite consapevolezza, preparazione e ritardo dell'ordine.
+- [ ] Difesa delle strade: misurare prima l'effetto sulla percorribilità (spec).
+- [ ] Rivedere i parametri nuovi: decadimento delle faville `EMBER_DECAY_M` 700 m, protezione `PROTECTED_EMBER` 0,85 e `PROTECTED_RADIANT` 0,5, soglie del coordinatore.
 
 ### Fasi 4–6
 
@@ -48,12 +49,24 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ### Debito tecnico
 
-- [ ] 4 test rossi in `demo` sul vecchio gioco a turni (`balance`, `lessons`, `playtest_feedback`): rimuovere insieme a `Session` in fase 3.
+- [ ] `abm::incident_gaps::the_last_resort_profile_sends_people_to_open_ground` è rosso dopo la correzione delle faville (scenario reale Spotorno, fragile per sua stessa ammissione): rimuoverlo con gli scenari reali o ricostruirlo su `t4_paese`.
+- [ ] 5 test rossi in `demo` sul vecchio gioco a turni (dal 2026-10-08 anche `lessons::l5_engines_and_crew_save_homes_only_on_the_fires_path`, dopo le correzioni di faville e autobotti) (`balance`, `lessons`, `playtest_feedback`): rimuovere insieme a `Session` in fase 3.
 - [ ] `demo_borgo` ha 15 famiglie su celle combustibili (trovate da `scenario_check`). Irrilevante se `demo_borgo` viene rimosso.
 - [ ] Il kiosk ha reset per inattività e rotazione dei paesi: da rimuovere con la nuova UX.
 - [ ] `CLAUDE.md` cita `docs/rocca-ventosa/…`, ma i documenti sono in `docs/`.
 
 ## Fatto
+
+- [x] 2026-10-08 **Fase 3 headless** (`docs/fase3/README.md`):
+  - crate `rocca`: `Game`, piano, coordinatore, CLI A/B ed esempi `ab_sweep` e `civili`;
+  - `game.json` della factory (`game-cases`): 9 casi, caserma VVF a Il Borgo e squadra AIB dalla SP 12;
+  - roster esplicito, 2 autobotti + 1 squadra AIB;
+  - preallerta reale in `abm`;
+  - difesa fisica in `fire::exposure`;
+  - faville che decadono con la distanza;
+  - autobotti che pre-bagnano solo con il fronte entro 300 m;
+  - 7 test di fase 3 verdi;
+  - ETA dal percorso reale sulla rete aperta (13–14 min da Il Borgo a Il Piano per il passo da 8,9 km) e basi da `game.json`.
 
 - [x] 2026-10-08 `cover.u8` collegato al kiosk: loader opzionale `scenario::Cover` (fallback se assente), niente piante su strade/case/orti (−332 piante), colore del suolo dalla copertura a 5 m in `terrain_mesh.rs`.
 

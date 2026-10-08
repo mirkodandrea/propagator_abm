@@ -1,0 +1,93 @@
+//! What a game is played on: one territory, several fires. Read from the
+//! scenario's `game.json`, written by the Scenario Factory (`game-cases`), so
+//! nothing about the town is hard-coded here.
+
+use std::path::Path;
+
+use anyhow::{Context, Result};
+use fire::Weather;
+use scenario::Pos;
+use serde::Deserialize;
+
+use abm::suppression::UnitKind;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Station {
+    pub name: String,
+    pub pos: [f32; 2],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    Engine,
+    HandCrew,
+}
+
+impl Kind {
+    pub fn unit_kind(self) -> UnitKind {
+        match self {
+            Kind::Engine => UnitKind::Engine,
+            Kind::HandCrew => UnitKind::HandCrew,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Slot {
+    pub kind: Kind,
+    /// Index into [`Game::stations`].
+    pub station: usize,
+}
+
+/// One fire on the territory.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Case {
+    pub name: String,
+    /// The locality this start was picked for (the atlas' grouping).
+    pub near: String,
+    pub ignition: [f32; 2],
+    pub radius_m: f32,
+    /// Where the wind blows FROM, degrees.
+    pub wind_from_deg: f64,
+    pub wind_kmh: f64,
+    pub minutes: i64,
+}
+
+impl Case {
+    pub fn ignition(&self) -> Pos {
+        Pos::from(self.ignition)
+    }
+
+    pub fn duration_s(&self) -> i64 {
+        self.minutes * 60
+    }
+}
+
+/// The scenario's `game.json`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Territory {
+    pub scenario: String,
+    pub moisture_pct: f64,
+    pub stations: Vec<Station>,
+    pub roster: Vec<Slot>,
+    pub cases: Vec<Case>,
+}
+
+impl Territory {
+    pub fn load(data_dir: &Path, scenario: &str) -> Result<Territory> {
+        let p = data_dir.join("scenarios").join(scenario).join("game.json");
+        let t: Territory = serde_json::from_slice(&std::fs::read(&p).with_context(|| format!("reading {}", p.display()))?)
+            .with_context(|| format!("parsing {}", p.display()))?;
+        anyhow::ensure!(t.roster.iter().all(|s| s.station < t.stations.len()), "roster names a missing station");
+        Ok(t)
+    }
+
+    pub fn case(&self, name: &str) -> Option<&Case> {
+        self.cases.iter().find(|c| c.name == name)
+    }
+
+    pub fn weather(&self, c: &Case) -> Weather {
+        Weather { wind_dir_deg: c.wind_from_deg, wind_speed_kmh: c.wind_kmh, moisture_pct: self.moisture_pct }
+    }
+}

@@ -242,9 +242,17 @@ fn raising_the_refill_threshold_sends_engines_for_water_earlier() {
         let target = w.downwind(250.0);
         let engine = w.unit(UnitKind::Engine);
         w.crews.assign(engine, Task::Attack { at: target }).unwrap();
-        // Long enough to arrive and pump, short enough that a "pump dry" engine
-        // has not yet had time to empty the tank *and* be sent back.
-        w.run(25, 10);
+        // Engines hold their water until the front is within `PREWET_M`, and
+        // the nearest road here is further than that from the front. This
+        // test is about refilling, not waiting: once the engine is there,
+        // light a patch next to it so it has a front to work.
+        w.run(15, 10);
+        let p = w.crews.units[engine].pos;
+        let near = w.scn.world.cell_of(scenario::Pos { x: p.x + 150.0, y: p.y });
+        w.fire.ignite_patch(near, 60.0, &w.scn).unwrap();
+        // Long enough to pump, short enough that a "pump dry" engine has not
+        // yet had time to empty the tank *and* be sent back.
+        w.run(10, 10);
         (w.crews.units[engine].state, w.crews.units[engine].water_frac())
     };
 

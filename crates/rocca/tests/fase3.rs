@@ -1,0 +1,157 @@
+//! Phase 3 checks (03-PIANO-DI-AZIONE, fase 3; CLAUDE.md «Verifiche»), on the
+//! factory territory `t4_paese`. Needs `out/factory/data` (build-town +
+//! game-cases); skipped with a note when it is missing.
+
+use std::path::{Path, PathBuf};
+
+use rocca::{Civil, Game, Outcome, Plan};
+use scenario::population::Status;
+
+fn data() -> Option<PathBuf> {
+    let d = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../out/factory/data");
+    if d.join("scenarios/t4_paese/game.json").exists() {
+        Some(d)
+    } else {
+        eprintln!("skip: out/factory/data/scenarios/t4_paese/game.json missing (scenario_factory.py build-town, game-cases)");
+        None
+    }
+}
+
+fn game(case: &str) -> Game {
+    Game::new(&data().unwrap(), "t4_paese", case, 1).unwrap()
+}
+
+fn idx(g: &Game, name: &str) -> usize {
+    g.district_index(name).unwrap()
+}
+
+fn run(case: &str, prio: &[&str], civil: &[(&str, Civil)], minutes: i64) -> (Game, Outcome) {
+    let mut g = game(case);
+    let p: Vec<usize> = prio.iter().map(|n| idx(&g, n)).collect();
+    let mut plan = Plan::new(g.districts.len()).with_priorities(&p);
+    for (n, c) in civil {
+        plan = plan.with_civil(idx(&g, n), *c);
+    }
+    g.commit(plan).unwrap();
+    g.run_until(minutes * 60).unwrap();
+    let o = g.outcome();
+    (g, o)
+}
+
+#[test]
+fn same_seed_same_plan_same_game() {
+    if data().is_none() {
+        return;
+    }
+    let (a, oa) = run("Piano1", &["Piano", "Coste"], &[("Piano", Civil::Preallerta)], 60);
+    let (b, ob) = run("Piano1", &["Piano", "Coste"], &[("Piano", Civil::Preallerta)], 60);
+    assert_eq!(oa, ob);
+    assert_eq!(a.log, b.log);
+    let pos = |g: &Game| g.crews.units.iter().map(|u| (u.pos.x, u.pos.y)).collect::<Vec<_>>();
+    assert_eq!(pos(&a), pos(&b));
+}
+
+#[test]
+fn inverting_priorities_changes_posts_and_outcomes() {
+    if data().is_none() {
+        return;
+    }
+    let (ga, a) = run("Piano1", &["Piano", "Coste"], &[], 180);
+    let (gb, b) = run("Piano1", &["Coste", "Piano"], &[], 180);
+    let (piano, coste) = (idx(&ga, "Piano"), idx(&ga, "Coste"));
+    let on = |g: &Game, d: usize| g.posts.iter().flatten().filter(|p| p.district == d).count();
+    // the first-ranked district gets two units
+    assert_eq!(on(&ga, piano), 2, "{:?}", ga.posts);
+    assert_eq!(on(&gb, coste), 2, "{:?}", gb.posts);
+    // and it is the homes that change, not only the icons
+    assert!(
+        a.districts[piano].homes_hit < b.districts[piano].homes_hit,
+        "Il Piano first should lose fewer homes: {} vs {}",
+        a.districts[piano].homes_hit,
+        b.districts[piano].homes_hit
+    );
+}
+
+#[test]
+fn defence_reduces_simulated_exposure() {
+    if data().is_none() {
+        return;
+    }
+    let (g, defended) = run("Piano1", &["Piano"], &[], 180);
+    let (_, open) = run("Piano1", &[], &[], 180);
+    let d = idx(&g, "Piano");
+    assert!(defended.districts[d].homes_hit < open.districts[d].homes_hit, "{} vs {}", defended.districts[d].homes_hit, open.districts[d].homes_hit);
+}
+
+fn departed(g: &Game, d: usize) -> usize {
+    g.districts[d].households.iter().filter(|&&i| matches!(g.agents.households[i].status, Status::Evacuating | Status::Evacuated)).count()
+}
+
+#[test]
+fn prealert_is_not_an_evacuation() {
+    if data().is_none() {
+        return;
+    }
+    // Il Borgo with the fire 800 m north: at T+30 an evacuation has most of
+    // the town on the move, a pre-alert has it ready at home.
+    let (gp, _) = run("Borgo1", &[], &[("Borgo", Civil::Preallerta)], 30);
+    let (ge, _) = run("Borgo1", &[], &[("Borgo", Civil::Evacua)], 30);
+    let (gn, _) = run("Borgo1", &[], &[], 30);
+    let d = idx(&gp, "Borgo");
+    let n = gp.districts[d].households.len();
+    let ready = gp.districts[d].households.iter().filter(|&&i| gp.agents.households[i].readied_s > 0.0).count();
+    assert!(departed(&ge, d) > n / 3, "evacuation: {} of {n} gone", departed(&ge, d));
+    assert!(departed(&gp, d) <= departed(&gn, d) + n / 20, "pre-alert must not send people away: {} vs {}", departed(&gp, d), departed(&gn, d));
+    assert!(ready > 9 * n / 10, "pre-alerted households get ready: {ready} of {n}");
+}
+
+#[test]
+fn prealert_pays_off_when_the_fire_comes() {
+    if data().is_none() {
+        return;
+    }
+    // Il Piano with the fire coming: pre-alerted households leave faster when
+    // they do decide to, so fewer are caught at home than with no order.
+    let (g, pre) = run("Piano1", &[], &[("Piano", Civil::Preallerta)], 120);
+    let (_, none) = run("Piano1", &[], &[], 120);
+    let d = idx(&g, "Piano");
+    assert!(pre.districts[d].caught < none.districts[d].caught, "{} vs {}", pre.districts[d].caught, none.districts[d].caught);
+}
+
+#[test]
+fn preview_has_no_side_effects_and_commit_revalidates() {
+    if data().is_none() {
+        return;
+    }
+    let mut a = game("Piano1");
+    let mut b = game("Piano1");
+    let plan = |g: &Game| Plan::new(g.districts.len()).with_priorities(&[idx(g, "Piano"), idx(g, "Coste")]);
+    a.commit(plan(&a)).unwrap();
+    b.commit(plan(&b)).unwrap();
+    a.run_until(20 * 60).unwrap();
+    b.run_until(20 * 60).unwrap();
+    // A previews the inverted plan and an evacuation, then carries on
+    let inverted = Plan::new(a.districts.len()).with_priorities(&[idx(&a, "Coste"), idx(&a, "Piano")]).with_civil(idx(&a, "Piano"), Civil::Evacua);
+    let preview = a.preview(&inverted).unwrap();
+    assert_ne!(preview.posts, a.posts, "the preview proposes something else");
+    assert!(a.agents.households.iter().all(|h| !h.ordered), "a preview orders nobody");
+    a.run_until(40 * 60).unwrap();
+    b.run_until(40 * 60).unwrap();
+    assert_eq!(a.outcome(), b.outcome());
+    assert_eq!(a.log, b.log);
+    // committing re-plans from the state now, not from the old preview
+    let committed = a.commit(inverted.clone()).unwrap();
+    assert_eq!(committed, a.preview(&inverted).unwrap());
+}
+
+#[test]
+fn civil_orders_only_escalate() {
+    if data().is_none() {
+        return;
+    }
+    let mut g = game("Borgo1");
+    let d = idx(&g, "Borgo");
+    g.commit(Plan::new(g.districts.len()).with_civil(d, Civil::Evacua)).unwrap();
+    g.commit(Plan::new(g.districts.len()).with_civil(d, Civil::Preallerta)).unwrap();
+    assert_eq!(g.active.civil[d], Civil::Evacua);
+}

@@ -82,6 +82,9 @@ pub struct StructureExposure {
     fields: Vec<ExposureField>,
     positions: Vec<[f32; 2]>,
     defensible: Vec<f32>,
+    /// Structure protection by crews on scene, 0-1 per household, set by the
+    /// game each step ([`StructureExposure::set_protection`]). Zero unless set.
+    protection: Vec<f32>,
     /// Households bucketed on a fixed grid, so each burning cell only tests
     /// the households that could possibly be in range. Positions never change,
     /// so this is built once.
@@ -95,6 +98,20 @@ pub struct StructureExposure {
 const RADIANT_IGNITION_S: f32 = 600.0;
 /// Seconds of sustained *full* ember load needed to ignite a structure.
 const EMBER_IGNITION_S: f32 = 1800.0;
+
+/// Share of the ember load a crew on scene removes: spot ignitions on and
+/// around a house are what structure protection exists to put out, and embers
+/// are the dominant cause of WUI losses (see the module docs).
+pub const PROTECTED_EMBER: f32 = 0.85;
+/// Share of the radiant load it removes: hose lines and wetting help, but a
+/// flaming front next to the wall still radiates.
+pub const PROTECTED_RADIANT: f32 = 0.5;
+
+/// Distance over which a cell's ember density falls by e. Most WUI
+/// structure losses to embers are within a few hundred metres of the front;
+/// long-range spotting starts *fires* (the core's own spotting), it does not
+/// shower a town 2 km away with enough brands to ignite every house.
+pub const EMBER_DECAY_M: f32 = 700.0;
 
 /// Bucket edge, in metres. Sized so a typical ember radius spans only a few
 /// buckets while keeping the grid small.
@@ -125,6 +142,7 @@ impl StructureExposure {
                 .iter()
                 .map(|h| h.defensible_space)
                 .collect(),
+            protection: vec![0.0; n],
             buckets,
             bucket_size: BUCKET_M,
             bcols,
@@ -138,6 +156,18 @@ impl StructureExposure {
 
     pub fn get(&self, household: usize) -> ExposureField {
         self.fields[household]
+    }
+
+    /// Crews on scene protecting each household, 0-1 (see [`PROTECTED_EMBER`]).
+    /// Holds until changed; all zeros is the unprotected model, bit for bit.
+    pub fn set_protection(&mut self, protection: &[f32]) {
+        for (p, &v) in self.protection.iter_mut().zip(protection) {
+            *p = v.clamp(0.0, 1.0);
+        }
+    }
+
+    pub fn protection(&self) -> &[f32] {
+        &self.protection
     }
 
     /// Households currently taking meaningful heat -- the triage list.
@@ -227,7 +257,15 @@ impl StructureExposure {
                             let dot = (vx * wind_vec[0] + vy * wind_vec[1]) / d;
                             if dot > 0.0 {
                                 let downwind = dot.powi(3);
-                                let falloff = 1.0 - d / r_emb;
+                                // Ember density falls off fast with distance:
+                                // the reach above is the longest lofting, not
+                                // where houses are lost. Summed over every
+                                // burning cell, a linear falloff saturated the
+                                // load of whole towns 2-3 km downwind of a
+                                // large front (audit, phase 0; measured on
+                                // t4_paese: 160/160 homes of Il Borgo alight
+                                // with the fire 3 km away).
+                                let falloff = (1.0 - d / r_emb) * (-d / EMBER_DECAY_M).exp();
                                 f.ember += downwind * falloff * 0.02;
                                 f.peak_fli = f.peak_fli.max(fli);
                             }
@@ -244,6 +282,13 @@ impl StructureExposure {
             let ds = self.defensible[i];
             f.radiant = (f.radiant * (1.0 - 0.8 * ds)).min(1.0);
             f.ember = (f.ember * (1.0 - 0.3 * ds)).min(1.0);
+            // Structure protection: a crew on scene puts out what lands on the
+            // roof and in the gutters, and wets the walls the front faces.
+            let pr = self.protection[i];
+            if pr > 0.0 {
+                f.radiant *= 1.0 - PROTECTED_RADIANT * pr;
+                f.ember *= 1.0 - PROTECTED_EMBER * pr;
+            }
 
             if !f.alight {
                 // Integrate over *simulated time*, not per call. Accruing per

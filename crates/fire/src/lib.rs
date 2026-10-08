@@ -178,6 +178,12 @@ impl FireSim {
         &self.exposure
     }
 
+    /// Structure protection by crews on scene, per household (0-1). Applies
+    /// from the next [`FireSim::advance`].
+    pub fn set_structure_protection(&mut self, protection: &[f32]) {
+        self.exposure.set_protection(protection)
+    }
+
     /// Where the fire is likely to go next: see [`hazard`].
     pub fn hazard(&self) -> &HazardField {
         &self.hazard

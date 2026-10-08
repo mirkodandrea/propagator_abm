@@ -84,6 +84,10 @@ pub const ENGINE_TANK_L: f32 = 2_500.0;
 pub const ENGINE_PUMP_LPM: f32 = 400.0;
 /// How far from the road an engine can work: one standard hose lay.
 pub const ENGINE_REACH_M: f32 = 60.0;
+/// An engine starts wetting the fuel around it once the burning front is this
+/// close (or anything in reach is already under threat): roughly the last
+/// 10-20 minutes before a wind-driven front arrives.
+pub const PREWET_M: f32 = 300.0;
 /// Refill rate at a hydrant, litres per minute. A full tank in ~2.5 minutes.
 pub const HYDRANT_LPM: f32 = 1_000.0;
 
@@ -424,6 +428,29 @@ impl Suppression {
     ) -> Result<Suppression> {
         anyhow::ensure!(!bases.is_empty(), "no staging area for suppression units");
 
+        // Round-robin the staging areas so the roster is spread across the
+        // town rather than parked in one car park.
+        let mut roster = Vec::new();
+        for (kind, n) in [
+            (UnitKind::Engine, DEFAULT_ENGINES),
+            (UnitKind::HandCrew, DEFAULT_CREWS),
+            (UnitKind::AirTanker, DEFAULT_TANKERS),
+        ] {
+            for _ in 0..n {
+                roster.push((kind, bases[roster.len() % bases.len()]));
+            }
+        }
+        Suppression::with_roster(scn, &roster, policy)
+    }
+
+    /// An explicit roster: each unit's kind and where it stages. Callsigns
+    /// number per kind in roster order.
+    pub fn with_roster(
+        scn: &Scenario,
+        roster: &[(UnitKind, Pos)],
+        policy: UnitRuntime,
+    ) -> Result<Suppression> {
+        anyhow::ensure!(!roster.is_empty(), "empty suppression roster");
         let hydrants: Vec<Pos> = scn
             .vectors
             .water
@@ -439,66 +466,55 @@ impl Suppression {
             .map(|w| Pos { x: w.pos[0], y: w.pos[1] })
             .collect();
 
-        let mut units = Vec::new();
-        let policy_for = |kind: UnitKind| policy.assign(unit_kind_of(kind));
-        let push = |kind: UnitKind, n: usize, units: &mut Vec<Unit>| -> Result<()> {
-            let policy = policy_for(kind).ok_or_else(|| {
+        let mut units: Vec<Unit> = Vec::new();
+        for &(kind, base) in roster {
+            let policy = policy.assign(unit_kind_of(kind)).ok_or_else(|| {
                 anyhow::anyhow!("no active behaviour profile covers {} units", kind.label())
             })?;
-            for i in 0..n {
-                // Round-robin the staging areas so the roster is spread across
-                // the town rather than parked in one car park.
-                let base = bases[units.len() % bases.len()];
-                let (tank, state) = match kind {
-                    UnitKind::Engine => (ENGINE_TANK_L, UnitState::Staged),
-                    UnitKind::HandCrew => (0.0, UnitState::Staged),
-                    // Air support has to be asked for.
-                    UnitKind::AirTanker => (TANKER_LOAD_L, UnitState::Unavailable),
-                };
-                let callsign = match kind {
-                    UnitKind::Engine => format!("Autobotte {}", i + 1),
-                    UnitKind::HandCrew => {
-                        format!("Squadra {}", (b'A' + i as u8) as char)
-                    }
-                    UnitKind::AirTanker => format!("Canadair {}", i + 1),
-                };
-                units.push(Unit {
-                    id: units.len(),
-                    kind,
-                    callsign,
-                    pos: base,
-                    heading: 0.0,
-                    state,
-                    task: Task::Hold,
-                    base,
-                    water_l: tank,
-                    tank_l: tank,
-                    arrives_at_s: 0.0,
-                    line_done_m: 0.0,
-                    heat_s: 0.0,
-                    water_used_l: 0.0,
-                    line_cut_m: 0.0,
-                    drops: 0,
-                    note: "",
-                    route: Vec::new(),
-                    at_node: NO_NODE,
-                    // Negative infinity, not zero: a unit that has never been
-                    // given an order must plan on the first step it needs to
-                    // move, and `stale` is what makes that happen.
-                    planned_at_s: f32::NEG_INFINITY,
-                    route_to: None,
-                    resume: None,
-                    tasked_at_s: 0.0,
-                    policy,
-                    air_leg: AirLeg::ToTarget,
-                    air_timer_s: 0.0,
-                });
-            }
-            Ok(())
-        };
-        push(UnitKind::Engine, DEFAULT_ENGINES, &mut units)?;
-        push(UnitKind::HandCrew, DEFAULT_CREWS, &mut units)?;
-        push(UnitKind::AirTanker, DEFAULT_TANKERS, &mut units)?;
+            let i = units.iter().filter(|u| u.kind == kind).count();
+            let (tank, state) = match kind {
+                UnitKind::Engine => (ENGINE_TANK_L, UnitState::Staged),
+                UnitKind::HandCrew => (0.0, UnitState::Staged),
+                // Air support has to be asked for.
+                UnitKind::AirTanker => (TANKER_LOAD_L, UnitState::Unavailable),
+            };
+            let callsign = match kind {
+                UnitKind::Engine => format!("Autobotte {}", i + 1),
+                UnitKind::HandCrew => format!("Squadra {}", (b'A' + i as u8) as char),
+                UnitKind::AirTanker => format!("Canadair {}", i + 1),
+            };
+            units.push(Unit {
+                id: units.len(),
+                kind,
+                callsign,
+                pos: base,
+                heading: 0.0,
+                state,
+                task: Task::Hold,
+                base,
+                water_l: tank,
+                tank_l: tank,
+                arrives_at_s: 0.0,
+                line_done_m: 0.0,
+                heat_s: 0.0,
+                water_used_l: 0.0,
+                line_cut_m: 0.0,
+                drops: 0,
+                note: "",
+                route: Vec::new(),
+                at_node: NO_NODE,
+                // Negative infinity, not zero: a unit that has never been
+                // given an order must plan on the first step it needs to
+                // move, and `stale` is what makes that happen.
+                planned_at_s: f32::NEG_INFINITY,
+                route_to: None,
+                resume: None,
+                tasked_at_s: 0.0,
+                policy,
+                air_leg: AirLeg::ToTarget,
+                air_timer_s: 0.0,
+            });
+        }
 
         Ok(Suppression {
             units,
@@ -1102,6 +1118,22 @@ impl Suppression {
             } else {
                 "nothing left to wet here"
             };
+            return;
+        }
+
+        // The front is still far off: nothing in reach is under threat and
+        // no burning cell is within [`PREWET_M`]. Hold the water for when it
+        // comes, rather than wetting fuel that dries again (1 %/min) while the
+        // tank goes back and forth to a hydrant and the post stands empty.
+        let hottest = fire.threat().at(scn.world.centre_of(cells[0]));
+        let front_near = fire
+            .active_cells()
+            .iter()
+            .any(|c| dist(scn.world.centre_of(*c), pos) <= PREWET_M);
+        if hottest <= 0.0 && !front_near {
+            let u = &mut self.units[i];
+            u.state = UnitState::Working;
+            u.note = "waiting for the front: holding the water";
             return;
         }
 

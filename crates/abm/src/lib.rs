@@ -314,6 +314,14 @@ pub struct HouseholdAgent {
     /// assigned without re-baking one.
     pub transient: bool,
     pub members: Vec<usize>,
+    /// Pre-alert issued for this household's area ([`Abm::prealert_of`]).
+    pub prealerted: bool,
+    /// The pre-alert has arrived over the household's channel.
+    pub prealert_received: bool,
+    /// Seconds of getting ready done at home since the pre-alert arrived:
+    /// taken off the preparation once the household does decide to leave.
+    pub readied_s: f32,
+    prealerted_at_s: f32,
     /// Time the order was issued to this household, or `f32::INFINITY`.
     ordered_at_s: f32,
     /// Time the order actually *arrived* over this household's channel, or
@@ -545,6 +553,10 @@ impl Abm {
                 shelter_s: 0.0,
                 transient,
                 members: h.members.clone(),
+                prealerted: false,
+                prealert_received: false,
+                readied_s: 0.0,
+                prealerted_at_s: f32::INFINITY,
                 ordered_at_s: f32::INFINITY,
                 warned_at_s: f32::INFINITY,
             });
@@ -778,6 +790,29 @@ impl Abm {
         }
         if n > 0 {
             self.order_at_s = self.order_at_s.min(now);
+        }
+        self.generation += 1;
+        n
+    }
+
+    /// Pre-alert these households (by index): tell them a fire may reach them
+    /// and to get ready, **without** telling them to leave. It travels over
+    /// each household's own channel like an order. Once it has arrived the
+    /// household is aware, gets ready at home ([`HouseholdAgent::readied_s`],
+    /// up to its whole preparation) and keeps listening, so a later order
+    /// reaches it within [`PREALERTED_ORDER_DELAY_S`]. Whether and when it
+    /// leaves is still its own decision, or the evacuation order's.
+    pub fn prealert_of(&mut self, ids: &[usize]) -> usize {
+        let now = self.time_s;
+        let mut n = 0;
+        for &i in ids {
+            if let Some(h) = self.households.get_mut(i) {
+                if !h.prealerted && !h.ordered {
+                    h.prealerted = true;
+                    h.prealerted_at_s = now;
+                    n += 1;
+                }
+            }
         }
         self.generation += 1;
         n
@@ -1282,14 +1317,27 @@ impl Abm {
             h.cue = if cue > h.cue { cue } else { h.cue * 0.98 + cue * 0.02 };
 
             // --- the order arriving over the household's own channel --------
-            if h.ordered && !h.warning_received && now - h.ordered_at_s >= warning_delay_s(h, signal)
-            {
+            // A pre-alerted household is listening for the follow-up.
+            let order_delay = if h.prealert_received {
+                warning_delay_s(h, signal).min(PREALERTED_ORDER_DELAY_S)
+            } else {
+                warning_delay_s(h, signal)
+            };
+            if h.ordered && !h.warning_received && now - h.ordered_at_s >= order_delay {
                 h.warning_received = true;
                 h.warned_at_s = now;
             }
+            if h.prealerted && !h.prealert_received && now - h.prealerted_at_s >= warning_delay_s(h, signal) {
+                h.prealert_received = true;
+            }
+            // Getting ready while staying put: bags, documents, the car turned
+            // round, the family called home. Bounded by the whole preparation.
+            if h.prealert_received && matches!(h.status, Status::Warned | Status::Defending) {
+                h.readied_s = (h.readied_s + dt).min(h.prep_time_min * 60.0 * 1.15);
+            }
 
             let jitter = hash01(h.id as u64, 0x51);
-            let awake = h.warning_received || h.cue > 0.10 + 0.20 * (1.0 - h.risk_perception) + 0.05 * jitter;
+            let awake = h.warning_received || h.prealert_received || h.cue > 0.10 + 0.20 * (1.0 - h.risk_perception) + 0.05 * jitter;
 
             if awake && h.status == Status::Normal {
                 h.status = Status::Warned;
@@ -1345,7 +1393,7 @@ impl Abm {
                 h.prep_remaining_s = if run_now {
                     60.0
                 } else {
-                    prep_seconds(h.id, h.prep_time_min, prep_scale)
+                    (prep_seconds(h.id, h.prep_time_min, prep_scale) - h.readied_s).max(60.0)
                 };
                 h.status = Status::Preparing;
             } else if run_now && h.status == Status::Preparing {
@@ -2467,6 +2515,10 @@ fn channel_delay_s(c: WarningChannel) -> f32 {
         WarningChannel::None => 1200.0,
     }
 }
+
+/// Longest a pre-alerted household takes to hear the evacuation order: it is
+/// already listening, so the channel's slow tail (neighbours, nobody) is cut.
+pub const PREALERTED_ORDER_DELAY_S: f32 = 120.0;
 
 /// Preparation time for a household, in seconds.
 ///

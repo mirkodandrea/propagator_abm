@@ -158,9 +158,15 @@ def cmd_fine_plate(cid, nature):
     print(diff)
 
 
+def cmd_game_cases(cid):
+    from factory import cases
+    g = cases.write(cid)
+    print(f"{cid}/game.json: {len(g['cases'])} casi, {len(g['roster'])} mezzi, stazioni {[x['name'] for x in g['stations']]}")
+
+
 def main(argv):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["nature", "fires", "atlas", "all", "build-town", "verify", "town-fires", "plate", "fine-plate"])
+    p.add_argument("command", choices=["nature", "fires", "atlas", "all", "build-town", "verify", "town-fires", "plate", "fine-plate", "game-cases"])
     p.add_argument("--terrain", default="t4")
     p.add_argument("--layout", type=int, default=1)
     p.add_argument("--scenario", default="t4_paese")
@@ -175,6 +181,8 @@ def main(argv):
         return cmd_town_fires(a.scenario, a.terrain, a.ignitions_from)
     if a.command == "fine-plate":
         return cmd_fine_plate(a.scenario, a.terrain)
+    if a.command == "game-cases":
+        return cmd_game_cases(a.scenario)
     if a.command == "plate":
         return cmd_plate(a.scenario, a.terrain)
     if a.command == "verify":

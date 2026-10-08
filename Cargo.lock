@@ -3739,6 +3739,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rocca"
+version = "0.1.0"
+dependencies = [
+ "abm",
+ "anyhow",
+ "behavior",
+ "fire",
+ "scenario",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rodio"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
