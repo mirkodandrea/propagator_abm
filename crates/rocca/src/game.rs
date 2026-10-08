@@ -242,7 +242,7 @@ impl Game {
         }
         for (d, why) in &p.uncovered {
             if !self.uncovered.iter().any(|(x, w)| x == d && w == why) {
-                self.log.push(LogEntry { at_s: now, text: format!("scoperto: {why}") });
+                self.log.push(LogEntry { at_s: now, text: format!("senza mezzi: {why}") });
             }
         }
         self.posts = p.posts.clone();

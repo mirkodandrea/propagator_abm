@@ -251,7 +251,7 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
                     }
                     let name = &v.districts[*d].name;
                     let reason = format!(
-                        "{} va a {} (priorità {}): case sottovento al fronte, fuoco a {}, arrivo in {:.0} min",
+                        "{} va a {} (priorità {}) a difendere le case verso cui il vento spinge il fuoco; fuoco a {}, arrivo in {:.0} min",
                         u.callsign,
                         name,
                         plan.rank(*d).map_or(0, |r| r + 1),

@@ -75,6 +75,13 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - [x] 2026-10-08 Mappa a tutto schermo con schede per quartiere (rango, fuoco, mezzi ora e dopo la conferma, Difendi / più importante / non difendere, Preallerta / Evacua), etichette dei mezzi, rotte attive (verdi) e proposte (bianche tratteggiate), barra in alto, crisi con countdown, pulsante unico, debrief contro «senza ordini» con Riprova / Altro incendio, barra operatore F2 (`docs/fase5/README.md`).
 - [x] 2026-10-08 Crisi: «scoperto» solo se il fuoco può arrivare entro 45 min (`URGENT_S`); nessuna crisi negli ultimi 10 min (`LAST_CALL_S`).
 - [x] 2026-10-08 Inquadratura calcolata (case + innesco nella zona libera, yaw ±50°); corretto il trigger che non scattava (il gioco parte a T+6 s).
+- [x] 2026-10-08 Revisione «studente ignaro» (agente Sonnet, solo sugli screenshot). Corretti:
+  - debrief con colonne «tu / senza ordini», «evacuate» al posto di «in salvo», «colte in casa dal fuoco», «mezzi persi»;
+  - spiegazione di Preallerta / Evacua (testo e hover);
+  - schede con «con il nuovo piano ne perde/riceve N»;
+  - niente gergo («sottovento al fronte», «Scoperto»);
+  - testo più grande e chiaro;
+  - «Nuovo incendio, vicino a …».
 - [ ] **Checkpoint umano 5.**
 - [x] 2026-10-08 Schede dei quartieri separate quando si sovrappongono sullo schermo; etichette dei mezzi impilate e spostate sotto la scheda che le copre. Resta: una scheda può coprire il fuoco.
 - [ ] Coordinatore: con la prima priorità irraggiungibile un mezzo rientra alla base (ora spiegato a schermo). Mandarlo al quartiere successivo annullava l'effetto della crisi in Coste2_gira (58 → 71): provato e annullato.

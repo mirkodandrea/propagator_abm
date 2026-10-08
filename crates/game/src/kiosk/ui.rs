@@ -32,7 +32,11 @@ const RED: Color32 = Color32::from_rgb(235, 80, 60);
 const AMBER: Color32 = Color32::from_rgb(250, 195, 70);
 const BLUE: Color32 = Color32::from_rgb(110, 185, 255);
 const GREEN: Color32 = Color32::from_rgb(110, 230, 150);
-const GREY: Color32 = Color32::from_rgb(170, 175, 180);
+/// What the two civil orders do, as the model does it (`Abm::prealert_of`,
+/// `Abm::order_evacuation_of`).
+const PREALLERTA: &str = "Preallerta: le famiglie vengono avvisate e si preparano, ma restano a casa. Se poi ordini l'evacuazione, partono prima.";
+const EVACUA: &str = "Evacua: le famiglie ricevono l'ordine di partire subito verso un'area sicura. Non si può annullare.";
+const GREY: Color32 = Color32::from_rgb(205, 208, 212);
 
 fn clock(s: i64) -> String {
     format!("T+{}:{:02}", s / 3600, (s / 60) % 60)
@@ -109,7 +113,7 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
                 ui.separator();
                 let (text, colour) = match k.phase {
                     Phase::Pianifica => ("PIANIFICA · tempo fermo".to_string(), GREY),
-                    Phase::Esegui => (format!("IN CORSO · ×{:.0}", k.speed), GREEN),
+                    Phase::Esegui => (format!("IN CORSO · tempo accelerato ×{:.0}", k.speed), GREEN),
                     Phase::Crisi => (format!("CRISI · ×1 · {:.0} s", (CRISIS_S - k.phase_t).max(0.0).ceil()), ORANGE),
                     Phase::Fine => ("FINE".to_string(), GREY),
                 };
@@ -133,8 +137,10 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
                 ui.add_space(6.0);
                 panel().show(ui, |ui| {
                     ui.set_max_width(760.0);
-                    ui.label(RichText::new("Un incendio è appena partito. Il tempo è fermo.").size(18.0).strong().color(Color32::WHITE));
-                    ui.label(RichText::new("Sulla mappa: scegli quali luoghi difendere e in che ordine, e se avvisare (Preallerta) o far partire (Evacua) gli abitanti. Il coordinatore manda i mezzi; il fuoco decide il resto.").size(16.0).color(GREY));
+                    ui.label(RichText::new(format!("Nuovo incendio, vicino a {}. Il tempo è fermo.", sim.case.near)).size(19.0).strong().color(Color32::WHITE));
+                    ui.label(RichText::new("Sulla mappa scegli quali luoghi difendere e in che ordine: la sala operativa manda lì i mezzi (autobotti e squadre), tu non li guidi. Il fuoco decide il resto.").size(16.0).color(GREY));
+                    ui.label(RichText::new(PREALLERTA).size(16.0).color(AMBER));
+                    ui.label(RichText::new(EVACUA).size(16.0).color(BLUE));
                 });
             }
             _ => {}
@@ -219,7 +225,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
             egui::Frame::none().fill(PANEL).stroke(egui::Stroke::new(1.5, border)).rounding(8.0).inner_margin(8.0).show(ui, |ui| {
                 ui.set_min_width(250.0);
                 ui.horizontal(|ui| {
-                    let badge = rank.map_or("–".to_string(), |r| (r + 1).to_string());
+                    let badge = rank.map_or("·".to_string(), |r| (r + 1).to_string());
                     ui.label(RichText::new(badge).size(30.0).strong().color(if rank.is_some() { AMBER } else { GREY }));
                     ui.vertical(|ui| {
                         ui.label(RichText::new(&dist.name).size(20.0).strong().color(Color32::WHITE));
@@ -237,11 +243,12 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                 });
                 let now = sim.posts.iter().flatten().filter(|p| p.district == d).count();
                 let next = k.preview.as_ref().map_or(now, |p| p.units_on(d));
-                let units = match (now, next) {
-                    (a, b) if a == b => format!("mezzi: {a}"),
-                    (a, b) => format!("mezzi: {a}, dopo la conferma {b}"),
-                };
-                ui.label(RichText::new(units).size(15.0).color(if next > 0 { GREEN } else { GREY }));
+                ui.label(RichText::new(format!("mezzi qui: {now}")).size(16.0).color(if now > 0 { GREEN } else { GREY }));
+                if next < now {
+                    ui.label(RichText::new(format!("con il nuovo piano ne perde {}", now - next)).size(16.0).strong().color(ORANGE));
+                } else if next > now {
+                    ui.label(RichText::new(format!("con il nuovo piano ne riceve {}", next - now)).size(16.0).strong().color(GREEN));
+                }
                 ui.horizontal(|ui| match rank {
                     Some(r) => {
                         if r > 0 && ui.button(RichText::new("più importante").size(15.0)).clicked() {
@@ -267,7 +274,8 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         // orders already given cannot be taken back
                         let locked = active >= c;
                         let text = RichText::new(label).size(16.0).color(if on { colour } else { Color32::WHITE });
-                        if ui.add_enabled(!locked, egui::SelectableLabel::new(on, text)).clicked() {
+                        let hint = if c == Civil::Preallerta { PREALLERTA } else { EVACUA };
+                        if ui.add_enabled(!locked, egui::SelectableLabel::new(on, text)).on_hover_text(hint).clicked() {
                             civil[d] = if on { active.max(Civil::Nessuno) } else { c };
                             changed = true;
                         }
@@ -278,7 +286,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     let safe = hh.iter().filter(|&&i| sim.agents.households[i].status == Status::Evacuated).count();
                     let road = hh.iter().filter(|&&i| sim.agents.households[i].status == Status::Evacuating).count();
                     let what = if sim.active.civil[d] == Civil::Evacua { "evacuazione ordinata" } else { "preallertati" };
-                    ui.label(RichText::new(format!("{what}: {safe} in salvo, {road} in strada")).size(14.0).color(GREY));
+                    ui.label(RichText::new(format!("{what}: {safe} in salvo, {road} in strada")).size(15.0).color(GREY));
                 }
             });
         });
@@ -312,7 +320,7 @@ fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
         let colour = if status.starts_with("bloccato") || status.starts_with("fuori") { RED } else if status.starts_with("si ritira") { ORANGE } else { GREEN };
         egui::Area::new(egui::Id::new(("mezzo", i))).fixed_pos(at).pivot(Align2::CENTER_BOTTOM).interactable(false).order(egui::Order::Background).show(ctx, |ui| {
             egui::Frame::none().fill(Color32::from_rgba_premultiplied(10, 12, 14, 190)).rounding(4.0).inner_margin(egui::Margin::symmetric(6.0, 2.0)).show(ui, |ui| {
-                ui.add(egui::Label::new(RichText::new(format!("{} · {status}", u.callsign)).size(13.0).color(colour)).extend());
+                ui.add(egui::Label::new(RichText::new(format!("{} · {status}", u.callsign)).size(15.0).color(colour)).extend());
             });
         });
     }
@@ -328,19 +336,19 @@ fn proposal(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
             let title = if pending { "Il coordinatore propone (anteprima, non è garantito)" } else { "Il coordinatore" };
             ui.label(RichText::new(title).size(16.0).strong().color(Color32::WHITE));
             for post in p.posts.iter().flatten() {
-                ui.label(RichText::new(&post.reason).size(14.0).color(GREY));
+                ui.label(RichText::new(&post.reason).size(15.0).color(GREY));
             }
             for (_, why) in &p.idle {
-                ui.label(RichText::new(why).size(14.0).color(GREY));
+                ui.label(RichText::new(why).size(15.0).color(GREY));
             }
             for (_, why) in &p.uncovered {
-                ui.label(RichText::new(format!("Scoperto: {why}")).size(14.0).color(ORANGE));
+                ui.label(RichText::new(format!("Senza mezzi: {why}")).size(15.0).color(ORANGE));
             }
             for &d in &p.quiet {
-                ui.label(RichText::new(format!("{}: il fuoco ora non lo minaccia, nessun mezzo", sim.districts[d].name)).size(14.0).color(GREY));
+                ui.label(RichText::new(format!("{}: il fuoco ora non lo minaccia, nessun mezzo", sim.districts[d].name)).size(15.0).color(GREY));
             }
             if p.posts.iter().all(|x| x.is_none()) && p.uncovered.is_empty() && p.quiet.is_empty() && p.idle.is_empty() {
-                ui.label(RichText::new("Nessun luogo da difendere: i mezzi restano alla base.").size(14.0).color(ORANGE));
+                ui.label(RichText::new("Nessun luogo da difendere: i mezzi restano alla base.").size(15.0).color(ORANGE));
             }
         });
     });
@@ -395,7 +403,7 @@ fn events(ctx: &egui::Context, sim: &Sim) {
             ui.label(RichText::new("Eventi").size(16.0).strong().color(Color32::WHITE));
             for e in sim.log.iter().rev().take(6).collect::<Vec<_>>().into_iter().rev() {
                 let colour = if e.text.starts_with("CRISI") { ORANGE } else { GREY };
-                ui.label(RichText::new(format!("{}  {}", clock(e.at_s), e.text)).size(13.0).color(colour));
+                ui.label(RichText::new(format!("{}  {}", clock(e.at_s), e.text)).size(15.0).color(colour));
             }
         });
     });
@@ -414,8 +422,12 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             ui.add_space(10.0);
             let b = base.as_ref().and_then(|r| r.as_ref().ok());
             egui::Grid::new("esito").spacing([22.0, 8.0]).show(ui, |ui| {
-                for h in ["", "case colpite", "senza ordini", "famiglie in pericolo in casa", "senza ordini", "in salvo"] {
-                    ui.label(RichText::new(h).size(15.0).strong().color(GREY));
+                for h in ["", "case colpite", "", "famiglie colte in casa", "", "famiglie"] {
+                    ui.label(RichText::new(h).size(16.0).strong().color(Color32::WHITE));
+                }
+                ui.end_row();
+                for h in ["", "tu", "senza ordini", "tu", "senza ordini", "evacuate"] {
+                    ui.label(RichText::new(h).size(15.0).color(GREY));
                 }
                 ui.end_row();
                 for (i, (d, x)) in sim.districts.iter().zip(&o.districts).enumerate() {
@@ -425,7 +437,7 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                     ui.label(RichText::new(bx.map_or("…".into(), |b| b.homes_hit.to_string())).size(18.0).color(GREY));
                     ui.label(RichText::new(x.caught.to_string()).size(20.0).strong().color(Color32::WHITE));
                     ui.label(RichText::new(bx.map_or("…".into(), |b| b.caught.to_string())).size(18.0).color(GREY));
-                    ui.label(RichText::new(format!("{} su {}", x.evacuated, x.households)).size(18.0).color(Color32::WHITE));
+                    ui.label(RichText::new(format!("{} su {}", x.evacuated, x.households)).size(18.0).color(GREY));
                     ui.end_row();
                 }
             });
@@ -439,21 +451,21 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                         n if n > 0 => format!("{n} {what} in meno"),
                         n => format!("{} {what} in più", -n),
                     };
-                    ui.label(RichText::new(format!("Con il tuo piano: {}, {}.", say(homes, "case colpite"), say(people, "famiglie in pericolo"))).size(20.0).strong().color(AMBER));
+                    ui.label(RichText::new(format!("Con il tuo piano: {}, {}.", say(homes, "case colpite"), say(people, "famiglie colte in casa dal fuoco"))).size(20.0).strong().color(AMBER));
                 }
                 Some(Err(e)) => {
-                    ui.label(RichText::new(format!("Confronto non disponibile: {e}")).size(14.0).color(RED));
+                    ui.label(RichText::new(format!("Confronto non disponibile: {e}")).size(15.0).color(RED));
                 }
                 None => {
                     ui.label(RichText::new("Calcolo il confronto con lo stesso incendio senza ordini…").size(16.0).color(GREY));
                 }
             }
             if o.units_lost > 0 {
-                ui.label(RichText::new(format!("Mezzi raggiunti dal fuoco: {}", o.units_lost)).size(16.0).color(RED));
+                ui.label(RichText::new(format!("Mezzi persi, raggiunti dal fuoco: {}", o.units_lost)).size(16.0).color(RED));
             }
             ui.label(
-                RichText::new("«Colpita» vuol dire raggiunta dal fuoco nella simulazione, non per forza distrutta. «In pericolo in casa»: famiglie ancora in casa quando il fuoco le ha raggiunte.")
-                    .size(13.0)
+                RichText::new("Casa «colpita»: raggiunta dal fuoco nella simulazione, non per forza distrutta. Famiglia «colta in casa»: era ancora in casa quando il fuoco è arrivato. «Evacuate»: famiglie arrivate in un'area sicura, anche dove il fuoco poi non è arrivato.")
+                    .size(15.0)
                     .color(GREY),
             );
             ui.add_space(14.0);
