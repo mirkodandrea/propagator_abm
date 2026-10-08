@@ -294,6 +294,23 @@ pub fn spawn(
     commands.insert_resource(Vegetation { chunks });
 }
 
+/// Whether the 5 m land cover leaves room for this plant at `p`: nothing grows
+/// on roads, tracks, buildings, yards or irrigated plots, and a tree keeps its
+/// crown clear of them too. Without cover the fuel cell alone decides.
+fn on_natural_cover(scn: &Scenario, species: Species, p: Pos) -> bool {
+    let Some(cover) = &scn.cover else {
+        return true;
+    };
+    let reach = match species {
+        Species::Conifer | Species::Broadleaf => 3.0,
+        Species::Shrub => 1.5,
+        Species::Grass => 0.0,
+    };
+    [(0.0, 0.0), (reach, 0.0), (-reach, 0.0), (0.0, reach), (0.0, -reach)]
+        .into_iter()
+        .all(|(dx, dy)| cover.is_natural(Pos { x: p.x + dx, y: p.y + dy }))
+}
+
 /// Place one plant somewhere inside `cell` and emit its geometry, returning
 /// where it ended up.
 fn scatter_plant(
@@ -309,7 +326,7 @@ fn scatter_plant(
         x: centre.x + (rng.unit() * 2.0 - 1.0) * half,
         y: centre.y + (rng.unit() * 2.0 - 1.0) * half,
     };
-    if !scn.world.contains(p) {
+    if !scn.world.contains(p) || !on_natural_cover(scn, species, p) {
         return None;
     }
     let ground = scn.terrain.height_at(p);

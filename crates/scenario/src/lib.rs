@@ -17,6 +17,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+pub mod cover;
 pub mod fuels;
 pub mod metadata;
 pub mod population;
@@ -28,6 +29,7 @@ mod web_assets {
     include!(concat!(env!("OUT_DIR"), "/web_scenarios.rs"));
 }
 
+pub use cover::{Cover, CoverClass};
 pub use fuels::FuelDefRaw;
 pub use metadata::{ScenarioMetadata, ScenarioRegistry, VrPalette};
 pub use population::{Dwelling, Household, Person, Population};
@@ -103,6 +105,8 @@ pub struct Scenario {
     pub dem: Vec<f64>,
     /// The eu_fuel12 class table these rasters are coded against.
     pub fuel_defs: Vec<FuelDefRaw>,
+    /// 5 m land cover for drawing the ground, if the scenario has one.
+    pub cover: Option<Cover>,
 }
 
 impl Scenario {
@@ -153,6 +157,7 @@ impl Scenario {
 
         let (fuel, dem) = load_fire_rasters(&scenario_dir, world.fire_rows, world.fire_cols)?;
         let fuel_defs = fuels::load(data_dir).context("fuel table")?;
+        let cover = Cover::load(&scenario_dir).context("land cover")?;
 
         Ok(Scenario {
             id: id.to_string(),
@@ -164,6 +169,7 @@ impl Scenario {
             fuel,
             dem,
             fuel_defs,
+            cover,
         })
     }
 
@@ -217,6 +223,7 @@ impl Scenario {
             fuel,
             dem,
             fuel_defs,
+            cover: None,
         })
     }
 
@@ -282,6 +289,7 @@ impl Scenario {
                 fuel,
                 dem,
                 fuel_defs,
+                cover: Cover::load(dir).context("land cover")?,
             })
         }
     }

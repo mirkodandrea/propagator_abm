@@ -17,7 +17,7 @@
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
-use scenario::{Cell, Pos, Scenario};
+use scenario::{Cell, Cover, CoverClass, Pos, Scenario};
 
 use crate::field::noise;
 use crate::retro;
@@ -34,6 +34,36 @@ const VR_GRID_LIFT_M: f32 = 0.8;
 
 #[derive(Component)]
 pub struct TerrainChunk;
+
+const PAVING: [f32; 3] = [0.84, 0.81, 0.74];
+const GARDEN: [f32; 3] = [0.50, 0.66, 0.36];
+
+/// What the 5 m cover says is built at `p`, as a colour and a weight in 0..1:
+/// the share of the four cover cells round `p` that are not natural ground.
+/// Vertices sit on cell corners, so the weight gives edges one posting soft.
+fn built_tint(cover: &Cover, p: Pos) -> ([f32; 3], f32) {
+    let h = cover.cell_m * 0.5;
+    let (mut sum, mut n) = ([0.0; 3], 0.0);
+    for (dx, dy) in [(-h, -h), (h, -h), (-h, h), (h, h)] {
+        let c = match cover.at(Pos { x: p.x + dx, y: p.y + dy }) {
+            CoverClass::Natural => continue,
+            // Tracks are drawn as ribbons too; beneath and beside them, bare
+            // compacted earth.
+            CoverClass::Track => [0.66, 0.58, 0.44],
+            CoverClass::Irrigated => [0.46, 0.68, 0.32],
+            CoverClass::Water => [0.20, 0.36, 0.44],
+            CoverClass::Road | CoverClass::Building | CoverClass::Yard => PAVING,
+        };
+        for i in 0..3 {
+            sum[i] += c[i];
+        }
+        n += 1.0;
+    }
+    if n == 0.0 {
+        return (PAVING, 0.0);
+    }
+    ([sum[0] / n, sum[1] / n, sum[2] / n], n / 4.0)
+}
 
 /// Land-cover tint at `p`, bilinear between fire-cell centres so the 20 m raster
 /// reads as soft pastel meadows rather than pixels.
@@ -56,8 +86,12 @@ fn cover_tint(scn: &Scenario, p: Pos) -> [f32; 3] {
             4..=6 => [0.42, 0.60, 0.30],
             7..=9 => [0.52, 0.55, 0.30],
             10..=12 => [0.28, 0.48, 0.30],
+            // Non-burnable fire cell. With 5 m cover, what is actually built
+            // is painted by `built_tint`; the rest of the cell is the yards
+            // and verges round the houses.
+            _ if scn.cover.is_some() => GARDEN,
             // Built-up ground: pale paving rather than bare earth.
-            _ => [0.84, 0.81, 0.74],
+            _ => PAVING,
         }
     };
     let mut out = [0.0; 3];
@@ -96,7 +130,14 @@ fn ground_color(scn: &Scenario, elev: f32, slope_cos: f32, p: Pos) -> [f32; 3] {
         x: p.x + 38.0 * (noise(p.x / 55.0, p.y / 55.0, 0x71) - 0.5),
         y: p.y + 38.0 * (noise(p.x / 55.0, p.y / 55.0, 0x72) - 0.5),
     };
-    let cover = cover_tint(scn, warp);
+    let mut cover = cover_tint(scn, warp);
+    // Built cover is sharp at 5 m, so it is sampled where it is, not warped.
+    if let Some(cv) = &scn.cover {
+        let (built, k) = built_tint(cv, p);
+        for i in 0..3 {
+            cover[i] = cover[i] * (1.0 - k) + built[i] * k;
+        }
+    }
     let soil = cover;
     let duff = [cover[0] * 0.92, cover[1] * 0.95, cover[2] * 0.92];
     let rock = [0.46, 0.45, 0.42];

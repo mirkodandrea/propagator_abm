@@ -4,8 +4,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
-- **Fase corrente:** risoluzione fine approvata (2026-10-08, `docs/factory/fine/README.md`). **Prossimo lavoro: collegare `cover.u8` al kiosk** (niente piante su strade, case e orti; colore del suolo dalla copertura a 5 m), poi fase 3.
-- **Prossimo checkpoint umano:** screenshot del kiosk prima/dopo il collegamento di `cover.u8`.
+- **Fase corrente: fase 3, gameplay headless** (avviata 2026-10-08 su richiesta dell'utente: "segui il piano, dobbiamo continuare con i sistemi ed il gameplay").
+- **Prossimo checkpoint umano:** fine fase 3 (confronti A/B a parità di seed, preallerta ≠ evacuazione).
 
 ## Decisioni dell'utente
 
@@ -15,6 +15,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - 2026-10-08: **checkpoint 2 approvato**, layout 1 di `t4_paese` così com'è. Affrontare la risoluzione fine **prima** della fase 3.
 - 2026-10-08: **DTM, strade, case e rendering andranno a risoluzione più fine dei 20 m** del propagatore (che resta a 20 m). Avrà effetto sia sulla grafica sia sui sistemi di gioco. Da pianificare nelle prossime iterazioni.
 - 2026-10-08: **il terreno fine serve solo a grafica e agenti, non all'incendio.** Il fuoco usa il DEM a 20 m approvato, invariato (non la media del terreno fine).
+- 2026-10-08: **niente altro lavoro grafico ora**: seguire il piano, proseguire con sistemi e gameplay (fase 3).
 - 2026-10-08: **risoluzione fine approvata** ("commit and push … continua"): terreno a 5 m e passo ritracciato a 8,9 km nello stesso corridoio. Avanti con `cover.u8` nel kiosk.
 
 ## Da fare
@@ -27,7 +28,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ### Risoluzione fine (approvata il 2026-10-08)
 
-- [ ] Collegare `cover.u8` al kiosk: piante non su strade, case e orti; colore del suolo dalla copertura a 5 m (`vegetation.rs`, `terrain_mesh.rs`, loader in `scenario`).
+- [ ] Verificare in fase 5 il colore del suolo da `cover.u8`: il kiosk mostra `t4_paese` travestito da `demo_borgo`, scenario dev con palette VR, che non usa `ground_color`. Le macchie chiare attorno alle case de Le Coste restano: vengono da un altro livello, da individuare.
 - [ ] Primo piano nel kiosk di tornanti e piazzole (draping a livello di pixel).
 - [ ] Strade come tagliafuoco: Borgo2 con vento da N supera o no la SP 12 secondo pochi metri di tracciato (spotting). Decidere se la provinciale è una fascia parafuoco più larga o solo una strada.
 - [ ] Fase 3: ritarare ETA e basi sul passo da 8,9 km. Le quote degli agenti seguono già le sedi stradali (`Terrain::height_at`).
@@ -53,6 +54,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - [ ] `CLAUDE.md` cita `docs/rocca-ventosa/…`, ma i documenti sono in `docs/`.
 
 ## Fatto
+
+- [x] 2026-10-08 `cover.u8` collegato al kiosk: loader opzionale `scenario::Cover` (fallback se assente), niente piante su strade/case/orti (−332 piante), colore del suolo dalla copertura a 5 m in `terrain_mesh.rs`.
 
 - [x] 2026-10-08 Risoluzione fine: `tools/factory/fine.py` (terreno a 5 m, sedi stradali, piazzole, `cover.u8`), router con direzione e costo dei tornanti (`roads.py`), tavola `docs/factory/fine/`. Il DEM del fuoco resta identico.
 - [x] 2026-10-08 Strada del Passo rifinita: niente più sega di micro-tornanti, pendenza della sede al 14 % (era 25 % p95 sul DEM a 20 m).
