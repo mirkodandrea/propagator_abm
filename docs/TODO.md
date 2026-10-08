@@ -4,8 +4,15 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
-- **Fase corrente: fase 4, crisi e bilanciamento** (fase 3 approvata il 2026-10-08; codice vecchio rimosso: un solo motore `rocca::Game`, un solo scenario `data/scenarios/rocca_ventosa`, una sola modalità).
+- **Fase corrente: fase 4 consegnata, in attesa del checkpoint 4** (fase 3 approvata il 2026-10-08; codice vecchio rimosso: un solo motore `rocca::Game`, un solo scenario `data/scenarios/rocca_ventosa`, una sola modalità).
 - **Prossimo checkpoint umano: checkpoint 4** (`docs/fase4/README.md`). Approvare il layout 2 del territorio e i 3 casi definitivi proposti (Coste2_gira, Piano2, Borgo2). Poi la fase 5.
+- **Per riprendere:**
+  - **Comandi:**
+    - `cargo test --release --workspace` (35 target verdi);
+    - `target/release/rocca <caso> --priorita A,B --b-priorita B,A`;
+    - esempi `rocca`: `ab_sweep`, `crisi`, `civili`, `porta`;
+    - kiosk: `KIOSK_CASE=Coste2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_SHOT=<dir> target/release/game`.
+  - **Territorio:** si rigenera con `scenario_factory.py build-town --layout 2`, `town-fires --scenario t4_paese2 --ignitions-from t4_paese` e `publish --scenario t4_paese2`.
 
 ## Decisioni dell'utente
 
