@@ -275,6 +275,9 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
             }
         }
         if kiosk.phase == Phase::Crisi && kiosk.phase_t >= CRISIS_S {
+            let now = sim.time_s();
+            let what = if kiosk.proposed != sim.active { "tempo scaduto: si applica il piano proposto" } else { "tempo scaduto: resta il piano attuale" };
+            sim.log.push(rocca::game::LogEntry { at_s: now, text: what.into() });
             close_crisis(&mut kiosk, &mut sim);
         }
         if sim.time_s() >= sim.case.duration_s() {

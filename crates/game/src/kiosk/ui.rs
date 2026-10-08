@@ -26,7 +26,7 @@ use scenario::Pos;
 use super::{close_crisis, commit, new_game, Kiosk, Phase, CRISIS_S};
 use crate::sim::{Sim, SimRestarted};
 
-const PANEL: Color32 = Color32::from_rgba_premultiplied(18, 20, 24, 215);
+const PANEL: Color32 = Color32::from_rgba_premultiplied(18, 20, 24, 242);
 const ORANGE: Color32 = Color32::from_rgb(240, 140, 50);
 const RED: Color32 = Color32::from_rgb(235, 80, 60);
 const AMBER: Color32 = Color32::from_rgb(250, 195, 70);
@@ -117,7 +117,7 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
                 }
                 ui.label(RichText::new(format!("Vento da {}, {:.0} km/h", compass(w.wind_dir_deg), w.wind_speed_kmh)).size(20.0).color(Color32::WHITE));
                 ui.separator();
-                ui.label(RichText::new(clock(sim.time_s())).size(20.0).color(Color32::WHITE).monospace());
+                ui.label(RichText::new(format!("{} di {}", clock(sim.time_s()), clock(sim.case.duration_s()).trim_start_matches("T+"))).size(20.0).color(Color32::WHITE).monospace());
                 ui.separator();
                 let (text, colour) = match k.phase {
                     Phase::Pianifica => ("PIANIFICA · tempo fermo".to_string(), GREY),
@@ -261,7 +261,12 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                 }
                 ui.horizontal(|ui| match rank {
                     Some(r) => {
-                        if r > 0 && ui.button(RichText::new("più importante").size(15.0)).clicked() {
+                        if r > 0 && ui.button(RichText::new("metti per primo").size(15.0)).clicked() {
+                            order.retain(|&x| x != d);
+                            order.insert(0, d);
+                            changed = true;
+                        }
+                        if r > 1 && ui.button(RichText::new("più importante").size(15.0)).clicked() {
                             order.swap(r, r - 1);
                             changed = true;
                         }
@@ -296,9 +301,24 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     let hh = &dist.households;
                     let safe = hh.iter().filter(|&&i| sim.agents.households[i].status == Status::Evacuated).count();
                     let road = hh.iter().filter(|&&i| sim.agents.households[i].status == Status::Evacuating).count();
-                    let home = hh.len() - safe - road;
+                    let count = |st: Status| hh.iter().filter(|&&i| sim.agents.households[i].status == st).count();
                     let what = if sim.active.civil[d] == Civil::Evacua { "evacuazione ordinata" } else { "preallertati" };
-                    ui.label(RichText::new(format!("{what}: {safe} in salvo, {road} in strada, {home} ancora a casa")).size(15.0).color(GREY));
+                    ui.label(RichText::new(format!("{what}: {safe} in salvo, {road} in strada")).size(15.0).color(GREY));
+                    // the families still at home, by what they are doing
+                    let parts: Vec<String> = [
+                        (count(Status::Preparing), "si preparano a partire"),
+                        (count(Status::Warned), "avvisate, aspettano di vedere il fuoco"),
+                        (count(Status::Defending), "restano a difendere la casa"),
+                        (count(Status::Normal), "non ancora raggiunte dall'avviso"),
+                        (count(Status::Trapped), "bloccate dal fuoco"),
+                    ]
+                    .into_iter()
+                    .filter(|(n, _)| *n > 0)
+                    .map(|(n, w)| format!("{n} {w}"))
+                    .collect();
+                    if !parts.is_empty() {
+                        ui.label(RichText::new(format!("a casa: {}", parts.join(", "))).size(15.0).color(GREY));
+                    }
                 }
             });
         });
@@ -345,8 +365,19 @@ fn proposal(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
     egui::Area::new(egui::Id::new("proposta")).anchor(Align2::LEFT_BOTTOM, [12.0, -12.0]).interactable(false).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.set_max_width(430.0);
-            let title = if pending { "Il coordinatore propone (anteprima, non è garantito)" } else { "Il coordinatore" };
-            ui.label(RichText::new(title).size(16.0).strong().color(Color32::WHITE));
+            if !pending {
+                // Nothing to confirm: what the units are doing now, not the
+                // reasons given when they were sent (those are in the log).
+                ui.label(RichText::new(format!("I mezzi adesso ({})", clock(sim.time_s()))).size(16.0).strong().color(Color32::WHITE));
+                for (i, u) in sim.crews.units.iter().enumerate().filter(|(_, u)| !u.kind.is_air()) {
+                    ui.label(RichText::new(format!("{}: {}", u.callsign, sim.unit_status(i))).size(15.0).color(GREY));
+                }
+                for (_, why) in &p.uncovered {
+                    ui.label(RichText::new(format!("Senza mezzi: {why}")).size(15.0).color(ORANGE));
+                }
+                return;
+            }
+            ui.label(RichText::new("Il coordinatore propone (anteprima, non è garantito)").size(16.0).strong().color(Color32::WHITE));
             for post in p.posts.iter().flatten() {
                 ui.label(RichText::new(&post.reason).size(15.0).color(GREY));
             }
@@ -480,12 +511,12 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             let orders: Vec<String> = sim
                 .log
                 .iter()
-                .filter(|e| ["priorità:", "preallerta:", "evacuazione:"].iter().any(|p| e.text.starts_with(p)))
+                .filter(|e| ["priorità:", "preallerta:", "evacuazione:"].iter().any(|p| e.text.starts_with(p)) || e.text.contains("fuori servizio"))
                 .map(|e| format!("{}  {}", clock(e.at_s), e.text))
                 .collect();
             if !orders.is_empty() {
                 ui.add_space(6.0);
-                ui.label(RichText::new("Le tue decisioni").size(16.0).strong().color(Color32::WHITE));
+                ui.label(RichText::new("Le tue decisioni (e i mezzi persi)").size(16.0).strong().color(Color32::WHITE));
                 for o in orders {
                     ui.label(RichText::new(o).size(15.0).color(GREY));
                 }

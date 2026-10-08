@@ -102,6 +102,8 @@ pub struct Game {
     /// Per unit: where it last moved and when, to tell a unit stuck on a
     /// closed road from one on its way.
     moved: Vec<(Pos, i64)>,
+    /// Per unit: the state last logged, to log a withdrawal or a loss once.
+    logged: Vec<UnitState>,
 }
 
 impl Game {
@@ -143,6 +145,7 @@ impl Game {
             next_review_s: 0,
             caught_at: vec![None; n],
             moved: crews.units.iter().map(|u| (u.pos, 0)).collect(),
+            logged: crews.units.iter().map(|u| u.state).collect(),
             scn,
             fire,
             agents,
@@ -308,6 +311,18 @@ impl Game {
         self.fire.set_structure_protection(&prot);
         self.note();
         let now = self.time_s();
+        for (k, u) in self.crews.units.iter().enumerate() {
+            let was = std::mem::replace(&mut self.logged[k], u.state);
+            if was == u.state {
+                continue;
+            }
+            let near = self.districts.iter().min_by(|a, b| dist(a.centre, u.pos).total_cmp(&dist(b.centre, u.pos))).map_or("", |d| d.name.as_str());
+            match u.state {
+                UnitState::Withdrawing => self.log.push(LogEntry { at_s: now, text: format!("{} si ritira vicino a {near}: il fuoco è troppo vicino", u.callsign) }),
+                UnitState::Lost => self.log.push(LogEntry { at_s: now, text: format!("{} raggiunto dal fuoco vicino a {near} mentre {}: fuori servizio", u.callsign, if was == UnitState::Withdrawing { "si ritirava" } else { "lavorava" }) }),
+                _ => {}
+            }
+        }
         for (u, m) in self.crews.units.iter().zip(&mut self.moved) {
             if dist(u.pos, m.0) > 1.0 {
                 *m = (u.pos, now);

@@ -94,6 +94,14 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - pulsante «Vista iniziale»;
   - schede di dimensione fissa (i pulsanti non saltano più sotto il puntatore);
   - nel debrief, le decisioni del giocatore e il nome del mezzo perso.
+- [x] 2026-10-08 Secondo playtest GPT 6.1 Sol, «roast da Redditor sedicenne» (`docs/fase5/playtest_gpt/roast.md`). Corretti:
+  - pannello del coordinatore in gioco: ora mostra lo stato attuale dei mezzi, non i motivi vecchi;
+  - chi resta a casa dopo l'ordine e perché (misurato: circa il 22 % del Borgo aspetta di vedere il fuoco o difende la casa; è comportamento del modello, non un bug);
+  - ritiro e perdita dei mezzi registrati con ora e luogo, anche nel debrief;
+  - «metti per primo»;
+  - pannelli più opachi;
+  - «T+0:42 di 3:00»;
+  - crisi scaduta registrata.
 - [ ] Dal playtest GPT, ancora aperto: click che a volte sembrano non rispondere (forse solo per l'input automatizzato, da verificare con persone vere); distinguere mezzi assegnati / in viaggio / sul posto; mostrare sulla mappa perché una postazione è irraggiungibile.
 - [ ] **Checkpoint umano 5.**
 - [x] 2026-10-08 Schede dei quartieri separate quando si sovrappongono sullo schermo; etichette dei mezzi impilate e spostate sotto la scheda che le copre. Resta: una scheda può coprire il fuoco.
