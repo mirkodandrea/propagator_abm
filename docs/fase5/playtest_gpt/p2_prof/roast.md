@@ -1,0 +1,41 @@
+# Rocca Ventosa: oggi interroghiamo il debrief, che ha studiato solo le tabelline
+
+Colleghe e colleghi, ho accompagnato la classe virtuale alla Settimana della Protezione Civile. Da insegnante di scienze, finalmente un laboratorio dove il vento cambia davvero e non perché qualcuno ha aperto la finestra durante la verifica.
+
+Ho evacuato Il Piano e Le Coste dall’inizio, preallertato il Borgo e poi ordinato anche lì l’evacuazione. Ho difeso prima Le Coste, poi spostato la priorità sul Borgo. Risultato: 3 famiglie colte in casa dal fuoco invece delle 16 del confronto senza ordini. Le case colpite? 72 invece di 73. L’evacuazione porta a casa un messaggio forte; la difesa delle case porta una giustificazione firmata dai genitori.
+
+Attenzione: non ho dimostrato che difendere sia inutile. È proprio il gioco che dovrebbe spiegare perché qui ha inciso così poco. Il finale offre tabella, cronologia e glossario: buon materiale per una verifica, manca la lezione che collega le risposte. Perché ho perso un’autobotte durante il ritiro? Che cosa avrei potuto decidere prima? Quanto ha contato il vento? «Le tue decisioni» è un elenco, non una spiegazione.
+
+Intanto alcune famiglie, già avvisate dell’evacuazione, aspettano di vedere il fuoco. A Le Coste ne leggevo ancora quattro con distanza 0,0 km. Senza un chiarimento, lo studente rischia di imparare «la gente non ascolta» oppure «aspetto anch’io, tanto il contatore regge». Non è un comportamento che il gioco dovrebbe lasciare senza commento.
+
+Le schede di due paesi si coprono a vicenda. Ottima simulazione del registro elettronico, meno ottima quando devo decidere durante un incendio.
+
+Si ragiona? Sì: cambiando priorità ho visto l’autobotte partire verso il Borgo. Si vince per fortuna? Una sola partita non basta a dirlo; il vento e le reazioni dei cittadini pesano, ma il finale non separa il loro contributo dal mio. Ho anche lasciato scadere due crisi: responsabilità mia, non prova che «l’ordine arriva sempre tardi».
+
+Lo porterei al chiosco presidiato, con un adulto che faccia il debrief. Per ora il docente deve essere anche l’estensione didattica del software. Almeno metteteci nel credito finale.
+
+---
+
+## Traduzione per gli sviluppatori — in ordine di gravità
+
+Osservazione di una sola partita completa, dalla pianificazione a T+3:00, esclusivamente attraverso il gioco nel browser. Nessun codice o documento del gioco consultato. Input simulati sul canvas; scheda visibile. Non ho confrontato strategie in altre partite né verificato l’eventuale casualità interna. La prima crisi a T+0:30 e quella a T+1:14 sono scadute: il tentativo di continuare nella seconda non risulta accettato prima della scadenza. Non uso queste scadenze per sostenere un difetto del timer.
+
+1. **Comportamenti rischiosi descritti senza una chiara interpretazione educativa.** Nelle schede durante la partita, dopo l’evacuazione ordinata, compaiono famiglie «avvisate, aspettano di vedere il fuoco» e famiglie che «restano a difendere la casa». Al Borgo, a T+2:28, sono rispettivamente 31 e 5; a Le Coste quattro risultano ancora in attesa con fuoco a 0,0 km. Il finale, anche aprendo il glossario, non commenta questi comportamenti. **Certezza alta** sui testi; **media** sul rischio di imitazione o di lettura fatalistica, che richiede una prova con studenti. **Correzione:** distinguere esplicitamente il comportamento simulato da quello da apprendere, con un breve debrief validato dalla Protezione Civile. Spiegare anche le cause possibili dei ritardi senza ridurre i cittadini a persone che non ascoltano. Il presidio umano può aiutare, ma il gioco dovrebbe fornire al facilitatore queste domande e spiegazioni.
+
+2. **Il finale confronta gli esiti, ma non attribuisce le cause.** A T+3:00: 3 famiglie colte in casa contro 16 senza ordini; 72 case colpite contro 73. Il Piano: 55 case colpite in entrambe le colonne, ma zero famiglie colte in casa contro sei. Il Borgo: zero case e zero famiglie colpite anche senza ordini. Ho inizialmente assegnato due mezzi a Le Coste e uno a Il Piano; successivamente ho cambiato priorità. La cronologia registra le scelte, ma non spiega il modesto effetto sulle case né il valore o il costo delle azioni al Borgo, non raggiunto dal fuoco in questa partita. **Certezza alta** sulla schermata; **media** sull’inferenza «difendere non serve». **Correzione:** aggiungere poche frasi specifiche per il risultato: dove l’evacuazione ha ridotto l’esposizione, quali vincoli hanno limitato la difesa e quali interventi erano precauzionali. Non presentare l’esito favorevole di una zona come prova che l’ordine fosse superfluo. Il confronto con nessun ordine non basta a separare gli effetti delle singole scelte.
+
+3. **La perdita di un mezzo non diventa una lezione utilizzabile.** Registro: T+1:11 ritiro dell’Autobotte 1 per fuoco troppo vicino; T+1:12 mezzo raggiunto vicino a Il Piano mentre si ritirava; crisi T+1:14. Il finale ripete la perdita ma non chiarisce se e come le mie priorità avrebbero potuto evitarla. **Certezza alta** sulla sequenza; **non verificato** che fosse evitabile. **Correzione:** spiegare il limite operativo che ha portato alla perdita, collegarlo alle informazioni disponibili prima e indicare se esisteva una scelta alternativa; se non esisteva, dirlo. Evitare che la lezione implicita sia «i soccorsi si perdono e basta».
+
+4. **Gli stati delle famiglie e la distanza del fuoco non si riconciliano chiaramente.** A T+2:28 Le Coste mostra 30 famiglie, 25 in salvo, zero in strada e quattro a casa in attesa; non vedo nella scheda uno stato che renda conto della trentesima. Il finale indica tre famiglie colte in casa dal fuoco. La distanza 0,0 km, mantenuta mentre alcune sono ancora in attesa, non chiarisce se si riferisca al nucleo, a una singola casa o a un arrotondamento. **Certezza alta** sui valori visibili, **bassa** sulle cause: non affermo un errore della simulazione. **Correzione:** rendere completi gli stati e chiarire che cosa misura la distanza; distinguere la vicinanza al nucleo dall’arrivo presso una famiglia. Collegare gli stati durante il gioco alle categorie finali.
+
+5. **Le informazioni necessarie per ragionare si coprono.** Già a T+0:19, e ancora a T+2:28, la scheda di Il Piano si sovrappone a quella di Le Coste, occultandone nome e parte dei dati. Osservato alla vista iniziale nel viewport 1800×906. **Certezza alta**; non verificato ad altri zoom o risoluzioni. **Correzione:** evitare collisioni fra schede o usare un pannello fisso con riepilogo comparabile dei tre nuclei. Non costringere a gestire la camera per leggere dati essenziali durante una crisi.
+
+6. **Il glossario chiarisce parole fondamentali solo se aperto.** Nel finale la sezione inizialmente chiusa spiega che una casa «colpita» è raggiunta dal fuoco, non necessariamente distrutta, e che una famiglia «colta in casa» era ancora lì all’arrivo del fuoco. Senza aprirla si può sovrainterpretare il danno. **Certezza alta** sulla presentazione; **media** sull’effetto negli studenti. **Correzione:** mostrare queste due definizioni direttamente accanto ai risultati principali. Mantenere il glossario per ulteriori dettagli.
+
+## Tre cose che funzionano e vanno tenute
+
+1. **Il confronto finale con lo stesso incendio e lo stesso vento, senza ordini.** Rende concreto il beneficio per le persone: in questa partita 13 famiglie colte in casa dal fuoco in meno. Tenere anche la distinzione fra danno alle case ed esposizione delle famiglie.
+2. **Preallerta, evacuazione e arrivo in sicurezza sono distinti.** La pianificazione spiega che la preallerta prepara le famiglie, mentre l’evacuazione ordina la partenza e non si può annullare. Gli stati successivi mostrano che un ordine non equivale a un arrivo istantaneo in area sicura.
+3. **Le priorità hanno conseguenze osservabili, con limiti operativi visibili.** Anteprima degli spostamenti, tempi di viaggio, rifornimenti, messaggi sulle postazioni non sicure e registro degli eventi danno materiale per ragionare. A T+1:25 portare il Borgo al primo posto ha effettivamente fatto partire l’Autobotte 2 verso quel nucleo.
+
+Screenshot: `01_pianificazione.jpg`, `02_ordini_e_attese.jpg`, `03_decisione_critica.jpg`, `04_fuoco_e_famiglie.jpg`, `05_finale.jpg` (glossario aperto).

@@ -167,9 +167,10 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
                 panel().show(ui, |ui| {
                     ui.set_max_width(760.0);
                     ui.label(RichText::new(format!("Nuovo incendio, vicino a {}. Il tempo è fermo.", sim.case.near)).size(19.0).strong().color(Color32::WHITE));
-                    ui.label(RichText::new("Sulla mappa scegli quali luoghi difendere e in che ordine: la sala operativa manda lì i mezzi (autobotti e squadre), tu non li guidi. Il fuoco decide il resto.").size(16.0).color(GREY));
-                    ui.label(RichText::new(PREALLERTA).size(16.0).color(AMBER));
-                    ui.label(RichText::new(EVACUA).size(16.0).color(BLUE));
+                    for (n, step) in ["Scegli quali paesi difendere: «Difendi». La sala operativa ci manda i mezzi.", "Avvisa (Preallerta) o fai partire (Evacua) gli abitanti.", "Premi «Conferma e avvia»."].iter().enumerate() {
+                        ui.label(RichText::new(format!("{}. {step}", n + 1)).size(18.0).color(Color32::WHITE));
+                    }
+                    ui.label(RichText::new("Passa il mouse su Preallerta ed Evacua per la differenza.").size(14.0).color(GREY));
                 });
             }
             _ => {}
@@ -279,7 +280,7 @@ fn view_controls(ctx: &egui::Context, k: &mut Kiosk) {
 fn legend(ctx: &egui::Context) {
     // below the operator bar when that is open; closed at first on a small screen
     let below = ctx.memory(|m| m.area_rect(egui::Id::new("operatore"))).filter(|_| ctx.memory(|m| m.areas().visible_last_frame(&egui::LayerId::new(egui::Order::Foreground, egui::Id::new("operatore"))))).map_or(12.0, |r| r.bottom() + 8.0);
-    let roomy = ctx.screen_rect().width() >= 1500.0;
+    let roomy = false;
     egui::Area::new(egui::Id::new("legenda")).anchor(Align2::LEFT_TOP, [12.0, below]).show(ctx, |ui| {
         panel().show(ui, |ui| {
             egui::CollapsingHeader::new(RichText::new("Legenda").size(15.0).strong().color(Color32::WHITE)).default_open(roomy).show(ui, |ui| {
@@ -461,6 +462,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     ui.vertical(|ui| {
                         ui.label(RichText::new(&dist.name).size(20.0).strong().color(Color32::WHITE));
                         let (risk, colour) = match k.risk.get(d).copied().flatten() {
+                            Some(e) if e.distance_m < 60.0 => ("fuoco tra le case".to_string(), Some(RED)),
                             Some(e) if e.distance_m < 1000.0 => (format!("fuoco a {}", km(e.distance_m)), Some(RED)),
                             Some(e) if e.distance_m < 2500.0 => (format!("fuoco a {}", km(e.distance_m)), Some(ORANGE)),
                             Some(e) => (format!("fuoco a {}", km(e.distance_m)), None),
@@ -480,11 +482,6 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                 let now = sim.posts.iter().flatten().filter(|p| p.district == d).count();
                 let next = k.preview.as_ref().map_or(now, |p| p.units_on(d));
                 ui.label(RichText::new(format!("mezzi assegnati: {now}")).size(16.0).color(if now > 0 { GREEN } else { GREY }));
-                if next < now {
-                    ui.label(RichText::new(format!("con il nuovo piano ne perde {}", now - next)).size(16.0).strong().color(ORANGE));
-                } else if next > now {
-                    ui.label(RichText::new(format!("con il nuovo piano ne riceve {}", next - now)).size(16.0).strong().color(GREEN));
-                }
                 ui.horizontal(|ui| match rank {
                     Some(r) => {
                         if r > 0 && ui.add(secondary("metti per primo")).clicked() {
@@ -529,6 +526,21 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         }
                     }
                 });
+                // what is chosen but not confirmed yet, right where it was chosen
+                let mut pending: Vec<String> = vec![];
+                if civil[d] != sim.active.civil[d] {
+                    pending.push(if civil[d] == Civil::Evacua { "evacuazione".into() } else { "preallerta".into() });
+                }
+                if next < now {
+                    pending.push(format!("perde {} mezzi", now - next));
+                } else if next > now {
+                    pending.push(format!("riceve {} mezzi", next - now));
+                }
+                if !pending.is_empty() && k.phase != Phase::Pianifica {
+                    pill(ui, &format!("da confermare: {}", pending.join(", ")), AMBER);
+                } else if !pending.is_empty() {
+                    ui.label(RichText::new(format!("con il piano: {}", pending.join(", "))).size(15.0).strong().color(AMBER));
+                }
                 if sim.active.civil[d] != Civil::Nessuno {
                     let hh = &dist.households;
                     let safe = hh.iter().filter(|&&i| sim.agents.households[i].status == Status::Evacuated).count();
@@ -543,6 +555,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         (count(Status::Defending), "restano a difendere la casa"),
                         (count(Status::Normal), "non ancora raggiunte dall'avviso"),
                         (count(Status::Trapped), "bloccate dal fuoco"),
+                        (count(Status::Casualty), "raggiunte dal fuoco"),
                     ]
                     .into_iter()
                     .filter(|(n, _)| *n > 0)
@@ -767,6 +780,33 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                     ui.label(RichText::new("Calcolo il confronto con lo stesso incendio senza ordini…").size(16.0).color(GREY));
                 }
             }
+            // why, district by district: what the orders changed and what they could not
+            if let Some(b) = b {
+                for (i, (d, x)) in sim.districts.iter().zip(&o.districts).enumerate() {
+                    let y = &b.districts[i];
+                    let mut why = vec![];
+                    if y.caught > x.caught {
+                        why.push(format!("{} famiglie in meno colte in casa: sono partite prima che arrivasse il fuoco", y.caught - x.caught));
+                    }
+                    if y.homes_hit > x.homes_hit {
+                        why.push(format!("{} case in meno colpite: i mezzi le hanno difese", y.homes_hit - x.homes_hit));
+                    } else if x.homes_hit > 0 && x.homes_hit == y.homes_hit {
+                        let ranked = sim.log.iter().any(|e| e.text.starts_with("priorità:") && e.text.contains(d.name.as_str()));
+                        why.push(if ranked {
+                            "le case colpite sono le stesse: i mezzi non sono arrivati in tempo o non c'era una postazione sicura (vedi gli eventi)".into()
+                        } else {
+                            "le case colpite sono le stesse: non era tra i luoghi da difendere".into()
+                        });
+                    }
+                    let ordered = sim.log.iter().any(|e| e.text.starts_with("evacuazione:") && e.text.contains(d.name.as_str()));
+                    if y.homes_hit == 0 && y.caught == 0 && ordered {
+                        why.push("qui il fuoco non è arrivato: l'evacuazione è stata una precauzione".into());
+                    }
+                    if !why.is_empty() {
+                        ui.label(RichText::new(format!("{}: {}.", d.name, why.join("; "))).size(15.0).color(Color32::WHITE));
+                    }
+                }
+            }
             if o.units_lost > 0 {
                 let lost: Vec<&str> = sim.crews.units.iter().filter(|u| u.state == abm::suppression::UnitState::Lost).map(|u| u.callsign.as_str()).collect();
                 ui.label(RichText::new(format!("Mezzi persi, raggiunti dal fuoco: {}", lost.join(", "))).size(16.0).color(RED));
@@ -788,13 +828,13 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             egui::Frame::none().fill(Color32::from_rgb(20, 40, 70)).rounding(6.0).inner_margin(8.0).show(ui, |ui| {
                 ui.label(RichText::new(format!("Da ricordare: {REAL_LIFE}")).size(15.0).color(Color32::WHITE));
             });
-            egui::CollapsingHeader::new(RichText::new("Che cosa vogliono dire queste parole").size(15.0).color(GREY)).default_open(false).show(ui, |ui| {
+            {
                 ui.label(
                     RichText::new("Casa «colpita»: raggiunta dal fuoco nella simulazione, non per forza distrutta. Famiglia «colta in casa»: era ancora in casa quando il fuoco è arrivato. «Evacuate»: famiglie arrivate in un'area sicura, anche dove il fuoco poi non è arrivato.")
-                        .size(15.0)
+                        .size(14.0)
                         .color(GREY),
                 );
-            });
+            }
             ui.add_space(14.0);
             ui.horizontal(|ui| {
                 let big = |t: &str| egui::Button::new(RichText::new(t).size(22.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(10.0).min_size(egui::vec2(220.0, 50.0));
