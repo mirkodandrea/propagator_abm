@@ -28,18 +28,35 @@ struct World {
     agents: Abm,
     crews: Suppression,
     ignition: scenario::Cell,
+    /// Unit vector the fire is heading along (world frame, +x east, +y north).
+    toward: [f32; 2],
 }
+
+/// Wind from the south-east: of the windows tried on Rocca Ventosa this one
+/// puts a continuous run of fuel and 160+ households in front of the fire (see
+/// `fire/tests/exposure.rs`), and the default north wind does not.
+const WIND_FROM_DEG: f64 = 135.0;
 
 fn setup() -> World {
     let scn = Scenario::load(data_dir()).unwrap();
-    let weather = Weather::default();
+    let weather = Weather { wind_dir_deg: WIND_FROM_DEG, ..Weather::default() };
     let plan = fire::plan_ignition(&scn, weather.wind_dir_deg, 250.0);
     let mut fire = FireSim::new(&scn, weather, 42).unwrap();
     fire.ignite_patch(plan.centre, plan.radius_m, &scn).unwrap();
     let agents = Abm::new(&scn, 42).unwrap();
-    let bases: Vec<Pos> = agents.refuges.iter().map(|r| r.pos).collect();
+    // Four of the six refuges on this territory are exits on the map edge, in
+    // 80-100% burnable fuel (measured at 300 m): places to leave through, not
+    // places to park an engine. Staging uses the two interior ones, which sit
+    // in 0% and 5% burnable.
+    let bases: Vec<Pos> = agents
+        .refuges
+        .iter()
+        .map(|r| r.pos)
+        .filter(|p| abm::refuge::burnable_fraction(&scn, *p, 300.0) < 0.2)
+        .collect();
     let crews = Suppression::new(&scn, &bases).unwrap();
-    World { scn, fire, agents, crews, ignition: plan.centre }
+    let a = (weather.wind_dir_deg + 180.0).to_radians() as f32;
+    World { scn, fire, agents, crews, ignition: plan.centre, toward: [a.sin(), a.cos()] }
 }
 
 impl World {
@@ -56,11 +73,16 @@ impl World {
     }
 
     /// A point `m` metres downwind of the ignition: where the fire is going,
-    /// which is the only place suppression is worth putting. Wind is from the
-    /// north here, so downwind is south (-y).
+    /// which is the only place suppression is worth putting.
     fn downwind(&self, m: f32) -> Pos {
         let c = self.scn.world.centre_of(self.ignition);
-        Pos { x: c.x, y: c.y - m }
+        Pos { x: c.x + self.toward[0] * m, y: c.y + self.toward[1] * m }
+    }
+
+    /// Distance along the direction of spread from the ignition.
+    fn along(&self, p: Pos) -> f32 {
+        let c = self.scn.world.centre_of(self.ignition);
+        (p.x - c.x) * self.toward[0] + (p.y - c.y) * self.toward[1]
     }
 
     /// `ahead_m` past the head of the fire as it is *now*: the furthest
@@ -72,8 +94,8 @@ impl World {
             .active_cells()
             .iter()
             .map(|c| self.scn.world.centre_of(*c))
-            .min_by(|a, b| a.y.partial_cmp(&b.y).unwrap())
-            .map(|p| Pos { x: p.x, y: p.y - ahead_m })
+            .max_by(|a, b| self.along(*a).partial_cmp(&self.along(*b)).unwrap())
+            .map(|p| Pos { x: p.x + self.toward[0] * ahead_m, y: p.y + self.toward[1] * ahead_m })
     }
 }
 
@@ -166,10 +188,16 @@ fn an_engine_refills_rather_than_running_dry_forever() {
 #[test]
 fn a_hand_crew_cuts_line_at_its_published_rate() {
     let mut w = setup();
-    // A line across the fire's line of advance, 400 m ahead of it.
-    let c = w.downwind(400.0);
-    let from = Pos { x: c.x - 150.0, y: c.y };
-    let to = Pos { x: c.x + 150.0, y: c.y };
+    // A line across the fire's line of advance, 1.2 km ahead of the ignition.
+    // Re-measured on Rocca Ventosa: the staging areas are 2-3 km from the fire,
+    // so the crew arrives late. Lines at 200-600 m are burnt over before it
+    // works (0-34 m cut, no unburnt cell left to clear) and at 900 m the front
+    // passes during the 2 h (237 m cut, 0 cells cleared); 1.2-1.6 km is ahead
+    // of the front when the crew gets there.
+    let c = w.downwind(1200.0);
+    let (px, py) = (-w.toward[1], w.toward[0]); // perpendicular to the spread
+    let from = Pos { x: c.x - 150.0 * px, y: c.y - 150.0 * py };
+    let to = Pos { x: c.x + 150.0 * px, y: c.y + 150.0 * py };
     let id = w.crews.nearest_available(from, UnitKind::HandCrew).unwrap();
     w.crews.assign(id, Task::Line { from, to }).unwrap();
 
@@ -338,7 +366,7 @@ fn water_is_independent_of_step_size() {
         let e = w.crews.nearest_available(at, UnitKind::Engine).unwrap();
         let c = w.crews.nearest_available(at, UnitKind::HandCrew).unwrap();
         w.crews.assign(e, Task::Attack { at }).unwrap();
-        let line_to = Pos { x: at.x + 200.0, y: at.y };
+        let line_to = Pos { x: at.x + 200.0 * -w.toward[1], y: at.y + 200.0 * w.toward[0] };
         w.crews.assign(c, Task::Line { from: at, to: line_to }).unwrap();
         w.run(60, dt);
         (w.crews.units[e].water_used_l, w.crews.units[c].line_cut_m)
@@ -436,7 +464,7 @@ fn suppression_changes_the_outcome() {
     let (static_ha, static_m, static_l) = fought(Plan::Static);
     let (retask_ha, retask_m, retask_l) = fought(Plan::Retasked);
     println!(
-        "2 h at seed 42, tramontana 35 km/h, 6% moisture:\n\
+        "2 h at seed 42, south-easterly 35 km/h, 6% moisture:\n\
          \x20 no suppression            {free:5.1} ha\n\
          \x20 committed to one point    {static_ha:5.1} ha  \
          ({static_m:3.0} m line, {:.0} kL)\n\

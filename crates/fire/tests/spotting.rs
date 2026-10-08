@@ -45,10 +45,34 @@ fn without_shrub_spotting() -> Scenario {
     scn
 }
 
+/// A shrub-dominated place to light the fire. `plan_ignition` aims at homes and
+/// on Rocca Ventosa lands in grass, where shrub spotting cannot show; here the
+/// centre is the shrub cell with the most shrub within 10 cells (200 m), so the
+/// ignition patch and the first km of spread sit in the fuel under test.
+fn shrub_centre(scn: &Scenario) -> Cell {
+    let (rows, cols) = (scn.world.fire_rows, scn.world.fire_cols);
+    let is_shrub = |r: usize, c: usize| SHRUBS.contains(&(scn.fuel_at(Cell { row: r, col: c }) as i32));
+    let mut best = (0usize, Cell { row: 0, col: 0 });
+    for r in (12..rows - 12).step_by(3) {
+        for c in (12..cols - 12).step_by(3) {
+            if !is_shrub(r, c) {
+                continue;
+            }
+            let n = (r - 10..=r + 10)
+                .flat_map(|rr| (c - 10..=c + 10).map(move |cc| (rr, cc)))
+                .filter(|(rr, cc)| is_shrub(*rr, *cc))
+                .count();
+            if n > best.0 {
+                best = (n, Cell { row: r, col: c });
+            }
+        }
+    }
+    best.1
+}
+
 fn run(scn: &Scenario, w: Weather, seed: u64, act: impl FnOnce(&mut FireSim)) -> FireSim {
-    let plan = fire::plan_ignition(scn, w.wind_dir_deg, START_RADIUS_M);
     let mut sim = FireSim::new(scn, w, seed).unwrap();
-    sim.ignite_patch(plan.centre, plan.radius_m, scn).unwrap();
+    sim.ignite_patch(shrub_centre(scn), START_RADIUS_M, scn).unwrap();
     act(&mut sim);
     while sim.time_s() < RUN_S {
         sim.advance(STEP_S).unwrap();
@@ -63,8 +87,8 @@ fn mean_burnt(scn: &Scenario, w: Weather, act: impl Fn(&mut FireSim)) -> f32 {
 
 /// The fuel that carries these fires must be able to start one somewhere else.
 ///
-/// Shrub is 706 of the 1,226 cells that burnt on Spotorno under upstream's
-/// table, against 146 conifer, and on `mati` it is 712 of 971 against 3. With
+/// On the old Spotorno and `mati` windows shrub was most of the burnt cells
+/// under upstream's table (706 of 1,226, and 712 of 971). With
 /// generation flagged on conifers alone, the core's spotting model was switched
 /// on, ran on every burning cell, and produced nothing at all on two of the four
 /// real windows -- an always-negative of exactly the kind houses-never-burn and
@@ -85,12 +109,16 @@ fn shrub_fuel_generates_embers() {
         assert!(d.prob_ign_by_embers > 0.0, "{} cannot be lit by an ember", d.name);
     }
 
-    // And it shows up in the fire, not only in the table.
+    // And it shows up in the fire, not only in the table. Re-measured on Rocca
+    // Ventosa from a shrub-dominated ignition (see `shrub_centre`): 1375 cells
+    // upstream against 1731 with shrub spotting, ~1.26x over 5 seeds. The 1.2x
+    // floor is therefore tight; the default `plan_ignition` lands in grass here
+    // and shows no difference at all, which is why it is not used.
     let w = Weather::default();
     let with = mean_burnt(&scn, w, |_| {});
     let without = mean_burnt(&without_shrub_spotting(), w, |_| {});
     println!(
-        "two hours on the shipped ignition, mean of {} seeds: {without:.0} cells \
+        "two hours on the shrub ignition, mean of {} seeds: {without:.0} cells \
          upstream, {with:.0} with shrub spotting ({:.1}x)",
         SEEDS.len(),
         with / without

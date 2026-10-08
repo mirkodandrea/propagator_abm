@@ -35,7 +35,12 @@ fn interaction_area_scales_with_intensity() {
 #[test]
 fn wui_scenario_threatens_households() {
     let scn = Scenario::load(data_dir()).unwrap();
-    let weather = Weather::default();
+    // The default north wind drives the planned fire away from Rocca Ventosa's
+    // homes (0 households threatened in two hours, measured). A south-easterly
+    // (from 135 degrees) is among the windows that do put people at risk:
+    // 160+ households downwind, peak 146 threatened and ~51 damage-equivalents
+    // after two hours at seed 42.
+    let weather = Weather { wind_dir_deg: 135.0, ..Weather::default() };
     let plan = fire::plan_ignition(&scn, weather.wind_dir_deg, 250.0);
     println!(
         "ignition {:?} fuel {}  |  {} households downwind, corridor {:.0}% burnable",
@@ -77,7 +82,9 @@ fn wui_scenario_threatens_households() {
 #[test]
 fn damage_is_independent_of_step_size() {
     let scn = Scenario::load(data_dir()).unwrap();
-    let weather = Weather::default();
+    // Same south-easterly window as above: under the default north wind no
+    // structure takes damage, and the comparison would hold vacuously.
+    let weather = Weather { wind_dir_deg: 135.0, ..Weather::default() };
     let plan = fire::plan_ignition(&scn, weather.wind_dir_deg, 250.0);
 
     let total_damage = |step: i64| -> f32 {
@@ -93,6 +100,7 @@ fn damage_is_independent_of_step_size() {
     let coarse = total_damage(300);
     let fine = total_damage(20);
     println!("total damage: 300 s steps {coarse:.2}, 20 s steps {fine:.2}");
+    assert!(coarse.max(fine) > 5.0, "no structure damage, so the comparison proves nothing");
     let rel = (coarse - fine).abs() / coarse.max(fine).max(1e-6);
     assert!(rel < 0.25, "damage depends on step size: {coarse:.2} vs {fine:.2}");
 }

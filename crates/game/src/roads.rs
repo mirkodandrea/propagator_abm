@@ -70,7 +70,7 @@ pub fn build(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<RetroMaterial>,
 ) {
-    let dev = scn.vr_palette().is_some();
+    let dev = false;
     let mut add = |base: StandardMaterial| {
         materials.add(retro::material_with_style(base, dev, retro::RetroStyle::ROUTE))
     };
@@ -81,45 +81,7 @@ pub fn build(
     // on the grid floor, unlit, drivable brighter than track — same
     // drive/walk contrast the realistic palette carries, just neon instead
     // of asphalt-vs-dirt.
-    let (drivable_mat, drivable_casing, track_mat, track_casing) = match scn.vr_palette() {
-        Some(pal) => {
-            let tint = |t: f32| Color::srgb(
-                pal.void[0] + (pal.grid[0] - pal.void[0]) * t,
-                pal.void[1] + (pal.grid[1] - pal.void[1]) * t,
-                pal.void[2] + (pal.grid[2] - pal.void[2]) * t,
-            );
-            let route = Color::srgb(
-                pal.grid[0] * 0.35 + pal.accent[0] * 0.65,
-                pal.grid[1] * 0.35 + pal.accent[1] * 0.65,
-                pal.grid[2] * 0.35 + pal.accent[2] * 0.65,
-            );
-            (
-                add(StandardMaterial {
-                    // A pale blue-white distinct from the cyan coordinate
-                    // grid. Width alone collapses to one pixel at overview
-                    // distance, so hue/luma carry the road-vs-grid distinction.
-                    base_color: route,
-                    unlit: true,
-                    ..default()
-                }),
-                add(StandardMaterial {
-                    base_color: tint(0.20),
-                    unlit: true,
-                    ..default()
-                }),
-                add(StandardMaterial {
-                    base_color: tint(0.43),
-                    unlit: true,
-                    ..default()
-                }),
-                add(StandardMaterial {
-                    base_color: tint(0.12),
-                    unlit: true,
-                    ..default()
-                }),
-            )
-        }
-        None => (
+    let (drivable_mat, drivable_casing, track_mat, track_casing) = (
             add(StandardMaterial {
                 base_color: Color::srgb(0.20, 0.20, 0.22),
                 perceptual_roughness: 0.95,
@@ -143,8 +105,7 @@ pub fn build(
                 perceptual_roughness: 1.0,
                 ..default()
             }),
-        ),
-    };
+        );
 
     // Four layers, each chunked independently: casings under surfaces, tracks
     // under drivable roads, so a lane crossing a path reads the right way.

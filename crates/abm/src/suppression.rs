@@ -108,9 +108,9 @@ pub const AIR_RESPONSE_S: f32 = 25.0 * 60.0;
 
 /// Engine road speed, m/s (~45 km/h): blue lights on a coast road with hairpins.
 pub const ENGINE_SPEED: f32 = 12.0;
-/// Hand crew network speed, m/s. A blend, deliberately: they ride a light
-/// vehicle where there is a track and walk where there is not, and modelling
-/// the transfer explicitly would add a state nobody would ever look at.
+/// Hand crew speed on tracks and paths, m/s. A blend, deliberately: they ride
+/// a light vehicle where the track allows and walk where it does not. On a
+/// carriageway the crew travels in its vehicle at [`ENGINE_SPEED`].
 pub const CREW_SPEED: f32 = 3.0;
 /// Crew speed off the network, m/s, before the slope correction.
 pub const CREW_WALK_SPEED: f32 = 1.1;
@@ -1365,11 +1365,10 @@ impl Suppression {
             self.units[i].planned_at_s = self.time_s;
         }
 
-        let mut budget = match kind {
-            UnitKind::Engine => ENGINE_SPEED,
-            UnitKind::HandCrew => CREW_SPEED,
-            UnitKind::AirTanker => TANKER_SPEED,
-        } * dt;
+        // Time budget for this sub-step, spent link by link at the speed of
+        // the link: crews ride their vehicle on carriageways and go at
+        // [`CREW_SPEED`] on tracks and paths.
+        let mut time = dt;
 
         // Civilian traffic on the link ahead. A unit is never *in* the queue —
         // it is not subject to storage, it does not take a place in the line
@@ -1377,35 +1376,45 @@ impl Suppression {
         // it time, which is the whole reason an engine dispatched into a mass
         // departure arrives late. Sampled on the link it is about to travel,
         // because that is the traffic it is about to be in.
+        let mut jam = 1.0;
         if !self.units[i].route.is_empty() {
             let next = self.units[i].route[0];
             let from = self.units[i].at_node;
             if let Some(edge) = net.edge_between(from, next) {
-                budget *= traffic.emergency_factor(Traffic::link_id(edge, from, next));
+                jam = traffic.emergency_factor(Traffic::link_id(edge, from, next));
             }
         }
 
         // Follow the network.
-        while budget > 0.0 {
+        while time > 0.0 {
             let Some(&next) = self.units[i].route.first() else {
                 break;
+            };
+            let from = self.units[i].at_node;
+            let drivable = from == NO_NODE || net.neighbours(from).iter().find(|e| e.to == next).is_none_or(|e| e.drivable);
+            let speed = jam * match kind {
+                UnitKind::Engine => ENGINE_SPEED,
+                UnitKind::HandCrew if drivable => ENGINE_SPEED,
+                UnitKind::HandCrew => CREW_SPEED,
+                UnitKind::AirTanker => TANKER_SPEED,
             };
             let np = net.pos(next);
             let d = dist(self.units[i].pos, np);
             let u = &mut self.units[i];
-            if d > budget {
-                let f = budget / d.max(1e-3);
+            if d > speed * time {
+                let f = speed * time / d.max(1e-3);
                 u.heading = (np.y - u.pos.y).atan2(np.x - u.pos.x);
                 u.pos.x += (np.x - u.pos.x) * f;
                 u.pos.y += (np.y - u.pos.y) * f;
-                budget = 0.0;
+                time = 0.0;
             } else {
                 u.pos = np;
                 u.at_node = next;
                 u.route.remove(0);
-                budget -= d;
+                time -= d / speed.max(1e-3);
             }
         }
+        let budget = time;
 
         // Off-network walk-in, crews only. Deliberately *not* a loop: closing
         // the last metres by repeatedly taking `on_foot / d` of the remaining
@@ -1415,8 +1424,8 @@ impl Suppression {
         if budget > 0.0 && self.units[i].route.is_empty() && kind == UnitKind::HandCrew {
             let slope = scn.terrain.slope_deg_at(self.units[i].pos);
             let walk = CREW_WALK_SPEED * (1.0 - slope / 45.0).clamp(0.35, 1.0);
-            // The remaining budget was spent at network speed; convert it.
-            let on_foot = budget / CREW_SPEED * walk;
+            // The remaining time, on foot.
+            let on_foot = budget * walk;
             let u = &mut self.units[i];
             let d = dist(u.pos, target);
             if d > 0.1 {

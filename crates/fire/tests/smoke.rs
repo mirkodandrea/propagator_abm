@@ -1,4 +1,4 @@
-//! End-to-end check that the baked Spotorno assets load and the fire core
+//! End-to-end check that the baked Rocca Ventosa assets load and the fire core
 //! actually spreads through them, with no Python in the loop.
 
 use fire::{CellFire, FireSim, Intervention, Weather};
@@ -29,9 +29,9 @@ fn wui_ignition(scn: &Scenario) -> Cell {
 #[test]
 fn fire_spreads_through_real_terrain() {
     let scn = Scenario::load(data_dir()).expect("load scenario");
-    assert_eq!(scn.world.fire_rows, 512);
-    assert!(scn.population.households.len() > 500);
-    assert!(scn.vectors.buildings.len() > 5000);
+    assert_eq!(scn.world.fire_rows, 400);
+    assert!(scn.population.households.len() > 200);
+    assert!(scn.vectors.buildings.len() > 200);
 
     let ignition = wui_ignition(&scn);
     let mut sim = FireSim::new(&scn, Weather::default(), 42).expect("build core");
@@ -72,7 +72,7 @@ fn fireline_reduces_spread() {
                         col: (ignition.col + 40).saturating_sub(d),
                     })
                 })
-                .filter(|c| c.row < 512 && c.col < 512)
+                .filter(|c| c.row < 400 && c.col < 400)
                 .collect();
             sim.queue(Intervention::fireline(cells));
         }

@@ -26,7 +26,7 @@ pub fn status_color(status: Status) -> Color {
 pub fn spawn(sim: Res<crate::sim::Sim>) {
     info!(
         "spawned {} households ({} people)",
-        sim.scenario.population.households.len(),
-        sim.scenario.population.people.len()
+        sim.scn.population.households.len(),
+        sim.scn.population.people.len()
     );
 }

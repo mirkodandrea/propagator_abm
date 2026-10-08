@@ -1,0 +1,509 @@
+{
+  "id": "t4",
+  "name": "Crinale e sella",
+  "notes": "crinale NO-SE con una sella; versanti di lunghezza diversa",
+  "seed": 44,
+  "archetype": "crinale",
+  "detail": {
+    "warp_m": 260.0,
+    "broad_m": 22.0,
+    "broad_relief_m": 40.0,
+    "fine_m": 6.0,
+    "erosion_iterations": 12,
+    "erosion_k": 0.4,
+    "erosion_cap_m": 6.0,
+    "erosion_diffusion": 2.0,
+    "erosion_exponent": 0.5
+  },
+  "elev_m": [
+    83.2,
+    704.5
+  ],
+  "slope_deg_p50_p95": [
+    9.4,
+    28.6
+  ],
+  "fuel_share": {
+    "0": 0.0012,
+    "1": 0.0015,
+    "2": 0.3133,
+    "3": 0.0113,
+    "4": 0.1044,
+    "5": 0.1303,
+    "7": 0.0387,
+    "8": 0.0824,
+    "9": 0.0626,
+    "11": 0.17,
+    "12": 0.0843
+  },
+  "class_share": {
+    "prato/coltivo": 0.3329,
+    "macchia": 0.1853,
+    "bosco di latifoglie": 0.2231,
+    "pineta": 0.2551,
+    "vegetazione rada": 0.0036
+  },
+  "veg": {
+    "channel_cells": 350,
+    "river_cells": 2500,
+    "open_max_slope_deg": 10.0,
+    "rock_slope_deg": 34.0
+  },
+  "layout": 1,
+  "town_id": "t4_paese",
+  "town_seed": 401,
+  "town_notes": {
+    "SP 12 della Valle": {
+      "length_m": 8083,
+      "grade_p95": 0.069
+    },
+    "Strada del Passo": {
+      "length_m": 8898,
+      "grade_p95": 0.225
+    },
+    "SP 9 di Fondovalle": {
+      "length_m": 3314,
+      "grade_p95": 0.119
+    },
+    "Strada del Monte": {
+      "length_m": 3606,
+      "grade_p95": 0.122
+    },
+    "Le Coste": {
+      "houses_requested": 24,
+      "houses_placed": 24
+    },
+    "households": {
+      "Il Borgo": 160,
+      "Il Piano": 55,
+      "Le Coste": 30
+    }
+  },
+  "fine": {
+    "fine_m": 5.0,
+    "nodes": 1601,
+    "micro_relief_m": 0.8,
+    "micro_relief_slope_m": 1.6,
+    "micro_seed": 4401,
+    "profile_sigma_m": 30.0,
+    "station_m": 2.5,
+    "chunk_m": 60.0,
+    "road_spec": {
+      "secondary": {
+        "half_w": 3.5,
+        "verge": 1.5,
+        "grade": 0.1
+      },
+      "tertiary": {
+        "half_w": 2.75,
+        "verge": 1.0,
+        "grade": 0.14
+      },
+      "residential": {
+        "half_w": 3.0,
+        "verge": 0.5,
+        "grade": 0.12
+      },
+      "unclassified": {
+        "half_w": 2.25,
+        "verge": 0.5,
+        "grade": 0.18
+      },
+      "track": {
+        "half_w": 1.75,
+        "verge": 0.5,
+        "grade": 0.22
+      }
+    },
+    "batter": 0.7,
+    "bench_half_m": {
+      "drivable": 6.0,
+      "track": 3.5
+    },
+    "fine_vs_fire_dem": {
+      "mean_abs_m": 0.942,
+      "p99_abs_m": 3.69,
+      "max_abs_m": 9.76
+    }
+  },
+  "road_profiles": {
+    "1": {
+      "name": "SP 12 della Valle",
+      "class": "secondary",
+      "length_m": 8085,
+      "grade_p95": 0.07,
+      "ground_grade_p95": 0.186,
+      "cutfill_p95_m": 1.23,
+      "cutfill_max_m": 3.17
+    },
+    "3": {
+      "name": "SP 9 di Fondovalle",
+      "class": "secondary",
+      "length_m": 3314,
+      "grade_p95": 0.1,
+      "ground_grade_p95": 0.29,
+      "cutfill_p95_m": 1.88,
+      "cutfill_max_m": 3.96
+    },
+    "2": {
+      "name": "Strada del Passo",
+      "class": "tertiary",
+      "length_m": 8908,
+      "grade_p95": 0.14,
+      "ground_grade_p95": 0.357,
+      "cutfill_p95_m": 3.15,
+      "cutfill_max_m": 8.65
+    },
+    "5": {
+      "name": "Il Borgo - via 1",
+      "class": "residential",
+      "length_m": 400,
+      "grade_p95": 0.04,
+      "ground_grade_p95": 0.175,
+      "cutfill_p95_m": 1.37,
+      "cutfill_max_m": 1.86
+    },
+    "6": {
+      "name": "Il Borgo - via 2",
+      "class": "residential",
+      "length_m": 460,
+      "grade_p95": 0.031,
+      "ground_grade_p95": 0.123,
+      "cutfill_p95_m": 1.0,
+      "cutfill_max_m": 1.57
+    },
+    "7": {
+      "name": "Il Borgo - via 3",
+      "class": "residential",
+      "length_m": 340,
+      "grade_p95": 0.044,
+      "ground_grade_p95": 0.159,
+      "cutfill_p95_m": 1.18,
+      "cutfill_max_m": 1.44
+    },
+    "8": {
+      "name": "Il Borgo - Via del Campo",
+      "class": "residential",
+      "length_m": 250,
+      "grade_p95": 0.041,
+      "ground_grade_p95": 0.169,
+      "cutfill_p95_m": 1.14,
+      "cutfill_max_m": 1.3
+    },
+    "9": {
+      "name": "Il Borgo - vicolo -150",
+      "class": "residential",
+      "length_m": 255,
+      "grade_p95": 0.033,
+      "ground_grade_p95": 0.17,
+      "cutfill_p95_m": 1.22,
+      "cutfill_max_m": 1.75
+    },
+    "10": {
+      "name": "Il Borgo - vicolo +0",
+      "class": "residential",
+      "length_m": 85,
+      "grade_p95": 0.037,
+      "ground_grade_p95": 0.152,
+      "cutfill_p95_m": 1.16,
+      "cutfill_max_m": 1.31
+    },
+    "11": {
+      "name": "Il Borgo - vicolo +140",
+      "class": "residential",
+      "length_m": 255,
+      "grade_p95": 0.022,
+      "ground_grade_p95": 0.146,
+      "cutfill_p95_m": 0.98,
+      "cutfill_max_m": 1.4
+    },
+    "12": {
+      "name": "Il Piano - via 0",
+      "class": "residential",
+      "length_m": 441,
+      "grade_p95": 0.039,
+      "ground_grade_p95": 0.16,
+      "cutfill_p95_m": 1.23,
+      "cutfill_max_m": 1.62
+    },
+    "13": {
+      "name": "Il Piano - via 1",
+      "class": "residential",
+      "length_m": 300,
+      "grade_p95": 0.023,
+      "ground_grade_p95": 0.127,
+      "cutfill_p95_m": 1.01,
+      "cutfill_max_m": 1.39
+    },
+    "14": {
+      "name": "Il Piano - Via del Campo",
+      "class": "residential",
+      "length_m": 250,
+      "grade_p95": 0.034,
+      "ground_grade_p95": 0.138,
+      "cutfill_p95_m": 0.75,
+      "cutfill_max_m": 0.84
+    },
+    "15": {
+      "name": "Il Piano - vicolo -60",
+      "class": "residential",
+      "length_m": 80,
+      "grade_p95": 0.021,
+      "ground_grade_p95": 0.121,
+      "cutfill_p95_m": 0.89,
+      "cutfill_max_m": 0.99
+    },
+    "16": {
+      "name": "Il Piano - vicolo +90",
+      "class": "residential",
+      "length_m": 80,
+      "grade_p95": 0.019,
+      "ground_grade_p95": 0.145,
+      "cutfill_p95_m": 1.04,
+      "cutfill_max_m": 1.1
+    },
+    "4": {
+      "name": "Strada del Monte",
+      "class": "unclassified",
+      "length_m": 3606,
+      "grade_p95": 0.126,
+      "ground_grade_p95": 0.264,
+      "cutfill_p95_m": 1.51,
+      "cutfill_max_m": 3.11
+    },
+    "17": {
+      "name": "Podere Le Coste 168",
+      "class": "unclassified",
+      "length_m": 46,
+      "grade_p95": 0.103,
+      "ground_grade_p95": 0.237,
+      "cutfill_p95_m": 2.19,
+      "cutfill_max_m": 2.35
+    },
+    "18": {
+      "name": "Podere Le Coste 169",
+      "class": "unclassified",
+      "length_m": 46,
+      "grade_p95": 0.085,
+      "ground_grade_p95": 0.264,
+      "cutfill_p95_m": 1.97,
+      "cutfill_max_m": 1.99
+    },
+    "19": {
+      "name": "Podere Le Coste 170",
+      "class": "unclassified",
+      "length_m": 46,
+      "grade_p95": 0.157,
+      "ground_grade_p95": 0.461,
+      "cutfill_p95_m": 3.56,
+      "cutfill_max_m": 4.04
+    },
+    "20": {
+      "name": "Podere Le Coste 171",
+      "class": "unclassified",
+      "length_m": 48,
+      "grade_p95": 0.188,
+      "ground_grade_p95": 0.478,
+      "cutfill_p95_m": 4.72,
+      "cutfill_max_m": 4.82
+    },
+    "21": {
+      "name": "Podere Le Coste 172",
+      "class": "unclassified",
+      "length_m": 30,
+      "grade_p95": 0.095,
+      "ground_grade_p95": 0.29,
+      "cutfill_p95_m": 2.99,
+      "cutfill_max_m": 3.2
+    },
+    "22": {
+      "name": "Podere Le Coste 173",
+      "class": "unclassified",
+      "length_m": 32,
+      "grade_p95": 0.153,
+      "ground_grade_p95": 0.567,
+      "cutfill_p95_m": 3.44,
+      "cutfill_max_m": 3.82
+    },
+    "23": {
+      "name": "Podere Le Coste 174",
+      "class": "unclassified",
+      "length_m": 35,
+      "grade_p95": 0.116,
+      "ground_grade_p95": 0.406,
+      "cutfill_p95_m": 3.21,
+      "cutfill_max_m": 3.43
+    },
+    "24": {
+      "name": "Podere Le Coste 175",
+      "class": "unclassified",
+      "length_m": 48,
+      "grade_p95": 0.207,
+      "ground_grade_p95": 0.514,
+      "cutfill_p95_m": 5.7,
+      "cutfill_max_m": 6.51
+    },
+    "25": {
+      "name": "Podere Le Coste 176",
+      "class": "unclassified",
+      "length_m": 46,
+      "grade_p95": 0.192,
+      "ground_grade_p95": 0.474,
+      "cutfill_p95_m": 5.69,
+      "cutfill_max_m": 6.32
+    },
+    "26": {
+      "name": "Podere Le Coste 177",
+      "class": "unclassified",
+      "length_m": 32,
+      "grade_p95": 0.116,
+      "ground_grade_p95": 0.54,
+      "cutfill_p95_m": 2.4,
+      "cutfill_max_m": 3.22
+    },
+    "27": {
+      "name": "Podere Le Coste 178",
+      "class": "unclassified",
+      "length_m": 48,
+      "grade_p95": 0.105,
+      "ground_grade_p95": 0.339,
+      "cutfill_p95_m": 3.61,
+      "cutfill_max_m": 3.97
+    },
+    "28": {
+      "name": "Podere Le Coste 179",
+      "class": "unclassified",
+      "length_m": 46,
+      "grade_p95": 0.165,
+      "ground_grade_p95": 0.494,
+      "cutfill_p95_m": 4.73,
+      "cutfill_max_m": 4.77
+    },
+    "29": {
+      "name": "Podere Le Coste 180",
+      "class": "unclassified",
+      "length_m": 32,
+      "grade_p95": 0.092,
+      "ground_grade_p95": 0.381,
+      "cutfill_p95_m": 1.9,
+      "cutfill_max_m": 2.06
+    },
+    "30": {
+      "name": "Podere Le Coste 181",
+      "class": "unclassified",
+      "length_m": 45,
+      "grade_p95": 0.154,
+      "ground_grade_p95": 0.362,
+      "cutfill_p95_m": 2.9,
+      "cutfill_max_m": 3.14
+    },
+    "31": {
+      "name": "Podere Le Coste 182",
+      "class": "unclassified",
+      "length_m": 32,
+      "grade_p95": 0.149,
+      "ground_grade_p95": 0.455,
+      "cutfill_p95_m": 4.18,
+      "cutfill_max_m": 4.21
+    },
+    "32": {
+      "name": "Podere Le Coste 183",
+      "class": "unclassified",
+      "length_m": 34,
+      "grade_p95": 0.101,
+      "ground_grade_p95": 0.409,
+      "cutfill_p95_m": 2.89,
+      "cutfill_max_m": 3.07
+    },
+    "33": {
+      "name": "Podere Le Coste 184",
+      "class": "unclassified",
+      "length_m": 46,
+      "grade_p95": 0.162,
+      "ground_grade_p95": 0.448,
+      "cutfill_p95_m": 4.87,
+      "cutfill_max_m": 5.64
+    },
+    "34": {
+      "name": "Podere Le Coste 185",
+      "class": "unclassified",
+      "length_m": 45,
+      "grade_p95": 0.145,
+      "ground_grade_p95": 0.41,
+      "cutfill_p95_m": 2.99,
+      "cutfill_max_m": 3.46
+    },
+    "35": {
+      "name": "Podere Le Coste 186",
+      "class": "unclassified",
+      "length_m": 34,
+      "grade_p95": 0.097,
+      "ground_grade_p95": 0.388,
+      "cutfill_p95_m": 3.79,
+      "cutfill_max_m": 4.12
+    },
+    "36": {
+      "name": "Podere Le Coste 187",
+      "class": "unclassified",
+      "length_m": 45,
+      "grade_p95": 0.095,
+      "ground_grade_p95": 0.397,
+      "cutfill_p95_m": 2.64,
+      "cutfill_max_m": 2.66
+    },
+    "37": {
+      "name": "Podere Le Coste 188",
+      "class": "unclassified",
+      "length_m": 46,
+      "grade_p95": 0.132,
+      "ground_grade_p95": 0.372,
+      "cutfill_p95_m": 2.56,
+      "cutfill_max_m": 2.87
+    },
+    "38": {
+      "name": "Podere Le Coste 189",
+      "class": "unclassified",
+      "length_m": 47,
+      "grade_p95": 0.206,
+      "ground_grade_p95": 0.519,
+      "cutfill_p95_m": 5.13,
+      "cutfill_max_m": 5.57
+    },
+    "39": {
+      "name": "Podere Le Coste 190",
+      "class": "unclassified",
+      "length_m": 45,
+      "grade_p95": 0.165,
+      "ground_grade_p95": 0.491,
+      "cutfill_p95_m": 3.38,
+      "cutfill_max_m": 3.84
+    },
+    "40": {
+      "name": "Podere Le Coste 191",
+      "class": "unclassified",
+      "length_m": 34,
+      "grade_p95": 0.144,
+      "ground_grade_p95": 0.542,
+      "cutfill_p95_m": 5.74,
+      "cutfill_max_m": 5.98
+    },
+    "41": {
+      "name": "Strada forestale del Crinale",
+      "class": "track",
+      "length_m": 1737,
+      "grade_p95": 0.119,
+      "ground_grade_p95": 0.38,
+      "cutfill_p95_m": 2.97,
+      "cutfill_max_m": 4.32
+    },
+    "42": {
+      "name": "Strada forestale del Monte",
+      "class": "track",
+      "length_m": 2380,
+      "grade_p95": 0.166,
+      "ground_grade_p95": 0.327,
+      "cutfill_p95_m": 1.8,
+      "cutfill_max_m": 3.25
+    }
+  }
+}

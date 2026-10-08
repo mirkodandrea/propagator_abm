@@ -7,8 +7,7 @@ description = "The wildfire kiosk demo: Bevy front end"
 
 [dependencies]
 scenario.workspace = true
-demo = { path = "../demo" }
-text = { path = "../text" }
+rocca.workspace = true
 fire.workspace = true
 abm.workspace = true
 behavior.workspace = true

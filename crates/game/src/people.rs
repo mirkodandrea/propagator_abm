@@ -99,7 +99,7 @@ pub fn setup(
     // colours themselves stay meaningful (they are what the ABM testing
     // these scenarios exist for actually cares about), only the shading
     // model changes.
-    let vr = sim.scenario.vr_palette().is_some();
+    let vr = false;
     let scale = figure_scale(vr);
     let mut add = |base: StandardMaterial| materials.add(retro::material(base, vr));
     let status: Vec<Handle<RetroMaterial>> = [
@@ -182,8 +182,8 @@ pub fn setup(
     // People all exist from the start; visibility is what changes.
     let mut walks = crate::life::plan_walks(&sim);
     for p in &sim.agents.people {
-        let ground = sim.scenario.terrain.height_at(p.pos);
-        let age = sim.scenario.population.people.get(p.id).map_or(40, |q| q.age);
+        let ground = sim.scn.terrain.height_at(p.pos);
+        let age = sim.scn.population.people.get(p.id).map_or(40, |q| q.age);
         let mesh = match age {
             a if a < 14 => &figure[2],
             a if a >= 70 => &figure[3],
@@ -248,13 +248,13 @@ pub fn spawn_vehicles(mut commands: Commands, sim: Res<Sim>, mut assets: ResMut<
         if t.mode != Mode::Car {
             continue;
         }
-        let ground = sim.scenario.terrain.height_at(t.pos);
+        let ground = sim.scn.terrain.height_at(t.pos);
         commands.spawn((
             MaterialMeshBundle::<RetroMaterial> {
                 mesh: assets.cars[(t.household.wrapping_mul(2654435761) >> 7) % assets.cars.len()].clone(),
                 material: assets.car_normal[i % assets.car_normal.len()].clone(),
                 transform: Transform::from_translation(frame::to_bevy(t.pos, ground + 0.05))
-                    .with_scale(Vec3::splat(CAR_TOY * if sim.scenario.vr_palette().is_some() { 2.4 } else { 1.0 })),
+                    .with_scale(Vec3::splat(CAR_TOY * if false { 2.4 } else { 1.0 })),
                 ..default()
             },
             VehicleView { traveller: i },
@@ -315,7 +315,7 @@ pub fn update_people(
             continue;
         }
 
-        let ground = sim.scenario.terrain.height_at(pos);
+        let ground = sim.scn.terrain.height_at(pos);
         let next = frame::to_bevy(pos, ground + 0.05);
         if let Some(yaw) = yaw {
             tf.rotation = Quat::from_rotation_y(yaw);
@@ -343,7 +343,7 @@ pub fn update_people(
             (None, false) => (1.6, 0.02),
         };
         let ph = t * rate + view.id as f32 * 1.7;
-        let k = figure_scale(sim.scenario.vr_palette().is_some());
+        let k = figure_scale(false);
         tf.scale = Vec3::new(k * (1.0 - 0.5 * amp * ph.sin()), k * (1.0 + amp * ph.sin()), k * (1.0 - 0.5 * amp * ph.sin()));
     }
 }
@@ -382,7 +382,7 @@ pub fn update_vehicles(
             continue;
         }
 
-        let ground = sim.scenario.terrain.height_at(t.pos);
+        let ground = sim.scn.terrain.height_at(t.pos);
         tf.translation = frame::to_bevy(t.pos, ground + 0.05);
         // World-frame bearing to a Bevy yaw: north is -Z, and the mesh's long
         // axis is +Z, so a heading of 0 (due east) is a quarter turn.
@@ -421,7 +421,7 @@ pub fn mark_refuges(
             x: r.pos.x,
             y: r.pos.y,
         };
-        let ground = sim.scenario.terrain.height_at(p);
+        let ground = sim.scn.terrain.height_at(p);
         commands.spawn(MaterialMeshBundle::<RetroMaterial> {
             mesh: mesh.clone(),
             material: mat.clone(),

@@ -28,23 +28,35 @@ struct World {
     agents: Abm,
     crews: Suppression,
     ignition: scenario::Cell,
+    /// Unit vector the fire is heading along (world frame).
+    toward: [f32; 2],
 }
 
 /// The shipped scenario, using the default graph policy or an explicitly
 /// supplied graph runtime.
 fn setup(policy: Option<UnitRuntime>) -> World {
     let scn = Scenario::load(data_dir()).unwrap();
-    let weather = Weather::default();
+    // South-easterly: the default north wind drives the planned fire away from
+    // Rocca Ventosa's homes and units (see `fire/tests/exposure.rs`).
+    let weather = Weather { wind_dir_deg: 135.0, ..Weather::default() };
     let plan = fire::plan_ignition(&scn, weather.wind_dir_deg, 250.0);
     let mut fire = FireSim::new(&scn, weather, 42).unwrap();
     fire.ignite_patch(plan.centre, plan.radius_m, &scn).unwrap();
     let agents = Abm::new(&scn, 42).unwrap();
-    let bases: Vec<Pos> = agents.refuges.iter().map(|r| r.pos).collect();
+    // Four of the six refuges are map-edge exits in 80-100% burnable fuel;
+    // stage on the two interior ones, which are clear ground.
+    let bases: Vec<Pos> = agents
+        .refuges
+        .iter()
+        .map(|r| r.pos)
+        .filter(|p| abm::refuge::burnable_fraction(&scn, *p, 300.0) < 0.2)
+        .collect();
     let crews = match policy {
         Some(policy) => Suppression::with_policy(&scn, &bases, policy).unwrap(),
         None => Suppression::new(&scn, &bases).unwrap(),
     };
-    World { scn, fire, agents, crews, ignition: plan.centre }
+    let a = (weather.wind_dir_deg + 180.0).to_radians() as f32;
+    World { scn, fire, agents, crews, ignition: plan.centre, toward: [a.sin(), a.cos()] }
 }
 
 impl World {
@@ -60,7 +72,23 @@ impl World {
 
     fn downwind(&self, m: f32) -> Pos {
         let c = self.scn.world.centre_of(self.ignition);
-        Pos { x: c.x, y: c.y - m }
+        Pos { x: c.x + self.toward[0] * m, y: c.y + self.toward[1] * m }
+    }
+
+    /// `ahead_m` past the furthest burning cell along the direction of spread:
+    /// where a crew can actually work the fire's edge, rather than the black
+    /// behind it.
+    fn head(&self, ahead_m: f32) -> Pos {
+        let c0 = self.scn.world.centre_of(self.ignition);
+        let along = |p: Pos| (p.x - c0.x) * self.toward[0] + (p.y - c0.y) * self.toward[1];
+        let p = self
+            .fire
+            .active_cells()
+            .iter()
+            .map(|c| self.scn.world.centre_of(*c))
+            .max_by(|a, b| along(*a).partial_cmp(&along(*b)).unwrap())
+            .unwrap_or(c0);
+        Pos { x: p.x + self.toward[0] * ahead_m, y: p.y + self.toward[1] * ahead_m }
     }
 
     fn unit(&self, kind: UnitKind) -> usize {
@@ -212,7 +240,7 @@ fn lowering_the_safety_limit_pulls_units_out_sooner() {
         }
         let mut w = setup(Some(tweaked(ov)));
         w.run(20, 20);
-        let head = w.downwind(120.0);
+        let head = w.head(60.0);
         for i in 0..w.crews.units.len() {
             if w.crews.units[i].kind == UnitKind::HandCrew {
                 let _ = w.crews.assign(i, Task::Attack { at: head });
@@ -224,6 +252,11 @@ fn lowering_the_safety_limit_pulls_units_out_sooner() {
 
     let bold = line_after(WORK_LIMIT);
     let timid = line_after(0.005);
+    // Re-measured on Rocca Ventosa (south-easterly, seed 42, crews ordered onto
+    // the head of the fire after 20 min): 44 m of line at the shipped limit,
+    // 0 m at 0.005. One crew of three gets to work in the hour, so the margin
+    // is thin, but a timid policy leaves all of them at staging.
+    println!("line cut: {bold:.0} m at {WORK_LIMIT}, {timid:.0} m at 0.005");
     assert!(
         timid < bold,
         "the safety limit has no effect: {bold:.0} m of line at {WORK_LIMIT}, {timid:.0} m at 0.005"

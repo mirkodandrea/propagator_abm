@@ -1,0 +1,18 @@
+{
+  "rows": 1600,
+  "cols": 1600,
+  "cell_m": 5.0,
+  "world_size_m": [
+    8000.0,
+    8000.0
+  ],
+  "classes": {
+    "0": "naturale",
+    "1": "strada",
+    "2": "pista",
+    "3": "edificio",
+    "4": "piazzale",
+    "5": "orto irriguo",
+    "6": "acqua"
+  }
+}

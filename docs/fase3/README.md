@@ -45,10 +45,10 @@ target/release/rocca Piano1 --priorita Piano --civili "0:Piano=p" --b-civili "0:
 
 | caso | nessuna difesa | prima il quartiere minacciato | prima l'altro |
 |---|---|---|---|
-| Piano1 | Il Piano 55 | Piano > Coste: Piano **8**, Coste 2 | Coste > Piano: Piano 55, Coste 2 |
+| Piano1 | Il Piano 55 | Piano > Coste: Piano **8**, Coste 2 | Coste > Piano: Piano 54, Coste 2 |
 | Borgo2 | Il Borgo 21 | Borgo > Coste: **4** | Coste > Borgo: 6 |
 | Piano3 (va verso Le Coste) | Le Coste 15 | Piano > Coste: **0**, le autobotti fermano il fronte prima | Coste > Piano: 15 |
-| Coste3 | Le Coste 8 | Coste > Borgo: **6** | Borgo > Coste: 8 |
+| Coste3 | Le Coste 8 | Coste > Borgo: **6** | Borgo > Coste: 7 |
 | Coste2 | Le Coste 18 | 18 | 18 |
 
 In Coste2 nessun piano salva case: il fronte supera le cascine sparse in meno di un'ora. Cambiano solo le famiglie colte in casa (11 → 9). In Borgo1, Borgo3 e Coste1 il fuoco minaccia poco.
@@ -74,17 +74,14 @@ Test (`crates/rocca/tests/fase3.rs`):
 
 ## 3. Non risolto
 
-- **Revisione del modello:** la correzione delle faville (700 m) e la difesa (85 %/50 %) sono parametri motivati ma non calibrati su dati. Le case "colpite" sono un fatto del modello di esposizione, non un danno strutturale verificato.
-- **Squadra AIB:** si muove a `CREW_SPEED` 3 m/s anche sulla provinciale, quindi arriva in circa 60 min dal bordo est. Da decidere se viaggia su mezzo (velocità dell'autobotte sulle strade carrozzabili).
-- **Le Coste è indifendibile** con 3 mezzi nei casi rapidi (Coste2): è una scelta di territorio da rivedere in fase 4. Inoltre 3 casi su 9 minacciano poco.
-- **Test rossi:**
-  - `abm::incident_gaps::the_last_resort_profile_sends_people_to_open_ground` (scenario reale Spotorno, fragile per sua stessa ammissione) cambia con la correzione delle faville;
-  - in `demo` restano rossi i 4 test di sempre (vecchio gioco a turni), più `lessons::l5_engines_and_crew_save_homes_only_on_the_fires_path`, che cambia con le correzioni di faville e autobotti. Va rimosso con `Session`.
-  - `game`, `fire` e `rocca` sono verdi.
-- **Kiosk:** il kiosk guida ancora il vecchio `game::sim.rs` con `demo::Referee`. Il passaggio a `rocca::Game` è legato alla nuova UX (fase 5), come la rimozione di `Session`, del turno e di `game::sim.rs`.
-- **Strade:** la difesa delle strade non è stata introdotta. Prima va misurato il suo effetto sulla percorribilità.
-- **Comportamento:** il grafo comportamentale non vede ancora la preallerta come osservazione. L'effetto passa da consapevolezza, preparazione e ritardo dell'ordine.
+Aggiornato dopo il checkpoint 3 (8 ottobre 2026): **un solo motore, un solo scenario, una sola modalità.**
+
+- **Modello:** il decadimento delle faville (700 m) e la difesa (85 %/50 %) sono parametri motivati ma non calibrati su dati. Le case "colpite" sono un fatto del modello di esposizione.
+- **Le Coste:** indifendibile con 3 mezzi nei casi rapidi (Coste2). Accettato dall'utente. 3 casi su 9 minacciano poco: la scelta dei casi spetta alla fase 4.
+- **Kiosk:** il pannello è provvisorio (egui). La UX vera è la fase 5: piano proposto disegnato sulla mappa, priorità cliccabili sui luoghi, debrief.
+- **Strade:** la difesa delle strade non è introdotta; prima va misurato il suo effetto sulla percorribilità.
+- **Comportamento:** la preallerta non è ancora un'osservazione del grafo comportamentale.
 
 ## 4. Passo successivo (checkpoint)
 
-Approva la fase 3: coordinatore, preallerta, difesa fisica e le due correzioni del modello (faville, acqua delle autobotti). Poi la **fase 4**: rilevatore di crisi, ×0/×N/×1 con timer e commit, e la scelta dei 2–3 casi definitivi (Piano1, Borgo2 e Piano3 sono i candidati, con il vento che gira).
+Fase 3 approvata. Prossima: la **fase 4**: rilevatore di crisi, ×0/×N/×1 con timer e commit, e la scelta dei 2–3 casi definitivi (Piano1, Borgo2 e Piano3 sono i candidati, con il vento che gira).

@@ -115,8 +115,4 @@ impl Population {
         Ok(serde_json::from_slice(&bytes)?)
     }
 
-    #[cfg(target_arch = "wasm32")]
-    pub fn load_web(bytes: &[u8]) -> Result<Population> {
-        Ok(serde_json::from_slice(bytes)?)
-    }
 }

@@ -7,7 +7,7 @@
 use rocca::{Game, Outcome, Plan, Territory};
 
 fn run(case: &str, prio: &[usize]) -> anyhow::Result<(Outcome, Vec<usize>)> {
-    let mut g = Game::new("out/factory/data".as_ref(), "t4_paese", case, 1)?;
+    let mut g = Game::new("data".as_ref(), case, 1)?;
     g.commit(Plan::new(g.districts.len()).with_priorities(prio))?;
     g.run_until(g.case.duration_s())?;
     let mut on = vec![0; g.districts.len()];
@@ -18,8 +18,8 @@ fn run(case: &str, prio: &[usize]) -> anyhow::Result<(Outcome, Vec<usize>)> {
 }
 
 fn main() -> anyhow::Result<()> {
-    let t = Territory::load("out/factory/data".as_ref(), "t4_paese")?;
-    let g = Game::new("out/factory/data".as_ref(), "t4_paese", &t.cases[0].name, 1)?;
+    let t = Territory::load("data".as_ref())?;
+    let g = Game::new("data".as_ref(), &t.cases[0].name, 1)?;
     let names: Vec<String> = g.districts.iter().map(|d| d.name.clone()).collect();
     let short = |k: usize| names[k].split(' ').next_back().unwrap().to_string();
     println!("| caso | piano | case colpite ({}) | colti in casa | mezzi a fine caso |", (0..names.len()).map(short).collect::<Vec<_>>().join(" / "));

@@ -338,7 +338,7 @@ fn check(data_dir: &str, id: &str) -> Value {
         ),
     );
 
-    // Units: staged the way the kiosk and `demo::Run` do it -- at the refuges.
+    // Units: staged at the refuges, the measured staging areas.
     // Ignition is not known here, so refuge order stands in for "closest first".
     let bases: Vec<Pos> = agents.refuges.iter().map(|r| r.pos).collect();
     let (units_json, engines_bad, engine_eta, hydrants_json) = match Suppression::new(&scn, &bases) {

@@ -8,7 +8,7 @@ use scenario::population::Status;
 fn main() -> anyhow::Result<()> {
     let a: Vec<String> = std::env::args().collect();
     for civil in [Civil::Nessuno, Civil::Preallerta, Civil::Evacua] {
-        let mut g = Game::new("out/factory/data".as_ref(), "t4_paese", &a[1], 1)?;
+        let mut g = Game::new("data".as_ref(), &a[1], 1)?;
         let d = g.district_index(&a[2]).unwrap();
         g.commit(Plan::new(g.districts.len()).with_civil(d, civil))?;
         let mut s = format!("{:<10}", format!("{civil:?}"));

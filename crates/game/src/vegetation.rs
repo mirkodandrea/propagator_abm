@@ -160,7 +160,7 @@ pub fn spawn(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
-    let scn = &sim.scenario;
+    let scn = &sim.scn;
     // WebGL browsers share GPU memory with the page.  A tenth of the desktop
     // vegetation still reads as continuous cover from the command camera,
     // while avoiding the multi-million-triangle startup spike.
@@ -172,7 +172,7 @@ pub fn spawn(
         // full density the shared cyan palette turns a hundred thousand plant
         // silhouettes into the highest-frequency signal in the view and hides
         // the roads, agents and unit markers the stage exists to exercise.
-        let default_density = if scn.vr_palette().is_some() { 0.16 } else { 1.0 };
+        let default_density = if false { 0.16 } else { 1.0 };
         std::env::var("SPOTORNO_VEG_DENSITY")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -183,16 +183,7 @@ pub fn spawn(
     // colour instead of leaving it white — vertex colour still carries the
     // per-species shape, but the hue reads as training-ground foliage, not
     // real macchia.
-    let base_color = match scn.vr_palette() {
-        // A dark, matte mass: enough cyan to identify fuel cover, never enough
-        // to compete with a route, a burning front or an operational marker.
-        Some(pal) => Color::srgb(
-            pal.void[0] * 0.65 + pal.grid[0] * 0.35,
-            pal.void[1] * 0.65 + pal.grid[1] * 0.35,
-            pal.void[2] * 0.65 + pal.grid[2] * 0.35,
-        ),
-        None => Color::WHITE,
-    };
+    let base_color = Color::WHITE;
     let material = materials.add(retro::material_with_style(StandardMaterial {
         base_color,
         perceptual_roughness: 0.92,
@@ -205,9 +196,9 @@ pub fn spawn(
         // as a flat dark mass from the shaded quarter.
         double_sided: true,
         cull_mode: None,
-        unlit: scn.vr_palette().is_some(),
+        unlit: false,
         ..default()
-    }, scn.vr_palette().is_some(), retro::RetroStyle::BACKGROUND));
+    }, false, retro::RetroStyle::BACKGROUND));
 
     let (rows, cols) = (scn.world.fire_rows, scn.world.fire_cols);
     let chunks_y = rows.div_ceil(CHUNK_CELLS);
@@ -223,20 +214,6 @@ pub fn spawn(
             for r in cy * CHUNK_CELLS..((cy + 1) * CHUNK_CELLS).min(rows) {
                 for c in cx * CHUNK_CELLS..((cx + 1) * CHUNK_CELLS).min(cols) {
                     let cell = Cell { row: r, col: c };
-                    // Static limestone clusters on the authored exposed
-                    // ridges. Their vertices are outside every plant's burn
-                    // range, so rocks never flare or turn into charcoal.
-                    if scn.metadata.id == "demo_borgo" {
-                        let p = scn.world.centre_of(cell);
-                        let ridge = ((p.x - 650.0) / 135.0).powi(2) + ((p.y - 3020.0) / 225.0).powi(2) < 1.0
-                            || ((p.x - 3310.0) / 165.0).powi(2) + ((p.y - 3270.0) / 155.0).powi(2) < 1.0;
-                        let mut rock_rng = Rng::seeded(r as u64 * 65_536 + c as u64 + 0xB01D);
-                        if ridge && rock_rng.unit() < 0.45 {
-                            let base = Vec3::new(p.x, scn.terrain.height_at(p) - 1.0, -p.y);
-                            let size = 8.0 + rock_rng.unit() * 12.0;
-                            builder.boulder(base, size, 0.6 + rock_rng.unit() * 0.6, rock_rng.unit() * 6.28);
-                        }
-                    }
                     let Some(species) = Species::of_fuel(scn.fuel_at(cell)) else {
                         continue;
                     };
@@ -365,7 +342,7 @@ fn scatter_plant(
         }
         Species::Broadleaf => broadleaf(out, base, scale, yaw, foliage, wood, rng),
         Species::Shrub => shrub(out, base, scale, yaw, foliage, rng),
-        Species::Grass if scn.vr_palette().is_none() && rng.unit() < 0.025 => {
+        Species::Grass if true && rng.unit() < 0.025 => {
             // Lone field trees break the meadow silhouette without changing
             // its simulation fuel; they share the same interpolated burn field.
             let height = (7.0 + rng.unit() * 5.0) * scale;
@@ -577,7 +554,7 @@ pub fn burn(sim: Res<Sim>, mut veg: ResMut<Vegetation>, mut meshes: ResMut<Asset
         state: sim.fire.state(),
         arrival: sim.fire.arrival_times(),
         intensity: sim.fire.intensity(),
-        world: sim.scenario.world,
+        world: sim.scn.world,
     };
     let now = sim.time_s() as f32;
 

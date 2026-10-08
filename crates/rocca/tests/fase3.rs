@@ -1,24 +1,17 @@
-//! Phase 3 checks (03-PIANO-DI-AZIONE, fase 3; CLAUDE.md «Verifiche»), on the
-//! factory territory `t4_paese`. Needs `out/factory/data` (build-town +
-//! game-cases); skipped with a note when it is missing.
+//! Phase 3 checks (03-PIANO-DI-AZIONE, fase 3; CLAUDE.md «Verifiche») on the
+//! game's territory, `data/scenarios/rocca_ventosa`.
 
 use std::path::{Path, PathBuf};
 
 use rocca::{Civil, Game, Outcome, Plan};
 use scenario::population::Status;
 
-fn data() -> Option<PathBuf> {
-    let d = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../out/factory/data");
-    if d.join("scenarios/t4_paese/game.json").exists() {
-        Some(d)
-    } else {
-        eprintln!("skip: out/factory/data/scenarios/t4_paese/game.json missing (scenario_factory.py build-town, game-cases)");
-        None
-    }
+fn data() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data")
 }
 
 fn game(case: &str) -> Game {
-    Game::new(&data().unwrap(), "t4_paese", case, 1).unwrap()
+    Game::new(&data(), case, 1).unwrap()
 }
 
 fn idx(g: &Game, name: &str) -> usize {
@@ -40,9 +33,6 @@ fn run(case: &str, prio: &[&str], civil: &[(&str, Civil)], minutes: i64) -> (Gam
 
 #[test]
 fn same_seed_same_plan_same_game() {
-    if data().is_none() {
-        return;
-    }
     let (a, oa) = run("Piano1", &["Piano", "Coste"], &[("Piano", Civil::Preallerta)], 60);
     let (b, ob) = run("Piano1", &["Piano", "Coste"], &[("Piano", Civil::Preallerta)], 60);
     assert_eq!(oa, ob);
@@ -53,9 +43,6 @@ fn same_seed_same_plan_same_game() {
 
 #[test]
 fn inverting_priorities_changes_posts_and_outcomes() {
-    if data().is_none() {
-        return;
-    }
     let (ga, a) = run("Piano1", &["Piano", "Coste"], &[], 180);
     let (gb, b) = run("Piano1", &["Coste", "Piano"], &[], 180);
     let (piano, coste) = (idx(&ga, "Piano"), idx(&ga, "Coste"));
@@ -74,9 +61,6 @@ fn inverting_priorities_changes_posts_and_outcomes() {
 
 #[test]
 fn defence_reduces_simulated_exposure() {
-    if data().is_none() {
-        return;
-    }
     let (g, defended) = run("Piano1", &["Piano"], &[], 180);
     let (_, open) = run("Piano1", &[], &[], 180);
     let d = idx(&g, "Piano");
@@ -89,9 +73,6 @@ fn departed(g: &Game, d: usize) -> usize {
 
 #[test]
 fn prealert_is_not_an_evacuation() {
-    if data().is_none() {
-        return;
-    }
     // Il Borgo with the fire 800 m north: at T+30 an evacuation has most of
     // the town on the move, a pre-alert has it ready at home.
     let (gp, _) = run("Borgo1", &[], &[("Borgo", Civil::Preallerta)], 30);
@@ -107,9 +88,6 @@ fn prealert_is_not_an_evacuation() {
 
 #[test]
 fn prealert_pays_off_when_the_fire_comes() {
-    if data().is_none() {
-        return;
-    }
     // Il Piano with the fire coming: pre-alerted households leave faster when
     // they do decide to, so fewer are caught at home than with no order.
     let (g, pre) = run("Piano1", &[], &[("Piano", Civil::Preallerta)], 120);
@@ -120,9 +98,6 @@ fn prealert_pays_off_when_the_fire_comes() {
 
 #[test]
 fn preview_has_no_side_effects_and_commit_revalidates() {
-    if data().is_none() {
-        return;
-    }
     let mut a = game("Piano1");
     let mut b = game("Piano1");
     let plan = |g: &Game| Plan::new(g.districts.len()).with_priorities(&[idx(g, "Piano"), idx(g, "Coste")]);
@@ -146,9 +121,6 @@ fn preview_has_no_side_effects_and_commit_revalidates() {
 
 #[test]
 fn civil_orders_only_escalate() {
-    if data().is_none() {
-        return;
-    }
     let mut g = game("Borgo1");
     let d = idx(&g, "Borgo");
     g.commit(Plan::new(g.districts.len()).with_civil(d, Civil::Evacua)).unwrap();

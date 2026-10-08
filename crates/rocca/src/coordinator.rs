@@ -85,15 +85,19 @@ pub struct View<'a> {
     pub districts: &'a [District],
 }
 
-fn speed(kind: UnitKind) -> f32 {
-    match kind {
-        UnitKind::Engine => ENGINE_SPEED,
-        _ => CREW_SPEED,
-    }
-}
-
-fn route_len(v: &View, nodes: &[NodeId]) -> f32 {
-    nodes.windows(2).map(|w| dist(v.agents.network.pos(w[0]), v.agents.network.pos(w[1]))).sum()
+/// Travel time along a route: crews ride their vehicle on carriageways and go
+/// at [`CREW_SPEED`] on tracks, as `abm::suppression` moves them.
+fn route_time(v: &View, kind: UnitKind, nodes: &[NodeId]) -> f32 {
+    let net = &v.agents.network;
+    nodes
+        .windows(2)
+        .map(|w| {
+            let len = dist(net.pos(w[0]), net.pos(w[1]));
+            let drivable = net.neighbours(w[0]).iter().find(|e| e.to == w[1]).is_none_or(|e| e.drivable);
+            let speed = if kind == UnitKind::Engine || drivable { ENGINE_SPEED } else { CREW_SPEED };
+            len / speed
+        })
+        .sum()
 }
 
 /// Where this unit would stand to cover `home`, and how long it takes to get
@@ -109,8 +113,8 @@ fn reach(v: &View, unit: usize, home: Pos) -> Option<(Pos, f32)> {
         return None;
     }
     let path = network::route(net, from, to, v.fire.threat(), drivable)?;
-    let walk = dist(u.pos, net.pos(from));
-    Some((post, (route_len(v, &path) + walk) / speed(u.kind)))
+    let walk = dist(u.pos, net.pos(from)) / CREW_SPEED;
+    Some((post, route_time(v, u.kind, &path) + walk))
 }
 
 fn workable(v: &View, p: Pos) -> bool {
@@ -120,6 +124,17 @@ fn workable(v: &View, p: Pos) -> bool {
 /// Safe enough to send a unit to now.
 fn safe(v: &View, p: Pos) -> bool {
     workable(v, p) && v.fire.active_cells().iter().all(|c| dist(v.scn.world.centre_of(*c), p) >= SAFE_M)
+}
+
+/// How soon `unit` could take a workable post in district `d`, by the roads
+/// open now: the quickest of the homes the front reaches first.
+pub fn eta_to_district(v: &View, unit: usize, d: usize) -> Option<f32> {
+    district::homes_by_threat(&v.districts[d], v.agents, v.fire, v.scn)
+        .into_iter()
+        .filter(|(h, _)| safe(v, *h))
+        .take(CANDIDATES)
+        .filter_map(|(h, _)| reach(v, unit, h).map(|(_, eta)| eta))
+        .min_by(|a, b| a.total_cmp(b))
 }
 
 /// The coordinator's proposal for `plan`, given the posts held now.
@@ -219,7 +234,7 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
                     }
                     let name = &v.districts[*d].name;
                     let reason = format!(
-                        "{} → {} (priorità {}): case sottovento al fronte, fuoco a {:.1} km, arrivo in {:.0} min",
+                        "{} va a {} (priorità {}): case sottovento al fronte, fuoco a {:.1} km, arrivo in {:.0} min",
                         u.callsign,
                         name,
                         plan.rank(*d).map_or(0, |r| r + 1),

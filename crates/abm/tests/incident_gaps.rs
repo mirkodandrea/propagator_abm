@@ -25,8 +25,16 @@ fn data_dir() -> std::path::PathBuf {
         .unwrap()
 }
 
+/// South-easterly 35 km/h. On Rocca Ventosa the default north wind drives the
+/// planned fire away from every home (0 households threatened in two hours),
+/// so nothing downstream of the fire is exercised; this window runs into 160+
+/// households (see `fire/tests/exposure.rs`).
+fn weather() -> Weather {
+    Weather { wind_dir_deg: 135.0, ..Weather::default() }
+}
+
 fn fire_for(scn: &Scenario) -> FireSim {
-    let weather = Weather::default();
+    let weather = weather();
     let plan = fire::plan_ignition(scn, weather.wind_dir_deg, 250.0);
     let mut fire = FireSim::new(scn, weather, 42).unwrap();
     fire.ignite_patch(plan.centre, plan.radius_m, scn).unwrap();
@@ -71,12 +79,14 @@ fn agents_for(scn: &Scenario, lib: &Library) -> Abm {
 /// pure fuel test would offer somebody a lane with houses alight on both sides
 /// and call it open ground.
 #[test]
-fn havens_are_measured_and_the_shore_is_derived_from_the_rasters() {
+fn havens_are_measured_off_the_data() {
     let scn = Scenario::load(data_dir()).unwrap();
     let net = abm::network::RoadNetwork::build(&scn);
     let havens = abm::haven::choose(&scn, &net, abm::haven::MAX_HAVENS);
 
-    assert!(havens.len() > 20, "only {} havens on a 10 km window", havens.len());
+    // Measured on Rocca Ventosa: 5 havens, two by the Borgo car parks and three
+    // around Il Piano (the old 10 km coastal window found dozens).
+    assert!(havens.len() >= 4, "only {} havens on an 8 km territory", havens.len());
     for h in &havens {
         assert!(
             h.burnable_frac <= 0.10,
@@ -85,43 +95,29 @@ fn havens_are_measured_and_the_shore_is_derived_from_the_rasters() {
             h.burnable_frac * 100.0
         );
     }
-
-    let water: Vec<_> = havens.iter().filter(|h| h.is_water()).collect();
-    assert!(
-        !water.is_empty(),
-        "no shore found on a scenario whose own refuges include the waterfront"
-    );
-    // The check that they are real, and the same one `refuge` uses: the
-    // waterfront is at sea level, and anything the derivation put on a ridge is
-    // a bug in the derivation rather than an interesting finding.
-    for h in &water {
-        let e = scn.terrain.height_at(h.pos);
-        assert!(e < 25.0, "\"shore\" haven at {:?} is {e:.0} m above the sea", h.pos);
-    }
+    // Inland: no sea, so the shore derivation must find nothing, not invent it.
+    assert!(!havens.iter().any(|h| h.is_water()), "a water haven on an inland territory");
 }
 
-/// Two of the four shipped real scenarios have no coast in their window at all —
-/// including `mati`, which is a scenario about people who died trying to reach
-/// a shoreline. That is a fact about the bake rather than about this code, and
-/// the reason every block offering the shore is gated on the distance being
-/// finite.
+/// Rocca Ventosa is inland, so it has no shore in its window. That is a fact
+/// about the territory rather than about this code, and the reason every block
+/// offering the shore is gated on the distance being finite: a maritime
+/// evacuation must be refused, not silently accepted.
 #[test]
 fn an_inland_window_has_no_shore_and_says_so() {
-    for id in ["pedrogao", "mati"] {
-        let scn = Scenario::load_by_id(data_dir(), id).unwrap();
-        let net = abm::network::RoadNetwork::build(&scn);
-        let havens = abm::haven::choose(&scn, &net, abm::haven::MAX_HAVENS);
-        assert!(
-            !havens.iter().any(|h| h.is_water()),
-            "{id} has no coast in its window but produced a water haven"
-        );
+    let scn = Scenario::load(data_dir()).unwrap();
+    let net = abm::network::RoadNetwork::build(&scn);
+    let havens = abm::haven::choose(&scn, &net, abm::haven::MAX_HAVENS);
+    assert!(
+        !havens.iter().any(|h| h.is_water()),
+        "the territory has no coast in its window but produced a water haven"
+    );
 
-        let mut agents = Abm::new(&scn, 42).unwrap();
-        assert!(
-            agents.request_boat_lift(0.0, 5.0).is_err(),
-            "{id} accepted a maritime evacuation with no water in the window"
-        );
-    }
+    let mut agents = Abm::new(&scn, 42).unwrap();
+    assert!(
+        agents.request_boat_lift(0.0, 5.0).is_err(),
+        "accepted a maritime evacuation with no water in the window"
+    );
 }
 
 /// The branch fires, and what it does is visible: households that would have
@@ -136,7 +132,20 @@ fn an_inland_window_has_no_shore_and_says_so() {
 /// shipped since before this work. This test lowers that block's own threshold,
 /// which is a parameter a profile is meant to move, and it is the only thing it
 /// changes.
+//
+// IGNORED on Rocca Ventosa, and that is a finding rather than a test bug. The
+// settlements are carved out of the fuel, so the threat field at a house never
+// reaches the block's threshold: lighting the most-surrounded burnable cell
+// within 550 m of a haven (4970, 5030, in the Borgo) burns 94 ha in two hours
+// and the peak threat at every one of the 245 homes is exactly 0.00, with
+// the nearest burnt cell 13 m from a door. A 70 km/h, 3% moisture variant
+// burns 542 ha and lifts the peak to 0.097 at two households, neither within
+// reach of a haven -- a test that passed on two households is the failure the
+// comment above describes. `block.fire_at_the_door` (and everything wired to
+// it: evacuate_now, shelter, last resort) is therefore dead on this territory
+// at the current model calibration; to be decided by the design owner.
 #[test]
+#[ignore = "fire_at_the_door never fires on Rocca Ventosa: peak threat at every home is 0 (13 m clearance), see comment"]
 fn the_last_resort_profile_sends_people_to_open_ground() {
     let scn = Scenario::load(data_dir()).unwrap();
     let graph = behavior::defaults::default_graph();
@@ -167,10 +176,24 @@ fn the_last_resort_profile_sends_people_to_open_ground() {
         // change to the fire's own draw then flipped it — enabling shrub
         // spotting did, and the branch was fine. A situation this test
         // constructs has to be constructed for a population, not a house.
-        let homes: Vec<Pos> = agents.households.iter().map(|h| h.home).collect();
+        //
+        // Only homes inside the branch's own 600 m walking limit of a haven
+        // count: on Rocca Ventosa there are 5 havens, all in the Borgo and Il
+        // Piano, so the most-surrounded cell overall (Le Coste farms, or the
+        // middle of a village) can leave nobody within reach of open ground.
+        let homes: Vec<Pos> = agents
+            .households
+            .iter()
+            .map(|h| h.home)
+            .filter(|p| {
+                agents.havens.iter().any(|v| {
+                    ((v.pos.x - p.x).powi(2) + (v.pos.y - p.y).powi(2)).sqrt() < 550.0
+                })
+            })
+            .collect();
         let at = most_surrounded_burnable(&scn, &homes, 200.0)
             .expect("burnable ground with houses around it");
-        let mut fire = FireSim::new(&scn, Weather::default(), 42).unwrap();
+        let mut fire = FireSim::new(&scn, weather(), 42).unwrap();
         fire.ignite_patch(scn.world.cell_of(at), 400.0, &scn).unwrap();
         agents.order_evacuation_all();
         run(&scn, &mut fire, &mut agents, 120, 10);
@@ -203,45 +226,6 @@ fn the_last_resort_profile_sends_people_to_open_ground() {
         t.state != TravelState::Sheltering
             || agents.households[t.household].status != scenario::population::Status::Evacuated
     }));
-}
-
-/// A boat lift is the Rhodes mechanism, and the thing that makes it an
-/// *evacuation* rather than a way of surviving is that somebody at the other end
-/// takes people off. Nobody leaves the beach before it is on station, and the
-/// rate is integrated over simulated time rather than accumulated per call —
-/// finding 5, which the structure damage model got wrong in exactly this shape.
-#[test]
-fn a_boat_lift_takes_people_off_the_beach_and_only_once_it_arrives() {
-    let scn = Scenario::load(data_dir()).unwrap();
-    let lifted_at = |dt: i64| {
-        let lib = library_with("reacts-to-events", "to-the-water");
-        let mut fire = fire_for(&scn);
-        let mut agents = agents_for(&scn, &lib);
-        agents.request_boat_lift(0.0, 6.0).unwrap();
-        // Everybody who can reach the water is sent there by the person
-        // profile, which is what an announced pickup does.
-        agents.order_evacuation_all();
-        run(&scn, &mut fire, &mut agents, 60, dt);
-        agents.stats().lifted
-    };
-
-    // Nothing arrives before the boats do.
-    let lib = library_with("reacts-to-events", "to-the-water");
-    let mut fire = fire_for(&scn);
-    let mut agents = agents_for(&scn, &lib);
-    agents.request_boat_lift(20.0 * 60.0, 6.0).unwrap();
-    agents.order_evacuation_all();
-    run(&scn, &mut fire, &mut agents, 15, 10);
-    assert_eq!(agents.stats().lifted, 0, "people left on boats that were not there yet");
-
-    // And the capacity does not depend on how often the caller steps.
-    let (coarse, fine) = (lifted_at(60), lifted_at(5));
-    assert!(fine > 0, "the lift arrived and took nobody off");
-    let drift = (coarse as f32 - fine as f32).abs() / fine as f32;
-    assert!(
-        drift < 0.15,
-        "a 60 s step lifted {coarse} and a 5 s step {fine}: the rate is per call, not per minute"
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -301,7 +285,7 @@ fn a_closure_binds_civilian_traffic_and_nothing_else() {
 /// closures leave links closed when the first one lifts.
 #[test]
 fn closures_expire_and_overlapping_ones_do_not_strand_a_link() {
-    let scn = Scenario::load_by_id(data_dir(), "road_cutoff").unwrap();
+    let scn = Scenario::load(data_dir()).unwrap();
     let mut fire = fire_for(&scn);
     let mut agents = Abm::new(&scn, 42).unwrap();
     let centre = agents.refuges[0].pos;
@@ -327,11 +311,11 @@ fn closures_expire_and_overlapping_ones_do_not_strand_a_link() {
 /// on Pedrógão Grande describes.
 #[test]
 fn the_fire_takes_out_the_warning_network() {
-    // Rhodes rather than Spotorno, and the reason is the measurement: four
-    // masts cover Spotorno's window with enough overlap that losing one leaves
-    // nobody without a signal, and six cover Rhodes' with a real hole in it.
-    // Which of those a window is, is a property of the window.
-    let scn = Scenario::load_by_id(data_dir(), "rhodes").unwrap();
+    // Rocca Ventosa derives a single mast (at ~(4296, 3801)) that covers all 245
+    // households, so losing it is the worst case: every household loses the
+    // channel at once, which is the correlation this test is about. Which of
+    // the possible shapes a window has is a property of the window.
+    let scn = Scenario::load(data_dir()).unwrap();
     let mut agents = Abm::new(&scn, 42).unwrap();
     assert!(!agents.comms().sites().is_empty(), "no warning infrastructure derived");
     assert_eq!(agents.comms().down(), 0);
@@ -349,8 +333,7 @@ fn the_fire_takes_out_the_warning_network() {
     );
 
     let site = agents.comms().sites()[0].pos;
-    let weather = Weather::default();
-    let mut fire = FireSim::new(&scn, weather, 42).unwrap();
+    let mut fire = FireSim::new(&scn, weather(), 42).unwrap();
     fire.ignite_patch(scn.world.cell_of(site), 250.0, &scn).unwrap();
     run(&scn, &mut fire, &mut agents, 25, 10);
 
@@ -370,13 +353,12 @@ fn the_fire_takes_out_the_warning_network() {
 /// fails, which is not the intuition and is what the Rhodes accounts describe.
 #[test]
 fn a_managed_population_is_warned_when_the_network_is_not() {
-    let scn = Scenario::load_by_id(data_dir(), "rhodes").unwrap();
+    let scn = Scenario::load(data_dir()).unwrap();
 
     let warned_after = |profile: &str| {
         let lib = library_with(profile, "walk-out");
         let mut agents = agents_for(&scn, &lib);
-        let weather = Weather::default();
-        let mut fire = FireSim::new(&scn, weather, 42).unwrap();
+        let mut fire = FireSim::new(&scn, weather(), 42).unwrap();
         // Take the network out first, then order the evacuation: the sequence
         // is the incident's, and an order issued before the outage would have
         // arrived anyway.
@@ -462,12 +444,20 @@ fn only_a_non_contiguous_ignition_counts_as_a_spot_fire() {
 #[test]
 fn the_shipped_fire_spots() {
     let scn = Scenario::load(data_dir()).unwrap();
-    let mut fire = fire_for(&scn);
+    // Not the south-easterly the other tests use: measured on Rocca Ventosa, two
+    // hours of 35 km/h gave 0 detached fires from the north, east and
+    // south-east, and 2, 6 and 8 from the south, south-west and west (seed 42,
+    // planned ignition), because the fire only throws embers once it reaches
+    // the shrub belts. South-westerly (6 spot fires) is used here.
+    let w = Weather { wind_dir_deg: 225.0, ..Weather::default() };
+    let plan = fire::plan_ignition(&scn, w.wind_dir_deg, 250.0);
+    let mut fire = FireSim::new(&scn, w, 42).unwrap();
+    fire.ignite_patch(plan.centre, plan.radius_m, &scn).unwrap();
     let mut agents = Abm::new(&scn, 42).unwrap();
     run(&scn, &mut fire, &mut agents, 120, 10);
     assert!(
         !agents.spot_fires().is_empty(),
-        "two hours of a 35 km/h tramontana on Ligurian macchia and not one \
+        "two hours of a 35 km/h south-westerly on shrub and not one \
          detached fire: check that the shrub classes still carry `spotting`"
     );
 }
@@ -494,8 +484,9 @@ fn the_shipped_profiles_are_unchanged_by_any_of_it() {
     assert_eq!(agents.closures().len(), 0);
     assert!(agents.boat_lift().is_none());
     // The figure the timeline in CLAUDE.md quotes: a general order on the
-    // shipped fire evacuates most of the town.
-    assert!(s.safe > 200, "only {} households reached safety", s.safe);
+    // shipped fire evacuates most of the town. Re-measured on Rocca Ventosa
+    // (south-easterly, seed 42): 197 of 245 reached safety in two hours.
+    assert!(s.safe > 150, "only {} households reached safety", s.safe);
 }
 
 // ---------------------------------------------------------------------------
@@ -544,13 +535,16 @@ fn checking_before_leaving_delays_the_departure_and_spreads_it_out() {
     let straight = departed_at(&library_with("wait-and-see", "walk-out"));
     let checked = departed_at(&delayed);
 
-    // T+20: the checking window. Fewer households have acted, and by a margin
-    // that is the mechanism rather than noise.
+    // T+10: the checking window. Fewer households have acted, and by a margin
+    // that is the mechanism rather than noise. Re-measured on Rocca Ventosa,
+    // where the whole town is within a few km of the fire and nearly everyone
+    // has acted by T+20 either way: 141 against 223 of 245 at T+10, 224 against
+    // 238 at T+20, so T+10 is where the delay is visible.
     assert!(
-        checked[1] + 30 < straight[1],
-        "confirmation changed nothing in the first twenty minutes: {} vs {}",
-        checked[1],
-        straight[1]
+        checked[0] + 30 < straight[0],
+        "confirmation changed nothing in the first ten minutes: {} vs {}",
+        checked[0],
+        straight[0]
     );
     // T+120: they get there in the end. This block delays, it does not refuse —
     // refusing is what the trust threshold is for, and conflating the two is
@@ -581,8 +575,14 @@ fn the_convincing_profile_leaves_a_real_share_of_the_town_at_home() {
     let (shipped, n) = outcome("wait-and-see");
     let (convinced, _) = outcome("takes-some-convincing");
 
+    // Re-measured on Rocca Ventosa (south-easterly, seed 42, 2 h, general
+    // order): 208 of 245 against 238 for the shipped profile, i.e. the trust
+    // threshold filters about an eighth of the town, where on the 750-household
+    // windows it filtered over a quarter. Most of the territory is close enough
+    // to the fire that it leaves on perception regardless, so the bound is
+    // "at least a tenth fewer".
     assert!(
-        convinced * 4 < shipped * 3,
+        convinced * 10 < shipped * 9,
         "a trust threshold at 0.65 moved {convinced} of {n} against the shipped {shipped}: \
          it is not filtering anybody, which is the always-negative finding 42 is about"
     );
@@ -618,7 +618,7 @@ fn confirmation_is_step_size_invariant() {
 /// so none of them may make the model depend on how often it is stepped.
 #[test]
 fn the_new_mechanisms_are_step_size_invariant() {
-    let scn = Scenario::load_by_id(data_dir(), "road_cutoff").unwrap();
+    let scn = Scenario::load(data_dir()).unwrap();
     let outcome = |dt: i64| {
         let lib = library_with("reacts-to-events", "to-the-water");
         let mut fire = fire_for(&scn);
@@ -642,7 +642,7 @@ fn the_new_mechanisms_are_step_size_invariant() {
 /// irreproducible: same seed, same library, same answer.
 #[test]
 fn turning_it_all_on_stays_deterministic() {
-    let scn = Scenario::load_by_id(data_dir(), "road_cutoff").unwrap();
+    let scn = Scenario::load(data_dir()).unwrap();
     let once = || {
         let lib = library_with("reacts-to-events", "to-the-water");
         let mut fire = fire_for(&scn);
@@ -703,14 +703,12 @@ fn a_transient_population_is_assigned_by_share_and_has_no_car() {
 #[test]
 #[ignore = "reports numbers rather than asserting them"]
 fn incident_mechanism_report() {
-    for id in ["spotorno", "rhodes"] {
-        println!("\n--- {id} ---");
-        incident_report_for(id);
-    }
+    println!("\n--- rocca_ventosa ---");
+    incident_report_for();
 }
 
-fn incident_report_for(id: &str) {
-    let scn = Scenario::load_by_id(data_dir(), id).unwrap();
+fn incident_report_for() {
+    let scn = Scenario::load(data_dir()).unwrap();
     println!(
         "{:38} {:>6} {:>10} {:>7} {:>8} {:>8} {:>7}",
         "profile", "safe", "sheltering", "dead", "on foot", "ppl safe", "lifted"
@@ -749,8 +747,8 @@ fn incident_report_for(id: &str) {
 #[ignore = "reports numbers rather than asserting them"]
 fn haven_report() {
     println!("{:12} {:>8} {:>8} {:>8} {:>7}", "scenario", "refuges", "havens", "shore", "masts");
-    for id in ["spotorno", "mati", "pedrogao", "rhodes"] {
-        let Ok(scn) = Scenario::load_by_id(data_dir(), id) else { continue };
+    for id in ["rocca_ventosa"] {
+        let scn = Scenario::load(data_dir()).unwrap();
         let net = abm::network::RoadNetwork::build(&scn);
         let refuges = abm::refuge::choose(&scn, &net, 12);
         let havens = abm::haven::choose(&scn, &net, abm::haven::MAX_HAVENS);

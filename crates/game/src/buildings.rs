@@ -35,7 +35,6 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
-use scenario::population::Status;
 use scenario::{Building, Pos, Scenario};
 
 use crate::sim::Sim;
@@ -125,7 +124,7 @@ pub fn spawn(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
-    let scn = &sim.scenario;
+    let scn = &sim.scn;
 
     // Storeys, where the population bake knows them.
     let mut levels: HashMap<i64, u8> = HashMap::new();
@@ -149,9 +148,9 @@ pub fn spawn(
         reflectance: 0.35,
         // VR-training dev scenarios are flat unlit geometry, not sunlit
         // plaster.
-        unlit: scn.vr_palette().is_some(),
+        unlit: false,
         ..default()
-    }, scn.vr_palette().is_some(), retro::RetroStyle::STRUCTURE));
+    }, false, retro::RetroStyle::STRUCTURE));
 
     let cols = (scn.world.width_m / CHUNK_M).ceil() as usize + 1;
     let rows = (scn.world.height_m / CHUNK_M).ceil() as usize + 1;
@@ -417,19 +416,7 @@ fn emit_building(
     let eave = hi + wall_h;
 
     let centroid = centroid(&ring);
-    let (wall, roof) = match scn.vr_palette() {
-        // VR-training look: dark solid walls and a restrained cyan roof. White
-        // is reserved for selection and interactive markers; using it for
-        // every wall made small houses look like goal pillars from altitude.
-        Some(pal) => {
-            let tint = |t: f32| [
-                pal.void[0] + (pal.grid[0] - pal.void[0]) * t,
-                pal.void[1] + (pal.grid[1] - pal.void[1]) * t,
-                pal.void[2] + (pal.grid[2] - pal.void[2]) * t,
-            ];
-            (tint(0.18), tint(0.52))
-        }
-        None => (
+    let (wall, roof) = (
             match kind {
                 Kind::Industrial => palette::INDUSTRIAL_WALL,
                 Kind::Civic => palette::CIVIC_WALL,
@@ -439,8 +426,7 @@ fn emit_building(
                 Kind::Industrial | Kind::Shed => palette::INDUSTRIAL_ROOF,
                 _ => palette::ROOFS[(hash01(b.id as u64, 0x3D) * 6.0) as usize % 6],
             },
-        ),
-    };
+        );
     // A plinth: the darker, damper base course every masonry building on this
     // coast has. It is also what stops a wall reading as an untextured plane.
     let plinth_top = base + (eave - base).min(1.0) * 0.9 + 0.6;
@@ -862,40 +848,28 @@ fn recolor_structure(colors: &mut [[f32; 4]], base: &[[f32; 4]], s: &Structure) 
     }
 }
 
-/// Building states follow the session's books (`demo::Referee`), not the fire
-/// model's raw exposure layer: that layer's ember reach (2.5 km) marks every
-/// house in a demo town as threatened and, in time, alight, so the houses
-/// burnt on screen while the end card said no home was hit. A home the books
-/// count as hit by the fire flares and then chars; a district the fire is
-/// threatening takes a warm cast. One source of truth for both.
+/// Building states are the game's own facts, the same the outcome counts
+/// (`rocca::Outcome::homes_hit`): a home the structure exposure model has
+/// ignited flares and then chars; a home taking heat now takes a warm cast.
 pub fn damage(
     sim: Res<Sim>,
-    kiosk: Res<crate::kiosk::Kiosk>,
     mut buildings: ResMut<Buildings>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     if !sim.is_changed() {
         return;
     }
-    let Some(referee) = kiosk.referee.as_ref() else { return };
     let now = sim.time_s() as f32;
-    let mut warm = vec![false; sim.agents.households.len()];
-    for (d, r) in referee.districts.iter().zip(&referee.reports) {
-        if r.level() >= demo::Level::Threatened {
-            for &i in &d.households {
-                if let Some(w) = warm.get_mut(i) {
-                    *w = true;
-                }
-            }
-        }
-    }
+    let fields = sim.fire.exposure().fields();
+    let warm: Vec<bool> = fields.iter().map(|f| f.radiant + f.ember > 0.05).collect();
+    let lost: Vec<bool> = fields.iter().map(|f| f.alight).collect();
 
     let Buildings { chunks, .. } = &mut *buildings;
 
     for chunk in chunks.iter_mut() {
         let mut dirty = false;
         for s in &mut chunk.structures {
-            let lost = s.households.iter().any(|&h| referee.tally.home_lost(h as usize) == Some(true));
+            let lost = s.households.iter().any(|&h| lost.get(h as usize) == Some(&true));
             let threatened = s.households.iter().any(|&h| warm.get(h as usize) == Some(&true));
             if lost && s.alight_at_s.is_infinite() {
                 s.alight_at_s = now;

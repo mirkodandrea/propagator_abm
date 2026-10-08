@@ -1,4 +1,4 @@
-//! Baked scenario assets for Spotorno, and the coordinate frames that tie
+//! The Rocca Ventosa territory, and the coordinate frames that tie
 //! them together.
 //!
 //! Three resolutions coexist deliberately:
@@ -24,14 +24,9 @@ pub mod population;
 pub mod terrain;
 pub mod vectors;
 
-#[cfg(target_arch = "wasm32")]
-mod web_assets {
-    include!(concat!(env!("OUT_DIR"), "/web_scenarios.rs"));
-}
-
 pub use cover::{Cover, CoverClass};
 pub use fuels::FuelDefRaw;
-pub use metadata::{ScenarioMetadata, ScenarioRegistry, VrPalette};
+pub use metadata::ScenarioMetadata;
 pub use population::{Dwelling, Household, Person, Population};
 pub use terrain::Terrain;
 pub use vectors::{Building, Road, Vectors, WaterSource};
@@ -109,44 +104,32 @@ pub struct Scenario {
     pub cover: Option<Cover>,
 }
 
-impl Scenario {
-    /// Returns true if this is a development/test scenario
-    pub fn is_dev(&self) -> bool {
-        self.metadata.is_dev
-    }
-
-    /// The VR-training palette to render this scenario with, or `None` for
-    /// the realistic look. Only dev scenarios ever get one — see
-    /// `metadata::VrPalette`.
-    pub fn vr_palette(&self) -> Option<VrPalette> {
-        self.metadata
-            .is_dev
-            .then(|| self.metadata.vr_palette.unwrap_or(VrPalette::DEFAULT))
-    }
-}
+/// The one territory the game is played on (`data/scenarios/rocca_ventosa`,
+/// published by `tools/scenario_factory.py publish`).
+pub const ID: &str = "rocca_ventosa";
 
 impl Scenario {
-    /// Load scenario by ID from the scenarios directory.
-    /// Example: load_by_id("data", "spotorno") loads from "data/scenarios/spotorno/"
-    #[cfg(not(target_arch = "wasm32"))]
+    /// Load the game's territory from a data directory (`data`).
+    pub fn load(data_dir: impl AsRef<Path>) -> Result<Scenario> {
+        Self::load_by_id(data_dir, ID)
+    }
+
+    /// Load a scenario directory `data_dir/scenarios/<id>/`. The game has one
+    /// ([`ID`]); the Scenario Factory uses this for the towns it is building.
     pub fn load_by_id(data_dir: impl AsRef<Path>, id: impl AsRef<str>) -> Result<Scenario> {
         let data_dir = data_dir.as_ref();
         let id = id.as_ref();
-
         let scenario_dir = data_dir.join("scenarios").join(id);
 
-        // Load metadata from scenario.json
         let metadata_path = scenario_dir.join("scenario.json");
-        let metadata_bytes = std::fs::read(&metadata_path)
-            .with_context(|| format!("reading {}", metadata_path.display()))?;
-        let metadata: ScenarioMetadata = serde_json::from_slice(&metadata_bytes)
-            .context("parsing scenario.json")?;
+        let metadata: ScenarioMetadata = serde_json::from_slice(
+            &std::fs::read(&metadata_path).with_context(|| format!("reading {}", metadata_path.display()))?,
+        )
+        .context("parsing scenario.json")?;
 
-        // Load scenario assets
         let terrain = Terrain::load(&scenario_dir).context("render terrain")?;
         let vectors = Vectors::load(&scenario_dir).context("osm vectors")?;
         let population = Population::load(&scenario_dir).context("population")?;
-
         let world = World {
             width_m: vectors.world_size_m[0],
             height_m: vectors.world_size_m[1],
@@ -154,155 +137,11 @@ impl Scenario {
             fire_cols: vectors.fire_grid.cols,
             cellsize: vectors.fire_grid.cellsize,
         };
-
         let (fuel, dem) = load_fire_rasters(&scenario_dir, world.fire_rows, world.fire_cols)?;
         let fuel_defs = fuels::load(data_dir).context("fuel table")?;
         let cover = Cover::load(&scenario_dir).context("land cover")?;
 
-        Ok(Scenario {
-            id: id.to_string(),
-            metadata,
-            world,
-            terrain,
-            vectors,
-            population,
-            fuel,
-            dem,
-            fuel_defs,
-            cover,
-        })
-    }
-
-    /// Load one of the scenarios compiled into the WebAssembly bundle.
-    #[cfg(target_arch = "wasm32")]
-    pub fn load_by_id(_data_dir: impl AsRef<Path>, id: impl AsRef<str>) -> Result<Scenario> {
-        let id = id.as_ref();
-        let assets = web_assets::scenario(id)
-            .with_context(|| format!("scenario {id:?} is not embedded in this web build"))?;
-        let metadata: ScenarioMetadata = serde_json::from_slice(assets.metadata)
-            .context("parsing embedded scenario.json")?;
-        anyhow::ensure!(
-            metadata.id == id,
-            "embedded scenario metadata id {:?} does not match requested id {id:?}",
-            metadata.id
-        );
-
-        let terrain = Terrain::load_web(assets.terrain_metadata, assets.terrain)
-            .context("embedded render terrain")?;
-        let vectors = Vectors::load_web(assets.vectors).context("embedded osm vectors")?;
-        let population =
-            Population::load_web(assets.population).context("embedded population")?;
-        let world = World {
-            width_m: vectors.world_size_m[0],
-            height_m: vectors.world_size_m[1],
-            fire_rows: vectors.fire_grid.rows,
-            fire_cols: vectors.fire_grid.cols,
-            cellsize: vectors.fire_grid.cellsize,
-        };
-        let fuel = read_raw_bytes::<i32>(assets.fuel, world.fire_rows * world.fire_cols)
-            .context("embedded fuel.i32")?;
-        let dem = read_raw_bytes::<f64>(assets.dem, world.fire_rows * world.fire_cols)
-            .context("embedded dem.f64")?;
-        let fuel_defs = fuels::load_web().context("embedded fuel table")?;
-
-        anyhow::ensure!(
-            metadata.fire_grid_size == [world.fire_rows, world.fire_cols],
-            "scenario metadata grid {:?} does not match vectors grid [{}, {}]",
-            metadata.fire_grid_size,
-            world.fire_rows,
-            world.fire_cols
-        );
-
-        Ok(Scenario {
-            id: id.to_string(),
-            metadata,
-            world,
-            terrain,
-            vectors,
-            population,
-            fuel,
-            dem,
-            fuel_defs,
-            cover: None,
-        })
-    }
-
-    /// Load the baked assets from a data directory.
-    /// For backward compatibility: if data directory contains "scenarios" subdir, loads default scenario.
-    /// Otherwise, tries to load from directory directly (legacy mode).
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn load(dir: impl AsRef<Path>) -> Result<Scenario> {
-        let dir = dir.as_ref();
-        let scenarios_dir = dir.join("scenarios");
-
-        // If scenarios directory exists, load default scenario from it
-        if scenarios_dir.exists() {
-            let registry = ScenarioRegistry::discover(dir)?;
-            let default_id = registry.default_id().to_string();
-            Self::load_by_id(dir, &default_id)
-        } else {
-            // Legacy mode: load directly from directory
-            let terrain = Terrain::load(dir).context("render terrain")?;
-            let vectors = Vectors::load(dir).context("osm vectors")?;
-            let population = Population::load(dir).context("population")?;
-
-            let world = World {
-                width_m: vectors.world_size_m[0],
-                height_m: vectors.world_size_m[1],
-                fire_rows: vectors.fire_grid.rows,
-                fire_cols: vectors.fire_grid.cols,
-                cellsize: vectors.fire_grid.cellsize,
-            };
-
-            let (fuel, dem) = load_fire_rasters(dir, world.fire_rows, world.fire_cols)?;
-            let fuel_defs = fuels::load(dir).context("fuel table")?;
-
-            Ok(Scenario {
-                id: "unknown".to_string(),
-                metadata: ScenarioMetadata {
-                    id: "unknown".to_string(),
-                    name: "Unknown".to_string(),
-                    description: "Loaded from legacy format".to_string(),
-                    location: String::new(),
-                    country: String::new(),
-                    coordinates: [0.0, 0.0],
-                    utm_zone: 0,
-                    world_size_m: [world.width_m, world.height_m],
-                    fire_grid_size: [world.fire_rows, world.fire_cols],
-                    buildings_count: 0,
-                    households_count: 0,
-                    people_count: 0,
-                    scenario_type: metadata::ScenarioType::Real,
-                    creation_date: String::new(),
-                    version: String::new(),
-                    tags: vec![],
-                    nationality: String::new(),
-                    region: String::new(),
-                    localities: vec![],
-                    is_dev: false,
-                    vr_palette: None,
-                },
-                world,
-                terrain,
-                vectors,
-                population,
-                fuel,
-                dem,
-                fuel_defs,
-                cover: Cover::load(dir).context("land cover")?,
-            })
-        }
-    }
-
-    /// Web builds are self-contained: GitHub Pages has no filesystem for the
-    /// game to read, so every registered scenario is compiled into the wasm.
-    /// Large render terrains are reduced to at most 512 samples per edge by
-    /// `build.rs`.
-    #[cfg(target_arch = "wasm32")]
-    pub fn load(dir: impl AsRef<Path>) -> Result<Scenario> {
-        let registry = ScenarioRegistry::load_web()?;
-        let default_id = registry.default_id().to_string();
-        Self::load_by_id(dir, default_id)
+        Ok(Scenario { id: id.to_string(), metadata, world, terrain, vectors, population, fuel, dem, fuel_defs, cover })
     }
 
     pub fn fuel_at(&self, c: Cell) -> i32 {
@@ -317,12 +156,11 @@ impl Scenario {
 /// Fuel and DEM are baked to raw little-endian arrays alongside the GeoTIFFs,
 /// because pulling a TIFF decoder in just to read two fixed-size grids is not
 /// worth the dependency.
-#[cfg(not(target_arch = "wasm32"))]
 fn load_fire_rasters(dir: &Path, rows: usize, cols: usize) -> Result<(Vec<i32>, Vec<f64>)> {
     let fuel = read_raw::<i32>(&dir.join("fuel.i32"), rows * cols)
-        .context("fuel.i32 (run scripts/bake_fire_rasters.py)")?;
+        .context("fuel.i32")?;
     let dem = read_raw::<f64>(&dir.join("dem.f64"), rows * cols)
-        .context("dem.f64 (run scripts/bake_fire_rasters.py)")?;
+        .context("dem.f64")?;
     Ok((fuel, dem))
 }
 

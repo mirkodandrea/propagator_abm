@@ -177,7 +177,7 @@ pub struct LifeAssets;
 pub(crate) fn plan_walks(sim: &Sim) -> HashMap<usize, Walk> {
     let mut out = HashMap::new();
     // The lab scenarios are flat-shaded test fixtures, not towns.
-    if sim.scenario.vr_palette().is_some() {
+    if false {
         return out;
     }
     let net = &sim.agents.network;
@@ -218,7 +218,7 @@ pub fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
-    if sim.scenario.vr_palette().is_some() {
+    if false {
         return;
     }
     let net = &sim.agents.network;
@@ -255,7 +255,7 @@ pub fn setup(
 
     let n = homes.len();
     let drivers = (n / 25).clamp(3, 14);
-    let pop = &sim.scenario.population;
+    let pop = &sim.scn.population;
     let mut spawned = 0;
     for k in 0..drivers {
         let h = (unit(k as u64 * 104_729 + 9) * n as f32) as usize % n;
@@ -267,7 +267,7 @@ pub fn setup(
         if path.len() < 4 {
             continue;
         }
-        let ground = sim.scenario.terrain.height_at(path[0]);
+        let ground = sim.scn.terrain.height_at(path[0]);
         commands.spawn((
             MaterialMeshBundle::<RetroMaterial> {
                 mesh: cars[(h + k) % cars.len()].clone(),
@@ -340,7 +340,7 @@ pub fn update(
             continue;
         }
         let pose = a.walk.pose(t, frozen);
-        let ground = sim.scenario.terrain.height_at(pose.pos);
+        let ground = sim.scn.terrain.height_at(pose.pos);
         tf.rotation = Quat::from_rotation_y(pose.yaw(true));
         tf.translation = frame::to_bevy(pose.pos, ground + 0.05);
     }

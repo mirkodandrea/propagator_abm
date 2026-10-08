@@ -1,8 +1,7 @@
 //! The kiosk camera: a miniature seen from above, never lost.
 //!
 //! Pitch 45-55 degrees, yaw within +-30, zoom and pan clamped to the town
-//! (spec §8). Replaces `camera::controls`, which is a free orbit. Any mouse
-//! input cancels the scripted fly-in.
+//! (spec §8). Any mouse input takes over from the home framing.
 
 use bevy::ecs::system::SystemParam;
 use bevy::input::gestures::{PinchGesture, RotationGesture};
@@ -13,6 +12,7 @@ use bevy::window::PrimaryWindow;
 use scenario::Pos;
 
 use super::{Kiosk, Phase};
+use rocca::Game;
 use crate::camera::OrbitCamera;
 use crate::sim::Sim;
 
@@ -22,43 +22,33 @@ const MAX_YAW: f32 = 1.75;
 const MIN_DIST: f32 = 90.0;
 const MAX_DIST: f32 = 4600.0;
 const PAN_RADIUS_M: f32 = 1500.0;
-const PLAY_DIST: f32 = 1900.0;
-const FLY_IN_S: f32 = 4.0;
-
-fn ease(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
 
 /// The places the frame has to hold: every district and the fire's origin.
-fn frame_points(sim: &Sim, kiosk: &Kiosk) -> Vec<Pos> {
-    let mut pts: Vec<Pos> = kiosk.referee.as_ref().map(|r| r.districts.iter().map(|d| d.centre).collect()).unwrap_or_default();
-    if pts.is_empty() {
-        pts = sim.agents.households.iter().map(|h| h.home).collect();
-    }
-    pts.push(kiosk.spec.ignition);
+fn frame_points(game: &Game) -> Vec<Pos> {
+    let mut pts: Vec<Pos> = game.districts.iter().map(|d| d.centre).collect();
+    pts.push(game.case.ignition());
     pts
 }
 
 /// What the camera looks at: the middle of the districts and the fire.
-fn home_focus(sim: &Sim, kiosk: &Kiosk) -> Vec3 {
+fn home_focus(sim: &Sim) -> Vec3 {
     if let Some((x, y)) = shot_focus() {
         let p = Pos { x, y };
-        return crate::frame::to_bevy(p, sim.scenario.terrain.height_at(p));
+        return crate::frame::to_bevy(p, sim.scn.terrain.height_at(p));
     }
-    let pts = frame_points(sim, kiosk);
+    let pts = frame_points(sim);
     let (x0, x1) = pts.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.x), b.max(p.x)));
     let (y0, y1) = pts.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.y), b.max(p.y)));
     // Nudged south: the chips stand above their districts and the action bar
     // takes the bottom of the screen, so the frame's centre sits a little low.
     let p = Pos { x: (x0 + x1) * 0.5, y: (y0 + y1) * 0.5 - 60.0 };
-    crate::frame::to_bevy(p, sim.scenario.terrain.height_at(p))
+    crate::frame::to_bevy(p, sim.scn.terrain.height_at(p))
 }
 
 /// Close enough that the houses read, far enough to hold every district.
-fn play_dist(sim: &Sim, kiosk: &Kiosk) -> f32 {
-    let f = crate::frame::to_world(home_focus(sim, kiosk));
-    let pts = frame_points(sim, kiosk);
+fn play_dist(sim: &Sim) -> f32 {
+    let f = crate::frame::to_world(home_focus(sim));
+    let pts = frame_points(sim);
     let (ex, ey) = pts.iter().fold((0.0f32, 0.0f32), |(a, b), p| (a.max((p.x - f.x).abs()), b.max((p.y - f.y).abs())));
     // The screen is wider than tall and tilted: north-south extent costs more.
     (ex.max(ey * 1.35) * 2.3 + 500.0).clamp(1300.0, 4200.0)
@@ -93,13 +83,13 @@ pub fn camera(
     kiosk: Res<Kiosk>,
     sim: Res<Sim>,
     focus: Res<crate::ui::UiFocus>,
-    order: Res<crate::command::OrderTool>,
     mut input: ViewInput,
     windows: Query<&Window, With<PrimaryWindow>>,
     mut query: Query<(&mut OrbitCamera, &mut Transform, &Camera, &mut bevy::core_pipeline::dof::DepthOfFieldSettings)>,
     time: Res<Time>,
     mut drag: Local<Drag>,
     mut released: Local<Option<(Phase, f32)>>,
+    mut settled: Local<u64>,
 ) {
     let delta = input.motion.read().fold(Vec2::ZERO, |s, e| s + e.delta);
     let shift = input.keys.pressed(KeyCode::ShiftLeft) || input.keys.pressed(KeyCode::ShiftRight);
@@ -118,12 +108,10 @@ pub fn camera(
     let rotation: f32 = input.rotation.read().map(|e| e.0).sum();
     let buttons = &input.buttons;
     let Ok((mut orbit, mut tf, camera, mut dof)) = query.get_single_mut() else { return };
-    let home = home_focus(&sim, &kiosk);
+    let home = home_focus(&sim);
     let t = kiosk.phase_t;
-    let pd = play_dist(&sim, &kiosk) * shot_zoom();
-    // A lower view lets the hill village, tree silhouettes and layered ridges
-    // read as a landscape; analytical stages retain their overhead framing.
-    let scene_pitch = if sim.scenario.metadata.id == "demo_borgo" { -0.68 } else { -0.86 };
+    let pd = play_dist(&sim) * shot_zoom();
+    let scene_pitch = -0.80;
 
     let window = windows.get_single().ok();
     let over_map = window.is_some_and(|w| w.focused)
@@ -131,7 +119,7 @@ pub fn camera(
         && window.and_then(|w| crate::pick::cursor_position(camera, w)).is_some();
     if buttons.just_pressed(MouseButton::Left) {
         // Shift-drag rotates even while choosing an order, on one-button trackpads.
-        drag.left = over_map && (!order.is_armed() || shift);
+        drag.left = over_map;
     }
     if buttons.just_pressed(MouseButton::Right) {
         drag.right = over_map;
@@ -154,31 +142,8 @@ pub fn camera(
     }
     let user_has_it = released.map(|(p, _)| p) == Some(kiosk.phase);
 
+    let _ = (t, &time);
     match kiosk.phase {
-        Phase::Attract => {
-            orbit.focus = home;
-            orbit.yaw = 0.45 * (time.elapsed_seconds() * 0.07).sin();
-            orbit.pitch = scene_pitch;
-            orbit.distance = pd;
-        }
-        Phase::Briefing if !user_has_it && t < FLY_IN_S => {
-            let k = ease(t / FLY_IN_S);
-            orbit.focus = home;
-            orbit.yaw = -0.45 * (1.0 - k);
-            orbit.pitch = -1.15 + (1.15 + scene_pitch) * k;
-            orbit.distance = 4600.0 + (pd - 4600.0) * k;
-        }
-        Phase::Outcome if !user_has_it => {
-            // The result panel takes the right half: slide the burnt town into
-            // the left half, and pull back a little.
-            let right = Quat::from_rotation_y(orbit.yaw) * Vec3::X;
-            let target = home + right * 0.30 * pd;
-            let k = (time.delta_seconds() * 2.5).min(1.0);
-            orbit.focus = orbit.focus.lerp(target, k);
-            orbit.distance += (pd * 1.15 - orbit.distance) * k;
-            orbit.pitch += (-0.9 - orbit.pitch) * k;
-            orbit.yaw += (0.0 - orbit.yaw) * k;
-        }
         _ => {
             let height = camera.logical_viewport_size().map_or(1000.0, |s| s.y);
             if (drag.left && !shift) || drag.middle {
@@ -200,8 +165,9 @@ pub fn camera(
                 orbit.yaw += rotation.to_radians();
                 orbit.distance *= (-scroll.clamp(-6.0, 6.0) * 0.1 - pinch.clamp(-1.0, 1.0)).exp();
             }
-            // First frame of play after the fly-in: settle on the home framing.
-            if kiosk.phase == Phase::Play && t < 0.05 && !user_has_it {
+            // A new game: settle on the home framing once.
+            if *settled != sim.generation.max(1) && sim.time_s() == 0 && !user_has_it {
+                *settled = sim.generation.max(1);
                 orbit.focus = home;
                 orbit.yaw = 0.0;
                 orbit.pitch = scene_pitch;
@@ -219,7 +185,7 @@ pub fn camera(
         orbit.focus.x = home.x + c.x;
         orbit.focus.z = home.z + c.y;
     }
-    orbit.focus.y = sim.scenario.terrain.height_at(crate::frame::to_world(orbit.focus));
+    orbit.focus.y = sim.scn.terrain.height_at(crate::frame::to_world(orbit.focus));
 
     let dir = Vec3::new(
         orbit.yaw.sin() * orbit.pitch.cos(),
@@ -227,15 +193,10 @@ pub fn camera(
         orbit.yaw.cos() * orbit.pitch.cos(),
     );
     tf.translation = orbit.focus + dir * orbit.distance;
-    let ground = sim.scenario.terrain.height_at(crate::frame::to_world(tf.translation));
+    let ground = sim.scn.terrain.height_at(crate::frame::to_world(tf.translation));
     tf.translation.y = tf.translation.y.max(ground + 25.0);
     tf.look_at(orbit.focus, Vec3::Y);
     dof.focal_distance = tf.translation.distance(orbit.focus);
-}
-
-/// Screen angle, clockwise from straight up, of a world bearing.
-pub fn screen_angle(bearing_deg: f32, yaw: f32) -> f32 {
-    bearing_deg.to_radians() + yaw
 }
 
 /// `KIOSK_SHOT_ZOOM=<k>` scales the play distance, to photograph close-ups.

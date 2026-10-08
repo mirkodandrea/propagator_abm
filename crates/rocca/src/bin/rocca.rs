@@ -2,8 +2,7 @@
 //!
 //!   rocca <caso> [--seme N] [--minuti M] [--priorita Borgo,Coste]
 //!                [--civili "0:Coste=preallerta,30:Coste=evacua"]
-//!                [--b-priorita ...] [--b-civili ...] [--dati out/factory/data]
-//!                [--scenario t4_paese] [--registro]
+//!                [--b-priorita ...] [--b-civili ...] [--dati data] [--registro]
 //!
 //! Plan A, and plan B if any `--b-*` is given (B = A plus what they change),
 //! on the same fire, seed and territory. Civil orders are given at their minute; priorities from T+0.
@@ -34,8 +33,8 @@ fn parse_civil(s: &str) -> Result<Vec<(i64, String, Civil)>> {
     Ok(out)
 }
 
-fn play(data: &std::path::Path, scenario: &str, case: &str, seed: u64, minutes: i64, s: &Script) -> Result<(Game, Outcome)> {
-    let mut g = Game::new(data, scenario, case, seed)?;
+fn play(data: &std::path::Path, case: &str, seed: u64, minutes: i64, s: &Script) -> Result<(Game, Outcome)> {
+    let mut g = Game::new(data, case, seed)?;
     let idx = |g: &Game, n: &str| g.district_index(n).with_context(|| format!("quartiere {n:?} sconosciuto"));
     let prio: Vec<usize> = s.priorities.iter().map(|n| idx(&g, n)).collect::<Result<_>>()?;
     let mut plan = Plan::new(g.districts.len()).with_priorities(&prio);
@@ -85,7 +84,7 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut case = None;
     let (mut seed, mut minutes) = (1u64, 180i64);
-    let (mut data, mut scenario) = (PathBuf::from("out/factory/data"), "t4_paese".to_string());
+    let mut data = PathBuf::from("data");
     let mut a = Script { priorities: vec![], civil: vec![] };
     let mut b = Script { priorities: vec![], civil: vec![] };
     let (mut has_b, mut registro) = (false, false);
@@ -97,7 +96,6 @@ fn main() -> Result<()> {
             "--seme" => seed = val()?.parse()?,
             "--minuti" => minutes = val()?.parse()?,
             "--dati" => data = val()?.into(),
-            "--scenario" => scenario = val()?,
             "--priorita" => a.priorities = val()?.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
             "--civili" => a.civil = parse_civil(&val()?)?,
             "--b-priorita" => {
@@ -124,8 +122,8 @@ fn main() -> Result<()> {
     }
     let case = case.context("uso: rocca <caso> [opzioni]; vedi l'intestazione di src/bin/rocca.rs")?;
     let t = std::time::Instant::now();
-    let (ga, oa) = play(&data, &scenario, &case, seed, minutes, &a)?;
-    let ob = if has_b { Some(play(&data, &scenario, &case, seed, minutes, &b)?.1) } else { None };
+    let (ga, oa) = play(&data, &case, seed, minutes, &a)?;
+    let ob = if has_b { Some(play(&data, &case, seed, minutes, &b)?.1) } else { None };
     println!("caso {case}, seme {seed}, {minutes} min simulati ({:.1} s)", t.elapsed().as_secs_f32());
     if registro {
         for e in &ga.log {

@@ -19,11 +19,11 @@
 | | Piano > Borgo | 0 / 8 / 2 | 0 / 10 / 7 | 0 / 2 / 0 |
 | | Borgo > Piano | 0 / 8 / 2 | 0 / 10 / 7 | 0 / 2 / 0 |
 | | Piano > Coste | 0 / 8 / 2 | 0 / 10 / 7 | 0 / 2 / 1 |
-| | Coste > Piano | 0 / 55 / 2 | 0 / 15 / 8 | 0 / 1 / 2 |
+| | Coste > Piano | 0 / 54 / 2 | 0 / 17 / 8 | 0 / 1 / 2 |
 | Piano2 | nessuna difesa | 0 / 8 / 8 | 0 / 0 / 4 | – |
 | | Piano > Borgo | 0 / 0 / 7 | 0 / 0 / 4 | 0 / 2 / 0 |
 | | Borgo > Piano | 0 / 0 / 7 | 0 / 0 / 4 | 0 / 2 / 0 |
-| | Piano > Coste | 0 / 0 / 7 | 0 / 0 / 4 | 0 / 2 / 1 |
+| | Piano > Coste | 0 / 0 / 10 | 0 / 0 / 4 | 0 / 2 / 1 |
 | | Coste > Piano | 0 / 0 / 8 | 0 / 0 / 4 | 0 / 0 / 2 |
 | Piano3 | nessuna difesa | 0 / 0 / 15 | 0 / 0 / 6 | – |
 | | Piano > Borgo | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 2 / 0 |
@@ -37,11 +37,11 @@
 | | Piano > Coste | 0 / 0 / 1 | 0 / 0 / 2 | 0 / 2 / 1 |
 | Coste2 | nessuna difesa | 0 / 0 / 18 | 0 / 0 / 11 | – |
 | | Coste > Borgo | 0 / 0 / 18 | 0 / 0 / 9 | 1 / 0 / 2 |
-| | Borgo > Coste | 0 / 0 / 18 | 0 / 0 / 11 | 2 / 0 / 1 |
+| | Borgo > Coste | 0 / 0 / 18 | 0 / 0 / 11 | 2 / 0 / 0 |
 | | Coste > Piano | 0 / 0 / 18 | 0 / 0 / 9 | 0 / 1 / 2 |
-| | Piano > Coste | 0 / 0 / 18 | 0 / 0 / 11 | 0 / 2 / 1 |
+| | Piano > Coste | 0 / 0 / 18 | 0 / 0 / 11 | 0 / 2 / 0 |
 | Coste3 | nessuna difesa | 0 / 0 / 8 | 0 / 0 / 2 | – |
 | | Coste > Borgo | 0 / 0 / 6 | 0 / 0 / 3 | 0 / 0 / 2 |
-| | Borgo > Coste | 0 / 0 / 8 | 0 / 0 / 2 | 0 / 0 / 1 |
+| | Borgo > Coste | 0 / 0 / 7 | 0 / 0 / 1 | 0 / 0 / 1 |
 | | Coste > Piano | 0 / 0 / 6 | 0 / 0 / 3 | 0 / 1 / 2 |
-| | Piano > Coste | 0 / 0 / 6 | 0 / 0 / 2 | 0 / 2 / 1 |
+| | Piano > Coste | 0 / 0 / 5 | 0 / 0 / 1 | 0 / 2 / 1 |

@@ -43,6 +43,7 @@ pub struct OverlayAssets {
     /// What the order rings were built for: (warned districts, engine posts).
     order_key: (usize, usize),
     ring_blue: Handle<RetroMaterial>,
+    ring_amber: Handle<RetroMaterial>,
     ring_green: Handle<RetroMaterial>,
 }
 
@@ -108,6 +109,7 @@ pub fn setup(
         WindArrow,
     ));
     let ring_blue = mat([0.35, 0.75, 1.0], 0.85, 1.6);
+    let ring_amber = mat([1.0, 0.75, 0.25], 0.85, 1.6);
     let ring_green = mat([0.35, 1.0, 0.6], 0.85, 1.4);
     commands.insert_resource(OverlayAssets {
         unlit_white,
@@ -117,53 +119,52 @@ pub fn setup(
         key: (usize::MAX, 0, 0),
         order_key: (usize::MAX, 0),
         ring_blue,
+        ring_amber,
         ring_green,
     });
 }
 
-/// The player's orders, on the ground: a sky-blue ring round each warned
-/// district, and a green ring for the homes each posted engine protects
-/// (`demo::run::DEFEND_REACH_M`). Rebuilt only when an order is added.
-/// Rings sit +20 m like the others (finding 13).
+/// The plan in force, on the ground: a ring round each district with a civil
+/// order (blue: evacuation, amber: pre-alert), and a green ring for the homes
+/// each unit's post covers (`rocca::coordinator::DEFEND_REACH_M`). Rebuilt
+/// only when the plan or the posts change. Rings sit +20 m (finding 13).
 pub fn update_orders(
     mut commands: Commands,
     sim: Res<Sim>,
-    kiosk: Res<crate::kiosk::Kiosk>,
     mut assets: ResMut<OverlayAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     old: Query<Entity, With<OrderRing>>,
 ) {
-    let Some(r) = kiosk.referee.as_ref() else { return };
-    let warned = r.reports.iter().filter(|x| x.warned_at_s.is_some()).count();
-    let posts: usize = (0..r.districts.len()).map(|d| r.posted(d)).sum();
-    if (warned, posts) == assets.order_key {
+    let civil = sim.active.civil.iter().fold(0usize, |a, c| a * 3 + *c as usize);
+    let posts: usize = sim.posts.iter().flatten().fold(0usize, |a, p| a.wrapping_mul(31).wrapping_add(p.at.x as usize ^ p.at.y as usize));
+    if (civil, posts) == assets.order_key {
         return;
     }
-    assets.order_key = (warned, posts);
+    assets.order_key = (civil, posts);
     for e in &old {
         commands.entity(e).despawn();
     }
-    for (k, d) in r.districts.iter().enumerate() {
-        if r.reports[k].warned_at_s.is_some() {
-            commands.spawn((
-                MaterialMeshBundle::<RetroMaterial> {
-                    mesh: meshes.add(ring_mesh(&sim.scenario, d.centre, d.radius_m + 45.0)),
-                    material: assets.ring_blue.clone(),
-                    ..default()
-                },
-                OrderRing,
-            ));
-        }
-        for p in r.posts(k) {
-            commands.spawn((
-                MaterialMeshBundle::<RetroMaterial> {
-                    mesh: meshes.add(ring_mesh(&sim.scenario, *p, demo::run::DEFEND_REACH_M)),
-                    material: assets.ring_green.clone(),
-                    ..default()
-                },
-                OrderRing,
-            ));
-        }
+    for (k, d) in sim.districts.iter().enumerate() {
+        let mat = match sim.active.civil[k] {
+            rocca::Civil::Nessuno => continue,
+            rocca::Civil::Preallerta => assets.ring_amber.clone(),
+            rocca::Civil::Evacua => assets.ring_blue.clone(),
+        };
+        let radius = d.households.iter().map(|&i| rocca::district::dist(sim.agents.households[i].home, d.centre)).fold(0.0, f32::max);
+        commands.spawn((
+            MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(ring_mesh(&sim.scn, d.centre, radius + 45.0)), material: mat, ..default() },
+            OrderRing,
+        ));
+    }
+    for p in sim.posts.iter().flatten() {
+        commands.spawn((
+            MaterialMeshBundle::<RetroMaterial> {
+                mesh: meshes.add(ring_mesh(&sim.scn, p.at, rocca::coordinator::DEFEND_REACH_M)),
+                material: assets.ring_green.clone(),
+                ..default()
+            },
+            OrderRing,
+        ));
     }
 }
 
@@ -181,7 +182,7 @@ pub fn update_wind(sim: Res<Sim>, mut q: Query<&mut Transform, With<WindArrow>>)
     let Ok(mut tf) = q.get_single_mut() else { return };
     let w = sim.fire.weather();
     let from = (w.wind_dir_deg as f32).to_radians();
-    let (pos, _) = crate::terrain_mesh::cell_ground(&sim.scenario, sim.ignition.centre);
+    let (pos, _) = crate::terrain_mesh::cell_ground(&sim.scn, sim.scn.world.cell_of(sim.case.ignition()));
     // Beside the fire, not upwind of it: upwind is often under the top HUD band.
     // Prefer the east flank; if the wind runs east-west, the south one.
     let side = |a: f32| (a.sin(), a.cos());
@@ -196,7 +197,7 @@ pub fn update_wind(sim: Res<Sim>, mut q: Query<&mut Transform, With<WindArrow>>)
     let down = from + std::f32::consts::PI;
     let up = Pos { x: pos.x + sx * 420.0 + down.sin() * 260.0, y: pos.y + sy * 420.0 + down.cos() * 260.0 };
     let len = 300.0 + 4.0 * w.wind_speed_kmh as f32;
-    let ground = sim.scenario.terrain.height_at(up);
+    let ground = sim.scn.terrain.height_at(up);
     tf.translation = frame::to_bevy(up, ground + WIND_LIFT_M);
     tf.rotation = Quat::from_rotation_y(-(from + std::f32::consts::PI));
     tf.scale = Vec3::new(len * 0.55, 1.0, len);
@@ -251,7 +252,7 @@ pub fn update_markers(
         if !caught {
             continue;
         }
-        let g = sim.scenario.terrain.height_at(h.home);
+        let g = sim.scn.terrain.height_at(h.home);
         octa(&mut b, frame::to_bevy(h.home, g + BEACON_LIFT_M), 8.0, [2.0, 0.36, 0.24]);
     }
     let n = b.pos.len();
@@ -285,14 +286,14 @@ pub fn update_markers(
     for &s in &spots {
         commands.spawn((
             MaterialMeshBundle::<RetroMaterial> {
-                mesh: meshes.add(ring_mesh(&sim.scenario, s, 90.0)),
+                mesh: meshes.add(ring_mesh(&sim.scn, s, 90.0)),
                 material: assets.ring_red.clone(),
                 ..default()
             },
             DynamicMarker,
         ));
         // "!": a bar and a dot.
-        let g = sim.scenario.terrain.height_at(s) + PIN_LIFT_M;
+        let g = sim.scn.terrain.height_at(s) + PIN_LIFT_M;
         let mut t = crate::toy::Toy::default();
         t.cuboid(Vec3::new(0.0, 22.0, 0.0), Vec3::new(5.0, 14.0, 5.0), [1.0, 0.9, 0.9]);
         t.cuboid(Vec3::new(0.0, 2.0, 0.0), Vec3::new(5.5, 5.5, 5.5), [1.0, 0.9, 0.9]);
@@ -309,13 +310,13 @@ pub fn update_markers(
     for &(centre, radius) in &closures {
         commands.spawn((
             MaterialMeshBundle::<RetroMaterial> {
-                mesh: meshes.add(ring_mesh(&sim.scenario, centre, radius.max(60.0))),
+                mesh: meshes.add(ring_mesh(&sim.scn, centre, radius.max(60.0))),
                 material: assets.ring_orange.clone(),
                 ..default()
             },
             DynamicMarker,
         ));
-        let g = sim.scenario.terrain.height_at(centre) + PIN_LIFT_M;
+        let g = sim.scn.terrain.height_at(centre) + PIN_LIFT_M;
         let mut t = crate::toy::Toy::default();
         t.cuboid(Vec3::new(0.0, 12.0, 0.0), Vec3::new(18.0, 4.0, 3.0), [1.0, 0.55, 0.1]);
         t.cuboid(Vec3::new(-16.0, 5.0, 0.0), Vec3::new(2.5, 8.0, 2.5), [1.0, 1.0, 1.0]);

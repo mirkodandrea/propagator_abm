@@ -4,8 +4,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
-- **Fase corrente: fase 3, gameplay headless, consegnata** (2026-10-08, `docs/fase3/README.md`, crate `crates/rocca`).
-- **Prossimo checkpoint umano: checkpoint 3.** Approvare coordinatore, preallerta, difesa fisica e le due correzioni del modello (faville a 700 m, autobotti che pre-bagnano solo con il fronte entro 300 m). Poi la fase 4.
+- **Fase corrente: fase 4, crisi e bilanciamento** (fase 3 approvata il 2026-10-08; codice vecchio rimosso: un solo motore `rocca::Game`, un solo scenario `data/scenarios/rocca_ventosa`, una sola modalità).
+- **Prossimo checkpoint umano:** fine fase 4 (replay e tabella: una decisione presa alla crisi conta, nessuna strategia sempre vincente, 2–3 casi definitivi).
 
 ## Decisioni dell'utente
 
@@ -15,6 +15,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - 2026-10-08: **checkpoint 2 approvato**, layout 1 di `t4_paese` così com'è. Affrontare la risoluzione fine **prima** della fase 3.
 - 2026-10-08: **DTM, strade, case e rendering andranno a risoluzione più fine dei 20 m** del propagatore (che resta a 20 m). Avrà effetto sia sulla grafica sia sui sistemi di gioco. Da pianificare nelle prossime iterazioni.
 - 2026-10-08: **il terreno fine serve solo a grafica e agenti, non all'incendio.** Il fuoco usa il DEM a 20 m approvato, invariato (non la media del terreno fine).
+- 2026-10-08: **checkpoint 3 approvato.** La squadra AIB viaggia su mezzo. Le Coste indifendibile nei casi rapidi: accettato.
+- 2026-10-08: **un solo motore, un solo scenario, una sola modalità.** Non fare riferimento a versioni vecchie del codice: rimosse (`demo`, `play`, `text`, `chat`, `telemetry`, scenari reali e dev, build web, palette VR, vecchio flusso del kiosk).
 - 2026-10-08: fase 3 avviata senza aspettare gli screenshot di `cover.u8` ("segui il piano").
 - 2026-10-08: **niente altro lavoro grafico ora**: seguire il piano, proseguire con sistemi e gameplay (fase 3).
 - 2026-10-08: **risoluzione fine approvata** ("commit and push … continua"): terreno a 5 m e passo ritracciato a 8,9 km nello stesso corridoio. Avanti con `cover.u8` nel kiosk.
@@ -29,33 +31,47 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ### Risoluzione fine (approvata il 2026-10-08)
 
-- [ ] Verificare in fase 5 il colore del suolo da `cover.u8`: il kiosk mostra `t4_paese` travestito da `demo_borgo`, scenario dev con palette VR, che non usa `ground_color`. Le macchie chiare attorno alle case de Le Coste restano: vengono da un altro livello, da individuare.
+- [ ] Verificare in fase 5, a distanza ravvicinata, il colore del suolo da `cover.u8` (ora visibile: niente più palette VR) e le macchie chiare attorno alle case de Le Coste.
 - [ ] Primo piano nel kiosk di tornanti e piazzole (draping a livello di pixel).
 - [ ] Strade come tagliafuoco: Borgo2 con vento da N supera o no la SP 12 secondo pochi metri di tracciato (spotting). Decidere se la provinciale è una fascia parafuoco più larga o solo una strada.
 
-### Fase 3: gameplay headless (consegnata, in attesa del checkpoint)
+### Fase 4: crisi e bilanciamento
 
-- [ ] **Checkpoint umano 3** (`docs/fase3/README.md`).
-- [ ] Kiosk su `rocca::Game`: rimuovere `game::sim.rs`, `demo::Session`, i turni e `demo::Referee` insieme alla nuova UX (fase 5).
-- [ ] Squadra AIB: oggi viaggia a `CREW_SPEED` 3 m/s anche sulla provinciale, quindi arriva in circa 60 min dal bordo est. Decidere se si sposta su mezzo.
-- [ ] Le Coste (cascine sparse) è indifendibile nei casi rapidi (Coste2), e 3 casi su 9 minacciano poco: scegliere i casi in fase 4.
-- [ ] Preallerta come osservazione del grafo comportamentale (`HouseholdObs`): oggi agisce tramite consapevolezza, preparazione e ritardo dell'ordine.
+- [x] 2026-10-08 Rilevatore di crisi (`crates/rocca/src/crisis.rs`) sullo stato conosciuto:
+  - tipi: quartiere scoperto con risposta ancora possibile, vento che gira, mezzo perso;
+  - al massimo 2 crisi, distanziate di almeno 15 min;
+  - niente crisi prima del primo piano, né per un quartiere lasciato scoperto consapevolmente all'ultima conferma.
+- [x] 2026-10-08 Casi «_gira» in `game.json`: a T+45 il vento spinge il fuoco verso la località più vicina tra le altre.
+- [ ] Misura «la decisione alla crisi conta» (`examples/crisi.rs`, tabella in `docs/fase4/crisi.md`):
+  - effetto netto in Coste2_gira: case colpite 76 se si ignora, 61 rispondendo subito, 47 rispondendo 20 min dopo; famiglie colte in casa 24 se si ignora, 12 rispondendo subito con evacuazione;
+  - nella maggior parte dei casi rispondere cambia poco: vanno scelti casi in cui la crisi è un vero dilemma, o rivisto il territorio (piano d'azione: «si torna a case/strade e inneschi»).
+- [ ] Fasi ×0/×N/×1 nel `Game` (timer reale a ×1, piano attivo che prosegue, commit o scadenza), condivise da headless e kiosk.
+- [ ] Prove strategiche: una decisione alla crisi conta, nessuna strategia sempre vincente. Scegliere 2–3 casi (candidati Piano1, Borgo2, Piano3, con il vento che gira).
+- [ ] Preallerta come osservazione del grafo comportamentale (`HouseholdObs`).
+- [ ] **Scoperta (porting dei test, 2026-10-08):** sul territorio la minaccia per le persone davanti alle case vale sempre 0, perché ogni casa ha una radura di circa 13 m. Il blocco comportamentale «fuoco alla porta» non scatta mai, e con lui i rami evacua-subito, riparo e ultima risorsa. Test `incident_gaps::the_last_resort_profile…` ignorato con motivazione. Decidere se è calibrazione del comportamento o del territorio.
 - [ ] Difesa delle strade: misurare prima l'effetto sulla percorribilità (spec).
-- [ ] Rivedere i parametri nuovi: decadimento delle faville `EMBER_DECAY_M` 700 m, protezione `PROTECTED_EMBER` 0,85 e `PROTECTED_RADIANT` 0,5, soglie del coordinatore.
+- [ ] Rivedere i parametri nuovi: `EMBER_DECAY_M` 700 m, `PROTECTED_EMBER` 0,85 e `PROTECTED_RADIANT` 0,5, soglie del coordinatore.
 
-### Fasi 4–6
+### Fasi 5–6
 
-- [ ] Crisi ×1, bilanciamento, nuova UX, playtest (vedi `03-PIANO-DI-AZIONE.md`).
+- [ ] Nuova UX e playtest (vedi `03-PIANO-DI-AZIONE.md`).
 
 ### Debito tecnico
 
-- [ ] `abm::incident_gaps::the_last_resort_profile_sends_people_to_open_ground` è rosso dopo la correzione delle faville (scenario reale Spotorno, fragile per sua stessa ammissione): rimuoverlo con gli scenari reali o ricostruirlo su `t4_paese`.
-- [ ] 5 test rossi in `demo` sul vecchio gioco a turni (dal 2026-10-08 anche `lessons::l5_engines_and_crew_save_homes_only_on_the_fires_path`, dopo le correzioni di faville e autobotti) (`balance`, `lessons`, `playtest_feedback`): rimuovere insieme a `Session` in fase 3.
-- [ ] `demo_borgo` ha 15 famiglie su celle combustibili (trovate da `scenario_check`). Irrilevante se `demo_borgo` viene rimosso.
-- [ ] Il kiosk ha reset per inattività e rotazione dei paesi: da rimuovere con la nuova UX.
 - [ ] `CLAUDE.md` cita `docs/rocca-ventosa/…`, ma i documenti sono in `docs/`.
+- [ ] File non tracciati rimasti dai vecchi scenari (`data/scenarios/{mati,pedrogao,rhodes,spotorno}/*.tif`, `data/osm_raw.json`, `data/spotorno_render_terrain.tif`, `dist/`, `results/`): da cancellare a mano, non sono in git.
+- [ ] Kiosk: pannello provvisorio in egui; la UX vera è la fase 5.
 
 ## Fatto
+
+- [x] 2026-10-08 **Un solo motore, un solo scenario, una sola modalità:**
+  - lo scenario è pubblicato in `data/scenarios/rocca_ventosa` (`scenario_factory.py publish`) e `Scenario::load(data)` carica solo quello;
+  - rimossi registro, build web, metadati dev e palette VR;
+  - `rocca::Game` carica la libreria di comportamento di `data/behaviours` e parte con il fuoco già nello stato;
+  - kiosk (`crates/game`): `sim.rs` è solo l'orologio intorno a `rocca::Game`, il nuovo `kiosk` è pianifica/esegui/fine con l'anteprima del piano, e la nuova partita si avvia solo dal pannello operatore (nessun reset per inattività); edifici e anelli seguono i fatti del `Game`;
+  - rimossi `demo`, `play`, `text`, `chat`, `telemetry`, `tools/mcp`, gli script del vecchio gioco, gli scenari reali e quelli dev;
+  - la squadra AIB viaggia su mezzo sulle carrozzabili: arrivo in 15 min invece di 59;
+  - test del modello (`abm`, `fire`) portati su Rocca Ventosa da un subagente: eliminato il test della scialuppa (niente costa), ignorato `the_last_resort…` (vedi fase 4); workspace tutto verde (35 target).
 
 - [x] 2026-10-08 **Fase 3 headless** (`docs/fase3/README.md`):
   - crate `rocca`: `Game`, piano, coordinatore, CLI A/B ed esempi `ab_sweep` e `civili`;

@@ -22,7 +22,10 @@ fn data_dir() -> std::path::PathBuf {
 }
 
 fn fire_for(scn: &Scenario) -> FireSim {
-    let weather = Weather::default();
+    // South-easterly: on Rocca Ventosa the default north wind drives the planned
+    // fire away from the homes (no household ever sees it), while this window
+    // runs into 160+ of them -- see `fire/tests/exposure.rs`.
+    let weather = Weather { wind_dir_deg: 135.0, ..Weather::default() };
     let plan = fire::plan_ignition(scn, weather.wind_dir_deg, 250.0);
     let mut fire = FireSim::new(scn, weather, 42).unwrap();
     fire.ignite_patch(plan.centre, plan.radius_m, scn).unwrap();
@@ -157,6 +160,7 @@ fn lowering_the_alarm_threshold_gets_more_people_out_sooner() {
 
     let jumpy = safe_after(0.05);
     let stoic = safe_after(0.95);
+    println!("safe after 90 min unordered: {jumpy} at threshold 0.05, {stoic} at 0.95");
     assert!(
         jumpy > stoic,
         "threshold has no effect: {jumpy} safe at 0.05, {stoic} at 0.95"

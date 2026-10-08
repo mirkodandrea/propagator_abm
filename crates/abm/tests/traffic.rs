@@ -21,20 +21,30 @@ fn data_dir() -> std::path::PathBuf {
         .unwrap()
 }
 
-fn load(id: &str) -> Scenario {
-    Scenario::load_by_id(data_dir(), id).unwrap()
+fn load() -> Scenario {
+    Scenario::load(data_dir()).unwrap()
 }
 
 /// A fire far enough away to leave the roads alone, so a traffic measurement is
 /// about traffic. Ignition is still real: the households have to have a reason
 /// to leave.
 fn world(scn: &Scenario) -> (FireSim, Abm) {
-    let weather = Weather::default();
+    let weather = Weather { wind_dir_deg: 135.0, ..Weather::default() };
     let plan = fire::plan_ignition(scn, weather.wind_dir_deg, 250.0);
     let mut fire = FireSim::new(scn, weather, 42).unwrap();
     fire.ignite_patch(plan.centre, plan.radius_m, scn).unwrap();
     let agents = Abm::new(scn, 42).unwrap();
     (fire, agents)
+}
+
+/// Everyone ready to leave at once: the baked preparation times spread the
+/// departures over most of an hour on this territory (measured: a peak of 3 cars
+/// on full links with the baked times), and a queue needs a surge. The
+/// preparation floor is 60 s, so this is a one-minute surge.
+fn surge(agents: &mut Abm) {
+    for h in agents.households.iter_mut() {
+        h.prep_time_min = 0.0;
+    }
 }
 
 /// Vehicles per directed link, counted off the travellers rather than off the
@@ -59,27 +69,39 @@ fn a_road_class_reaches_the_graph() {
     // `RoadNetwork::build` discarded both, so every drivable edge — the A10 and
     // a farm service track alike — had the same speed and the same capacity.
     // This is the assertion that it no longer does.
-    let scn = load("spotorno");
+    let scn = load();
     let net = abm::network::RoadNetwork::build(&scn);
     let mut seen: HashMap<&'static str, usize> = HashMap::new();
     for e in 0..net.edge_count as u32 {
         *seen.entry(net.edge_class(e).label()).or_default() += 1;
     }
-    assert!(seen.contains_key("motorway"), "the A10 is in this window: {seen:?}");
-    assert!(seen.contains_key("residential"), "{seen:?}");
-    assert!(seen.contains_key("service"), "{seen:?}");
+    // Rocca Ventosa is a valley territory: no motorway, the SP roads are
+    // secondary/tertiary, the villages residential or unclassified.
+    for class in ["secondary", "tertiary", "residential", "unclassified"] {
+        assert!(seen.contains_key(class), "no {class} edge on this territory: {seen:?}");
+    }
 
-    let (fast, lanes, cap) = RoadClass::Motorway.params();
+    let (fast, lanes, cap) = RoadClass::Secondary.params();
     let (slow, _, cap_s) = RoadClass::Service.params();
-    assert!(fast > slow * 3.0, "a motorway is not a service road");
-    assert!(cap * lanes > cap_s * 4.0, "nor is its capacity");
+    assert!(fast > slow * 2.0, "a provincial road is not a service road");
+    assert!(cap * lanes > cap_s * 3.0, "nor is its capacity");
+
+    // And it reaches the queue, not only the table: the graph's own edges carry
+    // different speeds and capacities by class.
+    let traffic = abm::traffic::Traffic::new(&net);
+    let link_of = |label: &str| {
+        (0..net.edge_count as u32).find(|e| net.edge_class(*e).label() == label).unwrap() * 2
+    };
+    let (sec, res) = (link_of("secondary"), link_of("residential"));
+    assert!(traffic.speed(sec) > traffic.speed(res));
+    assert!(traffic.capacity(sec) > traffic.capacity(res));
 }
 
 #[test]
 fn storage_is_the_length_of_the_road_in_cars() {
     // The failure this pins is the one the old model had at its root: a count
     // of vehicles on a link means nothing until the link has a length.
-    let scn = load("spotorno");
+    let scn = load();
     let net = abm::network::RoadNetwork::build(&scn);
     let traffic = abm::traffic::Traffic::new(&net);
     for e in 0..net.edge_count as u32 {
@@ -98,11 +120,14 @@ fn storage_is_the_length_of_the_road_in_cars() {
 
 #[test]
 fn a_queue_forms_at_the_single_exit() {
-    // `congestion_funnel` exists to produce this and, before the queue model,
-    // could not: its peak was 9 cars strung out over a 1,088 m exit road, 270 m
-    // apart, which is free flow by any measure.
-    let scn = load("congestion_funnel");
+    // The whole territory leaving in a one-minute surge funnels through the few
+    // valley roads. Measured on Rocca Ventosa (SE wind, seed 42): a peak of 18
+    // vehicles on full links and 5 cars on the busiest link, against 3 and 3
+    // with the baked, spread-out preparation times -- so the threshold of 10
+    // sits between a real queue and free flow.
+    let scn = load();
     let (mut fire, mut agents) = world(&scn);
+    surge(&mut agents);
     agents.order_evacuation_all();
 
     let mut peak_queue = 0usize;
@@ -115,7 +140,7 @@ fn a_queue_forms_at_the_single_exit() {
     }
     assert!(
         peak_queue >= 10,
-        "no queue ever formed on the single-exit lab: {peak_queue} vehicles on full links, \
+        "no queue ever formed at the valley exits: {peak_queue} vehicles on full links, \
          busiest link {peak_link_cars} cars"
     );
 }
@@ -123,10 +148,10 @@ fn a_queue_forms_at_the_single_exit() {
 #[test]
 fn a_link_never_holds_more_than_it_can_store() {
     // Spillback is the constraint doing the work, so the invariant it rests on
-    // has to hold everywhere, all the time — including on the scenario with the
-    // most vehicles in it.
-    let scn = load("mass_evacuation");
+    // has to hold everywhere, all the time — including under a simultaneous surge.
+    let scn = load();
     let (mut fire, mut agents) = world(&scn);
+    surge(&mut agents);
     agents.order_evacuation_all();
     for _ in 0..(60 * 60 / 10) {
         fire.advance(10).unwrap();
@@ -151,8 +176,9 @@ fn a_bottleneck_does_not_discharge_faster_than_its_capacity() {
     // The quantity the old model had no bound on at all: with 1,000 cars on one
     // link it would have moved all 1,000 at the floor speed simultaneously and
     // cleared them together.
-    let scn = load("congestion_funnel");
+    let scn = load();
     let (mut fire, mut agents) = world(&scn);
+    surge(&mut agents);
     agents.order_evacuation_all();
 
     // Watch the single exit: whichever link ends up carrying the most traffic
@@ -190,10 +216,11 @@ fn traffic_is_step_size_invariant() {
     // The game steps every 2 s and a batch test every 300 s, so anything that
     // accumulated here would make the evacuation figures a property of the
     // caller.
-    let scn = load("congestion_funnel");
+    let scn = load();
     let run = |dt: i64| {
         let (mut fire, mut agents) = world(&scn);
-        agents.order_evacuation_all();
+        surge(&mut agents);
+    agents.order_evacuation_all();
         for _ in 0..(60 * 60 / dt) {
             fire.advance(dt).unwrap();
             agents.step(dt as f32, &fire, &scn);
@@ -205,8 +232,8 @@ fn traffic_is_step_size_invariant() {
     // A queue is a stateful thing and the obvious implementations of one credit
     // capacity per call; this one event-times its discharge instead, so the
     // residue is the movement sub-step's junction hand-off and nothing else.
-    // Measured across 2-60 s on a 1,000-household lab it is at most one
-    // household — see the `step_size_sweep` report.
+    // Measured across 2-60 s on this territory's 245 households it is
+    // at most one household — see the `step_size_sweep` report.
     let slack = 3;
     assert!(
         (fine.safe as i64 - coarse.safe as i64).abs() <= slack,
@@ -228,9 +255,10 @@ fn the_queue_survives_a_car_leaving_from_the_middle() {
     // a served counter, precisely so that a car burnt over in the middle of a
     // line — or turned round by a `last_resort` branch — does not desynchronise
     // everyone behind it. The observable is that nothing deadlocks and the
-    // counts stay consistent on the scenario where cars do die in traffic.
-    let scn = load("pedrogao");
+    // counts stay consistent over a two-hour surge with the fire running.
+    let scn = load();
     let (mut fire, mut agents) = world(&scn);
+    surge(&mut agents);
     agents.order_evacuation_all();
     for _ in 0..(120 * 60 / 10) {
         fire.advance(10).unwrap();
@@ -245,10 +273,11 @@ fn the_queue_survives_a_car_leaving_from_the_middle() {
 
 #[test]
 fn the_model_is_deterministic() {
-    let scn = load("congestion_funnel");
+    let scn = load();
     let run = || {
         let (mut fire, mut agents) = world(&scn);
-        agents.order_evacuation_all();
+        surge(&mut agents);
+    agents.order_evacuation_all();
         for _ in 0..(45 * 60 / 10) {
             fire.advance(10).unwrap();
             agents.step(10.0, &fire, &scn);
@@ -267,13 +296,14 @@ fn the_model_is_deterministic() {
 #[test]
 #[ignore]
 fn traffic_report() {
-    for id in ["spotorno", "congestion_funnel", "town_scale", "mass_evacuation"] {
-        let scn = load(id);
+    for id in ["rocca_ventosa"] {
+        let scn = load();
         let net = abm::network::RoadNetwork::build(&scn);
         let mut lens: Vec<f32> = (0..net.edge_count as u32).map(|e| net.edge_len(e)).collect();
         lens.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let (mut fire, mut agents) = world(&scn);
-        agents.order_evacuation_all();
+        surge(&mut agents);
+    agents.order_evacuation_all();
 
         println!(
             "\n=== {id}: {} households, {} edges, median edge {:.0} m ===",
@@ -320,10 +350,11 @@ fn step_size_sweep() {
     // genuinely different fires — the CA has its own quantum — so a sweep that
     // varied both would be measuring the wrong thing, which is what the first
     // version of this did.
-    let scn = load("congestion_funnel");
+    let scn = load();
     for agent_dt in [2i64, 4, 6, 10, 30, 60] {
         let (mut fire, mut agents) = world(&scn);
-        agents.order_evacuation_all();
+        surge(&mut agents);
+    agents.order_evacuation_all();
         let mut through = 0usize;
         let mut last: HashMap<usize, Option<u32>> = HashMap::new();
         let mut acc = 0i64;

@@ -8,7 +8,7 @@ use bevy::prelude::*;
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum AppState {
     #[default]
-    /// No town loaded: `kiosk::launch` loads the one the session is on.
+    /// Nothing loaded yet: `kiosk::launch` loads the territory and the first game.
     SelectingScenario,
     Playing,
 }
@@ -16,13 +16,11 @@ pub enum AppState {
 mod agents;
 mod buildings;
 mod camera;
-mod command;
 mod field;
 mod fire_shader;
 mod fire_view;
 mod frame;
 mod kiosk;
-mod library;
 mod models;
 mod overlays;
 mod life;
@@ -48,17 +46,17 @@ use bevy_egui::EguiPlugin;
 use crate::camera::OrbitCamera;
 use crate::sim::Sim;
 
-/// Where the baked scenarios live (`SPOTORNO_DATA`, default `data`).
+/// Where the territory lives (`ROCCA_DATA`, default `data`).
 #[derive(Resource)]
 pub struct DataPath(pub std::path::PathBuf);
 
 fn main() -> anyhow::Result<()> {
-    let data = std::env::var("SPOTORNO_DATA").unwrap_or_else(|_| "data".to_string());
+    let data = std::env::var("ROCCA_DATA").unwrap_or_else(|_| "data".to_string());
 
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: kiosk::strings_it::TITLE.into(),
+            title: kiosk::TITLE.into(),
             resolution: (1600.0, 1000.0).into(),
             mode: kiosk::window_mode(),
             // KIOSK_FPS measures the real frame cost, so it must not be vsync-capped.
@@ -72,10 +70,8 @@ fn main() -> anyhow::Result<()> {
     .add_plugins(EguiPlugin)
     .add_plugins(fire_shader::FireShaderPlugin)
     .add_plugins(retro::RetroShaderPlugin)
-    .add_plugins(library::LibraryPlugin)
     .init_state::<AppState>()
     .init_resource::<ui::UiFocus>()
-    .init_resource::<command::OrderTool>()
     .add_event::<sim::SimRestarted>()
     .insert_resource(DataPath(std::path::PathBuf::from(&data)))
     // Everything that spawns a scene entity or caches a per-scenario handle
@@ -86,7 +82,6 @@ fn main() -> anyhow::Result<()> {
         (
             setup_scene,
             fire_view::setup,
-            command::setup,
             vegetation::spawn,
             buildings::spawn,
             agents::spawn,
@@ -114,9 +109,9 @@ fn setup_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<retro::RetroMaterial>>,
 ) {
-    terrain_mesh::build(&sim.scenario, &mut commands, &mut meshes, &mut materials);
-    roads::build(&sim.scenario, &mut commands, &mut meshes, &mut materials);
-    plinth::build(&sim.scenario, &mut commands, &mut meshes, &mut materials);
+    terrain_mesh::build(&sim.scn, &mut commands, &mut meshes, &mut materials);
+    roads::build(&sim.scn, &mut commands, &mut meshes, &mut materials);
+    plinth::build(&sim.scn, &mut commands, &mut meshes, &mut materials);
 
     // One fixed sun: no clock, no day/night (spec decisions).
     commands.spawn(DirectionalLightBundle {
@@ -133,7 +128,7 @@ fn setup_scene(
         ..default()
     });
 
-    let (p, h) = terrain_mesh::cell_ground(&sim.scenario, sim.ignition.centre);
+    let (p, h) = terrain_mesh::cell_ground(&sim.scn, sim.scn.world.cell_of(sim.case.ignition()));
     let distance = 2600.0;
     let focus = frame::to_bevy(p, h);
     commands.spawn((
@@ -166,9 +161,7 @@ fn setup_scene(
 fn teardown_scene(
     mut commands: Commands,
     roots: Query<Entity, (With<Transform>, Without<Parent>)>,
-    mut order: ResMut<command::OrderTool>,
 ) {
-    *order = command::OrderTool::default();
     for e in &roots {
         commands.entity(e).despawn_recursive();
     }
@@ -176,29 +169,14 @@ fn teardown_scene(
 
 /// The kiosk's schedule.
 fn kiosk_systems(app: &mut App) {
-    app.insert_resource(kiosk::Kiosk::from_env()).add_systems(
+    app.add_systems(
         Update,
         (
             kiosk::launch.run_if(in_state(AppState::SelectingScenario)),
-            (
-                kiosk::activity,
-                kiosk::draw,
-                kiosk::step,
-                kiosk::camera,
-                kiosk::shots,
-                command::hover,
-                command::place,
-            )
+            (kiosk::ui::draw, kiosk::step, kiosk::view::camera, kiosk::shots)
                 .chain()
                 .run_if(in_state(AppState::Playing)),
-            (
-                fire_view::reset,
-                buildings::reset,
-                people::reset,
-                overlays::reset,
-                units::reset,
-                command::reset,
-            )
+            (fire_view::reset, buildings::reset, people::reset, overlays::reset, units::reset)
                 .after(kiosk::step)
                 .run_if(in_state(AppState::Playing)),
             (
@@ -216,13 +194,11 @@ fn kiosk_systems(app: &mut App) {
                 overlays::update_orders,
                 units::sync_orders,
                 units::update_work_overlay,
-                command::update_cursor,
             )
                 .after(fire_view::reset)
                 .after(buildings::reset)
                 .after(people::reset)
                 .after(units::reset)
-                .after(command::reset)
                 .run_if(in_state(AppState::Playing)),
         ),
     );

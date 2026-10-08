@@ -40,6 +40,15 @@ pub struct Slot {
     pub station: usize,
 }
 
+/// A change of wind during a case, at a fixed simulated minute. Part of the
+/// case, not a forecast: the game never shows it before it happens.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct Shift {
+    pub at_min: i64,
+    pub wind_from_deg: f64,
+    pub wind_kmh: f64,
+}
+
 /// One fire on the territory.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Case {
@@ -52,6 +61,8 @@ pub struct Case {
     pub wind_from_deg: f64,
     pub wind_kmh: f64,
     pub minutes: i64,
+    #[serde(default)]
+    pub shift: Option<Shift>,
 }
 
 impl Case {
@@ -75,8 +86,8 @@ pub struct Territory {
 }
 
 impl Territory {
-    pub fn load(data_dir: &Path, scenario: &str) -> Result<Territory> {
-        let p = data_dir.join("scenarios").join(scenario).join("game.json");
+    pub fn load(data_dir: &Path) -> Result<Territory> {
+        let p = data_dir.join("scenarios").join(scenario::ID).join("game.json");
         let t: Territory = serde_json::from_slice(&std::fs::read(&p).with_context(|| format!("reading {}", p.display()))?)
             .with_context(|| format!("parsing {}", p.display()))?;
         anyhow::ensure!(t.roster.iter().all(|s| s.station < t.stations.len()), "roster names a missing station");
@@ -89,5 +100,10 @@ impl Territory {
 
     pub fn weather(&self, c: &Case) -> Weather {
         Weather { wind_dir_deg: c.wind_from_deg, wind_speed_kmh: c.wind_kmh, moisture_pct: self.moisture_pct }
+    }
+
+    /// The weather after the case's wind shift, if it has one.
+    pub fn shifted(&self, c: &Case) -> Option<(i64, Weather)> {
+        c.shift.map(|s| (s.at_min * 60, Weather { wind_dir_deg: s.wind_from_deg, wind_speed_kmh: s.wind_kmh, moisture_pct: self.moisture_pct }))
     }
 }

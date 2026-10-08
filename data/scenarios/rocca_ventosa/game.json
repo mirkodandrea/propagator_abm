@@ -1,0 +1,306 @@
+{
+ "scenario": "rocca_ventosa",
+ "moisture_pct": 3.0,
+ "stations": [
+  {
+   "name": "Vigili del fuoco - Il Borgo",
+   "pos": [
+    5150.459399563263,
+    4968.997322994763
+   ]
+  },
+  {
+   "name": "Squadra AIB (da fuori, SP 12)",
+   "pos": [
+    7990.0,
+    3300.0
+   ]
+  }
+ ],
+ "roster": [
+  {
+   "kind": "engine",
+   "station": 0
+  },
+  {
+   "kind": "engine",
+   "station": 0
+  },
+  {
+   "kind": "hand_crew",
+   "station": 1
+  }
+ ],
+ "cases": [
+  {
+   "name": "Borgo1",
+   "near": "Il Borgo",
+   "ignition": [
+    5010.0,
+    6170.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 0.0,
+   "wind_kmh": 40.0,
+   "minutes": 180
+  },
+  {
+   "name": "Borgo2",
+   "near": "Il Borgo",
+   "ignition": [
+    5870.0,
+    4670.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 119.0,
+   "wind_kmh": 40.0,
+   "minutes": 180
+  },
+  {
+   "name": "Borgo3",
+   "near": "Il Borgo",
+   "ignition": [
+    4070.0,
+    4530.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 239.0,
+   "wind_kmh": 40.0,
+   "minutes": 180
+  },
+  {
+   "name": "Piano1",
+   "near": "Il Piano",
+   "ignition": [
+    3070.0,
+    3450.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 40.0,
+   "wind_kmh": 40.0,
+   "minutes": 180
+  },
+  {
+   "name": "Piano2",
+   "near": "Il Piano",
+   "ignition": [
+    2750.0,
+    1650.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 160.0,
+   "wind_kmh": 40.0,
+   "minutes": 180
+  },
+  {
+   "name": "Piano3",
+   "near": "Il Piano",
+   "ignition": [
+    1430.0,
+    2770.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 280.0,
+   "wind_kmh": 40.0,
+   "minutes": 180
+  },
+  {
+   "name": "Coste1",
+   "near": "Le Coste",
+   "ignition": [
+    4570.0,
+    4090.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 80.0,
+   "wind_kmh": 40.0,
+   "minutes": 180
+  },
+  {
+   "name": "Coste2",
+   "near": "Le Coste",
+   "ignition": [
+    3370.0,
+    2530.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 200.0,
+   "wind_kmh": 40.0,
+   "minutes": 180
+  },
+  {
+   "name": "Coste3",
+   "near": "Le Coste",
+   "ignition": [
+    2950.0,
+    4690.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 320.0,
+   "wind_kmh": 40.0,
+   "minutes": 180
+  },
+  {
+   "name": "Borgo1_gira",
+   "near": "Il Borgo",
+   "ignition": [
+    5010.0,
+    6170.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 0.0,
+   "wind_kmh": 40.0,
+   "minutes": 180,
+   "shift": {
+    "at_min": 45,
+    "wind_from_deg": 32.9,
+    "wind_kmh": 40.0,
+    "toward": "Le Coste"
+   }
+  },
+  {
+   "name": "Borgo2_gira",
+   "near": "Il Borgo",
+   "ignition": [
+    5870.0,
+    4670.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 119.0,
+   "wind_kmh": 40.0,
+   "minutes": 180,
+   "shift": {
+    "at_min": 45,
+    "wind_from_deg": 68.2,
+    "wind_kmh": 40.0,
+    "toward": "Le Coste"
+   }
+  },
+  {
+   "name": "Borgo3_gira",
+   "near": "Il Borgo",
+   "ignition": [
+    4070.0,
+    4530.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 239.0,
+   "wind_kmh": 40.0,
+   "minutes": 180,
+   "shift": {
+    "at_min": 45,
+    "wind_from_deg": 38.3,
+    "wind_kmh": 40.0,
+    "toward": "Le Coste"
+   }
+  },
+  {
+   "name": "Piano1_gira",
+   "near": "Il Piano",
+   "ignition": [
+    3070.0,
+    3450.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 40.0,
+   "wind_kmh": 40.0,
+   "minutes": 180,
+   "shift": {
+    "at_min": 45,
+    "wind_from_deg": 235.1,
+    "wind_kmh": 40.0,
+    "toward": "Le Coste"
+   }
+  },
+  {
+   "name": "Piano2_gira",
+   "near": "Il Piano",
+   "ignition": [
+    2750.0,
+    1650.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 160.0,
+   "wind_kmh": 40.0,
+   "minutes": 180,
+   "shift": {
+    "at_min": 45,
+    "wind_from_deg": 197.8,
+    "wind_kmh": 40.0,
+    "toward": "Le Coste"
+   }
+  },
+  {
+   "name": "Piano3_gira",
+   "near": "Il Piano",
+   "ignition": [
+    1430.0,
+    2770.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 280.0,
+   "wind_kmh": 40.0,
+   "minutes": 180,
+   "shift": {
+    "at_min": 45,
+    "wind_from_deg": 245.2,
+    "wind_kmh": 40.0,
+    "toward": "Le Coste"
+   }
+  },
+  {
+   "name": "Coste1_gira",
+   "near": "Le Coste",
+   "ignition": [
+    4570.0,
+    4090.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 80.0,
+   "wind_kmh": 40.0,
+   "minutes": 180,
+   "shift": {
+    "at_min": 45,
+    "wind_from_deg": 202.1,
+    "wind_kmh": 40.0,
+    "toward": "Il Borgo"
+   }
+  },
+  {
+   "name": "Coste2_gira",
+   "near": "Le Coste",
+   "ignition": [
+    3370.0,
+    2530.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 200.0,
+   "wind_kmh": 40.0,
+   "minutes": 180,
+   "shift": {
+    "at_min": 45,
+    "wind_from_deg": 93.9,
+    "wind_kmh": 40.0,
+    "toward": "Il Piano"
+   }
+  },
+  {
+   "name": "Coste3_gira",
+   "near": "Le Coste",
+   "ignition": [
+    2950.0,
+    4690.0
+   ],
+   "radius_m": 60.0,
+   "wind_from_deg": 320.0,
+   "wind_kmh": 40.0,
+   "minutes": 180,
+   "shift": {
+    "at_min": 45,
+    "wind_from_deg": 256.9,
+    "wind_kmh": 40.0,
+    "toward": "Il Borgo"
+   }
+  }
+ ]
+}

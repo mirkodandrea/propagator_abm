@@ -292,7 +292,7 @@ pub fn update_overlay(
     view.last_layer = layer;
     view.since_overlay = 0.0;
 
-    let scn = &sim.scenario;
+    let scn = &sim.scn;
     let w = scn.world;
     let hazard = sim.fire.hazard().as_slice();
     let field = FireField {
@@ -374,7 +374,7 @@ fn touched_bounds(
     hazard: &[f32],
     layer: FireLayer,
 ) -> Option<(usize, usize, usize, usize)> {
-    let w = sim.scenario.world;
+    let w = sim.scn.world;
     let (mut r0, mut r1, mut c0, mut c1) = (usize::MAX, 0usize, usize::MAX, 0usize);
     for (i, state) in sim.fire.state().iter().enumerate() {
         let touched =
@@ -625,7 +625,7 @@ pub fn update_flames(
     let Ok(cam) = camera.get_single() else {
         return;
     };
-    let scn = &sim.scenario;
+    let scn = &sim.scn;
     let t = time.elapsed_seconds();
     let dt = time.delta_seconds().min(0.1);
     let now = sim.time_s() as f32;
@@ -812,7 +812,7 @@ pub fn update_flames(
 
 /// Advance smoke and embers, and top both up from the active front.
 fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
-    let scn = &sim.scenario;
+    let scn = &sim.scn;
     let weather = sim.fire.weather();
     // `wind_dir_deg` is the bearing the wind blows *from*, so drift is the
     // opposite bearing. (Bevy -Z is north.)

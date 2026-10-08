@@ -1,0 +1,38 @@
+{
+  "id": "rocca_ventosa",
+  "name": "Rocca Ventosa",
+  "description": "Un borgo in piano, un nucleo di fondovalle e case sparse sul versante, separati da un crinale con un valico. Territorio sintetico.",
+  "location": "Luogo immaginario",
+  "country": "Italia",
+  "nationality": "Italian",
+  "region": "territorio sintetico (Scenario Factory)",
+  "localities": [
+    "Il Borgo",
+    "Il Piano",
+    "Le Coste"
+  ],
+  "coordinates": [
+    0.0,
+    0.0
+  ],
+  "utm_zone": 0,
+  "world_size_m": [
+    8000.0,
+    8000.0
+  ],
+  "fire_grid_size": [
+    400,
+    400
+  ],
+  "buildings_count": 207,
+  "households_count": 245,
+  "people_count": 664,
+  "scenario_type": "synthetic",
+  "creation_date": "2026-10-08",
+  "version": "0.1.0",
+  "tags": [
+    "factory",
+    "town"
+  ],
+  "is_dev": false
+}

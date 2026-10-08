@@ -18,6 +18,7 @@ use scenario::{Pos, Scenario};
 
 use crate::case::{Case, Territory};
 use crate::coordinator::{self, Post, Proposal, View, DEFEND_REACH_M, ON_POST_M, REVIEW_S};
+use crate::crisis::{Crisis, Detector};
 use crate::district::{self, dist, District};
 use crate::plan::{Civil, Plan};
 
@@ -88,33 +89,51 @@ pub struct Game {
     pub posts: Vec<Option<Post>>,
     pub uncovered: Vec<(usize, String)>,
     pub log: Vec<LogEntry>,
+    /// A crisis raised and not yet taken by the caller ([`Game::take_crisis`]).
+    pub crisis: Option<Crisis>,
+    detector: Detector,
+    /// The player has committed a first plan.
+    planned: bool,
     next_review_s: i64,
     caught_at: Vec<Option<i64>>,
 }
 
 impl Game {
-    pub fn new(data_dir: &Path, scenario: &str, case: &str, seed: u64) -> Result<Game> {
-        let territory = Territory::load(data_dir, scenario)?;
+    /// A new game on the territory in `data_dir` (`data`), fire `case`.
+    pub fn new(data_dir: &Path, case: &str, seed: u64) -> Result<Game> {
+        let territory = Territory::load(data_dir)?;
         let case = territory.case(case).with_context(|| format!("caso {case:?} assente in game.json"))?.clone();
-        let scn = Scenario::load_by_id(data_dir, scenario)?;
+        let scn = Scenario::load(data_dir)?;
         let mut fire = FireSim::new(&scn, territory.weather(&case), seed)?;
         fire.ignite_patch(scn.world.cell_of(case.ignition()), case.radius_m, &scn)?;
-        let agents = Abm::new(&scn, seed)?;
+        // The behaviour graphs the civilians and units decide by: the shipped
+        // library in `data/behaviours`, the same for every caller.
+        let lib = behavior::Library::load_dir_reported(&data_dir.join(behavior::library::DEFAULT_DIR))?.library;
+        lib.validate_runtime().map_err(|e| anyhow::anyhow!("behaviour library: {e}"))?;
+        let households = abm::BehaviorRuntime::build(&lib)
+            .map_err(|e| anyhow::anyhow!("household behaviour: {e}"))?
+            .context("household behaviour: no profile has a positive share")?;
+        let persons = abm::PersonRuntime::build(&lib)
+            .map_err(|e| anyhow::anyhow!("person behaviour: {e}"))?
+            .context("person behaviour: no profile has a positive share")?;
+        let policy = abm::UnitRuntime::build(&lib)
+            .map_err(|e| anyhow::anyhow!("unit behaviour: {e}"))?
+            .context("unit behaviour: no profile is enabled")?;
+        let agents = Abm::with_behaviours(&scn, seed, households, persons)?;
         let roster: Vec<(UnitKind, Pos)> =
             territory.roster.iter().map(|s| (s.kind.unit_kind(), Pos::from(territory.stations[s.station].pos))).collect();
-        let lib = behavior::defaults::default_library();
-        let policy = abm::behaviour::UnitRuntime::build(&lib)
-            .map_err(|e| anyhow::anyhow!(e))?
-            .context("nessun profilo attivo per i mezzi")?;
         let crews = Suppression::with_roster(&scn, &roster, policy)?;
         let districts = district::of(&scn, &agents);
         let n = agents.households.len();
         let units = crews.units.len();
-        Ok(Game {
+        let mut game = Game {
             active: Plan::new(districts.len()),
             posts: vec![None; units],
             uncovered: vec![],
             log: vec![],
+            crisis: None,
+            detector: Detector::default(),
+            planned: false,
             next_review_s: 0,
             caught_at: vec![None; n],
             scn,
@@ -125,7 +144,12 @@ impl Game {
             case,
             seed,
             districts,
-        })
+        };
+        // The ignition is a boundary condition the core applies on its next
+        // advance: one step puts the opening fire into the state, so the
+        // player plans (×0) on a fire that is actually there.
+        game.step()?;
+        Ok(game)
     }
 
     pub fn time_s(&self) -> i64 {
@@ -172,11 +196,17 @@ impl Game {
             self.log.push(LogEntry { at_s: now, text: format!("priorità: {}", names.join(" > ")) });
         }
         self.active = plan;
-        Ok(self.review())
+        self.planned = true;
+        Ok(self.review_inner(false))
     }
 
-    /// Re-plan the active plan and hand the units their tasks.
+    /// Re-plan the active plan and hand the units their tasks; a periodic
+    /// review also looks for a crisis.
     fn review(&mut self) -> Proposal {
+        self.review_inner(true)
+    }
+
+    fn review_inner(&mut self, look_for_crisis: bool) -> Proposal {
         let p = coordinator::propose(&self.view(), &self.active, &self.posts);
         let now = self.time_s();
         for (k, post) in p.posts.iter().enumerate() {
@@ -210,7 +240,26 @@ impl Game {
         self.posts = p.posts.clone();
         self.uncovered = p.uncovered.clone();
         self.next_review_s = now + REVIEW_S;
+        // No crisis before the player's first plan (that is the planning
+        // phase), nor out of a commit: only the world moving raises one.
+        let v = View { scn: &self.scn, agents: &self.agents, fire: &self.fire, crews: &self.crews, districts: &self.districts };
+        if !look_for_crisis {
+            self.detector.acknowledge(&v, &self.posts);
+        }
+        if !(look_for_crisis && self.planned) {
+            return p;
+        }
+        if let Some(c) = self.detector.check(&v, &self.active, &self.posts, now) {
+            self.log.push(LogEntry { at_s: now, text: format!("CRISI: {}", c.text) });
+            self.crisis = Some(c);
+        }
         p
+    }
+
+    /// The crisis raised since the last call, if any. The kiosk slows to ×1
+    /// on it; a headless strategy decides on it.
+    pub fn take_crisis(&mut self) -> Option<Crisis> {
+        self.crisis.take()
     }
 
     /// Homes protected by units on their posts, 0-1 each.
@@ -232,11 +281,15 @@ impl Game {
     }
 
     pub fn step(&mut self) -> Result<()> {
+        if let Some((at, w)) = self.territory.shifted(&self.case) {
+            if self.time_s() >= at && self.fire.weather().wind_dir_deg != w.wind_dir_deg {
+                self.fire.set_weather(w)?;
+                self.log.push(LogEntry { at_s: self.time_s(), text: format!("il vento gira: ora soffia da {:.0}°", w.wind_dir_deg) });
+            }
+        }
         self.fire.advance(STEP_S)?;
         self.agents.step(STEP_S as f32, &self.fire, &self.scn);
-        // The opening fire is in the state only after the first advance, so
-        // the plan committed at T+0 is reviewed again straight away.
-        if self.time_s() >= self.next_review_s || self.time_s() == STEP_S {
+        if self.time_s() >= self.next_review_s {
             self.review();
         }
         for a in self.crews.step(STEP_S as f32, &self.agents.network, &self.agents.traffic, &self.fire, &self.scn) {

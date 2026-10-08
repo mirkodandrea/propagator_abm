@@ -7,11 +7,13 @@
 
 pub mod case;
 pub mod coordinator;
+pub mod crisis;
 pub mod district;
 pub mod game;
 pub mod plan;
 
 pub use case::{Case, Territory};
 pub use coordinator::{Post, Proposal};
+pub use crisis::Crisis;
 pub use game::{DistrictOutcome, Game, Outcome, STEP_S};
 pub use plan::{Civil, Plan};

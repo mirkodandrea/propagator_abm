@@ -115,7 +115,7 @@ pub fn setup(
         squad: meshes.add(crate::toy::crew()),
     });
 
-    let vr = sim.scenario.vr_palette().is_some();
+    let vr = false;
     let symbol_scale = symbol_scale(vr);
     let mut mat = |c: Color, emissive: f32| {
         materials.add(retro::material(StandardMaterial {
@@ -135,7 +135,7 @@ pub fn setup(
             UnitKind::HandCrew => (crew.clone(), symbol_scale),
             UnitKind::AirTanker => (tanker.clone(), symbol_scale * 1.6),
         };
-        let ground = sim.scenario.terrain.height_at(u.pos);
+        let ground = sim.scn.terrain.height_at(u.pos);
         commands.spawn((
                 MaterialMeshBundle::<RetroMaterial> {
                 mesh,
@@ -246,7 +246,7 @@ pub fn update_units(
                 *mesh = want.clone();
             }
         }
-        let ground = sim.scenario.terrain.height_at(u.pos);
+        let ground = sim.scn.terrain.height_at(u.pos);
         let lift = if u.kind.is_air() {
             AIR_ALTITUDE_M
         } else {
@@ -305,7 +305,7 @@ pub fn sync_orders(
             Task::Attack { at } | Task::Drop { at } => {
                 commands.spawn((
                     MaterialMeshBundle::<RetroMaterial> {
-                        mesh: meshes.add(ring_mesh(&sim.scenario, at, ORDER_RING_M)),
+                        mesh: meshes.add(ring_mesh(&sim.scn, at, ORDER_RING_M)),
                         material: assets.order_ring.clone(),
                         ..default()
                     },
@@ -322,7 +322,7 @@ pub fn sync_orders(
                 if done > 0.001 {
                     commands.spawn((
                         MaterialMeshBundle::<RetroMaterial> {
-                            mesh: meshes.add(ribbon(&sim.scenario, from, head, 8.0)),
+                            mesh: meshes.add(ribbon(&sim.scn, from, head, 8.0)),
                             material: assets.line_cut.clone(),
                             ..default()
                         },
@@ -332,7 +332,7 @@ pub fn sync_orders(
                 if done < 0.999 {
                     commands.spawn((
                         MaterialMeshBundle::<RetroMaterial> {
-                            mesh: meshes.add(ribbon(&sim.scenario, head, to, 4.0)),
+                            mesh: meshes.add(ribbon(&sim.scn, head, to, 4.0)),
                             material: assets.line_todo.clone(),
                             ..default()
                         },
@@ -412,7 +412,7 @@ pub fn update_work_overlay(
         return;
     }
 
-    let w = sim.scenario.world;
+    let w = sim.scn.world;
     let mut cleared: Vec<Cell> = Vec::new();
     let mut wet: Vec<Cell> = Vec::new();
     for (i, flag) in sim.fire.cleared().iter().enumerate() {
@@ -436,7 +436,7 @@ pub fn update_work_overlay(
         }
         commands.spawn((
             MaterialMeshBundle::<RetroMaterial> {
-                mesh: meshes.add(cell_patches(&sim.scenario, &cells)),
+                mesh: meshes.add(cell_patches(&sim.scn, &cells)),
                 material,
                 ..default()
             },
