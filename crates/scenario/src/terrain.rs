@@ -33,7 +33,7 @@ pub struct Terrain {
 impl Terrain {
     pub fn load(dir: &Path) -> Result<Terrain> {
         let meta: TerrainMeta = serde_json::from_slice(
-            &std::fs::read(dir.join("render_terrain.json"))
+            &datafs::read(dir.join("render_terrain.json"))
                 .context("render_terrain.json")?,
         )?;
         let elev = read_raw::<f32>(

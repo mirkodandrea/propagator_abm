@@ -31,7 +31,7 @@ pub const RUN_SPEED: f32 = 20.0;
 pub const CRISIS_S: f32 = 25.0;
 
 pub fn window_mode() -> WindowMode {
-    if std::env::var("KIOSK_WINDOWED").is_ok() {
+    if cfg!(target_arch = "wasm32") || std::env::var("KIOSK_WINDOWED").is_ok() {
         WindowMode::Windowed
     } else {
         WindowMode::BorderlessFullscreen
@@ -79,6 +79,10 @@ pub struct Kiosk {
     pub baseline: Arc<Mutex<Option<(String, u64, Result<Outcome, String>)>>>,
     /// The operator bar (F2).
     pub operator: bool,
+    /// In the browser (no threads) the no-orders game runs here, a few steps
+    /// a frame.
+    #[cfg(target_arch = "wasm32")]
+    run: Option<Box<Game>>,
     data: PathBuf,
 }
 
@@ -102,6 +106,8 @@ impl Kiosk {
             risk: vec![],
             baseline: Arc::new(Mutex::new(None)),
             operator: false,
+            #[cfg(target_arch = "wasm32")]
+            run: None,
             data,
         }
     }
@@ -120,7 +126,7 @@ impl Kiosk {
     }
 
     /// Start the no-orders run in the background, unless it is already done.
-    fn start_baseline(&self) {
+    fn start_baseline(&mut self) {
         if self.baseline().is_some() {
             return;
         }
@@ -128,12 +134,51 @@ impl Kiosk {
         if let Ok(mut b) = slot.lock() {
             *b = None;
         }
+        #[cfg(not(target_arch = "wasm32"))]
         std::thread::spawn(move || {
             let r = Game::without_orders(&data, &case, seed).map_err(|e| format!("{e:#}"));
             if let Ok(mut b) = slot.lock() {
                 *b = Some((case, seed, r));
             }
         });
+        #[cfg(target_arch = "wasm32")]
+        match Game::new(&data, &case, seed) {
+            Ok(g) => self.run = Some(Box::new(g)),
+            Err(e) => {
+                if let Ok(mut b) = slot.lock() {
+                    *b = Some((case, seed, Err(format!("{e:#}"))));
+                }
+            }
+        }
+    }
+
+    /// Browser only: advance the no-orders game a little (`Game::without_orders`
+    /// in steps).
+    #[cfg(target_arch = "wasm32")]
+    fn advance_baseline(&mut self) {
+        const STEPS_PER_FRAME: usize = 4;
+        let Some(g) = self.run.as_mut() else { return };
+        let end = g.case.duration_s();
+        for _ in 0..STEPS_PER_FRAME {
+            if g.time_s() >= end {
+                break;
+            }
+            if let Err(e) = g.step() {
+                let r = Err(format!("{e:#}"));
+                if let Ok(mut b) = self.baseline.lock() {
+                    *b = Some((self.case.clone(), self.seed, r));
+                }
+                self.run = None;
+                return;
+            }
+        }
+        if g.time_s() >= end {
+            let r = Ok(g.outcome());
+            if let Ok(mut b) = self.baseline.lock() {
+                *b = Some((g.case.name.clone(), g.seed, r));
+            }
+            self.run = None;
+        }
     }
 
     pub fn enter(&mut self, phase: Phase) {
@@ -205,6 +250,8 @@ pub fn commit(kiosk: &mut Kiosk, sim: &mut Sim) {
 /// Run the clock and keep the preview current.
 pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
     let dt = time.delta_seconds();
+    #[cfg(target_arch = "wasm32")]
+    kiosk.advance_baseline();
     kiosk.phase_t += dt;
     sim.speed = match kiosk.phase {
         Phase::Esegui => kiosk.speed,

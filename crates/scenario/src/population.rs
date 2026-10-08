@@ -110,7 +110,7 @@ pub struct Population {
 
 impl Population {
     pub fn load(dir: &Path) -> Result<Population> {
-        let bytes = std::fs::read(dir.join("population.json"))
+        let bytes = datafs::read(dir.join("population.json"))
             .context("population.json")?;
         Ok(serde_json::from_slice(&bytes)?)
     }

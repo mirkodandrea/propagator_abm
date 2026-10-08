@@ -67,6 +67,10 @@ fn main() -> anyhow::Result<()> {
                 r
             },
             mode: kiosk::window_mode(),
+            // in the browser: the page's canvas, filling it
+            canvas: Some("#rocca".into()),
+            fit_canvas_to_parent: true,
+            prevent_default_event_handling: true,
             // KIOSK_FPS measures the real frame cost, so it must not be vsync-capped.
             present_mode: if std::env::var("KIOSK_FPS").is_ok() { bevy::window::PresentMode::AutoNoVsync } else { bevy::window::PresentMode::AutoVsync },
             ..default()
@@ -74,6 +78,8 @@ fn main() -> anyhow::Result<()> {
         ..default()
     }))
     .insert_resource(ClearColor(Color::srgb(0.80, 0.76, 0.70)))
+    // WebGL2 has no multisampled HDR targets.
+    .insert_resource(if cfg!(target_arch = "wasm32") { Msaa::Off } else { Msaa::default() })
     .insert_resource(AmbientLight { color: Color::srgb(0.85, 0.88, 1.0), brightness: 420.0 })
     .add_plugins(EguiPlugin)
     .add_plugins(fire_shader::FireShaderPlugin)

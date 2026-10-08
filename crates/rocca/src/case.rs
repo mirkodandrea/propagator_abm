@@ -92,7 +92,7 @@ pub struct Territory {
 impl Territory {
     pub fn load(data_dir: &Path) -> Result<Territory> {
         let p = data_dir.join("scenarios").join(scenario::ID).join("game.json");
-        let t: Territory = serde_json::from_slice(&std::fs::read(&p).with_context(|| format!("reading {}", p.display()))?)
+        let t: Territory = serde_json::from_slice(&datafs::read(&p).with_context(|| format!("reading {}", p.display()))?)
             .with_context(|| format!("parsing {}", p.display()))?;
         anyhow::ensure!(t.roster.iter().all(|s| s.station < t.stations.len()), "roster names a missing station");
         anyhow::ensure!(t.featured.iter().all(|n| t.case(n).is_some()), "featured names a missing case");

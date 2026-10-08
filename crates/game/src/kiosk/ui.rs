@@ -243,7 +243,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                 });
                 let now = sim.posts.iter().flatten().filter(|p| p.district == d).count();
                 let next = k.preview.as_ref().map_or(now, |p| p.units_on(d));
-                ui.label(RichText::new(format!("mezzi qui: {now}")).size(16.0).color(if now > 0 { GREEN } else { GREY }));
+                ui.label(RichText::new(format!("mezzi assegnati: {now}")).size(16.0).color(if now > 0 { GREEN } else { GREY }));
                 if next < now {
                     ui.label(RichText::new(format!("con il nuovo piano ne perde {}", now - next)).size(16.0).strong().color(ORANGE));
                 } else if next > now {
@@ -270,13 +270,14 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                 ui.horizontal(|ui| {
                     let active = sim.active.civil[d];
                     for (c, label, colour) in [(Civil::Preallerta, "Preallerta", AMBER), (Civil::Evacua, "Evacua", BLUE)] {
-                        let on = civil[d] >= c;
+                        // the order chosen, not every order it includes
+                        let on = civil[d] == c;
                         // orders already given cannot be taken back
                         let locked = active >= c;
                         let text = RichText::new(label).size(16.0).color(if on { colour } else { Color32::WHITE });
                         let hint = if c == Civil::Preallerta { PREALLERTA } else { EVACUA };
                         if ui.add_enabled(!locked, egui::SelectableLabel::new(on, text)).on_hover_text(hint).clicked() {
-                            civil[d] = if on { active.max(Civil::Nessuno) } else { c };
+                            civil[d] = if on { active } else { c.max(active) };
                             changed = true;
                         }
                     }

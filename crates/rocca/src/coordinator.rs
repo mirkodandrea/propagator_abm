@@ -287,7 +287,8 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
         }
     }
     // 6. who is left without a post, and why
-    let blocked = engaged.iter().find(|(d, _)| no_access.contains(d)).map(|(d, _)| *d);
+    // a ranked district short of its share because no unit could reach it
+    let blocked = engaged.iter().enumerate().find(|(r, (d, _))| no_access.contains(d) && taken[*d] < quota[*r]).map(|(_, (d, _))| *d);
     let mut idle = vec![];
     for &k in &usable {
         if posts[k].is_some() || v.crews.units[k].state == UnitState::Withdrawing {

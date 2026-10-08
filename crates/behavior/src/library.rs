@@ -118,19 +118,19 @@ impl Library {
         let mut report = LoadReport::default();
         for (sub, is_graph) in [("graphs", true), ("subtypes", false)] {
             let dir = root.join(sub);
-            if !dir.is_dir() {
+            if !datafs::is_dir(&dir) {
                 continue;
             }
-            let mut entries: Vec<PathBuf> = std::fs::read_dir(&dir)
+            let mut entries: Vec<PathBuf> = datafs::files_in(&dir)
                 .with_context(|| format!("reading {}", dir.display()))?
-                .filter_map(|e| e.ok().map(|e| e.path()))
+                .into_iter()
                 .filter(|p| p.extension().map(|e| e == "json").unwrap_or(false))
                 .collect();
             entries.sort();
             for path in entries {
                 let mut file =
                     FileReport { path: path.clone(), is_graph, id: None, error: None };
-                match std::fs::read_to_string(&path) {
+                match datafs::read_to_string(&path) {
                     Err(e) => file.error = Some(format!("{e}")),
                     Ok(text) if is_graph => match serde_json::from_str::<BehaviorGraph>(&text) {
                         Ok(g) => {

@@ -82,6 +82,9 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - niente gergo («sottovento al fronte», «Scoperto»);
   - testo più grande e chiaro;
   - «Nuovo incendio, vicino a …».
+- [x] 2026-10-08 Versione per browser (`docs/web.md`): dati compilati nel wasm (`crates/datafs`), terreno disegnato a 20 m e vegetazione al 12 % solo nel browser, workflow Pages. Partita giocata con il mouse nel browser: 60 FPS, ×20 regolare.
+- [x] 2026-10-08 Dalla partita giocata: crisi del vento e della previsione solo se il quartiere non ha mezzi; motivo corretto dei mezzi in attesa; «mezzi assegnati»; Evacua non illumina più Preallerta.
+- [ ] Pubblicazione su Pages: l'ambiente `github-pages` accetta solo `main` (decisione dell'utente: aggiungere il ramo o fare merge).
 - [ ] **Checkpoint umano 5.**
 - [x] 2026-10-08 Schede dei quartieri separate quando si sovrappongono sullo schermo; etichette dei mezzi impilate e spostate sotto la scheda che le copre. Resta: una scheda può coprire il fuoco.
 - [ ] Coordinatore: con la prima priorità irraggiungibile un mezzo rientra alla base (ora spiegato a schermo). Mandarlo al quartiere successivo annullava l'effetto della crisi in Coste2_gira (58 → 71): provato e annullato.

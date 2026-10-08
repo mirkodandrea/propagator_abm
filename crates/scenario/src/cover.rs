@@ -64,8 +64,8 @@ impl Cover {
             return Ok(None);
         }
         let meta: CoverMeta =
-            serde_json::from_slice(&std::fs::read(&meta_path)?).context("cover.json")?;
-        let classes = std::fs::read(dir.join("cover.u8")).context("cover.u8")?;
+            serde_json::from_slice(&datafs::read(&meta_path)?).context("cover.json")?;
+        let classes = datafs::read(dir.join("cover.u8")).context("cover.u8")?;
         anyhow::ensure!(
             classes.len() == meta.rows * meta.cols,
             "cover.u8 has {} bytes, expected {}x{}",

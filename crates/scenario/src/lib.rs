@@ -123,7 +123,7 @@ impl Scenario {
 
         let metadata_path = scenario_dir.join("scenario.json");
         let metadata: ScenarioMetadata = serde_json::from_slice(
-            &std::fs::read(&metadata_path).with_context(|| format!("reading {}", metadata_path.display()))?,
+            &datafs::read(&metadata_path).with_context(|| format!("reading {}", metadata_path.display()))?,
         )
         .context("parsing scenario.json")?;
 
@@ -165,7 +165,7 @@ fn load_fire_rasters(dir: &Path, rows: usize, cols: usize) -> Result<(Vec<i32>, 
 }
 
 pub(crate) fn read_raw<T: Copy>(path: &Path, count: usize) -> Result<Vec<T>> {
-    let bytes = std::fs::read(path)
+    let bytes = datafs::read(path)
         .with_context(|| format!("reading {}", path.display()))?;
     let want = count * std::mem::size_of::<T>();
     anyhow::ensure!(

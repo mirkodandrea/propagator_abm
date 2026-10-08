@@ -6,6 +6,7 @@ license.workspace = true
 description = "Author-able agent behaviour graphs: node registry, evaluator, subtypes"
 
 [dependencies]
+datafs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true

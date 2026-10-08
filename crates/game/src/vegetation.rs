@@ -56,8 +56,9 @@ const CHUNK_CELLS: usize = 32;
 /// release on an M4 Pro, so there was room for roughly another half.
 const DENSITY: [f32; 4] = [11.0, 3.4, 6.5, 3.8];
 
-/// The share of [`DENSITY`] actually planted.
-const VEG_DENSITY: f32 = 0.5;
+/// The share of [`DENSITY`] actually planted: in the browser much less, for
+/// WebGL.
+const VEG_DENSITY: f32 = if cfg!(target_arch = "wasm32") { 0.12 } else { 0.5 };
 
 /// Vegetation does not honour cell boundaries, and it is not uniform inside
 /// one either: real stands are patchy at tens of metres. Two octaves of value

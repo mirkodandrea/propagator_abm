@@ -6,6 +6,7 @@ license.workspace = true
 description = "Rocca Ventosa: the one simulation and gameplay authority (priorities, coordinator, civil orders, plans), shared by the headless runner and the kiosk"
 
 [dependencies]
+datafs.workspace = true
 scenario.workspace = true
 fire.workspace = true
 abm.workspace = true

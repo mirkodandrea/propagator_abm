@@ -142,9 +142,11 @@ impl Detector {
                     })
                     .filter(|(_, e, cos)| *cos > coordinator::DOWNWIND_COS && e.distance_m <= 2.0 * CRISIS_M)
                     .min_by(|a, b| a.1.distance_m.total_cmp(&b.1.distance_m));
+                // a district the plan already covers is news, not a decision
+                let target = target.filter(|(d, _, _)| !posts.iter().flatten().any(|p| p.district == *d));
                 if let Some((d, e, _)) = target {
                     let name = &v.districts[d].name;
-                    let units = posts.iter().flatten().filter(|p| p.district == d).count();
+                    let units = 0;
                     candidates.push(Crisis {
                         at_s: now,
                         kind: Kind::Previsione { district: d },
@@ -168,14 +170,13 @@ impl Detector {
             let arrive_s = e.distance_m / speed.max(0.05);
             let urgent = arrive_s <= URGENT_S;
             let covered = posts.iter().flatten().any(|p| p.district == d);
-            if turned && e.downwind > coordinator::DOWNWIND_COS {
+            if turned && e.downwind > coordinator::DOWNWIND_COS && !covered {
                 candidates.push(Crisis {
                     at_s: now,
                     kind: Kind::Vento { district: d },
                     text: format!(
-                        "Il vento è girato: ora spinge il fuoco verso {name}, a {}. {}",
+                        "Il vento è girato: ora spinge il fuoco verso {name}, a {}. Nel piano attuale {name} non ha mezzi.",
                         words::km(e.distance_m),
-                        if covered { "Il piano attuale lo copre già.".to_string() } else { format!("Nel piano attuale {name} non ha mezzi.") }
                     ),
                 });
             }

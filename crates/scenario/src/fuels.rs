@@ -28,7 +28,7 @@ pub struct FuelDefRaw {
 
 pub fn load(dir: &Path) -> Result<Vec<FuelDefRaw>> {
     let bytes =
-        std::fs::read(dir.join("fuels_eu12.json")).context("fuels_eu12.json")?;
+        datafs::read(dir.join("fuels_eu12.json")).context("fuels_eu12.json")?;
     Ok(serde_json::from_slice(&bytes)?)
 }
 

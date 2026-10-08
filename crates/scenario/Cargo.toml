@@ -6,6 +6,7 @@ license.workspace = true
 description = "The Rocca Ventosa territory: terrain, vectors, population, fire rasters"
 
 [dependencies]
+datafs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rocca Ventosa</title>
+    <style>
+      html, body, #game { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #d0c6b4; }
+      #rocca { display: block; width: 100%; height: 100%; outline: none; }
+      #loading { position: fixed; inset: 0; display: grid; place-items: center; color: #222; font: 18px system-ui, sans-serif; pointer-events: none; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <main id="game"><canvas id="rocca" tabindex="0"></canvas></main>
+    <div id="loading">Rocca Ventosa: caricamento del territorio e della simulazione…<br><small>(circa 30 MB; serve un computer con mouse e un browser recente)</small></div>
+    <script type="module">
+      import init from './game.js';
+      const loading = document.querySelector('#loading');
+      // Winit throws this on purpose once the browser's event loop has the
+      // game: it is running, not failing.
+      const winitControlFlow = 'Using exceptions for control flow, don\'t mind me.';
+      init().then(() => loading.remove())
+        .catch(error => {
+          if (String(error).includes(winitControlFlow)) {
+            loading.remove();
+            return;
+          }
+          loading.textContent = `Impossibile avviare il gioco: ${error}`;
+          console.error(error);
+        });
+    </script>
+  </body>
+</html>

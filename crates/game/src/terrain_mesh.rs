@@ -25,6 +25,10 @@ use crate::retro::RetroMaterial;
 
 /// Samples per chunk edge. 128 keeps each chunk at ~16 k vertices.
 const CHUNK: usize = 128;
+/// Terrain samples per mesh vertex: every sample natively; in the browser
+/// every fourth (20 m), which WebGL can draw. The data (and so the agents and
+/// every height lookup) stay at full resolution.
+const STRIDE: usize = if cfg!(target_arch = "wasm32") { 4 } else { 1 };
 
 #[derive(Component)]
 pub struct TerrainChunk;
@@ -181,8 +185,10 @@ pub fn build(
     // dev floor matte and opt it out of the animated edge treatment.
     }, false));
 
-    let chunks_x = (t.cols - 1).div_ceil(CHUNK);
-    let chunks_y = (t.rows - 1).div_ceil(CHUNK);
+    // the mesh's own grid: every STRIDE-th sample
+    let (cols, rows, posting) = ((t.cols - 1) / STRIDE + 1, (t.rows - 1) / STRIDE + 1, t.posting * STRIDE as f32);
+    let chunks_x = (cols - 1).div_ceil(CHUNK);
+    let chunks_y = (rows - 1).div_ceil(CHUNK);
     let mut count = 0;
 
     for cy in 0..chunks_y {
@@ -190,8 +196,8 @@ pub fn build(
             let c0 = cx * CHUNK;
             let r0 = cy * CHUNK;
             // +1 so neighbouring chunks share an edge and leave no seam
-            let cn = (CHUNK + 1).min(t.cols - c0);
-            let rn = (CHUNK + 1).min(t.rows - r0);
+            let cn = (CHUNK + 1).min(cols - c0);
+            let rn = (CHUNK + 1).min(rows - r0);
             if cn < 2 || rn < 2 {
                 continue;
             }
@@ -203,11 +209,11 @@ pub fn build(
 
             for r in 0..rn {
                 for c in 0..cn {
-                    let gx = (c0 + c) as f32 * t.posting;
+                    let gx = (c0 + c) as f32 * posting;
                     // row 0 is the north edge; world +y is north
-                    let gy = t.height_m - (r0 + r) as f32 * t.posting;
+                    let gy = t.height_m - (r0 + r) as f32 * posting;
                     let p = Pos { x: gx, y: gy };
-                    let elev = t.elev[(r0 + r) * t.cols + (c0 + c)];
+                    let elev = t.elev[(r0 + r) * STRIDE * t.cols + (c0 + c) * STRIDE];
 
                     positions.push([gx, elev, -gy]);
                     // Deliberately the plain heightfield normal, not a
