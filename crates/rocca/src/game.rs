@@ -24,6 +24,9 @@ use crate::plan::{Civil, Plan};
 
 /// Simulated seconds per step (the units' and civilians' decision interval).
 pub const STEP_S: i64 = 6;
+/// A unit on the move that has not moved for this long is stuck: its road is
+/// cut and no other is open.
+pub const STUCK_S: i64 = 5 * 60;
 
 /// How much a unit on its post protects the homes around it (0-1), by kind:
 /// an engine with water does the full job, an empty one or a hand crew (no
@@ -96,6 +99,9 @@ pub struct Game {
     planned: bool,
     next_review_s: i64,
     caught_at: Vec<Option<i64>>,
+    /// Per unit: where it last moved and when, to tell a unit stuck on a
+    /// closed road from one on its way.
+    moved: Vec<(Pos, i64)>,
 }
 
 impl Game {
@@ -136,6 +142,7 @@ impl Game {
             planned: false,
             next_review_s: 0,
             caught_at: vec![None; n],
+            moved: crews.units.iter().map(|u| (u.pos, 0)).collect(),
             scn,
             fire,
             agents,
@@ -227,7 +234,8 @@ impl Game {
                 None => {
                     if matches!(task, Task::Attack { .. }) {
                         let _ = self.crews.assign(k, Task::Return);
-                        self.log.push(LogEntry { at_s: now, text: format!("{}: rientra, nessun quartiere in priorità da coprire", callsign) });
+                        let why = p.idle.iter().find(|(u, _)| *u == k).map_or_else(|| format!("{callsign} rientra alla base"), |(_, w)| w.clone());
+                        self.log.push(LogEntry { at_s: now, text: why });
                     }
                 }
             }
@@ -246,7 +254,7 @@ impl Game {
         if !look_for_crisis {
             self.detector.acknowledge(&v, &self.posts);
         }
-        if !(look_for_crisis && self.planned) {
+        if !(look_for_crisis && self.planned) || now > self.case.duration_s() - crate::crisis::LAST_CALL_S {
             return p;
         }
         let forecast = self.territory.shifted(&self.case).map(|(at, w)| (at, w.wind_dir_deg));
@@ -285,7 +293,7 @@ impl Game {
         if let Some((at, w)) = self.territory.shifted(&self.case) {
             if self.time_s() >= at && self.fire.weather().wind_dir_deg != w.wind_dir_deg {
                 self.fire.set_weather(w)?;
-                self.log.push(LogEntry { at_s: self.time_s(), text: format!("il vento gira: ora soffia da {:.0}°", w.wind_dir_deg) });
+                self.log.push(LogEntry { at_s: self.time_s(), text: format!("il vento gira: ora soffia da {}", crate::words::compass(w.wind_dir_deg)) });
             }
         }
         self.fire.advance(STEP_S)?;
@@ -299,7 +307,51 @@ impl Game {
         let prot = self.protection();
         self.fire.set_structure_protection(&prot);
         self.note();
+        let now = self.time_s();
+        for (u, m) in self.crews.units.iter().zip(&mut self.moved) {
+            if dist(u.pos, m.0) > 1.0 {
+                *m = (u.pos, now);
+            }
+        }
         Ok(())
+    }
+
+    /// What unit `k` is doing, in words for the map and the log.
+    pub fn unit_status(&self, k: usize) -> String {
+        let u = &self.crews.units[k];
+        let post = self.posts.get(k).and_then(|p| p.as_ref());
+        let place = |p: &Post| self.districts[p.district].name.clone();
+        match u.state {
+            UnitState::Lost => "fuori servizio".into(),
+            UnitState::Withdrawing => "si ritira: troppo pericoloso".into(),
+            UnitState::Refilling => "va a rifornirsi d'acqua".into(),
+            UnitState::Working => match post {
+                Some(p) => format!("difende {}", place(p)),
+                None => "al lavoro".into(),
+            },
+            UnitState::Moving if self.time_s() - self.moved[k].1 >= STUCK_S => "bloccato: strada tagliata dal fuoco".into(),
+            UnitState::Moving => match post {
+                Some(p) => {
+                    let min = (self.crews.route_remaining_m(k, &self.agents.network) / abm::suppression::ENGINE_SPEED / 60.0).ceil().max(1.0);
+                    format!("verso {}, {min:.0} min", place(p))
+                }
+                None => "rientra alla base".into(),
+            },
+            UnitState::Staged => match post {
+                Some(p) if dist(u.pos, p.at) <= ON_POST_M => format!("in postazione a {}", place(p)),
+                _ => "in attesa".into(),
+            },
+            UnitState::Inbound | UnitState::Unavailable => "non disponibile".into(),
+        }
+    }
+
+    /// The same fire with no orders at all, to the end of the case: what the
+    /// debrief compares the player's game with.
+    pub fn without_orders(data_dir: &Path, case: &str, seed: u64) -> Result<Outcome> {
+        let mut g = Game::new(data_dir, case, seed)?;
+        let end = g.case.duration_s();
+        g.run_until(end)?;
+        Ok(g.outcome())
     }
 
     pub fn run_until(&mut self, t_s: i64) -> Result<()> {

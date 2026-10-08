@@ -82,6 +82,10 @@ pub struct Territory {
     pub moisture_pct: f64,
     pub stations: Vec<Station>,
     pub roster: Vec<Slot>,
+    /// The cases the kiosk plays, in order; the rest are for the headless
+    /// runner and the operator.
+    #[serde(default)]
+    pub featured: Vec<String>,
     pub cases: Vec<Case>,
 }
 
@@ -91,11 +95,21 @@ impl Territory {
         let t: Territory = serde_json::from_slice(&std::fs::read(&p).with_context(|| format!("reading {}", p.display()))?)
             .with_context(|| format!("parsing {}", p.display()))?;
         anyhow::ensure!(t.roster.iter().all(|s| s.station < t.stations.len()), "roster names a missing station");
+        anyhow::ensure!(t.featured.iter().all(|n| t.case(n).is_some()), "featured names a missing case");
         Ok(t)
     }
 
     pub fn case(&self, name: &str) -> Option<&Case> {
         self.cases.iter().find(|c| c.name == name)
+    }
+
+    /// The kiosk's cases in order: the featured ones, or all of them.
+    pub fn playlist(&self) -> Vec<String> {
+        if self.featured.is_empty() {
+            self.cases.iter().map(|c| c.name.clone()).collect()
+        } else {
+            self.featured.clone()
+        }
     }
 
     pub fn weather(&self, c: &Case) -> Weather {

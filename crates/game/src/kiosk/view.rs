@@ -20,12 +20,14 @@ const MIN_PITCH: f32 = -1.30;
 const MAX_PITCH: f32 = -0.55;
 const MAX_YAW: f32 = 1.75;
 const MIN_DIST: f32 = 90.0;
-const MAX_DIST: f32 = 4600.0;
+const MAX_DIST: f32 = 6000.0;
 const PAN_RADIUS_M: f32 = 1500.0;
 
-/// The places the frame has to hold: every district and the fire's origin.
+/// The places the frame has to hold: every home of every district, and where
+/// the fire started. The distance is fitted to them (`fit_view`), so a fire
+/// away from the middle widens the frame rather than pushing a district off it.
 fn frame_points(game: &Game) -> Vec<Pos> {
-    let mut pts: Vec<Pos> = game.districts.iter().map(|d| d.centre).collect();
+    let mut pts: Vec<Pos> = game.districts.iter().flat_map(|d| d.households.iter().map(|&i| game.agents.households[i].home)).collect();
     pts.push(game.case.ignition());
     pts
 }
@@ -39,19 +41,60 @@ fn home_focus(sim: &Sim) -> Vec3 {
     let pts = frame_points(sim);
     let (x0, x1) = pts.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.x), b.max(p.x)));
     let (y0, y1) = pts.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.y), b.max(p.y)));
-    // Nudged south: the chips stand above their districts and the action bar
-    // takes the bottom of the screen, so the frame's centre sits a little low.
-    let p = Pos { x: (x0 + x1) * 0.5, y: (y0 + y1) * 0.5 - 60.0 };
+    let p = Pos { x: (x0 + x1) * 0.5, y: (y0 + y1) * 0.5 };
     crate::frame::to_bevy(p, sim.scn.terrain.height_at(p))
 }
 
-/// Close enough that the houses read, far enough to hold every district.
-fn play_dist(sim: &Sim) -> f32 {
-    let f = crate::frame::to_world(home_focus(sim));
-    let pts = frame_points(sim);
-    let (ex, ey) = pts.iter().fold((0.0f32, 0.0f32), |(a, b), p| (a.max((p.x - f.x).abs()), b.max((p.y - f.y).abs())));
-    // The screen is wider than tall and tilted: north-south extent costs more.
-    (ex.max(ey * 1.35) * 2.3 + 500.0).clamp(1300.0, 4200.0)
+/// Where the camera stands for a focus, yaw, pitch and distance.
+fn eye(focus: Vec3, yaw: f32, pitch: f32, distance: f32) -> Transform {
+    let dir = Vec3::new(yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos());
+    Transform::from_translation(focus + dir * distance).looking_at(focus, Vec3::Y)
+}
+
+/// The closest distance at which every home lands in the part of the screen
+/// the interface leaves free: below the top band with room for a chip over
+/// it, above the button and the panels. `None` until the camera has a size.
+fn fit_distance(camera: &Camera, sim: &Sim, focus: Vec3, yaw: f32, pitch: f32) -> Option<f32> {
+    let size = camera.logical_viewport_size()?;
+    let pts: Vec<Vec3> = frame_points(sim).into_iter().map(|p| crate::frame::to_bevy(p, sim.scn.terrain.height_at(p))).collect();
+    let fits = |d: f32| {
+        let gt = GlobalTransform::from(eye(focus, yaw, pitch, d));
+        pts.iter().all(|p| {
+            camera.world_to_viewport(&gt, *p).is_some_and(|s| {
+                s.x >= 0.10 * size.x && s.x <= 0.90 * size.x && s.y >= 0.30 * size.y && s.y <= 0.78 * size.y
+            })
+        })
+    };
+    // Not projected yet (first frames): every test would fail; wait.
+    camera.world_to_viewport(&GlobalTransform::default(), Vec3::NEG_Z)?;
+    let (mut lo, mut hi) = (MIN_DIST * 4.0, MAX_DIST);
+    if !fits(hi) {
+        return Some(hi);
+    }
+    for _ in 0..24 {
+        let mid = 0.5 * (lo + hi);
+        if fits(mid) {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    Some(hi)
+}
+
+/// The home view: the yaw (within ±50°) that brings the districts closest,
+/// and that distance. The territory's places lie on a diagonal; turned, they
+/// use the width of the screen.
+fn fit_view(camera: &Camera, sim: &Sim, focus: Vec3, pitch: f32) -> Option<(f32, f32)> {
+    let mut best: Option<(f32, f32)> = None;
+    for k in -6..=6 {
+        let yaw = k as f32 * 0.15;
+        let d = fit_distance(camera, sim, focus, yaw, pitch)?;
+        if best.is_none_or(|(_, b)| d < b * 0.97) {
+            best = Some((yaw, d));
+        }
+    }
+    best
 }
 
 #[derive(Default)]
@@ -110,7 +153,6 @@ pub fn camera(
     let Ok((mut orbit, mut tf, camera, mut dof)) = query.get_single_mut() else { return };
     let home = home_focus(&sim);
     let t = kiosk.phase_t;
-    let pd = play_dist(&sim) * shot_zoom();
     let scene_pitch = -0.80;
 
     let window = windows.get_single().ok();
@@ -165,13 +207,16 @@ pub fn camera(
                 orbit.yaw += rotation.to_radians();
                 orbit.distance *= (-scroll.clamp(-6.0, 6.0) * 0.1 - pinch.clamp(-1.0, 1.0)).exp();
             }
-            // A new game: settle on the home framing once.
-            if *settled != sim.generation.max(1) && sim.time_s() == 0 && !user_has_it {
-                *settled = sim.generation.max(1);
-                orbit.focus = home;
-                orbit.yaw = 0.0;
-                orbit.pitch = scene_pitch;
-                orbit.distance = pd;
+            // A new game: settle on the home framing once. (A game starts one
+            // step in: `rocca::Game::new` puts the ignition into the state.)
+            if *settled != sim.generation.max(1) && sim.time_s() <= rocca::STEP_S && !user_has_it {
+                if let Some((yaw, d)) = fit_view(camera, &sim, home, scene_pitch) {
+                    *settled = sim.generation.max(1);
+                    orbit.focus = home;
+                    orbit.yaw = yaw;
+                    orbit.pitch = scene_pitch;
+                    orbit.distance = d * shot_zoom();
+                }
             }
         }
     }

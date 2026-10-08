@@ -61,6 +61,8 @@ pub struct Post {
     pub at: Pos,
     /// Drive (or walk) time from where the unit is now, by the route open now.
     pub eta_s: f32,
+    /// The way there, from the unit, by the roads open now: for the map.
+    pub route: Vec<Pos>,
     pub reason: String,
 }
 
@@ -72,6 +74,9 @@ pub struct Proposal {
     pub uncovered: Vec<(usize, String)>,
     /// Ranked districts that do not need cover now.
     pub quiet: Vec<usize>,
+    /// Units left without a post, with why: a unit sent home is a choice the
+    /// player should see, not a silence.
+    pub idle: Vec<(usize, String)>,
 }
 
 impl Proposal {
@@ -105,8 +110,8 @@ fn route_time(v: &View, kind: UnitKind, nodes: &[NodeId]) -> f32 {
 }
 
 /// Where this unit would stand to cover `home`, and how long it takes to get
-/// there by the roads open now. `None` if there is no way.
-fn reach(v: &View, unit: usize, home: Pos) -> Option<(Pos, f32)> {
+/// there by the roads open now, and the way. `None` if there is no way.
+fn reach(v: &View, unit: usize, home: Pos) -> Option<(Pos, f32, Vec<Pos>)> {
     let u = &v.crews.units[unit];
     let drivable = u.kind.drivable_only();
     let net = &v.agents.network;
@@ -118,7 +123,8 @@ fn reach(v: &View, unit: usize, home: Pos) -> Option<(Pos, f32)> {
     }
     let path = network::route(net, from, to, v.fire.threat(), drivable)?;
     let walk = dist(u.pos, net.pos(from)) / CREW_SPEED;
-    Some((post, route_time(v, u.kind, &path) + walk))
+    let way = std::iter::once(u.pos).chain(std::iter::once(net.pos(from))).chain(path.iter().map(|&n| net.pos(n))).collect();
+    Some((post, route_time(v, u.kind, &path) + walk, way))
 }
 
 fn workable(v: &View, p: Pos) -> bool {
@@ -137,7 +143,7 @@ pub fn eta_to_district(v: &View, unit: usize, d: usize) -> Option<f32> {
         .into_iter()
         .filter(|(h, _)| safe(v, *h))
         .take(CANDIDATES)
-        .filter_map(|(h, _)| reach(v, unit, h).map(|(_, eta)| eta))
+        .filter_map(|(h, _)| reach(v, unit, h).map(|(_, eta, _)| eta))
         .min_by(|a, b| a.total_cmp(b))
 }
 
@@ -199,7 +205,10 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
             {
                 taken[p.district] += 1;
                 let mut kept = p.clone();
-                kept.eta_s = reach(v, k, p.at).map_or(p.eta_s, |(_, eta)| eta);
+                if let Some((_, eta, way)) = reach(v, k, p.at) {
+                    kept.eta_s = eta;
+                    kept.route = way;
+                }
                 posts[k] = Some(kept);
             }
         }
@@ -236,20 +245,20 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
                 if tried > CANDIDATES {
                     break;
                 }
-                if let Some((at, eta)) = reach(v, k, h) {
+                if let Some((at, eta, route)) = reach(v, k, h) {
                     if held.iter().any(|q| dist(*q, at) < 2.0 * DEFEND_REACH_M) {
                         continue;
                     }
                     let name = &v.districts[*d].name;
                     let reason = format!(
-                        "{} va a {} (priorità {}): case sottovento al fronte, fuoco a {:.1} km, arrivo in {:.0} min",
+                        "{} va a {} (priorità {}): case sottovento al fronte, fuoco a {}, arrivo in {:.0} min",
                         u.callsign,
                         name,
                         plan.rank(*d).map_or(0, |r| r + 1),
-                        e.distance_m / 1000.0,
+                        crate::words::km(e.distance_m),
                         (eta / 60.0).ceil()
                     );
-                    posts[k] = Some(Post { unit: k, district: *d, at, eta_s: eta, reason });
+                    posts[k] = Some(Post { unit: k, district: *d, at, eta_s: eta, route, reason });
                     taken[*d] += 1;
                     break 'districts;
                 }
@@ -277,5 +286,25 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
             uncovered.push((*d, format!("{}: nessun mezzo rimasto dopo le priorità più alte", v.districts[*d].name)));
         }
     }
-    Proposal { posts, uncovered, quiet }
+    // 6. who is left without a post, and why
+    let blocked = engaged.iter().find(|(d, _)| no_access.contains(d)).map(|(d, _)| *d);
+    let mut idle = vec![];
+    for &k in &usable {
+        if posts[k].is_some() || v.crews.units[k].state == UnitState::Withdrawing {
+            continue;
+        }
+        let u = &v.crews.units[k];
+        let what = match current.get(k).and_then(|p| p.as_ref()) {
+            Some(p) => format!("{} lascia {} e rientra alla base", u.callsign, v.districts[p.district].name),
+            None => format!("{} resta in attesa", u.callsign),
+        };
+        let why = match blocked {
+            Some(d) => format!("{} (priorità {}) non è raggiungibile ora", v.districts[d].name, plan.rank(d).map_or(0, |r| r + 1)),
+            None if plan.priorities.is_empty() => "nessun luogo scelto da difendere".to_string(),
+            None if engaged.is_empty() => "nessun luogo in priorità è minacciato ora".to_string(),
+            None => "i luoghi in priorità hanno già i mezzi che servono".to_string(),
+        };
+        idle.push((k, format!("{what}: {why}")));
+    }
+    Proposal { posts, uncovered, quiet, idle }
 }

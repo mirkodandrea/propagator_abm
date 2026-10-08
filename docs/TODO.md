@@ -4,18 +4,21 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
-- **Fase corrente: fase 4 consegnata, in attesa del checkpoint 4** (fase 3 approvata il 2026-10-08; codice vecchio rimosso: un solo motore `rocca::Game`, un solo scenario `data/scenarios/rocca_ventosa`, una sola modalità).
-- **Prossimo checkpoint umano: checkpoint 4** (`docs/fase4/README.md`). Approvare il layout 2 del territorio e i 3 casi definitivi proposti (Coste2_gira, Piano2, Borgo2). Poi la fase 5.
+- **Fase corrente: fase 5 consegnata (nuova UX), in attesa del checkpoint 5** (checkpoint 4 approvato il 2026-10-08: un solo motore `rocca::Game`, un solo scenario `data/scenarios/rocca_ventosa`, una sola modalità).
+- **Prossimo checkpoint umano: checkpoint 5** (`docs/fase5/README.md`): una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), prima azione e debrief. Poi la fase 6 (playtest).
 - **Per riprendere:**
   - **Comandi:**
     - `cargo test --release --workspace` (35 target verdi);
     - `target/release/rocca <caso> --priorita A,B --b-priorita B,A`;
     - esempi `rocca`: `ab_sweep`, `crisi`, `civili`, `porta`;
-    - kiosk: `KIOSK_CASE=Coste2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_SHOT=<dir> target/release/game`.
+    - kiosk: `KIOSK_CASE=Coste2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_SHOT=<dir> target/release/game` (partita scriptata fino a «Altro incendio»);
+    - kiosk: F2 apre la barra operatore; `KIOSK_FPS=1` scrive gli FPS; `KIOSK_VEG_DENSITY` regola la vegetazione (0,5 di serie); `KIOSK_SCALE=1` forza 1 pixel per punto.
   - **Territorio:** si rigenera con `scenario_factory.py build-town --layout 2`, `town-fires --scenario t4_paese2 --ignitions-from t4_paese` e `publish --scenario t4_paese2`.
 
 ## Decisioni dell'utente
 
+- 2026-10-08: **checkpoint 4 approvato** («Continua» dopo la proposta): layout 2 e i tre casi del kiosk, cioè Coste2_gira (principale), Piano2 e Borgo2 (introduttivo).
+- 2026-10-08: **prestazioni: non ottimizzare ora**, solo ridurre la densità degli alberi (fatto: metà densità, da 24 a circa 40 FPS su M4 Pro).
 - 2026-10-08: la difesa delle case deve **ridurre l'esposizione simulata**, non restare un proxy contabile (`Tally::note_defence`).
 - 2026-10-08: incendi più vivaci e più lunghi. Vento di prova 40 km/h, 6 h simulate, umidità **3 %** fissa e uniforme. Evitare i bordi: mondo di 8 km con nucleo progettato di 4 km.
 - 2026-10-08: terreno scelto **t4 (Crinale e sella)**.
@@ -53,29 +56,40 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - [x] 2026-10-08 **Layout 2** del territorio (`T4_L2` → `rocca_ventosa`): Il Borgo più esposto, Le Coste in 4 nuclei, casi «_gira».
 - [x] 2026-10-08 Crisi **previsione** (bollettino 20 min prima del cambio di vento) e preposizionamento per la prima priorità (`PREEMPT_M` 3,5 km).
 - [x] 2026-10-08 Report di fase 4 (`docs/fase4/README.md`): le priorità iniziali cambiano gli esiti in 4 casi; la crisi conta in Coste2_gira (58 case colpite rispondendo subito, 71 rispondendo tardi o ignorandola).
-- [ ] **Checkpoint umano 4.**
+- [x] 2026-10-08 **Checkpoint umano 4** approvato.
 - [ ] Bollettino meteo con incertezza (orario ± e probabilità), senza leggere il futuro dell'incendio.
-- [ ] Mezzi bloccati al rientro (strada tagliata): mostrarli come «bloccati».
+- [x] 2026-10-08 Mezzi bloccati: `Game::unit_status` dice «bloccato: strada tagliata dal fuoco» se un mezzo in movimento è fermo da 5 min (`STUCK_S`); etichetta rossa sulla mappa.
 - [ ] (prima versione, superata dal layout 2) Misura «la decisione alla crisi conta» (`examples/crisi.rs`, tabella in `docs/fase4/crisi.md`):
   - effetto netto in Coste2_gira: case colpite 76 se si ignora, 61 rispondendo subito, 47 rispondendo 20 min dopo; famiglie colte in casa 24 se si ignora, 12 rispondendo subito con evacuazione;
   - nella maggior parte dei casi rispondere cambia poco: vanno scelti casi in cui la crisi è un vero dilemma, o rivisto il territorio (piano d'azione: «si torna a case/strade e inneschi»).
 - [x] 2026-10-08 Kiosk: fase **Crisi** a ×1 con countdown di 25 s. Il piano attivo prosegue; il proposto si applica alla conferma o alla scadenza (rivalidato), e se non cambia resta il piano attuale. Verificato con screenshot su Coste2_gira (crisi del vento a T+46).
 - [ ] Le fasi ×0/×N/×1 sono tempo reale del kiosk; l'headless le simula con strategie (`examples/crisi.rs`). Valutare se spostare il countdown nel `Game` per i replay.
-- [ ] Prove strategiche: una decisione alla crisi conta, nessuna strategia sempre vincente. Scegliere 2–3 casi (candidati Piano1, Borgo2, Piano3, con il vento che gira).
+- [x] 2026-10-08 Casi scelti: Coste2_gira, Piano2, Borgo2 (`featured` in `game.json`).
 - [ ] Preallerta come osservazione del grafo comportamentale (`HouseholdObs`).
 - [x] **Rettificato (2026-10-08):** la «scoperta» del porting dei test era sbagliata. Sui casi veri la minaccia alla porta supera 0,35 in 9 casi su 18; non supera mai 0,55 (celle da 20 m). Il testo originale diceva: sul territorio la minaccia per le persone davanti alle case vale sempre 0, perché ogni casa ha una radura di circa 13 m. Il blocco comportamentale «fuoco alla porta» non scatta mai, e con lui i rami evacua-subito, riparo e ultima risorsa. Test `incident_gaps::the_last_resort_profile…` ignorato con motivazione. Decidere se è calibrazione del comportamento o del territorio.
 - [ ] Difesa delle strade: misurare prima l'effetto sulla percorribilità (spec).
 - [ ] Rivedere i parametri nuovi: `EMBER_DECAY_M` 700 m, `PROTECTED_EMBER` 0,85 e `PROTECTED_RADIANT` 0,5, soglie del coordinatore.
 
-### Fasi 5–6
+### Fase 5: nuova UX
 
-- [ ] Nuova UX e playtest (vedi `03-PIANO-DI-AZIONE.md`).
+- [x] 2026-10-08 Mappa a tutto schermo con schede per quartiere (rango, fuoco, mezzi ora e dopo la conferma, Difendi / più importante / non difendere, Preallerta / Evacua), etichette dei mezzi, rotte attive (verdi) e proposte (bianche tratteggiate), barra in alto, crisi con countdown, pulsante unico, debrief contro «senza ordini» con Riprova / Altro incendio, barra operatore F2 (`docs/fase5/README.md`).
+- [x] 2026-10-08 Crisi: «scoperto» solo se il fuoco può arrivare entro 45 min (`URGENT_S`); nessuna crisi negli ultimi 10 min (`LAST_CALL_S`).
+- [x] 2026-10-08 Inquadratura calcolata (case + innesco nella zona libera, yaw ±50°); corretto il trigger che non scattava (il gioco parte a T+6 s).
+- [ ] **Checkpoint umano 5.**
+- [ ] Schede dei quartieri che si sovrappongono tra loro o al fuoco; etichette dei mezzi sovrapposte alla base.
+- [ ] Coordinatore: con la prima priorità irraggiungibile un mezzo rientra alla base (ora spiegato a schermo). Mandarlo al quartiere successivo annullava l'effetto della crisi in Coste2_gira (58 → 71): provato e annullato.
+- [ ] Tempo di pianificazione senza limite: decidere nei playtest se serve (spec: ~40 s indicativi).
+- [ ] FPS circa 40 su M4 Pro con vegetazione dimezzata: misurare sulla macchina del chiosco (fase 6).
+
+### Fase 6
+
+- [ ] Playtest (vedi `03-PIANO-DI-AZIONE.md`).
 
 ### Debito tecnico
 
 - [ ] `CLAUDE.md` cita `docs/rocca-ventosa/…`, ma i documenti sono in `docs/`.
 - [ ] File non tracciati rimasti dai vecchi scenari (`data/scenarios/{mati,pedrogao,rhodes,spotorno}/*.tif`, `data/osm_raw.json`, `data/spotorno_render_terrain.tif`, `dist/`, `results/`): da cancellare a mano, non sono in git.
-- [ ] Kiosk: pannello provvisorio in egui; la UX vera è la fase 5.
+- [x] 2026-10-08 Kiosk: pannello provvisorio sostituito dalla UX della fase 5.
 
 ## Fatto
 

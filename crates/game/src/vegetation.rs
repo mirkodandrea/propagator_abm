@@ -42,8 +42,8 @@ use crate::sim::Sim;
 const CHUNK_CELLS: usize = 32;
 
 /// Expected plants per 20 m fire cell (400 m²), per archetype, before the
-/// patchiness modulation below. Scaled by `SPOTORNO_VEG_DENSITY` for machines
-/// that would rather not draw several million triangles of macchia.
+/// patchiness modulation below. Scaled by [`VEG_DENSITY`] (or
+/// `KIOSK_VEG_DENSITY`).
 ///
 /// These are stand densities, not decoration: 8 tussocks per cell is 200/ha of
 /// grassland, 6 macchia clumps is 150/ha of shrubland, and 3.6 stems is 90/ha
@@ -55,6 +55,9 @@ const CHUNK_CELLS: usize = 32;
 /// Set by measurement, not by taste: 10.5 M triangles rendered at 119 fps in
 /// release on an M4 Pro, so there was room for roughly another half.
 const DENSITY: [f32; 4] = [11.0, 3.4, 6.5, 3.8];
+
+/// The share of [`DENSITY`] actually planted.
+const VEG_DENSITY: f32 = 0.5;
 
 /// Vegetation does not honour cell boundaries, and it is not uniform inside
 /// one either: real stands are patchy at tens of metres. Two octaves of value
@@ -161,23 +164,9 @@ pub fn spawn(
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
     let scn = &sim.scn;
-    // WebGL browsers share GPU memory with the page.  A tenth of the desktop
-    // vegetation still reads as continuous cover from the command camera,
-    // while avoiding the multi-million-triangle startup spike.
-    #[cfg(target_arch = "wasm32")]
-    let density: f32 = 0.12;
-    #[cfg(not(target_arch = "wasm32"))]
-    let density: f32 = {
-        // Dev scenarios are analytical stages, not landscape showcases. At
-        // full density the shared cyan palette turns a hundred thousand plant
-        // silhouettes into the highest-frequency signal in the view and hides
-        // the roads, agents and unit markers the stage exists to exercise.
-        let default_density = if false { 0.16 } else { 1.0 };
-        std::env::var("SPOTORNO_VEG_DENSITY")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(default_density)
-    };
+    // Half the stand densities below (user decision 2026-10-08: fewer trees
+    // for now). `KIOSK_VEG_DENSITY` overrides the factor.
+    let density: f32 = std::env::var("KIOSK_VEG_DENSITY").ok().and_then(|v| v.parse().ok()).unwrap_or(VEG_DENSITY);
 
     // VR-training dev scenarios tint every plant toward the palette's grid
     // colour instead of leaving it white — vertex colour still carries the

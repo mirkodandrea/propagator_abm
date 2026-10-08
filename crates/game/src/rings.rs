@@ -59,3 +59,47 @@ pub(crate) fn ring_mesh(scn: &Scenario, centre: Pos, radius_m: f32) -> Mesh {
     mesh.insert_indices(Indices::U32(indices));
     mesh
 }
+
+/// A route drawn on the map: a ribbon `width_m` wide along `pts`, draped like
+/// the rings. With `dash_m`, drawn and skipped in turns of that length, so a
+/// proposed route reads apart from one being driven.
+pub(crate) fn path_mesh(scn: &Scenario, pts: &[Pos], width_m: f32, dash_m: Option<f32>) -> Mesh {
+    const STEP_M: f32 = 8.0;
+    let mut positions: Vec<[f32; 3]> = vec![];
+    let mut indices: Vec<u32> = vec![];
+    let mut along = 0.0f32;
+    for w in pts.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let len = (dx * dx + dy * dy).sqrt();
+        if len < 0.5 {
+            continue;
+        }
+        let (nx, ny) = (-dy / len * width_m * 0.5, dx / len * width_m * 0.5);
+        let steps = (len / STEP_M).ceil() as usize;
+        for i in 0..steps {
+            let (t0, t1) = (i as f32 / steps as f32, (i + 1) as f32 / steps as f32);
+            let on = dash_m.is_none_or(|d| ((along + len * t0) / d) as i64 % 2 == 0);
+            if !on {
+                continue;
+            }
+            let s = positions.len() as u32;
+            for t in [t0, t1] {
+                let c = Pos { x: a.x + dx * t, y: a.y + dy * t };
+                for side in [-1.0f32, 1.0] {
+                    let p = Pos { x: c.x + nx * side, y: c.y + ny * side };
+                    positions.push([p.x, scn.terrain.height_at(c) + RING_LIFT_M, -p.y]);
+                }
+            }
+            indices.extend_from_slice(&[s, s + 2, s + 1, s + 1, s + 2, s + 3]);
+        }
+        along += len;
+    }
+    let n = positions.len();
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32, 0.0]; n]);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}

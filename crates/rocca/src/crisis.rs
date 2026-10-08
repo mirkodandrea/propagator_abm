@@ -22,6 +22,7 @@ use scenario::Pos;
 use crate::coordinator::{self, Post, View};
 use crate::district;
 use crate::plan::Plan;
+use crate::words;
 
 pub const MAX_CRISES: usize = 2;
 pub const MIN_GAP_S: i64 = 15 * 60;
@@ -29,6 +30,11 @@ pub const MIN_GAP_S: i64 = 15 * 60;
 pub const FORECAST_LEAD_S: i64 = 20 * 60;
 /// No crisis for a fire further than this from the district's homes.
 pub const CRISIS_M: f32 = 2000.0;
+/// An uncovered district is a crisis only if the fire could be on it within
+/// this long: beyond it, it is not yet a decision under time pressure.
+pub const URGENT_S: f32 = 45.0 * 60.0;
+/// No crisis this close to the end of a game: nothing could still change.
+pub const LAST_CALL_S: i64 = 10 * 60;
 /// Approach speed assumed until two observations exist, m/s (~1 km/h).
 const DEFAULT_APPROACH: f32 = 0.3;
 /// Window over which the approach speed is measured, simulated seconds.
@@ -143,10 +149,10 @@ impl Detector {
                         at_s: now,
                         kind: Kind::Previsione { district: d },
                         text: format!(
-                            "Previsione meteo: tra circa {} min il vento girerà e soffierà da {:.0}°. Spingerebbe il fuoco verso {name}, ora a {:.1} km. Oggi {name} ha {units} mezzi.",
+                            "Previsione meteo: tra circa {} min il vento girerà e soffierà da {}. Spingerebbe il fuoco verso {name}, ora a {}. Oggi {name} ha {units} mezzi.",
                             (at - now) / 60,
-                            from,
-                            e.distance_m / 1000.0
+                            words::compass(from),
+                            words::km(e.distance_m)
                         ),
                     });
                 }
@@ -160,19 +166,20 @@ impl Detector {
             }
             let name = &v.districts[d].name;
             let arrive_s = e.distance_m / speed.max(0.05);
+            let urgent = arrive_s <= URGENT_S;
             let covered = posts.iter().flatten().any(|p| p.district == d);
             if turned && e.downwind > coordinator::DOWNWIND_COS {
                 candidates.push(Crisis {
                     at_s: now,
                     kind: Kind::Vento { district: d },
                     text: format!(
-                        "Il vento è girato: ora spinge il fuoco verso {name}, a {:.1} km. {}",
-                        e.distance_m / 1000.0,
+                        "Il vento è girato: ora spinge il fuoco verso {name}, a {}. {}",
+                        words::km(e.distance_m),
                         if covered { "Il piano attuale lo copre già.".to_string() } else { format!("Nel piano attuale {name} non ha mezzi.") }
                     ),
                 });
             }
-            if covered || self.acknowledged.contains(&d) {
+            if covered || !urgent || self.acknowledged.contains(&d) {
                 continue;
             }
             // Is there an answer? The quickest unit that could take a post here.
@@ -196,8 +203,8 @@ impl Detector {
                 at_s: now,
                 kind: Kind::Scoperto { district: d },
                 text: format!(
-                    "{name} è minacciato: fuoco a {:.1} km, potrebbe arrivare in circa {} min. Spostare {} richiede circa {} min {cost}.",
-                    e.distance_m / 1000.0,
+                    "{name} è minacciato: fuoco a {}, potrebbe arrivare in circa {} min. Spostare {} richiede circa {} min {cost}.",
+                    words::km(e.distance_m),
                     minutes(arrive_s),
                     u.callsign,
                     minutes(eta)

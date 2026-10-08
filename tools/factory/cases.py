@@ -27,6 +27,10 @@ CASE_MINUTES = 180
 # fire at the nearest other locality (01-SPEC-GIOCO §3: a wind change that
 # overturns the exposure is one of the crises the game is about).
 SHIFT_AT_MIN = 45
+# The cases the kiosk plays, in its order (checkpoint 4, 2026-10-08): the main
+# dilemma, the non-obvious one, the introductory one. The others stay in
+# game.json for the headless runner and the operator.
+FEATURED = ["Coste2_gira", "Piano2", "Borgo2"]
 
 
 def build(cid: str) -> dict:
@@ -63,6 +67,7 @@ def build(cid: str) -> dict:
             {"name": "Squadra AIB (da fuori, SP 12)", "pos": entry},
         ],
         "roster": ROSTER,
+        "featured": [n for n in FEATURED if any(c["name"] == n for c in cases)],
         "cases": cases,
     }
 

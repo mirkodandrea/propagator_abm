@@ -11,6 +11,7 @@ pub mod crisis;
 pub mod district;
 pub mod game;
 pub mod plan;
+pub mod words;
 
 pub use case::{Case, Territory};
 pub use coordinator::{Post, Proposal};

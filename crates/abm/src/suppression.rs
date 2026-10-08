@@ -667,6 +667,15 @@ impl Suppression {
         m
     }
 
+    /// The road still ahead of a ground unit, from where it is: for the map.
+    pub fn route_points(&self, id: usize, net: &RoadNetwork) -> Vec<Pos> {
+        let Some(u) = self.units.get(id) else { return vec![] };
+        if u.route.is_empty() {
+            return vec![];
+        }
+        std::iter::once(u.pos).chain(u.route.iter().map(|&n| net.pos(n))).collect()
+    }
+
     /// The hydrant an engine at `p` would refill from, if the map has one.
     pub fn nearest_hydrant(&self, p: Pos) -> Option<Pos> {
         nearest(&self.hydrants, p)

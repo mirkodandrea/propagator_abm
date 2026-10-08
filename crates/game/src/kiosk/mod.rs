@@ -6,15 +6,20 @@
 //!
 //! Flow: **Pianifica** (×0, the proposed plan is previewed on the map) →
 //! **Esegui** (×N) ⇄ **Crisi** (×1 with a countdown, raised by the game) →
-//! **Fine** (facts per district). No inactivity reset: a new game starts only
-//! from the operator panel.
+//! **Fine** (facts per district, against the same fire with no orders). No
+//! inactivity reset: a new game starts from the debrief's «Riprova» / «Altro
+//! incendio» or from the operator bar (F2), never by itself.
 
 pub mod ui;
 pub mod view;
 
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
 use bevy::prelude::*;
 use bevy::window::WindowMode;
-use rocca::{Plan, Proposal, Territory};
+use rocca::district::Exposure;
+use rocca::{Game, Outcome, Plan, Proposal, Territory};
 
 use crate::sim::{Sim, SimRestarted};
 use crate::{AppState, DataPath};
@@ -67,11 +72,19 @@ pub struct Kiosk {
     pub error: Option<String>,
     /// The crisis being decided, while in [`Phase::Crisi`].
     pub crisis: Option<rocca::Crisis>,
+    /// Per district, how the fire stands to it now (refreshed with the preview).
+    pub risk: Vec<Option<Exposure>>,
+    /// The same case and seed with no orders, run beside the game for the
+    /// debrief: (case, seed) and the result when it is ready.
+    pub baseline: Arc<Mutex<Option<(String, u64, Result<Outcome, String>)>>>,
+    /// The operator bar (F2).
+    pub operator: bool,
+    data: PathBuf,
 }
 
 impl Kiosk {
-    fn new(territory: Territory) -> Kiosk {
-        let case = std::env::var("KIOSK_CASE").ok().filter(|c| territory.case(c).is_some()).unwrap_or_else(|| territory.cases[0].name.clone());
+    fn new(territory: Territory, data: PathBuf) -> Kiosk {
+        let case = std::env::var("KIOSK_CASE").ok().filter(|c| territory.case(c).is_some()).unwrap_or_else(|| territory.playlist()[0].clone());
         let speed = std::env::var("KIOSK_SPEED").ok().and_then(|v| v.parse().ok()).unwrap_or(RUN_SPEED);
         Kiosk {
             phase: Phase::Pianifica,
@@ -86,7 +99,41 @@ impl Kiosk {
             speed,
             error: None,
             crisis: None,
+            risk: vec![],
+            baseline: Arc::new(Mutex::new(None)),
+            operator: false,
+            data,
         }
+    }
+
+    /// The next case of the kiosk's playlist («Altro incendio»).
+    pub fn next_case(&self) -> String {
+        let list = self.territory.playlist();
+        let at = list.iter().position(|c| *c == self.case).map_or(0, |i| i + 1);
+        list[at % list.len()].clone()
+    }
+
+    /// The no-orders run for this case and seed, if it has finished.
+    pub fn baseline(&self) -> Option<Result<Outcome, String>> {
+        let b = self.baseline.lock().ok()?;
+        b.as_ref().filter(|(c, s, _)| *c == self.case && *s == self.seed).map(|(_, _, r)| r.clone())
+    }
+
+    /// Start the no-orders run in the background, unless it is already done.
+    fn start_baseline(&self) {
+        if self.baseline().is_some() {
+            return;
+        }
+        let (slot, data, case, seed) = (self.baseline.clone(), self.data.clone(), self.case.clone(), self.seed);
+        if let Ok(mut b) = slot.lock() {
+            *b = None;
+        }
+        std::thread::spawn(move || {
+            let r = Game::without_orders(&data, &case, seed).map_err(|e| format!("{e:#}"));
+            if let Ok(mut b) = slot.lock() {
+                *b = Some((case, seed, r));
+            }
+        });
     }
 
     pub fn enter(&mut self, phase: Phase) {
@@ -98,13 +145,14 @@ impl Kiosk {
 /// Load the territory and start the first game.
 pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<NextState<AppState>>, mut exit: EventWriter<AppExit>) {
     let built = Territory::load(&data.0).and_then(|t| {
-        let k = Kiosk::new(t);
+        let k = Kiosk::new(t, data.0.clone());
         let sim = Sim::new(&data.0, &k.case, k.seed)?;
         Ok((k, sim))
     });
     match built {
         Ok((mut k, sim)) => {
             k.proposed = Plan::new(sim.districts.len());
+            k.start_baseline();
             commands.insert_resource(k);
             commands.insert_resource(sim);
             next.set(AppState::Playing);
@@ -123,6 +171,8 @@ pub fn new_game(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<Si
             kiosk.proposed = Plan::new(sim.districts.len());
             kiosk.dirty = true;
             kiosk.error = None;
+            kiosk.crisis = None;
+            kiosk.start_baseline();
             kiosk.enter(Phase::Pianifica);
             restarted.send(SimRestarted);
         }
@@ -186,6 +236,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
     let stale = kiosk.dirty || (kiosk.phase != Phase::Pianifica && sim.generation >= kiosk.preview_at.saturating_add(20));
     if stale && kiosk.phase != Phase::Fine {
         kiosk.preview = sim.preview(&kiosk.proposed).ok();
+        kiosk.risk = sim.districts.iter().map(|d| rocca::district::exposure(d, &sim.agents, &sim.fire, &sim.scn)).collect();
         kiosk.preview_at = sim.generation;
         kiosk.dirty = false;
     }
@@ -201,6 +252,7 @@ pub fn shots(
     windows: Query<Entity, With<bevy::window::PrimaryWindow>>,
     mut mgr: ResMut<bevy::render::view::screenshot::ScreenshotManager>,
     mut exit: EventWriter<AppExit>,
+    mut restarted: EventWriter<SimRestarted>,
     mut stage: Local<(u32, f32)>,
 ) {
     let Ok(dir) = std::env::var("KIOSK_SHOT") else { return };
@@ -231,14 +283,43 @@ pub fn shots(
             snap("3_esegui");
             *stage = (5, 0.0);
         }
+        // at the first crisis, put the place it names first, and show the proposal
         5 if kiosk.phase == Phase::Crisi && kiosk.phase_t > 1.0 => {
+            if let Some(d) = kiosk.crisis.as_ref().and_then(|c| match c.kind {
+                rocca::crisis::Kind::Scoperto { district } | rocca::crisis::Kind::Previsione { district } | rocca::crisis::Kind::Vento { district } => Some(district),
+                rocca::crisis::Kind::MezzoPerso { .. } => None,
+            }) {
+                let mut prio = vec![d];
+                prio.extend(kiosk.proposed.priorities.iter().copied().filter(|&x| x != d));
+                kiosk.proposed.priorities = prio;
+                kiosk.dirty = true;
+            }
+            *stage = (7, 0.0);
+        }
+        7 if stage.1 > 1.5 => {
             snap("3b_crisi");
             close_crisis(&mut kiosk, &mut sim);
             *stage = (3, 0.0);
         }
         5 if kiosk.phase == Phase::Fine => *stage = (3, 0.0),
-        3 if kiosk.phase == Phase::Fine && stage.1 > 1.0 => {
+        3 if kiosk.phase == Phase::Crisi && kiosk.phase_t > 1.0 => {
+            snap("3c_crisi");
+            close_crisis(&mut kiosk, &mut sim);
+            *stage = (3, 0.0);
+        }
+        3 if kiosk.phase == Phase::Fine => *stage = (6, 0.0),
+        6 if stage.1 > 1.0 && kiosk.baseline().is_some() => {
             snap("4_fine");
+            *stage = (8, 0.0);
+        }
+        // «Altro incendio»: the manual restart must leave a clean scene
+        8 if stage.1 > 1.0 => {
+            kiosk.case = kiosk.next_case();
+            new_game(&mut kiosk, &mut sim, &mut restarted);
+            *stage = (9, 0.0);
+        }
+        9 if stage.1 > 4.0 => {
+            snap("5_altro_incendio");
             *stage = (4, 0.0);
         }
         4 if stage.1 > 1.0 => {

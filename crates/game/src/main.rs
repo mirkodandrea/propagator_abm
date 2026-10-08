@@ -57,7 +57,15 @@ fn main() -> anyhow::Result<()> {
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: kiosk::TITLE.into(),
-            resolution: (1600.0, 1000.0).into(),
+            // KIOSK_SCALE=1 renders one pixel per point on a Retina screen,
+            // as a 1080p kiosk monitor would.
+            resolution: {
+                let mut r: bevy::window::WindowResolution = (1600.0, 1000.0).into();
+                if let Some(s) = std::env::var("KIOSK_SCALE").ok().and_then(|v| v.parse::<f32>().ok()) {
+                    r = r.with_scale_factor_override(s);
+                }
+                r
+            },
             mode: kiosk::window_mode(),
             // KIOSK_FPS measures the real frame cost, so it must not be vsync-capped.
             present_mode: if std::env::var("KIOSK_FPS").is_ok() { bevy::window::PresentMode::AutoNoVsync } else { bevy::window::PresentMode::AutoVsync },
@@ -192,6 +200,7 @@ fn kiosk_systems(app: &mut App) {
                 overlays::update_markers,
                 overlays::update_wind,
                 overlays::update_orders,
+                overlays::update_routes,
                 units::sync_orders,
                 units::update_work_overlay,
             )
