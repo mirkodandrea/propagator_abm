@@ -34,8 +34,11 @@ const BLUE: Color32 = Color32::from_rgb(110, 185, 255);
 const GREEN: Color32 = Color32::from_rgb(110, 230, 150);
 /// What the two civil orders do, as the model does it (`Abm::prealert_of`,
 /// `Abm::order_evacuation_of`).
-const PREALLERTA: &str = "Preallerta: le famiglie vengono avvisate e si preparano, ma restano a casa. Se poi ordini l'evacuazione, partono prima.";
+const PREALLERTA: &str = "Preallerta: le famiglie vengono avvisate e si preparano, ma restano a casa (qualcuna può decidere di partire da sola). Se poi ordini l'evacuazione, partono prima.";
 const EVACUA: &str = "Evacua: le famiglie ricevono l'ordine di partire subito verso un'area sicura. Non si può annullare.";
+/// Room a district chip is given on screen, for placing chips apart.
+const CHIP_W: f32 = 290.0;
+const CHIP_H: f32 = 190.0;
 const GREY: Color32 = Color32::from_rgb(205, 208, 212);
 
 fn clock(s: i64) -> String {
@@ -71,6 +74,11 @@ pub fn draw(
     }
 
     let top = top_bar(ctx, k, &sim, cam);
+    egui::Area::new(egui::Id::new("vista")).anchor(Align2::RIGHT_TOP, [-12.0, 12.0]).show(ctx, |ui| {
+        if ui.button(RichText::new("Vista iniziale").size(16.0)).clicked() {
+            k.reset_view = true;
+        }
+    });
     if k.phase == Phase::Fine {
         debrief(ctx, k, &mut sim, &mut restarted);
     } else {
@@ -175,7 +183,9 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
     let mut place: Vec<Option<(egui::Pos2, egui::Vec2)>> = (0..n)
         .map(|d| {
             let at = screen(cam, sim, chip_anchor(sim, d), 40.0)?;
-            let size = ctx.memory(|m| m.area_rect(egui::Id::new(("quartiere", d)))).map_or(egui::vec2(260.0, 150.0), |r| r.size());
+            // A fixed size, not last frame's: a chip that gains a line of text
+            // must not move its buttons from under the pointer.
+            let size = egui::vec2(CHIP_W, CHIP_H);
             Some((at, size))
         })
         .collect();
@@ -286,8 +296,9 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     let hh = &dist.households;
                     let safe = hh.iter().filter(|&&i| sim.agents.households[i].status == Status::Evacuated).count();
                     let road = hh.iter().filter(|&&i| sim.agents.households[i].status == Status::Evacuating).count();
+                    let home = hh.len() - safe - road;
                     let what = if sim.active.civil[d] == Civil::Evacua { "evacuazione ordinata" } else { "preallertati" };
-                    ui.label(RichText::new(format!("{what}: {safe} in salvo, {road} in strada")).size(15.0).color(GREY));
+                    ui.label(RichText::new(format!("{what}: {safe} in salvo, {road} in strada, {home} ancora a casa")).size(15.0).color(GREY));
                 }
             });
         });
@@ -462,7 +473,22 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                 }
             }
             if o.units_lost > 0 {
-                ui.label(RichText::new(format!("Mezzi persi, raggiunti dal fuoco: {}", o.units_lost)).size(16.0).color(RED));
+                let lost: Vec<&str> = sim.crews.units.iter().filter(|u| u.state == abm::suppression::UnitState::Lost).map(|u| u.callsign.as_str()).collect();
+                ui.label(RichText::new(format!("Mezzi persi, raggiunti dal fuoco: {}", lost.join(", "))).size(16.0).color(RED));
+            }
+            // the player's own orders, in order
+            let orders: Vec<String> = sim
+                .log
+                .iter()
+                .filter(|e| ["priorità:", "preallerta:", "evacuazione:"].iter().any(|p| e.text.starts_with(p)))
+                .map(|e| format!("{}  {}", clock(e.at_s), e.text))
+                .collect();
+            if !orders.is_empty() {
+                ui.add_space(6.0);
+                ui.label(RichText::new("Le tue decisioni").size(16.0).strong().color(Color32::WHITE));
+                for o in orders {
+                    ui.label(RichText::new(o).size(15.0).color(GREY));
+                }
             }
             ui.label(
                 RichText::new("Casa «colpita»: raggiunta dal fuoco nella simulazione, non per forza distrutta. Famiglia «colta in casa»: era ancora in casa quando il fuoco è arrivato. «Evacuate»: famiglie arrivate in un'area sicura, anche dove il fuoco poi non è arrivato.")

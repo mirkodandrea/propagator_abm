@@ -146,12 +146,11 @@ impl Detector {
                 let target = target.filter(|(d, _, _)| !posts.iter().flatten().any(|p| p.district == *d));
                 if let Some((d, e, _)) = target {
                     let name = &v.districts[d].name;
-                    let units = 0;
                     candidates.push(Crisis {
                         at_s: now,
                         kind: Kind::Previsione { district: d },
                         text: format!(
-                            "Previsione meteo: tra circa {} min il vento girerà e soffierà da {}. Spingerebbe il fuoco verso {name}, ora a {}. Oggi {name} ha {units} mezzi.",
+                            "Previsione meteo: tra circa {} min il vento girerà e soffierà da {}. Spingerebbe il fuoco verso {name}, ora a {}. Ora {name} non ha mezzi.",
                             (at - now) / 60,
                             words::compass(from),
                             words::km(e.distance_m)

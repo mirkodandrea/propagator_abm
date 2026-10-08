@@ -84,7 +84,16 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - «Nuovo incendio, vicino a …».
 - [x] 2026-10-08 Versione per browser (`docs/web.md`): dati compilati nel wasm (`crates/datafs`), terreno disegnato a 20 m e vegetazione al 12 % solo nel browser, workflow Pages. Partita giocata con il mouse nel browser: 60 FPS, ×20 regolare.
 - [x] 2026-10-08 Dalla partita giocata: crisi del vento e della previsione solo se il quartiere non ha mezzi; motivo corretto dei mezzi in attesa; «mezzi assegnati»; Evacua non illumina più Preallerta.
-- [ ] Pubblicazione su Pages: l'ambiente `github-pages` accetta solo `main` (decisione dell'utente: aggiungere il ramo o fare merge).
+- [x] 2026-10-08 Pubblicato su https://mirkodandrea.github.io/propagator_abm/. Il ramo `settimana-protezione-civile` è stato aggiunto ai rami ammessi dall'ambiente `github-pages` (decisione dell'utente: con `gh`, senza merge su `main`).
+- [x] 2026-10-08 Playtest di GPT 6.1 Sol, che non conosceva il progetto, avviato da una cartella vuota (`docs/fase5/playtest_gpt/report.md`). Corretti:
+  - «Ora X non ha mezzi» nella previsione (prima diceva «ha 1 mezzi»);
+  - motivo «N mezzi su M» quando una parte non trova postazione;
+  - riga «… ancora a casa»;
+  - la preallerta dice che qualcuno può partire da solo;
+  - pulsante «Vista iniziale»;
+  - schede di dimensione fissa (i pulsanti non saltano più sotto il puntatore);
+  - nel debrief, le decisioni del giocatore e il nome del mezzo perso.
+- [ ] Dal playtest GPT, ancora aperto: click che a volte sembrano non rispondere (forse solo per l'input automatizzato, da verificare con persone vere); distinguere mezzi assegnati / in viaggio / sul posto; mostrare sulla mappa perché una postazione è irraggiungibile.
 - [ ] **Checkpoint umano 5.**
 - [x] 2026-10-08 Schede dei quartieri separate quando si sovrappongono sullo schermo; etichette dei mezzi impilate e spostate sotto la scheda che le copre. Resta: una scheda può coprire il fuoco.
 - [ ] Coordinatore: con la prima priorità irraggiungibile un mezzo rientra alla base (ora spiegato a schermo). Mandarlo al quartiere successivo annullava l'effetto della crisi in Coste2_gira (58 → 71): provato e annullato.

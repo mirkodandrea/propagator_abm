@@ -273,8 +273,10 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
     for (rank, (d, _)) in engaged.iter().enumerate() {
         if taken[*d] < quota[rank] && !full.contains(d) {
             let name = &v.districts[*d].name;
-            let why = if no_access.contains(d) {
-                format!("{name}: nessuna postazione raggiungibile e lavorabile ora")
+            let why = if no_access.contains(d) && taken[*d] > 0 {
+                format!("{name}: {} mezzi su {}; per gli altri nessuna postazione raggiungibile e sicura ora", taken[*d], quota[rank])
+            } else if no_access.contains(d) {
+                format!("{name}: nessuna postazione raggiungibile e sicura ora")
             } else {
                 format!("{name}: mezzi insufficienti ({} di {})", taken[*d], quota[rank])
             };

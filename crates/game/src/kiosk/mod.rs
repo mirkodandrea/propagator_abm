@@ -79,6 +79,8 @@ pub struct Kiosk {
     pub baseline: Arc<Mutex<Option<(String, u64, Result<Outcome, String>)>>>,
     /// The operator bar (F2).
     pub operator: bool,
+    /// «Vista iniziale» was pressed: the camera goes back to the home view.
+    pub reset_view: bool,
     /// In the browser (no threads) the no-orders game runs here, a few steps
     /// a frame.
     #[cfg(target_arch = "wasm32")]
@@ -106,6 +108,7 @@ impl Kiosk {
             risk: vec![],
             baseline: Arc::new(Mutex::new(None)),
             operator: false,
+            reset_view: false,
             #[cfg(target_arch = "wasm32")]
             run: None,
             data,

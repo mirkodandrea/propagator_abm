@@ -123,7 +123,7 @@ fn pan(orbit: &mut OrbitCamera, delta: Vec2, viewport_height: f32) {
 
 #[allow(clippy::too_many_arguments)]
 pub fn camera(
-    kiosk: Res<Kiosk>,
+    mut kiosk: ResMut<Kiosk>,
     sim: Res<Sim>,
     focus: Res<crate::ui::UiFocus>,
     mut input: ViewInput,
@@ -133,6 +133,7 @@ pub fn camera(
     mut drag: Local<Drag>,
     mut released: Local<Option<(Phase, f32)>>,
     mut settled: Local<u64>,
+    mut home_view: Local<Option<(f32, f32)>>,
 ) {
     let delta = input.motion.read().fold(Vec2::ZERO, |s, e| s + e.delta);
     let shift = input.keys.pressed(KeyCode::ShiftLeft) || input.keys.pressed(KeyCode::ShiftRight);
@@ -212,6 +213,17 @@ pub fn camera(
             if *settled != sim.generation.max(1) && sim.time_s() <= rocca::STEP_S && !user_has_it {
                 if let Some((yaw, d)) = fit_view(camera, &sim, home, scene_pitch) {
                     *settled = sim.generation.max(1);
+                    *home_view = Some((yaw, d));
+                    orbit.focus = home;
+                    orbit.yaw = yaw;
+                    orbit.pitch = scene_pitch;
+                    orbit.distance = d * shot_zoom();
+                }
+            }
+            // «Vista iniziale»: back to the home view of this game.
+            if kiosk.reset_view {
+                kiosk.reset_view = false;
+                if let Some((yaw, d)) = *home_view {
                     orbit.focus = home;
                     orbit.yaw = yaw;
                     orbit.pitch = scene_pitch;
