@@ -20,3 +20,7 @@ data/scenarios/*/dem.tif
 *.pyc
 __pycache__/
 tools/mcp/.venv/
+
+# Scenario Factory: local Python env and raw sweep output (regenerable from seeds)
+.venv/
+/out/
