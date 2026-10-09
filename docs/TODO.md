@@ -8,6 +8,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - 5b: punti 1–10 (`docs/fase5/iterazione5b.md`), compreso il playtest automatico 3 (`docs/fase5/playtest_gpt3/README.md`);
   - 5c: punti 1–5 del playtest 3 (`docs/fase5/iterazione5c.md`).
 - **Prossima azione: checkpoint 5, umano** (`docs/fase5/README.md`). Una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), con prima azione e debrief. Non procedere senza conferma dell'utente; dopo viene la fase 6 (playtest).
+- **Playtest 5 (Sonnet 5.5)** fatto: `docs/fase5/playtest_sonnet/report.md`. Il punteggio va rivisto, perché la classifica unica non è coerente con un punteggio relativo all'incendio.
 - **Tempo reale, pause, punteggio e classifica** fatti (`docs/fase5/tempo_reale.md`); nove difetti trovati giocando, elencati lì e nella sezione «Tempo reale» della fase 5.
 - **Playtest 4** (Giulia, prima volta, Haiku 5.5): fatto, difetti da decidere con l'utente (`docs/fase5/playtest_haiku/`, sezione «Playtest 4» della fase 5).
 - **Ancora aperti** (vedi «Dal playtest 3» in fondo alla fase 5):
@@ -36,6 +37,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 - 2026-10-09: **tempo reale dichiarato** («non è chiaro se è real time o a turni»; «Va bene» alla proposta in 7 punti): pulsante unico play/pausa, ordini immediati durante il gioco, pausa visibile, orologio «ore 14:26», crisi come rallentatore, accelerazione solo se è davvero tutto fermo, intro esplicita.
 - 2026-10-09: **massimo 3 pause** a partita (le crisi non contano).
+- 2026-10-09: playtest con **Sonnet**.
 - 2026-10-09: **gli ordini si cambiano solo in pausa** (o alla crisi), così i cambi di piano sono pochi; **niente pausa subito dopo un'altra** (15 min simulati, `PAUSE_GAP_S`). Niente penalità a punti per i cambi.
 - 2026-10-09: **punteggio e classifica:** salvati rispetto a nessun ordine (100 per famiglia, 10 per casa) + 50 per pausa non usata; tre iniziali arcade; classifica **unica** per tutti gli incendi.
 
@@ -207,6 +209,20 @@ Prompt e resoconto in `docs/fase5/playtest_haiku/`. Codex aveva finito i crediti
 - [ ] scheda compatta senza l'ordine dato;
 - [ ] tre iniziali lente (20 click per «GIU»): griglia di lettere;
 - [ ] mezzi fermi a fine partita («acqua», «in arrivo ~1 min» per oltre 20 min simulati).
+
+#### Playtest 5: Giulia con Sonnet 5.5 (2026-10-09, `docs/fase5/playtest_sonnet/report.md`)
+
+Esiti: 3/70 (1330 punti), 3/71 (1470), 2/12 (770).
+
+- [ ] **punteggio contro esito:** la partita migliore vale meno, perché il punteggio è relativo a «senza ordini» e la classifica è unica. Da decidere con l'utente;
+- [ ] priorità a un paese irraggiungibile alla crisi: i mezzi lasciano un paese per uno che non raggiungono. Serve un avviso prima della conferma;
+- [ ] in pausa Evacua è un interruttore: il secondo click toglie l'ordine proposto. Renderlo univoco o mostrare «ordinata alle …»;
+- [ ] Preallerta ed Evacua poco distinguibili sulla mappa;
+- [ ] il «Perché» non spiega le famiglie che non partono nonostante l'ordine (circa 22 %, comportamento del modello);
+- [ ] pulsanti grigi prima di «Ho capito», senza spiegazione;
+- [ ] bonus delle pause non usate in contrasto con «usale bene»;
+- [ ] fuoco poco visibile all'inizio; crisi assenti in un caso;
+- [ ] finale: numeri piccoli sulle barre; etichette A1 e A2 sovrapposte; schede sopra Castelvento.
 
 - [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen e a 900×600.
 
