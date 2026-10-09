@@ -16,5 +16,5 @@ pub mod words;
 pub use case::{Case, Territory};
 pub use coordinator::{Post, Proposal};
 pub use crisis::Crisis;
-pub use game::{DistrictOutcome, Game, Outcome, STEP_S};
+pub use game::{Arrival, DistrictOutcome, Game, Outcome, STEP_S};
 pub use plan::{Civil, Plan};

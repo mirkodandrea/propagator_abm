@@ -122,8 +122,11 @@ impl Detector {
                 candidates.push(Crisis {
                     at_s: now,
                     kind: Kind::MezzoPerso { unit: k },
-                    text: format!("{} è stato raggiunto dal fuoco ed è fuori servizio. Restano {} mezzi per gli stessi luoghi.", u.callsign,
-                        v.crews.units.iter().filter(|x| x.state != UnitState::Lost && !x.kind.is_air()).count()),
+                    text: {
+                        let left = v.crews.units.iter().filter(|x| x.state != UnitState::Lost && !x.kind.is_air()).count();
+                        let left = if left == 1 { "Resta 1 mezzo".to_string() } else { format!("Restano {left} mezzi") };
+                        format!("{} è stato raggiunto dal fuoco ed è fuori servizio. {left} per gli stessi luoghi.", u.callsign)
+                    },
                 });
             }
         }

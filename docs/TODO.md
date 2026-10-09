@@ -99,11 +99,13 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
    - legenda con miniature e colori campionati dal rendering.
    - Piante invariate (551 mila), triangoli da 34,0 a 32,4 M. FPS nativi invariati (mediana 30 → 32).
    - [ ] FPS nel browser da misurare a finestra in primo piano: la scheda automatizzata in secondo piano viene rallentata da Chrome.
-3. [ ] **Stima d'arrivo dallo stato reale**, non dall'anteprima.
-   - Oggi a T+2:37 compare «arrivi ~2–2 min» con la squadra in ritirata (`ui.rs` ~790 usa `Post.eta_s` dell'anteprima).
-   - Durante Esegui usare lo stato dei mezzi (`Game::unit_status`): «in postazione», «in arrivo ~N min», «nessun mezzo: <motivo>».
-   - Scrivere «~2 min» quando i due valori coincidono.
-4. [ ] **Motivo nella scheda.** «Nessun arrivo previsto» deve dire perché (da `Proposal.idle`). Nell'anteprima prima di confermare dire cosa succederà (es. «A2 tornerà alla base: nessuna postazione sicura a Pian dei Grilli»).
+3. [x] 2026-10-09 **Stima d'arrivo dallo stato reale** (`iterazione5b.md` §3–4):
+   - `Game::arrivals` durante Esegui; anteprima solo con un piano da confermare;
+   - «~2 min» quando gli estremi coincidono;
+   - test `fase3::arrivals_follow_the_units`.
+4. [x] 2026-10-09 **Motivo nella scheda:**
+   - senza mezzi, la scheda dice perché, da `uncovered` / priorità / minaccia;
+   - nell'anteprima, «X tornerà alla base» per i mezzi che il nuovo piano richiama.
 5. [ ] **Debrief con il perché:**
    - X/Y accanto alle barre delle evacuate;
    - 2–3 righe causali per paese, al posto del consiglio fisso, costruite da registro ed esito (es. «preallerta a T+0: partite in 12 min»; «evacuazione a T+1:40: 3 famiglie ancora in casa all'arrivo del fuoco»);
@@ -119,7 +121,9 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 8. [ ] **Ritmo a metà partita** (scelta all'agente):
    - la volontaria dice un fatto nuovo (prossimo arrivo, fronte più vicino, famiglie ancora a casa) invece di ripetere il tutorial;
    - «Altro incendio» si presenta con una frase su dove parte e verso chi va (dati del caso: `near`, vento).
-9. [ ] Minori: «1 mezzi su 2» → «1 mezzo su 2»; etichette dei mezzi coperte dal pannello aggiornamenti.
+9. [ ] Minori:
+   - [x] 2026-10-09 «1 mezzi su 2» → «1 mezzo su 2» (coordinatore) e «Resta 1 mezzo» (crisi del mezzo perso);
+   - [ ] etichette dei mezzi coperte dal pannello aggiornamenti.
 
 - [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen e a 900×600.
 

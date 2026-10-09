@@ -60,6 +60,18 @@ pub struct DistrictOutcome {
     pub casualties: usize,
 }
 
+/// Where a unit posted to a district stands ([`Game::arrivals`]).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Arrival {
+    OnPost,
+    /// On its way, minutes left by the route it is driving.
+    InMin(u32),
+    /// Moving but stopped for [`STUCK_S`]: the road is cut.
+    Blocked,
+    /// Withdrawing, refilling or otherwise not heading there, in words.
+    Away(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Outcome {
     pub at_s: i64,
@@ -365,6 +377,26 @@ impl Game {
             },
             UnitState::Inbound | UnitState::Unavailable => "non disponibile".into(),
         }
+    }
+
+    /// The units posted to district `d` by the plan in force, and where each
+    /// stands now: the card's defence line while the plan runs, from the
+    /// units' real state rather than from the preview's drive times.
+    pub fn arrivals(&self, d: usize) -> Vec<(usize, Arrival)> {
+        let mut out = vec![];
+        for (k, post) in self.posts.iter().enumerate() {
+            let Some(p) = post.as_ref().filter(|p| p.district == d) else { continue };
+            let u = &self.crews.units[k];
+            let a = match u.state {
+                UnitState::Working => Arrival::OnPost,
+                UnitState::Staged if dist(u.pos, p.at) <= ON_POST_M => Arrival::OnPost,
+                UnitState::Moving if self.time_s() - self.moved[k].1 >= STUCK_S => Arrival::Blocked,
+                UnitState::Moving => Arrival::InMin((self.crews.route_remaining_m(k, &self.agents.network) / abm::suppression::ENGINE_SPEED / 60.0).ceil().max(1.0) as u32),
+                _ => Arrival::Away(self.unit_status(k)),
+            };
+            out.push((k, a));
+        }
+        out
     }
 
     /// Nothing is changing that the player would want to watch closely: no

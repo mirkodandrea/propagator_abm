@@ -570,6 +570,72 @@ fn legend(ctx: &egui::Context) {
     });
 }
 
+/// «~3 min» or «~2–6 min».
+fn minutes(m: &[u32]) -> String {
+    let (a, b) = (m.iter().min().copied().unwrap_or(0), m.iter().max().copied().unwrap_or(0));
+    if a == b { format!("~{a} min") } else { format!("~{a}–{b} min") }
+}
+
+/// The card's defence line. While the plan in force runs untouched, it is the
+/// units' real state ([`rocca::Game::arrivals`]); while a plan is being
+/// composed, the coordinator's preview of it. With no unit coming, it says
+/// why, in the coordinator's words.
+fn defence_line(k: &Kiosk, sim: &Sim, d: usize) -> String {
+    let name = &sim.districts[d].name;
+    let units = |n: usize| if n == 1 { "1 mezzo".to_string() } else { format!("{n} mezzi") };
+    let composing = k.phase != Phase::Esegui || k.proposed != sim.active;
+    // why nothing is coming: not chosen, no unit could be given, or no threat yet
+    let reason = |plan: &rocca::Plan, uncovered: &[(usize, String)]| -> String {
+        if plan.rank(d).is_none() {
+            return "Difesa: non è tra le priorità".into();
+        }
+        match uncovered.iter().find(|(x, _)| *x == d) {
+            Some((_, why)) => format!("Difesa: {}", why.strip_prefix(&format!("{name}: ")).unwrap_or(why)),
+            None => "Difesa: nessun mezzo ora, il fuoco non minaccia ancora".into(),
+        }
+    };
+    if composing {
+        let Some(p) = k.preview.as_ref() else { return String::new() };
+        let mins: Vec<u32> = p.posts.iter().flatten().filter(|x| x.district == d).map(|x| (x.eta_s / 60.0).ceil() as u32).collect();
+        // units that hold a post here now and the new plan sends home
+        let leaving: Vec<&str> = p.idle.iter().filter(|(u, _)| sim.posts.get(*u).and_then(|x| x.as_ref()).is_some_and(|x| x.district == d)).map(|(u, _)| sim.crews.units[*u].callsign.as_str()).collect();
+        let mut line = if mins.is_empty() {
+            reason(&k.proposed, &p.uncovered)
+        } else if mins.iter().all(|&m| m == 0) {
+            format!("Difesa: {} in postazione", units(mins.len()))
+        } else {
+            format!("Difesa: {} in arrivo {}", units(mins.len()), minutes(&mins))
+        };
+        if !leaving.is_empty() {
+            line += &format!(" · {} tornerà alla base", leaving.join(", "));
+        }
+        return line;
+    }
+    let arrivals = sim.arrivals(d);
+    if arrivals.is_empty() {
+        return reason(&sim.active, &sim.uncovered);
+    }
+    let on_post = arrivals.iter().filter(|(_, a)| *a == rocca::Arrival::OnPost).count();
+    let coming: Vec<u32> = arrivals.iter().filter_map(|(_, a)| if let rocca::Arrival::InMin(m) = a { Some(*m) } else { None }).collect();
+    let blocked = arrivals.iter().filter(|(_, a)| *a == rocca::Arrival::Blocked).count();
+    let mut parts = vec![];
+    if on_post > 0 {
+        parts.push(format!("{} in postazione", units(on_post)));
+    }
+    if !coming.is_empty() {
+        parts.push(format!("{} in arrivo {}", units(coming.len()), minutes(&coming)));
+    }
+    if blocked > 0 {
+        parts.push(format!("{} bloccato dal fuoco", units(blocked)));
+    }
+    for (u, a) in &arrivals {
+        if let rocca::Arrival::Away(what) = a {
+            parts.push(format!("{} {what}", sim.crews.units[*u].callsign));
+        }
+    }
+    format!("Difesa: {}", parts.join(" · "))
+}
+
 /// A sub-section of the legend that can be folded.
 fn section(ui: &mut egui::Ui, title: &str, open: bool, add: impl FnOnce(&mut egui::Ui)) {
     egui::CollapsingHeader::new(RichText::new(title).size(15.0).strong().color(Color32::WHITE)).default_open(open).show(ui, add);
@@ -854,17 +920,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                 }
                 // Reserve two lines so choosing an order cannot move controls.
                 ui.allocate_ui(egui::vec2(CHIP_W - 20.0, 42.0), |ui| {
-                    let arrivals: Vec<f32> = k.preview.as_ref().into_iter().flat_map(|p| p.posts.iter().flatten())
-                        .filter(|p| p.district == d).map(|p| (p.eta_s / 60.0).ceil()).collect();
-                    let defence = if arrivals.is_empty() {
-                        "Difesa: nessun arrivo previsto".into()
-                    } else {
-                        let first = arrivals.iter().copied().fold(f32::INFINITY, f32::min);
-                        let last = arrivals.iter().copied().fold(0.0, f32::max);
-                        if last == 0.0 { "Difesa: mezzi in postazione".into() }
-                        else { format!("Difesa: arrivi stimati ~{first:.0}–{last:.0} min") }
-                    };
-                    ui.label(RichText::new(defence).size(14.0).color(GREEN));
+                    ui.label(RichText::new(defence_line(k, sim, d)).size(14.0).color(GREEN));
                     let journey = match k.evacuation.get(d) {
                         Some((Some((a, b)), 0)) => format!("Evacua: viaggio ~{a}–{b} min + attesa"),
                         Some((Some((a, b)), blocked)) => format!("Viaggio ~{a}–{b} min · {blocked} famiglie senza via"),

@@ -1,6 +1,6 @@
 # Iterazione 5b: velocità, vegetazione leggibile, correzioni del playtest 2
 
-Stato: **in corso.** Fatti i punti 1 e 2 di `docs/TODO.md` e parte del 6 (legenda). Restano i punti 3, 4, 5, 7, 8 e 9, poi il playtest automatico 3.
+Stato: **in corso.** Fatti i punti 1, 2, 3, 4 e 6 di `docs/TODO.md` e parte del 9. Restano i punti 5, 7, 8 e il resto del 9, poi il playtest automatico 3.
 
 ## 1. Velocità tra i turni
 
@@ -67,6 +67,26 @@ Browser (12 % di vegetazione):
   - latifoglie: nel territorio avanzano lente (fase 2: Borgo3, 11 ha in 3 h).
 - «senza via» diventa «famiglie senza via». Il testo dei tempi dice ×40.
 - `KIOSK_LEGEND=1` apre la legenda all'avvio, per le schermate.
+
+## 3–4. Stima d'arrivo dallo stato reale, con il motivo
+
+- **Durante Esegui** (piano invariato), la riga «Difesa» della scheda viene da `rocca::Game::arrivals`, che legge lo stato dei mezzi assegnati al paese:
+  - «1 mezzo in postazione»;
+  - «1 mezzo in arrivo ~5 min», con i minuti rimasti sul percorso che il mezzo sta facendo;
+  - «1 mezzo bloccato dal fuoco»;
+  - «A1 si ritira: troppo pericoloso».
+- **Quando c'è un piano da confermare** (Pianifica, Crisi, «Pausa e modifica piano») resta l'anteprima del coordinatore. Aggiunge chi verrà richiamato, per esempio «Squadra A tornerà alla base».
+- **Senza mezzi**, la riga dice perché, con le parole del coordinatore:
+  - «non è tra le priorità»;
+  - «nessun mezzo rimasto dopo le priorità più alte»;
+  - «nessuna postazione raggiungibile e sicura ora»;
+  - «nessun mezzo ora, il fuoco non minaccia ancora».
+- Un intervallo con estremi uguali si scrive «~2 min».
+- **Prova:** test `fase3::arrivals_follow_the_units`. Un mezzo inviato alla prima priorità è prima in arrivo, con minuti che non crescono, poi in postazione.
+- **Punto 9 (parte):** «1 mezzo su 2» nel coordinatore e «Resta 1 mezzo» nella crisi del mezzo perso.
+
+![schede durante Esegui, T+0:05](img/5b/schede_esegui.jpg)
+![anteprima alla crisi](img/5b/scheda_anteprima_crisi.jpg)
 
 ## Incognite
 

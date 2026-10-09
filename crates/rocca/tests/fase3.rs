@@ -127,3 +127,30 @@ fn civil_orders_only_escalate() {
     g.commit(Plan::new(g.districts.len()).with_civil(d, Civil::Preallerta)).unwrap();
     assert_eq!(g.active.civil[d], Civil::Evacua);
 }
+
+/// The card's defence line comes from the units' real state: a unit sent to
+/// the first priority is first on its way, with minutes left that shrink,
+/// then on its post.
+#[test]
+fn arrivals_follow_the_units() {
+    let mut g = game("Coste2_gira");
+    let near = g.district_index(&g.case.near.clone()).unwrap();
+    g.commit(Plan::new(g.districts.len()).with_priorities(&[near])).unwrap();
+    assert!(g.arrivals(near).iter().any(|(_, a)| matches!(a, rocca::Arrival::InMin(_))), "a unit should be on its way: {:?}", g.arrivals(near));
+    let mut arrived = false;
+    let mut last = vec![u32::MAX; g.crews.units.len()];
+    while g.time_s() < 30 * 60 && !arrived {
+        g.run_until(g.time_s() + 60).unwrap();
+        for (k, a) in g.arrivals(near) {
+            match a {
+                rocca::Arrival::OnPost => arrived = true,
+                rocca::Arrival::InMin(m) => {
+                    assert!(m <= last[k].saturating_add(1), "unit {k}: minutes left grew, {m} after {}", last[k]);
+                    last[k] = m;
+                }
+                _ => {}
+            }
+        }
+    }
+    assert!(arrived, "no unit reached its post in 30 min");
+}
