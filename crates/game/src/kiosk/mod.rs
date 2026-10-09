@@ -86,6 +86,9 @@ pub struct Kiosk {
     pub operator: bool,
     /// «Vista iniziale» was pressed: the camera goes back to the home view.
     pub reset_view: bool,
+    /// The opening screen is showing (a new visitor): at launch and after the
+    /// operator's «Nuova partita», not after «Riprova» / «Altro incendio».
+    pub intro: bool,
     /// Real seconds the player has at a crisis; the operator can lengthen it
     /// for slow readers.
     pub crisis_s: f32,
@@ -127,6 +130,7 @@ impl Kiosk {
             reset_view: false,
             zoom: 1.0,
             crisis_s: CRISIS_S,
+            intro: true,
             pick: String::new(),
             reset_armed: None,
             #[cfg(target_arch = "wasm32")]
@@ -339,7 +343,12 @@ pub fn shots(
         let _ = mgr.save_screenshot_to_disk(window, format!("{dir}/{name}.png"));
     };
     match stage.0 {
-        0 if stage.1 > 4.0 => {
+        0 if kiosk.intro && stage.1 > 8.0 => {
+            snap("0_intro");
+            kiosk.intro = false;
+            stage.1 = 0.0;
+        }
+        0 if !kiosk.intro && stage.1 > 3.0 => {
             snap("1_pianifica");
             // the locality the fire was picked for first, then the others
             let near = sim.district_index(&sim.case.near).unwrap_or(0);

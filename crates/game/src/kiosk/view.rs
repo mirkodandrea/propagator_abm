@@ -112,6 +112,7 @@ pub struct ViewInput<'w, 's> {
     wheel: EventReader<'w, 's, MouseWheel>,
     pinch: EventReader<'w, 's, PinchGesture>,
     rotation: EventReader<'w, 's, RotationGesture>,
+    touches: Res<'w, Touches>,
 }
 
 fn pan(orbit: &mut OrbitCamera, delta: Vec2, viewport_height: f32) {
@@ -187,7 +188,8 @@ pub fn camera(
     if kiosk.phase_t < 0.05 {
         *released = None;
     }
-    let touched = delta.length_squared() > 0.0 && (drag.left || drag.right || drag.middle)
+    let touched = input.touches.iter().any(|t| t.delta() != Vec2::ZERO)
+        || delta.length_squared() > 0.0 && (drag.left || drag.right || drag.middle)
         || over_map && (scroll != 0.0 || trackpad != Vec2::ZERO || pinch != 0.0 || rotation != 0.0);
     if touched {
         *released = Some((kiosk.phase, t));
@@ -204,6 +206,22 @@ pub fn camera(
             if drag.right || (drag.left && shift) {
                 orbit.yaw -= delta.x * 0.005;
                 orbit.pitch -= delta.y * 0.004;
+            }
+            // Touch screens: one finger drags the map, two fingers pinch to zoom.
+            // Not while a finger is on the interface.
+            if !focus.pointer {
+                let active: Vec<_> = input.touches.iter().collect();
+                match active.as_slice() {
+                    [t] => pan(&mut orbit, t.delta(), height),
+                    [a, b] => {
+                        let now = a.position().distance(b.position());
+                        let before = (a.position() - a.delta()).distance(b.position() - b.delta());
+                        if now > 1.0 && before > 1.0 {
+                            orbit.distance *= before / now;
+                        }
+                    }
+                    _ => {}
+                }
             }
             if over_map {
                 // macOS delivers two-finger scrolling in pixels, including x.

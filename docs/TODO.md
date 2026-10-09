@@ -143,6 +143,13 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - debrief che mostri le famiglie spostate dove il fuoco non è arrivato.
 - [x] 2026-10-09 **Durata:** accelerazione automatica ×3 quando nulla cambia (`Game::is_quiet`: 10 min senza eventi e nessun mezzo in movimento), le crisi restano a ×1. Partita da 9–10 a **4–6 minuti reali** (`examples/durata.rs`, `docs/fase5/durata.md`).
 - Prima: Partita di circa 10 minuti reali a ×20, con tratti morti dopo gli ordini (quattordicenne). Opzioni: ×30-40 tra una decisione e l'altra, partita di 2 ore simulate invece di 3, accelerazione automatica quando non c'è nulla da decidere.
+- [x] 2026-10-09 (utente) **Schermata introduttiva con logo CIMA e interfaccia adatta al touch** (`docs/fase5/img/intro.jpg`):
+  - **schermata iniziale:** situazione, tre passi, «Inizia», nota su PROPAGATOR e Fondazione CIMA; compare all'avvio e dopo «Nuova partita» dell'operatore, non dopo «Riprova» o «Altro incendio»;
+  - **comandi:** pulsanti alti almeno 44 px e testo più grande;
+  - **camera:** un dito sposta la mappa, due dita fanno lo zoom;
+  - **niente spiegazioni solo al passaggio del mouse;**
+  - **pagina web:** niente zoom del browser né selezione del testo sul canvas.
+  - **Non ancora provato su un touchscreen vero.**
 - [ ] Dai roast, ancora aperto: navigazione da tastiera (egui sul canvas), forme oltre ai colori per gli anelli, layout a finestra stretta (900×600), stato perso con la ricarica della pagina, verifica dei percorsi verso le aree di attesa, supporto ai ritardatari dell'evacuazione (scelta di design).
 - [ ] Dal playtest GPT, ancora aperto: icone dei mezzi leggibili nella vista generale (oggi si leggono le etichette); indicatori aggregati per le evacuazioni sulla mappa; click che a volte sembrano non rispondere (forse solo per l'input automatizzato, da verificare con persone vere); distinguere mezzi assegnati / in viaggio / sul posto; mostrare sulla mappa perché una postazione è irraggiungibile.
 - [ ] **Checkpoint umano 5.**

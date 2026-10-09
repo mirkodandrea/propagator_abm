@@ -37,8 +37,8 @@ const GREEN: Color32 = Color32::from_rgb(110, 230, 150);
 const PREALLERTA: &str = "Preallerta: le famiglie vengono avvisate e si preparano, ma restano a casa (qualcuna può decidere di partire da sola). Se poi ordini l'evacuazione, partono prima.";
 const EVACUA: &str = "Evacua: le famiglie ricevono l'ordine di partire subito verso un'area sicura. Non si può annullare.";
 /// Room a district chip is given on screen, for placing chips apart.
-const CHIP_W: f32 = 290.0;
-const CHIP_H: f32 = 190.0;
+const CHIP_W: f32 = 330.0;
+const CHIP_H: f32 = 240.0;
 /// What the simulated families do is not what to do: said where it shows.
 const REAL_LIFE: &str = "Nella realtà, quando arriva l'ordine di evacuazione si parte subito, seguendo le indicazioni. Aspettare di vedere il fuoco o restare a difendere la casa sono tra gli errori più pericolosi.";
 const GREY: Color32 = Color32::from_rgb(205, 208, 212);
@@ -51,20 +51,21 @@ fn clock(s: i64) -> String {
 /// One family of controls: a secondary action (grey), an order that can be
 /// on (filled with its colour) or off, and the one primary action (yellow).
 fn secondary(text: &str) -> egui::Button<'static> {
-    egui::Button::new(RichText::new(text.to_string()).size(15.0).color(Color32::WHITE))
+    // 44 px: a finger, not a mouse pointer
+    egui::Button::new(RichText::new(text.to_string()).size(17.0).color(Color32::WHITE))
         .fill(Color32::from_gray(62))
         .stroke(egui::Stroke::new(1.0, Color32::from_gray(110)))
-        .rounding(6.0)
-        .min_size(egui::vec2(0.0, 28.0))
+        .rounding(8.0)
+        .min_size(egui::vec2(44.0, 44.0))
 }
 
 fn toggle(text: &str, on: bool, colour: Color32) -> egui::Button<'static> {
     let fg = if on { Color32::BLACK } else { Color32::WHITE };
-    egui::Button::new(RichText::new(text.to_string()).size(16.0).strong().color(fg))
+    egui::Button::new(RichText::new(text.to_string()).size(18.0).strong().color(fg))
         .fill(if on { colour } else { Color32::from_gray(48) })
-        .stroke(egui::Stroke::new(1.5, colour))
-        .rounding(6.0)
-        .min_size(egui::vec2(104.0, 30.0))
+        .stroke(egui::Stroke::new(2.0, colour))
+        .rounding(8.0)
+        .min_size(egui::vec2(120.0, 44.0))
 }
 
 fn primary(text: &str) -> egui::Button<'static> {
@@ -97,6 +98,7 @@ pub fn draw(
     mut focus: ResMut<crate::ui::UiFocus>,
     mut restarted: EventWriter<SimRestarted>,
     cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::OrbitCamera>>,
+    logo: Option<Res<Logo>>,
 ) {
     let ctx = contexts.ctx_mut();
     let k = &mut *kiosk;
@@ -105,6 +107,14 @@ pub fn draw(
         k.operator = !k.operator;
     }
 
+    if k.intro {
+        intro(ctx, k, &sim, logo.as_deref().map(|l| l.0));
+        if k.operator {
+            operator(ctx, k, &mut sim, &mut restarted);
+        }
+        focus.pointer = true;
+        return;
+    }
     let mut top = top_bar(ctx, k, &sim, cam);
     view_controls(ctx, k);
     if k.phase == Phase::Fine {
@@ -171,7 +181,8 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
                     for (n, step) in ["Scegli quali paesi difendere: «Difendi». La sala operativa ci manda i mezzi.", "Avvisa (Preallerta) o fai partire (Evacua) gli abitanti.", "Premi «Conferma e avvia»."].iter().enumerate() {
                         ui.label(RichText::new(format!("{}. {step}", n + 1)).size(18.0).color(Color32::WHITE));
                     }
-                    ui.label(RichText::new("Passa il mouse su Preallerta ed Evacua per la differenza.").size(14.0).color(GREY));
+                    ui.label(RichText::new(PREALLERTA).size(15.0).color(AMBER));
+                    ui.label(RichText::new(EVACUA).size(15.0).color(BLUE));
                 });
             }
             _ => {}
@@ -180,6 +191,89 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
     .response
     .rect
     .bottom()
+}
+
+/// The CIMA logo, as an egui texture.
+#[derive(Resource)]
+pub struct Logo(pub egui::TextureId);
+
+/// Load the logo once: compiled in, so the browser build has it too.
+pub fn load_logo(mut commands: Commands, mut images: ResMut<Assets<Image>>, mut contexts: EguiContexts) {
+    let bytes = include_bytes!("../../../../assets/brand/cima_logo_white.png");
+    let Ok(img) = Image::from_buffer(
+        bytes,
+        bevy::render::texture::ImageType::Extension("png"),
+        bevy::render::texture::CompressedImageFormats::NONE,
+        true,
+        bevy::render::texture::ImageSampler::linear(),
+        bevy::render::render_asset::RenderAssetUsages::all(),
+    ) else {
+        return;
+    };
+    let id = contexts.add_image(images.add(img));
+    commands.insert_resource(Logo(id));
+}
+
+/// The opening screen: who made it, the situation, how to play, «Inizia».
+fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::TextureId>) {
+    let screen = ctx.screen_rect();
+    egui::Area::new(egui::Id::new("intro_fondo")).fixed_pos(screen.min).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
+        ui.painter().rect_filled(screen, 0.0, Color32::from_rgba_premultiplied(8, 10, 14, 200));
+    });
+    egui::Area::new(egui::Id::new("intro")).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+        egui::Frame::none().fill(Color32::from_rgb(18, 20, 24)).stroke(egui::Stroke::new(1.0, Color32::from_gray(80))).rounding(14.0).inner_margin(28.0).show(ui, |ui| {
+            ui.set_width((screen.width() - 64.0).min(860.0));
+            ui.horizontal(|ui| {
+                if let Some(t) = logo {
+                    ui.add(egui::Image::new(egui::load::SizedTexture::new(t, egui::vec2(77.0, 96.0))));
+                    ui.add_space(14.0);
+                }
+                ui.vertical(|ui| {
+                    ui.label(RichText::new("Rocca Ventosa").size(42.0).strong().color(Color32::WHITE));
+                    ui.label(RichText::new("Un incendio, tre paesi, poche squadre. Decidi tu le priorità.").size(20.0).color(AMBER));
+                });
+            });
+            ui.add_space(12.0);
+            ui.label(
+                RichText::new(format!(
+                    "È un pomeriggio d'estate, secco e con vento forte. Vicino a {} è appena partito un incendio nel bosco. Sei nella sala operativa della Protezione Civile: hai due autobotti e una squadra antincendio per tre paesi, Il Borgo, Il Piano e Le Coste. Non basteranno per tutti.",
+                    sim.case.near
+                ))
+                .size(19.0)
+                .color(Color32::WHITE),
+            );
+            ui.add_space(12.0);
+            for (n, title, text) in [
+                ("1", "Scegli chi difendere", "Tocca «Difendi» sui paesi, nell'ordine che preferisci. La sala operativa manda i mezzi: non li guidi tu."),
+                ("2", "Pensa alle persone", "«Preallerta» avvisa le famiglie, «Evacua» le fa partire. Le case si possono ricostruire."),
+                ("3", "Conferma e osserva", "Il tempo scorre veloce. Se succede qualcosa di grave il gioco rallenta: hai pochi secondi per cambiare il piano."),
+            ] {
+                ui.horizontal(|ui| {
+                    egui::Frame::none().fill(AMBER).rounding(22.0).inner_margin(egui::Margin::symmetric(14.0, 6.0)).show(ui, |ui| {
+                        ui.label(RichText::new(n).size(24.0).strong().color(Color32::BLACK));
+                    });
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new(title).size(20.0).strong().color(Color32::WHITE));
+                        ui.label(RichText::new(text).size(17.0).color(GREY));
+                    });
+                });
+                ui.add_space(6.0);
+            }
+            ui.add_space(10.0);
+            ui.vertical_centered(|ui| {
+                let b = egui::Button::new(RichText::new("Inizia").size(30.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(320.0, 70.0));
+                if ui.add(b).clicked() {
+                    k.intro = false;
+                }
+            });
+            ui.add_space(10.0);
+            ui.label(
+                RichText::new("Territorio e incendio sono immaginari, ma il fuoco si muove con PROPAGATOR, il modello di propagazione degli incendi di Fondazione CIMA. Non è un addestramento: nella realtà segui sempre le indicazioni delle autorità.")
+                    .size(14.0)
+                    .color(GREY),
+            );
+        });
+    });
 }
 
 /// The district a crisis is about, if any.
@@ -233,7 +327,7 @@ fn crisis_banner(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, top: f32) ->
                     .filter_map(|x| {
                         let now = sim.posts.iter().flatten().filter(|q| q.district == x).count();
                         let next = p.units_on(x);
-                        (now != next).then(|| format!("{} da {now} a {next} mezzi", sim.districts[x].name))
+                        (now != next).then(|| format!("{} da {now} a {next} {}", sim.districts[x].name, if next == 1 { "mezzo" } else { "mezzi" }))
                     })
                     .collect();
                 if !changes.is_empty() {
@@ -262,17 +356,17 @@ fn view_controls(ctx: &egui::Context, k: &mut Kiosk) {
     egui::Area::new(egui::Id::new("vista")).anchor(Align2::RIGHT_TOP, [-12.0, 12.0]).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.horizontal(|ui| {
-                if ui.add(secondary("+")).on_hover_text("avvicina").clicked() {
+                if ui.add(secondary("+")).clicked() {
                     k.zoom *= 0.8;
                 }
-                if ui.add(secondary("−")).on_hover_text("allontana").clicked() {
+                if ui.add(secondary("−")).clicked() {
                     k.zoom *= 1.25;
                 }
                 if ui.add(secondary("Vista iniziale")).clicked() {
                     k.reset_view = true;
                 }
             });
-            ui.label(RichText::new("trascina: sposta · rotella: zoom · tasto destro: ruota").size(13.0).color(GREY));
+            ui.label(RichText::new("trascina: sposta · due dita o + −: zoom").size(14.0).color(GREY));
         });
     });
 }
@@ -503,8 +597,8 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         let b = egui::Button::new(RichText::new("Difendi").size(17.0).strong().color(Color32::WHITE))
                             .fill(Color32::from_gray(62))
                             .stroke(egui::Stroke::new(2.0, AMBER))
-                            .rounding(6.0)
-                            .min_size(egui::vec2(120.0, 30.0));
+                            .rounding(8.0)
+                            .min_size(egui::vec2(140.0, 44.0));
                         if ui.add(b).clicked() {
                             order.push(d);
                             changed = true;
@@ -533,9 +627,9 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     pending.push(if civil[d] == Civil::Evacua { "evacuazione".into() } else { "preallerta".into() });
                 }
                 if next < now {
-                    pending.push(format!("perde {} mezzi", now - next));
+                    pending.push(format!("perde {} {}", now - next, if now - next == 1 { "mezzo" } else { "mezzi" }));
                 } else if next > now {
-                    pending.push(format!("riceve {} mezzi", next - now));
+                    pending.push(format!("riceve {} {}", next - now, if next - now == 1 { "mezzo" } else { "mezzi" }));
                 }
                 if !pending.is_empty() && k.phase != Phase::Pianifica {
                     pill(ui, &format!("da confermare: {}", pending.join(", ")), AMBER);
@@ -892,6 +986,7 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
                         k.reset_armed = None;
                         k.case = k.pick.clone();
                         new_game(k, sim, restarted);
+                        k.intro = true;
                     }
                 }
                 if k.phase == Phase::Esegui && ui.add(secondary("Pausa")).clicked() {
