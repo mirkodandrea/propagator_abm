@@ -38,6 +38,10 @@ pub const CRISIS_S: f32 = 25.0;
 /// that the game is played in real time, not a pause per order. Crises do
 /// not count.
 pub const MAX_PAUSES: u32 = 3;
+/// Simulated seconds after «Avvia» / «Riprendi» before the next pause
+/// (user, 2026-10-09: no pause straight after another). Orders change only
+/// in a pause, so this also spaces the changes of plan.
+pub const PAUSE_GAP_S: i64 = 15 * 60;
 /// How many times faster the game runs while nothing is happening
 /// (`rocca::Game::is_quiet`): the waits after the orders were the dull part.
 /// ×40·3 = ×120.
@@ -110,6 +114,8 @@ pub struct Kiosk {
     pub help: bool,
     /// Pauses left in this game ([`MAX_PAUSES`]).
     pub pauses_left: u32,
+    /// Simulated time the clock last started running («Avvia», «Riprendi»).
+    pub resumed_at_s: i64,
     /// The leaderboard, one for all fires (user, 2026-10-09).
     pub board: rocca::score::Board,
     /// The initials being chosen at the debrief (letter indices), and the
@@ -164,6 +170,7 @@ impl Kiosk {
             started: false,
             help: false,
             pauses_left: MAX_PAUSES,
+            resumed_at_s: 0,
             board: board::load(),
             initials: [0; 3],
             placed: None,
@@ -251,6 +258,11 @@ impl Kiosk {
         self.started && !self.help
     }
 
+    /// Minutes until a pause is allowed again; 0 when it is.
+    pub fn pause_wait_min(&self, now_s: i64) -> i64 {
+        ((self.resumed_at_s + PAUSE_GAP_S - now_s).max(0) + 59) / 60
+    }
+
     pub fn enter(&mut self, phase: Phase) {
         self.phase = phase;
         self.phase_t = 0.0;
@@ -292,6 +304,7 @@ pub fn new_game(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<Si
             kiosk.started = false;
             kiosk.help = false;
             kiosk.pauses_left = MAX_PAUSES;
+            kiosk.resumed_at_s = 0;
             kiosk.placed = None;
             kiosk.start_baseline();
             kiosk.enter(Phase::Pianifica);

@@ -169,13 +169,7 @@ pub fn draw(
         }
         unit_labels(ctx, &sim, cam);
         district_chips(ctx, k, &sim, cam, top);
-        // While the time runs an order is given, not proposed: it applies at
-        // the click (user, 2026-10-09: «Conferma» made the game read as
-        // turn-based). The preview with confirmation stays for the pause and
-        // the crises, where the spec asks for it.
-        if k.phase == Phase::Esegui && k.proposed != sim.active {
-            commit(k, &mut sim);
-        }
+
         side(ctx, k, &sim);
         action(ctx, k, &mut sim);
     }
@@ -380,7 +374,7 @@ fn speaker(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, speech: &Speech, faces
         // how to play only at first; then something new from the game
         None if k.phase == Phase::Esegui && sim.time_s() < TUTORIAL_S => {
             tip = Line { who: Who::Volontaria, mood: Mood::Calmo,
-                text: "Il tempo scorre e il fuoco non aspetta. Gli ordini che dai nelle schede valgono subito; le pause sono poche, tienile per quando servono.".into() };
+                text: "Il tempo scorre e il fuoco non aspetta. Per cambiare gli ordini serve una pausa, e le pause sono poche: tienile per quando servono.".into() };
             &tip
         }
         None if k.phase == Phase::Esegui => {
@@ -406,7 +400,7 @@ fn how_to_play(ctx: &egui::Context, k: &mut Kiosk, faces: Option<&Portraits>) {
     let steps = [
         (Icon::Shield, AMBER, "«Difendi»: scegli i paesi da difendere e in che ordine. Autobotti e squadra vanno dove indichi, se ci arrivano in tempo.".to_string()),
         (Icon::Bell, AMBER, "«Preallerta» fa preparare le famiglie; «Evacua» le fa partire. Un ordine dato non si ritira.".to_string()),
-        (Icon::Play, GREEN, format!("Premi «Avvia»: da lì il tempo scorre da solo e gli ordini valgono subito. Hai {} pause per fermarti a pensare: usale bene.", crate::kiosk::MAX_PAUSES)),
+        (Icon::Play, GREEN, format!("Premi «Avvia»: da lì il tempo scorre da solo. Gli ordini si cambiano solo in pausa, e hai {} pause, non una dopo l'altra: usale bene.", crate::kiosk::MAX_PAUSES)),
         (Icon::Alert, ORANGE, format!("Se succede qualcosa di grave il tempo rallenta, ma non si ferma: hai {:.0} secondi per decidere.", k.crisis_s)),
     ];
     let mut done = false;
@@ -1119,6 +1113,21 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         ui.label(RichText::new(journey).size(14.0).color(BLUE));
                     });
                 }
+                // While the time runs nothing changes: orders are given in a
+                // pause, so changes of plan are few (user, 2026-10-09). The
+                // crises have their own answers.
+                if k.phase == Phase::Esegui {
+                    let wait = k.pause_wait_min(sim.time_s());
+                    let text = if k.pauses_left == 0 {
+                        "Nessuna pausa rimasta: gli ordini restano questi".to_string()
+                    } else if wait > 0 {
+                        format!("Ordini: si cambiano in pausa, tra {wait} min")
+                    } else {
+                        "Ordini: metti in pausa per cambiarli".to_string()
+                    };
+                    ui.label(RichText::new(text).size(14.0).color(AMBER));
+                    return;
+                }
                 // controls, greyed until the game has started
                 ui.add_enabled_ui(can_order, |ui| {
                 ui.horizontal(|ui| match rank {
@@ -1288,7 +1297,9 @@ fn proposal(ui: &mut egui::Ui, k: &Kiosk, sim: &Sim) {
 /// paused, «Pausa» while the time runs (user, 2026-10-09). Before it, the
 /// gate «Inizia la partita».
 fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
-    let pause_label = format!("Pausa · {} rimaste", k.pauses_left);
+    let wait = k.pause_wait_min(sim.time_s());
+    let left = if k.pauses_left == 1 { "l'ultima".to_string() } else { format!("{} rimaste", k.pauses_left) };
+    let pause_label = if wait > 0 { format!("Pausa tra {wait} min · {left}") } else { format!("Pausa · {left}") };
     let (icon, label, fill) = match k.phase {
         // how to play is on screen: «Ho capito» is the button
         Phase::Pianifica if k.help => return,
@@ -1296,7 +1307,7 @@ fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
         Phase::Pianifica if sim.time_s() > rocca::STEP_S => (Some(Icon::Play), "Riprendi", AMBER),
         Phase::Pianifica => (Some(Icon::Play), "Avvia", AMBER),
         Phase::Esegui if k.pauses_left == 0 => (None, "Nessuna pausa rimasta", Color32::from_gray(90)),
-        Phase::Esegui if k.pauses_left == 1 => (Some(Icon::Pause), "Pausa · l'ultima", Color32::from_gray(200)),
+        Phase::Esegui if wait > 0 => (Some(Icon::Pause), &*pause_label, Color32::from_gray(90)),
         Phase::Esegui => (Some(Icon::Pause), &*pause_label, Color32::from_gray(200)),
         Phase::Crisi | Phase::Fine => return,
     };
@@ -1304,7 +1315,7 @@ fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
         ui.set_width(320.0);
         ui.vertical_centered(|ui| {
             if k.phase == Phase::Esegui {
-                ui.label(RichText::new("Passa sopra una scheda: gli ordini valgono subito").size(16.0).color(Color32::WHITE));
+                ui.label(RichText::new("Per cambiare gli ordini metti in pausa").size(16.0).color(Color32::WHITE));
             }
             if big_button(ui, icon, label, fill).clicked() {
                 match k.phase {
@@ -1314,9 +1325,10 @@ fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
                     }
                     Phase::Pianifica => {
                         commit(k, sim);
+                        k.resumed_at_s = sim.time_s();
                         k.enter(Phase::Esegui);
                     }
-                    Phase::Esegui if k.pauses_left > 0 => {
+                    Phase::Esegui if k.pauses_left > 0 && wait == 0 => {
                         k.pauses_left -= 1;
                         k.enter(Phase::Pianifica);
                     }
@@ -1333,8 +1345,13 @@ fn big_button(ui: &mut egui::Ui, icon: Option<Icon>, label: &str, fill: Color32)
     let (r, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     let p = ui.painter();
     p.rect_filled(r, 10.0, if resp.hovered() { fill.gamma_multiply(0.85) } else { fill });
-    let g = p.layout_no_wrap(label.to_string(), egui::FontId::proportional(26.0), Color32::BLACK);
     let icon_w = if icon.is_some() { 40.0 } else { 0.0 };
+    // a long label («Pausa tra 14 min · 2 rimaste») shrinks to fit
+    let mut g = p.layout_no_wrap(label.to_string(), egui::FontId::proportional(26.0), Color32::BLACK);
+    if g.size().x + icon_w > size.x - 24.0 {
+        let fit = 26.0 * (size.x - 24.0 - icon_w) / g.size().x;
+        g = p.layout_no_wrap(label.to_string(), egui::FontId::proportional(fit.max(14.0)), Color32::BLACK);
+    }
     let x = r.center().x - (g.size().x + icon_w) / 2.0;
     if let Some(i) = icon {
         icons::draw(p, egui::Rect::from_min_size(egui::pos2(x, r.center().y - 15.0), egui::vec2(30.0, 30.0)), i, Color32::BLACK);

@@ -36,6 +36,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 - 2026-10-09: **tempo reale dichiarato** («non è chiaro se è real time o a turni»; «Va bene» alla proposta in 7 punti): pulsante unico play/pausa, ordini immediati durante il gioco, pausa visibile, orologio «ore 14:26», crisi come rallentatore, accelerazione solo se è davvero tutto fermo, intro esplicita.
 - 2026-10-09: **massimo 3 pause** a partita (le crisi non contano).
+- 2026-10-09: **gli ordini si cambiano solo in pausa** (o alla crisi), così i cambi di piano sono pochi; **niente pausa subito dopo un'altra** (15 min simulati, `PAUSE_GAP_S`). Niente penalità a punti per i cambi.
 - 2026-10-09: **punteggio e classifica:** salvati rispetto a nessun ordine (100 per famiglia, 10 per casa) + 50 per pausa non usata; tre iniziali arcade; classifica **unica** per tutti gli incendi.
 
 - 2026-10-09: **prima di iniziare la partita nessun ordine; appena iniziata un piccolo tutorial.** Scelta dell'utente: stato «pronto» a ×0. Dopo «Inizia», «Riprova» o «Altro incendio» la mappa mostra fuoco e schede con i pulsanti degli ordini disattivati; «Inizia la partita» apre «Come si gioca» (4 passi della volontaria); gli ordini si sbloccano a «Ho capito», poi si pianifica a ×0 e «Avvia». Fatto: `Kiosk::started`/`help`/`can_order` (`kiosk/mod.rs`), `how_to_play` (`kiosk/ui.rs`); la partita scriptata fotografa `0b_pronto` e `0c_come_si_gioca`.
@@ -193,6 +194,7 @@ Prompt e resoconto in `docs/fase5/playtest_haiku/`. Codex aveva finito i crediti
 #### Tempo reale, pause, punteggio (2026-10-09, `docs/fase5/tempo_reale.md`)
 
 - [x] 2026-10-09 play/pausa unico, ordini immediati durante il gioco, velo «IN PAUSA», orologio «ore 14:26», crisi «rallentato» con cornice, intro e «Come si gioca» aggiornati;
+- [x] 2026-10-09 ordini solo in pausa o alla crisi; pausa di nuovo disponibile 15 min simulati dopo «Avvia» / «Riprendi»; pulsante «Pausa tra N min · 2 rimaste»;
 - [x] 2026-10-09 3 pause (`MAX_PAUSES`); ×120 solo senza partenze in corso e con il fuoco a più di 1,5 km da chi è in casa (`QUIET_FIRE_M`). Durata: 4,5–5,3 min reali;
 - [x] 2026-10-09 `rocca::score` (punteggio e classifica, 4 test) e `kiosk/board.rs` (file o `localStorage`); «Azzera classifica» in F2;
 - [x] 2026-10-09 playtest mio nel browser, tre partite: 1/71 → 2/24 → Borgo2 1/6 con 1720 punti;

@@ -15,7 +15,9 @@ Richiesta dell'utente: «non è chiaro se è un gioco real time o a turni». Poi
 | ×120 automatico anche con un paese in fuga | ×120 solo se nessuno è in partenza e il fuoco è a più di 1,5 km da chi è in casa (`Game::is_quiet`, `QUIET_FIRE_M`) |
 | nessun punteggio | `rocca::score`: 100 per famiglia e 10 per casa salvate rispetto allo stesso incendio senza ordini, 50 per pausa non usata (solo se si è salvato qualcosa), mai negativo. Classifica unica dei primi 10, tre iniziali, file `~/.rocca_ventosa/classifica.json` (`KIOSK_SCORES` per spostarlo) o `localStorage` nel browser. «Azzera classifica» nella barra F2, con doppia pressione |
 
-Intro e «Come si gioca» dicono che il tempo scorre da solo, che gli ordini valgono subito e quante pause ci sono.
+**Aggiornamento, stessa sera (utente):** «si cambia solo in pausa, così in automatico rendiamo possibili pochi cambi piani» e «una pausa non può essere immediatamente dopo un'altra». Durante il gioco le schede mostrano gli ordini ma non li cambiano («Ordini: si cambiano in pausa, tra N min»). Gli ordini immediati della riga sopra sono stati **tolti**. Dopo «Avvia» o «Riprendi» la pausa torna disponibile solo dopo 15 minuti simulati (`PAUSE_GAP_S`, circa 22 s reali a ×40): il pulsante mostra «Pausa tra N min · 2 rimaste». Le crisi restano decisioni a sé, con le loro risposte.
+
+Intro e «Come si gioca» dicono che il tempo scorre da solo, che gli ordini si cambiano solo in pausa e quante pause ci sono.
 
 ## Prova
 
