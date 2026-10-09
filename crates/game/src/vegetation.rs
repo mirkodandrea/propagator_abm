@@ -54,7 +54,23 @@ const CHUNK_CELLS: usize = 32;
 ///
 /// Set by measurement, not by taste: 10.5 M triangles rendered at 119 fps in
 /// release on an M4 Pro, so there was room for roughly another half.
-const DENSITY: [f32; 4] = [11.0, 3.4, 6.5, 3.8];
+///
+/// Broadleaf is 2.5 (was 3.4 for class 5 and 1.4 olives for class 4): the
+/// chestnut crowns are wide, and the total plant count stays the same.
+const DENSITY: [f32; 4] = [11.0, 2.5, 6.5, 3.8];
+
+/// Within a group, how the fuel class scales [`DENSITY`]: moist broadleaf a
+/// little denser than dry, macchia from sparse (7) to closed (9). Weighted by
+/// the territory's cells, the mean stays at 1: no more plants overall.
+fn class_density(fuel: i32) -> f32 {
+    match fuel {
+        4 => 1.04,
+        5 => 0.97,
+        7 => 0.75,
+        9 => 1.15,
+        _ => 1.0,
+    }
+}
 
 /// The share of [`DENSITY`] actually planted: in the browser much less, for
 /// WebGL.
@@ -80,11 +96,13 @@ const PLANT_FLAMING_S: f32 = 240.0;
 pub enum Species {
     /// classes 1-3: grassland, drawn as crossed blade tufts
     Grass = 0,
-    /// classes 4-6: broadleaves, a rounded canopy on a short trunk
+    /// classes 4-6: broadleaves, drawn as chestnuts: a big round lobed crown
+    /// on a short trunk
     Broadleaf = 1,
-    /// classes 7-9: shrubland and macchia, overlapping low domes
+    /// classes 7-9: shrubland and macchia, low dense rounded clumps
     Shrub = 2,
-    /// classes 10-12: conifers, stacked cones on a bare trunk
+    /// classes 10-12: conifers, drawn as maritime pines: a tall bare reddish
+    /// trunk under a flat umbrella crown
     Conifer = 3,
 }
 
@@ -99,32 +117,40 @@ impl Species {
         })
     }
 
-    /// Foliage colour, as a pair the per-plant tint interpolates between.
+    /// Foliage colour for a fuel class, as a pair the per-plant tint
+    /// interpolates between.
     ///
-    /// A single colour per species is what makes procedural vegetation look
-    /// like plastic: a real stand runs from cured straw to dark green within
-    /// metres. The two ends are the dry and the vigorous extreme of the same
-    /// species; each plant lands somewhere between them. Kept dark — plants
-    /// are a pixel or two at commander altitude, and anything bright at that
-    /// size aliases into sparkle.
-    fn foliage_range(self) -> ([f32; 3], [f32; 3]) {
-        match self {
-            // Cured Mediterranean grassland: straw, with green only in the
-            // draws. This is also the fuel that carries fire fastest. The dry
-            // end sits close to the soil colour on purpose — grassland should
-            // read as continuous cover, not as green dots on tan.
-            Species::Grass => ([0.42, 0.36, 0.19], [0.26, 0.29, 0.15]),
-            Species::Broadleaf => ([0.19, 0.24, 0.12], [0.09, 0.17, 0.09]),
-            // Macchia is a mix of species by definition; the widest range.
-            Species::Shrub => ([0.30, 0.27, 0.14], [0.13, 0.20, 0.10]),
-            Species::Conifer => ([0.12, 0.18, 0.11], [0.06, 0.13, 0.09]),
+    /// A single colour per class is what makes procedural vegetation look like
+    /// plastic: a real stand varies within metres. The two ends are the dry
+    /// and the vigorous extreme; each plant lands somewhere between them. The
+    /// four groups are kept apart in hue as well as in shape (iteration 5b,
+    /// the player must tell them apart): pine dark blue-green, chestnut a
+    /// bright mid green, macchia dark olive, grass straw.
+    fn foliage_range(fuel: i32) -> ([f32; 3], [f32; 3]) {
+        match fuel {
+            // gardens and lawns round the houses
+            1 => ([0.46, 0.52, 0.24], [0.34, 0.48, 0.20]),
+            // Cured Mediterranean grassland: straw; the fuel that carries fire
+            // fastest. Class 3 (dry meadow) paler and more golden.
+            2 => ([0.66, 0.56, 0.28], [0.54, 0.50, 0.24]),
+            3 => ([0.80, 0.68, 0.36], [0.70, 0.60, 0.30]),
+            // Chestnut; class 4 (moist) greener than 5.
+            4 => ([0.24, 0.40, 0.13], [0.17, 0.34, 0.11]),
+            5..=6 => ([0.32, 0.42, 0.15], [0.24, 0.36, 0.12]),
+            // Macchia: dark olive, greyer than the chestnut, warmer than the pine.
+            7..=9 => ([0.27, 0.32, 0.15], [0.18, 0.25, 0.12]),
+            // Maritime pine: dark, toward blue.
+            _ => ([0.13, 0.22, 0.18], [0.08, 0.17, 0.15]),
         }
     }
 
     fn wood(self) -> [f32; 3] {
         match self {
             Species::Grass => [0.32, 0.29, 0.17],
-            _ => [0.21, 0.17, 0.13],
+            // maritime pine bark is red-brown, and it is what shows: the
+            // trunk is bare for most of its height
+            Species::Conifer => [0.46, 0.23, 0.14],
+            _ => [0.24, 0.18, 0.13],
         }
     }
 }
@@ -209,7 +235,7 @@ pub fn spawn(
                     };
                     let mut rng = Rng::seeded(r as u64 * 65_536 + c as u64);
                     let centre = scn.world.centre_of(cell);
-                    let stand_density = if scn.fuel_at(cell) == 4 { 1.4 } else { DENSITY[species as usize] };
+                    let stand_density = DENSITY[species as usize] * class_density(scn.fuel_at(cell));
                     let expected = stand_density * density * patchiness(centre);
                     let n = expected.floor() as u32 + u32::from(rng.unit() < expected.fract());
 
@@ -311,7 +337,7 @@ fn scatter_plant(
     // Where this plant sits between the dry and vigorous ends of its species,
     // correlated over ~40 m so drying runs in patches — slopes and aspects
     // cure together — with a per-plant scatter on top.
-    let (dry, green) = species.foliage_range();
+    let (dry, green) = Species::foliage_range(scn.fuel_at(cell));
     let local = noise(p.x / 40.0, p.y / 40.0, 0xC0FF);
     let t = (0.72 * local + 0.28 * rng.unit()).clamp(0.0, 1.0);
     let foliage = [
@@ -323,17 +349,10 @@ fn scatter_plant(
     let foliage = mul(foliage, shade);
     let wood = mul(species.wood(), shade);
 
+    // One model per group, no mixing: the player reads the fuel from the
+    // silhouette (cypresses and olives used to stand among pines and oaks).
     match species {
-        Species::Conifer if rng.unit() < 0.18 => {
-            let height = (15.0 + rng.unit() * 12.0) * scale;
-            out.model("cypress", base, Vec3::new(height * 0.8, height, height * 0.8), yaw, foliage, wood);
-        }
         Species::Conifer => conifer(out, base, scale, yaw, foliage, wood, rng),
-        Species::Broadleaf if scn.fuel_at(cell) == 4 || rng.unit() < 0.25 => {
-            let height = (6.0 + rng.unit() * 5.0) * scale;
-            let silver = [0.30 + t * 0.08, 0.36 + t * 0.07, 0.23 + t * 0.06];
-            out.model("olive", base, Vec3::new(height * 1.2, height, height * 1.2), yaw, silver, wood);
-        }
         Species::Broadleaf => broadleaf(out, base, scale, yaw, foliage, wood, rng),
         Species::Shrub => shrub(out, base, scale, yaw, foliage, rng),
         Species::Grass if true && rng.unit() < 0.025 => {
@@ -357,18 +376,22 @@ fn mul(c: [f32; 3], k: f32) -> [f32; 3] {
 // Normalized trees scale to the existing ecological height distributions.
 fn conifer(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
     foliage: [f32; 3], wood: [f32; 3], rng: &mut Rng) {
-    let height = (12.0 + rng.unit() * 9.0) * scale;
-    out.model("pine", base, Vec3::splat(height), yaw, foliage, wood);
+    // maritime pine: tall, the umbrella a little wider than the model
+    let height = (13.0 + rng.unit() * 8.0) * scale;
+    let width = height * (1.0 + rng.unit() * 0.3);
+    out.model("pine", base, Vec3::new(width, height, width), yaw, foliage, wood);
 }
 
 fn broadleaf(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
     foliage: [f32; 3], wood: [f32; 3], rng: &mut Rng) {
-    let height = (7.0 + rng.unit() * 6.0) * scale;
-    out.model("oak", base, Vec3::splat(height), yaw, foliage, wood);
+    // chestnut: lower than the pines, the crown about as wide as tall
+    let height = (8.0 + rng.unit() * 5.0) * scale;
+    out.model("chestnut", base, Vec3::new(height * 1.1, height, height * 1.1), yaw, foliage, wood);
 }
 
 fn shrub(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
     foliage: [f32; 3], rng: &mut Rng) {
+    // low, wide and stemless: macchia must not read as young trees
     let r = (2.6 + rng.unit() * 2.2) * scale;
     out.model("bush", base, Vec3::new(r, r * 0.8, r), yaw, foliage, foliage);
 }

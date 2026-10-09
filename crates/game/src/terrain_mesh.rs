@@ -80,10 +80,16 @@ fn cover_tint(scn: &Scenario, p: Pos) -> [f32; 3] {
             // Gardens and lawns round the houses: the green that makes a
             // town read as a town (class 1 is only ever painted there).
             1 => [0.56, 0.74, 0.40],
-            2..=3 => [0.74, 0.66, 0.38],
-            4..=6 => [0.42, 0.60, 0.30],
-            7..=9 => [0.52, 0.55, 0.30],
-            10..=12 => [0.28, 0.48, 0.30],
+            // The hue of each group's plants, lighter, so the cover reads
+            // where the plants are sparse (12 % in the browser): straw gold
+            // (class 3 paler), chestnut green, olive macchia, pine
+            // blue-green. Bilinear and warped below, never hard-edged.
+            2 => [0.78, 0.68, 0.38],
+            3 => [0.86, 0.76, 0.46],
+            4 => [0.40, 0.60, 0.26],
+            5..=6 => [0.46, 0.60, 0.28],
+            7..=9 => [0.44, 0.48, 0.28],
+            10..=12 => [0.30, 0.42, 0.33],
             // Non-burnable fire cell. With 5 m cover, what is actually built
             // is painted by `built_tint`; the rest of the cell is the yards
             // and verges round the houses.

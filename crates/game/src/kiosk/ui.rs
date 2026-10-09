@@ -456,9 +456,10 @@ fn view_controls(ctx: &egui::Context, k: &mut Kiosk) {
 
 /// What the marks on the map mean.
 fn legend(ctx: &egui::Context) {
-    // below the operator bar when that is open; closed at first on a small screen
+    // below the operator bar when that is open
     let below = ctx.memory(|m| m.area_rect(egui::Id::new("operatore"))).filter(|_| ctx.memory(|m| m.areas().visible_last_frame(&egui::LayerId::new(egui::Order::Foreground, egui::Id::new("operatore"))))).map_or(12.0, |r| r.bottom() + 8.0);
-    let roomy = false;
+    // closed at first; `KIOSK_LEGEND=1` opens it, for screenshots
+    let roomy = std::env::var("KIOSK_LEGEND").is_ok();
     egui::Area::new(egui::Id::new("legenda")).order(egui::Order::Foreground).anchor(Align2::LEFT_TOP, [12.0, below]).show(ctx, |ui| {
         panel().fill(Color32::from_rgb(18, 20, 24)).show(ui, |ui| {
             egui::CollapsingHeader::new(RichText::new("Legenda e tempi").size(15.0).strong().color(Color32::WHITE)).default_open(roomy).show(ui, |ui| {
@@ -473,92 +474,157 @@ fn legend(ctx: &egui::Context) {
                     Arrow,
                     Diamond,
                 }
-                let items = [
-                    (Mark::Fill(Color32::from_rgb(255, 120, 40)), "fuoco attivo"),
-                    (Mark::Fill(Color32::from_rgb(70, 50, 40)), "area già bruciata"),
-                    (Mark::Arrow, "dove il vento spinge il fuoco"),
-                    (Mark::Ring(GREEN), "case difese da un mezzo"),
-                    (Mark::Line(GREEN, false), "strada che un mezzo sta facendo"),
-                    (Mark::Line(Color32::WHITE, true), "spostamento proposto, da confermare"),
-                    (Mark::Ring(AMBER), "preallerta"),
-                    (Mark::Ring(BLUE), "evacuazione"),
-                    (Mark::Diamond, "famiglia in casa con il fuoco vicino"),
-                    (Mark::Fill(Color32::from_rgb(60, 120, 220)), "cartello blu: area di attesa sicura"),
-                ];
-                for (m, text) in items {
+                // Most asked first: what the plants on the map are and why they
+                // matter, then the families bar; the rest folds away.
+                section(ui, "Vegetazione: come brucia", true, |ui| {
+                    for (kind, text) in [
+                        (Plant::Grass, "Prato secco: il fuoco corre veloce, con fiamme basse."),
+                        (Plant::Shrub, "Macchia: cespugli fitti, brucia forte e lancia faville."),
+                        (Plant::Pine, "Pineta di pino marittimo: fiamme alte e faville lontane; può correre veloce."),
+                        (Plant::Chestnut, "Castagneto (latifoglie): il fuoco avanza più lento."),
+                    ] {
+                        ui.horizontal(|ui| {
+                            plant_sample(ui, kind);
+                            ui.add(egui::Label::new(RichText::new(text).size(14.0).color(GREY)).wrap());
+                        });
+                    }
                     ui.horizontal(|ui| {
-                        let (r, _) = ui.allocate_exact_size(egui::vec2(26.0, 16.0), egui::Sense::hover());
-                        let p = ui.painter();
-                        let c = r.center();
-                        match m {
-                            Mark::Fill(col) => {
-                                p.rect_filled(r.shrink2(egui::vec2(4.0, 2.0)), 3.0, col);
-                            }
-                            Mark::Ring(col) => {
-                                p.circle_stroke(c, 6.5, egui::Stroke::new(2.5, col));
-                            }
-                            Mark::Line(col, dashed) => {
-                                let (a, b) = (egui::pos2(r.left() + 2.0, c.y), egui::pos2(r.right() - 2.0, c.y));
-                                if dashed {
-                                    p.add(egui::Shape::dashed_line(&[a, b], egui::Stroke::new(3.0, col), 5.0, 3.0));
-                                } else {
-                                    p.line_segment([a, b], egui::Stroke::new(3.0, col));
+                        let (r, _) = ui.allocate_exact_size(egui::vec2(40.0, 26.0), egui::Sense::hover());
+                        ui.painter().rect_filled(r.shrink(2.0), 4.0, Color32::from_rgb(214, 207, 189));
+                        ui.label(RichText::new("Strade, case, orti: non bruciano.").size(14.0).color(GREY));
+                    });
+                    ui.label(RichText::new("Anche vento e pendenza spingono il fuoco.").size(14.0).color(GREY));
+                });
+                section(ui, "Barra delle famiglie", true, |ui| {
+                    for (colour, text) in [(GREEN, "Evacuate: in sicurezza"), (BLUE, "In viaggio"), (AMBER, "In preparazione"), (Color32::from_gray(150), "A casa"), (RED, "Intrappolate / vittime")] {
+                        ui.horizontal(|ui| {
+                            let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 12.0), egui::Sense::hover());
+                            ui.painter().rect_filled(r, 2.0, colour);
+                            ui.label(RichText::new(text).size(14.0).color(GREY));
+                        });
+                    }
+                });
+                section(ui, "Segni sulla mappa", true, |ui| {
+                    let items = [
+                        (Mark::Fill(Color32::from_rgb(255, 120, 40)), "fuoco attivo"),
+                        (Mark::Fill(Color32::from_rgb(70, 50, 40)), "area già bruciata"),
+                        (Mark::Arrow, "dove il vento spinge il fuoco"),
+                        (Mark::Ring(GREEN), "case difese da un mezzo"),
+                        (Mark::Line(GREEN, false), "strada che un mezzo sta facendo"),
+                        (Mark::Line(Color32::WHITE, true), "spostamento proposto, da confermare"),
+                        (Mark::Ring(AMBER), "preallerta"),
+                        (Mark::Ring(BLUE), "evacuazione"),
+                        (Mark::Diamond, "famiglia in casa con il fuoco vicino"),
+                        (Mark::Fill(Color32::from_rgb(60, 120, 220)), "cartello blu: area di attesa sicura"),
+                    ];
+                    for (m, text) in items {
+                        ui.horizontal(|ui| {
+                            let (r, _) = ui.allocate_exact_size(egui::vec2(26.0, 16.0), egui::Sense::hover());
+                            let p = ui.painter();
+                            let c = r.center();
+                            match m {
+                                Mark::Fill(col) => {
+                                    p.rect_filled(r.shrink2(egui::vec2(4.0, 2.0)), 3.0, col);
+                                }
+                                Mark::Ring(col) => {
+                                    p.circle_stroke(c, 6.5, egui::Stroke::new(2.5, col));
+                                }
+                                Mark::Line(col, dashed) => {
+                                    let (a, b) = (egui::pos2(r.left() + 2.0, c.y), egui::pos2(r.right() - 2.0, c.y));
+                                    if dashed {
+                                        p.add(egui::Shape::dashed_line(&[a, b], egui::Stroke::new(3.0, col), 5.0, 3.0));
+                                    } else {
+                                        p.line_segment([a, b], egui::Stroke::new(3.0, col));
+                                    }
+                                }
+                                Mark::Arrow => {
+                                    let st = egui::Stroke::new(3.0, Color32::from_gray(230));
+                                    p.line_segment([egui::pos2(r.left() + 3.0, c.y), egui::pos2(r.right() - 3.0, c.y)], st);
+                                    p.line_segment([egui::pos2(r.right() - 3.0, c.y), egui::pos2(r.right() - 9.0, c.y - 5.0)], st);
+                                    p.line_segment([egui::pos2(r.right() - 3.0, c.y), egui::pos2(r.right() - 9.0, c.y + 5.0)], st);
+                                }
+                                Mark::Diamond => {
+                                    let pts = vec![c + egui::vec2(0.0, -7.0), c + egui::vec2(6.0, 0.0), c + egui::vec2(0.0, 7.0), c + egui::vec2(-6.0, 0.0)];
+                                    p.add(egui::Shape::convex_polygon(pts, RED, egui::Stroke::NONE));
                                 }
                             }
-                            Mark::Arrow => {
-                                let st = egui::Stroke::new(3.0, Color32::from_gray(230));
-                                p.line_segment([egui::pos2(r.left() + 3.0, c.y), egui::pos2(r.right() - 3.0, c.y)], st);
-                                p.line_segment([egui::pos2(r.right() - 3.0, c.y), egui::pos2(r.right() - 9.0, c.y - 5.0)], st);
-                                p.line_segment([egui::pos2(r.right() - 3.0, c.y), egui::pos2(r.right() - 9.0, c.y + 5.0)], st);
-                            }
-                            Mark::Diamond => {
-                                let pts = vec![c + egui::vec2(0.0, -7.0), c + egui::vec2(6.0, 0.0), c + egui::vec2(0.0, 7.0), c + egui::vec2(-6.0, 0.0)];
-                                p.add(egui::Shape::convex_polygon(pts, RED, egui::Stroke::NONE));
-                            }
-                        }
-                        ui.label(RichText::new(text).size(14.0).color(GREY));
-                    });
-                }
-                ui.separator();
-                ui.label(RichText::new("Schede dei paesi").strong().color(Color32::WHITE));
-                for text in [
-                    "1, 2, 3: priorità di difesa. Cerchio vuoto: escluso dalla difesa.",
-                    "Fiamma + km: distanza del fronte dalla casa più vicina, non tempo d’arrivo.",
-                    "Famiglia + numero: famiglie del paese. Evacuate X/Y: già arrivate in sicurezza su totale.",
-                    "Mezzo verde: assegnato, può essere in viaggio. Giallo: da assegnare alla conferma. Barrato: da trasferire.",
-                    "Preallerta prepara; Evacua ordina di partire. Gli ordini confermati non si possono ritirare.",
-                    "Tutti i tempi sono minuti nel mondo simulato. A ×20, 20 minuti passano in 1 minuto reale.",
-                    "Evacuazione: avviso, preparazione, viaggio. La stima indica solo il viaggio dalla casa, senza code né rallentamenti; qualcuno può tardare o restare.",
-                    "I nuclei con lo stesso nome condividono gli ordini della stessa scheda.",
-                ] { ui.label(RichText::new(text).size(14.0).color(GREY)); }
-                ui.label(RichText::new("Barra delle famiglie").strong().color(Color32::WHITE));
-                for (colour, text) in [(GREEN, "Evacuate: in sicurezza"), (BLUE, "In viaggio"), (AMBER, "In preparazione"), (Color32::from_gray(150), "A casa"), (RED, "Intrappolate / vittime")] {
-                    ui.horizontal(|ui| {
-                        let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 12.0), egui::Sense::hover());
-                        ui.painter().rect_filled(r, 2.0, colour);
-                        ui.label(RichText::new(text).size(14.0).color(GREY));
-                    });
-                }
-                ui.separator();
-                ui.label(RichText::new("Vegetazione e combustibili").strong().color(Color32::WHITE));
-                for (colour, text) in [
-                    (Color32::from_rgb(189, 168, 97), "Prati ed erba secca"),
-                    (Color32::from_rgb(107, 153, 77), "Bosco di latifoglie"),
-                    (Color32::from_rgb(133, 140, 77), "Macchia e arbusti"),
-                    (Color32::from_rgb(71, 122, 77), "Conifere / pineta"),
-                    (Color32::from_rgb(214, 207, 189), "Strade e suolo costruito: non combustibili"),
-                ] {
-                    ui.horizontal(|ui| {
-                        let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 12.0), egui::Sense::hover());
-                        ui.painter().rect_filled(r, 2.0, colour);
-                        ui.label(RichText::new(text).size(14.0).color(GREY));
-                    });
-                }
-                ui.label(RichText::new("Colori indicativi del suolo; alberi e cespugli indicano la vegetazione. Vento e pendenza influenzano la propagazione.").size(14.0).color(GREY));
+                            ui.label(RichText::new(text).size(14.0).color(GREY));
+                        });
+                    }
+                });
+                section(ui, "Schede dei paesi", false, |ui| {
+                    for text in [
+                        "1, 2, 3: priorità di difesa. Cerchio vuoto: escluso dalla difesa.",
+                        "Fiamma + km: distanza del fronte dalla casa più vicina, non tempo d’arrivo.",
+                        "Famiglia + numero: famiglie del paese. Evacuate X/Y: già arrivate in sicurezza su totale.",
+                        "Mezzo verde: assegnato, può essere in viaggio. Giallo: da assegnare alla conferma. Barrato: da trasferire.",
+                        "Preallerta prepara; Evacua ordina di partire. Gli ordini confermati non si possono ritirare.",
+                        "Tutti i tempi sono minuti nel mondo simulato. A ×40, 40 minuti passano in 1 minuto reale; quando non succede nulla il gioco accelera.",
+                        "Evacuazione: avviso, preparazione, viaggio. La stima indica solo il viaggio dalla casa, senza code né rallentamenti; qualcuno può tardare o restare.",
+                        "I nuclei con lo stesso nome condividono gli ordini della stessa scheda.",
+                    ] { ui.label(RichText::new(text).size(14.0).color(GREY)); }
+                });
                 });
             });
         });
     });
+}
+
+/// A sub-section of the legend that can be folded.
+fn section(ui: &mut egui::Ui, title: &str, open: bool, add: impl FnOnce(&mut egui::Ui)) {
+    egui::CollapsingHeader::new(RichText::new(title).size(15.0).strong().color(Color32::WHITE)).default_open(open).show(ui, add);
+}
+
+#[derive(Clone, Copy)]
+enum Plant {
+    Grass,
+    Shrub,
+    Pine,
+    Chestnut,
+}
+
+/// A small drawing of one vegetation type on its ground, in the colours the
+/// map renders them with (sampled from kiosk screenshots, iteration 5b):
+/// the same silhouettes as `vegetation.rs`.
+fn plant_sample(ui: &mut egui::Ui, kind: Plant) {
+    let (r, _) = ui.allocate_exact_size(egui::vec2(40.0, 26.0), egui::Sense::hover());
+    let p = ui.painter();
+    let ground = match kind {
+        Plant::Grass => Color32::from_rgb(213, 186, 104),
+        Plant::Shrub => Color32::from_rgb(156, 157, 90),
+        Plant::Pine => Color32::from_rgb(92, 112, 84),
+        Plant::Chestnut => Color32::from_rgb(120, 150, 70),
+    };
+    p.rect_filled(r.shrink(2.0), 4.0, ground);
+    let (base, c) = (r.bottom() - 4.0, r.center().x);
+    match kind {
+        Plant::Grass => {
+            let tuft = Color32::from_rgb(150, 130, 70);
+            for x in [-12.0, -3.0, 7.0, 14.0] {
+                for (dx, h) in [(-2.0, 6.0), (0.0, 8.0), (2.0, 6.0)] {
+                    p.line_segment([egui::pos2(c + x, base), egui::pos2(c + x + dx, base - h)], egui::Stroke::new(1.5, tuft));
+                }
+            }
+        }
+        Plant::Shrub => {
+            let leaf = Color32::from_rgb(111, 122, 59);
+            for (dx, rad) in [(-9.0, 6.0), (0.0, 8.0), (9.0, 6.5)] {
+                p.circle_filled(egui::pos2(c + dx, base - rad * 0.6), rad, leaf);
+            }
+        }
+        Plant::Pine => {
+            let (bark, leaf) = (Color32::from_rgb(150, 70, 40), Color32::from_rgb(50, 75, 54));
+            p.line_segment([egui::pos2(c, base), egui::pos2(c + 1.5, r.top() + 9.0)], egui::Stroke::new(2.5, bark));
+            p.add(egui::Shape::ellipse_filled(egui::pos2(c + 1.0, r.top() + 8.0), egui::vec2(14.0, 4.5), leaf));
+        }
+        Plant::Chestnut => {
+            let (bark, leaf) = (Color32::from_rgb(80, 60, 40), Color32::from_rgb(95, 119, 42));
+            p.line_segment([egui::pos2(c, base), egui::pos2(c, base - 7.0)], egui::Stroke::new(3.5, bark));
+            p.circle_filled(egui::pos2(c, base - 13.0), 9.0, leaf);
+            p.circle_filled(egui::pos2(c - 7.0, base - 10.0), 5.5, leaf);
+            p.circle_filled(egui::pos2(c + 7.0, base - 10.0), 5.5, leaf);
+        }
+    }
 }
 
 /// Where a district's chip stands: over the home nearest the district's
@@ -801,7 +867,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     ui.label(RichText::new(defence).size(14.0).color(GREEN));
                     let journey = match k.evacuation.get(d) {
                         Some((Some((a, b)), 0)) => format!("Evacua: viaggio ~{a}–{b} min + attesa"),
-                        Some((Some((a, b)), blocked)) => format!("Viaggio ~{a}–{b} min · {blocked} senza via"),
+                        Some((Some((a, b)), blocked)) => format!("Viaggio ~{a}–{b} min · {blocked} famiglie senza via"),
                         _ => "Evacua: viaggio non disponibile".into(),
                     };
                     ui.label(RichText::new(journey).size(13.0).color(BLUE));

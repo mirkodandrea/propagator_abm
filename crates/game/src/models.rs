@@ -141,6 +141,7 @@ mod tests {
             "fire_engine",
             "pine",
             "oak",
+            "chestnut",
             "bush",
             "olive",
             "cypress",
@@ -172,7 +173,7 @@ mod tests {
                 );
             }
             // Vegetation is copied many thousands of times: enforce its budget.
-            if matches!(name, "pine" | "oak" | "bush" | "olive" | "cypress") {
+            if matches!(name, "pine" | "oak" | "chestnut" | "bush" | "olive" | "cypress") {
                 assert!(
                     m.positions.len() <= 120 && m.indices.len() / 3 <= 160,
                     "{name}"

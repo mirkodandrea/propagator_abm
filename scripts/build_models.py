@@ -134,9 +134,12 @@ def vehicle(truck=False):
 
 def plant(kind):
     if kind == 'bush':
-        for i in range(5):
-            a=i*2.4
-            ico('Macchia crown',(math.cos(a)*.48,math.sin(a)*.40,.52+(i%2)*.13),(.66,.58,.52),leaf if i%2 else leaf2)
+        # Macchia: a low, dense, rounded clump wider than tall, no stem, so it
+        # never reads as a small tree from the overview.
+        ico('Macchia core',(0,0,.42),(.72,.68,.46),leaf2)
+        for i in range(4):
+            a=i*1.57+.4
+            ico('Macchia lobe',(math.cos(a)*.48,math.sin(a)*.44,.30+(i%2)*.06),(.46,.42,.34),leaf if i%2 else leaf2)
         return
     if kind == 'cypress':
         rod('Cypress trunk', (0,0,0), (0,0,.75), .025, wood, 5, top=.012)
@@ -151,21 +154,38 @@ def plant(kind):
             rod('Olive bough',(.06,0,.25),end,.022,wood,4,top=.009)
             ico('Silver olive crown',end,(.30,.27,.23),leaf if i%2 else leaf2)
         return
-    rod('Tapered trunk',(0,0,0),(.025,0,.69),.036 if kind=='pine' else .055,wood,5,top=.019)
+    if kind == 'pine':
+        # Maritime pine: a tall, bare, slightly leaning trunk and a flat,
+        # irregular umbrella of separate needle pads high up.
+        rod('Leaning pine trunk',(0,0,0),(.07,.02,.80),.038,wood,6,top=.02)
+        rod('Pine fork',(.05,.015,.62),(-.13,.09,.84),.016,wood,4,top=.008)
+        for pos,size,m in [((.08,.02,.86),(.34,.30,.09),leaf),
+                           ((.25,.10,.80),(.20,.17,.07),leaf2),
+                           ((-.13,.10,.90),(.22,.19,.07),leaf2),
+                           ((.04,-.18,.93),(.17,.15,.06),leaf)]:
+            ico('Umbrella pine pad',pos,size,m)
+        return
+    if kind == 'chestnut':
+        # Chestnut: a short, stout trunk under a big, round, lobed crown.
+        rod('Stout chestnut trunk',(0,0,0),(0,0,.34),.075,wood,6,top=.05)
+        for i in range(3):
+            a=i*2.1
+            rod('Chestnut bough',(0,0,.28),(math.cos(a)*.22,math.sin(a)*.22,.50),.03,wood,4,top=.012)
+        ico('Chestnut crown',(0,0,.66),(.44,.42,.32),leaf2)
+        for i in range(4):
+            a=i*1.571+.3
+            ico('Chestnut lobe',(math.cos(a)*.34,math.sin(a)*.32,.58+(i%2)*.14),(.29,.28,.24),leaf if i%2 else leaf2)
+        return
+    rod('Tapered trunk',(0,0,0),(.025,0,.69),.055,wood,5,top=.019)
     for i in range(3):
         a=i*2.4
         end=(math.cos(a)*.23,math.sin(a)*.23,.73)
         rod('Branch',(0,0,.38),end,.017,wood,4,top=.007)
-    if kind=='pine':
-        for i in range(5):
-            a=i*2.4
-            ico('Umbrella pine crown',(math.cos(a)*.19,math.sin(a)*.19,.79+(i%2)*.10),(.30,.29,.17),leaf if i%2 else leaf2)
-    else:
-        for i in range(5):
-            a=i*2.4
-            ico('Oak crown',(math.cos(a)*.21,math.sin(a)*.21,.64+(i%2)*.16),(.32,.30,.28),leaf if i%2 else leaf2)
+    for i in range(5):
+        a=i*2.4
+        ico('Oak crown',(math.cos(a)*.21,math.sin(a)*.21,.64+(i%2)*.16),(.32,.30,.28),leaf if i%2 else leaf2)
 
-builders = {'pedestrian':lambda:person(), 'firefighter':lambda:person(True), 'car':lambda:vehicle(), 'fire_engine':lambda:vehicle(True), 'pine':lambda:plant('pine'), 'oak':lambda:plant('oak'), 'bush':lambda:plant('bush'), 'olive':lambda:plant('olive'), 'cypress':lambda:plant('cypress')}
+builders = {'pedestrian':lambda:person(), 'firefighter':lambda:person(True), 'car':lambda:vehicle(), 'fire_engine':lambda:vehicle(True), 'pine':lambda:plant('pine'), 'oak':lambda:plant('oak'), 'chestnut':lambda:plant('chestnut'), 'bush':lambda:plant('bush'), 'olive':lambda:plant('olive'), 'cypress':lambda:plant('cypress')}
 baked={}
 for name, build in builders.items():
     current=bpy.data.collections.new(name)
@@ -192,7 +212,7 @@ for name, build in builders.items():
                 wood_flags.append(material==wood)
                 indices.append(len(indices))
         o.to_mesh_clear()
-    if name in ('pine', 'oak', 'bush', 'olive', 'cypress'):
+    if name in ('pine', 'oak', 'chestnut', 'bush', 'olive', 'cypress'):
         # Weld the vegetation bake to keep large forests compact. The chunk
         # builder computes area-weighted normals after placement.
         lookup = {}; remap = []; ps = []; ns = []; cs = []; ws = []
@@ -211,9 +231,9 @@ for name, build in builders.items():
 bpy.context.preferences.filepaths.save_version = 0
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'emergency_assets.blend'))
 # Contact sheet staged only after saving the reusable source.
-layout={'pedestrian':(-6,-3,0),'firefighter':(-4.5,-3,0),'car':(-.8,-1.5,0),'fire_engine':(4.1,0,0),'pine':(-5,5,0),'oak':(-.7,5.6,0),'bush':(3.4,5.2,0),'olive':(-3,8.8,0),'cypress':(2,8.8,0)}
+layout={'pedestrian':(-6,-3,0),'firefighter':(-4.5,-3,0),'car':(-.8,-1.5,0),'fire_engine':(4.1,0,0),'pine':(-5,5,0),'oak':(-7.5,8.8,0),'chestnut':(-.7,5.6,0),'bush':(3.4,5.2,0),'olive':(-3,8.8,0),'cypress':(2,8.8,0)}
 for name,pos in layout.items():
-    scale=4 if name in ('pine','oak','olive','cypress') else 1.5 if name=='bush' else 1
+    scale=4 if name in ('pine','oak','chestnut','olive','cypress') else 1.5 if name=='bush' else 1
     for o in bpy.data.collections[name].objects:
         o.location=Vector(pos)+o.location*scale
         o.scale*=scale
@@ -224,7 +244,7 @@ box('Ground',(0,1,-.16),(22,20,.25),mat('Studio',(.105,.135,.17)))
 bpy.ops.object.light_add(type='AREA', location=(1,-4,13))
 bpy.context.object.data.energy=2400; bpy.context.object.data.shape='DISK'; bpy.context.object.data.size=9
 bpy.ops.object.camera_add(location=(15,-21,19))
-camera=bpy.context.object; camera.rotation_euler=(Vector((0,1,1))-camera.location).to_track_quat('-Z','Y').to_euler(); camera.data.type='ORTHO'; camera.data.ortho_scale=19
+camera=bpy.context.object; camera.rotation_euler=(Vector((0,3,1.5))-camera.location).to_track_quat('-Z','Y').to_euler(); camera.data.type='ORTHO'; camera.data.ortho_scale=25
 scene=bpy.context.scene; scene.camera=camera; scene.render.engine='CYCLES'; scene.cycles.samples=32
 scene.world.color=(.3,.3,.3); scene.render.resolution_x=1500; scene.render.resolution_y=1200; scene.render.resolution_percentage=100
 scene.render.filepath=str(OUT/'preview.png')

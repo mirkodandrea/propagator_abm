@@ -93,17 +93,12 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
    - Corretto `Sim::tick`: un frame lungo eseguiva step oltre la crisi e oltre la fine del caso. Test `game::sim::tests::the_speed_does_not_change_the_game`: a ×20, a ×120 e con frame lenti, stesse crisi e stesso esito.
    - FPS invariati tra ×0 e ×120. Nessuna frase dei personaggi persa.
    - [ ] Da confermare nel playtest 3: Piano2 a 1,8 minuti potrebbe risultare troppo breve per seguire il fuoco.
-2. [ ] **Vegetazione riconoscibile**, solo grafica (`crates/game/src/vegetation.rs`, modelli da `scripts/build_models.py` → `assets/models/meshes.json`). Fuoco e combustibili non cambiano.
-   - **Pineta** (fuel 11–12): pino marittimo, cioè fusto alto e nudo, rossastro, e chioma a ombrello alta e irregolare, verde scuro-bluastro. Oggi è il modello `pine`, troppo simile all'`oak`.
-   - **Latifoglie** (fuel 4–5): castagno, con chioma grande, tondeggiante e lobata, verde medio brillante e fusto corto. Fuel 4 (umide) leggermente più verde e fitto di fuel 5.
-   - **Macchia** (fuel 7–9): cespugli bassi e tondi, densi, verde oliva-grigio, ben distinti dagli alberi anche dalla vista generale. La densità sale da 7 a 9.
-   - **Prateria** (fuel 1–3): erba paglierina evidente, a ciuffi, sul suolo giallo-oro; fuel 3 (prato secco) più chiaro e dorato. Niente alberi sparsi oltre agli attuali isolati.
-   - **Suolo:** tinta tenue per tipo sotto la vegetazione, che si legga anche a densità 12 % nel browser. Attenzione: `terrain_mesh.rs` ha già abbandonato i colori a classi perché sembravano mimetica. Sfumare, non disegnare a macchie.
-   - **Legenda:** campioni presi dai colori veri del rendering (oggi sono indicativi), con una miniatura per tipo se possibile. Dire perché contano: l'erba corre veloce, la macchia brucia forte, il bosco più lento.
-   - **Prove:**
-     - schermate ravvicinate e generali, prima/dopo, nativo e browser;
-     - FPS non sotto gli attuali ~40 su M4 Pro e 60 nel browser;
-     - non aumentare la densità delle piante (`KIOSK_VEG_DENSITY` 0,5; browser 12 %).
+2. [x] 2026-10-09 **Vegetazione riconoscibile** (`docs/fase5/iterazione5b.md` §2), solo grafica:
+   - nuovi modelli `pine` (pino marittimo) e `chestnut` (castagno) in `scripts/build_models.py`, `bush` più basso;
+   - un solo modello per gruppo, colori distinti per gruppo e per classe, tinte del suolo per gruppo;
+   - legenda con miniature e colori campionati dal rendering.
+   - Piante invariate (551 mila), triangoli da 34,0 a 32,4 M. FPS nativi invariati (mediana 30 → 32).
+   - [ ] FPS nel browser da misurare a finestra in primo piano: la scheda automatizzata in secondo piano viene rallentata da Chrome.
 3. [ ] **Stima d'arrivo dallo stato reale**, non dall'anteprima.
    - Oggi a T+2:37 compare «arrivi ~2–2 min» con la squadra in ritirata (`ui.rs` ~790 usa `Post.eta_s` dell'anteprima).
    - Durante Esegui usare lo stato dei mezzi (`Game::unit_status`): «in postazione», «in arrivo ~N min», «nessun mezzo: <motivo>».
@@ -113,7 +108,10 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
    - X/Y accanto alle barre delle evacuate;
    - 2–3 righe causali per paese, al posto del consiglio fisso, costruite da registro ed esito (es. «preallerta a T+0: partite in 12 min»; «evacuazione a T+1:40: 3 famiglie ancora in casa all'arrivo del fuoco»);
    - nessuna regola nuova: solo dati già prodotti dal motore.
-6. [ ] **Legenda:** vegetazione e chiave della barra in cima, o in schede/sezioni apribili, non in fondo allo scorrimento. «senza via» → «famiglie senza via». Non coprire la scheda di Pian dei Grilli all'apertura.
+6. [x] 2026-10-09 **Legenda** (`iterazione5b.md` §6):
+   - sezioni apribili: in cima vegetazione e barra delle famiglie, «Schede dei paesi» chiusa;
+   - «famiglie senza via»; testo dei tempi a ×40;
+   - chiusa all'avvio, quindi non copre Pian dei Grilli. `KIOSK_LEGEND=1` la apre per le schermate.
 7. [ ] **Schede che si coprono** (scelta all'agente):
    - collisioni tra schede anche con lo zoom;
    - schede compatte durante Esegui;
