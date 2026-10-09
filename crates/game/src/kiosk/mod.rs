@@ -4,7 +4,8 @@
 //! what the player is composing (the proposed plan), asks the game for its
 //! preview, commits it on request and runs the clock. No rules live here.
 //!
-//! Flow: **Pianifica** (×0, the proposed plan is previewed on the map) →
+//! Flow: **Pianifica** (×0: first the map with orders locked until «Inizia
+//! la partita», then how to play, then the proposed plan is previewed) →
 //! **Esegui** (×N) ⇄ **Crisi** (×1 with a countdown, raised by the game) →
 //! **Fine** (facts per district, against the same fire with no orders). No
 //! inactivity reset: a new game starts from the debrief's «Riprova» / «Altro
@@ -97,6 +98,11 @@ pub struct Kiosk {
     /// The opening screen is showing (a new visitor): at launch and after the
     /// operator's «Nuova partita», not after «Riprova» / «Altro incendio».
     pub intro: bool,
+    /// The visitor pressed «Inizia la partita». Before that the map, the fire
+    /// and the chips show, but no order can be given (user, 2026-10-09).
+    pub started: bool,
+    /// How to play, shown once the game has started, until «Ho capito».
+    pub help: bool,
     /// Real seconds the player has at a crisis; the operator can lengthen it
     /// for slow readers.
     pub crisis_s: f32,
@@ -140,6 +146,8 @@ impl Kiosk {
             zoom: 1.0,
             crisis_s: CRISIS_S,
             intro: true,
+            started: false,
+            help: false,
             pick: String::new(),
             reset_armed: None,
             #[cfg(target_arch = "wasm32")]
@@ -217,6 +225,12 @@ impl Kiosk {
         }
     }
 
+    /// Whether the chips take orders: not before «Inizia la partita», nor
+    /// while how to play is on screen.
+    pub fn can_order(&self) -> bool {
+        self.started && !self.help
+    }
+
     pub fn enter(&mut self, phase: Phase) {
         self.phase = phase;
         self.phase_t = 0.0;
@@ -255,6 +269,8 @@ pub fn new_game(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<Si
             kiosk.dirty = true;
             kiosk.error = None;
             kiosk.crisis = None;
+            kiosk.started = false;
+            kiosk.help = false;
             kiosk.start_baseline();
             kiosk.enter(Phase::Pianifica);
             restarted.send(SimRestarted);
@@ -372,7 +388,19 @@ pub fn shots(
             kiosk.intro = false;
             stage.1 = 0.0;
         }
-        0 if !kiosk.intro && stage.1 > 3.0 => {
+        // before «Inizia la partita» (orders locked), then how to play
+        0 if !kiosk.intro && !kiosk.started && stage.1 > 3.0 => {
+            snap("0b_pronto");
+            kiosk.started = true;
+            kiosk.help = true;
+            stage.1 = 0.0;
+        }
+        0 if kiosk.help && stage.1 > 1.5 => {
+            snap("0c_come_si_gioca");
+            kiosk.help = false;
+            stage.1 = 0.0;
+        }
+        0 if kiosk.can_order() && stage.1 > 1.5 => {
             snap("1_pianifica");
             // the locality the fire was picked for first, then the others
             let near = sim.district_index(&sim.case.near).unwrap_or(0);

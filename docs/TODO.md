@@ -32,6 +32,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Decisioni dell'utente
 
+- 2026-10-09: **prima di iniziare la partita nessun ordine; appena iniziata un piccolo tutorial.** Scelta dell'utente: stato «pronto» a ×0. Dopo «Inizia», «Riprova» o «Altro incendio» la mappa mostra fuoco e schede con i pulsanti degli ordini disattivati; «Inizia la partita» apre «Come si gioca» (4 passi della volontaria); gli ordini si sbloccano a «Ho capito», poi si pianifica a ×0 e «Avvia». Fatto: `Kiosk::started`/`help`/`can_order` (`kiosk/mod.rs`), `how_to_play` (`kiosk/ui.rs`); la partita scriptata fotografa `0b_pronto` e `0c_come_si_gioca`.
 - 2026-10-09: «correggi le cose minori per ora», **senza playtest dopo**: punti 6–9 del playtest 3 (fatto).
 
 - 2026-10-09: **«Procedi»**: correggere i punti 1–5 del playtest 3 prima del checkpoint 5 (fatto: iterazione 5c). Commit e push richiesti. I resoconti dei playtest vanno dati all'utente in italiano.

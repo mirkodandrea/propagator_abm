@@ -340,10 +340,19 @@ fn speaking<R>(ctx: &egui::Context, faces: Option<&Portraits>, who: Who, mood: M
 }
 
 /// Outside a crisis: the latest line, or at the start how to begin.
-fn speaker(ctx: &egui::Context, k: &Kiosk, sim: &Sim, speech: &Speech, faces: Option<&Portraits>) {
+fn speaker(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, speech: &Speech, faces: Option<&Portraits>) {
+    if k.phase == Phase::Pianifica && k.help {
+        how_to_play(ctx, k, faces);
+        return;
+    }
     let tip;
     let line = match &speech.now {
         Some((l, _)) => l,
+        None if k.phase == Phase::Pianifica && !k.started => {
+            let text = format!("{} Guarda la mappa: dove sono i paesi e dove va il fuoco. Poi premi «Inizia la partita».", the_fire(k, sim));
+            tip = Line { who: Who::Volontaria, mood: Mood::Preoccupato, text };
+            &tip
+        }
         None if k.phase == Phase::Pianifica => {
             let text = if sim.time_s() <= rocca::STEP_S {
                 format!("{} Scegli chi difendere per primo e chi avvisare, poi premi «Avvia».", the_fire(k, sim))
@@ -373,6 +382,40 @@ fn speaker(ctx: &egui::Context, k: &Kiosk, sim: &Sim, speech: &Speech, faces: Op
     speaking(ctx, faces, line.who, line.mood, |ui| {
         characters::bubble(ui, line.who, |ui| characters::says(ui, line.who, &line.text, BUBBLE_W));
     });
+}
+
+/// Just after «Inizia la partita»: what to do, in four steps, told by the
+/// volunteer; the orders unlock at «Ho capito».
+fn how_to_play(ctx: &egui::Context, k: &mut Kiosk, faces: Option<&Portraits>) {
+    let who = Who::Volontaria;
+    let steps = [
+        (Icon::Shield, AMBER, "«Difendi»: scegli i paesi da difendere e in che ordine. Autobotti e squadra vanno dove indichi, se ci arrivano in tempo.".to_string()),
+        (Icon::Bell, AMBER, "«Preallerta» fa preparare le famiglie; «Evacua» le fa partire. Un ordine confermato non si ritira.".to_string()),
+        (Icon::Play, GREEN, "Premi «Avvia»: il tempo corre. Puoi mettere in pausa e cambiare il piano quando vuoi.".to_string()),
+        (Icon::Alert, ORANGE, format!("Se succede qualcosa di grave il gioco rallenta: hai {:.0} secondi per decidere.", k.crisis_s)),
+    ];
+    let mut done = false;
+    speaking(ctx, faces, who, Mood::Calmo, |ui| {
+        characters::bubble(ui, who, |ui| {
+            ui.set_max_width(BUBBLE_W + 80.0);
+            ui.label(RichText::new("Come si gioca").size(20.0).strong().color(Color32::BLACK));
+            ui.add_space(4.0);
+            for (icon, colour, text) in &steps {
+                ui.horizontal(|ui| {
+                    egui::Frame::none().fill(Color32::from_gray(40)).rounding(6.0).inner_margin(4.0).show(ui, |ui| icons::show(ui, *icon, 26.0, *colour));
+                    ui.add(egui::Label::new(RichText::new(text).size(17.0).color(Color32::BLACK)).wrap());
+                });
+                ui.add_space(2.0);
+            }
+            ui.label(RichText::new("Alla fine vedrai com'è andata, confrontata con lo stesso incendio senza ordini.").size(15.0).color(Color32::from_gray(70)));
+        });
+        ui.add_space(8.0);
+        let b = egui::Button::new(RichText::new("Ho capito").size(24.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(10.0).min_size(egui::vec2(150.0, 52.0));
+        done = ui.add(b).clicked();
+    });
+    if done {
+        k.help = false;
+    }
 }
 
 /// Simulated seconds the volunteer explains how to play, after which she
@@ -811,6 +854,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
     let mut order = k.proposed.priorities.clone();
     let mut civil = k.proposed.civil.clone();
     let mut changed = false;
+    let can_order = k.can_order();
     // While the plan in force runs and nothing is being composed, chips are
     // compact, so three of them fit near each other; the one under the
     // pointer opens (downward, so what was under the pointer stays put).
@@ -1059,7 +1103,8 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         ui.label(RichText::new(journey).size(14.0).color(BLUE));
                     });
                 }
-                // controls
+                // controls, greyed until the game has started
+                ui.add_enabled_ui(can_order, |ui| {
                 ui.horizontal(|ui| match rank {
                     Some(r) => {
                         if r == 0 { ui.allocate_space(egui::vec2(44.0, 44.0)); }
@@ -1089,6 +1134,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                             changed = true;
                         }
                     }
+                });
                 });
                 if (civil[d] != sim.active.civil[d] || next != now) && k.phase != Phase::Pianifica {
                     pill(ui, "da confermare", AMBER);
@@ -1222,6 +1268,9 @@ fn proposal(ui: &mut egui::Ui, k: &Kiosk, sim: &Sim) {
 fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
     let pending = k.proposed != sim.active;
     let label = match k.phase {
+        // how to play is on screen: «Ho capito» is the button
+        Phase::Pianifica if k.help => return,
+        Phase::Pianifica if !k.started => Some("Inizia la partita"),
         Phase::Pianifica if sim.time_s() > rocca::STEP_S => Some("Conferma e riprendi"),
         Phase::Pianifica => Some("Avvia"),
         Phase::Esegui if pending => Some("Conferma"),
@@ -1246,6 +1295,10 @@ fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
                     let b = egui::Button::new(RichText::new(l).size(26.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(10.0).min_size(egui::vec2(320.0, 58.0));
                     if ui.add(b).clicked() {
                         match k.phase {
+                            Phase::Pianifica if !k.started => {
+                                k.started = true;
+                                k.help = true;
+                            }
                             Phase::Pianifica => {
                                 commit(k, sim);
                                 k.enter(Phase::Esegui);
