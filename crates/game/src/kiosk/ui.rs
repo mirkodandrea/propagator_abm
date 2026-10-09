@@ -154,6 +154,7 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
                 let (text, colour) = match k.phase {
                     Phase::Pianifica if sim.time_s() > rocca::STEP_S => ("IN PAUSA · puoi cambiare il piano".to_string(), AMBER),
                     Phase::Pianifica => ("PIANIFICA · tempo fermo".to_string(), GREY),
+                    Phase::Esegui if sim.speed > k.speed => (format!("IN CORSO · niente di nuovo, tempo veloce ×{:.0}", sim.speed), GREEN),
                     Phase::Esegui => (format!("IN CORSO · tempo accelerato ×{:.0}", k.speed), GREEN),
                     Phase::Crisi => (format!("CRISI · ×1 · {:.0} s", (k.crisis_s - k.phase_t).max(0.0).ceil()), ORANGE),
                     Phase::Fine => ("FINE".to_string(), GREY),
@@ -806,6 +807,11 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                         ui.label(RichText::new(format!("{}: {}.", d.name, why.join("; "))).size(15.0).color(Color32::WHITE));
                     }
                 }
+            }
+            // the evacuation orders, with when they were given: the timing is the lesson
+            let evac: Vec<String> = sim.log.iter().filter(|e| e.text.starts_with("evacuazione:")).map(|e| format!("{} {}", e.text.trim_start_matches("evacuazione: "), clock(e.at_s))).collect();
+            if !evac.is_empty() {
+                ui.label(RichText::new(format!("Evacuazioni ordinate: {}. Prima si parte, meno famiglie il fuoco trova in casa.", evac.join(", "))).size(15.0).color(GREY));
             }
             if o.units_lost > 0 {
                 let lost: Vec<&str> = sim.crews.units.iter().filter(|u| u.state == abm::suppression::UnitState::Lost).map(|u| u.callsign.as_str()).collect();

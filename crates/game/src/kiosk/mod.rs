@@ -29,6 +29,11 @@ pub const TITLE: &str = "Rocca Ventosa";
 pub const RUN_SPEED: f32 = 20.0;
 /// Real seconds the player has at a crisis (spec: ~25 s at ×1).
 pub const CRISIS_S: f32 = 25.0;
+/// How many times faster the game runs while nothing is happening
+/// (`rocca::Game::is_quiet`): the waits after the orders were the dull part.
+pub const QUIET_BOOST: f32 = 3.0;
+/// Simulated seconds without events before the game counts as quiet.
+pub const QUIET_S: i64 = 10 * 60;
 
 pub fn window_mode() -> WindowMode {
     if cfg!(target_arch = "wasm32") || std::env::var("KIOSK_WINDOWED").is_ok() {
@@ -273,6 +278,8 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
     kiosk.advance_baseline();
     kiosk.phase_t += dt;
     sim.speed = match kiosk.phase {
+        // faster while nothing is happening and nothing is being composed
+        Phase::Esegui if kiosk.proposed == sim.active && sim.is_quiet(QUIET_S) => kiosk.speed * QUIET_BOOST,
         Phase::Esegui => kiosk.speed,
         Phase::Crisi => 1.0,
         _ => 0.0,

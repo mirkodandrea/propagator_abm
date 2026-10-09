@@ -130,7 +130,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - «fuoco tra le case» al posto di «0,0 km»;
   - conteggi delle famiglie completi («raggiunte dal fuoco»);
   - debrief con il perché per paese e le definizioni sempre visibili.
-- [ ] **Da decidere (utente): l'evacuazione non costa nulla nel modello.** Misura su Coste2_gira, seme 1 (`target/release/rocca`):
+- [x] 2026-10-09 (utente: «continua con le tue soluzioni») **Costo dell'evacuazione misurato** (`examples/costi.rs`, `docs/fase5/costi_evacuazione.md`). I costi esistono già nel modello (i mezzi rallentati dal traffico, le famiglie esposte in strada), ma con evacuazioni precoci non incidono: i mezzi sono in postazione a T+12 e nessuno viene colto in strada. Conta invece **quando** si evacua: tutto a T+0 lascia 3 famiglie colte in casa, a T+40 10, a T+90 15. Nessuna penalità inventata. Il debrief mostra l'orario degli ordini di evacuazione e le evacuazioni precauzionali.
+- Misura originale: Misura su Coste2_gira, seme 1 (`target/release/rocca`):
   - nessun ordine: 73 case colpite, 16 famiglie colte in casa;
   - Il Piano per primo: 27 / 17;
   - evacuare tutto: 73 / 3;
@@ -140,7 +141,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - traffico dell'evacuazione che rallenta i mezzi sulle stesse strade;
   - famiglie in strada esposte se il fuoco taglia il percorso;
   - debrief che mostri le famiglie spostate dove il fuoco non è arrivato.
-- [ ] **Da decidere (utente): durata.** Partita di circa 10 minuti reali a ×20, con tratti morti dopo gli ordini (quattordicenne). Opzioni: ×30-40 tra una decisione e l'altra, partita di 2 ore simulate invece di 3, accelerazione automatica quando non c'è nulla da decidere.
+- [x] 2026-10-09 **Durata:** accelerazione automatica ×3 quando nulla cambia (`Game::is_quiet`: 10 min senza eventi e nessun mezzo in movimento), le crisi restano a ×1. Partita da 9–10 a **4–6 minuti reali** (`examples/durata.rs`, `docs/fase5/durata.md`).
+- Prima: Partita di circa 10 minuti reali a ×20, con tratti morti dopo gli ordini (quattordicenne). Opzioni: ×30-40 tra una decisione e l'altra, partita di 2 ore simulate invece di 3, accelerazione automatica quando non c'è nulla da decidere.
 - [ ] Dai roast, ancora aperto: navigazione da tastiera (egui sul canvas), forme oltre ai colori per gli anelli, layout a finestra stretta (900×600), stato perso con la ricarica della pagina, verifica dei percorsi verso le aree di attesa, supporto ai ritardatari dell'evacuazione (scelta di design).
 - [ ] Dal playtest GPT, ancora aperto: icone dei mezzi leggibili nella vista generale (oggi si leggono le etichette); indicatori aggregati per le evacuazioni sulla mappa; click che a volte sembrano non rispondere (forse solo per l'input automatizzato, da verificare con persone vere); distinguere mezzi assegnati / in viaggio / sul posto; mostrare sulla mappa perché una postazione è irraggiungibile.
 - [ ] **Checkpoint umano 5.**

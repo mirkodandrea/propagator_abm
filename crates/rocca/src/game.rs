@@ -367,6 +367,16 @@ impl Game {
         }
     }
 
+    /// Nothing is changing that the player would want to watch closely: no
+    /// event for `quiet_s` simulated seconds and no unit on the move. The
+    /// kiosk runs faster then; it is pacing, not a rule of the game.
+    pub fn is_quiet(&self, quiet_s: i64) -> bool {
+        let now = self.time_s();
+        let calm_log = self.log.last().is_none_or(|e| now - e.at_s >= quiet_s);
+        let parked = self.crews.units.iter().all(|u| !matches!(u.state, UnitState::Moving | UnitState::Withdrawing));
+        calm_log && parked
+    }
+
     /// The same fire with no orders at all, to the end of the case: what the
     /// debrief compares the player's game with.
     pub fn without_orders(data_dir: &Path, case: &str, seed: u64) -> Result<Outcome> {
