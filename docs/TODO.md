@@ -76,6 +76,12 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 - [x] 2026-10-09 **Feedback del playtest umano: leggibilità e tempi** (`docs/fase5/playtest_feedback.md`): etichette per i nuclei separati di Le Ghiande, collegamenti alla scheda comune; legenda di numeri/barre/mezzi e combustibili; stato delle famiglie e stime di arrivo nelle schede; viaggio dell'evacuazione dai percorsi reali (distinto da avviso, preparazione e code); aggiornamenti recenti sempre visibili e cronologia completa; indicazioni persistenti e pulsante «Pausa e modifica piano». Verificati test ABM/Rocca e build nativa; controllo visivo con partita scriptata.
 - [x] 2026-10-09 (utente) Proporzioni da diorama, solo grafica (`crates/game/src/visual_scale.rs`): edifici ×1,9 in pianta e ×2,5 in altezza, auto ×3, persone ×4,5, mezzi ×7, alberi ×1,6, arbusti ×1,25. Coordinate, fuoco e percorsi invariati.
+- [x] 2026-10-09 **Playtest automatico 2** (`docs/fase5/playtest_gpt2/README.md`): quattro personaggi GPT (nuova, quattordicenne, min-maxer, UX). Nessuna strategia dominante su Coste2_gira: AFK 16 / 73, evacua tutti 3 / 71, preallerta e poi cambio piano 1 / 73 (famiglie / case).
+- [ ] **Stima d'arrivo dallo stato reale**, non dall'anteprima (`ui.rs`, `Post.eta_s`): a T+2:37 «arrivi ~2–2 min» con la squadra in ritirata. Scrivere «~2 min» quando i due valori coincidono.
+- [ ] Motivo del «nessun arrivo previsto» dentro la scheda, e nell'anteprima prima di confermare (es. «A2 tornerà alla base»).
+- [ ] Debrief: X/Y accanto alle barre delle evacuate; 2–3 righe causali per paese al posto del consiglio fisso.
+- [ ] Legenda: vegetazione e chiave delle barre in cima o in vista; «senza via» → «famiglie senza via».
+- [ ] Da decidere con l'utente dopo una prova al chiosco: schede che coprono la mappa e tra loro (zoom, legenda); frasi della volontaria a metà partita con fatti nuovi invece del tutorial; presentazione di «Altro incendio».
 - [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen e a 900×600.
 
 - [x] 2026-10-08 Mappa a tutto schermo con schede per quartiere (rango, fuoco, mezzi ora e dopo la conferma, Difendi / più importante / non difendere, Preallerta / Evacua), etichette dei mezzi, rotte attive (verdi) e proposte (bianche tratteggiate), barra in alto, crisi con countdown, pulsante unico, debrief contro «senza ordini» con Riprova / Altro incendio, barra operatore F2 (`docs/fase5/README.md`).
