@@ -8,6 +8,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - 5b: punti 1–10 (`docs/fase5/iterazione5b.md`), compreso il playtest automatico 3 (`docs/fase5/playtest_gpt3/README.md`);
   - 5c: punti 1–5 del playtest 3 (`docs/fase5/iterazione5c.md`).
 - **Prossima azione: checkpoint 5, umano** (`docs/fase5/README.md`). Una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), con prima azione e debrief. Non procedere senza conferma dell'utente; dopo viene la fase 6 (playtest).
+- **Playtest 4** (Giulia, prima volta, Haiku 5.5): fatto, difetti da decidere con l'utente (`docs/fase5/playtest_haiku/`, sezione «Playtest 4» della fase 5).
 - **Ancora aperti** (vedi «Dal playtest 3» in fondo alla fase 5):
   - layout a 900×600: schede sovrapposte e barra in alto sopra legenda e zoom (punti 6–9 del playtest 3 chiusi il 2026-10-09);
   - FPS nel browser a finestra in primo piano;
@@ -33,6 +34,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 ## Decisioni dell'utente
 
 - 2026-10-09: **prima di iniziare la partita nessun ordine; appena iniziata un piccolo tutorial.** Scelta dell'utente: stato «pronto» a ×0. Dopo «Inizia», «Riprova» o «Altro incendio» la mappa mostra fuoco e schede con i pulsanti degli ordini disattivati; «Inizia la partita» apre «Come si gioca» (4 passi della volontaria); gli ordini si sbloccano a «Ho capito», poi si pianifica a ×0 e «Avvia». Fatto: `Kiosk::started`/`help`/`can_order` (`kiosk/mod.rs`), `how_to_play` (`kiosk/ui.rs`); la partita scriptata fotografa `0b_pronto` e `0c_come_si_gioca`.
+- 2026-10-09: playtest completo con un visitatore alla prima volta e almeno 3 partite; con Codex senza crediti, **farlo fare ad Haiku 5.5**.
 - 2026-10-09: «correggi le cose minori per ora», **senza playtest dopo**: punti 6–9 del playtest 3 (fatto).
 
 - 2026-10-09: **«Procedi»**: correggere i punti 1–5 del playtest 3 prima del checkpoint 5 (fatto: iterazione 5c). Commit e push richiesti. I resoconti dei playtest vanno dati all'utente in italiano.
@@ -164,6 +166,24 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
    - **crisi a 900 px:** la riga dei pulsanti va a capo, quindi «Conferma» resta sullo schermo (prima era tagliata).
    - [ ] A 900×600 restano due problemi: le schede si sovrappongono tra loro e la barra in alto copre «Legenda» e lo zoom.
    - Il punto «ritratti illustrati e diorama low-poly sono due stili» resta come osservazione: non ci sono interventi previsti.
+
+#### Playtest 4: Giulia, prima volta, tre partite (2026-10-09, Haiku 5.5)
+
+Prompt e resoconto in `docs/fase5/playtest_haiku/`. Codex aveva finito i crediti dopo 5 minuti, quindi (utente) l'ha giocato un agente Haiku 5.5 con Chrome DevTools, sulla build di `f6dced3`.
+
+- Esiti (famiglie colte in casa / case colpite): P1 alla cieca 9 / 71; P2 «Riprova» evacuando tutti a T+0, 3 / 73; P3 «Altro incendio» 3 / 24.
+- Da correggere (verificati sulle schermate dove indicato):
+  - [ ] finale: la colonna «in casa» (colte dal fuoco, 0) e il «Perché» («36 rimaste a casa») sembrano in contraddizione (verificato su `p2-02-finale.jpg`);
+  - [ ] crisi «Scoperto»: «Autobotte 1 … è libero ora», va concordato al femminile (verificato su `p2-01-decisione.jpg`);
+  - [ ] «~102» senza unità: si legge come un numero qualsiasi (anche nel diario di Codex);
+  - [ ] Difendi, Preallerta ed Evacua non spiegati sul pulsante; «Nessuna priorità di difesa» non dice nulla;
+  - [ ] crisi di 16–22 s: il testo non si legge in tempo. Da confermare con persone, perché lo strumento rallenta;
+  - [ ] ×40 → ×120 senza spiegazione;
+  - [ ] gergo: «nessuna postazione raggiungibile e sicura», «senza via»;
+  - [ ] freccia del vento senza «da dove» (anche nel diario di Codex);
+  - [ ] da verificare: ordine in pausa senza effetto visibile prima di Conferma; pulsanti solo al passaggio del mouse; click finito su Preallerta per una scheda che si sposta. Possibile errore di coordinate dell'agente.
+- Funziona: barra «a casa / si preparano / in viaggio»; stima della strada; finale con il contorno «senza ordini» e il «Perché».
+- «Evacua tutto a T+0» resta la scelta che vince sulle persone (3 famiglie colte in tutte le prove).
 
 - [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen e a 900×600.
 
