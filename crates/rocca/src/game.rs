@@ -111,6 +111,12 @@ pub struct Game {
     planned: bool,
     next_review_s: i64,
     caught_at: Vec<Option<i64>>,
+    /// Per household: when it left home (on the road or already safe).
+    left_at: Vec<Option<i64>>,
+    /// Per district: when the pre-alert and the evacuation order went out.
+    ordered_at: Vec<(Option<i64>, Option<i64>)>,
+    /// Per district: simulated seconds with at least one unit on its post.
+    defended_s: Vec<i64>,
     /// Per unit: where it last moved and when, to tell a unit stuck on a
     /// closed road from one on its way.
     moved: Vec<(Pos, i64)>,
@@ -156,6 +162,9 @@ impl Game {
             planned: false,
             next_review_s: 0,
             caught_at: vec![None; n],
+            left_at: vec![None; n],
+            ordered_at: vec![(None, None); districts.len()],
+            defended_s: vec![0; districts.len()],
             moved: crews.units.iter().map(|u| (u.pos, 0)).collect(),
             logged: crews.units.iter().map(|u| u.state).collect(),
             scn,
@@ -210,6 +219,12 @@ impl Game {
                 Civil::Evacua => self.agents.order_evacuation_of(&ids),
                 Civil::Nessuno => 0,
             };
+            let at = &mut self.ordered_at[d];
+            match new {
+                Civil::Preallerta => at.0 = at.0.or(Some(now)),
+                Civil::Evacua => at.1 = at.1.or(Some(now)),
+                Civil::Nessuno => {}
+            }
             let what = if new == Civil::Evacua { "evacuazione" } else { "preallerta" };
             self.log.push(LogEntry { at_s: now, text: format!("{what}: {} ({n} famiglie)", self.districts[d].name) });
         }
@@ -430,9 +445,26 @@ impl Game {
     }
 
     /// Caught at home: still there, and the fire is on them (the house is
-    /// alight or the threat at the door is alarming), or trapped.
+    /// alight or the threat at the door is alarming), or trapped. Also the
+    /// debrief's bookkeeping: when each household left, and how long each
+    /// district had a unit on its post.
     fn note(&mut self) {
         let now = self.time_s();
+        for (i, h) in self.agents.households.iter().enumerate() {
+            if self.left_at[i].is_none() && matches!(h.status, Status::Evacuating | Status::Evacuated) {
+                self.left_at[i] = Some(now);
+            }
+        }
+        let mut held = vec![false; self.districts.len()];
+        for post in self.posts.iter().flatten() {
+            let u = &self.crews.units[post.unit];
+            if matches!(u.state, UnitState::Working | UnitState::Staged) && dist(u.pos, post.at) <= ON_POST_M {
+                held[post.district] = true;
+            }
+        }
+        for (d, h) in held.into_iter().enumerate() {
+            self.defended_s[d] += STEP_S * h as i64;
+        }
         let ex = self.fire.exposure().fields();
         for (i, h) in self.agents.households.iter().enumerate() {
             if self.caught_at[i].is_some() || !Self::at_home(h.status) {
@@ -476,5 +508,64 @@ impl Game {
 
     pub fn caught_at(&self, household: usize) -> Option<i64> {
         self.caught_at[household]
+    }
+
+    /// Two or three lines on why district `d` ended as it did, for the
+    /// debrief: the civil order and how fast families left, the defence, and
+    /// when the fire reached families still at home. Only facts the game
+    /// recorded; no rule and no advice.
+    pub fn story(&self, d: usize) -> Vec<String> {
+        let hh = &self.districts[d].households;
+        let n = hh.len();
+        let clock = |s: i64| format!("T+{}:{:02}", s / 3600, (s / 60) % 60);
+        let fam = |k: usize| if k == 1 { "1 famiglia".to_string() } else { format!("{k} famiglie") };
+        let mut out = vec![];
+        // the order, and how long families took to leave after it
+        let (pre, evac) = self.ordered_at[d];
+        let left: Vec<i64> = hh.iter().filter_map(|&i| self.left_at[i]).collect();
+        let order = match (pre, evac) {
+            (Some(p), Some(e)) => Some((format!("Preallerta a {}, evacuazione a {}", clock(p), clock(e)), p)),
+            (None, Some(e)) => Some((format!("Evacuazione a {}", clock(e)), e)),
+            (Some(p), None) => Some((format!("Preallerta a {}, nessun ordine di evacuazione", clock(p)), p)),
+            (None, None) => None,
+        };
+        out.push(match order {
+            Some((what, from)) => {
+                let after: Vec<i64> = left.iter().filter(|&&t| t >= from).map(|&t| t - from).collect();
+                if after.is_empty() {
+                    format!("{what}: nessuna famiglia è partita.")
+                } else {
+                    let mut a = after;
+                    a.sort_unstable();
+                    let min = |t: i64| (t + 59) / 60;
+                    if a.len() == 1 {
+                        format!("{what}: 1 famiglia partita, dopo {} min.", min(a[0]))
+                    } else {
+                        format!("{what}: {} famiglie partite su {n}, metà entro {} min.", a.len(), min(a[(a.len() - 1) / 2]))
+                    }
+                }
+            }
+            None if left.is_empty() => "Nessun ordine alla popolazione: nessuna famiglia è partita.".into(),
+            None if left.len() == 1 => format!("Nessun ordine alla popolazione: 1 famiglia su {n} è partita da sola."),
+            None => format!("Nessun ordine alla popolazione: {} famiglie su {n} sono partite da sole.", left.len()),
+        });
+        // the defence
+        let rank = self.active.rank(d);
+        out.push(match (self.defended_s[d], rank) {
+            (0, None) => "Nessun mezzo: non era tra le priorità.".into(),
+            (0, Some(r)) => format!("Priorità {}, ma nessun mezzo è mai arrivato in postazione.", r + 1),
+            (s, _) if s >= 3600 => format!("Mezzi in postazione per {} h {:02} min.", s / 3600, (s / 60) % 60),
+            (s, _) => format!("Mezzi in postazione per {} min.", (s + 59) / 60),
+        });
+        // the fire at the door
+        let caught: Vec<i64> = hh.iter().filter_map(|&i| self.caught_at[i]).collect();
+        if let Some(&first) = caught.iter().min() {
+            out.push(if caught.len() == 1 {
+                format!("Il fuoco ha raggiunto 1 famiglia ancora in casa, a {}.", clock(first))
+            } else {
+                format!("Il fuoco ha raggiunto {} ancora in casa, la prima a {}.", fam(caught.len()), clock(first))
+            });
+        }
+        out
     }
 }

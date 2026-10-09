@@ -154,3 +154,17 @@ fn arrivals_follow_the_units() {
     }
     assert!(arrived, "no unit reached its post in 30 min");
 }
+
+/// The debrief's lines come from what happened: an evacuation order shows up
+/// with its time and the families that left, and the place no unit was sent
+/// to says so.
+#[test]
+fn the_story_tells_what_happened() {
+    let (g, _) = run("Borgo2", &["Castelvento"], &[("Castelvento", Civil::Evacua)], 180);
+    let town = g.story(idx(&g, "Castelvento"));
+    assert!(town[0].starts_with("Evacuazione a T+0:00: "), "{town:?}");
+    assert!(town[0].contains("famiglie partite su 160"), "{town:?}");
+    assert!(town[1].starts_with("Mezzi in postazione per"), "{town:?}");
+    let other = g.story(idx(&g, "Grilli"));
+    assert!(other.iter().any(|l| l == "Nessun mezzo: non era tra le priorità."), "{other:?}");
+}

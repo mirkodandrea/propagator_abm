@@ -106,10 +106,10 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 4. [x] 2026-10-09 **Motivo nella scheda:**
    - senza mezzi, la scheda dice perché, da `uncovered` / priorità / minaccia;
    - nell'anteprima, «X tornerà alla base» per i mezzi che il nuovo piano richiama.
-5. [ ] **Debrief con il perché:**
-   - X/Y accanto alle barre delle evacuate;
-   - 2–3 righe causali per paese, al posto del consiglio fisso, costruite da registro ed esito (es. «preallerta a T+0: partite in 12 min»; «evacuazione a T+1:40: 3 famiglie ancora in casa all'arrivo del fuoco»);
-   - nessuna regola nuova: solo dati già prodotti dal motore.
+5. [x] 2026-10-09 **Debrief con il perché** (`iterazione5b.md` §5):
+   - X/Y accanto alle barre;
+   - «Perché» da `Game::story` (ordini, partenze, mezzi in postazione, fuoco alla porta);
+   - test `fase3::the_story_tells_what_happened` e `docs/fase5/debrief_righe.md`.
 6. [x] 2026-10-09 **Legenda** (`iterazione5b.md` §6):
    - sezioni apribili: in cima vegetazione e barra delle famiglie, «Schede dei paesi» chiusa;
    - «famiglie senza via»; testo dei tempi a ×40;

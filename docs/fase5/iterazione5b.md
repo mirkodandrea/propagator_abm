@@ -1,6 +1,6 @@
 # Iterazione 5b: velocità, vegetazione leggibile, correzioni del playtest 2
 
-Stato: **in corso.** Fatti i punti 1, 2, 3, 4 e 6 di `docs/TODO.md` e parte del 9. Restano i punti 5, 7, 8 e il resto del 9, poi il playtest automatico 3.
+Stato: **in corso.** Fatti i punti 1–6 di `docs/TODO.md` e parte del 9. Restano i punti 7, 8 e il resto del 9, poi il playtest automatico 3.
 
 ## 1. Velocità tra i turni
 
@@ -87,6 +87,21 @@ Browser (12 % di vegetazione):
 
 ![schede durante Esegui, T+0:05](img/5b/schede_esegui.jpg)
 ![anteprima alla crisi](img/5b/scheda_anteprima_crisi.jpg)
+
+## 5. Debrief con il perché
+
+- Accanto alle barre delle evacuate c'è il conteggio X/Y.
+- Il consiglio fisso della volontaria lascia il posto a «Perché»: 2–3 righe per paese da `rocca::Game::story`. Righe:
+  - l'ordine alla popolazione, con l'ora, e quante famiglie sono partite e in quanto tempo (metà entro N min);
+  - per quanto tempo il paese ha avuto mezzi in postazione, oppure perché non ne ha avuti;
+  - quando il fuoco ha raggiunto famiglie ancora in casa.
+- Il motore ora registra tre fatti, senza regole nuove: l'ora di partenza di ogni famiglia, l'ora degli ordini per paese e il tempo con mezzi in postazione per paese.
+- La frase sulla realtà («quando arriva l'ordine di evacuazione si parte subito») resta come nota in fondo: è un'indicazione di sicurezza, non un consiglio di gioco.
+- **Prove:**
+  - test `fase3::the_story_tells_what_happened`;
+  - tabella per i tre casi e tre piani in `docs/fase5/debrief_righe.md`. In Coste2_gira, a Le Ghiande, le famiglie colte in casa sono 9 senza ordini, 1 con la preallerta e 3 con l'evacuazione.
+
+![debrief](img/5b/debrief.jpg)
 
 ## Incognite
 

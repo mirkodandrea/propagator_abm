@@ -150,7 +150,7 @@ pub fn draw(
     view_controls(ctx, k);
     speech.update(&sim, ctx.input(|i| i.time));
     if k.phase == Phase::Fine {
-        debrief(ctx, k, &mut sim, &mut restarted, faces);
+        debrief(ctx, k, &mut sim, &mut restarted);
     } else {
         legend(ctx);
         if k.phase == Phase::Crisi {
@@ -1213,7 +1213,7 @@ fn timeline(ui: &mut egui::Ui, sim: &Sim, width: f32) {
 }
 
 /// The end: what your plan changed, against the same fire with no orders.
-fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, faces: Option<&Portraits>) {
+fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
     let o = sim.outcome();
     let base = k.baseline();
     let mut again = None;
@@ -1271,7 +1271,10 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                     ui.label(RichText::new(&d.name).size(19.0).strong().color(Color32::WHITE));
                     compare_bars(ui, x.caught, bx.map(|b| b.caught), scale, BLUE);
                     compare_bars(ui, x.homes_hit, bx.map(|b| b.homes_hit), scale, ORANGE);
-                    icons::stack_bar(ui, 120.0, &[(x.evacuated, GREEN), (x.households - x.evacuated, Color32::from_gray(80))]);
+                    ui.horizontal(|ui| {
+                        icons::stack_bar(ui, 120.0, &[(x.evacuated, GREEN), (x.households - x.evacuated, Color32::from_gray(80))]);
+                        ui.label(RichText::new(format!("{}/{}", x.evacuated, x.households)).size(15.0).color(GREEN));
+                    });
                     ui.end_row();
                 }
             });
@@ -1288,12 +1291,24 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             });
             ui.add_space(10.0);
             timeline(ui, sim, 740.0);
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                characters::portrait(ui, faces, Who::Volontaria, Mood::Calmo, 84.0);
-                ui.add_space(18.0);
-                characters::bubble(ui, Who::Volontaria, |ui| characters::says(ui, Who::Volontaria, REAL_LIFE, 560.0));
-            });
+            // why each place ended as it did: what the game recorded
+            ui.label(RichText::new("Perché").size(17.0).strong().color(Color32::WHITE));
+            for d in 0..sim.districts.len() {
+                ui.horizontal_top(|ui| {
+                    ui.allocate_ui_with_layout(egui::vec2(130.0, 18.0), egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                        ui.set_min_width(130.0);
+                        ui.label(RichText::new(&sim.districts[d].name).size(15.0).strong().color(Color32::WHITE));
+                    });
+                    ui.vertical(|ui| {
+                        for line in sim.story(d) {
+                            ui.add(egui::Label::new(RichText::new(line).size(14.0).color(GREY)).wrap());
+                        }
+                    });
+                });
+                ui.add_space(4.0);
+            }
+            // a real-world note, not advice on the game
+            ui.label(RichText::new(REAL_LIFE).size(13.0).italics().color(AMBER));
             ui.add_space(14.0);
             ui.horizontal(|ui| {
                 let big = |t: &str| egui::Button::new(RichText::new(t).size(24.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(240.0, 60.0));
