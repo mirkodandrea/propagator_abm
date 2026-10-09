@@ -15,7 +15,10 @@ use scenario::Pos;
 use crate::frame;
 use crate::retro;
 use crate::retro::RetroMaterial;
-use crate::rings::ring_mesh;
+use crate::rings::{halo_mesh, path_mesh, ring_mesh, HALO};
+
+/// Width of a route on the map.
+const ROUTE_M: f32 = 9.0;
 use crate::sim::Sim;
 
 const BEACON_LIFT_M: f32 = 26.0;
@@ -30,11 +33,11 @@ pub struct DynamicMarker;
 pub struct BeaconLayer;
 
 /// Rings for the player's own orders: a warned district, an engine's post.
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 pub struct OrderRing;
 
 /// Routes on the map: the ones being driven and the proposed ones.
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 pub struct RouteMark;
 
 #[derive(Resource)]
@@ -49,6 +52,8 @@ pub struct OverlayAssets {
     ring_amber: Handle<RetroMaterial>,
     ring_green: Handle<RetroMaterial>,
     ring_white: Handle<RetroMaterial>,
+    /// Dark, under rings and routes.
+    halo: Handle<RetroMaterial>,
     /// What the routes were built for.
     route_key: u64,
 }
@@ -117,7 +122,9 @@ pub fn setup(
     let ring_amber = mat([1.0, 0.75, 0.25], 0.85, 1.6);
     let ring_green = mat([0.35, 1.0, 0.6], 0.85, 1.4);
     let ring_white = mat([1.0, 1.0, 1.0], 0.9, 1.6);
+    let halo = mat([0.03, 0.05, 0.06], 0.75, 0.0);
     commands.insert_resource(OverlayAssets {
+        halo,
         unlit_white,
         ring_orange,
         beacons,
@@ -159,23 +166,26 @@ pub fn update_orders(
         };
         let homes: Vec<Pos> = d.households.iter().map(|&i| sim.agents.households[i].home).collect();
         for (centre, radius) in clusters(&homes) {
-            commands.spawn((
-                MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(ring_mesh(&sim.scn, centre, radius + 40.0)), material: mat.clone(), ..default() },
-                OrderRing,
-            ));
+            let (ring, halo) = (meshes.add(ring_mesh(&sim.scn, centre, radius + 40.0)), meshes.add(halo_mesh(&sim.scn, centre, radius + 40.0)));
+            spawn_outlined(&mut commands, ring, halo, mat.clone(), assets.halo.clone(), OrderRing);
         }
     }
     for p in sim.posts.iter().flatten() {
-        commands.spawn((
-            MaterialMeshBundle::<RetroMaterial> {
-                mesh: meshes.add(ring_mesh(&sim.scn, p.at, rocca::coordinator::DEFEND_REACH_M)),
-                material: assets.ring_green.clone(),
-                ..default()
-            },
-            OrderRing,
-        ));
+        let r = rocca::coordinator::DEFEND_REACH_M;
+        let (ring, halo) = (meshes.add(ring_mesh(&sim.scn, p.at, r)), meshes.add(halo_mesh(&sim.scn, p.at, r)));
+        spawn_outlined(&mut commands, ring, halo, assets.ring_green.clone(), assets.halo.clone(), OrderRing);
     }
 }
+
+/// A ring or route with its dark halo just under it. The halo sits lower, so
+/// the transparent pass draws it first.
+fn spawn_outlined<M: Component + Copy>(commands: &mut Commands, mesh: Handle<Mesh>, halo_mesh: Handle<Mesh>, mat: Handle<RetroMaterial>, halo: Handle<RetroMaterial>, tag: M) {
+    commands.spawn((MaterialMeshBundle::<RetroMaterial> { mesh: halo_mesh, material: halo, transform: Transform::from_xyz(0.0, -HALO_DROP_M, 0.0), ..default() }, tag));
+    commands.spawn((MaterialMeshBundle::<RetroMaterial> { mesh, material: mat, ..default() }, tag));
+}
+
+/// How far under its ring or route a halo lies.
+const HALO_DROP_M: f32 = 1.5;
 
 /// Homes grouped into the places a ring can hold: a district of four hamlets
 /// gets four rings, not one across the woods between them.
@@ -246,10 +256,8 @@ pub fn update_routes(
         }
         let pts = sim.crews.route_points(k, &sim.agents.network);
         if pts.len() >= 2 {
-            commands.spawn((
-                MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(crate::rings::path_mesh(&sim.scn, &pts, 9.0, None)), material: assets.ring_green.clone(), ..default() },
-                RouteMark,
-            ));
+            let (route, halo) = (meshes.add(path_mesh(&sim.scn, &pts, ROUTE_M, None)), meshes.add(path_mesh(&sim.scn, &pts, ROUTE_M * HALO, None)));
+            spawn_outlined(&mut commands, route, halo, assets.ring_green.clone(), assets.halo.clone(), RouteMark);
         }
     }
     if kiosk.phase == crate::kiosk::Phase::Fine {
@@ -257,23 +265,12 @@ pub fn update_routes(
     }
     for p in proposed {
         if p.route.len() >= 2 {
-            commands.spawn((
-                MaterialMeshBundle::<RetroMaterial> {
-                    mesh: meshes.add(crate::rings::path_mesh(&sim.scn, &p.route, 9.0, Some(30.0))),
-                    material: assets.ring_white.clone(),
-                    ..default()
-                },
-                RouteMark,
-            ));
+            let (route, halo) = (meshes.add(path_mesh(&sim.scn, &p.route, ROUTE_M, Some(30.0))), meshes.add(path_mesh(&sim.scn, &p.route, ROUTE_M * HALO, None)));
+            spawn_outlined(&mut commands, route, halo, assets.ring_white.clone(), assets.halo.clone(), RouteMark);
         }
-        commands.spawn((
-            MaterialMeshBundle::<RetroMaterial> {
-                mesh: meshes.add(ring_mesh(&sim.scn, p.at, rocca::coordinator::DEFEND_REACH_M)),
-                material: assets.ring_white.clone(),
-                ..default()
-            },
-            RouteMark,
-        ));
+        let r = rocca::coordinator::DEFEND_REACH_M;
+        let (ring, halo) = (meshes.add(ring_mesh(&sim.scn, p.at, r)), meshes.add(halo_mesh(&sim.scn, p.at, r)));
+        spawn_outlined(&mut commands, ring, halo, assets.ring_white.clone(), assets.halo.clone(), RouteMark);
     }
 }
 

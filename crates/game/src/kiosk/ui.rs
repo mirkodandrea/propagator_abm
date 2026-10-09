@@ -444,7 +444,10 @@ fn crisis(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, faces: Option<&Port
         characters::bubble(ui, who, |ui| characters::says(ui, who, &c.text, BUBBLE_W));
         ui.add_space(8.0);
         egui::Frame::none().fill(Color32::from_rgb(64, 30, 10)).stroke(egui::Stroke::new(3.0, ORANGE)).rounding(10.0).inner_margin(12.0).show(ui, |ui| {
-            ui.horizontal(|ui| {
+            // one row as wide as the screen allows, wrapped only when it
+            // does not fit, so «Conferma» stays on screen at 900 px
+            let room = ui.ctx().screen_rect().width() - FACE - 80.0;
+            ui.allocate_ui(egui::vec2(room, 0.0), |ui| ui.horizontal_wrapped(|ui| {
                 // the countdown as a shrinking ring around the seconds
                 let (r, _) = ui.allocate_exact_size(egui::vec2(56.0, 56.0), egui::Sense::hover());
                 let left = (1.0 - k.phase_t / k.crisis_s).clamp(0.0, 1.0);
@@ -502,7 +505,7 @@ fn crisis(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, faces: Option<&Port
                 if ui.add(primary(if pending { "Conferma" } else { "Continua" })).clicked() {
                     close = true;
                 }
-            });
+            }));
             // what the change does to the units, as engine icons
             if let Some(p) = &k.preview {
                 for x in 0..sim.districts.len() {
@@ -655,7 +658,7 @@ fn legend(ctx: &egui::Context) {
                         "Mezzo verde: assegnato, può essere in viaggio. Giallo: da assegnare alla conferma. Barrato: da trasferire.",
                         "Preallerta prepara; Evacua ordina di partire. Gli ordini confermati non si possono ritirare.",
                         "Tutti i tempi sono minuti nel mondo simulato. A ×40, 40 minuti passano in 1 minuto reale; quando non succede nulla il gioco accelera.",
-                        "Evacuazione: avviso, preparazione, viaggio. La stima indica solo il viaggio dalla casa, senza code né rallentamenti; qualcuno può tardare o restare.",
+                        "Evacuazione: avviso, preparazione, viaggio. La stima indica solo la strada: il tempo tipico e quello delle famiglie più lontane, senza preparazione né code; qualcuno può tardare o restare.",
                         "I nuclei con lo stesso nome condividono gli ordini della stessa scheda.",
                     ] { ui.label(RichText::new(text).size(14.0).color(GREY)); }
                 });
@@ -1045,11 +1048,12 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         ui.allocate_space(egui::vec2(1.0, 16.0));
                     }
                     // Reserve two lines so choosing an order cannot move controls.
-                    ui.allocate_ui(egui::vec2(CHIP_W - 20.0, 42.0), |ui| {
+                    ui.allocate_ui(egui::vec2(CHIP_W - 20.0, 60.0), |ui| {
                         ui.label(RichText::new(defence_line(k, sim, d)).size(14.0).color(GREEN));
+                        let road = |a: u32, b: u32| if b > a { format!("~{a} min di strada, le ultime ~{b}") } else { format!("~{a} min di strada") };
                         let journey = match k.evacuation.get(d) {
-                            Some((Some((a, b)), 0)) => format!("Evacua: viaggio ~{a}–{b} min + attesa"),
-                            Some((Some((a, b)), blocked)) => format!("Viaggio ~{a}–{b} min · {blocked} famiglie senza via"),
+                            Some((Some((a, b)), 0)) => format!("Evacua: {}", road(*a, *b)),
+                            Some((Some((a, b)), blocked)) => format!("{} · {blocked} famiglie senza via", road(*a, *b)),
                             _ => "Evacua: viaggio non disponibile".into(),
                         };
                         ui.label(RichText::new(journey).size(14.0).color(BLUE));
@@ -1349,10 +1353,12 @@ fn timeline(ui: &mut egui::Ui, sim: &Sim, width: f32) {
         } else {
             None
         };
+        // a dot on the line and the icon small above it, without the disc
+        // that made them look like buttons (playtest 3)
         if let Some((icon, c)) = mark {
-            let at = egui::Rect::from_center_size(egui::pos2(x(e.at_s), y), egui::vec2(22.0, 22.0));
-            p.circle_filled(at.center(), 13.0, Color32::from_gray(25));
-            icons::draw(p, at.shrink(2.0), icon, c);
+            let px = x(e.at_s);
+            p.circle_filled(egui::pos2(px, y), 4.5, c);
+            icons::draw(p, egui::Rect::from_center_size(egui::pos2(px, y - 12.0), egui::vec2(14.0, 14.0)), icon, c);
         }
     }
 }
@@ -1424,17 +1430,22 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                 }
             });
             ui.horizontal(|ui| {
+                // solid in the bars' own colours, as they are drawn (playtest 3:
+                // a white key against blue and orange bars)
                 let (r, _) = ui.allocate_exact_size(egui::vec2(24.0, 12.0), egui::Sense::hover());
-                ui.painter().rect_filled(r, 3.0, Color32::WHITE);
-                ui.label(RichText::new("tu").size(14.0).color(GREY));
+                let (l, rr) = r.split_left_right_at_fraction(0.5);
+                ui.painter().rect_filled(l, egui::Rounding { nw: 3.0, sw: 3.0, ..Default::default() }, BLUE);
+                ui.painter().rect_filled(rr, egui::Rounding { ne: 3.0, se: 3.0, ..Default::default() }, ORANGE);
+                ui.label(RichText::new("barra piena: tu").size(14.0).color(GREY));
                 let (r, _) = ui.allocate_exact_size(egui::vec2(24.0, 12.0), egui::Sense::hover());
                 ui.painter().rect_stroke(r, 3.0, egui::Stroke::new(1.5, Color32::from_gray(150)));
-                ui.label(RichText::new("lo stesso incendio senza ordini").size(14.0).color(GREY));
+                ui.label(RichText::new("contorno: lo stesso incendio senza ordini").size(14.0).color(GREY));
                 if base.is_none() {
                     ui.label(RichText::new("(calcolo…)").size(14.0).color(GREY));
                 }
             });
             ui.add_space(10.0);
+            ui.label(RichText::new("Le tue decisioni e gli imprevisti, ora per ora").size(14.0).color(GREY));
             timeline(ui, sim, 740.0);
             // why each place ended as it did: what the game recorded
             ui.label(RichText::new("Perché").size(17.0).strong().color(Color32::WHITE));

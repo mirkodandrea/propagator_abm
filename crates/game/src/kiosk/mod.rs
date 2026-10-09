@@ -84,6 +84,8 @@ pub struct Kiosk {
     /// Per district, how the fire stands to it now (refreshed with the preview).
     pub risk: Vec<Option<Exposure>>,
     /// Free-flow journey range in minutes and homes without a route.
+    /// Per district, the evacuation journey in minutes (median, longest)
+    /// and the families with no way out.
     pub evacuation: Vec<(Option<(u32, u32)>, usize)>,
     /// The same case and seed with no orders, run beside the game for the
     /// debrief: (case, seed) and the result when it is ready.
@@ -334,7 +336,10 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
                     None => blocked += 1,
                 }
             }
-            (minutes.iter().min().zip(minutes.iter().max()).map(|(&a, &b)| (a, b)), blocked)
+            // the typical journey and the longest, not the shortest: the
+            // range "~4–102 min" did not say when it would be over (playtest 3)
+            minutes.sort_unstable();
+            (minutes.last().map(|&b| (minutes[minutes.len() / 2], b)), blocked)
         }).collect();
         kiosk.preview_at = sim.generation;
         kiosk.dirty = false;

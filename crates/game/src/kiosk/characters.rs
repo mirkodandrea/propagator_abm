@@ -176,11 +176,14 @@ fn from_log(text: &str) -> Option<Line> {
     if let Some(rest) = text.strip_prefix("il vento gira: ") {
         return Some(Line::new(Who::Meteo, Mood::Preoccupato, format!("Il vento è girato: {rest}.")));
     }
+    // "evacuazione: Le Ghiande (12 famiglie)": the place is enough
+    // (playtest 3: the long lines were skipped).
+    let place = |rest: &str| rest.split(" (").next().unwrap_or(rest).to_string();
     if let Some(rest) = text.strip_prefix("evacuazione: ") {
-        return Some(Line::new(Who::Sindaca, Mood::Calmo, format!("Ho firmato l'ordine di evacuazione: {rest}. L’avviso deve arrivare alle famiglie; poi si preparano e partono.")));
+        return Some(Line::new(Who::Sindaca, Mood::Calmo, format!("Evacuazione di {} avviata.", place(rest))));
     }
     if let Some(rest) = text.strip_prefix("preallerta: ") {
-        return Some(Line::new(Who::Sindaca, Mood::Calmo, format!("Preallerta diramata: {rest}. Si preparano a partire.")));
+        return Some(Line::new(Who::Sindaca, Mood::Calmo, format!("Preallerta a {}: tenersi pronti.", place(rest))));
     }
     if text.contains(" si ritira vicino a ") || text.contains("fuori servizio") {
         return Some(Line::new(Who::Dos, Mood::Preoccupato, format!("{text}.")));

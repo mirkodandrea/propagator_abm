@@ -9,7 +9,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - 5c: punti 1–5 del playtest 3 (`docs/fase5/iterazione5c.md`).
 - **Prossima azione: checkpoint 5, umano** (`docs/fase5/README.md`). Una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), con prima azione e debrief. Non procedere senza conferma dell'utente; dopo viene la fase 6 (playtest).
 - **Ancora aperti** (vedi «Dal playtest 3» in fondo alla fase 5):
-  - punti 6–9 del playtest 3;
+  - layout a 900×600: schede sovrapposte e barra in alto sopra legenda e zoom (punti 6–9 del playtest 3 chiusi il 2026-10-09);
   - FPS nel browser a finestra in primo piano;
   - apertura delle schede al tocco;
   - durata di Piano2 (1,8 min di esecuzione);
@@ -31,6 +31,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - **Territorio:** si rigenera con `scenario_factory.py build-town --layout 3`, `town-fires --scenario t4_paese3 --ignitions-from t4_paese2` e `publish --scenario t4_paese3`.
 
 ## Decisioni dell'utente
+
+- 2026-10-09: «correggi le cose minori per ora», **senza playtest dopo**: punti 6–9 del playtest 3 (fatto).
 
 - 2026-10-09: **«Procedi»**: correggere i punti 1–5 del playtest 3 prima del checkpoint 5 (fatto: iterazione 5c). Commit e push richiesti. I resoconti dei playtest vanno dati all'utente in italiano.
 - 2026-10-09: **affrontare le criticità del playtest 2**, più due richieste:
@@ -151,13 +153,16 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
    - «Priorità N · 0 mezzi ora»;
    - «Alla fine, su N famiglie: …» nel finale.
    La differenza tra preallerta ed evacuazione immediata è rumore del seme (`docs/fase5/preallerta_vs_evacua.md`).
-6. [ ] Evacuazione «~4–102 min + attesa»: non si capisce quando finisce.
-7. [ ] Frasi della sindaca sugli ordini più corte.
-8. [ ] Fumetto tagliato a sinistra (q4, non verificato): controllare con frasi lunghe e finestre strette.
-9. [ ] Minori:
-   - nella legenda del finale, «tu» bianco contro barre colorate;
-   - scudi della cronologia che sembrano pulsanti;
-   - contrasto di anelli e percorsi sul verde.
+6–9. [x] 2026-10-09 (utente: «correggi le cose minori», niente playtest dopo) corretti:
+   - **evacuazione:** la scheda dice «Evacua: ~5 min di strada, le ultime ~102» (mediana e più lontane) al posto di «~4–102 min + attesa»; la legenda spiega che è solo la strada (`kiosk/mod.rs`, `ui.rs`);
+   - **sindaca:** «Evacuazione di Le Ghiande avviata.» e «Preallerta a X: tenersi pronti.» (`characters.rs`);
+   - **fumetto:** non tagliato né a 1600×1000 né a 900×600 (partita scriptata). Nuovo `KIOSK_SIZE=900x600` per provarlo;
+   - **legenda del finale:** campione pieno blu/arancio «barra piena: tu», «contorno: lo stesso incendio senza ordini»;
+   - **cronologia del finale:** pallino sulla linea e icona piccola sopra, senza disco; didascalia «Le tue decisioni e gli imprevisti, ora per ora»;
+   - **contrasto:** bordo scuro sotto anelli e percorsi (`rings.rs::halo_mesh`, `overlays.rs::spawn_outlined`);
+   - **crisi a 900 px:** la riga dei pulsanti va a capo, quindi «Conferma» resta sullo schermo (prima era tagliata).
+   - [ ] A 900×600 restano due problemi: le schede si sovrappongono tra loro e la barra in alto copre «Legenda» e lo zoom.
+   - Il punto «ritratti illustrati e diorama low-poly sono due stili» resta come osservazione: non ci sono interventi previsti.
 
 - [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen e a 900×600.
 

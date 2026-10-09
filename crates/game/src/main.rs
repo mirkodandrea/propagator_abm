@@ -61,7 +61,11 @@ fn main() -> anyhow::Result<()> {
             // KIOSK_SCALE=1 renders one pixel per point on a Retina screen,
             // as a 1080p kiosk monitor would.
             resolution: {
-                let mut r: bevy::window::WindowResolution = (1600.0, 1000.0).into();
+                // KIOSK_SIZE=900x600 checks the layout on a small screen.
+                let (w, h) = std::env::var("KIOSK_SIZE").ok()
+                    .and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse::<f32>().ok()?, h.parse::<f32>().ok()?))))
+                    .unwrap_or((1600.0, 1000.0));
+                let mut r: bevy::window::WindowResolution = (w, h).into();
                 if let Some(s) = std::env::var("KIOSK_SCALE").ok().and_then(|v| v.parse::<f32>().ok()) {
                     r = r.with_scale_factor_override(s);
                 }
