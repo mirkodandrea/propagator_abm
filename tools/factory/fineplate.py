@@ -96,7 +96,7 @@ def figure_profile(cid, nature, road_name, path):
         axs[1].plot(sg / 1000, g, color=col, lw=1, label=f"{lab}: p95 {np.percentile(g, 95):.0f} %")
     axs[1].axhline(14, color="k", ls=":", lw=0.8)
     axs[1].set_ylabel("pendenza su 20 m (%)")
-    axs[1].set_xlabel("km da Il Borgo")
+    axs[1].set_xlabel("km da Castelvento")
     axs[1].legend(fontsize=8)
     fig.suptitle(f"{road_name}: profilo longitudinale", fontsize=10)
     fig.tight_layout()
@@ -162,9 +162,9 @@ def threat_diff(old_json, new_json):
 def make(cid: str, nature: str, old: str):
     DOCS.mkdir(parents=True, exist_ok=True)
     _, pop, _, _, fuel = plate.load(cid)
-    coste = np.array([h["pos"] for h in pop["households"] if h["locality"] == "Le Coste"]).mean(0)
-    views = [("Il Borgo", (5000, 5150), 900), ("tornanti del versante NE", (4000, 4750), 900),
-             ("Le Coste", tuple(coste), 900)]
+    coste = np.array([h["pos"] for h in pop["households"] if h["locality"] == "Le Ghiande"]).mean(0)
+    views = [("Castelvento", (5000, 5150), 900), ("tornanti del versante NE", (4000, 4750), 900),
+             ("Le Ghiande", tuple(coste), 900)]
     figure_terrain(cid, nature, views, DOCS / "terreno_fine.png")
     figure_profile(cid, nature, "Strada del Passo", DOCS / "profilo_passo.png")
     fire_cmp = compare_fires(old, cid, DOCS / "confronto_incendi.png")

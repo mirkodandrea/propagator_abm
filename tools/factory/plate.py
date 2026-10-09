@@ -28,7 +28,7 @@ DOCS = ROOT / "docs" / "factory" / "fase2"
 NEAR_M = 150.0
 ROAD_STYLE = {"secondary": ("#c0392b", 2.2), "tertiary": ("#e67e22", 1.8), "unclassified": ("#7f6a4f", 0.9),
               "residential": ("#555555", 1.0), "track": ("#8d6e63", 0.8)}
-LOC_COLOURS = {"Il Borgo": "#1f4e9c", "Il Piano": "#6a1b9a", "Le Coste": "#00838f"}
+LOC_COLOURS = {"Castelvento": "#1f4e9c", "Pian dei Grilli": "#6a1b9a", "Le Ghiande": "#00838f"}
 
 
 def load(cid):

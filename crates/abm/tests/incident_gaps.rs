@@ -85,7 +85,7 @@ fn havens_are_measured_off_the_data() {
     let havens = abm::haven::choose(&scn, &net, abm::haven::MAX_HAVENS);
 
     // Measured on Rocca Ventosa: 5 havens, two by the Borgo car parks and three
-    // around Il Piano (the old 10 km coastal window found dozens).
+    // around Pian dei Grilli (the old 10 km coastal window found dozens).
     assert!(havens.len() >= 4, "only {} havens on an 8 km territory", havens.len());
     for h in &havens {
         assert!(
@@ -179,7 +179,7 @@ fn the_last_resort_profile_sends_people_to_open_ground() {
         //
         // Only homes inside the branch's own 600 m walking limit of a haven
         // count: on Rocca Ventosa there are 5 havens, all in the Borgo and Il
-        // Piano, so the most-surrounded cell overall (Le Coste farms, or the
+        // Piano, so the most-surrounded cell overall (Le Ghiande farms, or the
         // middle of a village) can leave nobody within reach of open ground.
         let homes: Vec<Pos> = agents
             .households

@@ -7,7 +7,7 @@ fn main() -> anyhow::Result<()> {
     for case in ["Coste2_gira", "Borgo2"] {
         let mut g = Game::new(data, case, 1)?;
         let n = g.districts.len();
-        let borgo = g.district_index("Borgo").unwrap();
+        let borgo = g.district_index("Castelvento").unwrap();
         g.commit(Plan::new(n).with_priorities(&[borgo]).with_civil(borgo, Civil::Evacua))?;
         g.run_until(90 * 60)?;
         let mut by: BTreeMap<String, usize> = BTreeMap::new();

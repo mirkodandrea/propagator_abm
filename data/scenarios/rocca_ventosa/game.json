@@ -3,7 +3,7 @@
  "moisture_pct": 3.0,
  "stations": [
   {
-   "name": "Vigili del fuoco - Il Borgo",
+   "name": "Vigili del fuoco - Castelvento",
    "pos": [
     5150.459399563263,
     4968.997322994763
@@ -39,7 +39,7 @@
  "cases": [
   {
    "name": "Borgo1",
-   "near": "Il Borgo",
+   "near": "Castelvento",
    "ignition": [
     5010.0,
     6170.0
@@ -51,7 +51,7 @@
   },
   {
    "name": "Borgo2",
-   "near": "Il Borgo",
+   "near": "Castelvento",
    "ignition": [
     5870.0,
     4670.0
@@ -63,7 +63,7 @@
   },
   {
    "name": "Borgo3",
-   "near": "Il Borgo",
+   "near": "Castelvento",
    "ignition": [
     4070.0,
     4530.0
@@ -75,7 +75,7 @@
   },
   {
    "name": "Piano1",
-   "near": "Il Piano",
+   "near": "Pian dei Grilli",
    "ignition": [
     3070.0,
     3450.0
@@ -87,7 +87,7 @@
   },
   {
    "name": "Piano2",
-   "near": "Il Piano",
+   "near": "Pian dei Grilli",
    "ignition": [
     2750.0,
     1650.0
@@ -99,7 +99,7 @@
   },
   {
    "name": "Piano3",
-   "near": "Il Piano",
+   "near": "Pian dei Grilli",
    "ignition": [
     1430.0,
     2770.0
@@ -111,7 +111,7 @@
   },
   {
    "name": "Coste1",
-   "near": "Le Coste",
+   "near": "Le Ghiande",
    "ignition": [
     4570.0,
     4090.0
@@ -123,7 +123,7 @@
   },
   {
    "name": "Coste2",
-   "near": "Le Coste",
+   "near": "Le Ghiande",
    "ignition": [
     3370.0,
     2530.0
@@ -135,7 +135,7 @@
   },
   {
    "name": "Coste3",
-   "near": "Le Coste",
+   "near": "Le Ghiande",
    "ignition": [
     2950.0,
     4690.0
@@ -147,7 +147,7 @@
   },
   {
    "name": "Borgo1_gira",
-   "near": "Il Borgo",
+   "near": "Castelvento",
    "ignition": [
     5010.0,
     6170.0
@@ -160,12 +160,12 @@
     "at_min": 45,
     "wind_from_deg": 34.8,
     "wind_kmh": 40.0,
-    "toward": "Le Coste"
+    "toward": "Le Ghiande"
    }
   },
   {
    "name": "Borgo2_gira",
-   "near": "Il Borgo",
+   "near": "Castelvento",
    "ignition": [
     5870.0,
     4670.0
@@ -178,12 +178,12 @@
     "at_min": 45,
     "wind_from_deg": 72.9,
     "wind_kmh": 40.0,
-    "toward": "Le Coste"
+    "toward": "Le Ghiande"
    }
   },
   {
    "name": "Borgo3_gira",
-   "near": "Il Borgo",
+   "near": "Castelvento",
    "ignition": [
     4070.0,
     4530.0
@@ -196,12 +196,12 @@
     "at_min": 45,
     "wind_from_deg": 45.8,
     "wind_kmh": 40.0,
-    "toward": "Le Coste"
+    "toward": "Le Ghiande"
    }
   },
   {
    "name": "Piano1_gira",
-   "near": "Il Piano",
+   "near": "Pian dei Grilli",
    "ignition": [
     3070.0,
     3450.0
@@ -214,12 +214,12 @@
     "at_min": 45,
     "wind_from_deg": 218.6,
     "wind_kmh": 40.0,
-    "toward": "Le Coste"
+    "toward": "Le Ghiande"
    }
   },
   {
    "name": "Piano2_gira",
-   "near": "Il Piano",
+   "near": "Pian dei Grilli",
    "ignition": [
     2750.0,
     1650.0
@@ -232,12 +232,12 @@
     "at_min": 45,
     "wind_from_deg": 197.1,
     "wind_kmh": 40.0,
-    "toward": "Le Coste"
+    "toward": "Le Ghiande"
    }
   },
   {
    "name": "Piano3_gira",
-   "near": "Il Piano",
+   "near": "Pian dei Grilli",
    "ignition": [
     1430.0,
     2770.0
@@ -250,12 +250,12 @@
     "at_min": 45,
     "wind_from_deg": 240.2,
     "wind_kmh": 40.0,
-    "toward": "Le Coste"
+    "toward": "Le Ghiande"
    }
   },
   {
    "name": "Coste1_gira",
-   "near": "Le Coste",
+   "near": "Le Ghiande",
    "ignition": [
     4570.0,
     4090.0
@@ -268,12 +268,12 @@
     "at_min": 45,
     "wind_from_deg": 202.1,
     "wind_kmh": 40.0,
-    "toward": "Il Borgo"
+    "toward": "Castelvento"
    }
   },
   {
    "name": "Coste2_gira",
-   "near": "Le Coste",
+   "near": "Le Ghiande",
    "ignition": [
     3370.0,
     2530.0
@@ -286,12 +286,12 @@
     "at_min": 45,
     "wind_from_deg": 93.9,
     "wind_kmh": 40.0,
-    "toward": "Il Piano"
+    "toward": "Pian dei Grilli"
    }
   },
   {
    "name": "Coste3_gira",
-   "near": "Le Coste",
+   "near": "Le Ghiande",
    "ignition": [
     2950.0,
     4690.0
@@ -304,7 +304,7 @@
     "at_min": 45,
     "wind_from_deg": 256.9,
     "wind_kmh": 40.0,
-    "toward": "Il Borgo"
+    "toward": "Castelvento"
    }
   }
  ]

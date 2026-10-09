@@ -33,8 +33,8 @@ fn run(case: &str, prio: &[&str], civil: &[(&str, Civil)], minutes: i64) -> (Gam
 
 #[test]
 fn same_seed_same_plan_same_game() {
-    let (a, oa) = run("Piano1", &["Piano", "Coste"], &[("Piano", Civil::Preallerta)], 60);
-    let (b, ob) = run("Piano1", &["Piano", "Coste"], &[("Piano", Civil::Preallerta)], 60);
+    let (a, oa) = run("Piano1", &["Grilli", "Ghiande"], &[("Grilli", Civil::Preallerta)], 60);
+    let (b, ob) = run("Piano1", &["Grilli", "Ghiande"], &[("Grilli", Civil::Preallerta)], 60);
     assert_eq!(oa, ob);
     assert_eq!(a.log, b.log);
     let pos = |g: &Game| g.crews.units.iter().map(|u| (u.pos.x, u.pos.y)).collect::<Vec<_>>();
@@ -43,9 +43,9 @@ fn same_seed_same_plan_same_game() {
 
 #[test]
 fn inverting_priorities_changes_posts_and_outcomes() {
-    let (ga, a) = run("Piano1", &["Piano", "Coste"], &[], 180);
-    let (gb, b) = run("Piano1", &["Coste", "Piano"], &[], 180);
-    let (piano, coste) = (idx(&ga, "Piano"), idx(&ga, "Coste"));
+    let (ga, a) = run("Piano1", &["Grilli", "Ghiande"], &[], 180);
+    let (gb, b) = run("Piano1", &["Ghiande", "Grilli"], &[], 180);
+    let (piano, coste) = (idx(&ga, "Grilli"), idx(&ga, "Ghiande"));
     let on = |g: &Game, d: usize| g.posts.iter().flatten().filter(|p| p.district == d).count();
     // the first-ranked district gets two units
     assert_eq!(on(&ga, piano), 2, "{:?}", ga.posts);
@@ -53,7 +53,7 @@ fn inverting_priorities_changes_posts_and_outcomes() {
     // and it is the homes that change, not only the icons
     assert!(
         a.districts[piano].homes_hit < b.districts[piano].homes_hit,
-        "Il Piano first should lose fewer homes: {} vs {}",
+        "Pian dei Grilli first should lose fewer homes: {} vs {}",
         a.districts[piano].homes_hit,
         b.districts[piano].homes_hit
     );
@@ -61,9 +61,9 @@ fn inverting_priorities_changes_posts_and_outcomes() {
 
 #[test]
 fn defence_reduces_simulated_exposure() {
-    let (g, defended) = run("Piano1", &["Piano"], &[], 180);
+    let (g, defended) = run("Piano1", &["Grilli"], &[], 180);
     let (_, open) = run("Piano1", &[], &[], 180);
-    let d = idx(&g, "Piano");
+    let d = idx(&g, "Grilli");
     assert!(defended.districts[d].homes_hit < open.districts[d].homes_hit, "{} vs {}", defended.districts[d].homes_hit, open.districts[d].homes_hit);
 }
 
@@ -73,12 +73,12 @@ fn departed(g: &Game, d: usize) -> usize {
 
 #[test]
 fn prealert_is_not_an_evacuation() {
-    // Il Borgo with the fire 800 m north: at T+30 an evacuation has most of
+    // Castelvento with the fire 800 m north: at T+30 an evacuation has most of
     // the town on the move, a pre-alert has it ready at home.
-    let (gp, _) = run("Borgo1", &[], &[("Borgo", Civil::Preallerta)], 30);
-    let (ge, _) = run("Borgo1", &[], &[("Borgo", Civil::Evacua)], 30);
+    let (gp, _) = run("Borgo1", &[], &[("Castelvento", Civil::Preallerta)], 30);
+    let (ge, _) = run("Borgo1", &[], &[("Castelvento", Civil::Evacua)], 30);
     let (gn, _) = run("Borgo1", &[], &[], 30);
-    let d = idx(&gp, "Borgo");
+    let d = idx(&gp, "Castelvento");
     let n = gp.districts[d].households.len();
     let ready = gp.districts[d].households.iter().filter(|&&i| gp.agents.households[i].readied_s > 0.0).count();
     assert!(departed(&ge, d) > n / 3, "evacuation: {} of {n} gone", departed(&ge, d));
@@ -88,11 +88,11 @@ fn prealert_is_not_an_evacuation() {
 
 #[test]
 fn prealert_pays_off_when_the_fire_comes() {
-    // Il Piano with the fire coming: pre-alerted households leave faster when
+    // Pian dei Grilli with the fire coming: pre-alerted households leave faster when
     // they do decide to, so fewer are caught at home than with no order.
-    let (g, pre) = run("Piano1", &[], &[("Piano", Civil::Preallerta)], 120);
+    let (g, pre) = run("Piano1", &[], &[("Grilli", Civil::Preallerta)], 120);
     let (_, none) = run("Piano1", &[], &[], 120);
-    let d = idx(&g, "Piano");
+    let d = idx(&g, "Grilli");
     assert!(pre.districts[d].caught < none.districts[d].caught, "{} vs {}", pre.districts[d].caught, none.districts[d].caught);
 }
 
@@ -100,13 +100,13 @@ fn prealert_pays_off_when_the_fire_comes() {
 fn preview_has_no_side_effects_and_commit_revalidates() {
     let mut a = game("Piano1");
     let mut b = game("Piano1");
-    let plan = |g: &Game| Plan::new(g.districts.len()).with_priorities(&[idx(g, "Piano"), idx(g, "Coste")]);
+    let plan = |g: &Game| Plan::new(g.districts.len()).with_priorities(&[idx(g, "Grilli"), idx(g, "Ghiande")]);
     a.commit(plan(&a)).unwrap();
     b.commit(plan(&b)).unwrap();
     a.run_until(20 * 60).unwrap();
     b.run_until(20 * 60).unwrap();
     // A previews the inverted plan and an evacuation, then carries on
-    let inverted = Plan::new(a.districts.len()).with_priorities(&[idx(&a, "Coste"), idx(&a, "Piano")]).with_civil(idx(&a, "Piano"), Civil::Evacua);
+    let inverted = Plan::new(a.districts.len()).with_priorities(&[idx(&a, "Ghiande"), idx(&a, "Grilli")]).with_civil(idx(&a, "Grilli"), Civil::Evacua);
     let preview = a.preview(&inverted).unwrap();
     assert_ne!(preview.posts, a.posts, "the preview proposes something else");
     assert!(a.agents.households.iter().all(|h| !h.ordered), "a preview orders nobody");
@@ -122,7 +122,7 @@ fn preview_has_no_side_effects_and_commit_revalidates() {
 #[test]
 fn civil_orders_only_escalate() {
     let mut g = game("Borgo1");
-    let d = idx(&g, "Borgo");
+    let d = idx(&g, "Castelvento");
     g.commit(Plan::new(g.districts.len()).with_civil(d, Civil::Evacua)).unwrap();
     g.commit(Plan::new(g.districts.len()).with_civil(d, Civil::Preallerta)).unwrap();
     assert_eq!(g.active.civil[d], Civil::Evacua);

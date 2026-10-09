@@ -1,18 +1,18 @@
 //! What an evacuation costs: engines slowed by the traffic, families caught on
 //! the road. Same fire and seed, the evacuation of everything ordered at
-//! different times, with the right priority (Il Piano first).
+//! different times, with the right priority (Pian dei Grilli first).
 use rocca::{Civil, Game, Plan};
 use scenario::population::Status;
 
 fn main() -> anyhow::Result<()> {
     let data = std::path::Path::new("data");
     let case = std::env::args().nth(1).unwrap_or_else(|| "Coste2_gira".into());
-    println!("| evacua tutto a | case colpite | colte in casa | in strada alla fine | bloccate/vittime fuori casa | arrivo 1° mezzo a Il Piano |");
+    println!("| evacua tutto a | case colpite | colte in casa | in strada alla fine | bloccate/vittime fuori casa | arrivo 1° mezzo a Pian dei Grilli |");
     println!("|---|---|---|---|---|---|");
     for at_min in [None, Some(0), Some(20), Some(40), Some(60), Some(90)] {
         let mut g = Game::new(data, &case, 1)?;
         let n = g.districts.len();
-        let piano = g.district_index("Piano").unwrap();
+        let piano = g.district_index("Grilli").unwrap();
         let mut plan = Plan::new(n).with_priorities(&[piano]);
         g.commit(plan.clone())?;
         let mut first_on_post: Option<i64> = None;

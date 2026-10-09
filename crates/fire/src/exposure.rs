@@ -263,7 +263,7 @@ impl StructureExposure {
                                 // burning cell, a linear falloff saturated the
                                 // load of whole towns 2-3 km downwind of a
                                 // large front (audit, phase 0; measured on
-                                // t4_paese: 160/160 homes of Il Borgo alight
+                                // t4_paese: 160/160 homes of Castelvento alight
                                 // with the fire 3 km away).
                                 let falloff = (1.0 - d / r_emb) * (-d / EMBER_DECAY_M).exp();
                                 f.ember += downwind * falloff * 0.02;

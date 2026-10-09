@@ -150,6 +150,20 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - **niente spiegazioni solo al passaggio del mouse;**
   - **pagina web:** niente zoom del browser né selezione del testo sul canvas.
   - **Non ancora provato su un touchscreen vero.**
+- [x] 2026-10-09 (utente: «troppo testo, gui più grafica») Interfaccia a icone disegnate (`kiosk/icons.rs`):
+  - **schede:** cerchio con il numero, fuoco con la distanza, autobotti come icone (piene, da ricevere, barrate se le perde), barra delle famiglie;
+  - **pulsanti:** icona più una parola;
+  - **mezzi:** badge con icona, sigla, livello dell'acqua e fiamma vicina;
+  - **barra in alto:** vento, tempo come barra, stato come icona;
+  - **crisi:** countdown ad anello;
+  - **finale:** due numeri grandi con «−N grazie a te», barre tu contro senza ordini, linea del tempo con le decisioni;
+  - **pannelli laterali:** chiusi all'avvio.
+- [x] 2026-10-09 (utente) Località rinominate: Il Borgo → **Castelvento**, Il Piano → **Pian dei Grilli**, Le Coste → **Le Ghiande** (dati, Factory, test). I nomi dei casi (Borgo1, Coste2_gira…) restano invariati come identificativi interni.
+- [ ] **Castelvento non viene mai colpito** (segnalato dall'utente, verificato): 0 case colpite in tutti i 18 casi, anche con inneschi a 700 m e vento che lo spinge contro. Causa:
+  - il paese è un grande blocco non combustibile (centro abitato, orti irrigui e area di attesa), circondato a nord-est da pianura erbosa (fuel 2);
+  - a 20 m le celle accanto alle case bruciano poco.
+  
+  Proposta: layout 3 della Factory con bosco e macchia fino al margine sud-ovest di Castelvento e orti ridotti all'area di attesa, poi rifare la misura A/B e crisi. Serve il via dell'utente, perché cambia il territorio approvato.
 - [ ] Dai roast, ancora aperto: navigazione da tastiera (egui sul canvas), forme oltre ai colori per gli anelli, layout a finestra stretta (900×600), stato perso con la ricarica della pagina, verifica dei percorsi verso le aree di attesa, supporto ai ritardatari dell'evacuazione (scelta di design).
 - [ ] Dal playtest GPT, ancora aperto: icone dei mezzi leggibili nella vista generale (oggi si leggono le etichette); indicatori aggregati per le evacuazioni sulla mappa; click che a volte sembrano non rispondere (forse solo per l'input automatizzato, da verificare con persone vere); distinguere mezzi assegnati / in viaggio / sul posto; mostrare sulla mappa perché una postazione è irraggiungibile.
 - [ ] **Checkpoint umano 5.**

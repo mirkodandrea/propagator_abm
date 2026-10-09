@@ -60,7 +60,7 @@ T4_L1 = Layout(
     terrain="t4", id="t4_paese", seed=401,
     settlements=[
         # NE plain, at the foot of the wooded slope: compact, vulnerable at the SW margin.
-        Settlement("Il Borgo", (5000, 5150), 128.0,
+        Settlement("Castelvento", (5000, 5150), 128.0,
                    streets=[(0, -260, 260, [("shop", .45), ("terrace", .55)]),
                             (-85, -200, 200, [("terrace", .6), ("house", .4)]),
                             (85, -230, 230, [("terrace", .5), ("apartments", .3), ("house", .2)]),
@@ -69,7 +69,7 @@ T4_L1 = Layout(
                    gaps=[(0, 42, 55)], core=(-280, 280, -110, 200),
                    irrigated=[(-420, 420, 200, 720)]),
         # SW basin floor: a small valley hamlet on the road out.
-        Settlement("Il Piano", (2450, 2600), 135.0,
+        Settlement("Pian dei Grilli", (2450, 2600), 135.0,
                    streets=[(0, -220, 220, [("house", .6), ("shop", .2), ("terrace", .2)]),
                             (-80, -150, 150, [("house", .8), ("villa", .2)])],
                    cross=[(-60, -80, 0), (90, -80, 0)],
@@ -77,46 +77,46 @@ T4_L1 = Layout(
                    irrigated=[(-450, 300, -560, -100)]),
     ],
     trunk=[
-        ("SP 12 della Valle", "secondary", [(1500, 7990), "Il Borgo:-260", "Il Borgo:260", (7990, 3300)]),
-        ("Strada del Passo", "tertiary", ["Il Borgo:0", (3900, 4100), (3350, 2950), "Il Piano:220"]),
-        ("SP 9 di Fondovalle", "secondary", ["Il Piano:-220", (10, 5000)]),
-        ("Strada del Monte", "unclassified", ["Il Piano:0", (2000, 10)]),
+        ("SP 12 della Valle", "secondary", [(1500, 7990), "Castelvento:-260", "Castelvento:260", (7990, 3300)]),
+        ("Strada del Passo", "tertiary", ["Castelvento:0", (3900, 4100), (3350, 2950), "Pian dei Grilli:220"]),
+        ("SP 9 di Fondovalle", "secondary", ["Pian dei Grilli:-220", (10, 5000)]),
+        ("Strada del Monte", "unclassified", ["Pian dei Grilli:0", (2000, 10)]),
     ],
     # Houses strung along the pass road on the sunny SW slope, in the macchia.
-    scattered={"Le Coste": ("Strada del Passo", (170, 400), 24, 70.0)},
+    scattered={"Le Ghiande": ("Strada del Passo", (170, 400), 24, 70.0)},
     landmarks=[
-        ("plaza", "Il Borgo", 0, 42, 70, 44, "Piazza"), ("church", "Il Borgo", 60, 42, 30, 18, "Chiesa"),
-        ("townhall", "Il Borgo", -60, 42, 26, 18, "Municipio"),
-        ("school", "Il Borgo", -230, 130, 40, 22, "Scuola"),
-        ("fire_station", "Il Borgo", 230, -50, 30, 20, "Vigili del fuoco"),
-        ("assembly", "Il Borgo", 0, 420, 160, 110, "Area di attesa"),
-        ("pitch", "Il Borgo", -150, 430, 70, 44, "Campo sportivo"),
-        ("parking", "Il Borgo", 150, 420, 60, 40, "Parcheggio"),
-        ("cemetery", "Il Borgo", 360, 120, 50, 36, "Cimitero"),
-        ("fuel", "Il Borgo", -330, 20, 22, 14, "Distributore"),
-        ("church", "Il Piano", 20, 30, 24, 14, "Chiesa"), ("mill", "Il Piano", -120, -160, 22, 16, "Mulino"),
-        ("assembly", "Il Piano", -150, -330, 140, 100, "Area di attesa"),
-        ("pitch", "Il Piano", 40, -330, 60, 36, "Campo sportivo"),
-        ("chapel", None, 3300, 3330, 14, 10, "Cappella delle Coste"),
+        ("plaza", "Castelvento", 0, 42, 70, 44, "Piazza"), ("church", "Castelvento", 60, 42, 30, 18, "Chiesa"),
+        ("townhall", "Castelvento", -60, 42, 26, 18, "Municipio"),
+        ("school", "Castelvento", -230, 130, 40, 22, "Scuola"),
+        ("fire_station", "Castelvento", 230, -50, 30, 20, "Vigili del fuoco"),
+        ("assembly", "Castelvento", 0, 420, 160, 110, "Area di attesa"),
+        ("pitch", "Castelvento", -150, 430, 70, 44, "Campo sportivo"),
+        ("parking", "Castelvento", 150, 420, 60, 40, "Parcheggio"),
+        ("cemetery", "Castelvento", 360, 120, 50, 36, "Cimitero"),
+        ("fuel", "Castelvento", -330, 20, 22, 14, "Distributore"),
+        ("church", "Pian dei Grilli", 20, 30, 24, 14, "Chiesa"), ("mill", "Pian dei Grilli", -120, -160, 22, 16, "Mulino"),
+        ("assembly", "Pian dei Grilli", -150, -330, 140, 100, "Area di attesa"),
+        ("pitch", "Pian dei Grilli", 40, -330, 60, 36, "Campo sportivo"),
+        ("chapel", None, 3300, 3330, 14, 10, "Cappella delle Ghiande"),
     ],
-    water=[("hydrant", "Il Borgo", -120, 0), ("hydrant", "Il Borgo", 140, 85), ("hydrant", "Il Piano", 0, 0),
-           ("open_water", None, 3880, 4140), ("open_water", "Il Piano", -260, -260)],
+    water=[("hydrant", "Castelvento", -120, 0), ("hydrant", "Castelvento", 140, 85), ("hydrant", "Pian dei Grilli", 0, 0),
+           ("open_water", None, 3880, 4140), ("open_water", "Pian dei Grilli", -260, -260)],
     tracks=[("Strada forestale del Crinale", [(3900, 4100), (2769, 5231)]),
             ("Strada forestale del Monte", [(3900, 4100), (4300, 3800)])],
-    households={"Il Borgo": 160, "Il Piano": 55, "Le Coste": 30},
+    households={"Castelvento": 160, "Pian dei Grilli": 55, "Le Ghiande": 30},
     # The assembly areas must be on the road graph: refuges are road nodes.
-    links=[("Il Borgo", (0, 170), (0, 420), "Via del Campo"),
-           ("Il Piano", (-150, -80), (-150, -330), "Via del Campo")],
+    links=[("Castelvento", (0, 170), (0, 420), "Via del Campo"),
+           ("Pian dei Grilli", (-150, -80), (-150, -330), "Via del Campo")],
 )
 
-# Hamlets of Le Coste: centres at least this far apart, houses within this of
+# Hamlets of Le Ghiande: centres at least this far apart, houses within this of
 # their centre (one engine's post covers ~120 m).
 HAMLET_SPACING_M = 600.0
 HAMLET_RADIUS_M = 110.0
 
-# Layout 2 (2026-10-08, after phase 4's first measurements): Il Borgo with
+# Layout 2 (2026-10-08, after phase 4's first measurements): Castelvento with
 # the wood up to its north edge (the irrigated belt shrinks to the block round
-# the assembly area, which must stay a refuge), and Le Coste as four hamlets
+# the assembly area, which must stay a refuge), and Le Ghiande as four hamlets
 # a unit can defend, instead of 24 farms no plan can hold.
 T4_L2 = dataclasses.replace(
     T4_L1,
@@ -125,7 +125,7 @@ T4_L2 = dataclasses.replace(
         dataclasses.replace(T4_L1.settlements[0], irrigated=[(-320, 320, 230, 640)]),
         T4_L1.settlements[1],
     ],
-    scattered={"Le Coste": ("Strada del Passo", (170, 400), 24, 25.0, 4)},
+    scattered={"Le Ghiande": ("Strada del Passo", (170, 400), 24, 25.0, 4)},
 )
 
 LAYOUTS = {("t4", 1): T4_L1, ("t4", 2): T4_L2}
