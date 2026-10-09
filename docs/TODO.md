@@ -4,7 +4,9 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
-- **Fase corrente: fase 5, iterazione 5b**: criticità del playtest automatico 2, velocità tra i turni, leggibilità della vegetazione (decisione dell'utente, 2026-10-09). La lista ordinata è in «Iterazione 5b» qui sotto. Le scelte di dettaglio sono lasciate all'agente: misurare, decidere, scriverle qui.
+- **Fase corrente: fase 5, iterazione 5b**: criticità del playtest automatico 2, velocità tra i turni, leggibilità della vegetazione (decisione dell'utente, 2026-10-09).
+  - Punti 1–9 fatti il 2026-10-09 (`docs/fase5/iterazione5b.md`).
+  - Manca il punto 10: il playtest automatico 3.
 - **Prossimo checkpoint umano: checkpoint 5** (`docs/fase5/README.md`): una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), con prima azione e debrief. Poi la fase 6 (playtest).
 - **Consegna dell'iterazione 5b:**
   - una pagina `docs/fase5/iterazione5b.md` con file modificati, prima/dopo (schermate e tabella), durata della partita e FPS;
@@ -118,12 +120,16 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
    - schede compatte durante Esegui; si aprono al passaggio del puntatore; collisioni sulla dimensione compatta;
    - fondo più opaco, testo secondario a 14 punti.
    - [ ] Verificare l'apertura con il tocco su touchscreen.
-8. [ ] **Ritmo a metà partita** (scelta all'agente):
-   - la volontaria dice un fatto nuovo (prossimo arrivo, fronte più vicino, famiglie ancora a casa) invece di ripetere il tutorial;
-   - «Altro incendio» si presenta con una frase su dove parte e verso chi va (dati del caso: `near`, vento).
-9. [ ] Minori:
-   - [x] 2026-10-09 «1 mezzi su 2» → «1 mezzo su 2» (coordinatore) e «Resta 1 mezzo» (crisi del mezzo perso);
-   - [ ] etichette dei mezzi coperte dal pannello aggiornamenti.
+8. [x] 2026-10-09 **Ritmo a metà partita** (`iterazione5b.md` §8):
+   - all'avvio, la volontaria dice da dove parte il fuoco e verso chi lo spinge il vento;
+   - dopo 10 minuti simulati, un fatto nuovo ogni 8 s (prossimo arrivo, fronte più vicino, famiglie ancora in casa).
+9. [x] 2026-10-09 Minori:
+   - «1 mezzo su 2» e «Resta 1 mezzo»;
+   - etichette dei mezzi sopra i pannelli fissi, con una linea fino al mezzo.
+10. [ ] **Playtest automatico 3** con i quattro personaggi (`docs/fase5/playtest_gpt2/prompt/`) sulla build web. Verificare anche:
+   - gli FPS del browser a finestra in primo piano;
+   - la durata di Piano2;
+   - le schede compatte.
 
 - [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen e a 900×600.
 

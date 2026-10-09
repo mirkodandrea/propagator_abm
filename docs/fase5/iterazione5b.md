@@ -1,6 +1,6 @@
 # Iterazione 5b: velocità, vegetazione leggibile, correzioni del playtest 2
 
-Stato: **in corso.** Fatti i punti 1–7 di `docs/TODO.md` e parte del 9. Restano il punto 8 e il resto del 9, poi il playtest automatico 3.
+Stato: **punti 1–9 fatti** (`docs/TODO.md`). Resta il playtest automatico 3 con gli stessi quattro personaggi.
 
 ## 1. Velocità tra i turni
 
@@ -118,6 +118,26 @@ Browser (12 % di vegetazione):
 ![compatte](img/5b/schede_compatte.jpg)
 ![compatte, più lontano](img/5b/schede_compatte_lontano.jpg)
 ![aperta nel browser](img/5b/scheda_aperta_browser.jpg)
+
+## 8. Ritmo a metà partita
+
+- **All'avvio di ogni partita**, compreso «Altro incendio», la volontaria dice da dove parte il fuoco, il vento e verso quale paese lo spinge. Usa `near` del caso, il vento attuale e i paesi sottovento.
+- **Durante Esegui**, la spiegazione del gioco resta solo per i primi 10 minuti simulati (`TUTORIAL_S`). Poi, ogni 8 s reali, la volontaria dice un fatto nuovo, a rotazione:
+  - il prossimo mezzo in arrivo, con i minuti;
+  - il fronte più vicino, e se il vento lo spinge lì;
+  - per ogni paese con il fuoco entro 2,5 km, le famiglie ancora in casa, e se non hanno ricevuto ordini.
+- Le frasi dal registro (ordini, ritirate, vento) hanno la precedenza, come prima.
+- La partita scriptata (`KIOSK_SHOT`) fotografa anche T+1:40 (`3d_esegui_dopo`).
+
+![volontaria](img/5b/volontaria.jpg)
+
+## 9. Minori
+
+- «1 mezzo su 2», «Resta 1 mezzo».
+- Le etichette dei mezzi dietro un pannello fisso (aggiornamenti, personaggio, pulsante) salgono sopra il pannello, con una linea sottile fino al mezzo.
+  - La posizione viene prima riportata dentro lo schermo, come fa egui. Così si sposta anche la squadra fuori schermo in basso a destra.
+
+![etichetta](img/5b/etichetta_mezzo.jpg)
 
 ## Incognite
 

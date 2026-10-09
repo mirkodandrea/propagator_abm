@@ -406,12 +406,17 @@ pub fn shots(
             *stage = (3, 0.0);
         }
         5 if kiosk.phase == Phase::Fine => *stage = (3, 0.0),
-        3 if kiosk.phase == Phase::Crisi && kiosk.phase_t > 1.0 => {
+        // later in the game: what the volunteer says once the tutorial is over
+        3 if kiosk.phase == Phase::Esegui && sim.time_s() >= 100 * 60 => {
+            snap("3d_esegui_dopo");
+            *stage = (11, 0.0);
+        }
+        3 | 11 if kiosk.phase == Phase::Crisi && kiosk.phase_t > 1.0 => {
             snap("3c_crisi");
             close_crisis(&mut kiosk, &mut sim);
-            *stage = (3, 0.0);
+            *stage = (stage.0, 0.0);
         }
-        3 if kiosk.phase == Phase::Fine => *stage = (6, 0.0),
+        3 | 11 if kiosk.phase == Phase::Fine => *stage = (6, 0.0),
         6 if stage.1 > 1.0 && kiosk.baseline().is_some() => {
             snap("4_fine");
             *stage = (8, 0.0);

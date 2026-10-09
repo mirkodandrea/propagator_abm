@@ -346,16 +346,26 @@ fn speaker(ctx: &egui::Context, k: &Kiosk, sim: &Sim, speech: &Speech, faces: Op
         Some((l, _)) => l,
         None if k.phase == Phase::Pianifica => {
             let text = if sim.time_s() <= rocca::STEP_S {
-                "Scegli quale paese difendere per primo e chi avvisare. Poi premi «Avvia»."
+                format!("{} Scegli chi difendere per primo e chi avvisare, poi premi «Avvia».", the_fire(k, sim))
             } else {
-                "Siamo in pausa: puoi cambiare il piano, poi premi «Conferma e riprendi»."
+                "Siamo in pausa: puoi cambiare il piano, poi premi «Conferma e riprendi».".into()
             };
-            tip = Line { who: Who::Volontaria, mood: Mood::Calmo, text: text.into() };
+            tip = Line { who: Who::Volontaria, mood: Mood::Calmo, text };
+            &tip
+        }
+        // how to play only at first; then something new from the game
+        None if k.phase == Phase::Esegui && sim.time_s() < TUTORIAL_S => {
+            tip = Line { who: Who::Volontaria, mood: Mood::Calmo,
+                text: "Il piano è in corso. Guarda arrivi ed evacuazioni nelle schede: puoi cambiare gli ordini e premere Conferma, oppure mettere in pausa.".into() };
             &tip
         }
         None if k.phase == Phase::Esegui => {
-            tip = Line { who: Who::Volontaria, mood: Mood::Calmo,
-                text: "Il piano è in corso. Guarda arrivi ed evacuazioni nelle schede: puoi cambiare gli ordini e premere Conferma, oppure mettere in pausa.".into() };
+            let facts = news(k, sim);
+            if facts.is_empty() {
+                return;
+            }
+            let (text, worried) = facts[(ctx.input(|i| i.time) / NEWS_S) as usize % facts.len()].clone();
+            tip = Line { who: Who::Volontaria, mood: if worried { Mood::Preoccupato } else { Mood::Calmo }, text };
             &tip
         }
         None => return,
@@ -363,6 +373,63 @@ fn speaker(ctx: &egui::Context, k: &Kiosk, sim: &Sim, speech: &Speech, faces: Op
     speaking(ctx, faces, line.who, line.mood, |ui| {
         characters::bubble(ui, line.who, |ui| characters::says(ui, line.who, &line.text, BUBBLE_W));
     });
+}
+
+/// Simulated seconds the volunteer explains how to play, after which she
+/// says what is new instead (playtest 2: the tutorial repeated all game).
+const TUTORIAL_S: i64 = 10 * 60;
+/// Real seconds each piece of news stays before the next.
+const NEWS_S: f64 = 8.0;
+
+/// Where this fire starts and whom the wind drives it at: the case's `near`,
+/// its wind, and the districts the fire is downwind of now.
+fn the_fire(k: &Kiosk, sim: &Sim) -> String {
+    let w = sim.fire.weather();
+    let wind = format!("il vento da {} a {:.0} km/h", rocca::words::compass(w.wind_dir_deg), w.wind_speed_kmh);
+    let mut toward: Vec<(f32, &str)> = k.risk.iter().enumerate()
+        .filter_map(|(d, e)| e.filter(|e| e.downwind > 0.5).map(|e| (e.distance_m, sim.districts[d].name.as_str())))
+        .collect();
+    toward.sort_by(|a, b| a.0.total_cmp(&b.0));
+    match toward.first() {
+        Some((m, name)) if *name == sim.case.near => format!("Il fuoco è partito a {} da {name}, e {wind} lo spinge proprio lì.", rocca::words::km(*m)),
+        Some((m, name)) => format!("Il fuoco è partito vicino a {}: {wind} lo spinge verso {name}, a {}.", sim.case.near, rocca::words::km(*m)),
+        None => format!("Il fuoco è partito vicino a {}: {wind} per ora lo spinge lontano dai paesi.", sim.case.near),
+    }
+}
+
+/// What the volunteer can tell that the player may not have seen: the next
+/// unit to arrive, the nearest front, families still at home near the fire.
+/// Facts of the game, each with whether it is worrying.
+fn news(k: &Kiosk, sim: &Sim) -> Vec<(String, bool)> {
+    let mut out = vec![];
+    let next = (0..sim.districts.len())
+        .flat_map(|d| sim.arrivals(d).into_iter().map(move |(u, a)| (d, u, a)))
+        .filter_map(|(d, u, a)| if let rocca::Arrival::InMin(m) = a { Some((m, d, u)) } else { None })
+        .min();
+    if let Some((m, d, u)) = next {
+        out.push((format!("{} arriva a {} tra circa {m} min.", sim.crews.units[u].callsign, sim.districts[d].name), false));
+    }
+    let nearest = k.risk.iter().enumerate().filter_map(|(d, e)| e.map(|e| (d, e))).min_by(|a, b| a.1.distance_m.total_cmp(&b.1.distance_m));
+    if let Some((d, e)) = nearest {
+        let push = if e.downwind > 0.5 { ", e il vento lo spinge proprio lì" } else { "" };
+        if e.distance_m >= 60.0 {
+            out.push((format!("Il fronte più vicino è a {} da {}{push}.", rocca::words::km(e.distance_m), sim.districts[d].name), e.distance_m < 1000.0));
+        }
+    }
+    for (d, e) in k.risk.iter().enumerate() {
+        let Some(e) = e.filter(|e| e.distance_m < 2500.0) else { continue };
+        let home = sim.districts[d].households.iter()
+            .filter(|&&i| matches!(sim.agents.households[i].status, Status::Normal | Status::Warned | Status::Defending | Status::Preparing))
+            .count();
+        if home == 0 {
+            continue;
+        }
+        let who = if home == 1 { "1 famiglia è ancora in casa".to_string() } else { format!("{home} famiglie sono ancora in casa") };
+        let order = if sim.active.civil[d] == Civil::Nessuno { " Non hanno ricevuto ordini." } else { "" };
+        let fire = if e.distance_m < 60.0 { "il fuoco già tra le case".to_string() } else { format!("il fuoco a {}", rocca::words::km(e.distance_m)) };
+        out.push((format!("A {}, con {fire}, {who}.{order}", sim.districts[d].name), true));
+    }
+    out
 }
 
 /// The crisis, told by the person it concerns: what is happening, the
@@ -1017,7 +1084,22 @@ fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
         // a label is about 200 px wide and 18 tall
         let below = shown.iter().filter(|p| (p.x - ground.x).abs() < 110.0 && (p.y - ground.y).abs() < 26.0).count();
         shown.push(ground);
-        let at = ground + egui::vec2(0.0, 28.0 * below as f32);
+        let mut at = ground + egui::vec2(0.0, 28.0 * below as f32);
+        // egui keeps an area on screen; do the same here so the panel test
+        // below sees where the label will really be drawn
+        let sr = ctx.screen_rect();
+        at.x = at.x.clamp(sr.left() + 60.0, sr.right() - 60.0);
+        at.y = at.y.clamp(sr.top() + 24.0, sr.bottom());
+        // Behind a fixed panel (updates, speaker, button): just above it, with
+        // a thin line down to where the unit is.
+        for name in ["lato", "personaggio", "azione"] {
+            let Some(panel) = ctx.memory(|m| m.area_rect(egui::Id::new(name))) else { continue };
+            if panel.expand(4.0).intersects(egui::Rect::from_center_size(at - egui::vec2(0.0, 12.0), egui::vec2(110.0, 24.0))) {
+                let lifted = egui::pos2(at.x, panel.top() - 6.0 - 28.0 * below as f32);
+                ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("guide"))).line_segment([lifted, at], egui::Stroke::new(1.5, Color32::from_white_alpha(150)));
+                at = lifted;
+            }
+        }
         let status = sim.unit_status(i);
         let trouble = if status.starts_with("bloccato") {
             Some((RED, "bloccata"))
