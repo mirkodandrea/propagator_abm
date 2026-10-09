@@ -162,7 +162,7 @@ fn arrivals_follow_the_units() {
 fn the_story_tells_what_happened() {
     let (g, _) = run("Borgo2", &["Castelvento"], &[("Castelvento", Civil::Evacua)], 180);
     let town = g.story(idx(&g, "Castelvento"));
-    assert!(town[0].starts_with("Evacuazione a T+0:00: dopo l'ordine sono partite "), "{town:?}");
+    assert!(town[0].starts_with("Evacuazione alle 14:00: dopo l'ordine sono partite "), "{town:?}");
     // the end state adds up to the district
     assert!(town[1].starts_with("Alla fine, su 160 famiglie: "), "{town:?}");
     assert!(town[2].starts_with("Mezzi in postazione per"), "{town:?}");

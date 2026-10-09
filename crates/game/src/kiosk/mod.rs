@@ -11,6 +11,7 @@
 //! inactivity reset: a new game starts from the debrief's «Riprova» / «Altro
 //! incendio» or from the operator bar (F2), never by itself.
 
+pub mod board;
 pub mod characters;
 pub mod icons;
 pub mod ui;
@@ -33,6 +34,10 @@ pub const TITLE: &str = "Rocca Ventosa";
 pub const RUN_SPEED: f32 = 40.0;
 /// Real seconds the player has at a crisis (spec: ~25 s at ×1).
 pub const CRISIS_S: f32 = 25.0;
+/// Pauses a game allows once the time runs (user, 2026-10-09): few enough
+/// that the game is played in real time, not a pause per order. Crises do
+/// not count.
+pub const MAX_PAUSES: u32 = 3;
 /// How many times faster the game runs while nothing is happening
 /// (`rocca::Game::is_quiet`): the waits after the orders were the dull part.
 /// ×40·3 = ×120.
@@ -103,6 +108,16 @@ pub struct Kiosk {
     pub started: bool,
     /// How to play, shown once the game has started, until «Ho capito».
     pub help: bool,
+    /// Pauses left in this game ([`MAX_PAUSES`]).
+    pub pauses_left: u32,
+    /// The leaderboard, one for all fires (user, 2026-10-09).
+    pub board: rocca::score::Board,
+    /// The initials being chosen at the debrief (letter indices), and the
+    /// place this game took once saved.
+    pub initials: [u8; 3],
+    pub placed: Option<Option<usize>>,
+    /// Real time «Azzera classifica» was first pressed (operator bar).
+    pub board_reset_armed: Option<f64>,
     /// Real seconds the player has at a crisis; the operator can lengthen it
     /// for slow readers.
     pub crisis_s: f32,
@@ -148,6 +163,11 @@ impl Kiosk {
             intro: true,
             started: false,
             help: false,
+            pauses_left: MAX_PAUSES,
+            board: board::load(),
+            initials: [0; 3],
+            placed: None,
+            board_reset_armed: None,
             pick: String::new(),
             reset_armed: None,
             #[cfg(target_arch = "wasm32")]
@@ -271,6 +291,8 @@ pub fn new_game(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<Si
             kiosk.crisis = None;
             kiosk.started = false;
             kiosk.help = false;
+            kiosk.pauses_left = MAX_PAUSES;
+            kiosk.placed = None;
             kiosk.start_baseline();
             kiosk.enter(Phase::Pianifica);
             restarted.send(SimRestarted);

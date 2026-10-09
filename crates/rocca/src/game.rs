@@ -89,6 +89,10 @@ impl Outcome {
     }
 }
 
+/// How far the fire must be from families still at home for the kiosk to
+/// count the game as quiet ([`Game::is_quiet`]).
+pub const QUIET_FIRE_M: f32 = 1500.0;
+
 pub struct Game {
     pub scn: Scenario,
     pub fire: FireSim,
@@ -415,13 +419,23 @@ impl Game {
     }
 
     /// Nothing is changing that the player would want to watch closely: no
-    /// event for `quiet_s` simulated seconds and no unit on the move. The
-    /// kiosk runs faster then; it is pacing, not a rule of the game.
+    /// event for `quiet_s` simulated seconds, no unit on the move and no
+    /// family packing or on the road (playtest 4: «niente di nuovo» showed
+    /// while a whole village was leaving). The kiosk runs faster then; it is
+    /// pacing, not a rule of the game.
     pub fn is_quiet(&self, quiet_s: i64) -> bool {
         let now = self.time_s();
         let calm_log = self.log.last().is_none_or(|e| now - e.at_s >= quiet_s);
         let parked = self.crews.units.iter().all(|u| !matches!(u.state, UnitState::Moving | UnitState::Withdrawing));
-        calm_log && parked
+        let settled = self.agents.households.iter().all(|h| !matches!(h.status, Status::Preparing | Status::Evacuating));
+        // nor while the fire closes on families still at home (playtest:
+        // «tutto fermo, ×120» with the front 400 m from Castelvento)
+        // (the costliest test, so last)
+        let safe = || self.districts.iter().all(|d| {
+            let home = d.households.iter().any(|&i| matches!(self.agents.households[i].status, Status::Normal | Status::Warned | Status::Defending));
+            !home || district::exposure(d, &self.agents, &self.fire, &self.scn).is_none_or(|e| e.distance_m > QUIET_FIRE_M)
+        });
+        calm_log && parked && settled && safe()
     }
 
     /// The same fire with no orders at all, to the end of the case: what the
@@ -517,16 +531,16 @@ impl Game {
     pub fn story(&self, d: usize) -> Vec<String> {
         let hh = &self.districts[d].households;
         let n = hh.len();
-        let clock = |s: i64| format!("T+{}:{:02}", s / 3600, (s / 60) % 60);
+        let clock = crate::words::clock;
         let fam = |k: usize| if k == 1 { "1 famiglia".to_string() } else { format!("{k} famiglie") };
         let mut out = vec![];
         // the order, and how long families took to leave after it
         let (pre, evac) = self.ordered_at[d];
         let left: Vec<i64> = hh.iter().filter_map(|&i| self.left_at[i]).collect();
         let order = match (pre, evac) {
-            (Some(p), Some(e)) => Some((format!("Preallerta a {}, evacuazione a {}", clock(p), clock(e)), p)),
-            (None, Some(e)) => Some((format!("Evacuazione a {}", clock(e)), e)),
-            (Some(p), None) => Some((format!("Preallerta a {}, nessun ordine di evacuazione", clock(p)), p)),
+            (Some(p), Some(e)) => Some((format!("Preallerta alle {}, evacuazione alle {}", clock(p), clock(e)), p)),
+            (None, Some(e)) => Some((format!("Evacuazione alle {}", clock(e)), e)),
+            (Some(p), None) => Some((format!("Preallerta alle {}, nessun ordine di evacuazione", clock(p)), p)),
             (None, None) => None,
         };
         out.push(match order {
@@ -576,9 +590,9 @@ impl Game {
         let caught: Vec<i64> = hh.iter().filter_map(|&i| self.caught_at[i]).collect();
         if let Some(&first) = caught.iter().min() {
             out.push(if caught.len() == 1 {
-                format!("Il fuoco ha raggiunto 1 famiglia ancora in casa, a {}.", clock(first))
+                format!("Il fuoco ha raggiunto 1 famiglia ancora in casa, alle {}.", clock(first))
             } else {
-                format!("Il fuoco ha raggiunto {} ancora in casa, la prima a {}.", fam(caught.len()), clock(first))
+                format!("Il fuoco ha raggiunto {} ancora in casa, la prima alle {}.", fam(caught.len()), clock(first))
             });
         }
         out

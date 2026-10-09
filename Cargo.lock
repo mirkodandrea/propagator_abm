@@ -2006,6 +2006,7 @@ dependencies = [
  "scenario",
  "serde_json",
  "uuid",
+ "web-sys",
 ]
 
 [[package]]

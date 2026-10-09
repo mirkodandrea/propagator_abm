@@ -8,6 +8,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - 5b: punti 1–10 (`docs/fase5/iterazione5b.md`), compreso il playtest automatico 3 (`docs/fase5/playtest_gpt3/README.md`);
   - 5c: punti 1–5 del playtest 3 (`docs/fase5/iterazione5c.md`).
 - **Prossima azione: checkpoint 5, umano** (`docs/fase5/README.md`). Una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), con prima azione e debrief. Non procedere senza conferma dell'utente; dopo viene la fase 6 (playtest).
+- **Tempo reale, pause, punteggio e classifica** fatti (`docs/fase5/tempo_reale.md`); nove difetti trovati giocando, elencati lì e nella sezione «Tempo reale» della fase 5.
 - **Playtest 4** (Giulia, prima volta, Haiku 5.5): fatto, difetti da decidere con l'utente (`docs/fase5/playtest_haiku/`, sezione «Playtest 4» della fase 5).
 - **Ancora aperti** (vedi «Dal playtest 3» in fondo alla fase 5):
   - layout a 900×600: schede sovrapposte e barra in alto sopra legenda e zoom (punti 6–9 del playtest 3 chiusi il 2026-10-09);
@@ -32,6 +33,10 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - **Territorio:** si rigenera con `scenario_factory.py build-town --layout 3`, `town-fires --scenario t4_paese3 --ignitions-from t4_paese2` e `publish --scenario t4_paese3`.
 
 ## Decisioni dell'utente
+
+- 2026-10-09: **tempo reale dichiarato** («non è chiaro se è real time o a turni»; «Va bene» alla proposta in 7 punti): pulsante unico play/pausa, ordini immediati durante il gioco, pausa visibile, orologio «ore 14:26», crisi come rallentatore, accelerazione solo se è davvero tutto fermo, intro esplicita.
+- 2026-10-09: **massimo 3 pause** a partita (le crisi non contano).
+- 2026-10-09: **punteggio e classifica:** salvati rispetto a nessun ordine (100 per famiglia, 10 per casa) + 50 per pausa non usata; tre iniziali arcade; classifica **unica** per tutti gli incendi.
 
 - 2026-10-09: **prima di iniziare la partita nessun ordine; appena iniziata un piccolo tutorial.** Scelta dell'utente: stato «pronto» a ×0. Dopo «Inizia», «Riprova» o «Altro incendio» la mappa mostra fuoco e schede con i pulsanti degli ordini disattivati; «Inizia la partita» apre «Come si gioca» (4 passi della volontaria); gli ordini si sbloccano a «Ho capito», poi si pianifica a ×0 e «Avvia». Fatto: `Kiosk::started`/`help`/`can_order` (`kiosk/mod.rs`), `how_to_play` (`kiosk/ui.rs`); la partita scriptata fotografa `0b_pronto` e `0c_come_si_gioca`.
 - 2026-10-09: playtest completo con un visitatore alla prima volta e almeno 3 partite; con Codex senza crediti, **farlo fare ad Haiku 5.5**.
@@ -184,6 +189,22 @@ Prompt e resoconto in `docs/fase5/playtest_haiku/`. Codex aveva finito i crediti
   - verificato nel playtest mio (browser): «da confermare» compare, quindi l'ordine in pausa si vede. Il «primo click a vuoto» era dello strumento (eventi senza `buttons`). **Confermato invece:** le schede si spostano di ~20 px a ogni cambio di fumetto o di ordine, quindi un click può finire sul pulsante sbagliato.
 - Funziona: barra «a casa / si preparano / in viaggio»; stima della strada; finale con il contorno «senza ordini» e il «Perché».
 - «Evacua tutto a T+0» resta la scelta che vince sulle persone (3 famiglie colte in tutte le prove).
+
+#### Tempo reale, pause, punteggio (2026-10-09, `docs/fase5/tempo_reale.md`)
+
+- [x] 2026-10-09 play/pausa unico, ordini immediati durante il gioco, velo «IN PAUSA», orologio «ore 14:26», crisi «rallentato» con cornice, intro e «Come si gioca» aggiornati;
+- [x] 2026-10-09 3 pause (`MAX_PAUSES`); ×120 solo senza partenze in corso e con il fuoco a più di 1,5 km da chi è in casa (`QUIET_FIRE_M`). Durata: 4,5–5,3 min reali;
+- [x] 2026-10-09 `rocca::score` (punteggio e classifica, 4 test) e `kiosk/board.rs` (file o `localStorage`); «Azzera classifica» in F2;
+- [x] 2026-10-09 playtest mio nel browser, tre partite: 1/71 → 2/24 → Borgo2 1/6 con 1720 punti;
+- [ ] schede che si spostano di ~20 px a ogni cambio di fumetto o di ordine (click sbagliati);
+- [ ] primo click a vuoto mentre la telecamera inquadra un nuovo incendio;
+- [ ] «Come si gioca» ricompare dopo «Riprova»;
+- [ ] etichette dei nuclei sopra i mezzi; «Le Ghiande · nucleo 1» a volte in cima allo schermo;
+- [ ] «fuoco a 0,0 km» nei motivi del coordinatore; «si ritira vicino a» con il paese sbagliato;
+- [ ] cronologia del finale: segni alle 14:00 sovrapposti;
+- [ ] scheda compatta senza l'ordine dato;
+- [ ] tre iniziali lente (20 click per «GIU»): griglia di lettere;
+- [ ] mezzi fermi a fine partita («acqua», «in arrivo ~1 min» per oltre 20 min simulati).
 
 - [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen e a 900×600.
 
