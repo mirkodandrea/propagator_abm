@@ -81,6 +81,8 @@ pub struct Kiosk {
     pub crisis: Option<rocca::Crisis>,
     /// Per district, how the fire stands to it now (refreshed with the preview).
     pub risk: Vec<Option<Exposure>>,
+    /// Free-flow journey range in minutes and homes without a route.
+    pub evacuation: Vec<(Option<(u32, u32)>, usize)>,
     /// The same case and seed with no orders, run beside the game for the
     /// debrief: (case, seed) and the result when it is ready.
     pub baseline: Arc<Mutex<Option<(String, u64, Result<Outcome, String>)>>>,
@@ -127,6 +129,7 @@ impl Kiosk {
             error: None,
             crisis: None,
             risk: vec![],
+            evacuation: vec![],
             baseline: Arc::new(Mutex::new(None)),
             operator: false,
             reset_view: false,
@@ -320,6 +323,17 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
     if stale && kiosk.phase != Phase::Fine {
         kiosk.preview = sim.preview(&kiosk.proposed).ok();
         kiosk.risk = sim.districts.iter().map(|d| rocca::district::exposure(d, &sim.agents, &sim.fire, &sim.scn)).collect();
+        kiosk.evacuation = sim.districts.iter().map(|d| {
+            let mut minutes = Vec::new();
+            let mut blocked = 0;
+            for &i in &d.households {
+                match sim.agents.evacuation_journey_s(i) {
+                    Some(s) => minutes.push((s / 60.0).ceil().max(1.0) as u32),
+                    None => blocked += 1,
+                }
+            }
+            (minutes.iter().min().zip(minutes.iter().max()).map(|(&a, &b)| (a, b)), blocked)
+        }).collect();
         kiosk.preview_at = sim.generation;
         kiosk.dirty = false;
     }

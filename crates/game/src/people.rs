@@ -29,15 +29,13 @@ use crate::sim::Sim;
 /// How far above life size people and cars are drawn. See the module note.
 /// `pub(crate)` so [`crate::inspect`] can pick at the same height these are
 /// actually drawn at, rather than duplicating the constant and drifting.
-pub(crate) const FIGURE_SCALE: f32 = 3.5;
+pub(crate) const FIGURE_SCALE: f32 = crate::visual_scale::PERSON;
 
 /// One scale for every car in the scene — parked in a lot (`town_kit`), driving
 /// the network, or ambient (`life`) — so a queue of evacuees is made of the
-/// same cars the car park is. Houses are drawn at `TOY_SCALE` (1.5, footprint)
-/// and 1.7 tall; a kit hatchback is 4 m, so ×2 is an 8 m toy car against a
-/// 15 m toy house: bigger than life against the house, because it has to read
-/// at play altitude, but not bigger than the house.
-pub(crate) const CAR_TOY: f32 = 2.0;
+/// same cars the car park is. A kit hatchback is 4 m, so ×3 is a 12 m toy
+/// car. The shared diorama proportions live in `visual_scale`.
+pub(crate) const CAR_TOY: f32 = crate::visual_scale::CAR;
 
 pub(crate) fn figure_scale(vr: bool) -> f32 {
     // A person is an operational map symbol in a lab scenario. At the fitted

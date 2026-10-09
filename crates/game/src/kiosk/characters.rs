@@ -177,7 +177,7 @@ fn from_log(text: &str) -> Option<Line> {
         return Some(Line::new(Who::Meteo, Mood::Preoccupato, format!("Il vento è girato: {rest}.")));
     }
     if let Some(rest) = text.strip_prefix("evacuazione: ") {
-        return Some(Line::new(Who::Sindaca, Mood::Calmo, format!("Ho firmato l'ordine di evacuazione: {rest}. Partono adesso.")));
+        return Some(Line::new(Who::Sindaca, Mood::Calmo, format!("Ho firmato l'ordine di evacuazione: {rest}. L’avviso deve arrivare alle famiglie; poi si preparano e partono.")));
     }
     if let Some(rest) = text.strip_prefix("preallerta: ") {
         return Some(Line::new(Who::Sindaca, Mood::Calmo, format!("Preallerta diramata: {rest}. Si preparano a partire.")));

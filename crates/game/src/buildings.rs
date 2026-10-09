@@ -296,10 +296,10 @@ mod palette {
 }
 
 /// Footprint magnification (see `emit_building`).
-const TOY_SCALE: f32 = 1.5;
+const TOY_SCALE: f32 = crate::visual_scale::BUILDING_FOOTPRINT;
 
 /// Toy houses are taller than real ones so they stand up out of the street.
-const TOY_HEIGHT: f32 = 1.7;
+const TOY_HEIGHT: f32 = crate::visual_scale::BUILDING_HEIGHT;
 
 /// Emit one building, and return the vertex range of its window quads
 /// (`start == end` if it has none). `None` for footprints too degenerate to
@@ -366,7 +366,8 @@ fn emit_building(
             p.y = cy + (p.y - cy) * k;
         }
     }
-    let area = area * TOY_SCALE * TOY_SCALE;
+    // Infer the building type and storeys from the real footprint, so visual
+    // magnification cannot turn a garage into a house or add storeys.
     let kind = Kind::of(b.kind.as_deref(), area);
     let h = hash01(b.id as u64, 0x1F);
     // The population bake's storey count is itself synthetic and sits at 2 for

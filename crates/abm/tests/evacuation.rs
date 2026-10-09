@@ -483,3 +483,18 @@ fn routing_cost() {
         t0.elapsed().as_secs_f64() * 1000.0 / n as f64
     );
 }
+
+#[test]
+fn journey_estimates_use_the_real_routes_without_issuing_orders() {
+    let (scn, fire, mut agents) = setup();
+    agents.step(1.0, &fire, &scn); // initialise the route fields
+    let generation = agents.generation;
+    let time = agents.time_s();
+    let estimates: Vec<_> = (0..agents.households.len()).map(|i| agents.evacuation_journey_s(i)).collect();
+    assert!(estimates.iter().flatten().all(|s| s.is_finite() && *s >= 0.0));
+    assert!(estimates.iter().all(Option::is_some), "all authored homes initially have an exit");
+    assert_eq!(agents.generation, generation);
+    assert_eq!(agents.time_s(), time);
+    assert!(agents.households.iter().all(|h| !h.ordered));
+    assert!(agents.evacuation_journey_s(agents.households.len()).is_none());
+}

@@ -74,6 +74,10 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ### Fase 5: nuova UX
 
+- [x] 2026-10-09 **Feedback del playtest umano: leggibilità e tempi** (`docs/fase5/playtest_feedback.md`): etichette per i nuclei separati di Le Ghiande, collegamenti alla scheda comune; legenda di numeri/barre/mezzi e combustibili; stato delle famiglie e stime di arrivo nelle schede; viaggio dell'evacuazione dai percorsi reali (distinto da avviso, preparazione e code); aggiornamenti recenti sempre visibili e cronologia completa; indicazioni persistenti e pulsante «Pausa e modifica piano». Verificati test ABM/Rocca e build nativa; controllo visivo con partita scriptata.
+- [x] 2026-10-09 (utente) Proporzioni da diorama, solo grafica (`crates/game/src/visual_scale.rs`): edifici ×1,9 in pianta e ×2,5 in altezza, auto ×3, persone ×4,5, mezzi ×7, alberi ×1,6, arbusti ×1,25. Coordinate, fuoco e percorsi invariati.
+- [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen e a 900×600.
+
 - [x] 2026-10-08 Mappa a tutto schermo con schede per quartiere (rango, fuoco, mezzi ora e dopo la conferma, Difendi / più importante / non difendere, Preallerta / Evacua), etichette dei mezzi, rotte attive (verdi) e proposte (bianche tratteggiate), barra in alto, crisi con countdown, pulsante unico, debrief contro «senza ordini» con Riprova / Altro incendio, barra operatore F2 (`docs/fase5/README.md`).
 - [x] 2026-10-08 Crisi: «scoperto» solo se il fuoco può arrivare entro 45 min (`URGENT_S`); nessuna crisi negli ultimi 10 min (`LAST_CALL_S`).
 - [x] 2026-10-08 Inquadratura calcolata (case + innesco nella zona libera, yaw ±50°); corretto il trigger che non scattava (il gioco parte a T+6 s).

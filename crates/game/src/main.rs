@@ -37,6 +37,7 @@ mod textures;
 mod ui;
 mod units;
 mod vegetation;
+mod visual_scale;
 
 use bevy::core_pipeline::bloom::BloomSettings;
 use bevy::core_pipeline::tonemapping::Tonemapping;

@@ -35,7 +35,7 @@ use crate::rings::{ring_mesh, RING_LIFT_M};
 use crate::sim::Sim;
 
 /// How far above life size units are drawn.
-pub(crate) const SYMBOL_SCALE: f32 = 5.0;
+pub(crate) const SYMBOL_SCALE: f32 = crate::visual_scale::UNIT;
 
 pub(crate) fn symbol_scale(vr: bool) -> f32 {
     SYMBOL_SCALE * if vr { 1.45 } else { 1.0 }

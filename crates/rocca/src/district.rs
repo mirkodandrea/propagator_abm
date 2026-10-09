@@ -10,6 +10,8 @@ pub struct District {
     pub name: String,
     /// Indices into `Abm::households`.
     pub households: Vec<usize>,
+    /// Anchors of disconnected hamlets, for map labels.
+    pub nuclei: Vec<Pos>,
     /// Centroid of the homes.
     pub centre: Pos,
 }
@@ -37,7 +39,9 @@ pub fn of(scn: &Scenario, agents: &Abm) -> Vec<District> {
                 x: households.iter().map(|&i| agents.households[i].home.x).sum::<f32>() / n,
                 y: households.iter().map(|&i| agents.households[i].home.y).sum::<f32>() / n,
             };
-            Some(District { name, households, centre })
+            let homes: Vec<Pos> = households.iter().map(|&i| agents.households[i].home).collect();
+            let nuclei = clusters(&homes, 220.0);
+            Some(District { name, households, nuclei, centre })
         })
         .collect()
 }
@@ -116,4 +120,49 @@ pub fn homes_by_threat(d: &District, agents: &Abm, fire: &FireSim, scn: &Scenari
     out.sort_by(|a, b| a.1.total_cmp(&b.1));
     out.dedup_by(|a, b| dist(a.0, b.0) < 1.0);
     out
+}
+
+/// Connected components of nearby homes. Each anchor is an actual home,
+/// nearest its component centre, rather than empty land between hamlets.
+fn clusters(homes: &[Pos], gap_m: f32) -> Vec<Pos> {
+    let mut seen = vec![false; homes.len()];
+    let mut out = Vec::new();
+    for start in 0..homes.len() {
+        if seen[start] { continue; }
+        seen[start] = true;
+        let mut group = vec![start];
+        let mut cursor = 0;
+        while cursor < group.len() {
+            let p = homes[group[cursor]];
+            for i in 0..homes.len() {
+                if !seen[i] && dist(p, homes[i]) <= gap_m {
+                    seen[i] = true;
+                    group.push(i);
+                }
+            }
+            cursor += 1;
+        }
+        let n = group.len() as f32;
+        let centre = Pos {
+            x: group.iter().map(|&i| homes[i].x).sum::<f32>() / n,
+            y: group.iter().map(|&i| homes[i].y).sum::<f32>() / n,
+        };
+        out.push(*group.iter().map(|&i| &homes[i]).min_by(|a, b| dist(**a, centre).total_cmp(&dist(**b, centre))).unwrap());
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn hamlets_have_anchors_on_homes_and_include_chained_neighbours() {
+        let homes = [Pos { x: 0.0, y: 0.0 }, Pos { x: 100.0, y: 0.0 },
+            Pos { x: 200.0, y: 0.0 }, Pos { x: 700.0, y: 0.0 }];
+        let anchors = clusters(&homes, 110.0);
+        assert_eq!(anchors.len(), 2);
+        assert_eq!(anchors[0].x, 100.0);
+        assert_eq!(anchors[1].x, 700.0);
+        assert!(clusters(&[], 110.0).is_empty());
+    }
 }

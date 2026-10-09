@@ -301,7 +301,11 @@ fn scatter_plant(
 
     // A stand of one species is not a stand of clones: size, tint and yaw all
     // jitter, which is most of what stops merged geometry looking stamped.
-    let scale = 0.75 + rng.unit() * 0.5;
+    let scale = (0.75 + rng.unit() * 0.5) * match species {
+        Species::Conifer | Species::Broadleaf => crate::visual_scale::TREE,
+        Species::Shrub => crate::visual_scale::SHRUB,
+        Species::Grass => 1.0,
+    };
     let yaw = rng.unit() * std::f32::consts::TAU;
 
     // Where this plant sits between the dry and vigorous ends of its species,
@@ -335,7 +339,7 @@ fn scatter_plant(
         Species::Grass if true && rng.unit() < 0.025 => {
             // Lone field trees break the meadow silhouette without changing
             // its simulation fuel; they share the same interpolated burn field.
-            let height = (7.0 + rng.unit() * 5.0) * scale;
+            let height = (7.0 + rng.unit() * 5.0) * scale * crate::visual_scale::TREE;
             out.model("olive", base, Vec3::splat(height), yaw, [0.33, 0.40, 0.26], wood);
         }
         Species::Grass => grass(out, base, scale, yaw, foliage, rng),

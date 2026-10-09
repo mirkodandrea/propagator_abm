@@ -1,5 +1,11 @@
 # Emergency simulation models
 
+Presentation proportions are centralized in `crates/game/src/visual_scale.rs`:
+building footprints ×1.9 and heights ×2.5, cars ×3, people ×4.5, emergency
+units ×7, trees ×1.6 and shrubs ×1.25. Vegetation multipliers apply to the
+existing species sizes. These affect rendering only; scenario coordinates,
+terrain and fire resolution, routes, plant counts and mesh detail are unchanged.
+
 Original, editable Blender assets generated for this project; no external art or textures.
 
 - `emergency_assets.blend`: nine named collections (pedestrian, firefighter, car, fire_engine, pine, oak, bush, olive, cypress). Each collection is authored at the origin; isolate a collection to edit it.

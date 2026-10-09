@@ -994,6 +994,39 @@ impl Abm {
         self.boat_lift = Some(lift);
     }
 
+    /// Free-flow journey from a home's current refuge route. This excludes
+    /// warning, preparation, queues, slope and future fire; it is a lower
+    /// bound on travel, never an evacuation completion prediction.
+    pub fn evacuation_journey_s(&self, i: usize) -> Option<f32> {
+        let h = self.households.get(i)?;
+        let car = self.entry_car[i];
+        let drive = h.vehicles > 0 && car != NO_NODE
+            && dist(self.network.pos(car), h.home) < 400.0
+            && self.routes_car.reachable(car);
+        let (mut at, field) = if drive { (car, &self.routes_car) }
+            else { (self.entry_foot[i], &self.routes_foot) };
+        if at == NO_NODE || !field.reachable(at) { return None; }
+        let walking = h.members.iter().map(|&p| {
+            let p = &self.people[p];
+            p.walk_speed * if p.needs_assistance { 0.55 } else { 1.0 }
+        }).fold(2.0, f32::min).max(0.1);
+        let approach = if drive { APPROACH_SPEED } else { walking.min(APPROACH_SPEED) };
+        let mut seconds = dist(h.home, self.network.pos(at)) / approach;
+        // A corrupt or cyclic route must not hang the UI.
+        for _ in 0..self.network.len() {
+            if field.cost[at as usize] == 0.0 { return Some(seconds); }
+            let next = field.next[at as usize];
+            if next == NO_NODE { return None; }
+            let edge = self.network.neighbours(at).iter().find(|e| e.to == next)?;
+            let speed = if drive {
+                self.traffic.speed(Traffic::link_id(edge.id, at, next))
+            } else { walking };
+            seconds += edge.length_m / speed.max(0.1);
+            at = next;
+        }
+        None
+    }
+
     /// Spot fires seen so far: fires that started away from the mapped front.
     pub fn spot_fires(&self) -> &SpotFires {
         &self.spots

@@ -83,7 +83,8 @@ pub(super) fn emit(scn: &Scenario, b: &Building, out: &mut Builder) -> bool {
             // the toy car: the lot is the size of the cars that park in it.
             let (w, d) = (w * TOY_SCALE, d * TOY_SCALE);
             drape(scn, out, c, w, d, [0.36, 0.37, 0.39], 0.3);
-            let bays = ((w / 6.5) as i32).max(2);
+            let bay_width = 3.25 * crate::people::CAR_TOY;
+            let bays = ((w / bay_width) as i32).max(1);
             for row in [-1.0f32, 1.0] {
                 for i in 0..bays {
                     let x = c.x - w * 0.5 + (i as f32 + 0.5) * w / bays as f32;
@@ -234,6 +235,11 @@ fn place(out: &mut Builder, m: &Kit, c: Pos, y: f32, s: [f32; 3], yaw: f32, pain
 
 /// A kit prop at `p` on the ground, uniformly scaled.
 fn put(scn: &Scenario, out: &mut Builder, name: &str, p: Pos, scale: f32, yaw: f32, paint: Option<[f32; 3]>) {
+    let scale = scale * if matches!(name, "street_tree" | "cypress") {
+        crate::visual_scale::TREE
+    } else {
+        1.0
+    };
     let y = ground_at(scn, p).max(0.0);
     place(out, kit(name), p, y - 0.1, [scale; 3], yaw, paint);
 }
