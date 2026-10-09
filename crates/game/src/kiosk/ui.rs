@@ -31,7 +31,7 @@ use super::icons::{self, Icon};
 use super::{close_crisis, commit, new_game, Kiosk, Phase};
 use crate::sim::{Sim, SimRestarted};
 
-const PANEL: Color32 = Color32::from_rgba_premultiplied(18, 20, 24, 242);
+const PANEL: Color32 = Color32::from_rgba_premultiplied(18, 20, 24, 250);
 const ORANGE: Color32 = Color32::from_rgb(240, 140, 50);
 const RED: Color32 = Color32::from_rgb(255, 105, 85);
 const AMBER: Color32 = Color32::from_rgb(250, 195, 70);
@@ -42,6 +42,9 @@ const GREEN: Color32 = Color32::from_rgb(110, 230, 150);
 /// Room a district chip is given on screen, for placing chips apart.
 const CHIP_W: f32 = 320.0;
 const CHIP_H: f32 = 350.0;
+/// A chip while the plan runs untouched: name, families, defence. It opens
+/// downward to the full chip under the pointer.
+const CHIP_H_COMPACT: f32 = 175.0;
 /// What the simulated families do is not what to do: said where it shows.
 const REAL_LIFE: &str = "Nella realtà, quando arriva l'ordine di evacuazione si parte subito. Aspettare di vedere il fuoco è uno degli errori più pericolosi.";
 const GREY: Color32 = Color32::from_rgb(205, 208, 212);
@@ -713,13 +716,18 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
     let mut order = k.proposed.priorities.clone();
     let mut civil = k.proposed.civil.clone();
     let mut changed = false;
+    // While the plan in force runs and nothing is being composed, chips are
+    // compact, so three of them fit near each other; the one under the
+    // pointer opens (downward, so what was under the pointer stays put).
+    let compact = k.phase == Phase::Esegui && k.proposed == sim.active;
+    let open_id = |d: usize| egui::Id::new(("quartiere aperto", d));
     // Where each chip stands (bottom centre) and how big it was last frame.
     let mut place: Vec<Option<(egui::Pos2, egui::Vec2)>> = (0..n)
         .map(|d| {
             let at = screen(cam, sim, chip_anchor(sim, d), 40.0)?;
             // A fixed size, not last frame's: a chip that gains a line of text
             // must not move its buttons from under the pointer.
-            let size = egui::vec2(CHIP_W, CHIP_H);
+            let size = egui::vec2(CHIP_W, if compact { CHIP_H_COMPACT } else { CHIP_H });
             Some((at, size))
         })
         .collect();
@@ -845,10 +853,21 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
         let Some((at, _)) = place[d] else { continue };
         let id = egui::Id::new(("quartiere", d));
         let rank = order.iter().position(|&x| x == d);
-        egui::Area::new(id).fixed_pos(at).pivot(Align2::CENTER_BOTTOM).show(ctx, |ui| {
+        let open = compact && ctx.memory(|m| m.data.get_temp::<bool>(open_id(d))).unwrap_or(false);
+        let small = compact && !open;
+        // compact chips hang from their top edge, so opening grows downward
+        let area = if compact {
+            egui::Area::new(id).fixed_pos(at - egui::vec2(CHIP_W * 0.5, CHIP_H_COMPACT)).pivot(Align2::LEFT_TOP).order(if open { egui::Order::Foreground } else { egui::Order::Middle })
+        } else {
+            egui::Area::new(id).fixed_pos(at).pivot(Align2::CENTER_BOTTOM)
+        };
+        let shown = area.show(ctx, |ui| {
             let (border, width) = if alarm == Some(d) { (ORANGE, 4.0) } else if rank == Some(0) { (AMBER, 1.5) } else { (Color32::from_gray(90), 1.5) };
             egui::Frame::none().fill(PANEL).stroke(egui::Stroke::new(width, border)).rounding(10.0).inner_margin(10.0).show(ui, |ui| {
                 ui.set_width(CHIP_W - 20.0);
+                if small {
+                    ui.set_min_height(CHIP_H_COMPACT - 22.0);
+                }
                 // rank, name, fire
                 ui.horizontal(|ui| {
                     let (r, _) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
@@ -874,10 +893,12 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         });
                     }
                 });
-                ui.label(RichText::new(match rank {
-                    Some(r) => format!("Priorità {}{}", r + 1, if dist.nuclei.len() > 1 { " · tutti i nuclei" } else { "" }),
-                    None => "Nessuna priorità di difesa".into(),
-                }).size(14.0).color(GREY));
+                if !small {
+                    ui.label(RichText::new(match rank {
+                        Some(r) => format!("Priorità {}{}", r + 1, if dist.nuclei.len() > 1 { " · tutti i nuclei" } else { "" }),
+                        None => "Nessuna priorità di difesa".into(),
+                    }).size(14.0).color(GREY));
+                }
                 // families and engines
                 let now = sim.posts.iter().flatten().filter(|p| p.district == d).count();
                 let next = k.preview.as_ref().map_or(now, |p| p.units_on(d));
@@ -907,11 +928,15 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         ui.label(RichText::new(format!("{safe}/{} evacuate", hh.len())).size(16.0).color(GREEN));
                     });
                 }
+                if small {
+                    ui.label(RichText::new(defence_line(k, sim, d)).size(14.0).color(GREEN));
+                    return;
+                }
                 let hh = &dist.households;
                 let count = |states: &[Status]| hh.iter().filter(|&&i| states.contains(&sim.agents.households[i].status)).count();
                 ui.label(RichText::new(format!("{} a casa · {} si preparano · {} in viaggio",
                     count(&[Status::Normal, Status::Warned, Status::Defending]),
-                    count(&[Status::Preparing]), count(&[Status::Evacuating]))).size(13.0).color(GREY));
+                    count(&[Status::Preparing]), count(&[Status::Evacuating]))).size(14.0).color(GREY));
                 let trapped = count(&[Status::Trapped, Status::Casualty]);
                 if trapped > 0 {
                     ui.label(RichText::new(format!("{trapped} intrappolate / vittime")).size(13.0).color(RED));
@@ -926,7 +951,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         Some((Some((a, b)), blocked)) => format!("Viaggio ~{a}–{b} min · {blocked} famiglie senza via"),
                         _ => "Evacua: viaggio non disponibile".into(),
                     };
-                    ui.label(RichText::new(journey).size(13.0).color(BLUE));
+                    ui.label(RichText::new(journey).size(14.0).color(BLUE));
                 });
                 // controls
                 ui.horizontal(|ui| match rank {
@@ -964,6 +989,9 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                 }
             });
         });
+        // open while the pointer is on it
+        let hovered = ctx.pointer_hover_pos().is_some_and(|p| shown.response.rect.contains(p));
+        ctx.memory_mut(|m| m.data.insert_temp(open_id(d), compact && hovered));
     }
     if changed {
         k.proposed.priorities = order;
@@ -1086,7 +1114,7 @@ fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
                 ui.label(RichText::new(if pending {
                     "Modifiche pronte: premi Conferma"
                 } else {
-                    "Modifica gli ordini dalle schede"
+                    "Passa sopra una scheda per gli ordini"
                 }).size(16.0).color(Color32::WHITE));
                 if !pending && ui.add(secondary("Pausa e modifica piano")).clicked() {
                     k.enter(Phase::Pianifica);

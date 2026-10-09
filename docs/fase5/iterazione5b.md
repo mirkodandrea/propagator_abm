@@ -1,6 +1,6 @@
 # Iterazione 5b: velocità, vegetazione leggibile, correzioni del playtest 2
 
-Stato: **in corso.** Fatti i punti 1–6 di `docs/TODO.md` e parte del 9. Restano i punti 7, 8 e il resto del 9, poi il playtest automatico 3.
+Stato: **in corso.** Fatti i punti 1–7 di `docs/TODO.md` e parte del 9. Restano il punto 8 e il resto del 9, poi il playtest automatico 3.
 
 ## 1. Velocità tra i turni
 
@@ -103,8 +103,25 @@ Browser (12 % di vegetazione):
 
 ![debrief](img/5b/debrief.jpg)
 
+## 7. Schede che si coprono
+
+- **Schede compatte durante Esegui** (piano invariato). Ogni scheda mostra nome, distanza del fuoco, famiglie, mezzi, barra con X/Y e la riga «Difesa»: 175 punti di altezza invece di 350.
+- Le collisioni si calcolano sulla dimensione compatta. Così le tre schede non si coprono né alla vista iniziale né più lontano (zoom ×1,8).
+- **La scheda sotto il puntatore si apre** verso il basso, in primo piano, con pulsanti e righe complete. Il punto sotto il puntatore non si sposta.
+- Appena c'è un piano da confermare (un pulsante premuto, una crisi, la pausa), tutte le schede tornano complete.
+- Indicazione in basso: «Passa sopra una scheda per gli ordini».
+- **Leggibilità:**
+  - fondo delle schede più opaco (alfa 250/255);
+  - righe secondarie («a casa · si preparano · in viaggio», viaggio dell'evacuazione) da 13 a 14 punti.
+- **Verifica:** schermate native a zoom 1 e 1,8; nel browser, la scheda di Le Ghiande aperta passando sopra con il mouse.
+
+![compatte](img/5b/schede_compatte.jpg)
+![compatte, più lontano](img/5b/schede_compatte_lontano.jpg)
+![aperta nel browser](img/5b/scheda_aperta_browser.jpg)
+
 ## Incognite
 
 - **FPS nel browser non misurati:** la scheda di Chrome automatizzata era in secondo piano e veniva rallentata (0,1 frame/s). Da misurare nel playtest 3 a finestra in primo piano.
+- **Touchscreen:** la scheda si apre al passaggio del puntatore. Su schermo a sfioramento va verificato che un tocco la apra (egui usa la posizione del tocco come puntatore).
 - **Durata di Piano2** (1,8 min di esecuzione): forse troppo breve per seguire il fuoco. Da valutare nel playtest 3.
 - **Pineta «può correre veloce»:** lo dice la tabella (v0 200 m/h). Nei casi del kiosk i fronti che arrivano ai paesi sono di erba e macchia. Da controllare che la frase non contraddica ciò che il giocatore vede.

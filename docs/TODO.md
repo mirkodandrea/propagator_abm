@@ -114,10 +114,10 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
    - sezioni apribili: in cima vegetazione e barra delle famiglie, «Schede dei paesi» chiusa;
    - «famiglie senza via»; testo dei tempi a ×40;
    - chiusa all'avvio, quindi non copre Pian dei Grilli. `KIOSK_LEGEND=1` la apre per le schermate.
-7. [ ] **Schede che si coprono** (scelta all'agente):
-   - collisioni tra schede anche con lo zoom;
-   - schede compatte durante Esegui;
-   - fondo più opaco e testo secondario più leggibile.
+7. [x] 2026-10-09 **Schede che si coprono** (`iterazione5b.md` §7):
+   - schede compatte durante Esegui; si aprono al passaggio del puntatore; collisioni sulla dimensione compatta;
+   - fondo più opaco, testo secondario a 14 punti.
+   - [ ] Verificare l'apertura con il tocco su touchscreen.
 8. [ ] **Ritmo a metà partita** (scelta all'agente):
    - la volontaria dice un fatto nuovo (prossimo arrivo, fronte più vicino, famiglie ancora a casa) invece di ripetere il tutorial;
    - «Altro incendio» si presenta con una frase su dove parte e verso chi va (dati del caso: `near`, vento).
