@@ -4,24 +4,35 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
-- **Fase corrente: fase 5, iterazione 5b**: criticità del playtest automatico 2, velocità tra i turni, leggibilità della vegetazione (decisione dell'utente, 2026-10-09).
-  - Punti 1–10 fatti il 2026-10-09 (`docs/fase5/iterazione5b.md`, `docs/fase5/playtest_gpt3/README.md`).
-  - Le criticità del playtest 3 sono in «Dal playtest 3», da decidere con l'utente.
-- **Prossimo checkpoint umano: checkpoint 5** (`docs/fase5/README.md`): una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), con prima azione e debrief. Poi la fase 6 (playtest).
-- **Consegna dell'iterazione 5b:**
-  - una pagina `docs/fase5/iterazione5b.md` con file modificati, prima/dopo (schermate e tabella), durata della partita e FPS;
-  - poi un nuovo playtest automatico con gli stessi quattro personaggi (`docs/fase5/playtest_gpt2/prompt/`). Copiare la cartella fuori dal repository e lanciare `run.sh`, con la build web servita su `localhost:8765`: `./scripts/build_web.sh` e `python3 -m http.server 8765 --directory target/web`.
+- **Fase corrente: fase 5, iterazioni 5b e 5c chiuse** (2026-10-09, inviate con push fino ad `a16a043`):
+  - 5b: punti 1–10 (`docs/fase5/iterazione5b.md`), compreso il playtest automatico 3 (`docs/fase5/playtest_gpt3/README.md`);
+  - 5c: punti 1–5 del playtest 3 (`docs/fase5/iterazione5c.md`).
+- **Prossima azione: checkpoint 5, umano** (`docs/fase5/README.md`). Una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), con prima azione e debrief. Non procedere senza conferma dell'utente; dopo viene la fase 6 (playtest).
+- **Ancora aperti** (vedi «Dal playtest 3» in fondo alla fase 5):
+  - punti 6–9 del playtest 3;
+  - FPS nel browser a finestra in primo piano;
+  - apertura delle schede al tocco;
+  - durata di Piano2 (1,8 min di esecuzione);
+  - crisi del mezzo perso con la nuova scelta, mai vista in una partita vera.
+- **Playtest automatico** (stessi quattro personaggi):
+  - copiare `docs/fase5/playtest_gpt3/prompt/` fuori dal repository e lanciare `run.sh` (circa 1 h);
+  - servire la build web su `localhost:8765`: `./scripts/build_web.sh` e `python3 -m http.server 8765 --directory target/web`;
+  - i resoconti vanno riassunti all'utente in italiano.
 - **Per riprendere:**
   - **Comandi:**
-    - `cargo test --release --workspace` (35 target verdi);
+    - `cargo test --release --workspace` (37 target verdi);
     - `target/release/rocca <caso> --priorita A,B --b-priorita B,A`;
-    - esempi `rocca`: `ab_sweep`, `crisi`, `civili`, `porta`;
+    - esempi `rocca`: `ab_sweep`, `crisi`, `civili`, `porta`, `durata` (minuti reali per ritmo), `debrief` (righe del «Perché»), `preallerta_vs_evacua` (semi);
     - kiosk: `KIOSK_CASE=Coste2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_SHOT=<dir> target/release/game` (partita scriptata fino a «Altro incendio»);
-    - kiosk: F2 apre la barra operatore; `KIOSK_FPS=1` scrive gli FPS; `KIOSK_VEG_DENSITY` regola la vegetazione (0,5 di serie); `KIOSK_SCALE=1` forza 1 pixel per punto.
+    - kiosk: F2 apre la barra operatore; `KIOSK_FPS=1` scrive gli FPS; `KIOSK_VEG_DENSITY` regola la vegetazione (0,5 di serie); `KIOSK_SCALE=1` forza 1 pixel per punto;
+    - kiosk: `KIOSK_LEGEND=1` apre la legenda; `KIOSK_SHOT_ZOOM` e `KIOSK_SHOT_FOCUS=x,y` per i primi piani. La partita scriptata fotografa anche T+1:40 (`3d_esegui_dopo`);
+    - velocità di serie ×40, ×120 nei tratti quieti (`kiosk/mod.rs`);
+    - modelli della vegetazione: `/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build_models.py`.
   - **Territorio:** si rigenera con `scenario_factory.py build-town --layout 3`, `town-fires --scenario t4_paese3 --ignitions-from t4_paese2` e `publish --scenario t4_paese3`.
 
 ## Decisioni dell'utente
 
+- 2026-10-09: **«Procedi»**: correggere i punti 1–5 del playtest 3 prima del checkpoint 5 (fatto: iterazione 5c). Commit e push richiesti. I resoconti dei playtest vanno dati all'utente in italiano.
 - 2026-10-09: **affrontare le criticità del playtest 2**, più due richieste:
   - **aumentare la velocità tra i turni** (fase Esegui);
   - **vegetazione più leggibile**, con una differenziazione grafica marcata: pini marittimi, castagni, cespugli e prateria riconoscibili.
