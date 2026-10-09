@@ -531,24 +531,39 @@ impl Game {
         };
         out.push(match order {
             Some((what, from)) => {
-                let after: Vec<i64> = left.iter().filter(|&&t| t >= from).map(|&t| t - from).collect();
-                if after.is_empty() {
-                    format!("{what}: nessuna famiglia è partita.")
-                } else {
-                    let mut a = after;
-                    a.sort_unstable();
-                    let min = |t: i64| (t + 59) / 60;
-                    if a.len() == 1 {
-                        format!("{what}: 1 famiglia partita, dopo {} min.", min(a[0]))
-                    } else {
-                        format!("{what}: {} famiglie partite su {n}, metà entro {} min.", a.len(), min(a[(a.len() - 1) / 2]))
-                    }
+                let mut after: Vec<i64> = left.iter().filter(|&&t| t >= from).map(|&t| t - from).collect();
+                after.sort_unstable();
+                match after.len() {
+                    0 => format!("{what}: dopo l'ordine nessuna famiglia è partita."),
+                    1 => format!("{what}: dopo l'ordine è partita 1 famiglia, in {} min.", (after[0] + 59) / 60),
+                    k => format!("{what}: dopo l'ordine sono partite {k} famiglie, metà entro {} min.", (after[(k - 1) / 2] + 59) / 60),
                 }
             }
             None if left.is_empty() => "Nessun ordine alla popolazione: nessuna famiglia è partita.".into(),
             None if left.len() == 1 => format!("Nessun ordine alla popolazione: 1 famiglia su {n} è partita da sola."),
             None => format!("Nessun ordine alla popolazione: {} famiglie su {n} sono partite da sole.", left.len()),
         });
+        // where every family ended, so the counts add up to the district
+        let (mut safe, mut road, mut home, mut dead) = (0, 0, 0, 0);
+        for &i in hh {
+            match self.agents.households[i].status {
+                Status::Evacuated => safe += 1,
+                Status::Evacuating => road += 1,
+                Status::Casualty => dead += 1,
+                _ => home += 1,
+            }
+        }
+        let mut parts = vec![format!("{safe} in salvo")];
+        if road > 0 {
+            parts.push(format!("{road} ancora in viaggio"));
+        }
+        if home > 0 {
+            parts.push(if home == 1 { "1 rimasta a casa".into() } else { format!("{home} rimaste a casa") });
+        }
+        if dead > 0 {
+            parts.push(if dead == 1 { "1 vittima".into() } else { format!("{dead} vittime") });
+        }
+        out.push(format!("Alla fine, su {n} famiglie: {}.", parts.join(", ")));
         // the defence
         let rank = self.active.rank(d);
         out.push(match (self.defended_s[d], rank) {

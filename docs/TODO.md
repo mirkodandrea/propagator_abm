@@ -133,13 +133,13 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 #### Dal playtest 3 (proposte, da decidere con l'utente)
 
-1. [ ] La crisi «mezzo perso» ha solo timer e «Continua» (verificato in `ui.rs`). Farne un aggiornamento senza countdown, oppure offrire una scelta vera.
-2. [ ] La scheda aperta si allunga sopra nucleo e fronte; badge dei mezzi sotto le schede; A1/SQ sovrapposti.
-3. [ ] Legenda tagliata in fondo, scorrimento invisibile (verificato nella schermata di q4); copre Pian dei Grilli.
-4. [ ] «Difendi» su un paese che non riceverà mezzi: dire «0 mezzi» prima della conferma.
-5. [ ] Finale:
-   - spiegare preallerta + evacuazione tardiva (1 colta) contro evacuazione immediata (3 colte), o verificare se è rumore del seme;
-   - riconciliare «26 partite» con «25/30 evacuate».
+1–5. [x] 2026-10-09 (utente: «Procedi») corretti nell'iterazione 5c (`docs/fase5/iterazione5c.md`):
+   - scelta vera alla crisi del mezzo perso;
+   - scheda aperta con soli pulsanti;
+   - legenda adattiva con scorrimento visibile, evitata dalle schede;
+   - «Priorità N · 0 mezzi ora»;
+   - «Alla fine, su N famiglie: …» nel finale.
+   La differenza tra preallerta ed evacuazione immediata è rumore del seme (`docs/fase5/preallerta_vs_evacua.md`).
 6. [ ] Evacuazione «~4–102 min + attesa»: non si capisce quando finisce.
 7. [ ] Frasi della sindaca sugli ordini più corte.
 8. [ ] Fumetto tagliato a sinistra (q4, non verificato): controllare con frasi lunghe e finestre strette.

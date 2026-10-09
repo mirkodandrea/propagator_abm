@@ -461,6 +461,24 @@ fn crisis(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, faces: Option<&Port
                 }
                 ui.painter().text(r.center(), Align2::CENTER_CENTER, format!("{:.0}", (k.crisis_s - k.phase_t).max(0.0).ceil()), egui::FontId::proportional(22.0), Color32::WHITE);
                 ui.add_space(6.0);
+                // A unit lost: the choice is who comes first with the units
+                // left (playtest 3: a countdown with only «Continua» was a
+                // decision without options).
+                if d.is_none() && matches!(c.kind, rocca::crisis::Kind::MezzoPerso { .. }) {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("Con i mezzi rimasti, chi difendere per primo?").size(15.0).color(Color32::WHITE));
+                        ui.horizontal(|ui| {
+                            for x in 0..sim.districts.len() {
+                                let first = k.proposed.priorities.first() == Some(&x);
+                                if icons::button(ui, Icon::Up, &sim.districts[x].name, first, AMBER, !first).clicked() {
+                                    k.proposed.priorities.retain(|&y| y != x);
+                                    k.proposed.priorities.insert(0, x);
+                                    k.dirty = true;
+                                }
+                            }
+                        });
+                    });
+                }
                 if let Some(d) = d {
                     let name = sim.districts[d].name.clone();
                     let first = k.proposed.priorities.first() == Some(&d);
@@ -534,8 +552,15 @@ fn legend(ctx: &egui::Context) {
         panel().fill(Color32::from_rgb(18, 20, 24)).show(ui, |ui| {
             egui::CollapsingHeader::new(RichText::new("Legenda e tempi").size(15.0).strong().color(Color32::WHITE)).default_open(roomy).show(ui, |ui| {
                 ui.set_width(340.0);
-                ui.set_height(ctx.screen_rect().height() * 0.65);
-                egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(ctx.screen_rect().height() * 0.65).show(ui, |ui| {
+                // as tall as its content up to most of the screen, with the
+                // scroll bar always shown (playtest 3: the cut-off last line
+                // did not say there was more)
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, true])
+                    .max_height(ctx.screen_rect().height() * 0.6)
+                    .min_scrolled_height(ctx.screen_rect().height() * 0.6)
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+                    .show(ui, |ui| {
                 #[derive(Clone, Copy)]
                 enum Mark {
                     Fill(Color32),
@@ -807,7 +832,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
         clamp(at, *size);
     }
     // the fixed panels (last frame's), which a chip must not cover
-    let obstacles: Vec<egui::Rect> = ["lato", "personaggio", "azione", "vista"]
+    let obstacles: Vec<egui::Rect> = ["lato", "personaggio", "azione", "vista", "legenda"]
         .iter()
         .filter_map(|n| ctx.memory(|m| m.area_rect(egui::Id::new(*n))))
         .map(|r| r.expand(6.0))
@@ -960,15 +985,19 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         });
                     }
                 });
-                if !small {
-                    ui.label(RichText::new(match rank {
-                        Some(r) => format!("Priorità {}{}", r + 1, if dist.nuclei.len() > 1 { " · tutti i nuclei" } else { "" }),
-                        None => "Nessuna priorità di difesa".into(),
-                    }).size(14.0).color(GREY));
-                }
                 // families and engines
                 let now = sim.posts.iter().flatten().filter(|p| p.district == d).count();
                 let next = k.preview.as_ref().map_or(now, |p| p.units_on(d));
+                if !compact {
+                    // a place ranked but given no unit says so before the
+                    // commit (playtest 3: «Difendi» promised more than it gave)
+                    let (text, colour) = match rank {
+                        Some(r) if next == 0 => (format!("Priorità {} · 0 mezzi ora", r + 1), AMBER),
+                        Some(r) => (format!("Priorità {}{}", r + 1, if dist.nuclei.len() > 1 { " · tutti i nuclei" } else { "" }), GREY),
+                        None => ("Nessuna priorità di difesa".into(), GREY),
+                    };
+                    ui.label(RichText::new(text).size(14.0).color(colour));
+                }
                 ui.horizontal(|ui| {
                     icons::show(ui, Icon::Family, 24.0, GREY);
                     ui.label(RichText::new(format!("{} famiglie", dist.households.len())).size(16.0).color(Color32::WHITE));
@@ -995,31 +1024,37 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         ui.label(RichText::new(format!("{safe}/{} evacuate", hh.len())).size(16.0).color(GREEN));
                     });
                 }
-                if small {
+                // Compact: the defence line only; opened, the orders under it
+                // and nothing else, so it covers little of the scene.
+                if compact {
                     ui.label(RichText::new(defence_line(k, sim, d)).size(14.0).color(GREEN));
-                    return;
+                    if small {
+                        return;
+                    }
                 }
                 let hh = &dist.households;
                 let count = |states: &[Status]| hh.iter().filter(|&&i| states.contains(&sim.agents.households[i].status)).count();
-                ui.label(RichText::new(format!("{} a casa · {} si preparano · {} in viaggio",
-                    count(&[Status::Normal, Status::Warned, Status::Defending]),
-                    count(&[Status::Preparing]), count(&[Status::Evacuating]))).size(14.0).color(GREY));
-                let trapped = count(&[Status::Trapped, Status::Casualty]);
-                if trapped > 0 {
-                    ui.label(RichText::new(format!("{trapped} intrappolate / vittime")).size(13.0).color(RED));
-                } else {
-                    ui.allocate_space(egui::vec2(1.0, 16.0));
+                if !compact {
+                    ui.label(RichText::new(format!("{} a casa · {} si preparano · {} in viaggio",
+                        count(&[Status::Normal, Status::Warned, Status::Defending]),
+                        count(&[Status::Preparing]), count(&[Status::Evacuating]))).size(14.0).color(GREY));
+                    let trapped = count(&[Status::Trapped, Status::Casualty]);
+                    if trapped > 0 {
+                        ui.label(RichText::new(format!("{trapped} intrappolate / vittime")).size(13.0).color(RED));
+                    } else {
+                        ui.allocate_space(egui::vec2(1.0, 16.0));
+                    }
+                    // Reserve two lines so choosing an order cannot move controls.
+                    ui.allocate_ui(egui::vec2(CHIP_W - 20.0, 42.0), |ui| {
+                        ui.label(RichText::new(defence_line(k, sim, d)).size(14.0).color(GREEN));
+                        let journey = match k.evacuation.get(d) {
+                            Some((Some((a, b)), 0)) => format!("Evacua: viaggio ~{a}–{b} min + attesa"),
+                            Some((Some((a, b)), blocked)) => format!("Viaggio ~{a}–{b} min · {blocked} famiglie senza via"),
+                            _ => "Evacua: viaggio non disponibile".into(),
+                        };
+                        ui.label(RichText::new(journey).size(14.0).color(BLUE));
+                    });
                 }
-                // Reserve two lines so choosing an order cannot move controls.
-                ui.allocate_ui(egui::vec2(CHIP_W - 20.0, 42.0), |ui| {
-                    ui.label(RichText::new(defence_line(k, sim, d)).size(14.0).color(GREEN));
-                    let journey = match k.evacuation.get(d) {
-                        Some((Some((a, b)), 0)) => format!("Evacua: viaggio ~{a}–{b} min + attesa"),
-                        Some((Some((a, b)), blocked)) => format!("Viaggio ~{a}–{b} min · {blocked} famiglie senza via"),
-                        _ => "Evacua: viaggio non disponibile".into(),
-                    };
-                    ui.label(RichText::new(journey).size(14.0).color(BLUE));
-                });
                 // controls
                 ui.horizontal(|ui| match rank {
                     Some(r) => {
