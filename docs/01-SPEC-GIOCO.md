@@ -28,7 +28,7 @@ Una priorità alta **non garantisce protezione**. Il coordinatore non può ordin
 4. **Conferma o scadenza:** si applica l'ultimo **piano proposto valido**, compresi i comandi civili selezionati esplicitamente. Se non ha fatto nulla, rimane il piano precedente. La partita torna a ×N.
 5. **Conclusione:** il mondo mostra il risultato e un confronto con lo stesso incendio senza ordini. «Riprova» ripete lo stesso caso, «Altro incendio» cambia innesco/meteo sullo **stesso territorio**.
 
-**Valori indicativi**, da testare: 40 s reali di pianificazione iniziale, ×20 durante l'esecuzione, 25 s a ×1 durante una crisi, 0–2 crisi per partita. **Nessun limite rigido alla durata complessiva**: la partita può superare 5 minuti se il ritmo regge. Un buon piano potrebbe non generare nessuna pausa critica; lo scenario deve comunque restare interessante.
+**Valori indicativi**, da testare: 40 s reali di pianificazione iniziale, ×40 durante l'esecuzione (fino a ×120 nei tratti senza eventi), 25 s a ×1 durante una crisi, 0–2 crisi per partita. Aggiornamento del 2026-10-09: nei playtest ×20 (×60 nei tratti quieti) dava circa 9 minuti reali e un calo d'attenzione dopo gli ordini. L'utente ha chiesto di aumentare la velocità tra i turni; i valori finali si fissano misurando la durata. **Nessun limite rigido alla durata complessiva**: la partita può superare 5 minuti se il ritmo regge. Un buon piano potrebbe non generare nessuna pausa critica; lo scenario deve comunque restare interessante.
 
 ## 3. Quando scatta una crisi
 
@@ -60,7 +60,9 @@ Il piano proposto si ricalcola usando lo stato più recente quando necessario; i
 - indicazione del vento, del rischio e del tempo (×N / ×1, con countdown);
 - due azioni chiare per i cittadini: **Preallerta / Evacua**;
 - un solo pulsante centrale **Conferma / Continua**;
-- finale molto breve: persone rimaste in pericolo, case **colpite** (non chiamarle «distrutte» se è un proxy), effetto di almeno una scelta e possibilità di riprovare.
+- finale molto breve: persone rimaste in pericolo, case **colpite** (non chiamarle «distrutte» se è un proxy), effetto di almeno una scelta e possibilità di riprovare;
+- **tempi e motivi dallo stato reale:** arrivi dei mezzi da ciò che stanno facendo, non dall'anteprima; quando un luogo prioritario resta senza mezzi, il motivo si legge nella sua scheda, già prima della conferma;
+- **vegetazione riconoscibile a colpo d'occhio** (decisione 2026-10-09): pini marittimi (pineta), castagni (latifoglie), cespugli (macchia) e prateria distinti per forma e colore anche nella vista generale; una legenda breve dice perché contano (l'erba corre, la macchia brucia forte, il bosco è più lento). Solo grafica: il combustibile simulato non cambia.
 
 Niente controlli manuali dei mezzi, disegno libero di poligoni, lunghe spiegazioni o menù da gestionale. La prima azione deve essere intuitiva; il chiosco sarà **presidiato** e potrà essere introdotto dal responsabile. Gioco completamente offline; **nessun reset automatico per inattività**. Sono previsti avvio di una nuova partita e riavvio **manuali**, con accesso operatore semplice. Il timer delle crisi (×1) rimane attivo come parte del gameplay.
 

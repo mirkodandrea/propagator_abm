@@ -4,8 +4,11 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
-- **Fase corrente: fase 5 consegnata (nuova UX), in attesa del checkpoint 5** (checkpoint 4 approvato il 2026-10-08: un solo motore `rocca::Game`, un solo scenario `data/scenarios/rocca_ventosa`, una sola modalità).
-- **Prossimo checkpoint umano: checkpoint 5** (`docs/fase5/README.md`): una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), prima azione e debrief. Poi la fase 6 (playtest).
+- **Fase corrente: fase 5, iterazione 5b**: criticità del playtest automatico 2, velocità tra i turni, leggibilità della vegetazione (decisione dell'utente, 2026-10-09). La lista ordinata è in «Iterazione 5b» qui sotto. Le scelte di dettaglio sono lasciate all'agente: misurare, decidere, scriverle qui.
+- **Prossimo checkpoint umano: checkpoint 5** (`docs/fase5/README.md`): una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), con prima azione e debrief. Poi la fase 6 (playtest).
+- **Consegna dell'iterazione 5b:**
+  - una pagina `docs/fase5/iterazione5b.md` con file modificati, prima/dopo (schermate e tabella), durata della partita e FPS;
+  - poi un nuovo playtest automatico con gli stessi quattro personaggi (`docs/fase5/playtest_gpt2/prompt/`). Copiare la cartella fuori dal repository e lanciare `run.sh`, con la build web servita su `localhost:8765`: `./scripts/build_web.sh` e `python3 -m http.server 8765 --directory target/web`.
 - **Per riprendere:**
   - **Comandi:**
     - `cargo test --release --workspace` (35 target verdi);
@@ -17,6 +20,11 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Decisioni dell'utente
 
+- 2026-10-09: **affrontare le criticità del playtest 2**, più due richieste:
+  - **aumentare la velocità tra i turni** (fase Esegui);
+  - **vegetazione più leggibile**, con una differenziazione grafica marcata: pini marittimi, castagni, cespugli e prateria riconoscibili.
+
+  «Per il resto lascio le scelte a te.»
 - 2026-10-09: **layout 3** («Procedi» alla proposta): macchia e bosco fino al margine sud-ovest di Castelvento, perché il paese possa essere colpito.
 - 2026-10-08: **nessuna evacuazione a piedi dalle case isolate** («molto poco realistico»). Nei nuclei sparsi ogni famiglia ha almeno un'auto; in paese è senza auto circa 1 famiglia su 12 (`town.py::vehicles`, applicato anche a `population.json` pubblicato: nessun'altra estrazione casuale cambia).
 - 2026-10-08: **checkpoint 4 approvato** («Continua» dopo la proposta): layout 2 e i tre casi del kiosk, cioè Coste2_gira (principale), Piano2 e Borgo2 (introduttivo).
@@ -77,11 +85,47 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - [x] 2026-10-09 **Feedback del playtest umano: leggibilità e tempi** (`docs/fase5/playtest_feedback.md`): etichette per i nuclei separati di Le Ghiande, collegamenti alla scheda comune; legenda di numeri/barre/mezzi e combustibili; stato delle famiglie e stime di arrivo nelle schede; viaggio dell'evacuazione dai percorsi reali (distinto da avviso, preparazione e code); aggiornamenti recenti sempre visibili e cronologia completa; indicazioni persistenti e pulsante «Pausa e modifica piano». Verificati test ABM/Rocca e build nativa; controllo visivo con partita scriptata.
 - [x] 2026-10-09 (utente) Proporzioni da diorama, solo grafica (`crates/game/src/visual_scale.rs`): edifici ×1,9 in pianta e ×2,5 in altezza, auto ×3, persone ×4,5, mezzi ×7, alberi ×1,6, arbusti ×1,25. Coordinate, fuoco e percorsi invariati.
 - [x] 2026-10-09 **Playtest automatico 2** (`docs/fase5/playtest_gpt2/README.md`): quattro personaggi GPT (nuova, quattordicenne, min-maxer, UX). Nessuna strategia dominante su Coste2_gira: AFK 16 / 73, evacua tutti 3 / 71, preallerta e poi cambio piano 1 / 73 (famiglie / case).
-- [ ] **Stima d'arrivo dallo stato reale**, non dall'anteprima (`ui.rs`, `Post.eta_s`): a T+2:37 «arrivi ~2–2 min» con la squadra in ritirata. Scrivere «~2 min» quando i due valori coincidono.
-- [ ] Motivo del «nessun arrivo previsto» dentro la scheda, e nell'anteprima prima di confermare (es. «A2 tornerà alla base»).
-- [ ] Debrief: X/Y accanto alle barre delle evacuate; 2–3 righe causali per paese al posto del consiglio fisso.
-- [ ] Legenda: vegetazione e chiave delle barre in cima o in vista; «senza via» → «famiglie senza via».
-- [ ] Da decidere con l'utente dopo una prova al chiosco: schede che coprono la mappa e tra loro (zoom, legenda); frasi della volontaria a metà partita con fatti nuovi invece del tutorial; presentazione di «Altro incendio».
+#### Iterazione 5b (2026-10-09, in quest'ordine)
+
+1. [ ] **Velocità tra i turni.**
+   - Oggi `RUN_SPEED` è ×20 e `QUIET_BOOST` ×3, cioè ×60 nei tratti quieti (`crates/game/src/kiosk/mod.rs`). Una partita dura circa 9 minuti reali (q2).
+   - Proposta di partenza: ×40 di base, ×120 nei tratti quieti. Il ×1 delle crisi e il countdown restano invariati.
+   - **Verificare:**
+     - che gli esiti non dipendano dalla velocità (stesso caso a `KIOSK_SPEED` 20 e 120: gli effetti dipendono dal tempo simulato, non dal numero di update);
+     - quanti secondi simulati avanza un frame a 40 FPS, e che le crisi scattino ancora in tempo (non saltate dentro un frame lungo);
+     - che le frasi dei personaggi non si accavallino (coda di 2, minimo 2,5 s).
+   - **Misurare:** la durata reale delle tre partite del kiosk, prima e dopo (`docs/fase5/durata.md`).
+   - Aggiornare `01-SPEC-GIOCO.md` §2 con i valori scelti.
+2. [ ] **Vegetazione riconoscibile**, solo grafica (`crates/game/src/vegetation.rs`, modelli da `scripts/build_models.py` → `assets/models/meshes.json`). Fuoco e combustibili non cambiano.
+   - **Pineta** (fuel 11–12): pino marittimo, cioè fusto alto e nudo, rossastro, e chioma a ombrello alta e irregolare, verde scuro-bluastro. Oggi è il modello `pine`, troppo simile all'`oak`.
+   - **Latifoglie** (fuel 4–5): castagno, con chioma grande, tondeggiante e lobata, verde medio brillante e fusto corto. Fuel 4 (umide) leggermente più verde e fitto di fuel 5.
+   - **Macchia** (fuel 7–9): cespugli bassi e tondi, densi, verde oliva-grigio, ben distinti dagli alberi anche dalla vista generale. La densità sale da 7 a 9.
+   - **Prateria** (fuel 1–3): erba paglierina evidente, a ciuffi, sul suolo giallo-oro; fuel 3 (prato secco) più chiaro e dorato. Niente alberi sparsi oltre agli attuali isolati.
+   - **Suolo:** tinta tenue per tipo sotto la vegetazione, che si legga anche a densità 12 % nel browser. Attenzione: `terrain_mesh.rs` ha già abbandonato i colori a classi perché sembravano mimetica. Sfumare, non disegnare a macchie.
+   - **Legenda:** campioni presi dai colori veri del rendering (oggi sono indicativi), con una miniatura per tipo se possibile. Dire perché contano: l'erba corre veloce, la macchia brucia forte, il bosco più lento.
+   - **Prove:**
+     - schermate ravvicinate e generali, prima/dopo, nativo e browser;
+     - FPS non sotto gli attuali ~40 su M4 Pro e 60 nel browser;
+     - non aumentare la densità delle piante (`KIOSK_VEG_DENSITY` 0,5; browser 12 %).
+3. [ ] **Stima d'arrivo dallo stato reale**, non dall'anteprima.
+   - Oggi a T+2:37 compare «arrivi ~2–2 min» con la squadra in ritirata (`ui.rs` ~790 usa `Post.eta_s` dell'anteprima).
+   - Durante Esegui usare lo stato dei mezzi (`Game::unit_status`): «in postazione», «in arrivo ~N min», «nessun mezzo: <motivo>».
+   - Scrivere «~2 min» quando i due valori coincidono.
+4. [ ] **Motivo nella scheda.** «Nessun arrivo previsto» deve dire perché (da `Proposal.idle`). Nell'anteprima prima di confermare dire cosa succederà (es. «A2 tornerà alla base: nessuna postazione sicura a Pian dei Grilli»).
+5. [ ] **Debrief con il perché:**
+   - X/Y accanto alle barre delle evacuate;
+   - 2–3 righe causali per paese, al posto del consiglio fisso, costruite da registro ed esito (es. «preallerta a T+0: partite in 12 min»; «evacuazione a T+1:40: 3 famiglie ancora in casa all'arrivo del fuoco»);
+   - nessuna regola nuova: solo dati già prodotti dal motore.
+6. [ ] **Legenda:** vegetazione e chiave della barra in cima, o in schede/sezioni apribili, non in fondo allo scorrimento. «senza via» → «famiglie senza via». Non coprire la scheda di Pian dei Grilli all'apertura.
+7. [ ] **Schede che si coprono** (scelta all'agente):
+   - collisioni tra schede anche con lo zoom;
+   - schede compatte durante Esegui;
+   - fondo più opaco e testo secondario più leggibile.
+8. [ ] **Ritmo a metà partita** (scelta all'agente):
+   - la volontaria dice un fatto nuovo (prossimo arrivo, fronte più vicino, famiglie ancora a casa) invece di ripetere il tutorial;
+   - «Altro incendio» si presenta con una frase su dove parte e verso chi va (dati del caso: `near`, vento).
+9. [ ] Minori: «1 mezzi su 2» → «1 mezzo su 2»; etichette dei mezzi coperte dal pannello aggiornamenti.
+
 - [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen e a 900×600.
 
 - [x] 2026-10-08 Mappa a tutto schermo con schede per quartiere (rango, fuoco, mezzi ora e dopo la conferma, Difendi / più importante / non difendere, Preallerta / Evacua), etichette dei mezzi, rotte attive (verdi) e proposte (bianche tratteggiate), barra in alto, crisi con countdown, pulsante unico, debrief contro «senza ordini» con Riprova / Altro incendio, barra operatore F2 (`docs/fase5/README.md`).

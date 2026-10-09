@@ -1,6 +1,6 @@
 # Playtest automatico 2: giocabilità, engagement, UX (9 ottobre 2026)
 
-Quattro personaggi giocati da GPT 6.1 Sol (Codex) nel browser, sulla build web di `76623e3` con il layout 3, senza accesso a codice o documentazione. Rapporti e schermate in questa cartella.
+Quattro personaggi giocati da GPT 6.1 Sol (Codex) nel browser, sulla build web di `76623e3` con il layout 3, senza accesso a codice o documentazione. Rapporti e schermate in questa cartella. Prompt e script in `prompt/`: copiare la cartella fuori dal repository, servire la build web su `localhost:8765` e lanciare `run.sh`, che esegue i personaggi uno dopo l'altro (circa 2 ore in tutto).
 
 | Personaggio | Partite | Esito |
 |---|---|---|
