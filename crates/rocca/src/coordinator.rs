@@ -274,9 +274,9 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
         if taken[*d] < quota[rank] && !full.contains(d) {
             let name = &v.districts[*d].name;
             let why = if no_access.contains(d) && taken[*d] > 0 {
-                format!("{name}: {} {} su {}; per gli altri nessuna postazione raggiungibile e sicura ora", taken[*d], if taken[*d] == 1 { "mezzo" } else { "mezzi" }, quota[rank])
+                format!("{name}: {} {} su {}; gli altri non possono avvicinarsi senza rischi ora", taken[*d], if taken[*d] == 1 { "mezzo" } else { "mezzi" }, quota[rank])
             } else if no_access.contains(d) {
-                format!("{name}: nessuna postazione raggiungibile e sicura ora")
+                format!("{name}: i mezzi non possono avvicinarsi senza rischi ora")
             } else {
                 format!("{name}: mezzi insufficienti ({} di {})", taken[*d], quota[rank])
             };

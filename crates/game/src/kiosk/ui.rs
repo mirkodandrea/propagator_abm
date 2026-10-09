@@ -193,7 +193,7 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
                     ui.painter().line_segment([c + d, c + d * 0.35 + side], stroke);
                     ui.painter().line_segment([c + d, c + d * 0.35 - side], stroke);
                 }
-                ui.label(RichText::new(format!("{:.0} km/h", w.wind_speed_kmh)).size(22.0).strong().color(Color32::WHITE));
+                ui.label(RichText::new(format!("da {} {:.0} km/h", rocca::words::compass(w.wind_dir_deg), w.wind_speed_kmh)).size(22.0).strong().color(Color32::WHITE));
                 ui.add_space(14.0);
                 // the three hours as a bar
                 let frac = (sim.time_s() as f32 / sim.case.duration_s() as f32).clamp(0.0, 1.0);
@@ -212,6 +212,7 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
                 icons::show(ui, icon, 30.0, colour);
                 let pace = match k.phase {
                     Phase::Pianifica => "In pausa".into(),
+                    Phase::Esegui if sim.speed > k.speed => format!("×{:.0} · niente di nuovo", sim.speed),
                     Phase::Esegui => format!("×{:.0}", sim.speed),
                     Phase::Crisi => "Decisione · ×1".into(),
                     Phase::Fine => "Concluso".into(),
@@ -728,7 +729,7 @@ fn defence_line(k: &Kiosk, sim: &Sim, d: usize) -> String {
     // why nothing is coming: not chosen, no unit could be given, or no threat yet
     let reason = |plan: &rocca::Plan, uncovered: &[(usize, String)]| -> String {
         if plan.rank(d).is_none() {
-            return "Difesa: non è tra le priorità".into();
+            return "Difesa: nessun mezzo mandato qui".into();
         }
         match uncovered.iter().find(|(x, _)| *x == d) {
             Some((_, why)) => format!("Difesa: {}", why.strip_prefix(&format!("{name}: ")).unwrap_or(why)),
@@ -1041,7 +1042,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     let (text, colour) = match rank {
                         Some(r) if next == 0 => (format!("Priorità {} · 0 mezzi ora", r + 1), AMBER),
                         Some(r) => (format!("Priorità {}{}", r + 1, if dist.nuclei.len() > 1 { " · tutti i nuclei" } else { "" }), GREY),
-                        None => ("Nessuna priorità di difesa".into(), GREY),
+                        None => ("Non difeso".into(), GREY),
                     };
                     ui.label(RichText::new(text).size(14.0).color(colour));
                 }
@@ -1094,10 +1095,10 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     // Reserve two lines so choosing an order cannot move controls.
                     ui.allocate_ui(egui::vec2(CHIP_W - 20.0, 60.0), |ui| {
                         ui.label(RichText::new(defence_line(k, sim, d)).size(14.0).color(GREEN));
-                        let road = |a: u32, b: u32| if b > a { format!("~{a} min di strada, le ultime ~{b}") } else { format!("~{a} min di strada") };
+                        let road = |a: u32, b: u32| if b > a { format!("~{a} min di strada, le ultime ~{b} min") } else { format!("~{a} min di strada") };
                         let journey = match k.evacuation.get(d) {
                             Some((Some((a, b)), 0)) => format!("Evacua: {}", road(*a, *b)),
-                            Some((Some((a, b)), blocked)) => format!("{} · {blocked} famiglie senza via", road(*a, *b)),
+                            Some((Some((a, b)), blocked)) => format!("{} · {blocked} con la strada tagliata", road(*a, *b)),
                             _ => "Evacua: viaggio non disponibile".into(),
                         };
                         ui.label(RichText::new(journey).size(14.0).color(BLUE));
@@ -1123,6 +1124,8 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                             order.push(d);
                             changed = true;
                         }
+                        // what it does, on the card (playtest 4)
+                        ui.label(RichText::new("manda i mezzi a\nproteggere le case").size(13.0).color(GREY));
                     }
                 });
                 ui.horizontal(|ui| {
@@ -1138,6 +1141,8 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                 });
                 if (civil[d] != sim.active.civil[d] || next != now) && k.phase != Phase::Pianifica {
                     pill(ui, "da confermare", AMBER);
+                } else if civil[d] == Civil::Nessuno && sim.active.civil[d] == Civil::Nessuno {
+                    ui.label(RichText::new("Preallerta: si tengono pronti · Evacua: partono").size(13.0).color(GREY));
                 }
             });
         });
@@ -1459,7 +1464,7 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                 ui.label("");
                 ui.horizontal(|ui| {
                     icons::show(ui, Icon::Family, 20.0, BLUE);
-                    ui.label(RichText::new("in casa").size(15.0).color(GREY));
+                    ui.label(RichText::new("colte in casa").size(15.0).color(GREY));
                 });
                 ui.horizontal(|ui| {
                     icons::show(ui, Icon::House, 20.0, ORANGE);

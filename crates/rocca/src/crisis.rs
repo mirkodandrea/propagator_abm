@@ -21,7 +21,6 @@ use scenario::Pos;
 
 use crate::coordinator::{self, Post, View};
 use crate::district;
-use crate::plan::Plan;
 use crate::words;
 
 pub const MAX_CRISES: usize = 2;
@@ -88,7 +87,7 @@ impl Detector {
     /// coordinator review, after the active plan's posts are known.
     /// `forecast`: a wind change the weather service has announced, as
     /// (when, wind from, degrees).
-    pub fn check(&mut self, v: &View, active: &Plan, posts: &[Option<Post>], now: i64, forecast: Option<(i64, f64)>) -> Option<Crisis> {
+    pub fn check(&mut self, v: &View, posts: &[Option<Post>], now: i64, forecast: Option<(i64, f64)>) -> Option<Crisis> {
         let n = v.districts.len();
         if self.seen.len() != n {
             self.seen = vec![vec![]; n];
@@ -125,7 +124,7 @@ impl Detector {
                     text: {
                         let left = v.crews.units.iter().filter(|x| x.state != UnitState::Lost && !x.kind.is_air()).count();
                         let left = if left == 1 { "Resta 1 mezzo".to_string() } else { format!("Restano {left} mezzi") };
-                        format!("{} è stato raggiunto dal fuoco ed è fuori servizio. {left} per gli stessi luoghi.", u.callsign)
+                        format!("Il fuoco ha colpito {}: è fuori servizio. {left} per gli stessi luoghi.", u.callsign)
                     },
                 });
             }
@@ -199,15 +198,15 @@ impl Detector {
             }
             let u = &v.crews.units[k];
             let cost = match posts.get(k).and_then(|p| p.as_ref()) {
-                Some(p) => format!("e lascia {} con un mezzo in meno (priorità {})", v.districts[p.district].name, active.rank(p.district).map_or(0, |r| r + 1)),
-                None => "ed è libero ora".to_string(),
+                Some(p) => format!(", ma lascia {} con un mezzo in meno", v.districts[p.district].name),
+                None => String::new(),
             };
             candidates.push(Crisis {
                 at_s: now,
                 kind: Kind::Scoperto { district: d },
                 text: format!(
-                    "{name} è minacciato: fuoco a {}, potrebbe arrivare in circa {} min. Spostare {} richiede circa {} min {cost}.",
-                    words::km(e.distance_m),
+                    // short: it is read against the countdown (playtest 4)
+                    "Il fuoco può arrivare a {name} in circa {} min. {} ci arriva in {} min{cost}.",
                     minutes(arrive_s),
                     u.callsign,
                     minutes(eta)

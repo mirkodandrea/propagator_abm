@@ -173,15 +173,15 @@ Prompt e resoconto in `docs/fase5/playtest_haiku/`. Codex aveva finito i crediti
 
 - Esiti (famiglie colte in casa / case colpite): P1 alla cieca 9 / 71; P2 «Riprova» evacuando tutti a T+0, 3 / 73; P3 «Altro incendio» 3 / 24.
 - Da correggere (verificati sulle schermate dove indicato):
-  - [ ] finale: la colonna «in casa» (colte dal fuoco, 0) e il «Perché» («36 rimaste a casa») sembrano in contraddizione (verificato su `p2-02-finale.jpg`);
-  - [ ] crisi «Scoperto»: «Autobotte 1 … è libero ora», va concordato al femminile (verificato su `p2-01-decisione.jpg`);
-  - [ ] «~102» senza unità: si legge come un numero qualsiasi (anche nel diario di Codex);
-  - [ ] Difendi, Preallerta ed Evacua non spiegati sul pulsante; «Nessuna priorità di difesa» non dice nulla;
-  - [ ] crisi di 16–22 s: il testo non si legge in tempo. Da confermare con persone, perché lo strumento rallenta;
-  - [ ] ×40 → ×120 senza spiegazione;
-  - [ ] gergo: «nessuna postazione raggiungibile e sicura», «senza via»;
-  - [ ] freccia del vento senza «da dove» (anche nel diario di Codex);
-  - [ ] da verificare: ordine in pausa senza effetto visibile prima di Conferma; pulsanti solo al passaggio del mouse; click finito su Preallerta per una scheda che si sposta. Possibile errore di coordinate dell'agente.
+  - [x] 2026-10-09 finale: colonna «colte in casa», nel «Perché» «N non sono partite»;
+  - [x] 2026-10-09 genere: «ci arriva in N min», «Il fuoco ha colpito Autobotte 1»;
+  - [x] 2026-10-09 «le ultime ~102 min»;
+  - [x] 2026-10-09 sulle schede: «Non difeso», «Difendi: manda i mezzi a proteggere le case», «Preallerta: si tengono pronti · Evacua: partono»;
+  - [x] 2026-10-09 crisi «Scoperto» più corta: «Il fuoco può arrivare a X in circa N min. A2 ci arriva in 2 min, ma lascia Y con un mezzo in meno.» Il countdown resta 25 s (spec);
+  - [x] 2026-10-09 «×120 · niente di nuovo»: da rivedere nel lavoro su tempo reale e pausa (scatta anche con l'evacuazione in corso);
+  - [x] 2026-10-09 gergo: «i mezzi non possono avvicinarsi senza rischi», «con la strada tagliata», «mezzi mancanti:»;
+  - [x] 2026-10-09 barra in alto: «da sud 40 km/h»;
+  - verificato nel playtest mio (browser): «da confermare» compare, quindi l'ordine in pausa si vede. Il «primo click a vuoto» era dello strumento (eventi senza `buttons`). **Confermato invece:** le schede si spostano di ~20 px a ogni cambio di fumetto o di ordine, quindi un click può finire sul pulsante sbagliato.
 - Funziona: barra «a casa / si preparano / in viaggio»; stima della strada; finale con il contorno «senza ordini» e il «Perché».
 - «Evacua tutto a T+0» resta la scelta che vince sulle persone (3 famiglie colte in tutte le prove).
 

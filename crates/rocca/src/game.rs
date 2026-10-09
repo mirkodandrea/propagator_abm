@@ -272,7 +272,7 @@ impl Game {
         }
         for (d, why) in &p.uncovered {
             if !self.uncovered.iter().any(|(x, w)| x == d && w == why) {
-                self.log.push(LogEntry { at_s: now, text: format!("senza mezzi: {why}") });
+                self.log.push(LogEntry { at_s: now, text: format!("mezzi mancanti: {why}") });
             }
         }
         self.posts = p.posts.clone();
@@ -288,7 +288,7 @@ impl Game {
             return p;
         }
         let forecast = self.territory.shifted(&self.case).map(|(at, w)| (at, w.wind_dir_deg));
-        if let Some(c) = self.detector.check(&v, &self.active, &self.posts, now, forecast) {
+        if let Some(c) = self.detector.check(&v, &self.posts, now, forecast) {
             self.log.push(LogEntry { at_s: now, text: format!("CRISI: {}", c.text) });
             self.crisis = Some(c);
         }
@@ -346,7 +346,7 @@ impl Game {
             let near = self.districts.iter().min_by(|a, b| dist(a.centre, u.pos).total_cmp(&dist(b.centre, u.pos))).map_or("", |d| d.name.as_str());
             match u.state {
                 UnitState::Withdrawing => self.log.push(LogEntry { at_s: now, text: format!("{} si ritira vicino a {near}: il fuoco è troppo vicino", u.callsign) }),
-                UnitState::Lost => self.log.push(LogEntry { at_s: now, text: format!("{} raggiunto dal fuoco vicino a {near} mentre {}: fuori servizio", u.callsign, if was == UnitState::Withdrawing { "si ritirava" } else { "lavorava" }) }),
+                UnitState::Lost => self.log.push(LogEntry { at_s: now, text: format!("Il fuoco ha colpito {} vicino a {near} mentre {}: fuori servizio", u.callsign, if was == UnitState::Withdrawing { "si ritirava" } else { "lavorava" }) }),
                 _ => {}
             }
         }
@@ -558,7 +558,7 @@ impl Game {
             parts.push(format!("{road} ancora in viaggio"));
         }
         if home > 0 {
-            parts.push(if home == 1 { "1 rimasta a casa".into() } else { format!("{home} rimaste a casa") });
+            parts.push(if home == 1 { "1 non è partita".into() } else { format!("{home} non sono partite") });
         }
         if dead > 0 {
             parts.push(if dead == 1 { "1 vittima".into() } else { format!("{dead} vittime") });
