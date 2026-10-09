@@ -49,8 +49,8 @@
     "open_max_slope_deg": 10.0,
     "rock_slope_deg": 34.0
   },
-  "layout": 2,
-  "town_id": "t4_paese2",
+  "layout": 3,
+  "town_id": "t4_paese3",
   "town_seed": 401,
   "town_notes": {
     "SP 12 della Valle": {

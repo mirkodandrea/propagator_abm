@@ -13,10 +13,11 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
     - esempi `rocca`: `ab_sweep`, `crisi`, `civili`, `porta`;
     - kiosk: `KIOSK_CASE=Coste2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_SHOT=<dir> target/release/game` (partita scriptata fino a «Altro incendio»);
     - kiosk: F2 apre la barra operatore; `KIOSK_FPS=1` scrive gli FPS; `KIOSK_VEG_DENSITY` regola la vegetazione (0,5 di serie); `KIOSK_SCALE=1` forza 1 pixel per punto.
-  - **Territorio:** si rigenera con `scenario_factory.py build-town --layout 2`, `town-fires --scenario t4_paese2 --ignitions-from t4_paese` e `publish --scenario t4_paese2`.
+  - **Territorio:** si rigenera con `scenario_factory.py build-town --layout 3`, `town-fires --scenario t4_paese3 --ignitions-from t4_paese2` e `publish --scenario t4_paese3`.
 
 ## Decisioni dell'utente
 
+- 2026-10-09: **layout 3** («Procedi» alla proposta): macchia e bosco fino al margine sud-ovest di Castelvento, perché il paese possa essere colpito.
 - 2026-10-08: **nessuna evacuazione a piedi dalle case isolate** («molto poco realistico»). Nei nuclei sparsi ogni famiglia ha almeno un'auto; in paese è senza auto circa 1 famiglia su 12 (`town.py::vehicles`, applicato anche a `population.json` pubblicato: nessun'altra estrazione casuale cambia).
 - 2026-10-08: **checkpoint 4 approvato** («Continua» dopo la proposta): layout 2 e i tre casi del kiosk, cioè Coste2_gira (principale), Piano2 e Borgo2 (introduttivo).
 - 2026-10-08: **prestazioni: non ottimizzare ora**, solo ridurre la densità degli alberi (fatto: metà densità, da 24 a circa 40 FPS su M4 Pro).
@@ -159,11 +160,11 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - **finale:** due numeri grandi con «−N grazie a te», barre tu contro senza ordini, linea del tempo con le decisioni;
   - **pannelli laterali:** chiusi all'avvio.
 - [x] 2026-10-09 (utente) Località rinominate: Il Borgo → **Castelvento**, Il Piano → **Pian dei Grilli**, Le Coste → **Le Ghiande** (dati, Factory, test). I nomi dei casi (Borgo1, Coste2_gira…) restano invariati come identificativi interni.
-- [ ] **Castelvento non viene mai colpito** (segnalato dall'utente, verificato): 0 case colpite in tutti i 18 casi, anche con inneschi a 700 m e vento che lo spinge contro. Causa:
-  - il paese è un grande blocco non combustibile (centro abitato, orti irrigui e area di attesa), circondato a nord-est da pianura erbosa (fuel 2);
-  - a 20 m le celle accanto alle case bruciano poco.
-  
-  Proposta: layout 3 della Factory con bosco e macchia fino al margine sud-ovest di Castelvento e orti ridotti all'area di attesa, poi rifare la misura A/B e crisi. Serve il via dell'utente, perché cambia il territorio approvato.
+- [x] 2026-10-09 **Castelvento colpibile: layout 3** (`docs/fase5/castelvento_layout3.md`, `tools/factory/town.py::T4_L3`). Macchia e latifoglie fino a 20 m dal margine sud-ovest; cambia solo `fuel.i32` (513 celle).
+  - **Correzione:** la nota precedente («0 case in tutti i 18 casi») era sbagliata. Già prima Borgo2 colpiva 31 case senza difesa e Borgo1 3.
+  - **Ora, Borgo2:** senza ordini ai civili 18 famiglie colte in casa (prima 5); con preallerta o evacuazione 3 (prima 0).
+  - **Invariati:** Coste2_gira, Piano2 e 14 casi su 18. Rapporti `docs/fase4/{ab_sweep,crisi,porta}.md` rigenerati.
+- [ ] Borgo3 non raggiunge Castelvento: 600 m di latifoglie umide, 11 ha in 3 h. Estendere le latifoglie secche a 750 m non cambia nulla (provato, annullato). Un caso con innesco nella macchia a sud-ovest richiede un nuovo innesco: da decidere con l'utente.
 - [x] 2026-10-09 (utente) **Personaggi che parlano**, in basso a sinistra con fumetto (`crates/game/src/kiosk/characters.rs`). Ritratti generati da Codex (gpt-6.1-sol, generazione immagini), ridotti a 256 px in `assets/characters/`:
   - **sindaca**: ordini di preallerta ed evacuazione, famiglie raggiunte in casa, crisi «quartiere scoperto»;
   - **caposquadra VVF (DOS)**: mezzi che si ritirano o vanno fuori servizio, crisi «mezzo perso»;

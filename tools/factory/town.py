@@ -39,6 +39,7 @@ class Settlement:
     gaps: list = field(default_factory=list)   # (u, v, radius) left unbuilt: piazza etc.
     core: tuple = (0, 0, 0, 0)                 # (u0, u1, v0, v1) built-up, non-vegetated
     irrigated: list = field(default_factory=list)  # (u0, u1, v0, v1) irrigated plots, non-vegetated
+    wild: list = field(default_factory=list)  # (u0, u1, v0, v1, fuel) untended land, painted under the rest
 
 
 @dataclass
@@ -128,7 +129,21 @@ T4_L2 = dataclasses.replace(
     scattered={"Le Ghiande": ("Strada del Passo", (170, 400), 24, 25.0, 4)},
 )
 
-LAYOUTS = {("t4", 1): T4_L1, ("t4", 2): T4_L2}
+# Layout 3 (2026-10-09, user decision): Castelvento was never reached, because
+# 300-400 m of grass separate its SW edge from the wood and a grass front's
+# embers do not carry to the houses. Abandoned terraces gone to macchia, then
+# the oak wood, now come up to the gardens on the SW side, the one the
+# prevailing wind blows across from the slope.
+T4_L3 = dataclasses.replace(
+    T4_L2,
+    id="t4_paese3",
+    settlements=[
+        dataclasses.replace(T4_L2.settlements[0], wild=[(-320, 320, -260, -130, 8), (-320, 320, -450, -260, 5)]),
+        T4_L2.settlements[1],
+    ],
+)
+
+LAYOUTS = {("t4", 1): T4_L1, ("t4", 2): T4_L2, ("t4", 3): T4_L3}
 
 
 # --------------------------------------------------------------------------- geometry
@@ -281,6 +296,8 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
                 add(f"{s.name} - {lname}", R.resample([w(u0, v0), w(u1, v1)], 40.0), "residential")
         for (cu, v0, v1) in s.cross:
             add(f"{s.name} - vicolo {cu:+.0f}", R.resample([w(cu, v0), w(cu, v1)], 40.0), "residential")
+        for *box, f in s.wild:
+            paint_poly(fuel, rect(w, *box), f)  # vegetation, so not an area: the render reads it from the fuel
         paint_poly(fuel, rect(w, *s.core), 0)
         areas.append({"kind": "core", "locality": s.name, "ring": rect(w, *s.core)})
         for box in s.irrigated:
