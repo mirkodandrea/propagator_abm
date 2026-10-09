@@ -5,8 +5,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 ## Stato
 
 - **Fase corrente: fase 5, iterazione 5b**: criticità del playtest automatico 2, velocità tra i turni, leggibilità della vegetazione (decisione dell'utente, 2026-10-09).
-  - Punti 1–9 fatti il 2026-10-09 (`docs/fase5/iterazione5b.md`).
-  - Manca il punto 10: il playtest automatico 3.
+  - Punti 1–10 fatti il 2026-10-09 (`docs/fase5/iterazione5b.md`, `docs/fase5/playtest_gpt3/README.md`).
+  - Le criticità del playtest 3 sono in «Dal playtest 3», da decidere con l'utente.
 - **Prossimo checkpoint umano: checkpoint 5** (`docs/fase5/README.md`): una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), con prima azione e debrief. Poi la fase 6 (playtest).
 - **Consegna dell'iterazione 5b:**
   - una pagina `docs/fase5/iterazione5b.md` con file modificati, prima/dopo (schermate e tabella), durata della partita e FPS;
@@ -126,10 +126,27 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 9. [x] 2026-10-09 Minori:
    - «1 mezzo su 2» e «Resta 1 mezzo»;
    - etichette dei mezzi sopra i pannelli fissi, con una linea fino al mezzo.
-10. [ ] **Playtest automatico 3** con i quattro personaggi (`docs/fase5/playtest_gpt2/prompt/`) sulla build web. Verificare anche:
-   - gli FPS del browser a finestra in primo piano;
-   - la durata di Piano2;
-   - le schede compatte.
+10. [x] 2026-10-09 **Playtest automatico 3** (`docs/fase5/playtest_gpt3/README.md`):
+   - nessuna strategia dominante (AFK 16/73, evacua tutti 3/71, preallerta poi evacuazione 1/71; q4 3/52 difendendo Castelvento);
+   - partita di 4 min 38 s per q2 (prima ~9);
+   - funzionano «Perché», «grazie a te», la volontaria con fatti nuovi, «Altro incendio».
+
+#### Dal playtest 3 (proposte, da decidere con l'utente)
+
+1. [ ] La crisi «mezzo perso» ha solo timer e «Continua» (verificato in `ui.rs`). Farne un aggiornamento senza countdown, oppure offrire una scelta vera.
+2. [ ] La scheda aperta si allunga sopra nucleo e fronte; badge dei mezzi sotto le schede; A1/SQ sovrapposti.
+3. [ ] Legenda tagliata in fondo, scorrimento invisibile (verificato nella schermata di q4); copre Pian dei Grilli.
+4. [ ] «Difendi» su un paese che non riceverà mezzi: dire «0 mezzi» prima della conferma.
+5. [ ] Finale:
+   - spiegare preallerta + evacuazione tardiva (1 colta) contro evacuazione immediata (3 colte), o verificare se è rumore del seme;
+   - riconciliare «26 partite» con «25/30 evacuate».
+6. [ ] Evacuazione «~4–102 min + attesa»: non si capisce quando finisce.
+7. [ ] Frasi della sindaca sugli ordini più corte.
+8. [ ] Fumetto tagliato a sinistra (q4, non verificato): controllare con frasi lunghe e finestre strette.
+9. [ ] Minori:
+   - nella legenda del finale, «tu» bianco contro barre colorate;
+   - scudi della cronologia che sembrano pulsanti;
+   - contrasto di anelli e percorsi sul verde.
 
 - [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen e a 900×600.
 

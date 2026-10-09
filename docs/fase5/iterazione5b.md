@@ -1,6 +1,6 @@
 # Iterazione 5b: velocità, vegetazione leggibile, correzioni del playtest 2
 
-Stato: **punti 1–9 fatti** (`docs/TODO.md`). Resta il playtest automatico 3 con gli stessi quattro personaggi.
+Stato: **fatta**, compreso il playtest automatico 3 (`playtest_gpt3/README.md`).
 
 ## 1. Velocità tra i turni
 

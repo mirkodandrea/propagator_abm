@@ -1,0 +1,20 @@
+09/10/2026 — orari Europe/Rome, osservazione solo UI.
+15:39 caricato; Inizia; 245 famiglie, incendio vicino Le Ghiande, vento sud 40 km/h.
+15:40 F2: Coste2_gira, seme 1; velocità da 40 a 80, crisi 25 s invariate.
+15:41:17 run 1 Avvia senza ordini. T+0:26 crisi vento verso Pian dei Grilli ignorata; Le Ghiande 6 evacuate spontaneamente.
+15:42:16 T+0:42 crisi Castelvento ignorata; tempo scaduto mantiene piano.
+15:43:24 finale 1: 16 famiglie colte in casa, 73 case colpite. Castelvento 0/0/1 evacuata; Pian 6/55/49; Ghiande 10/18/17.
+15:43:45 Riprova.
+15:44:03-07 run 2 T+0: Evacua nei tre paesi, Difendi Le Ghiande unica priorità.
+15:44:26 Avvia. F2 conferma Coste2_gira, seme 1, ×80.
+15:45:10 T+0:42: evacuate Ghiande 17/30, Pian 35/55, Castelvento 100/160; crisi chiede spostare autobotte da Ghiande, ignoro.
+15:46:39 finale 2: 3 famiglie colte in casa, 71 case colpite. Castelvento 0/0/124 evacuate; Pian 0/55/55; Ghiande 3/16/25. Testo Ghiande: 26 partite, 25 evacuate: presumibilmente una ancora in viaggio, da verificare; non chiamarlo bug.
+15:47:03 Riprova; run 3: preallerta tutti, difendi Ghiande, nessuna evacuazione iniziale. 15:47:24 circa Avvia; voglio cambiare alla crisi meteo.
+15:48 run 3 crisi T+0:26 scaduta durante osservazione; tentativi non confermati. Un comando ha spostato A1 verso Pian, poi riassegnato a Ghiande (testo cronologia); sequenza imprecisa, non usarla per affermazioni causali isolate.
+15:49:03 F2 Pausa a T+1:39. A1 persa a T+1:12 vicino a Pian; Ghiande 18 famiglie senza via.
+15:49:25-52 evacua tutti; Pian priorità 2 poi promossa a 1. UI: nessuna postazione sicura Pian; A2 tornerà alla base da Ghiande. Cambio tardivo verificato.
+15:51:46 finale 3: 1 famiglia colta in casa, 71 case colpite. Evacuate C124/P55/G25. Finale: preallerta T+0, evacuazione T+1:39; Pian priorità1 ma nessun mezzo arrivato in posizione; Ghiande mezzi in posizione1h36, prima famiglia colta T+1:39. Risultato migliore di run2 ma più variabili, niente causalità isolata.
+15:52:24 Riprova run4: preallerta tutti e difendi Ghiande; Avvia15:52:29.
+15:53:17 anche secondo tentativo crisi meteo scaduto prima del click; non è test cambio precoce. Cronologia mostra A1 poi persa vicino Pian, come run3.
+15:53:42 F2 pausa a T+1:20; 15:54:08-35 evacuazione tutti, Difendi Castelvento e promuovi a priorità1; Ghiande scende a2, due mezzi destinati Castelvento3-6min. Nessuna causalità isolata sui tentativi intermedi.
+15:56:03 finale4: 1 famiglia colta in casa,71 case colpite; C124/P55/G25 evacuate. Castelvento mezzi1h37, Ghiande1h17. Stesse case run3 nonostante diversa destinazione dei mezzi. Nessuna prova vittoria garantita, nessun cambio tempestivo isolato.
