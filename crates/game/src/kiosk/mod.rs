@@ -27,12 +27,14 @@ use crate::sim::{Sim, SimRestarted};
 use crate::{AppState, DataPath};
 
 pub const TITLE: &str = "Rocca Ventosa";
-/// Simulated seconds per real second while the game runs (spec: ~×20).
-pub const RUN_SPEED: f32 = 20.0;
+/// Simulated seconds per real second while the game runs (spec §2: ×40;
+/// ×20 gave 9-minute games and a lull after the orders).
+pub const RUN_SPEED: f32 = 40.0;
 /// Real seconds the player has at a crisis (spec: ~25 s at ×1).
 pub const CRISIS_S: f32 = 25.0;
 /// How many times faster the game runs while nothing is happening
 /// (`rocca::Game::is_quiet`): the waits after the orders were the dull part.
+/// ×40·3 = ×120.
 pub const QUIET_BOOST: f32 = 3.0;
 /// Simulated seconds without events before the game counts as quiet.
 pub const QUIET_S: i64 = 10 * 60;

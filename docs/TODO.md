@@ -87,15 +87,12 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - [x] 2026-10-09 **Playtest automatico 2** (`docs/fase5/playtest_gpt2/README.md`): quattro personaggi GPT (nuova, quattordicenne, min-maxer, UX). Nessuna strategia dominante su Coste2_gira: AFK 16 / 73, evacua tutti 3 / 71, preallerta e poi cambio piano 1 / 73 (famiglie / case).
 #### Iterazione 5b (2026-10-09, in quest'ordine)
 
-1. [ ] **Velocità tra i turni.**
-   - Oggi `RUN_SPEED` è ×20 e `QUIET_BOOST` ×3, cioè ×60 nei tratti quieti (`crates/game/src/kiosk/mod.rs`). Una partita dura circa 9 minuti reali (q2).
-   - Proposta di partenza: ×40 di base, ×120 nei tratti quieti. Il ×1 delle crisi e il countdown restano invariati.
-   - **Verificare:**
-     - che gli esiti non dipendano dalla velocità (stesso caso a `KIOSK_SPEED` 20 e 120: gli effetti dipendono dal tempo simulato, non dal numero di update);
-     - quanti secondi simulati avanza un frame a 40 FPS, e che le crisi scattino ancora in tempo (non saltate dentro un frame lungo);
-     - che le frasi dei personaggi non si accavallino (coda di 2, minimo 2,5 s).
-   - **Misurare:** la durata reale delle tre partite del kiosk, prima e dopo (`docs/fase5/durata.md`).
-   - Aggiornare `01-SPEC-GIOCO.md` §2 con i valori scelti.
+1. [x] 2026-10-09 **Velocità tra i turni** (`docs/fase5/durata.md`):
+   - ×40 di base, ×120 nei tratti quieti; crisi a ×1 e countdown invariati. Spec §2 e `00-LEGGIMI-PRIMA.md` aggiornati.
+   - Esecuzione dimezzata: Coste2_gira da 5,8 a 3,3 minuti reali, Piano2 da 3,6 a 1,8, Borgo2 da 4,1 a 2,1.
+   - Corretto `Sim::tick`: un frame lungo eseguiva step oltre la crisi e oltre la fine del caso. Test `game::sim::tests::the_speed_does_not_change_the_game`: a ×20, a ×120 e con frame lenti, stesse crisi e stesso esito.
+   - FPS invariati tra ×0 e ×120. Nessuna frase dei personaggi persa.
+   - [ ] Da confermare nel playtest 3: Piano2 a 1,8 minuti potrebbe risultare troppo breve per seguire il fuoco.
 2. [ ] **Vegetazione riconoscibile**, solo grafica (`crates/game/src/vegetation.rs`, modelli da `scripts/build_models.py` → `assets/models/meshes.json`). Fuoco e combustibili non cambiano.
    - **Pineta** (fuel 11–12): pino marittimo, cioè fusto alto e nudo, rossastro, e chioma a ombrello alta e irregolare, verde scuro-bluastro. Oggi è il modello `pine`, troppo simile all'`oak`.
    - **Latifoglie** (fuel 4–5): castagno, con chioma grande, tondeggiante e lobata, verde medio brillante e fusto corto. Fuel 4 (umide) leggermente più verde e fitto di fuel 5.

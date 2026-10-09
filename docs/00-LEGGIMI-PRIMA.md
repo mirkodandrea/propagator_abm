@@ -37,7 +37,7 @@ Un gioco strategico da stand (durata flessibile, anche oltre 5 minuti) in cui il
 | Obiettivi | Priorità **ordinate** (1°, 2°, 3°), non tutti «alta» |
 | Risorse iniziali | 2 autobotti + 1 squadra AIB |
 | Pianificazione iniziale | ~40 secondi, simulazione ×0 |
-| Simulazione ordinaria | ~×20, da calibrare |
+| Simulazione ordinaria | ×40, ×120 nei tratti quieti (iterazione 5b, `docs/fase5/durata.md`) |
 | Finestra critica | ~25 secondi reali, simulazione ×1; 0–2 finestre tipiche |
 | Strada da difendere | Inclusa **solo quando un test dimostra effetti reali** sulla percorribilità |
 | Durata della partita | Non fissata a priori: può superare 5 minuti; verificare ritmo e attenzione durante i playtest |

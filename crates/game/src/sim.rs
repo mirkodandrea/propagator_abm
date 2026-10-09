@@ -58,7 +58,9 @@ impl Sim {
     }
 
     /// Advance by `real_s` of wall time at the current speed. Effects depend on
-    /// simulated time only: steps are always [`STEP_S`] long.
+    /// simulated time only: steps are always [`STEP_S`] long, and a frame stops
+    /// on the step that raised a crisis, so the player meets it at the same
+    /// simulated time whatever the speed or the frame rate.
     pub fn tick(&mut self, real_s: f32) -> anyhow::Result<bool> {
         if self.speed <= 0.0 {
             return Ok(false);
@@ -66,7 +68,7 @@ impl Sim {
         self.accumulator += real_s * self.speed;
         let mut stepped = false;
         for _ in 0..MAX_STEPS_PER_FRAME {
-            if self.accumulator < STEP_S as f32 {
+            if self.accumulator < STEP_S as f32 || self.game.crisis.is_some() || self.game.time_s() >= self.game.case.duration_s() {
                 break;
             }
             self.game.step()?;
@@ -79,5 +81,50 @@ impl Sim {
             self.generation += 1;
         }
         Ok(stepped)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rocca::{Civil, Plan};
+
+    /// A scripted kiosk game: the near locality first with a pre-alert, and at
+    /// each crisis the place it names moves first. Returns when each crisis
+    /// was met (simulated s) and the outcome.
+    fn play(speed: f32, frame_s: f32) -> (Vec<i64>, rocca::Outcome) {
+        let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let mut sim = Sim::new(&data, "Coste2_gira", 1).unwrap();
+        let n = sim.districts.len();
+        let near = sim.district_index(&sim.case.near.clone()).unwrap();
+        sim.commit(Plan::new(n).with_priorities(&[near]).with_civil(near, Civil::Preallerta)).unwrap();
+        sim.speed = speed;
+        let mut met = vec![];
+        while sim.time_s() < sim.case.duration_s() {
+            sim.tick(frame_s).unwrap();
+            if let Some(c) = sim.take_crisis() {
+                met.push(sim.time_s());
+                let d = match c.kind {
+                    rocca::crisis::Kind::Scoperto { district } | rocca::crisis::Kind::Previsione { district } | rocca::crisis::Kind::Vento { district } => district,
+                    rocca::crisis::Kind::MezzoPerso { .. } => continue,
+                };
+                let mut plan = sim.active.clone();
+                plan.priorities.retain(|&x| x != d);
+                plan.priorities.insert(0, d);
+                sim.commit(plan).unwrap();
+            }
+        }
+        (met, sim.outcome())
+    }
+
+    /// Effects depend on simulated time, not on the speed or the frame rate:
+    /// ×20 at 40 FPS, ×120 at 40 FPS, at 4 FPS and with 84 s frames give the same game.
+    #[test]
+    fn the_speed_does_not_change_the_game() {
+        let slow = play(20.0, 1.0 / 40.0);
+        assert!(!slow.0.is_empty(), "Coste2_gira should raise a crisis");
+        assert_eq!(play(120.0, 1.0 / 40.0), slow);
+        assert_eq!(play(120.0, 0.25), slow);
+        assert_eq!(play(120.0, 0.7), slow);
     }
 }
