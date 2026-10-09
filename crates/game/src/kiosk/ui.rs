@@ -4,10 +4,13 @@
 //!   the units on it now and after confirmation, the controls to rank it and
 //!   the two civil orders. Each ground unit carries a label of what it is
 //!   doing. Routes and posts are drawn in 3D by `overlays::update_routes`.
-//! - **Top**: wind, clock and phase; the crisis banner with its countdown.
-//! - **Bottom centre**: the one button (Conferma / Continua).
-//! - **Bottom left**: what the coordinator proposes and why; **bottom right**:
-//!   the latest events.
+//! - **Top**: wind, clock and phase.
+//! - **Bottom left**: someone speaking (`characters`): the mayor, the fire
+//!   chief, the forecaster or a volunteer, with one line about what just
+//!   happened; at a crisis, the crisis with its countdown and answers.
+//! - **Bottom centre**: the one button (Avvia / Conferma).
+//! - **Bottom right**: what the coordinator proposes and why, and the
+//!   latest events, both closed by default.
 //! - **Fine**: the debrief, against the same fire with no orders, with
 //!   «Riprova» and «Altro incendio».
 //! - **F2**: the operator bar (case, seed, speed, new game). Hidden by default.
@@ -23,6 +26,7 @@ use rocca::Civil;
 use scenario::population::Status;
 use scenario::Pos;
 
+use super::characters::{self, Line, Mood, Portraits, Speech, Who};
 use super::icons::{self, Icon};
 use super::{close_crisis, commit, new_game, Kiosk, Phase};
 use crate::sim::{Sim, SimRestarted};
@@ -35,13 +39,11 @@ const BLUE: Color32 = Color32::from_rgb(110, 185, 255);
 const GREEN: Color32 = Color32::from_rgb(110, 230, 150);
 /// What the two civil orders do, as the model does it (`Abm::prealert_of`,
 /// `Abm::order_evacuation_of`).
-const PREALLERTA: &str = "Preallerta: le famiglie vengono avvisate e si preparano, ma restano a casa (qualcuna può decidere di partire da sola). Se poi ordini l'evacuazione, partono prima.";
-const EVACUA: &str = "Evacua: le famiglie ricevono l'ordine di partire subito verso un'area sicura. Non si può annullare.";
 /// Room a district chip is given on screen, for placing chips apart.
 const CHIP_W: f32 = 320.0;
 const CHIP_H: f32 = 230.0;
 /// What the simulated families do is not what to do: said where it shows.
-const REAL_LIFE: &str = "Nella realtà, quando arriva l'ordine di evacuazione si parte subito, seguendo le indicazioni. Aspettare di vedere il fuoco o restare a difendere la casa sono tra gli errori più pericolosi.";
+const REAL_LIFE: &str = "Nella realtà, quando arriva l'ordine di evacuazione si parte subito. Aspettare di vedere il fuoco è uno degli errori più pericolosi.";
 const GREY: Color32 = Color32::from_rgb(205, 208, 212);
 
 fn clock(s: i64) -> String {
@@ -94,15 +96,6 @@ fn secondary(text: &str) -> egui::Button<'static> {
         .min_size(egui::vec2(44.0, 44.0))
 }
 
-fn toggle(text: &str, on: bool, colour: Color32) -> egui::Button<'static> {
-    let fg = if on { Color32::BLACK } else { Color32::WHITE };
-    egui::Button::new(RichText::new(text.to_string()).size(18.0).strong().color(fg))
-        .fill(if on { colour } else { Color32::from_gray(48) })
-        .stroke(egui::Stroke::new(2.0, colour))
-        .rounding(8.0)
-        .min_size(egui::vec2(120.0, 44.0))
-}
-
 fn primary(text: &str) -> egui::Button<'static> {
     egui::Button::new(RichText::new(text.to_string()).size(24.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(10.0).min_size(egui::vec2(300.0, 54.0))
 }
@@ -134,7 +127,10 @@ pub fn draw(
     mut restarted: EventWriter<SimRestarted>,
     cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::OrbitCamera>>,
     logo: Option<Res<Logo>>,
+    portraits: Option<Res<Portraits>>,
+    mut speech: ResMut<Speech>,
 ) {
+    let faces = portraits.as_deref();
     let ctx = contexts.ctx_mut();
     let k = &mut *kiosk;
     let Ok(cam) = cameras.get_single() else { return };
@@ -143,27 +139,29 @@ pub fn draw(
     }
 
     if k.intro {
-        intro(ctx, k, &sim, logo.as_deref().map(|l| l.0));
+        intro(ctx, k, &sim, logo.as_deref().map(|l| l.0), faces);
         if k.operator {
             operator(ctx, k, &mut sim, &mut restarted);
         }
         focus.pointer = true;
         return;
     }
-    let mut top = top_bar(ctx, k, &sim, cam);
+    let top = top_bar(ctx, k, &sim, cam);
     view_controls(ctx, k);
+    speech.update(&sim, ctx.input(|i| i.time));
     if k.phase == Phase::Fine {
-        debrief(ctx, k, &mut sim, &mut restarted);
+        debrief(ctx, k, &mut sim, &mut restarted, faces);
     } else {
         legend(ctx);
         if k.phase == Phase::Crisi {
-            top = crisis_banner(ctx, k, &mut sim, top);
+            crisis(ctx, k, &mut sim, faces);
+        } else {
+            speaker(ctx, k, &sim, &speech, faces);
         }
         unit_labels(ctx, &sim, cam);
         district_chips(ctx, k, &sim, cam, top);
-        proposal(ctx, k, &sim);
+        side(ctx, k, &sim);
         action(ctx, k, &mut sim);
-        events(ctx, &sim);
     }
     if k.operator {
         operator(ctx, k, &mut sim, &mut restarted);
@@ -211,13 +209,6 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
                 icons::show(ui, icon, 30.0, colour);
             });
         });
-        if k.phase == Phase::Pianifica {
-            ui.add_space(6.0);
-            panel().show(ui, |ui| {
-                let tip = if sim.time_s() <= rocca::STEP_S { "Scegli chi difendere e chi avvisare, poi conferma" } else { "Pausa: cambia il piano e conferma" };
-                ui.label(RichText::new(tip).size(19.0).color(Color32::WHITE));
-            });
-        }
     })
     .response
     .rect
@@ -246,7 +237,7 @@ pub fn load_logo(mut commands: Commands, mut images: ResMut<Assets<Image>>, mut 
 }
 
 /// The opening screen: who made it, the situation, how to play, «Inizia».
-fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::TextureId>) {
+fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::TextureId>, faces: Option<&Portraits>) {
     let screen = ctx.screen_rect();
     egui::Area::new(egui::Id::new("intro_fondo")).fixed_pos(screen.min).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
         ui.painter().rect_filled(screen, 0.0, Color32::from_rgba_premultiplied(8, 10, 14, 200));
@@ -265,7 +256,14 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                 });
             });
             ui.add_space(12.0);
-            ui.label(RichText::new(format!("Un incendio è partito vicino a {}. Hai 2 autobotti e 1 squadra per 3 paesi: non bastano per tutti.", sim.case.near)).size(20.0).color(Color32::WHITE));
+            ui.horizontal(|ui| {
+                characters::portrait(ui, faces, Who::Volontaria, Mood::Preoccupato, 110.0);
+                ui.add_space(18.0);
+                characters::bubble(ui, Who::Volontaria, |ui| {
+                    let text = format!("Un incendio è partito vicino a {}! Abbiamo 2 autobotti e 1 squadra per 3 paesi: non bastano per tutti. Decidi tu come usarle.", sim.case.near);
+                    characters::says(ui, Who::Volontaria, &text, 600.0);
+                });
+            });
             ui.add_space(16.0);
             ui.horizontal(|ui| {
                 for (icon, colour, title) in [
@@ -309,18 +307,62 @@ fn crisis_district(k: &Kiosk) -> Option<usize> {
     }
 }
 
-/// The crisis in one place: what is happening, the actions that answer it,
-/// what the change would do to the units, the countdown and the button.
-/// Returns where it ends.
-fn crisis_banner(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, top: f32) -> f32 {
-    let Some(c) = k.crisis.clone() else { return top };
+/// Size of the portraits bottom left.
+const FACE: f32 = 132.0;
+/// Widest a speech bubble gets.
+const BUBBLE_W: f32 = 380.0;
+
+/// Someone speaking, bottom left: the portrait and the bubble, and under
+/// them whatever answers it (the crisis controls).
+fn speaking<R>(ctx: &egui::Context, faces: Option<&Portraits>, who: Who, mood: Mood, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    egui::Area::new(egui::Id::new("personaggio")).order(egui::Order::Foreground).anchor(Align2::LEFT_BOTTOM, [12.0, -12.0]).show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.add_space(8.0);
+                characters::portrait(ui, faces, who, mood, FACE);
+            });
+            ui.add_space(18.0);
+            ui.vertical(|ui| add(ui)).inner
+        })
+        .inner
+    })
+    .inner
+}
+
+/// Outside a crisis: the latest line, or at the start how to begin.
+fn speaker(ctx: &egui::Context, k: &Kiosk, sim: &Sim, speech: &Speech, faces: Option<&Portraits>) {
+    let tip;
+    let line = match &speech.now {
+        Some((l, _)) => l,
+        None if k.phase == Phase::Pianifica => {
+            let text = if sim.time_s() <= rocca::STEP_S {
+                "Scegli quale paese difendere per primo e chi avvisare. Poi premi «Avvia»."
+            } else {
+                "Siamo in pausa: puoi cambiare il piano, poi premi «Riprendi»."
+            };
+            tip = Line { who: Who::Volontaria, mood: Mood::Calmo, text: text.into() };
+            &tip
+        }
+        None => return,
+    };
+    speaking(ctx, faces, line.who, line.mood, |ui| {
+        characters::bubble(ui, line.who, |ui| characters::says(ui, line.who, &line.text, BUBBLE_W));
+    });
+}
+
+/// The crisis, told by the person it concerns: what is happening, the
+/// actions that answer it, what the change would do to the units, the
+/// countdown and the button.
+fn crisis(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, faces: Option<&Portraits>) {
+    let Some(c) = k.crisis.clone() else { return };
     let d = crisis_district(k);
+    let (who, mood) = characters::for_crisis(c.kind);
     let mut close = false;
-    let r = egui::Area::new(egui::Id::new("crisi")).order(egui::Order::Foreground).anchor(Align2::CENTER_TOP, [0.0, top + 6.0]).show(ctx, |ui| {
-        egui::Frame::none().fill(Color32::from_rgb(64, 30, 10)).stroke(egui::Stroke::new(3.0, ORANGE)).rounding(10.0).inner_margin(14.0).show(ui, |ui| {
-            ui.set_max_width(800.0);
+    speaking(ctx, faces, who, mood, |ui| {
+        characters::bubble(ui, who, |ui| characters::says(ui, who, &c.text, BUBBLE_W));
+        ui.add_space(8.0);
+        egui::Frame::none().fill(Color32::from_rgb(64, 30, 10)).stroke(egui::Stroke::new(3.0, ORANGE)).rounding(10.0).inner_margin(12.0).show(ui, |ui| {
             ui.horizontal(|ui| {
-                icons::show(ui, Icon::Alert, 52.0, ORANGE);
                 // the countdown as a shrinking ring around the seconds
                 let (r, _) = ui.allocate_exact_size(egui::vec2(56.0, 56.0), egui::Sense::hover());
                 let left = (1.0 - k.phase_t / k.crisis_s).clamp(0.0, 1.0);
@@ -337,12 +379,6 @@ fn crisis_banner(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, top: f32) ->
                 }
                 ui.painter().text(r.center(), Align2::CENTER_CENTER, format!("{:.0}", (k.crisis_s - k.phase_t).max(0.0).ceil()), egui::FontId::proportional(22.0), Color32::WHITE);
                 ui.add_space(6.0);
-                ui.allocate_ui(egui::vec2(600.0, 0.0), |ui| {
-                    ui.add(egui::Label::new(RichText::new(&c.text).size(19.0).color(Color32::WHITE)).wrap());
-                });
-            });
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
                 if let Some(d) = d {
                     let name = sim.districts[d].name.clone();
                     let first = k.proposed.priorities.first() == Some(&d);
@@ -385,7 +421,6 @@ fn crisis_banner(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, top: f32) ->
     if close {
         close_crisis(k, sim);
     }
-    r.response.rect.bottom()
 }
 
 /// Back to the home view, zoom in and out.
@@ -513,7 +548,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
         clamp(at, *size);
     }
     // the fixed panels (last frame's), which a chip must not cover
-    let obstacles: Vec<egui::Rect> = ["proposta", "eventi", "azione", "legenda", "vista"]
+    let obstacles: Vec<egui::Rect> = ["lato", "personaggio", "azione", "legenda", "vista"]
         .iter()
         .filter_map(|n| ctx.memory(|m| m.area_rect(egui::Id::new(*n))))
         .map(|r| r.expand(6.0))
@@ -742,10 +777,9 @@ fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
 }
 
 /// What the coordinator would do with the plan being composed, and why.
-fn proposal(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
+fn proposal(ui: &mut egui::Ui, k: &Kiosk, sim: &Sim) {
     let Some(p) = &k.preview else { return };
     let pending = k.proposed != sim.active || k.phase == Phase::Pianifica;
-    egui::Area::new(egui::Id::new("proposta")).anchor(Align2::LEFT_BOTTOM, [12.0, -12.0]).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.set_max_width(430.0);
             let title = if pending { "Il coordinatore propone" } else { "I mezzi" };
@@ -780,7 +814,6 @@ fn proposal(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
             }
             });
         });
-    });
 }
 
 /// The one button.
@@ -818,11 +851,10 @@ fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
 }
 
 /// The latest events.
-fn events(ctx: &egui::Context, sim: &Sim) {
+fn events(ui: &mut egui::Ui, sim: &Sim) {
     if sim.log.is_empty() {
         return;
     }
-    egui::Area::new(egui::Id::new("eventi")).anchor(Align2::RIGHT_BOTTOM, [-12.0, -12.0]).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.set_max_width(400.0);
             egui::CollapsingHeader::new(RichText::new(format!("Eventi ({})", sim.log.len())).size(15.0).strong().color(Color32::WHITE)).default_open(false).show(ui, |ui| {
@@ -831,6 +863,17 @@ fn events(ctx: &egui::Context, sim: &Sim) {
                 ui.label(RichText::new(format!("{}  {}", clock(e.at_s), e.text)).size(15.0).color(colour));
             }
             });
+        });
+}
+
+/// Bottom right, one above the other: what the coordinator proposes and the
+/// latest events, both closed until asked for.
+fn side(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
+    egui::Area::new(egui::Id::new("lato")).anchor(Align2::RIGHT_BOTTOM, [-12.0, -12.0]).show(ctx, |ui| {
+        ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
+            proposal(ui, k, sim);
+            ui.add_space(6.0);
+            events(ui, sim);
         });
     });
 }
@@ -889,7 +932,7 @@ fn timeline(ui: &mut egui::Ui, sim: &Sim, width: f32) {
 }
 
 /// The end: what your plan changed, against the same fire with no orders.
-fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, faces: Option<&Portraits>) {
     let o = sim.outcome();
     let base = k.baseline();
     let mut again = None;
@@ -965,11 +1008,10 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             ui.add_space(10.0);
             timeline(ui, sim, 740.0);
             ui.add_space(6.0);
-            egui::Frame::none().fill(Color32::from_rgb(20, 40, 70)).rounding(8.0).inner_margin(10.0).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    icons::show(ui, Icon::Exit, 30.0, BLUE);
-                    ui.label(RichText::new("Nella realtà: quando arriva l'ordine di evacuazione si parte subito.").size(17.0).color(Color32::WHITE));
-                });
+            ui.horizontal(|ui| {
+                characters::portrait(ui, faces, Who::Volontaria, Mood::Calmo, 84.0);
+                ui.add_space(18.0);
+                characters::bubble(ui, Who::Volontaria, |ui| characters::says(ui, Who::Volontaria, REAL_LIFE, 560.0));
             });
             ui.add_space(14.0);
             ui.horizontal(|ui| {

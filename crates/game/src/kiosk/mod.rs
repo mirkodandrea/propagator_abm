@@ -10,6 +10,7 @@
 //! inactivity reset: a new game starts from the debrief's «Riprova» / «Altro
 //! incendio» or from the operator bar (F2), never by itself.
 
+pub mod characters;
 pub mod icons;
 pub mod ui;
 pub mod view;
@@ -229,6 +230,7 @@ pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<Next
             k.start_baseline();
             commands.insert_resource(k);
             commands.insert_resource(sim);
+            commands.insert_resource(characters::Speech::default());
             next.set(AppState::Playing);
         }
         Err(e) => {

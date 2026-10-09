@@ -105,6 +105,7 @@ fn main() -> anyhow::Result<()> {
             life::setup,
             units::setup,
             kiosk::ui::load_logo,
+            kiosk::characters::load_portraits,
         ),
     )
     .add_systems(OnExit(AppState::Playing), teardown_scene);

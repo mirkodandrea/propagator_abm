@@ -164,6 +164,13 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - a 20 m le celle accanto alle case bruciano poco.
   
   Proposta: layout 3 della Factory con bosco e macchia fino al margine sud-ovest di Castelvento e orti ridotti all'area di attesa, poi rifare la misura A/B e crisi. Serve il via dell'utente, perché cambia il territorio approvato.
+- [x] 2026-10-09 (utente) **Personaggi che parlano**, in basso a sinistra con fumetto (`crates/game/src/kiosk/characters.rs`). Ritratti generati da Codex (gpt-6.1-sol, generazione immagini), ridotti a 256 px in `assets/characters/`:
+  - **sindaca**: ordini di preallerta ed evacuazione, famiglie raggiunte in casa, crisi «quartiere scoperto»;
+  - **caposquadra VVF (DOS)**: mezzi che si ritirano o vanno fuori servizio, crisi «mezzo perso»;
+  - **previsore meteo**: cambi di vento, crisi «previsione» e «vento»;
+  - **volontaria di protezione civile**: intro, consiglio di partenza, «nella realtà» del debrief.
+  Ogni frase nasce da una voce del registro, da una crisi o dall'esito già prodotti dal motore: nessuna regola nuova. La crisi ora si legge nel fumetto, con countdown e risposte subito sotto; proposta del coordinatore ed eventi spostati in basso a destra. Immagine: `docs/fase5/img/personaggi_crisi.jpg`.
+- [ ] Personaggi: verificare in un playtest che il fumetto in basso a sinistra si noti durante la crisi (prima era in alto al centro) e che le frasi a ×20 non si accavallino (coda di 2, minimo 2,5 s ciascuna).
 - [ ] Dai roast, ancora aperto: navigazione da tastiera (egui sul canvas), forme oltre ai colori per gli anelli, layout a finestra stretta (900×600), stato perso con la ricarica della pagina, verifica dei percorsi verso le aree di attesa, supporto ai ritardatari dell'evacuazione (scelta di design).
 - [ ] Dal playtest GPT, ancora aperto: icone dei mezzi leggibili nella vista generale (oggi si leggono le etichette); indicatori aggregati per le evacuazioni sulla mappa; click che a volte sembrano non rispondere (forse solo per l'input automatizzato, da verificare con persone vere); distinguere mezzi assegnati / in viaggio / sul posto; mostrare sulla mappa perché una postazione è irraggiungibile.
 - [ ] **Checkpoint umano 5.**
