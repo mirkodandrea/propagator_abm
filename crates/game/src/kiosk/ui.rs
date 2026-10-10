@@ -44,7 +44,7 @@ const GREEN: Color32 = Color32::from_rgb(110, 230, 150);
 /// `Abm::order_evacuation_of`).
 /// Room a district chip is given on screen, for placing chips apart.
 const CHIP_W: f32 = 320.0;
-const CHIP_H: f32 = 376.0;
+const CHIP_H: f32 = 400.0;
 /// A chip while the plan runs untouched: name, families, defence. It opens
 /// downward to the full chip under the pointer.
 const CHIP_H_COMPACT: f32 = 201.0;
@@ -172,10 +172,10 @@ pub fn draw(
     view_controls(ctx, k);
     speech.update(&sim, ctx.input(|i| i.time));
     if k.phase == Phase::Fine {
-        debrief(ctx, k, &mut sim, &mut restarted);
-        leaderboard(ctx, k, &sim);
+        debrief(ctx, k, &mut sim, &mut restarted, top);
+        leaderboard(ctx, k, &sim, top);
     } else {
-        legend(ctx);
+        legend(ctx, top);
         if k.phase == Phase::Crisi {
             crisis(ctx, k, &mut sim, faces);
         } else {
@@ -185,10 +185,14 @@ pub fn draw(
             paused_veil(ctx, k, &sim, top);
         } else if k.phase == Phase::Crisi {
             slow_motion_frame(ctx);
+            crisis_banner(ctx, k, top);
         }
+        fire_marker(ctx, &sim, cam);
         unit_labels(ctx, &sim, cam);
         plan_panel(ctx, k, &sim, top);
-        district_chips(ctx, k, &sim, cam, top);
+        // the pause and crisis bands sit under the top bar
+        let band = if (k.phase == Phase::Pianifica && k.started && !k.help) || k.phase == Phase::Crisi { 44.0 } else { 0.0 };
+        district_chips(ctx, k, &sim, cam, top + band);
 
         side(ctx, k, &sim);
         action(ctx, k, &mut sim);
@@ -324,6 +328,7 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                 ] {
                     egui::Frame::none().fill(Color32::from_gray(32)).rounding(10.0).inner_margin(14.0).show(ui, |ui| {
                         ui.set_width(230.0);
+                        ui.set_min_height(110.0);
                         ui.vertical_centered(|ui| {
                             icons::show(ui, icon, 64.0, colour);
                             ui.label(RichText::new(title).size(19.0).strong().color(Color32::WHITE));
@@ -452,7 +457,7 @@ fn how_to_play(ctx: &egui::Context, k: &mut Kiosk, faces: Option<&Portraits>) {
     let steps = [
         (Icon::Shield, AMBER, "«Difendi»: scegli i paesi da difendere e in che ordine. Autobotti e squadra vanno dove indichi, se ci arrivano in tempo.".to_string()),
         (Icon::Bell, AMBER, "«Preallerta» fa preparare le famiglie; «Evacua» le fa partire. Un ordine dato non si ritira.".to_string()),
-        (Icon::Play, GREEN, format!("Premi «Avvia»: da lì il tempo scorre da solo. Gli ordini si cambiano solo in pausa, e hai {} pause, non una dopo l'altra: usale bene.", crate::kiosk::MAX_PAUSES)),
+        (Icon::Play, GREEN, format!("Premi «Avvia»: da lì il tempo scorre da solo. Gli ordini si cambiano solo in pausa: hai {} pause in tutto, e tra una e l'altra devono passare {} minuti di gioco.", crate::kiosk::MAX_PAUSES, crate::kiosk::PAUSE_GAP_S / 60)),
         (Icon::Alert, ORANGE, format!("Se succede qualcosa di grave il tempo rallenta, ma non si ferma: hai {:.0} secondi per decidere.", k.crisis_s)),
     ];
     let mut done = false;
@@ -548,7 +553,11 @@ fn crisis(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, faces: Option<&Port
         characters::bubble(ui, who, |ui| characters::says(ui, who, &c.text, BUBBLE_W));
         ui.add_space(8.0);
         egui::Frame::none().fill(Color32::from_rgb(64, 30, 10)).stroke(egui::Stroke::new(3.0, ORANGE)).rounding(10.0).inner_margin(12.0).show(ui, |ui| {
-            ui.label(RichText::new("Il tempo è rallentato, non fermo: il fuoco avanza ancora.").size(15.0).color(ORANGE));
+            ui.horizontal(|ui| {
+                icons::show(ui, Icon::Alert, 24.0, ORANGE);
+                ui.label(RichText::new("Decisione urgente").size(21.0).strong().color(ORANGE));
+            });
+            ui.label(RichText::new("Il tempo è rallentato, non fermo: il fuoco avanza ancora. Se non scegli, allo scadere resta il piano attuale.").size(15.0).color(ORANGE));
             // one row as wide as the screen allows, wrapped only when it
             // does not fit, so «Conferma» stays on screen at 900 px
             let room = ui.ctx().screen_rect().width() - FACE - 80.0;
@@ -613,6 +622,10 @@ fn crisis(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, faces: Option<&Port
             }));
             // what the change does to the units, as engine icons
             if let Some(p) = &k.preview {
+                let moves = (0..sim.districts.len()).any(|x| sim.posts.iter().flatten().filter(|q| q.district == x).count() != p.units_on(x));
+                if moves {
+                    ui.label(RichText::new("Con questa scelta i mezzi si spostano così:").size(15.0).color(Color32::WHITE));
+                }
                 for x in 0..sim.districts.len() {
                     let now = sim.posts.iter().flatten().filter(|q| q.district == x).count();
                     let next = p.units_on(x);
@@ -651,22 +664,33 @@ fn view_controls(ctx: &egui::Context, k: &mut Kiosk) {
 }
 
 /// What the marks on the map mean.
-fn legend(ctx: &egui::Context) {
+fn legend(ctx: &egui::Context, top: f32) {
     // below the operator bar when that is open
     let below = ctx.memory(|m| m.area_rect(egui::Id::new("operatore"))).filter(|_| ctx.memory(|m| m.areas().visible_last_frame(&egui::LayerId::new(egui::Order::Foreground, egui::Id::new("operatore"))))).map_or(12.0, |r| r.bottom() + 8.0);
     // closed at first; `KIOSK_LEGEND=1` opens it, for screenshots
     let roomy = std::env::var("KIOSK_LEGEND").is_ok();
-    egui::Area::new(egui::Id::new("legenda")).order(egui::Order::Foreground).anchor(Align2::LEFT_TOP, [12.0, below]).show(ctx, |ui| {
+    // the switch top left; the legend itself opens under the top bar, so
+    // it never hides wind and clock
+    let open = egui::Area::new(egui::Id::new("legenda")).order(egui::Order::Foreground).anchor(Align2::LEFT_TOP, [12.0, below]).show(ctx, |ui| {
         panel().fill(Color32::from_rgb(18, 20, 24)).show(ui, |ui| {
-            egui::CollapsingHeader::new(RichText::new("Legenda e tempi").size(15.0).strong().color(Color32::WHITE)).default_open(roomy).show(ui, |ui| {
-                ui.set_width(340.0);
-                // as tall as its content up to most of the screen, with the
-                // scroll bar always shown (playtest 3: the cut-off last line
-                // did not say there was more)
+            egui::CollapsingHeader::new(RichText::new("Legenda e tempi").size(15.0).strong().color(Color32::WHITE)).default_open(roomy).show_unindented(ui, |_| ()).openness > 0.0
+        }).inner
+    }).inner;
+    if !open {
+        return;
+    }
+    let at = top.max(below + 40.0) + 8.0;
+    egui::Area::new(egui::Id::new("legenda_corpo")).order(egui::Order::Foreground).fixed_pos(egui::pos2(12.0, at)).show(ctx, |ui| {
+        panel().fill(Color32::from_rgb(18, 20, 24)).show(ui, |ui| {
+            {
+                // two columns, so it fits without scrolling on a short screen
+                // (playtest 6: the last line cut off at 824 px); the scroll
+                // bar, always shown, only for smaller ones
+                let wide = ctx.screen_rect().width() >= 760.0;
+                ui.set_width(if wide { 700.0 } else { 340.0 });
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, true])
-                    .max_height(ctx.screen_rect().height() * 0.6)
-                    .min_scrolled_height(ctx.screen_rect().height() * 0.6)
+                    .max_height(ctx.screen_rect().height() - at - 40.0)
                     .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
                     .show(ui, |ui| {
                 #[derive(Clone, Copy)]
@@ -679,6 +703,10 @@ fn legend(ctx: &egui::Context) {
                 }
                 // Most asked first: what the plants on the map are and why they
                 // matter, then the families bar; the rest folds away.
+                ui.columns(if wide { 2 } else { 1 }, |cols| {
+                let right = cols.len() - 1;
+                {
+                let ui = &mut cols[0];
                 section(ui, "Vegetazione: come brucia", true, |ui| {
                     for (kind, text) in [
                         (Plant::Grass, "Prato secco: il fuoco corre veloce, con fiamme basse."),
@@ -707,6 +735,8 @@ fn legend(ctx: &egui::Context) {
                         });
                     }
                 });
+                }
+                let ui = &mut cols[right];
                 section(ui, "Segni sulla mappa", true, |ui| {
                     let items = [
                         (Mark::Fill(Color32::from_rgb(255, 120, 40)), "fuoco attivo"),
@@ -755,6 +785,7 @@ fn legend(ctx: &egui::Context) {
                         });
                     }
                 });
+                });
                 section(ui, "Schede dei paesi", false, |ui| {
                     for text in [
                         "1, 2, 3: priorità di difesa. Cerchio vuoto: escluso dalla difesa.",
@@ -767,8 +798,10 @@ fn legend(ctx: &egui::Context) {
                         "I nuclei con lo stesso nome condividono gli ordini della stessa scheda.",
                     ] { ui.label(RichText::new(text).size(14.0).color(GREY)); }
                 });
+                // room for the last line: the columns above measure short
+                ui.add_space(8.0);
                 });
-            });
+            }
         });
     });
 }
@@ -1295,10 +1328,17 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     }
                 });
                 });
-                if (civil[d] != sim.active.civil[d] || next != now) && k.phase != Phase::Pianifica {
+                if !can_order {
+                    // playtest 6: grey buttons with no reason given
+                    let why = if k.help { "Gli ordini si sbloccano con «Ho capito»." } else { "Gli ordini si sbloccano con «Inizia la partita»." };
+                    ui.label(RichText::new(why).size(14.0).strong().color(AMBER));
+                } else if (civil[d] != sim.active.civil[d] || next != now) && k.phase != Phase::Pianifica {
                     pill(ui, "da confermare", AMBER);
-                } else if civil[d] == Civil::Nessuno && sim.active.civil[d] == Civil::Nessuno {
-                    ui.label(RichText::new("Preallerta: si tengono pronti · Evacua: partono").size(13.0).color(GREY));
+                } else if civil[d] != Civil::Evacua && sim.active.civil[d] != Civil::Evacua {
+                    // as the model does it (`Abm::prealert_of`): ready at home,
+                    // a few leave on their own, the order then reaches them sooner
+                    ui.add(egui::Label::new(RichText::new("Preallerta: si preparano a casa e qualcuno parte da sé; un'evacuazione dopo li raggiunge prima.").size(13.0).color(GREY)).wrap());
+                    ui.add(egui::Label::new(RichText::new("Evacua: partono tutti adesso.").size(13.0).color(GREY)).wrap());
                 }
             });
         });
@@ -1403,6 +1443,7 @@ fn plan_panel(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, top: f32) {
 fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform)) {
     // Units standing together (at the base, on one post) stack their labels.
     let mut shown: Vec<egui::Pos2> = vec![];
+    let mut badges: Vec<egui::Rect> = (0..sim.districts.len()).filter_map(|d| ctx.memory(|m| m.area_rect(egui::Id::new(("badge", d))))).collect();
     for (i, u) in sim.crews.units.iter().enumerate() {
         if u.kind.is_air() {
             continue;
@@ -1413,25 +1454,7 @@ fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
             .filter_map(|d| ctx.memory(|m| m.area_rect(egui::Id::new(("quartiere", d)))))
             .find(|r| r.expand(4.0).intersects(egui::Rect::from_center_size(ground - egui::vec2(0.0, 12.0), egui::vec2(110.0, 24.0))))
             .map_or(ground, |r| egui::pos2(ground.x, r.bottom() + 24.0));
-        // a label is about 200 px wide and 18 tall
-        let below = shown.iter().filter(|p| (p.x - ground.x).abs() < 110.0 && (p.y - ground.y).abs() < 26.0).count();
-        shown.push(ground);
-        let mut at = ground + egui::vec2(0.0, 28.0 * below as f32);
-        // egui keeps an area on screen; do the same here so the panel test
-        // below sees where the label will really be drawn
-        let sr = ctx.screen_rect();
-        at.x = at.x.clamp(sr.left() + 60.0, sr.right() - 60.0);
-        at.y = at.y.clamp(sr.top() + 24.0, sr.bottom());
-        // Behind a fixed panel (updates, speaker, button): just above it, with
-        // a thin line down to where the unit is.
-        for name in ["lato", "personaggio", "azione"] {
-            let Some(panel) = ctx.memory(|m| m.area_rect(egui::Id::new(name))) else { continue };
-            if panel.expand(4.0).intersects(egui::Rect::from_center_size(at - egui::vec2(0.0, 12.0), egui::vec2(110.0, 24.0))) {
-                let lifted = egui::pos2(at.x, panel.top() - 6.0 - 28.0 * below as f32);
-                ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("guide"))).line_segment([lifted, at], egui::Stroke::new(1.5, Color32::from_white_alpha(150)));
-                at = lifted;
-            }
-        }
+
         let status = sim.unit_status(i);
         let trouble = if status.starts_with("bloccato") {
             Some((RED, "bloccata"))
@@ -1445,6 +1468,42 @@ fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
             None
         };
         let fire_near = status.contains(", fuoco a");
+        // the label's width, roughly: icon, name, water, then the words
+        let label_w = 80.0 + if fire_near { 20.0 } else { 0.0 } + trouble.map_or(0.0, |t| 10.0 + 8.0 * t.1.chars().count() as f32);
+        // a label is about 200 px wide and 18 tall
+        let below = shown.iter().filter(|p| (p.x - ground.x).abs() < 110.0 && (p.y - ground.y).abs() < 26.0).count();
+        shown.push(ground);
+        let mut at = ground + egui::vec2(0.0, 28.0 * below as f32);
+        // egui keeps an area on screen; do the same here so the panel test
+        // below sees where the label will really be drawn
+        let sr = ctx.screen_rect();
+        at.x = at.x.clamp(sr.left() + 60.0, sr.right() - 60.0);
+        at.y = at.y.clamp(sr.top() + 24.0, sr.bottom());
+        // nor under a badge (playtest 6: A2 and SQ hidden under two of them):
+        // just below it, a few times in case that is under the next one
+        for _ in 0..3 {
+            let label = egui::Rect::from_center_size(at - egui::vec2(0.0, 12.0), egui::vec2(label_w, 24.0));
+            let Some(r) = badges.iter().find(|r| r.intersects(label)) else { break };
+            at.y = r.bottom() + 26.0;
+        }
+        // Behind a fixed panel (updates, speaker, button): just above it, with
+        // a thin line down to where the unit is.
+        for name in ["lato", "personaggio", "azione"] {
+            let Some(panel) = ctx.memory(|m| m.area_rect(egui::Id::new(name))) else { continue };
+            if panel.expand(4.0).intersects(egui::Rect::from_center_size(at - egui::vec2(0.0, 12.0), egui::vec2(110.0, 24.0))) {
+                let lifted = egui::pos2(at.x, panel.top() - 6.0 - 28.0 * below as f32);
+                ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("guide"))).line_segment([lifted, at], egui::Stroke::new(1.5, Color32::from_white_alpha(150)));
+                at = lifted;
+            }
+        }
+        // lifted back under a badge (a panel just below it): beside the badge
+        for _ in 0..3 {
+            let label = egui::Rect::from_center_size(at - egui::vec2(0.0, 12.0), egui::vec2(label_w, 24.0));
+            let Some(r) = badges.iter().find(|r| r.intersects(label)) else { break };
+            let half = label_w * 0.5 + 4.0;
+            at.x = if r.left() - half > sr.left() + 60.0 { r.left() - half } else { r.right() + half };
+        }
+        badges.push(egui::Rect::from_center_size(at - egui::vec2(0.0, 12.0), egui::vec2(label_w - 8.0, 22.0)));
         let colour = trouble.map_or(if fire_near { ORANGE } else { GREEN }, |t| t.0);
         egui::Area::new(egui::Id::new(("mezzo", i))).fixed_pos(at).pivot(Align2::CENTER_BOTTOM).interactable(false).order(egui::Order::Background).show(ctx, |ui| {
             egui::Frame::none().fill(Color32::from_rgb(14, 16, 18)).stroke(egui::Stroke::new(2.0, colour)).rounding(6.0).inner_margin(egui::Margin::symmetric(5.0, 2.0)).show(ui, |ui| {
@@ -1601,6 +1660,50 @@ fn paused_veil(ctx: &egui::Context, k: &Kiosk, sim: &Sim, top: f32) {
     });
 }
 
+/// Simulated seconds the start of the fire stays marked on the map.
+const FIRE_MARK_S: i64 = 30 * 60;
+
+/// Where the fire started, ringed and named, until it has grown enough to
+/// be seen (playtests 5 and 6: at the start the fire was a few red pixels,
+/// often under a panel).
+fn fire_marker(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform)) {
+    if sim.time_s() > FIRE_MARK_S {
+        return;
+    }
+    let Some(p) = screen(cam, sim, sim.case.ignition(), 0.0) else { return };
+    if !ctx.screen_rect().contains(p) {
+        return;
+    }
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("innesco")));
+    let t = ctx.input(|i| i.time) as f32;
+    // a ring that keeps widening, as on a radar, round a steady one
+    let grow = (t * 0.8).fract();
+    painter.circle_stroke(p, 22.0 + 30.0 * grow, egui::Stroke::new(4.0, Color32::from_rgba_unmultiplied(255, 120, 40, (230.0 * (1.0 - grow)) as u8)));
+    painter.circle_stroke(p, 20.0, egui::Stroke::new(3.0, ORANGE));
+    let galley = painter.layout_no_wrap("Il fuoco è partito qui".into(), egui::FontId::proportional(16.0), Color32::BLACK);
+    let at = p + egui::vec2(-galley.size().x * 0.5, -galley.size().y - 30.0);
+    painter.rect_filled(egui::Rect::from_min_size(at, galley.size()).expand2(egui::vec2(8.0, 4.0)), 6.0, ORANGE);
+    painter.galley(at, galley, Color32::BLACK);
+    ctx.request_repaint();
+}
+
+/// At a crisis, under the top bar: that a decision is due and how long is
+/// left, so it is seen wherever the eye is (playtest 6: a crisis ran out
+/// unseen).
+fn crisis_banner(ctx: &egui::Context, k: &Kiosk, top: f32) {
+    let left = (k.crisis_s - k.phase_t).max(0.0).ceil();
+    // blinking in the last seconds
+    let strong = left > 8.0 || (ctx.input(|i| i.time) * 2.0).fract() < 0.6;
+    egui::Area::new(egui::Id::new("crisi_banda")).anchor(Align2::CENTER_TOP, [0.0, top + 8.0]).interactable(false).order(egui::Order::Foreground).show(ctx, |ui| {
+        egui::Frame::none().fill(if strong { ORANGE } else { Color32::from_rgb(120, 60, 20) }).rounding(8.0).inner_margin(egui::Margin::symmetric(16.0, 6.0)).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                icons::show(ui, Icon::Alert, 26.0, Color32::BLACK);
+                ui.label(RichText::new(format!("DECISIONE URGENTE · {left:.0} s · scegli in basso a sinistra")).size(20.0).strong().color(Color32::BLACK));
+            });
+        });
+    });
+}
+
 /// At a crisis the time slows but does not stop: an orange frame round the
 /// screen, like a slow-motion shot.
 fn slow_motion_frame(ctx: &egui::Context) {
@@ -1622,6 +1725,8 @@ fn events(ui: &mut egui::Ui, sim: &Sim) {
         let show = |ui: &mut egui::Ui, e: &rocca::game::LogEntry| {
             let (icon, colour) = if e.text.starts_with("CRISI") || e.text.contains("fuori servizio") || e.text.contains("si ritira") {
                 (Icon::Alert, ORANGE)
+            } else if e.text.contains("nessun mezzo") || e.text.contains("mezzi insufficienti") || e.text.contains("non possono avvicinarsi") {
+                (Icon::Engine, ORANGE)
             } else if e.text.starts_with("evacuazione") { (Icon::Exit, BLUE) }
             else if e.text.starts_with("preallerta") { (Icon::Bell, AMBER) }
             else { (Icon::Engine, GREEN) };
@@ -1663,7 +1768,9 @@ fn compare_bars(ui: &mut egui::Ui, mine: usize, theirs: Option<usize>, scale: us
     let w = 150.0;
     let (r, _) = ui.allocate_exact_size(egui::vec2(w + 40.0, 30.0), egui::Sense::hover());
     let p = ui.painter();
-    let len = |n: usize| w * n as f32 / scale.max(1) as f32;
+    // past the scale the bar stops at its column; the number says the rest
+    // (83 homes ran into the «evacuate» column)
+    let len = |n: usize| w * n.min(scale) as f32 / scale.max(1) as f32;
     let top = egui::Rect::from_min_size(r.min, egui::vec2(len(mine).max(2.0), 13.0));
     p.rect_filled(top, 3.0, colour);
     p.text(egui::pos2(top.right() + 4.0, top.center().y), Align2::LEFT_CENTER, mine.to_string(), egui::FontId::proportional(15.0), Color32::WHITE);
@@ -1713,22 +1820,31 @@ fn timeline(ui: &mut egui::Ui, sim: &Sim, width: f32) {
 }
 
 /// The end: what your plan changed, against the same fire with no orders.
-fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, top: f32) {
     let o = sim.outcome();
     let base = k.baseline();
     let mut again = None;
-    egui::Area::new(egui::Id::new("fine")).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
-        egui::Frame::none().fill(Color32::from_rgb(18, 20, 24)).stroke(egui::Stroke::new(1.0, Color32::from_gray(80))).rounding(14.0).inner_margin(24.0).show(ui, |ui| {
-            ui.set_width(760.0);
+    // Between the top bar and the screen's foot, left of the score: the
+    // middle scrolls and the buttons stay in sight (playtest 6: on a 824 px
+    // window the panel ran off both edges and «Riprova» could not be reached).
+    let screen = ctx.screen_rect();
+    let room = screen.width() - (BOARD_W + 40.0);
+    let width = (room - 72.0).clamp(480.0, 760.0);
+    let left = ((room - (width + 48.0)) * 0.5).max(12.0);
+    let height = screen.height() - top - 20.0;
+    egui::Area::new(egui::Id::new("fine")).fixed_pos(egui::pos2(left, top + 8.0)).show(ctx, |ui| {
+        egui::Frame::none().fill(Color32::from_rgb(18, 20, 24)).stroke(egui::Stroke::new(1.0, Color32::from_gray(80))).rounding(14.0).inner_margin(egui::Margin::symmetric(24.0, 18.0)).show(ui, |ui| {
+            ui.set_width(width);
+            let started = ui.cursor().top();
             let b = base.as_ref().and_then(|r| r.as_ref().ok());
             // the two numbers that matter, big
-            ui.horizontal(|ui| {
+            ui.horizontal_top(|ui| {
                 for (icon, what, mine, theirs, colour) in [
                     (Icon::Family, "famiglie colte in casa", o.caught(), b.map(|b| b.caught()), BLUE),
                     (Icon::House, "case colpite", o.homes_hit(), b.map(|b| b.homes_hit()), ORANGE),
                 ] {
                     egui::Frame::none().fill(Color32::from_gray(32)).rounding(10.0).inner_margin(14.0).show(ui, |ui| {
-                        ui.set_width(340.0);
+                        ui.set_width((width - 8.0) * 0.5 - 28.0);
                         ui.horizontal(|ui| {
                             icons::show(ui, icon, 56.0, colour);
                             ui.vertical(|ui| {
@@ -1749,6 +1865,14 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                 }
             });
             ui.add_space(10.0);
+            // what stays below the scrolling part: the note and the buttons
+            const FOOT: f32 = 110.0;
+            let scroll_h = (height - 36.0 - (ui.cursor().top() - started) - FOOT).max(120.0);
+            egui::ScrollArea::vertical()
+                .max_height(scroll_h)
+                .auto_shrink([false, true])
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+                .show(ui, |ui| {
             // per place: two bars each, yours against no orders
             let scale = sim.districts.iter().map(|d| d.households.len()).max().unwrap_or(1).min(60);
             egui::Grid::new("esito").spacing([18.0, 6.0]).show(ui, |ui| {
@@ -1795,7 +1919,7 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             });
             ui.add_space(10.0);
             ui.label(RichText::new("Le tue decisioni e gli imprevisti, ora per ora").size(14.0).color(GREY));
-            timeline(ui, sim, 740.0);
+            timeline(ui, sim, width - 24.0);
             // why each place ended as it did: what the game recorded
             ui.label(RichText::new("Perché").size(17.0).strong().color(Color32::WHITE));
             for d in 0..sim.districts.len() {
@@ -1812,9 +1936,11 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                 });
                 ui.add_space(4.0);
             }
+                });
             // a real-world note, not advice on the game
-            ui.label(RichText::new(REAL_LIFE).size(13.0).italics().color(AMBER));
-            ui.add_space(14.0);
+            ui.add_space(6.0);
+            ui.add(egui::Label::new(RichText::new(REAL_LIFE).size(13.0).italics().color(AMBER)).wrap());
+            ui.add_space(8.0);
             ui.horizontal(|ui| {
                 let big = |t: &str| egui::Button::new(RichText::new(t).size(24.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(240.0, 60.0));
                 if ui.add(big("Riprova")).clicked() {
@@ -1838,15 +1964,18 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
 
 /// Beside the debrief: the score, made of the debrief's numbers
 /// (`rocca::score`), three letters to enter the board, and the board.
-fn leaderboard(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim) {
+/// Width of the score panel beside the debrief.
+const BOARD_W: f32 = 278.0;
+
+fn leaderboard(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, top: f32) {
     let base = k.baseline();
     let score = match base.as_ref() {
         Some(Ok(b)) => Some(rocca::score::score(&sim.outcome(), b)),
         _ => None,
     };
-    egui::Area::new(egui::Id::new("classifica")).anchor(Align2::RIGHT_CENTER, [-12.0, 0.0]).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("classifica")).anchor(Align2::RIGHT_TOP, [-12.0, top + 8.0]).show(ctx, |ui| {
         egui::Frame::none().fill(Color32::from_rgb(18, 20, 24)).stroke(egui::Stroke::new(1.0, Color32::from_gray(80))).rounding(14.0).inner_margin(14.0).show(ui, |ui| {
-            ui.set_width(250.0);
+            ui.set_width(BOARD_W - 28.0);
             let Some(s) = score else {
                 ui.label(RichText::new("Punteggio: calcolo…").size(17.0).color(GREY));
                 return;
@@ -1857,14 +1986,16 @@ fn leaderboard(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim) {
                 ui.label(RichText::new(format!("su {}", rocca::score::MAX)).size(16.0).color(GREY));
             });
             // what it is made of: shares of what the fire would have taken
-            let pct = |kept: usize, risk: usize| (100.0 * kept as f64 / risk.max(1) as f64).round();
+            // (playtest 6: «8 salvate su 11» did not say 11 of what)
+            let line = |ui: &mut egui::Ui, text: String| { ui.add(egui::Label::new(RichText::new(text).size(14.0).color(GREY)).wrap()); };
             if s.families_at_risk > 0 {
-                ui.label(RichText::new(format!("Famiglie: {} salvate su {} ({:.0} %)", s.families, s.families_at_risk, pct(s.families, s.families_at_risk))).size(14.0).color(GREY));
+                line(ui, format!("Senza ordini il fuoco avrebbe colto in casa {} famiglie: tu ne hai salvate {}.", s.families_at_risk, s.families));
             }
             if s.homes_at_risk > 0 {
-                ui.label(RichText::new(format!("Case: {} salvate su {} ({:.0} %)", s.homes, s.homes_at_risk, pct(s.homes, s.homes_at_risk))).size(14.0).color(GREY));
+                line(ui, format!("Avrebbe colpito {} case: tu ne hai risparmiate {}.", s.homes_at_risk, s.homes));
             }
-            ui.label(RichText::new("Le famiglie contano di più delle case.").size(13.0).color(GREY));
+            let w = (rocca::score::FAMILY_WEIGHT * 100.0).round();
+            ui.add(egui::Label::new(RichText::new(format!("Punti: {w:.0} % dalle famiglie salvate, {:.0} % dalle case.", 100.0 - w)).size(13.0).color(GREY)).wrap());
             if s.total == 0 {
                 ui.label(RichText::new("Nessun punto: è andata come senza ordini.").size(14.0).color(GREY));
             }

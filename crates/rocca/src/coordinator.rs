@@ -285,7 +285,7 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
     }
     for (rank, (d, _)) in engaged.iter().enumerate() {
         if quota[rank] == 0 && !uncovered.iter().any(|(x, _)| x == d) {
-            uncovered.push((*d, format!("{}: nessun mezzo rimasto dopo le priorità più alte", v.districts[*d].name)));
+            uncovered.push((*d, format!("{}: nessun mezzo libero, sono già tutti dove la priorità è più alta", v.districts[*d].name)));
         }
     }
     // 6. who is left without a post, and why
