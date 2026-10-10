@@ -9,6 +9,12 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - 5b: punti 1–10 (`docs/fase5/iterazione5b.md`), compreso il playtest automatico 3 (`docs/fase5/playtest_gpt3/README.md`);
   - 5c: punti 1–5 del playtest 3 (`docs/fase5/iterazione5c.md`).
 - **Prossima azione: checkpoint 5, umano** (`docs/fase5/README.md`). Una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), con prima azione e debrief. Non procedere senza conferma dell'utente; dopo viene la fase 6 (playtest).
+- **Playtest 6 (Sonnet 5.5, 2026-10-10, build `3ff28cd`)** fatto, nel browser in primo piano: `docs/fase5/playtest6/report.md`. Partite: Facile 742, Facile 869 (evacuare presto), Medio 360; Esperto solo avviato. Da correggere, verificato sugli screenshot:
+  - [ ] **debrief più alto della finestra** (824 px CSS): barra in alto sopra il titolo, «Perché» tagliato, pulsanti per rigiocare o cambiare difficoltà irraggiungibili (`p1-06-finale-tagliato.jpg`). Bloccante: tra una partita e l'altra Giulia ha ricaricato la pagina;
+  - [ ] legenda tagliata in basso (`p4-01`);
+  - [ ] il badge di Le Terrazze copre l'etichetta A2 (`p3-02`);
+  - [ ] crisi persa (P3, 14:45): scaduta senza che Giulia la vedesse. Molto dipende dalla lentezza dello strumento, ma conviene renderla più evidente;
+  - [ ] ancora aperti dal playtest 5: fuoco poco visibile all'inizio, pulsanti grigi senza spiegazione, Preallerta ed Evacua poco distinte, effetto dei mezzi non spiegato nel «Perché» (P1 e P2: case identiche, 59/76).
 - **Playtest 5 (Sonnet 5.5)** fatto: `docs/fase5/playtest_sonnet/report.md`. Il punteggio va rivisto, perché la classifica unica non è coerente con un punteggio relativo all'incendio.
 - **Tempo reale, pause, punteggio e classifica** fatti (`docs/fase5/tempo_reale.md`); nove difetti trovati giocando, elencati lì e nella sezione «Tempo reale» della fase 5.
 - **Playtest 4** (Giulia, prima volta, Haiku 5.5): fatto, difetti da decidere con l'utente (`docs/fase5/playtest_haiku/`, sezione «Playtest 4» della fase 5).
