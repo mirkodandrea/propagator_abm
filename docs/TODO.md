@@ -4,7 +4,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
-- **2026-10-09, nuclei più grandi: layout 4 `t4_paese4` adottato** (richiesta e «fai tu» dell'utente): sei distretti, 538 famiglie, borghi organici, nuovi inneschi e casi del kiosk (`Forna3_gira`, `Coste2_gira`, `Rocco3`). Test adattati, 37 target verdi. Note e incognite in `docs/fase5/ingrandimento_nuclei.md`; playtest 5: browser fallito (scheda nascosta), solo partite scriptate native; schede e debrief da sistemare, playtest vero da rifare. **Non ancora committato.**
+- **2026-10-09, nuclei più grandi: layout 4 `t4_paese4` adottato** (richiesta e «fai tu» dell'utente): sei distretti, 538 famiglie, borghi organici, nuovi inneschi e casi del kiosk (`Forna3_gira`, `Coste2_gira`, `Rocco3`). Test adattati, 37 target verdi. Note e incognite in `docs/fase5/ingrandimento_nuclei.md`; playtest 5: browser fallito (scheda nascosta), solo partite scriptate native; schede e debrief da sistemare, playtest vero da rifare. Committato e inviato con push il 2026-10-10 (`900351c`).
 - **Fase corrente: fase 5, iterazioni 5b e 5c chiuse** (2026-10-09, inviate con push fino ad `a16a043`):
   - 5b: punti 1–10 (`docs/fase5/iterazione5b.md`), compreso il playtest automatico 3 (`docs/fase5/playtest_gpt3/README.md`);
   - 5c: punti 1–5 del playtest 3 (`docs/fase5/iterazione5c.md`).
@@ -38,6 +38,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 - 2026-10-09: **tempo reale dichiarato** («non è chiaro se è real time o a turni»; «Va bene» alla proposta in 7 punti): pulsante unico play/pausa, ordini immediati durante il gioco, pausa visibile, orologio «ore 14:26», crisi come rallentatore, accelerazione solo se è davvero tutto fermo, intro esplicita.
 - 2026-10-09: **massimo 3 pause** a partita (le crisi non contano).
+- 2026-10-10: **selettore di difficoltà** all'avvio: Facile = `Rocco3`, Medio = `Forna3_gira`, Esperto = `Coste2_gira` (`levels` in `game.json`, `LEVELS` in `tools/factory/cases.py`). Nel finale «Cambia difficoltà» al posto di «Altro incendio»; classifica unica con il livello accanto.
 - 2026-10-10: **punteggio come quota salvata** (0–1000, famiglie 70 %, case 30 %), senza bonus delle pause; classifica unica.
 - 2026-10-09: playtest con **Sonnet**.
 - 2026-10-09: **gli ordini si cambiano solo in pausa** (o alla crisi), così i cambi di piano sono pochi; **niente pausa subito dopo un'altra** (15 min simulati, `PAUSE_GAP_S`). Niente penalità a punti per i cambi.

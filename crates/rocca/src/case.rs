@@ -86,7 +86,19 @@ pub struct Territory {
     /// runner and the operator.
     #[serde(default)]
     pub featured: Vec<String>,
+    /// What the visitor chooses at the start, easiest first.
+    #[serde(default)]
+    pub levels: Vec<Level>,
     pub cases: Vec<Case>,
+}
+
+/// A difficulty the visitor can pick: a name, the case it plays and one
+/// line on what makes it so.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Level {
+    pub name: String,
+    pub case: String,
+    pub about: String,
 }
 
 impl Territory {
@@ -96,6 +108,7 @@ impl Territory {
             .with_context(|| format!("parsing {}", p.display()))?;
         anyhow::ensure!(t.roster.iter().all(|s| s.station < t.stations.len()), "roster names a missing station");
         anyhow::ensure!(t.featured.iter().all(|n| t.case(n).is_some()), "featured names a missing case");
+        anyhow::ensure!(t.levels.iter().all(|l| t.case(&l.case).is_some()), "a level names a missing case");
         Ok(t)
     }
 

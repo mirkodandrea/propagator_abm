@@ -114,6 +114,10 @@ pub struct Kiosk {
     pub help: bool,
     /// Pauses left in this game ([`MAX_PAUSES`]).
     pub pauses_left: u32,
+    /// The level being played (`Territory::levels`), and the one just
+    /// picked on the opening screen, for `ui::draw` to start.
+    pub level: Option<usize>,
+    pub picked_level: Option<usize>,
     /// The district whose badge is opened on the map (a click), if any.
     pub selected: Option<usize>,
     /// Simulated time the clock last started running («Avvia», «Riprendi»).
@@ -172,6 +176,8 @@ impl Kiosk {
             started: false,
             help: false,
             pauses_left: MAX_PAUSES,
+            level: None,
+            picked_level: None,
             selected: None,
             resumed_at_s: 0,
             board: board::load(),

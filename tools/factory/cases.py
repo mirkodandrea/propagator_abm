@@ -31,6 +31,13 @@ SHIFT_AT_MIN = 45
 # dilemma, the non-obvious one, the introductory one. The others stay in
 # game.json for the headless runner and the operator.
 FEATURED = ["Forna3_gira", "Coste2_gira", "Rocco3"]
+# What the visitor chooses at the start (user, 2026-10-10: «facile, medio,
+# esperto»): one featured case per level, from the role each was chosen for.
+LEVELS = [
+    {"name": "Facile", "case": "Rocco3", "about": "Un paese minacciato, il vento non cambia."},
+    {"name": "Medio", "case": "Forna3_gira", "about": "Più paesi in pericolo e il vento che gira."},
+    {"name": "Esperto", "case": "Coste2_gira", "about": "Un fuoco velocissimo: ogni minuto conta."},
+]
 
 
 def build(cid: str) -> dict:
@@ -68,6 +75,7 @@ def build(cid: str) -> dict:
         ],
         "roster": ROSTER,
         "featured": [n for n in FEATURED if any(c["name"] == n for c in cases)],
+        "levels": [lv for lv in LEVELS if any(c["name"] == lv["case"] for c in cases)],
         "cases": cases,
     }
 

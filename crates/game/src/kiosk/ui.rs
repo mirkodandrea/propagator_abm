@@ -150,6 +150,18 @@ pub fn draw(
 
     if k.intro {
         intro(ctx, k, &sim, logo.as_deref().map(|l| l.0), faces);
+        // a level picked: play its case (a new game if it changes, or if
+        // the choice came from a finished game's «Cambia difficoltà»)
+        if let Some(i) = k.picked_level.take() {
+            if let Some(l) = k.territory.levels.get(i).cloned() {
+                if l.case != k.case || k.phase == Phase::Fine {
+                    k.case = l.case;
+                    new_game(k, &mut sim, &mut restarted);
+                }
+                k.level = Some(i);
+            }
+            k.intro = false;
+        }
         if k.operator {
             operator(ctx, k, &mut sim, &mut restarted);
         }
@@ -193,6 +205,10 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
     egui::Area::new(egui::Id::new("barra")).order(egui::Order::Foreground).anchor(Align2::CENTER_TOP, [0.0, 10.0]).interactable(false).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.horizontal(|ui| {
+                if let Some(l) = k.level.and_then(|i| k.territory.levels.get(i)) {
+                    pill(ui, &l.name, Color32::from_gray(200));
+                    ui.add_space(6.0);
+                }
                 let w = sim.fire.weather();
                 // an arrow the way the wind pushes the fire, as seen on screen
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(38.0, 38.0), egui::Sense::hover());
@@ -287,7 +303,15 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                 characters::portrait(ui, faces, Who::Volontaria, Mood::Preoccupato, 110.0);
                 ui.add_space(18.0);
                 characters::bubble(ui, Who::Volontaria, |ui| {
-                    let text = format!("Un incendio è partito vicino a {}! Abbiamo 2 autobotti e 1 squadra per sei borghi: non bastano per tutti. Decidi tu come usarle. Il tempo scorre da solo, ma puoi mettere in pausa quando vuoi.", sim.case.near);
+                    // the fire is not chosen yet: say what is at stake, from the data
+                    let roster = &k.territory.roster;
+                    let engines = roster.iter().filter(|s| s.kind == rocca::case::Kind::Engine).count();
+                    let crews = roster.len() - engines;
+                    let n = |k: usize, one: &str, many: &str| if k == 1 { format!("1 {one}") } else { format!("{k} {many}") };
+                    let text = format!(
+                        "Un incendio minaccia i nostri borghi! Abbiamo {} e {} per {} borghi: non bastano per tutti. Decidi tu come usarli. Il tempo scorre da solo, ma puoi mettere in pausa quando vuoi.",
+                        n(engines, "autobotte", "autobotti"), n(crews, "squadra", "squadre"), sim.districts.len()
+                    );
                     characters::says(ui, Who::Volontaria, &text, 600.0);
                 });
             });
@@ -309,12 +333,32 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
             });
             ui.add_space(6.0);
             ui.add_space(10.0);
-            ui.vertical_centered(|ui| {
-                let b = egui::Button::new(RichText::new("Inizia").size(30.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(320.0, 70.0));
-                if ui.add(b).clicked() {
-                    k.intro = false;
-                }
-            });
+            // the difficulty, as three fires (user, 2026-10-10); without
+            // levels in game.json, the single button of before
+            let levels = k.territory.levels.clone();
+            if levels.is_empty() {
+                ui.vertical_centered(|ui| {
+                    let b = egui::Button::new(RichText::new("Inizia").size(30.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(320.0, 70.0));
+                    if ui.add(b).clicked() {
+                        k.intro = false;
+                    }
+                });
+            } else {
+                ui.label(RichText::new("Scegli la difficoltà").size(20.0).strong().color(Color32::WHITE));
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    for (i, l) in levels.iter().enumerate() {
+                        ui.vertical(|ui| {
+                            ui.set_width(250.0);
+                            let b = egui::Button::new(RichText::new(&l.name).size(28.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0);
+                            if ui.add_sized([250.0, 64.0], b).clicked() {
+                                k.picked_level = Some(i);
+                            }
+                            ui.add(egui::Label::new(RichText::new(&l.about).size(15.0).color(GREY)).wrap());
+                        });
+                    }
+                });
+            }
             ui.add_space(10.0);
             ui.label(
                 RichText::new("Territorio immaginario, fuoco simulato con PROPAGATOR di Fondazione CIMA. Nella realtà segui sempre le indicazioni delle autorità.")
@@ -1776,8 +1820,12 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                 if ui.add(big("Riprova")).clicked() {
                     again = Some(k.case.clone());
                 }
-                if ui.add(big("Altro incendio")).clicked() {
-                    again = Some(k.next_case());
+                if k.territory.levels.is_empty() {
+                    if ui.add(big("Altro incendio")).clicked() {
+                        again = Some(k.next_case());
+                    }
+                } else if ui.add(big("Cambia difficoltà")).clicked() {
+                    k.intro = true;
                 }
             });
         });
@@ -1857,6 +1905,10 @@ fn leaderboard(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim) {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(format!("{:>2}.", i + 1)).size(16.0).monospace().color(GREY));
                     ui.label(RichText::new(&e.initials).size(16.0).strong().monospace().color(colour));
+                    // one board for every level: say which each game was
+                    if let Some(l) = k.territory.levels.iter().find(|l| l.case == e.case) {
+                        ui.label(RichText::new(&l.name).size(13.0).color(GREY));
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(RichText::new(e.score.to_string()).size(16.0).monospace().color(colour));
                     });

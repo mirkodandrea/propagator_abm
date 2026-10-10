@@ -36,6 +36,23 @@
   "Coste2_gira",
   "Rocco3"
  ],
+ "levels": [
+  {
+   "name": "Facile",
+   "case": "Rocco3",
+   "about": "Un paese minacciato, il vento non cambia."
+  },
+  {
+   "name": "Medio",
+   "case": "Forna3_gira",
+   "about": "Più paesi in pericolo e il vento che gira."
+  },
+  {
+   "name": "Esperto",
+   "case": "Coste2_gira",
+   "about": "Un fuoco velocissimo: ogni minuto conta."
+  }
+ ],
  "cases": [
   {
    "name": "Borgo1",
