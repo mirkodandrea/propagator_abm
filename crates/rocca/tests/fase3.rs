@@ -43,8 +43,8 @@ fn same_seed_same_plan_same_game() {
 
 #[test]
 fn inverting_priorities_changes_posts_and_outcomes() {
-    let (ga, a) = run("Piano1", &["Grilli", "Ghiande"], &[], 180);
-    let (gb, b) = run("Piano1", &["Ghiande", "Grilli"], &[], 180);
+    let (ga, a) = run("Piano3", &["Grilli", "Ghiande"], &[], 180);
+    let (gb, b) = run("Piano3", &["Ghiande", "Grilli"], &[], 180);
     let (piano, coste) = (idx(&ga, "Grilli"), idx(&ga, "Ghiande"));
     let on = |g: &Game, d: usize| g.posts.iter().flatten().filter(|p| p.district == d).count();
     // the first-ranked district gets two units
@@ -90,8 +90,8 @@ fn prealert_is_not_an_evacuation() {
 fn prealert_pays_off_when_the_fire_comes() {
     // Pian dei Grilli with the fire coming: pre-alerted households leave faster when
     // they do decide to, so fewer are caught at home than with no order.
-    let (g, pre) = run("Piano1", &[], &[("Grilli", Civil::Preallerta)], 120);
-    let (_, none) = run("Piano1", &[], &[], 120);
+    let (g, pre) = run("Piano3", &[], &[("Grilli", Civil::Preallerta)], 120);
+    let (_, none) = run("Piano3", &[], &[], 120);
     let d = idx(&g, "Grilli");
     assert!(pre.districts[d].caught < none.districts[d].caught, "{} vs {}", pre.districts[d].caught, none.districts[d].caught);
 }
@@ -164,7 +164,7 @@ fn the_story_tells_what_happened() {
     let town = g.story(idx(&g, "Castelvento"));
     assert!(town[0].starts_with("Evacuazione alle 14:00: dopo l'ordine sono partite "), "{town:?}");
     // the end state adds up to the district
-    assert!(town[1].starts_with("Alla fine, su 160 famiglie: "), "{town:?}");
+    assert!(town[1].starts_with("Alla fine, su 190 famiglie: "), "{town:?}");
     assert!(town[2].starts_with("Mezzi in postazione per"), "{town:?}");
     let other = g.story(idx(&g, "Grilli"));
     assert!(other.iter().any(|l| l == "Nessun mezzo: non era tra le priorità."), "{other:?}");

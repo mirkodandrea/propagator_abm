@@ -25,7 +25,7 @@ fn fire_for(scn: &Scenario) -> FireSim {
     // South-easterly: on Rocca Ventosa the default north wind drives the planned
     // fire away from the homes (no household ever sees it), while this window
     // runs into 160+ of them -- see `fire/tests/exposure.rs`.
-    let weather = Weather { wind_dir_deg: 135.0, ..Weather::default() };
+    let weather = Weather { wind_dir_deg: 225.0, ..Weather::default() };
     let plan = fire::plan_ignition(scn, weather.wind_dir_deg, 250.0);
     let mut fire = FireSim::new(scn, weather, 42).unwrap();
     fire.ignite_patch(plan.centre, plan.radius_m, scn).unwrap();

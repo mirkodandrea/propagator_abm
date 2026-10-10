@@ -30,7 +30,7 @@ SHIFT_AT_MIN = 45
 # The cases the kiosk plays, in its order (checkpoint 4, 2026-10-08): the main
 # dilemma, the non-obvious one, the introductory one. The others stay in
 # game.json for the headless runner and the operator.
-FEATURED = ["Coste2_gira", "Piano2", "Borgo2"]
+FEATURED = ["Forna3_gira", "Coste2_gira", "Rocco3"]
 
 
 def build(cid: str) -> dict:

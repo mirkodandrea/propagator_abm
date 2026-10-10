@@ -114,6 +114,8 @@ pub struct Kiosk {
     pub help: bool,
     /// Pauses left in this game ([`MAX_PAUSES`]).
     pub pauses_left: u32,
+    /// The district whose badge is opened on the map (a click), if any.
+    pub selected: Option<usize>,
     /// Simulated time the clock last started running («Avvia», «Riprendi»).
     pub resumed_at_s: i64,
     /// The leaderboard, one for all fires (user, 2026-10-09).
@@ -170,6 +172,7 @@ impl Kiosk {
             started: false,
             help: false,
             pauses_left: MAX_PAUSES,
+            selected: None,
             resumed_at_s: 0,
             board: board::load(),
             initials: [0; 3],
@@ -266,6 +269,8 @@ impl Kiosk {
     pub fn enter(&mut self, phase: Phase) {
         self.phase = phase;
         self.phase_t = 0.0;
+        // an opened chip would cover the pause's or the crisis's own panel
+        self.selected = None;
     }
 }
 
@@ -304,6 +309,7 @@ pub fn new_game(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<Si
             kiosk.started = false;
             kiosk.help = false;
             kiosk.pauses_left = MAX_PAUSES;
+            kiosk.selected = None;
             kiosk.resumed_at_s = 0;
             kiosk.placed = None;
             kiosk.start_baseline();
@@ -443,6 +449,8 @@ pub fn shots(
             prio.extend((0..sim.districts.len()).filter(|&d| d != near));
             kiosk.proposed = Plan::new(sim.districts.len()).with_priorities(&prio).with_civil(near, rocca::Civil::Preallerta);
             kiosk.dirty = true;
+            // the badge opened, as a click would (the next shot shows it)
+            kiosk.selected = Some(near);
             *stage = (1, 0.0);
         }
         1 if stage.1 > 2.0 => {

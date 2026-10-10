@@ -67,6 +67,11 @@ def pick_ignitions(fuel: np.ndarray, n: int, margin_m: float, radius_m: float) -
     return out
 
 
+# Case names, kept from the three-locality layouts (Il Borgo, Il Piano, Le Coste)
+# so that earlier cases and tests keep their names.
+CASE_PREFIX = {"Castelvento": "Borgo", "Pian dei Grilli": "Piano", "Le Ghiande": "Coste"}
+
+
 def pick_ignitions_around(fuel: np.ndarray, localities: dict, radius_m: float, dist_m: float = 1000.0,
                           per_locality: int = 3, clear_m: float = 400.0) -> list[dict]:
     """Starts that matter for a town: for each locality, `per_locality` starts
@@ -94,7 +99,7 @@ def pick_ignitions_around(fuel: np.ndarray, localities: dict, radius_m: float, d
                 d = np.hypot(homes[:, 0] - x, homes[:, 1] - y).min()
                 if d < clear_m or burn[row - r:row + r + 1, col - r:col + r + 1].mean() <= 0.8:
                     continue
-                out.append({"name": f"{loc.split()[-1][:5]}{k + 1}", "row": row, "col": col, "x": float(x),
+                out.append({"name": f"{CASE_PREFIX.get(loc, loc.split()[-1][:5])}{k + 1}", "row": row, "col": col, "x": float(x),
                             "y": float(y), "fuel": int(fuel[row, col]), "near": loc,
                             "bearing_deg": int(np.degrees(b)) % 360, "dist_to_homes_m": round(float(d))})
                 break

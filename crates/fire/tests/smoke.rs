@@ -12,13 +12,22 @@ fn data_dir() -> std::path::PathBuf {
 }
 
 fn wui_ignition(scn: &Scenario) -> Cell {
+    // A burnable cell 8-26 cells north of a home, in continuous fuel (a 5x5
+    // block), so the fire is lit at the edge of the settlement and not in a
+    // pocket among gardens.
     for h in &scn.population.households {
         for d in 8..26usize {
-            if d > h.cell[0] {
+            if d + 2 > h.cell[0] {
                 break;
             }
             let c = Cell { row: h.cell[0] - d, col: h.cell[1] };
-            if scn.is_burnable(c) {
+            let block = (0..5usize).all(|i| {
+                (0..5usize).all(|j| {
+                    let (r, k) = (c.row + i, c.col + j);
+                    r >= 2 && k >= 2 && scn.is_burnable(Cell { row: r - 2, col: k - 2 })
+                })
+            });
+            if block {
                 return c;
             }
         }

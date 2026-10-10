@@ -49,13 +49,13 @@
     "open_max_slope_deg": 10.0,
     "rock_slope_deg": 34.0
   },
-  "layout": 3,
-  "town_id": "t4_paese3",
-  "town_seed": 401,
+  "layout": 4,
+  "town_id": "t4_paese4",
+  "town_seed": 404,
   "town_notes": {
     "SP 12 della Valle": {
-      "length_m": 8083,
-      "grade_p95": 0.069
+      "length_m": 8112,
+      "grade_p95": 0.075
     },
     "Strada del Passo": {
       "length_m": 8898,
@@ -70,13 +70,16 @@
       "grade_p95": 0.122
     },
     "Le Ghiande": {
-      "houses_requested": 24,
-      "houses_placed": 24
+      "houses_requested": 32,
+      "houses_placed": 32
     },
     "households": {
-      "Castelvento": 160,
-      "Pian dei Grilli": 55,
-      "Le Ghiande": 30
+      "Castelvento": 190,
+      "Pian dei Grilli": 90,
+      "Fornaci": 90,
+      "San Rocco": 100,
+      "Le Terrazze": 30,
+      "Le Ghiande": 38
     }
   },
   "fine": {
@@ -121,389 +124,641 @@
       "track": 3.5
     },
     "fine_vs_fire_dem": {
-      "mean_abs_m": 0.942,
-      "p99_abs_m": 3.69,
-      "max_abs_m": 17.64
+      "mean_abs_m": 0.943,
+      "p99_abs_m": 3.73,
+      "max_abs_m": 10.42
     }
   },
   "road_profiles": {
     "1": {
       "name": "SP 12 della Valle",
       "class": "secondary",
-      "length_m": 8085,
-      "grade_p95": 0.07,
-      "ground_grade_p95": 0.186,
+      "length_m": 8113,
+      "grade_p95": 0.076,
+      "ground_grade_p95": 0.184,
       "cutfill_p95_m": 1.23,
-      "cutfill_max_m": 3.17
+      "cutfill_max_m": 2.51
     },
     "3": {
       "name": "SP 9 di Fondovalle",
       "class": "secondary",
       "length_m": 3314,
       "grade_p95": 0.1,
-      "ground_grade_p95": 0.29,
-      "cutfill_p95_m": 1.88,
-      "cutfill_max_m": 3.96
+      "ground_grade_p95": 0.256,
+      "cutfill_p95_m": 1.91,
+      "cutfill_max_m": 2.91
     },
     "2": {
       "name": "Strada del Passo",
       "class": "tertiary",
-      "length_m": 8908,
+      "length_m": 8907,
       "grade_p95": 0.14,
-      "ground_grade_p95": 0.357,
-      "cutfill_p95_m": 3.15,
-      "cutfill_max_m": 8.65
+      "ground_grade_p95": 0.344,
+      "cutfill_p95_m": 3.35,
+      "cutfill_max_m": 8.04
     },
-    "5": {
-      "name": "Castelvento - via 1",
-      "class": "residential",
-      "length_m": 400,
-      "grade_p95": 0.04,
-      "ground_grade_p95": 0.175,
-      "cutfill_p95_m": 1.37,
-      "cutfill_max_m": 1.86
-    },
-    "6": {
-      "name": "Castelvento - via 2",
-      "class": "residential",
-      "length_m": 460,
-      "grade_p95": 0.031,
-      "ground_grade_p95": 0.123,
-      "cutfill_p95_m": 1.0,
-      "cutfill_max_m": 1.57
-    },
-    "7": {
-      "name": "Castelvento - via 3",
-      "class": "residential",
-      "length_m": 340,
-      "grade_p95": 0.044,
-      "ground_grade_p95": 0.159,
-      "cutfill_p95_m": 1.18,
-      "cutfill_max_m": 1.44
-    },
-    "8": {
-      "name": "Castelvento - Via del Campo",
-      "class": "residential",
-      "length_m": 250,
-      "grade_p95": 0.041,
-      "ground_grade_p95": 0.169,
-      "cutfill_p95_m": 1.14,
-      "cutfill_max_m": 1.3
-    },
-    "9": {
-      "name": "Castelvento - vicolo -150",
-      "class": "residential",
-      "length_m": 255,
-      "grade_p95": 0.033,
-      "ground_grade_p95": 0.17,
-      "cutfill_p95_m": 1.22,
-      "cutfill_max_m": 1.75
-    },
-    "10": {
-      "name": "Castelvento - vicolo +0",
-      "class": "residential",
-      "length_m": 85,
-      "grade_p95": 0.037,
-      "ground_grade_p95": 0.152,
-      "cutfill_p95_m": 1.16,
-      "cutfill_max_m": 1.31
-    },
-    "11": {
-      "name": "Castelvento - vicolo +140",
-      "class": "residential",
-      "length_m": 255,
-      "grade_p95": 0.022,
-      "ground_grade_p95": 0.146,
-      "cutfill_p95_m": 0.98,
-      "cutfill_max_m": 1.4
-    },
-    "12": {
+    "14": {
       "name": "Pian dei Grilli - via 0",
       "class": "residential",
       "length_m": 441,
-      "grade_p95": 0.039,
-      "ground_grade_p95": 0.16,
-      "cutfill_p95_m": 1.23,
-      "cutfill_max_m": 1.62
+      "grade_p95": 0.038,
+      "ground_grade_p95": 0.185,
+      "cutfill_p95_m": 1.03,
+      "cutfill_max_m": 1.28
     },
-    "13": {
+    "15": {
       "name": "Pian dei Grilli - via 1",
       "class": "residential",
       "length_m": 300,
-      "grade_p95": 0.023,
-      "ground_grade_p95": 0.127,
-      "cutfill_p95_m": 1.01,
-      "cutfill_max_m": 1.39
-    },
-    "14": {
-      "name": "Pian dei Grilli - Via del Campo",
-      "class": "residential",
-      "length_m": 250,
-      "grade_p95": 0.034,
-      "ground_grade_p95": 0.138,
-      "cutfill_p95_m": 0.75,
-      "cutfill_max_m": 0.84
-    },
-    "15": {
-      "name": "Pian dei Grilli - vicolo -60",
-      "class": "residential",
-      "length_m": 80,
-      "grade_p95": 0.021,
-      "ground_grade_p95": 0.121,
-      "cutfill_p95_m": 0.89,
-      "cutfill_max_m": 0.99
-    },
-    "16": {
-      "name": "Pian dei Grilli - vicolo +90",
-      "class": "residential",
-      "length_m": 80,
-      "grade_p95": 0.019,
-      "ground_grade_p95": 0.145,
-      "cutfill_p95_m": 1.04,
-      "cutfill_max_m": 1.1
+      "grade_p95": 0.025,
+      "ground_grade_p95": 0.146,
+      "cutfill_p95_m": 1.18,
+      "cutfill_max_m": 1.5
     },
     "4": {
       "name": "Strada del Monte",
       "class": "unclassified",
       "length_m": 3606,
-      "grade_p95": 0.126,
+      "grade_p95": 0.127,
       "ground_grade_p95": 0.264,
       "cutfill_p95_m": 1.51,
-      "cutfill_max_m": 3.11
+      "cutfill_max_m": 2.57
+    },
+    "5": {
+      "name": "Castelvento - via 4",
+      "class": "unclassified",
+      "length_m": 183,
+      "grade_p95": 0.035,
+      "ground_grade_p95": 0.157,
+      "cutfill_p95_m": 1.15,
+      "cutfill_max_m": 1.33
+    },
+    "6": {
+      "name": "Castelvento - via 5",
+      "class": "unclassified",
+      "length_m": 448,
+      "grade_p95": 0.028,
+      "ground_grade_p95": 0.161,
+      "cutfill_p95_m": 1.1,
+      "cutfill_max_m": 1.71
+    },
+    "7": {
+      "name": "Castelvento - via 6",
+      "class": "unclassified",
+      "length_m": 241,
+      "grade_p95": 0.021,
+      "ground_grade_p95": 0.139,
+      "cutfill_p95_m": 0.79,
+      "cutfill_max_m": 0.99
+    },
+    "8": {
+      "name": "Castelvento - via 7",
+      "class": "unclassified",
+      "length_m": 174,
+      "grade_p95": 0.039,
+      "ground_grade_p95": 0.146,
+      "cutfill_p95_m": 1.27,
+      "cutfill_max_m": 1.42
+    },
+    "9": {
+      "name": "Castelvento - via 8",
+      "class": "unclassified",
+      "length_m": 124,
+      "grade_p95": 0.032,
+      "ground_grade_p95": 0.153,
+      "cutfill_p95_m": 1.01,
+      "cutfill_max_m": 1.27
+    },
+    "10": {
+      "name": "Castelvento - via 9",
+      "class": "unclassified",
+      "length_m": 120,
+      "grade_p95": 0.049,
+      "ground_grade_p95": 0.122,
+      "cutfill_p95_m": 0.84,
+      "cutfill_max_m": 1.0
+    },
+    "11": {
+      "name": "Castelvento - via 10",
+      "class": "unclassified",
+      "length_m": 124,
+      "grade_p95": 0.028,
+      "ground_grade_p95": 0.135,
+      "cutfill_p95_m": 1.08,
+      "cutfill_max_m": 1.27
+    },
+    "12": {
+      "name": "Castelvento - via 11",
+      "class": "unclassified",
+      "length_m": 101,
+      "grade_p95": 0.033,
+      "ground_grade_p95": 0.18,
+      "cutfill_p95_m": 0.95,
+      "cutfill_max_m": 1.06
+    },
+    "13": {
+      "name": "Castelvento - via 12",
+      "class": "unclassified",
+      "length_m": 237,
+      "grade_p95": 0.035,
+      "ground_grade_p95": 0.18,
+      "cutfill_p95_m": 1.17,
+      "cutfill_max_m": 1.38
+    },
+    "16": {
+      "name": "Pian dei Grilli - via 15",
+      "class": "unclassified",
+      "length_m": 177,
+      "grade_p95": 0.057,
+      "ground_grade_p95": 0.167,
+      "cutfill_p95_m": 0.94,
+      "cutfill_max_m": 1.09
     },
     "17": {
-      "name": "Podere Le Ghiande 168",
+      "name": "Pian dei Grilli - via 16",
       "class": "unclassified",
-      "length_m": 46,
-      "grade_p95": 0.103,
-      "ground_grade_p95": 0.237,
-      "cutfill_p95_m": 2.19,
-      "cutfill_max_m": 2.34
+      "length_m": 184,
+      "grade_p95": 0.069,
+      "ground_grade_p95": 0.156,
+      "cutfill_p95_m": 0.89,
+      "cutfill_max_m": 1.13
     },
     "18": {
-      "name": "Podere Le Ghiande 169",
+      "name": "Pian dei Grilli - via 17",
       "class": "unclassified",
-      "length_m": 107,
-      "grade_p95": 0.018,
-      "ground_grade_p95": 0.188,
-      "cutfill_p95_m": 2.76,
-      "cutfill_max_m": 2.8
+      "length_m": 108,
+      "grade_p95": 0.06,
+      "ground_grade_p95": 0.169,
+      "cutfill_p95_m": 1.25,
+      "cutfill_max_m": 1.38
     },
     "19": {
-      "name": "Podere Le Ghiande 170",
+      "name": "Pian dei Grilli - via 18",
       "class": "unclassified",
-      "length_m": 38,
-      "grade_p95": 0.043,
-      "ground_grade_p95": 0.254,
-      "cutfill_p95_m": 3.42,
-      "cutfill_max_m": 3.43
+      "length_m": 331,
+      "grade_p95": 0.046,
+      "ground_grade_p95": 0.176,
+      "cutfill_p95_m": 1.02,
+      "cutfill_max_m": 1.6
     },
     "20": {
-      "name": "Podere Le Ghiande 171",
+      "name": "Pian dei Grilli - via 19",
       "class": "unclassified",
-      "length_m": 32,
-      "grade_p95": 0.141,
-      "ground_grade_p95": 0.439,
-      "cutfill_p95_m": 6.76,
-      "cutfill_max_m": 6.79
+      "length_m": 167,
+      "grade_p95": 0.025,
+      "ground_grade_p95": 0.095,
+      "cutfill_p95_m": 0.68,
+      "cutfill_max_m": 0.72
     },
     "21": {
-      "name": "Podere Le Ghiande 172",
+      "name": "Pian dei Grilli - via 20",
       "class": "unclassified",
-      "length_m": 53,
-      "grade_p95": 0.131,
-      "ground_grade_p95": 0.25,
-      "cutfill_p95_m": 4.28,
-      "cutfill_max_m": 4.33
+      "length_m": 112,
+      "grade_p95": 0.022,
+      "ground_grade_p95": 0.14,
+      "cutfill_p95_m": 0.87,
+      "cutfill_max_m": 0.95
     },
     "22": {
-      "name": "Podere Le Ghiande 173",
+      "name": "Fornaci - via 21",
       "class": "unclassified",
-      "length_m": 60,
-      "grade_p95": 0.008,
-      "ground_grade_p95": 0.261,
-      "cutfill_p95_m": 2.03,
-      "cutfill_max_m": 2.34
+      "length_m": 173,
+      "grade_p95": 0.03,
+      "ground_grade_p95": 0.148,
+      "cutfill_p95_m": 1.37,
+      "cutfill_max_m": 1.55
     },
     "23": {
-      "name": "Podere Le Ghiande 174",
+      "name": "Fornaci - via 22",
       "class": "unclassified",
-      "length_m": 110,
-      "grade_p95": 0.187,
-      "ground_grade_p95": 0.378,
-      "cutfill_p95_m": 4.83,
-      "cutfill_max_m": 5.16
+      "length_m": 334,
+      "grade_p95": 0.026,
+      "ground_grade_p95": 0.145,
+      "cutfill_p95_m": 1.1,
+      "cutfill_max_m": 1.33
     },
     "24": {
-      "name": "Podere Le Ghiande 175",
+      "name": "Fornaci - via 23",
       "class": "unclassified",
-      "length_m": 100,
-      "grade_p95": 0.127,
-      "ground_grade_p95": 0.296,
-      "cutfill_p95_m": 2.13,
-      "cutfill_max_m": 2.34
+      "length_m": 185,
+      "grade_p95": 0.036,
+      "ground_grade_p95": 0.132,
+      "cutfill_p95_m": 0.89,
+      "cutfill_max_m": 1.06
     },
     "25": {
-      "name": "Podere Le Ghiande 176",
+      "name": "Fornaci - via 24",
       "class": "unclassified",
-      "length_m": 59,
-      "grade_p95": 0.188,
-      "ground_grade_p95": 0.403,
-      "cutfill_p95_m": 6.05,
-      "cutfill_max_m": 6.07
+      "length_m": 169,
+      "grade_p95": 0.039,
+      "ground_grade_p95": 0.15,
+      "cutfill_p95_m": 1.2,
+      "cutfill_max_m": 1.46
     },
     "26": {
-      "name": "Podere Le Ghiande 177",
+      "name": "Fornaci - via 25",
       "class": "unclassified",
-      "length_m": 105,
-      "grade_p95": 0.156,
-      "ground_grade_p95": 0.285,
-      "cutfill_p95_m": 4.13,
-      "cutfill_max_m": 4.3
+      "length_m": 121,
+      "grade_p95": 0.041,
+      "ground_grade_p95": 0.103,
+      "cutfill_p95_m": 0.9,
+      "cutfill_max_m": 1.0
     },
     "27": {
-      "name": "Podere Le Ghiande 178",
+      "name": "Fornaci - via 26",
       "class": "unclassified",
-      "length_m": 52,
-      "grade_p95": 0.138,
-      "ground_grade_p95": 0.338,
-      "cutfill_p95_m": 5.64,
-      "cutfill_max_m": 5.77
+      "length_m": 126,
+      "grade_p95": 0.057,
+      "ground_grade_p95": 0.183,
+      "cutfill_p95_m": 1.53,
+      "cutfill_max_m": 1.83
     },
     "28": {
-      "name": "Podere Le Ghiande 179",
+      "name": "San Rocco - via 27",
       "class": "unclassified",
-      "length_m": 77,
-      "grade_p95": 0.163,
-      "ground_grade_p95": 0.293,
-      "cutfill_p95_m": 4.23,
-      "cutfill_max_m": 4.32
+      "length_m": 196,
+      "grade_p95": 0.02,
+      "ground_grade_p95": 0.147,
+      "cutfill_p95_m": 0.89,
+      "cutfill_max_m": 1.0
     },
     "29": {
-      "name": "Podere Le Ghiande 180",
+      "name": "San Rocco - via 28",
       "class": "unclassified",
-      "length_m": 48,
-      "grade_p95": 0.188,
-      "ground_grade_p95": 0.478,
-      "cutfill_p95_m": 4.75,
-      "cutfill_max_m": 4.85
+      "length_m": 200,
+      "grade_p95": 0.022,
+      "ground_grade_p95": 0.136,
+      "cutfill_p95_m": 0.9,
+      "cutfill_max_m": 1.06
     },
     "30": {
-      "name": "Podere Le Ghiande 181",
+      "name": "San Rocco - via 29",
       "class": "unclassified",
-      "length_m": 64,
-      "grade_p95": 0.174,
-      "ground_grade_p95": 0.369,
-      "cutfill_p95_m": 4.63,
-      "cutfill_max_m": 4.85
+      "length_m": 344,
+      "grade_p95": 0.035,
+      "ground_grade_p95": 0.175,
+      "cutfill_p95_m": 1.25,
+      "cutfill_max_m": 1.71
     },
     "31": {
-      "name": "Podere Le Ghiande 182",
+      "name": "San Rocco - via 30",
       "class": "unclassified",
-      "length_m": 111,
-      "grade_p95": 0.177,
-      "ground_grade_p95": 0.415,
-      "cutfill_p95_m": 4.87,
-      "cutfill_max_m": 5.18
+      "length_m": 176,
+      "grade_p95": 0.035,
+      "ground_grade_p95": 0.121,
+      "cutfill_p95_m": 0.86,
+      "cutfill_max_m": 0.97
     },
     "32": {
-      "name": "Podere Le Ghiande 183",
+      "name": "San Rocco - via 31",
       "class": "unclassified",
-      "length_m": 67,
-      "grade_p95": 0.145,
-      "ground_grade_p95": 0.468,
-      "cutfill_p95_m": 4.87,
-      "cutfill_max_m": 5.01
+      "length_m": 128,
+      "grade_p95": 0.059,
+      "ground_grade_p95": 0.137,
+      "cutfill_p95_m": 0.73,
+      "cutfill_max_m": 0.93
     },
     "33": {
-      "name": "Podere Le Ghiande 184",
+      "name": "San Rocco - via 32",
       "class": "unclassified",
-      "length_m": 103,
-      "grade_p95": 0.189,
-      "ground_grade_p95": 0.477,
-      "cutfill_p95_m": 5.28,
-      "cutfill_max_m": 5.81
+      "length_m": 130,
+      "grade_p95": 0.038,
+      "ground_grade_p95": 0.155,
+      "cutfill_p95_m": 1.27,
+      "cutfill_max_m": 1.46
     },
     "34": {
-      "name": "Podere Le Ghiande 185",
+      "name": "Le Terrazze - via 33",
       "class": "unclassified",
-      "length_m": 37,
-      "grade_p95": 0.138,
-      "ground_grade_p95": 0.47,
-      "cutfill_p95_m": 8.26,
-      "cutfill_max_m": 8.49
+      "length_m": 213,
+      "grade_p95": 0.057,
+      "ground_grade_p95": 0.167,
+      "cutfill_p95_m": 1.05,
+      "cutfill_max_m": 1.18
     },
     "35": {
-      "name": "Podere Le Ghiande 186",
+      "name": "Le Terrazze - via 34",
       "class": "unclassified",
-      "length_m": 84,
-      "grade_p95": 0.093,
-      "ground_grade_p95": 0.329,
-      "cutfill_p95_m": 6.25,
-      "cutfill_max_m": 6.3
+      "length_m": 209,
+      "grade_p95": 0.05,
+      "ground_grade_p95": 0.155,
+      "cutfill_p95_m": 1.0,
+      "cutfill_max_m": 1.1
     },
     "36": {
-      "name": "Podere Le Ghiande 187",
+      "name": "Le Terrazze - via 35",
       "class": "unclassified",
-      "length_m": 35,
-      "grade_p95": 0.111,
-      "ground_grade_p95": 0.507,
-      "cutfill_p95_m": 7.24,
-      "cutfill_max_m": 7.64
+      "length_m": 136,
+      "grade_p95": 0.159,
+      "ground_grade_p95": 0.283,
+      "cutfill_p95_m": 1.48,
+      "cutfill_max_m": 1.95
     },
     "37": {
-      "name": "Podere Le Ghiande 188",
+      "name": "Podere Le Ghiande 437",
       "class": "unclassified",
-      "length_m": 62,
-      "grade_p95": 0.208,
-      "ground_grade_p95": 0.501,
-      "cutfill_p95_m": 9.39,
-      "cutfill_max_m": 9.4
+      "length_m": 47,
+      "grade_p95": 0.171,
+      "ground_grade_p95": 0.376,
+      "cutfill_p95_m": 1.82,
+      "cutfill_max_m": 2.3
     },
     "38": {
-      "name": "Podere Le Ghiande 189",
+      "name": "Podere Le Ghiande 438",
       "class": "unclassified",
-      "length_m": 89,
-      "grade_p95": 0.15,
-      "ground_grade_p95": 0.309,
-      "cutfill_p95_m": 4.42,
-      "cutfill_max_m": 4.7
+      "length_m": 70,
+      "grade_p95": 0.037,
+      "ground_grade_p95": 0.169,
+      "cutfill_p95_m": 3.58,
+      "cutfill_max_m": 3.77
     },
     "39": {
-      "name": "Podere Le Ghiande 190",
+      "name": "Podere Le Ghiande 439",
       "class": "unclassified",
-      "length_m": 98,
-      "grade_p95": 0.235,
-      "ground_grade_p95": 0.559,
-      "cutfill_p95_m": 15.73,
-      "cutfill_max_m": 16.37
+      "length_m": 71,
+      "grade_p95": 0.146,
+      "ground_grade_p95": 0.441,
+      "cutfill_p95_m": 6.36,
+      "cutfill_max_m": 6.39
     },
     "40": {
-      "name": "Podere Le Ghiande 191",
+      "name": "Podere Le Ghiande 440",
       "class": "unclassified",
-      "length_m": 99,
-      "grade_p95": 0.038,
-      "ground_grade_p95": 0.185,
-      "cutfill_p95_m": 5.1,
-      "cutfill_max_m": 5.36
+      "length_m": 63,
+      "grade_p95": 0.157,
+      "ground_grade_p95": 0.365,
+      "cutfill_p95_m": 1.76,
+      "cutfill_max_m": 2.3
     },
     "41": {
+      "name": "Podere Le Ghiande 441",
+      "class": "unclassified",
+      "length_m": 106,
+      "grade_p95": 0.188,
+      "ground_grade_p95": 0.479,
+      "cutfill_p95_m": 5.88,
+      "cutfill_max_m": 6.27
+    },
+    "42": {
+      "name": "Podere Le Ghiande 442",
+      "class": "unclassified",
+      "length_m": 59,
+      "grade_p95": 0.098,
+      "ground_grade_p95": 0.286,
+      "cutfill_p95_m": 5.09,
+      "cutfill_max_m": 5.38
+    },
+    "43": {
+      "name": "Podere Le Ghiande 443",
+      "class": "unclassified",
+      "length_m": 109,
+      "grade_p95": 0.062,
+      "ground_grade_p95": 0.226,
+      "cutfill_p95_m": 3.64,
+      "cutfill_max_m": 3.8
+    },
+    "44": {
+      "name": "Podere Le Ghiande 444",
+      "class": "unclassified",
+      "length_m": 41,
+      "grade_p95": 0.142,
+      "ground_grade_p95": 0.546,
+      "cutfill_p95_m": 6.56,
+      "cutfill_max_m": 6.61
+    },
+    "45": {
+      "name": "Podere Le Ghiande 445",
+      "class": "unclassified",
+      "length_m": 46,
+      "grade_p95": 0.199,
+      "ground_grade_p95": 0.401,
+      "cutfill_p95_m": 5.13,
+      "cutfill_max_m": 5.49
+    },
+    "46": {
+      "name": "Podere Le Ghiande 446",
+      "class": "unclassified",
+      "length_m": 82,
+      "grade_p95": 0.097,
+      "ground_grade_p95": 0.339,
+      "cutfill_p95_m": 4.54,
+      "cutfill_max_m": 5.49
+    },
+    "47": {
+      "name": "Podere Le Ghiande 447",
+      "class": "unclassified",
+      "length_m": 55,
+      "grade_p95": 0.075,
+      "ground_grade_p95": 0.37,
+      "cutfill_p95_m": 5.49,
+      "cutfill_max_m": 5.51
+    },
+    "48": {
+      "name": "Podere Le Ghiande 448",
+      "class": "unclassified",
+      "length_m": 56,
+      "grade_p95": 0.032,
+      "ground_grade_p95": 0.265,
+      "cutfill_p95_m": 5.42,
+      "cutfill_max_m": 5.49
+    },
+    "49": {
+      "name": "Podere Le Ghiande 449",
+      "class": "unclassified",
+      "length_m": 76,
+      "grade_p95": 0.055,
+      "ground_grade_p95": 0.359,
+      "cutfill_p95_m": 5.66,
+      "cutfill_max_m": 5.85
+    },
+    "50": {
+      "name": "Podere Le Ghiande 450",
+      "class": "unclassified",
+      "length_m": 43,
+      "grade_p95": 0.156,
+      "ground_grade_p95": 0.384,
+      "cutfill_p95_m": 8.92,
+      "cutfill_max_m": 8.96
+    },
+    "51": {
+      "name": "Podere Le Ghiande 451",
+      "class": "unclassified",
+      "length_m": 47,
+      "grade_p95": 0.165,
+      "ground_grade_p95": 0.54,
+      "cutfill_p95_m": 5.32,
+      "cutfill_max_m": 5.84
+    },
+    "52": {
+      "name": "Podere Le Ghiande 452",
+      "class": "unclassified",
+      "length_m": 92,
+      "grade_p95": 0.024,
+      "ground_grade_p95": 0.415,
+      "cutfill_p95_m": 4.94,
+      "cutfill_max_m": 5.49
+    },
+    "53": {
+      "name": "Podere Le Ghiande 453",
+      "class": "unclassified",
+      "length_m": 45,
+      "grade_p95": 0.208,
+      "ground_grade_p95": 0.455,
+      "cutfill_p95_m": 3.65,
+      "cutfill_max_m": 3.69
+    },
+    "54": {
+      "name": "Podere Le Ghiande 454",
+      "class": "unclassified",
+      "length_m": 100,
+      "grade_p95": 0.109,
+      "ground_grade_p95": 0.331,
+      "cutfill_p95_m": 3.2,
+      "cutfill_max_m": 3.64
+    },
+    "55": {
+      "name": "Podere Le Ghiande 455",
+      "class": "unclassified",
+      "length_m": 59,
+      "grade_p95": 0.108,
+      "ground_grade_p95": 0.477,
+      "cutfill_p95_m": 3.63,
+      "cutfill_max_m": 3.78
+    },
+    "56": {
+      "name": "Podere Le Ghiande 456",
+      "class": "unclassified",
+      "length_m": 86,
+      "grade_p95": 0.18,
+      "ground_grade_p95": 0.338,
+      "cutfill_p95_m": 1.96,
+      "cutfill_max_m": 3.12
+    },
+    "57": {
+      "name": "Podere Le Ghiande 457",
+      "class": "unclassified",
+      "length_m": 41,
+      "grade_p95": 0.062,
+      "ground_grade_p95": 0.275,
+      "cutfill_p95_m": 2.13,
+      "cutfill_max_m": 2.32
+    },
+    "58": {
+      "name": "Podere Le Ghiande 458",
+      "class": "unclassified",
+      "length_m": 110,
+      "grade_p95": 0.18,
+      "ground_grade_p95": 0.475,
+      "cutfill_p95_m": 3.84,
+      "cutfill_max_m": 5.03
+    },
+    "59": {
+      "name": "Podere Le Ghiande 459",
+      "class": "unclassified",
+      "length_m": 104,
+      "grade_p95": 0.222,
+      "ground_grade_p95": 0.452,
+      "cutfill_p95_m": 5.67,
+      "cutfill_max_m": 5.71
+    },
+    "60": {
+      "name": "Podere Le Ghiande 460",
+      "class": "unclassified",
+      "length_m": 66,
+      "grade_p95": 0.176,
+      "ground_grade_p95": 0.337,
+      "cutfill_p95_m": 2.3,
+      "cutfill_max_m": 2.62
+    },
+    "61": {
+      "name": "Podere Le Ghiande 461",
+      "class": "unclassified",
+      "length_m": 31,
+      "grade_p95": 0.158,
+      "ground_grade_p95": 0.493,
+      "cutfill_p95_m": 5.62,
+      "cutfill_max_m": 5.67
+    },
+    "62": {
+      "name": "Podere Le Ghiande 462",
+      "class": "unclassified",
+      "length_m": 29,
+      "grade_p95": 0.02,
+      "ground_grade_p95": 0.208,
+      "cutfill_p95_m": 5.53,
+      "cutfill_max_m": 5.67
+    },
+    "63": {
+      "name": "Podere Le Ghiande 463",
+      "class": "unclassified",
+      "length_m": 65,
+      "grade_p95": 0.129,
+      "ground_grade_p95": 0.298,
+      "cutfill_p95_m": 7.37,
+      "cutfill_max_m": 7.53
+    },
+    "64": {
+      "name": "Podere Le Ghiande 464",
+      "class": "unclassified",
+      "length_m": 57,
+      "grade_p95": 0.013,
+      "ground_grade_p95": 0.18,
+      "cutfill_p95_m": 4.11,
+      "cutfill_max_m": 4.4
+    },
+    "65": {
+      "name": "Podere Le Ghiande 465",
+      "class": "unclassified",
+      "length_m": 99,
+      "grade_p95": 0.095,
+      "ground_grade_p95": 0.322,
+      "cutfill_p95_m": 5.6,
+      "cutfill_max_m": 5.67
+    },
+    "66": {
+      "name": "Podere Le Ghiande 466",
+      "class": "unclassified",
+      "length_m": 105,
+      "grade_p95": 0.165,
+      "ground_grade_p95": 0.513,
+      "cutfill_p95_m": 5.84,
+      "cutfill_max_m": 5.9
+    },
+    "67": {
+      "name": "Podere Le Ghiande 467",
+      "class": "unclassified",
+      "length_m": 34,
+      "grade_p95": 0.103,
+      "ground_grade_p95": 0.365,
+      "cutfill_p95_m": 8.18,
+      "cutfill_max_m": 8.25
+    },
+    "68": {
+      "name": "Podere Le Ghiande 468",
+      "class": "unclassified",
+      "length_m": 71,
+      "grade_p95": 0.142,
+      "ground_grade_p95": 0.365,
+      "cutfill_p95_m": 4.22,
+      "cutfill_max_m": 4.57
+    },
+    "69": {
       "name": "Strada forestale del Crinale",
       "class": "track",
       "length_m": 1737,
-      "grade_p95": 0.119,
-      "ground_grade_p95": 0.38,
-      "cutfill_p95_m": 2.97,
-      "cutfill_max_m": 4.32
+      "grade_p95": 0.109,
+      "ground_grade_p95": 0.362,
+      "cutfill_p95_m": 2.46,
+      "cutfill_max_m": 3.96
     },
-    "42": {
+    "70": {
       "name": "Strada forestale del Monte",
       "class": "track",
       "length_m": 2380,
-      "grade_p95": 0.166,
-      "ground_grade_p95": 0.327,
-      "cutfill_p95_m": 1.8,
-      "cutfill_max_m": 3.25
+      "grade_p95": 0.174,
+      "ground_grade_p95": 0.355,
+      "cutfill_p95_m": 2.21,
+      "cutfill_max_m": 3.44
     }
   }
 }

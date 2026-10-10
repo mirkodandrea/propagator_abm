@@ -28,6 +28,25 @@ from .grid import CELL_M, N, WORLD_M, slope_aspect, to_cell
 
 
 @dataclass
+class Lane:
+    """A free-form lane: a smoothed polyline from a point on a parent road, with
+    houses strewn along it at irregular gaps and setbacks, turned to follow its
+    bends. The way an Italian hill village grows, not a street grid."""
+    parent: object              # "main", an index into the settlement's lanes, or (settlement, index)
+    t: float                    # u on the main street, or fraction along the parent lane
+    pts: list                   # control points (u, v) after the start
+    mix: list = field(default_factory=lambda: [("house", .7), ("villa", .3)])
+    step: tuple = (15, 30)      # gap between houses along one side, m
+    setback: float = 12.0
+    road: bool = True           # False: houses only, along a road that already exists
+    houses_until: float = 1e9   # no houses beyond this arclength from the start, m
+    sides: tuple = (-1, 1)
+    p: float = 0.92             # chance a slot is built
+    loc: str | None = None      # locality, when it differs from the settlement's
+    cls: str = "unclassified"   # road class; only "residential"/"secondary" are painted out as a fuel break
+
+
+@dataclass
 class Settlement:
     name: str
     centre: tuple[float, float]
@@ -40,6 +59,7 @@ class Settlement:
     core: tuple = (0, 0, 0, 0)                 # (u0, u1, v0, v1) built-up, non-vegetated
     irrigated: list = field(default_factory=list)  # (u0, u1, v0, v1) irrigated plots, non-vegetated
     wild: list = field(default_factory=list)  # (u0, u1, v0, v1, fuel) untended land, painted under the rest
+    lanes: list = field(default_factory=list)  # Lane, in order: a lane's parent comes before it
 
 
 @dataclass
@@ -143,11 +163,6 @@ T4_L3 = dataclasses.replace(
     ],
 )
 
-LAYOUTS = {("t4", 1): T4_L1, ("t4", 2): T4_L2, ("t4", 3): T4_L3}
-
-
-# --------------------------------------------------------------------------- geometry
-
 def frame(s: Settlement):
     """Local (u along the main street, v to its left) -> world."""
     a = math.radians(s.axis_deg)
@@ -158,6 +173,120 @@ def frame(s: Settlement):
         return (s.centre[0] + u * ux + v * vx, s.centre[1] + u * uy + v * vy)
     return w
 
+
+def _shift(base: Settlement, du: float, dv: float):
+    """World position of the point (du, dv) in `base`'s frame."""
+    return frame(base)(du, dv)
+
+
+_C = T4_L3.settlements[0]
+_P = T4_L3.settlements[1]
+
+# Layout 4 (2026-10-09, user request): bigger settlements with several
+# districts, laid out as Italian hill villages: winding lanes off the provincial
+# road, houses at irregular gaps turned to follow the bends. Castelvento keeps
+# its piazza and civic buildings; Fornaci (west) and San Rocco (east) are on the
+# same provincial road; Le Terrazze are villas on the macchia slope south-west
+# of the core, the exposed side. Each is its own locality (a district the
+# player prioritises).
+def _centre_from(axis_deg, u, target):
+    """Centre of a settlement whose main street, at `u`, passes through `target`."""
+    a = math.radians(axis_deg)
+    return (target[0] - u * math.sin(a), target[1] - u * math.cos(a))
+
+
+_OLD = [("terrace", .5), ("house", .4), ("shop", .1)]
+_MID = [("house", .6), ("terrace", .25), ("villa", .15)]
+_NEW = [("house", .45), ("villa", .4), ("terrace", .15)]
+_V = [("villa", .6), ("house", .4)]
+
+T4_L4 = dataclasses.replace(
+    T4_L3,
+    id="t4_paese4", seed=404,
+    settlements=[
+        dataclasses.replace(
+            _C, streets=[], cross=[],
+            gaps=[(0, 42, 55)], core=(-280, 280, -135, 225),
+            lanes=[
+                Lane("main", -260, [(260, 0)], [("shop", .4), ("terrace", .6)], step=(13, 21), setback=11, road=False),
+                Lane("main", -170, [(-190, 50), (-150, 110), (-185, 170)], [("terrace", .5), ("house", .5)], step=(13, 24), setback=11, houses_until=260),
+                Lane("main", -110, [(-115, 60), (-130, 120), (-95, 190), (-60, 270), (-30, 350), (0, 420)], _MID, step=(13, 24), setback=11, houses_until=250),
+                Lane("main", 70, [(95, 55), (140, 100), (110, 155), (150, 205)], [("terrace", .4), ("house", .4), ("apartments", .2)], step=(13, 24), setback=11),
+                Lane("main", 190, [(215, 50), (255, 95), (240, 150)], [("house", .7), ("villa", .3)], step=(14, 26)),
+                Lane("main", -210, [(-215, -50), (-180, -85), (-205, -108)], _MID, step=(14, 26)),
+                Lane("main", -60, [(-45, -45), (-70, -80), (-45, -108)], [("terrace", .4), ("house", .6)], step=(13, 24)),
+                Lane("main", 60, [(70, -50), (105, -80), (85, -108)], [("house", .6), ("villa", .4)], step=(14, 26)),
+                Lane("main", 200, [(190, -55), (225, -85)], [("villa", .5), ("house", .5)], step=(15, 28)),
+                Lane(6, 1.0, [(-40, -190), (-20, -265), (0, -340)], houses_until=0, cls="unclassified"),
+            ]),
+        dataclasses.replace(
+            _P, cross=[], gaps=[(20, 30, 35)], core=(-240, 240, -100, 190),
+            lanes=[
+                Lane("main", -220, [(220, 0)], [("house", .6), ("shop", .2), ("terrace", .2)], step=(13, 22), setback=11, road=False),
+                Lane("main", -130, [(-135, 55), (-100, 110), (-130, 165)], _MID, step=(14, 26), houses_until=220),
+                Lane("main", 60, [(75, 60), (110, 115), (80, 170)], _MID, step=(14, 26)),
+                Lane("main", 160, [(165, 50), (195, 100)], _MID, step=(15, 28)),
+                Lane("main", -150, [(-155, -80), (-150, -170), (-150, -250), (-150, -330)], _MID, step=(14, 26), houses_until=130),
+                Lane("main", 20, [(15, -55), (50, -105), (20, -155)], _MID, step=(14, 26)),
+                Lane("main", 110, [(120, -55), (150, -100)], _MID, step=(15, 28)),
+            ]),
+        Settlement("Fornaci", _centre_from(118.0, 200, _shift(_C, -275, 10)), 118.0, streets=[], gaps=[(-90, 25, 28)],
+                   core=(-90, 90, -35, 60), irrigated=[], spacing=28.0,
+                   lanes=[
+                       Lane("main", -200, [(200, 0)], _OLD, step=(13, 22), setback=11, road=False),
+                       Lane("main", -170, [(-175, 55), (-135, 105), (-165, 160)], _OLD, step=(13, 24), houses_until=200),
+                       Lane("main", -100, [(-105, 60), (-100, 140), (-125, 210), (-120, 330)], _MID, step=(13, 24), houses_until=200),
+                       Lane("main", -30, [(-15, 60), (30, 115), (0, 170)], _OLD, step=(13, 24)),
+                       Lane("main", 90, [(100, 55), (140, 100), (115, 155)], _MID, step=(14, 26)),
+                       Lane("main", -120, [(-125, -45), (-95, -80), (-120, -108)], _MID, step=(14, 26)),
+                       Lane("main", 60, [(65, -50), (105, -80), (85, -108)], _MID, step=(14, 26)),
+                   ]),
+        Settlement("San Rocco", _centre_from(138.0, -200, _shift(_C, 275, -10)), 138.0, streets=[], gaps=[],
+                   core=(-90, 90, -35, 60), irrigated=[], spacing=28.0,
+                   lanes=[
+                       Lane("main", -200, [(200, 0)], _NEW, step=(18, 32), setback=13, road=False),
+                       Lane("main", -150, [(-140, 60), (-110, 120), (-135, 185)], _NEW, step=(18, 34)),
+                       Lane("main", -10, [(0, 70), (40, 125), (15, 190)], _NEW, step=(18, 34)),
+                       Lane("main", 60, [(75, 70), (95, 150), (110, 230), (130, 330)], _NEW, step=(18, 34), houses_until=170),
+                       Lane("main", 140, [(145, 60), (185, 110), (165, 165)], _NEW, step=(18, 34)),
+                       Lane("main", -100, [(-95, -50), (-65, -85), (-95, -112)], _NEW, step=(18, 34)),
+                       Lane("main", 90, [(100, -50), (135, -85), (115, -112)], _NEW, step=(18, 34)),
+                   ]),
+        Settlement("Le Terrazze", _shift(_C, 0, -340), 128.0, streets=[], gaps=[], core=(-60, 60, -25, 25),
+                   spacing=34.0,
+                   lanes=[
+                       Lane(("Castelvento", 9), 1.0, [(70, 12), (140, -8), (210, 10)], _V, step=(24, 42), setback=15, cls="unclassified"),
+                       Lane(("Castelvento", 9), 1.0, [(-70, 12), (-140, -8), (-205, 10)], _V, step=(24, 42), setback=15, cls="unclassified"),
+                       Lane(("Castelvento", 9), 1.0, [(10, -70), (-30, -125)], _V, step=(24, 42), setback=15, cls="unclassified"),
+                   ]),
+    ],
+    trunk=[
+        ("SP 12 della Valle", "secondary",
+         [(1500, 7990), "Fornaci:-200", "Fornaci:200", "Castelvento:-260", "Castelvento:260",
+          "San Rocco:-200", "San Rocco:200", (7990, 3300)]),
+        *T4_L3.trunk[1:],
+    ],
+    scattered={"Le Ghiande": ("Strada del Passo", (170, 400), 32, 25.0, 5)},
+    landmarks=T4_L3.landmarks + [
+        ("church", "Fornaci", -90, 25, 28, 16, "Chiesa di San Nicola"),
+        ("assembly", "Fornaci", -120, 330, 140, 100, "Area di attesa"),
+        ("pitch", "Fornaci", 30, 330, 60, 36, "Campo sportivo"),
+        ("church", "San Rocco", 40, 40, 28, 16, "Chiesa di San Rocco"),
+        ("assembly", "San Rocco", 130, 330, 140, 100, "Area di attesa"),
+        ("parking", "San Rocco", -30, 330, 60, 40, "Parcheggio"),
+        ("shop", "Le Terrazze", 100, 45, 20, 14, "Agriturismo"),
+    ],
+    water=T4_L3.water + [("hydrant", "Fornaci", -120, 0), ("hydrant", "San Rocco", 120, 0),
+                         ("hydrant", "Le Terrazze", 0, 0)],
+    households={"Castelvento": 190, "Pian dei Grilli": 90, "Fornaci": 90, "San Rocco": 100,
+                "Le Terrazze": 30, "Le Ghiande": 38},
+    links=[],
+)
+
+LAYOUTS = {("t4", 1): T4_L1, ("t4", 2): T4_L2, ("t4", 3): T4_L3, ("t4", 4): T4_L4}
+
+
+# --------------------------------------------------------------------------- geometry
 
 def anchor(layout: Layout, ref):
     if isinstance(ref, tuple):
@@ -255,6 +384,8 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
         pts = [anchor(layout, w) for w in wps]
         line = [pts[0]]
         for a, b in zip(pts[:-1], pts[1:]):
+            if math.hypot(b[0] - a[0], b[1] - a[1]) < 1.0:
+                continue  # the same point named from two frames
             if any(isinstance(w, str) for w in wps) and _same_settlement(layout, a, b):
                 line.append(b)  # through the village: the main street itself, straight
             else:
@@ -267,6 +398,7 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
     # 2. Village streets, in each settlement's frame. Streets meet the trunk at
     #    shared vertices (connect_junctions) because they are laid across it.
     homes = []
+    lane_lines, road_pts = {}, []
     for s in layout.settlements:
         w = frame(s)
         in_trunk = any(f"{s.name}:" in str(a) and f"{s.name}:" in str(b)
@@ -294,6 +426,11 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
         for sname, (u0, v0), (u1, v1), lname in layout.links:
             if sname == s.name:
                 add(f"{s.name} - {lname}", R.resample([w(u0, v0), w(u1, v1)], 40.0), "residential")
+        if s.lanes:
+            main_line = next((built[n]["line"] for n, _, wps in layout.trunk
+                              if any(f"{s.name}:" in str(a) and f"{s.name}:" in str(b) for a, b in zip(wps[:-1], wps[1:]))),
+                             next((r_["line"] for r_ in roads if r_["name"] == f"{s.name} - via 0"), None))
+            _lanes(s, w, layout, roads, add, main_line, lane_lines, road_pts, homes)
         for (cu, v0, v1) in s.cross:
             add(f"{s.name} - vicolo {cu:+.0f}", R.resample([w(cu, v0), w(cu, v1)], 40.0), "residential")
         for *box, f in s.wild:
@@ -448,6 +585,80 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
     notes["households"] = {loc: sum(1 for h in households if h["locality"] == loc) for loc in layout.households}
     return {"fuel": fuel, "roads": roads, "buildings": buildings, "water": water, "areas": areas, "dwellings": dwellings,
             "households": households, "people": people, "notes": notes}
+
+
+def _lanes(s, w, layout, roads, add, main_line, lane_lines, road_pts, homes):
+    """Lay out `s.lanes`: roads and the houses along them."""
+    rng = np.random.default_rng(layout.seed + 7 + len(lane_lines))
+    a = math.radians(s.axis_deg)
+    ux, uy = math.sin(a), math.cos(a)
+    civic = []
+    for _, sn, lu, lv, wd, ht, _ in layout.landmarks:
+        if sn:
+            cs = next(c for c in layout.settlements if c.name == sn)
+            civic.append((*frame(cs)(lu, lv), max(wd, ht) / 2 + 12))
+        else:
+            civic.append((lu, lv, max(wd, ht) / 2 + 12))
+
+    def local(x, y):
+        dx, dy = x - s.centre[0], y - s.centre[1]
+        return dx * ux + dy * uy, -dx * uy + dy * ux
+
+    if main_line is not None:
+        road_pts.append(np.array(R.resample([tuple(q) for q in main_line], 2.0)))
+    for i, ln in enumerate(s.lanes):
+        if ln.parent == "main":
+            if ln.road:
+                start = R.nearest_vertex(main_line, w(ln.t, 0.0))
+            else:
+                start = w(ln.t, 0.0)
+        else:
+            key = ln.parent if isinstance(ln.parent, tuple) else (s.name, ln.parent)
+            pl = lane_lines[key]
+            start = pl[int(round(ln.t * (len(pl) - 1)))]
+        ctrl = [tuple(start)] + [w(*q) for q in ln.pts]
+        if ln.road:
+            line = R.resample(R.chaikin(ctrl, 2), 25.0)
+            add(f"{s.name} - via {len(roads)}", line, ln.cls)
+            roads[-1]["line"] = [[round(float(x), 2), round(float(y), 2)] for x, y in line]
+            line = [tuple(p_) for p_ in roads[-1]["line"]]
+        else:
+            line = ctrl
+        lane_lines[(s.name, i)] = line
+        dense = np.array(R.resample(line, 2.0))
+        seg = np.hypot(*np.diff(dense, axis=0).T)
+        cum = np.concatenate([[0.0], np.cumsum(seg)])
+        mine = len(road_pts)
+        if ln.road:
+            road_pts.append(dense)
+        for side in ln.sides:
+            d = rng.uniform(0, ln.step[1])
+            while d < min(cum[-1], ln.houses_until):
+                k = min(int(np.searchsorted(cum, d)), len(dense) - 1)
+                k0, k1 = max(k - 3, 0), min(k + 3, len(dense) - 1)
+                tx, ty = dense[k1] - dense[k0]
+                n_ = math.hypot(tx, ty) or 1.0
+                tx, ty = tx / n_, ty / n_
+                off = ln.setback + rng.uniform(-2.0, 5.0)
+                x, y = dense[k][0] - ty * side * off, dense[k][1] + tx * side * off
+                step = rng.uniform(*ln.step)
+                lu, lv = local(x, y)
+                free = not any(math.hypot(lu - gu, lv - gv) < gr for gu, gv, gr in s.gaps) \
+                    and all(math.hypot(x - hx, y - hy) >= 15.0 for _, hx, hy, _, _ in homes) \
+                    and all(math.hypot(x - cx, y - cy) >= cr for cx, cy, cr in civic) \
+                    and all(np.min(np.hypot(pts[:, 0] - x, pts[:, 1] - y)) >= 9.0
+                            for j, pts in enumerate(road_pts) if j != mine or not ln.road)
+                if free and rng.random() < ln.p:
+                    h = rng.random()
+                    acc, kind = 0.0, ln.mix[-1][0]
+                    for kd, wt in ln.mix:
+                        acc += wt
+                        if h < acc:
+                            kind = kd
+                            break
+                    bearing = math.degrees(math.atan2(tx, ty)) + rng.uniform(-9.0, 9.0)
+                    homes.append((ln.loc or s.name, x, y, kind, bearing))
+                d += step
 
 
 def allocate(target: int, caps: list[int]) -> list[int]:

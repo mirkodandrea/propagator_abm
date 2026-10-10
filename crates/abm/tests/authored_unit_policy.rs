@@ -36,9 +36,10 @@ struct World {
 /// supplied graph runtime.
 fn setup(policy: Option<UnitRuntime>) -> World {
     let scn = Scenario::load(data_dir()).unwrap();
-    // South-easterly: the default north wind drives the planned fire away from
-    // Rocca Ventosa's homes and units (see `fire/tests/exposure.rs`).
-    let weather = Weather { wind_dir_deg: 135.0, ..Weather::default() };
+    // North-westerly (from 315 degrees): the default north wind drives the planned
+    // fire away from Rocca Ventosa's homes and units; this window runs into them
+    // (see `fire/tests/exposure.rs`).
+    let weather = Weather { wind_dir_deg: 315.0, ..Weather::default() };
     let plan = fire::plan_ignition(&scn, weather.wind_dir_deg, 250.0);
     let mut fire = FireSim::new(&scn, weather, 42).unwrap();
     fire.ignite_patch(plan.centre, plan.radius_m, &scn).unwrap();
@@ -281,7 +282,14 @@ fn raising_the_refill_threshold_sends_engines_for_water_earlier() {
         // light a patch next to it so it has a front to work.
         w.run(15, 10);
         let p = w.crews.units[engine].pos;
-        let near = w.scn.world.cell_of(scenario::Pos { x: p.x + 150.0, y: p.y });
+        // (the engine may stand in a built-up core, so look all round for fuel)
+        let near = (0..16)
+            .map(|k| {
+                let a = k as f32 * std::f32::consts::TAU / 16.0;
+                w.scn.world.cell_of(scenario::Pos { x: p.x + 150.0 * a.cos(), y: p.y + 150.0 * a.sin() })
+            })
+            .find(|c| w.scn.is_burnable(*c))
+            .expect("fuel within 150 m of the engine");
         w.fire.ignite_patch(near, 60.0, &w.scn).unwrap();
         // The tank level at which it first breaks off for water, if it does
         // within the next 40 minutes.

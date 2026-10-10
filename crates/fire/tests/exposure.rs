@@ -37,10 +37,10 @@ fn wui_scenario_threatens_households() {
     let scn = Scenario::load(data_dir()).unwrap();
     // The default north wind drives the planned fire away from Rocca Ventosa's
     // homes (0 households threatened in two hours, measured). A south-easterly
-    // (from 135 degrees) is among the windows that do put people at risk:
+    // (from 225 degrees) is among the windows that do put people at risk:
     // 160+ households downwind, peak 146 threatened and ~51 damage-equivalents
     // after two hours at seed 42.
-    let weather = Weather { wind_dir_deg: 135.0, ..Weather::default() };
+    let weather = Weather { wind_dir_deg: 225.0, ..Weather::default() };
     let plan = fire::plan_ignition(&scn, weather.wind_dir_deg, 250.0);
     println!(
         "ignition {:?} fuel {}  |  {} households downwind, corridor {:.0}% burnable",

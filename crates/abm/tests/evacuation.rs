@@ -21,7 +21,7 @@ fn setup() -> (Scenario, FireSim, Abm) {
     // South-easterly: on Rocca Ventosa the default north wind carries the planned
     // fire away from every home, so nobody could perceive it (0 households
     // threatened in 2 h); this window runs into 160+ of them.
-    let weather = Weather { wind_dir_deg: 135.0, ..Weather::default() };
+    let weather = Weather { wind_dir_deg: 225.0, ..Weather::default() };
     let plan = fire::plan_ignition(&scn, weather.wind_dir_deg, 250.0);
     let mut fire = FireSim::new(&scn, weather, 42).unwrap();
     fire.ignite_patch(plan.centre, plan.radius_m, &scn).unwrap();

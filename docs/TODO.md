@@ -4,6 +4,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
+- **2026-10-09, nuclei più grandi: layout 4 `t4_paese4` adottato** (richiesta e «fai tu» dell'utente): sei distretti, 538 famiglie, borghi organici, nuovi inneschi e casi del kiosk (`Forna3_gira`, `Coste2_gira`, `Rocco3`). Test adattati, 37 target verdi. Note e incognite in `docs/fase5/ingrandimento_nuclei.md`; playtest 5: browser fallito (scheda nascosta), solo partite scriptate native; schede e debrief da sistemare, playtest vero da rifare. **Non ancora committato.**
 - **Fase corrente: fase 5, iterazioni 5b e 5c chiuse** (2026-10-09, inviate con push fino ad `a16a043`):
   - 5b: punti 1–10 (`docs/fase5/iterazione5b.md`), compreso il playtest automatico 3 (`docs/fase5/playtest_gpt3/README.md`);
   - 5c: punti 1–5 del playtest 3 (`docs/fase5/iterazione5c.md`).
