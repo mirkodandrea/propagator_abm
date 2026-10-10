@@ -1619,7 +1619,7 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
 fn leaderboard(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim) {
     let base = k.baseline();
     let score = match base.as_ref() {
-        Some(Ok(b)) => Some(rocca::score::score(&sim.outcome(), b, k.pauses_left)),
+        Some(Ok(b)) => Some(rocca::score::score(&sim.outcome(), b)),
         _ => None,
     };
     egui::Area::new(egui::Id::new("classifica")).anchor(Align2::RIGHT_CENTER, [-12.0, 0.0]).show(ctx, |ui| {
@@ -1630,16 +1630,19 @@ fn leaderboard(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim) {
                 return;
             };
             ui.label(RichText::new("Il tuo punteggio").size(16.0).color(GREY));
-            ui.label(RichText::new(s.total.to_string()).size(44.0).strong().color(AMBER));
-            for (n, what, per) in [
-                (s.families, "famiglie", rocca::score::PER_FAMILY),
-                (s.homes, "case", rocca::score::PER_HOME),
-                (s.pauses as i64, "pause non usate", rocca::score::PER_PAUSE),
-            ] {
-                if n > 0 {
-                    ui.label(RichText::new(format!("{n} {what} × {per}")).size(14.0).color(GREY));
-                }
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(s.total.to_string()).size(44.0).strong().color(AMBER));
+                ui.label(RichText::new(format!("su {}", rocca::score::MAX)).size(16.0).color(GREY));
+            });
+            // what it is made of: shares of what the fire would have taken
+            let pct = |kept: usize, risk: usize| (100.0 * kept as f64 / risk.max(1) as f64).round();
+            if s.families_at_risk > 0 {
+                ui.label(RichText::new(format!("Famiglie: {} salvate su {} ({:.0} %)", s.families, s.families_at_risk, pct(s.families, s.families_at_risk))).size(14.0).color(GREY));
             }
+            if s.homes_at_risk > 0 {
+                ui.label(RichText::new(format!("Case: {} salvate su {} ({:.0} %)", s.homes, s.homes_at_risk, pct(s.homes, s.homes_at_risk))).size(14.0).color(GREY));
+            }
+            ui.label(RichText::new("Le famiglie contano di più delle case.").size(13.0).color(GREY));
             if s.total == 0 {
                 ui.label(RichText::new("Nessun punto: è andata come senza ordini.").size(14.0).color(GREY));
             }

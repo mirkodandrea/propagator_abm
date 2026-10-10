@@ -1,10 +1,12 @@
 //! The score and the leaderboard (user, 2026-10-09).
 //!
 //! The score is made of the debrief's own numbers, so the screen and the
-//! points never disagree: families the fire did not catch at home and homes
-//! it did not hit, against the same fire with no orders ([`Game::without_orders`]),
-//! plus the pauses the player did not need. Nothing here reads the
-//! simulation: it only weighs two [`Outcome`]s.
+//! points never disagree: of the families the same fire with no orders
+//! would catch at home ([`Game::without_orders`]), the share the player
+//! spared; of the homes it would hit, the share left standing. Shares, not
+//! counts, so one board serves every fire: a small fire played well beats a
+//! large one played badly (playtest 5: 2 / 12 scored below 3 / 71). Nothing
+//! here reads the simulation: it only weighs two [`Outcome`]s.
 //!
 //! [`Game::without_orders`]: crate::Game::without_orders
 
@@ -12,34 +14,39 @@ use serde::{Deserialize, Serialize};
 
 use crate::Outcome;
 
-/// Points per family not caught at home, against no orders.
-pub const PER_FAMILY: i64 = 100;
-/// Points per home not hit, against no orders.
-pub const PER_HOME: i64 = 10;
-/// Points per pause left unused, only on top of a game that saved someone
-/// or something: doing nothing must not score.
-pub const PER_PAUSE: i64 = 50;
+/// The best score: everything the fire would have taken, spared.
+pub const MAX: i64 = 1000;
+/// Weight of the families' share; the homes take the rest. People first.
+pub const FAMILY_WEIGHT: f64 = 0.7;
 /// Places on the leaderboard.
 pub const TOP: usize = 10;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Score {
-    /// Families not caught at home thanks to the player (may be negative).
-    pub families: i64,
-    /// Homes not hit thanks to the player (may be negative).
-    pub homes: i64,
-    /// Pauses left unused.
-    pub pauses: u32,
+    /// Families the fire would catch at home with no orders, and how many
+    /// of them the player spared (never below 0).
+    pub families_at_risk: usize,
+    pub families: usize,
+    /// The same for homes.
+    pub homes_at_risk: usize,
+    pub homes: usize,
     pub total: i64,
 }
 
 /// The player's game against the same fire with no orders.
-pub fn score(mine: &Outcome, without: &Outcome, pauses_left: u32) -> Score {
-    let families = without.caught() as i64 - mine.caught() as i64;
-    let homes = without.homes_hit() as i64 - mine.homes_hit() as i64;
-    let saved = families * PER_FAMILY + homes * PER_HOME;
-    let pauses = if saved > 0 { pauses_left } else { 0 };
-    Score { families, homes, pauses, total: (saved + pauses as i64 * PER_PAUSE).max(0) }
+pub fn score(mine: &Outcome, without: &Outcome) -> Score {
+    let spared = |risk: usize, lost: usize| risk.saturating_sub(lost);
+    let (fr, hr) = (without.caught(), without.homes_hit());
+    let (f, h) = (spared(fr, mine.caught()), spared(hr, mine.homes_hit()));
+    // a part with nothing at risk drops out and the other takes its weight
+    let parts: Vec<(f64, f64)> = [(fr, f, FAMILY_WEIGHT), (hr, h, 1.0 - FAMILY_WEIGHT)]
+        .into_iter()
+        .filter(|(risk, _, _)| *risk > 0)
+        .map(|(risk, kept, w)| (kept as f64 / risk as f64, w))
+        .collect();
+    let weight: f64 = parts.iter().map(|(_, w)| w).sum();
+    let share = if weight > 0.0 { parts.iter().map(|(s, w)| s * w).sum::<f64>() / weight } else { 0.0 };
+    Score { families_at_risk: fr, families: f, homes_at_risk: hr, homes: h, total: (share * MAX as f64).round() as i64 }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,19 +108,25 @@ mod tests {
     }
 
     #[test]
-    fn the_score_is_the_debriefs_numbers() {
-        // the second game of the 2026-10-09 playtest: 2 / 24 against 16 / 73
-        let s = score(&outcome(2, 24), &outcome(16, 73), 2);
-        assert_eq!((s.families, s.homes, s.pauses), (14, 49, 2));
-        assert_eq!(s.total, 14 * PER_FAMILY + 49 * PER_HOME + 2 * PER_PAUSE);
+    fn the_score_is_the_share_spared() {
+        // playtest 5: game 2 (3 / 71 against 16 / 73) and game 3 (2 / 12
+        // against 8 / 24) -- the better game must score higher
+        let p2 = score(&outcome(3, 71), &outcome(16, 73));
+        let p3 = score(&outcome(2, 12), &outcome(8, 24));
+        assert_eq!((p2.families, p2.homes), (13, 2));
+        assert_eq!(p2.total, ((0.7 * 13.0 / 16.0 + 0.3 * 2.0 / 73.0) * 1000.0_f64).round() as i64);
+        assert!(p3.total > p2.total, "{} vs {}", p3.total, p2.total);
     }
 
     #[test]
     fn doing_nothing_does_not_score() {
-        let s = score(&outcome(16, 73), &outcome(16, 73), 3);
-        assert_eq!(s.total, 0);
+        assert_eq!(score(&outcome(16, 73), &outcome(16, 73)).total, 0);
         // worse than no orders: no negative points either
-        assert_eq!(score(&outcome(20, 80), &outcome(16, 73), 3).total, 0);
+        assert_eq!(score(&outcome(20, 80), &outcome(16, 73)).total, 0);
+        // everything spared
+        assert_eq!(score(&outcome(0, 0), &outcome(16, 73)).total, MAX);
+        // no family at risk: the homes alone
+        assert_eq!(score(&outcome(0, 5), &outcome(0, 10)).total, 500);
     }
 
     #[test]

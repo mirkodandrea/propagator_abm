@@ -37,6 +37,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 - 2026-10-09: **tempo reale dichiarato** («non è chiaro se è real time o a turni»; «Va bene» alla proposta in 7 punti): pulsante unico play/pausa, ordini immediati durante il gioco, pausa visibile, orologio «ore 14:26», crisi come rallentatore, accelerazione solo se è davvero tutto fermo, intro esplicita.
 - 2026-10-09: **massimo 3 pause** a partita (le crisi non contano).
+- 2026-10-10: **punteggio come quota salvata** (0–1000, famiglie 70 %, case 30 %), senza bonus delle pause; classifica unica.
 - 2026-10-09: playtest con **Sonnet**.
 - 2026-10-09: **gli ordini si cambiano solo in pausa** (o alla crisi), così i cambi di piano sono pochi; **niente pausa subito dopo un'altra** (15 min simulati, `PAUSE_GAP_S`). Niente penalità a punti per i cambi.
 - 2026-10-09: **punteggio e classifica:** salvati rispetto a nessun ordine (100 per famiglia, 10 per casa) + 50 per pausa non usata; tre iniziali arcade; classifica **unica** per tutti gli incendi.
@@ -214,13 +215,13 @@ Prompt e resoconto in `docs/fase5/playtest_haiku/`. Codex aveva finito i crediti
 
 Esiti: 3/70 (1330 punti), 3/71 (1470), 2/12 (770).
 
-- [ ] **punteggio contro esito:** la partita migliore vale meno, perché il punteggio è relativo a «senza ordini» e la classifica è unica. Da decidere con l'utente;
+- [x] 2026-10-10 **punteggio contro esito** (utente: «procedi»): ora è da 0 a 1000 sulla quota salvata rispetto a nessun ordine, 70 % famiglie e 30 % case, senza bonus delle pause (`rocca::score`). La partita 3 (2/12) supera la 2 (3/71). Nuova classifica (`classifica2.json`, `rocca_ventosa_classifica2`);
 - [ ] priorità a un paese irraggiungibile alla crisi: i mezzi lasciano un paese per uno che non raggiungono. Serve un avviso prima della conferma;
 - [ ] in pausa Evacua è un interruttore: il secondo click toglie l'ordine proposto. Renderlo univoco o mostrare «ordinata alle …»;
 - [ ] Preallerta ed Evacua poco distinguibili sulla mappa;
 - [ ] il «Perché» non spiega le famiglie che non partono nonostante l'ordine (circa 22 %, comportamento del modello);
 - [ ] pulsanti grigi prima di «Ho capito», senza spiegazione;
-- [ ] bonus delle pause non usate in contrasto con «usale bene»;
+- [x] 2026-10-10 bonus delle pause non usate tolto;
 - [ ] fuoco poco visibile all'inizio; crisi assenti in un caso;
 - [ ] finale: numeri piccoli sulle barre; etichette A1 e A2 sovrapposte; schede sopra Castelvento.
 

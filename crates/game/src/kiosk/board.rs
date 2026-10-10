@@ -1,6 +1,7 @@
 //! Where the leaderboard is kept: a file on the kiosk, the browser's local
 //! storage on the web. The board itself and the score are `rocca::score`;
-//! this only reads and writes it.
+//! this only reads and writes it. «2»: scores out of 1000 since
+//! 2026-10-10; the first board's points are not comparable.
 
 use rocca::score::Board;
 
@@ -11,7 +12,7 @@ fn path() -> std::path::PathBuf {
         return p.into();
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    std::path::Path::new(&home).join(".rocca_ventosa").join("classifica.json")
+    std::path::Path::new(&home).join(".rocca_ventosa").join("classifica2.json")
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -30,7 +31,7 @@ pub fn save(b: &Board) -> Result<(), String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-const KEY: &str = "rocca_ventosa_classifica";
+const KEY: &str = "rocca_ventosa_classifica2";
 
 #[cfg(target_arch = "wasm32")]
 fn storage() -> Option<web_sys::Storage> {
