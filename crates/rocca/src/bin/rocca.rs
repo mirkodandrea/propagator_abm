@@ -6,6 +6,7 @@
 //!
 //! Plan A, and plan B if any `--b-*` is given (B = A plus what they change),
 //! on the same fire, seed and territory. Civil orders are given at their minute; priorities from T+0.
+//! Ends with the kiosk's score of each plan, against the same fire with no orders.
 
 use std::path::PathBuf;
 
@@ -131,5 +132,18 @@ fn main() -> Result<()> {
         }
     }
     table(&ga, &oa, ob.as_ref());
+    // the kiosk's score: against the same fire with no orders
+    let base = Game::without_orders(&data, &case, seed)?;
+    let line = |name: &str, o: &Outcome| {
+        let s = rocca::score::score(o, &base);
+        println!(
+            "punteggio {name}: {} su {} (famiglie salvate {} di {}, case risparmiate {} di {})",
+            s.total, rocca::score::MAX, s.families, s.families_at_risk, s.homes, s.homes_at_risk
+        );
+    };
+    line("A", &oa);
+    if let Some(ob) = &ob {
+        line("B", ob);
+    }
     Ok(())
 }

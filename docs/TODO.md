@@ -4,6 +4,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
+- **2026-10-10, playtest 7 (Haiku, strategie headless)**: `docs/fase5/playtest7_strategie/report.md`. Ricetta quasi ottimale «evacua tutti a T+0 + tutti i mezzi sul borgo più vicino al fuoco» (entro il 5 % del migliore); evacuare non costa nulla; Esperto quasi insensibile alle decisioni (91–299). Il runner `rocca` ora stampa il punteggio del chiosco.
+  - [ ] decidere con l'utente: costo reale dell'evacuazione (code, famiglie in strada esposte) e/o casi in cui la decisione arriva dopo T+0; rivedere `Coste2_gira` come Esperto.
 - **2026-10-10, usabilità schermata per schermata** (richiesta dell'utente): finale che sta nella finestra con pulsanti fissi, segno «Il fuoco è partito qui», mezzi non più nascosti dai badge, banda di crisi, legenda su due colonne, punteggio spiegato, testi del coordinatore e della guida. Prove e tabella in `docs/fase5/usabilita/README.md`. Da verificare con un playtest nel browser (playtest 7).
 - **2026-10-09, nuclei più grandi: layout 4 `t4_paese4` adottato** (richiesta e «fai tu» dell'utente): sei distretti, 538 famiglie, borghi organici, nuovi inneschi e casi del kiosk (`Forna3_gira`, `Coste2_gira`, `Rocco3`). Test adattati, 37 target verdi. Note e incognite in `docs/fase5/ingrandimento_nuclei.md`; playtest 5: browser fallito (scheda nascosta), solo partite scriptate native; schede e debrief da sistemare, playtest vero da rifare. Committato e inviato con push il 2026-10-10 (`900351c`).
 - **Fase corrente: fase 5, iterazioni 5b e 5c chiuse** (2026-10-09, inviate con push fino ad `a16a043`):
