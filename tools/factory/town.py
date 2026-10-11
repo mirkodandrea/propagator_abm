@@ -75,6 +75,10 @@ class Layout:
     tracks: list                # (name, [waypoints]) forest tracks, not drivable
     households: dict            # name -> target households
     links: list = field(default_factory=list)  # (settlement, (u0, v0), (u1, v1), name) access lanes
+    # (settlement, (u0, u1, v0, v1), fuel): vegetation painted back over the
+    # painted-out roads, where a narrow road runs between untended plots and a
+    # 20 m bare cell would be an artificial firebreak
+    verges: list = field(default_factory=list)
 
 
 T4_L1 = Layout(
@@ -283,7 +287,37 @@ T4_L4 = dataclasses.replace(
     links=[],
 )
 
-LAYOUTS = {("t4", 1): T4_L1, ("t4", 2): T4_L2, ("t4", 3): T4_L3, ("t4", 4): T4_L4}
+# Layout 5 (2026-10-11, user decision, docs/fase5/uscite): evacuating everyone
+# cost nothing, because every hamlet was 300-500 m from the refuge in
+# Castelvento's non-burnable core and its road emptied before the fire came.
+# San Rocco moves ~1 km further down the SP 12, at the foot of the wooded
+# slope with the grass plain on the other side: its one road to the refuge runs
+# through the fuel and then down Castelvento's main street, the way
+# Castelvento's own families take to the assembly area.
+SAN_ROCCO_FROM_CASTELVENTO_M = 1000.0
+
+T4_L5 = dataclasses.replace(
+    T4_L4,
+    id="t4_paese5", seed=405,
+    settlements=[
+        *T4_L4.settlements[:3],
+        # The plain is meadow (eu_fuel12 2), and a meadow fire's flames are too
+        # short to make a 20 m road impassable (fire::threat): abandoned olive
+        # terraces gone to macchia line the road from Castelvento, the way
+        # layout 3 brought them to Castelvento's SW edge.
+        dataclasses.replace(T4_L4.settlements[3],
+                            centre=_centre_from(128.0, -200, _shift(_C, 275 + SAN_ROCCO_FROM_CASTELVENTO_M, -10)),
+                            axis_deg=128.0,
+                            wild=[(-1100, -230, -250, 250, 8)]),
+        T4_L4.settlements[4],
+    ],
+    # The SP 12 is 6 m of tarmac between those terraces, not a 20 m firebreak:
+    # painted out, no fire could ever reach a car on it (measured: the road
+    # nodes never reach fire::threat::IMPASSABLE, whatever burns beside them).
+    verges=[("San Rocco", (-1100, -230, -30, 30), 8)],
+)
+
+LAYOUTS = {("t4", 1): T4_L1, ("t4", 2): T4_L2, ("t4", 3): T4_L3, ("t4", 4): T4_L4, ("t4", 5): T4_L5}
 
 
 # --------------------------------------------------------------------------- geometry
@@ -513,6 +547,8 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
     for r_ in roads:
         if r_["drivable"] and r_["class"] in PAINTED_ROADS:
             paint_line(fuel, r_["line"], 0)
+    for sname, box, f in layout.verges:
+        paint_poly(fuel, rect(frame(next(s for s in layout.settlements if s.name == sname)), *box), f)
 
     # 5. Landmarks and water.
     buildings = []

@@ -65,7 +65,11 @@ fn main() -> anyhow::Result<()> {
             for civ in plans {
                 let mut g = Game::new(data, case, seed)?;
                 let n = g.districts.len();
-                let prio: Vec<usize> = best_priority(case).iter().map(|s| g.district_index(s).unwrap()).collect();
+                // PRIORITA="San Rocco,Castelvento" overrides the playtest-7 best.
+                let prio: Vec<usize> = match std::env::var("PRIORITA") {
+                    Ok(p) => p.split(',').map(|s| g.district_index(s.trim()).unwrap()).collect(),
+                    Err(_) => best_priority(case).iter().map(|s| g.district_index(s).unwrap()).collect(),
+                };
                 let set_all = |p: Plan, c: Civil| (0..n).fold(p, |p, d| p.with_civil(d, c));
                 let mut plan = Plan::new(n).with_priorities(&prio);
                 let mut later: Option<(i64, Civil)> = None;
