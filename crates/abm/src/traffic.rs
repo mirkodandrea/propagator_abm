@@ -79,6 +79,27 @@ pub const JAM_SPACING_M: f32 = 7.0;
 /// invented rather than measured.
 const EMERGENCY_JAM_FLOOR: f32 = 0.35;
 
+/// How much of its discharge a link keeps when the fire is on the roadside.
+///
+/// Smoke across the road and flame on the verge do not only slow the car that
+/// meets them (that is the speed term at link entry): drivers brake, leave
+/// longer gaps, stop to decide whether to go on, and the link lets through far
+/// fewer cars per minute. That is what turns a smoky stretch into the *front*
+/// of a queue, so the line of cars waits upstream of it, next to the fire,
+/// rather than flowing through at a slightly lower speed. Nothing changes below
+/// `fire::threat::ALARMING`; the flow falls linearly from there to this floor
+/// at `fire::threat::IMPASSABLE`, where nobody routes through any more. An
+/// assumption, not a measurement: fog cuts saturation flow by 10–20 %, and
+/// thick smoke with flame in view is a great deal worse.
+pub const SMOKE_FLOW_FLOOR: f32 = 0.2;
+
+/// The fraction of its capacity a link discharges with this danger on it.
+pub fn smoke_flow(danger: f32) -> f32 {
+    let (lo, hi) = (fire::threat::ALARMING, fire::threat::IMPASSABLE);
+    let x = ((danger - lo) / (hi - lo)).clamp(0.0, 1.0);
+    1.0 - (1.0 - SMOKE_FLOW_FLOOR) * x
+}
+
 /// How a road is classified for traffic purposes. Derived from the OSM
 /// `highway` tag the bake already carries and, until now, threw away at
 /// [`RoadNetwork::build`] — the graph knew only whether a way was drivable, so
@@ -308,14 +329,15 @@ impl Traffic {
     }
 
     /// Record that the link discharged a vehicle at `at_s`, and set when it may
-    /// discharge the next one.
+    /// discharge the next one. `flow` is the fraction of capacity the link has
+    /// right now, 1 on a clear road (see [`smoke_flow`]).
     ///
     /// Anchored on the *later* of the release and the gate it had, so a link
     /// that has stood empty for an hour does not bank an hour of credit and
     /// then release a whole queue at once — a mistake that would make the
     /// bottleneck's throughput depend on how long it had been idle.
-    pub fn took_slot(&mut self, link: u32, at_s: f32) {
-        let cap = self.capacity(link).max(1e-4);
+    pub fn took_slot(&mut self, link: u32, at_s: f32, flow: f32) {
+        let cap = (self.capacity(link) * flow).max(1e-4);
         let base = self.next_release_s[link as usize].max(at_s);
         self.next_release_s[link as usize] = base + 1.0 / cap;
     }

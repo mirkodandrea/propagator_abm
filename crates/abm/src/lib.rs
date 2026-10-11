@@ -2188,7 +2188,13 @@ impl Abm {
             // end of the sub-step, so the remainder carries onto the next link
             // and a car does not lose the rest of its budget at every junction.
             let t_rel = arrive_s.max(gate).max(now - dt);
-            self.traffic.took_slot(link, t_rel);
+            // Smoke on the link holds the next car back: sampled at the middle
+            // and at the stop line, as the router does.
+            let (a, b) = self.network.link_ends(link);
+            let (pa, pb) = (self.network.pos(a), self.network.pos(b));
+            let mid = Pos { x: (pa.x + pb.x) * 0.5, y: (pa.y + pb.y) * 0.5 };
+            let danger = threat.at(mid).max(threat.at(pb));
+            self.traffic.took_slot(link, t_rel, traffic::smoke_flow(danger));
             self.traffic.leave(link);
 
             let node = {

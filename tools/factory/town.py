@@ -79,6 +79,10 @@ class Layout:
     # painted-out roads, where a narrow road runs between untended plots and a
     # 20 m bare cell would be an artificial firebreak
     verges: list = field(default_factory=list)
+    # (road, settlement, u0, u1, fuel): the same along a road's own line, for
+    # the stretch whose points fall between u0 and u1 in the settlement's frame
+    # (a box misses a road that bends)
+    wooded_roads: list = field(default_factory=list)
 
 
 T4_L1 = Layout(
@@ -317,7 +321,42 @@ T4_L5 = dataclasses.replace(
     verges=[("San Rocco", (-1100, -230, -30, 30), 8)],
 )
 
-LAYOUTS = {("t4", 1): T4_L1, ("t4", 2): T4_L2, ("t4", 3): T4_L3, ("t4", 4): T4_L4, ("t4", 5): T4_L5}
+# Layout 6 (2026-10-11, user decision): no new refuges (assembly areas out in
+# the fuel are not how civil protection works), but the town itself sprawls into
+# the vegetation, as Ligurian villages do. Castelvento's newer houses string out
+# along the SP 12 towards San Rocco, villas up short lanes into the macchia, and
+# San Rocco loses its bare core: gardens and macchia run between its houses. The
+# SP 12 keeps its verges along its whole line between the two (layout 5's box
+# missed the bend, where the road swings 60 m off the axis).
+_RIBBON = [("villa", .5), ("house", .5)]
+_SR = T4_L5.settlements[3]
+
+T4_L6 = dataclasses.replace(
+    T4_L5,
+    id="t4_paese6", seed=406,
+    settlements=[
+        dataclasses.replace(T4_L5.settlements[0], lanes=[
+            *T4_L5.settlements[0].lanes,
+            # along the SP 12 itself, following its bend (C frame, measured off
+            # the built road: v = -62 at u = 900)
+            Lane("main", 400, [(600, -40), (800, -59), (950, -62), (1100, -50), (1200, -27)], _RIBBON,
+                 step=(30, 55), setback=20, road=False),
+            Lane("main", 470, [(480, 70), (455, 150), (480, 220)], _RIBBON, step=(24, 44), setback=15),
+            Lane("main", 640, [(650, -130), (680, -210), (650, -280)], _RIBBON, step=(24, 44), setback=15),
+            Lane("main", 840, [(850, 20), (880, 100), (860, 180)], _RIBBON, step=(24, 44), setback=15),
+            Lane("main", 1040, [(1040, -140), (1070, -220)], _RIBBON, step=(24, 44), setback=15),
+        ]),
+        *T4_L5.settlements[1:3],
+        dataclasses.replace(_SR, core=(-25, 25, -15, 15),
+                            wild=[*_SR.wild, (-230, 260, -160, 260, 8)]),
+        T4_L5.settlements[4],
+    ],
+    verges=[],
+    wooded_roads=[("SP 12 della Valle", "Castelvento", 320, 1700, 8)],
+    households={**T4_L5.households, "Castelvento": 230},
+)
+
+LAYOUTS = {("t4", 1): T4_L1, ("t4", 2): T4_L2, ("t4", 3): T4_L3, ("t4", 4): T4_L4, ("t4", 5): T4_L5, ("t4", 6): T4_L6}
 
 
 # --------------------------------------------------------------------------- geometry
@@ -549,6 +588,12 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
             paint_line(fuel, r_["line"], 0)
     for sname, box, f in layout.verges:
         paint_poly(fuel, rect(frame(next(s for s in layout.settlements if s.name == sname)), *box), f)
+    for rname, sname, u0, u1, f in layout.wooded_roads:
+        st = next(s for s in layout.settlements if s.name == sname)
+        a = math.radians(st.axis_deg)
+        u = lambda p: (p[0] - st.centre[0]) * math.sin(a) + (p[1] - st.centre[1]) * math.cos(a)
+        line = R.resample([tuple(p) for p in built[rname]["line"]], CELL_M / 2)
+        paint_line(fuel, [p for p in line if u0 <= u(p) <= u1], f)
 
     # 5. Landmarks and water.
     buildings = []
