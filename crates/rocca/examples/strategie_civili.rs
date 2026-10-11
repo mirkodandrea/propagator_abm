@@ -4,6 +4,10 @@
 //! as priorities. «colte fuori» are families killed or trapped after leaving
 //! home, which the score does not count (`rocca::score` weighs caught at home).
 //!
+//! MESSAGGERI=squadre,famiglie_al_minuto,broadcast(0|1),per_priorita(0|1)
+//! carries the orders door to door (`rocca::messengers`) instead of over each
+//! household's channel.
+//!
 //!   cargo run --release -p rocca --example strategie_civili [caso...] [--semi 1,2]
 use abm::Mode;
 use rocca::{Civil, Game, Plan};
@@ -11,6 +15,10 @@ use scenario::population::Status;
 
 fn main() -> anyhow::Result<()> {
     let data = std::path::Path::new("data");
+    let messengers = std::env::var("MESSAGGERI").ok().map(|v| {
+        let f: Vec<f32> = v.split(',').map(|x| x.trim().parse().unwrap()).collect();
+        rocca::Messengers { teams: f[0], per_min: f[1], broadcast: f[2] > 0.0, by_priority: f[3] > 0.0 }
+    });
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut seeds = vec![1u64];
     let mut cases: Vec<String> = vec![];
@@ -42,6 +50,7 @@ fn main() -> anyhow::Result<()> {
             }
             for plan in ["nessun ordine", "evacua tutti", "evacua i minacciati", "preallerta tutti", "preallerta tutti, evacua i minacciati"] {
                 let mut g = Game::new(data, case, seed)?;
+                g.messengers = messengers;
                 let n = g.districts.len();
                 let names: Vec<String> = hit.iter().map(|&d| g.districts[d].name.clone()).collect();
                 let mut p = Plan::new(n).with_priorities(&hit);

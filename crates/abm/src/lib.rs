@@ -839,6 +839,43 @@ impl Abm {
         n
     }
 
+    /// Tell these households in person, now: someone at the door with the
+    /// pre-alert (`evacuate` false) or the order to leave. Unlike
+    /// [`Abm::prealert_of`] and [`Abm::order_evacuation_of`] nothing travels
+    /// over the household's channel, so it has arrived when this returns. For
+    /// a caller that models who carries the message (`rocca::Messengers`).
+    pub fn tell_in_person(&mut self, ids: &[usize], evacuate: bool) -> usize {
+        let now = self.time_s;
+        let mut n = 0;
+        for &i in ids {
+            let Some(h) = self.households.get_mut(i) else { continue };
+            if evacuate {
+                if h.warning_received {
+                    continue;
+                }
+                if !h.ordered {
+                    h.ordered = true;
+                    h.ordered_at_s = now;
+                }
+                h.warning_received = true;
+                h.warned_at_s = now;
+                self.order_at_s = self.order_at_s.min(now);
+            } else {
+                if h.prealert_received || h.ordered {
+                    continue;
+                }
+                if !h.prealerted {
+                    h.prealerted = true;
+                    h.prealerted_at_s = now;
+                }
+                h.prealert_received = true;
+            }
+            n += 1;
+        }
+        self.generation += 1;
+        n
+    }
+
     /// Order everyone out, whatever the distance.
     pub fn order_evacuation_all(&mut self) -> usize {
         let now = self.time_s;

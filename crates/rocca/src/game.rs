@@ -126,6 +126,10 @@ pub struct Game {
     moved: Vec<(Pos, i64)>,
     /// Per unit: the state last logged, to log a withdrawal or a loss once.
     logged: Vec<UnitState>,
+    /// Teams carrying orders to the door; `None` (the default) sends every
+    /// order over the households' own channels ([`crate::messengers`]).
+    pub messengers: Option<crate::Messengers>,
+    rounds: Vec<crate::messengers::Round>,
 }
 
 impl Game {
@@ -171,6 +175,8 @@ impl Game {
             defended_s: vec![0; districts.len()],
             moved: crews.units.iter().map(|u| (u.pos, 0)).collect(),
             logged: crews.units.iter().map(|u| u.state).collect(),
+            messengers: None,
+            rounds: vec![],
             scn,
             fire,
             agents,
@@ -213,15 +219,17 @@ impl Game {
         plan.validate(self.districts.len())?;
         let plan = plan.escalated_from(&self.active);
         let now = self.time_s();
-        for (d, (&new, &old)) in plan.civil.iter().zip(&self.active.civil).enumerate() {
+        let before = self.active.civil.clone();
+        for (d, (&new, &old)) in plan.civil.iter().zip(&before).enumerate() {
             if new == old {
                 continue;
             }
             let ids = self.districts[d].households.clone();
-            let n = match new {
-                Civil::Preallerta => self.agents.prealert_of(&ids),
-                Civil::Evacua => self.agents.order_evacuation_of(&ids),
-                Civil::Nessuno => 0,
+            let n = match (new, self.messengers) {
+                (Civil::Nessuno, _) => 0,
+                (Civil::Preallerta, None) => self.agents.prealert_of(&ids),
+                (Civil::Evacua, None) => self.agents.order_evacuation_of(&ids),
+                (_, Some(m)) => self.send_round(d, new == Civil::Evacua, m),
             };
             let at = &mut self.ordered_at[d];
             match new {
@@ -239,6 +247,58 @@ impl Game {
         self.active = plan;
         self.planned = true;
         Ok(self.review_inner(false))
+    }
+
+    /// Open a messengers' round for district `d`: the households that will
+    /// hear over their channel are told that way now, the rest queue for a
+    /// team, nearest the centre first. Returns the households ordered.
+    fn send_round(&mut self, d: usize, evacuate: bool, m: crate::Messengers) -> usize {
+        let centre = self.districts[d].centre;
+        let mut by_channel = vec![];
+        let mut queue = vec![];
+        for &i in &self.districts[d].households {
+            let h = &self.agents.households[i];
+            let listening = evacuate && h.prealert_received;
+            let alert = m.broadcast && h.channel == scenario::population::WarningChannel::MobileAlert;
+            if listening || alert { by_channel.push(i) } else { queue.push(i) }
+        }
+        if evacuate {
+            self.agents.order_evacuation_of(&by_channel);
+        } else {
+            self.agents.prealert_of(&by_channel);
+        }
+        let homes = &self.agents.households;
+        queue.sort_by(|&a, &b| dist(homes[a].home, centre).total_cmp(&dist(homes[b].home, centre)).then(a.cmp(&b)));
+        self.rounds.retain(|r| r.district != d);
+        let n = by_channel.len() + queue.len();
+        self.rounds.push(crate::messengers::Round { district: d, evacuate, queue: queue.into(), progress: 0.0 });
+        n
+    }
+
+    /// One step of the messengers' rounds.
+    fn knock(&mut self) {
+        let Some(m) = self.messengers else { return };
+        self.rounds.retain(|r| !r.queue.is_empty());
+        if self.rounds.is_empty() {
+            return;
+        }
+        let rank = |d: usize| self.active.priorities.iter().position(|&p| p == d).unwrap_or(usize::MAX);
+        let share: Vec<f32> = if m.by_priority {
+            let first = (0..self.rounds.len()).min_by_key(|&k| (rank(self.rounds[k].district), k)).unwrap();
+            (0..self.rounds.len()).map(|k| if k == first { m.teams } else { 0.0 }).collect()
+        } else {
+            vec![m.teams / self.rounds.len() as f32; self.rounds.len()]
+        };
+        for (r, teams) in self.rounds.iter_mut().zip(share) {
+            r.progress += STEP_S as f32 / 60.0 * m.per_min * teams;
+            let mut told = vec![];
+            while r.progress >= 1.0 {
+                let Some(i) = r.queue.pop_front() else { break };
+                told.push(i);
+                r.progress -= 1.0;
+            }
+            self.agents.tell_in_person(&told, r.evacuate);
+        }
     }
 
     /// Re-plan the active plan and hand the units their tasks; a periodic
@@ -332,6 +392,7 @@ impl Game {
         }
         self.fire.advance(STEP_S)?;
         self.agents.step(STEP_S as f32, &self.fire, &self.scn);
+        self.knock();
         if self.time_s() >= self.next_review_s {
             self.review();
         }
