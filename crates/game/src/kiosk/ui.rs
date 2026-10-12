@@ -189,9 +189,8 @@ pub fn draw(
     speech.update(&sim, ctx.input(|i| i.time));
     if k.phase == Phase::Fine {
         k.side_w = 0.0;
-        let top = top_bar(ctx, k, &sim, cam);
-        debrief(ctx, k, &mut sim, &mut restarted, faces, top);
-        leaderboard(ctx, k, &sim, top);
+        // one panel: the old top bar (wind, hour) and the separate score are gone
+        debrief(ctx, k, &mut sim, &mut restarted, faces);
     } else {
         // everything but the map in the side bar; on the map only what
         // points at a place, the opened chip and the speaker (user, 2026-10-12)
@@ -217,52 +216,6 @@ pub fn draw(
         operator(ctx, k, &mut sim, &mut restarted);
     }
     focus.pointer = ctx.wants_pointer_input() || ctx.is_pointer_over_area();
-}
-
-/// At the end, over the debrief: wind, time as a bar, and the pace as an
-/// icon. Returns where the band ends.
-fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTransform)) -> f32 {
-    egui::Area::new(egui::Id::new("barra")).order(egui::Order::Foreground).anchor(Align2::CENTER_TOP, [0.0, 10.0]).interactable(false).show(ctx, |ui| {
-        panel().show(ui, |ui| {
-            ui.horizontal(|ui| {
-                if let Some(l) = k.level.and_then(|i| k.territory.levels.get(i)) {
-                    pill(ui, &l.name, Color32::from_gray(200));
-                    ui.add_space(6.0);
-                }
-                let w = sim.fire.weather();
-                wind_arrow(ui, sim, cam);
-                ui.label(RichText::new(format!("da {} {:.0} km/h", rocca::words::compass(w.wind_dir_deg), w.wind_speed_kmh)).size(22.0).strong().color(Color32::WHITE));
-                ui.add_space(14.0);
-                // the three hours as a bar
-                let frac = (sim.time_s() as f32 / sim.case.duration_s() as f32).clamp(0.0, 1.0);
-                let (r, _) = ui.allocate_exact_size(egui::vec2(170.0, 14.0), egui::Sense::hover());
-                ui.painter().rect_filled(r, 5.0, Color32::from_gray(60));
-                ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(r.width() * frac, r.height())), 5.0, ORANGE);
-                ui.label(RichText::new(format!("ore {}", clock(sim.time_s()))).size(22.0).strong().color(Color32::WHITE).monospace());
-                ui.label(RichText::new(format!("fine {}", clock(sim.case.duration_s()))).size(14.0).color(GREY));
-                ui.add_space(10.0);
-                let (icon, colour) = match k.phase {
-                    Phase::Pianifica => (Icon::Pause, if sim.time_s() > rocca::STEP_S { AMBER } else { GREY }),
-                    Phase::Esegui if sim.speed > k.speed => (Icon::Fast, GREEN),
-                    Phase::Esegui => (Icon::Play, GREEN),
-                    Phase::Crisi => (Icon::Alert, ORANGE),
-                    Phase::Fine => (Icon::Check, GREY),
-                };
-                icons::show(ui, icon, 30.0, colour);
-                let pace = match k.phase {
-                    Phase::Pianifica => "In pausa".into(),
-                    Phase::Esegui if sim.speed > k.speed => format!("Il tempo scorre · tutto fermo, ×{:.0}", sim.speed),
-                    Phase::Esegui => format!("Il tempo scorre · ×{:.0}", sim.speed),
-                    Phase::Crisi => "Rallentato · ×1".into(),
-                    Phase::Fine => "Concluso".into(),
-                };
-                ui.label(RichText::new(pace).size(17.0).color(colour));
-            });
-        });
-    })
-    .response
-    .rect
-    .bottom()
 }
 
 /// An arrow the way the wind pushes the fire, as seen on screen.
@@ -1913,22 +1866,22 @@ fn card(tint: Color32) -> egui::Frame {
 }
 
 /// The end: what your plan changed, against the same fire with no orders.
-fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, faces: Option<&Portraits>, top: f32) {
+fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, faces: Option<&Portraits>) {
     let o = sim.outcome();
     let base = k.baseline();
     let mut again = None;
-    // Between the top bar and the screen's foot, left of the score: the
-    // middle scrolls and the buttons stay in sight (playtest 6: on a 824 px
-    // window the panel ran off both edges and «Riprova» could not be reached).
+    // One panel for everything, centred: the debrief on the left, the score
+    // and the board on the right. The middle of the debrief scrolls and the
+    // buttons stay in sight (playtest 6: on a 824 px window the panel ran off
+    // both edges and «Riprova» could not be reached).
     let screen = ctx.screen_rect();
     egui::Area::new(egui::Id::new("fine_fondo")).fixed_pos(screen.min).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
-        ui.painter().rect_filled(screen, 0.0, Color32::from_rgba_premultiplied(8, 10, 14, 170));
+        ui.painter().rect_filled(screen, 0.0, Color32::from_rgba_premultiplied(8, 10, 14, 200));
     });
-    let room = screen.width() - (BOARD_W + 40.0);
-    let width = (room - 88.0).clamp(480.0, 860.0);
-    let left = ((room - (width + 72.0)) * 0.5).max(12.0);
-    let height = screen.height() - top - 28.0;
-    egui::Area::new(egui::Id::new("fine")).fixed_pos(egui::pos2(left, top + 12.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+    let inner = (screen.width() - 48.0 - 72.0).min(1200.0);
+    let width = (inner - BOARD_W - 14.0).max(480.0);
+    let height = screen.height() - 48.0;
+    egui::Area::new(egui::Id::new("fine")).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         egui::Frame::none()
             .fill(Color32::from_rgb(18, 20, 24))
             .stroke(egui::Stroke::new(1.5, AMBER.gamma_multiply(0.55)))
@@ -1936,11 +1889,22 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             .rounding(18.0)
             .inner_margin(egui::Margin { left: 36.0, right: 36.0, top: 24.0, bottom: 22.0 })
             .show(ui, |ui| {
+            ui.set_width(inner);
+            ui.horizontal_top(|ui| {
+            // a fixed height, so the scroll area below has room to fill (in a
+            // plain row it would get one line)
+            ui.allocate_ui_with_layout(egui::vec2(width, height - 48.0), egui::Layout::top_down(egui::Align::Min), |ui| {
             ui.set_width(width);
             let started = ui.cursor().top();
             let b = base.as_ref().and_then(|r| r.as_ref().ok());
             let title = if k.player.is_empty() { "Com'è andata".to_string() } else { format!("Com'è andata, {}", k.player) };
-            ui.label(RichText::new(title).size(34.0).strong().color(Color32::WHITE));
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(title).size(34.0).strong().color(Color32::WHITE));
+                if let Some(l) = k.level.and_then(|i| k.territory.levels.get(i)) {
+                    ui.add_space(8.0);
+                    pill(ui, &l.name, Color32::from_gray(200));
+                }
+            });
             ui.add_space(8.0);
             // the mayor sums it up
             let (mood, says) = verdict(&k.player, &o, b);
@@ -1982,8 +1946,8 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                 }
             });
             ui.add_space(12.0);
-            // what stays below the scrolling part: the note and the buttons
-            const FOOT: f32 = 120.0;
+            // the note and the buttons are in the right column
+            const FOOT: f32 = 0.0;
             let scroll_h = (height - 48.0 - (ui.cursor().top() - started) - FOOT).max(120.0);
             egui::ScrollArea::vertical()
                 .max_height(scroll_h)
@@ -2084,24 +2048,31 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                 timeline(ui, sim, width - 48.0);
             });
                 });
+            });
+            ui.add_space(14.0);
+            ui.vertical(|ui| {
+            ui.set_width(BOARD_W);
+            card(AMBER).show(ui, |ui| ui.vertical(|ui| leaderboard(ui, k, sim)));
             // a real-world note, not advice on the game
             ui.add_space(8.0);
             ui.add(egui::Label::new(RichText::new(REAL_LIFE).size(13.0).italics().color(AMBER)).wrap());
             ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                let big = |t: &str| egui::Button::new(RichText::new(t).size(26.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(260.0, 64.0));
+            ui.vertical(|ui| {
+                let big = |t: &str| egui::Button::new(RichText::new(t).size(26.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(BOARD_W, 64.0));
                 // one way on (playtest colleghi): «Riprova» goes back to the
                 // levels, the name kept; without levels, the same fire again
-                if icons::pointing(ui.add(big("Riprova"))).clicked() {
+                if icons::pointing(ui.add_sized([BOARD_W, 64.0], big("Riprova"))).clicked() {
                     if k.territory.levels.is_empty() {
                         again = Some(k.case.clone());
                     } else {
                         k.intro = true;
                     }
                 }
-                if k.territory.levels.is_empty() && icons::pointing(ui.add(big("Altro incendio"))).clicked() {
+                if k.territory.levels.is_empty() && icons::pointing(ui.add_sized([BOARD_W, 64.0], big("Altro incendio"))).clicked() {
                     again = Some(k.next_case());
                 }
+            });
+            });
             });
         });
     });
@@ -2114,23 +2085,17 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
 /// Beside the debrief: the score, made of the debrief's numbers
 /// (`rocca::score`), three letters to enter the board, and the board.
 /// Width of the score panel beside the debrief.
-const BOARD_W: f32 = 278.0;
+const BOARD_W: f32 = 310.0;
 
-fn leaderboard(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, top: f32) {
+fn leaderboard(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim) {
     let base = k.baseline();
     let score = match base.as_ref() {
         Some(Ok(b)) => Some(rocca::score::score(&sim.outcome(), b)),
         _ => None,
     };
-    egui::Area::new(egui::Id::new("classifica")).anchor(Align2::RIGHT_TOP, [-12.0, top + 8.0]).show(ctx, |ui| {
-        egui::Frame::none()
-            .fill(Color32::from_rgb(18, 20, 24))
-            .stroke(egui::Stroke::new(1.5, AMBER.gamma_multiply(0.55)))
-            .shadow(egui::epaint::Shadow { offset: egui::vec2(0.0, 10.0), blur: 40.0, spread: 4.0, color: Color32::from_black_alpha(160) })
-            .rounding(18.0)
-            .inner_margin(16.0)
-            .show(ui, |ui| {
-            ui.set_width(BOARD_W - 32.0);
+    {
+        {
+            ui.set_width(BOARD_W - 28.0);
             let Some(s) = score else {
                 ui.label(RichText::new("Punteggio: calcolo…").size(17.0).color(GREY));
                 return;
@@ -2190,8 +2155,8 @@ fn leaderboard(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, top: f32) {
                     });
                 });
             }
-        });
-    });
+        }
+    }
 }
 
 /// The operator bar (F2): any case, seed and speed, a new game, a pause.

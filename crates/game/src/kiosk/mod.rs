@@ -473,7 +473,27 @@ pub fn shots(
     let mut snap = |name: &str| {
         let _ = mgr.save_screenshot_to_disk(window, format!("{dir}/{name}.png"));
     };
+    // `KIOSK_SHOT_END=1`: only the debrief. A plan is committed, the game is
+    // run headless to its end, and the end screen is saved (a few seconds).
+    let end_only = std::env::var_os("KIOSK_SHOT_END").is_some();
     match stage.0 {
+        0 if end_only && stage.1 > 3.0 => {
+            kiosk.player = "Giulia".into();
+            kiosk.intro = false;
+            kiosk.started = true;
+            let near = sim.district_index(&sim.case.near).unwrap_or(0);
+            let mut prio = vec![near];
+            prio.extend((0..sim.districts.len()).filter(|&d| d != near));
+            kiosk.proposed = Plan::new(sim.districts.len()).with_priorities(&prio).with_civil(near, rocca::Civil::Preallerta);
+            commit(&mut kiosk, &mut sim);
+            let end = sim.case.duration_s();
+            if let Err(e) = sim.run_until(end) {
+                kiosk.error = Some(format!("{e:#}"));
+            }
+            sim.generation += 1;
+            kiosk.enter(Phase::Fine);
+            *stage = (6, 0.0);
+        }
         // a name typed, as a visitor would, so the intro and the lines show it
         0 if kiosk.intro && kiosk.player.is_empty() && stage.1 > 4.0 => {
             snap("0_intro_vuota");
@@ -552,7 +572,7 @@ pub fn shots(
         3 | 11 if kiosk.phase == Phase::Fine => *stage = (6, 0.0),
         6 if stage.1 > 1.0 && kiosk.baseline().is_some() => {
             snap("4_fine");
-            *stage = (8, 0.0);
+            *stage = (if end_only { 4 } else { 8 }, 0.0);
         }
         // «Altro incendio»: the manual restart must leave a clean scene
         8 if stage.1 > 1.0 => {

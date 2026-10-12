@@ -417,6 +417,7 @@ Esiti: 3/70 (1330 punti), 3/71 (1470), 2/12 (770).
 
 ## Fatto
 
+- [x] 2026-10-12 finale in un solo pannello (`kiosk/ui.rs::debrief`, `leaderboard`): tolta la barra in alto con vento e ora (`top_bar`) e il pannello del punteggio separato; a sinistra verdetto, numeri, ordini, borghi e cronologia, a destra punteggio, classifica, nota e «Riprova». Il livello è una pillola accanto al titolo. Prova rapida, senza giocare (13 s): `KIOSK_SIZE=1920x1080 KIOSK_CASE=Coste2_gira KIOSK_WINDOWED=1 KIOSK_SHOT_END=1 KIOSK_SHOT=<dir> target/release/game` → `4_fine.png` (`kiosk/mod.rs::shots`: piano di prova, partita simulata fino in fondo, solo il finale).
 - [x] 2026-10-12 schermata finale ridisegnata (`kiosk/ui.rs::debrief`, `leaderboard`): cornice dell'intro (sfondo scurito, bordo ambra, ombra), verdetto della sindaca con ritratto e fumetto (`verdetto`), due card grandi famiglie/case con «grazie a te» o «senza ordini», una card per borgo (verde al sicuro / ambra case / rossa famiglie) con «Perché» ripiegabile al posto del muro di testo, cronologia in una card; tolto `compare_bars`. Prova: `KIOSK_SIZE=1920x1080 KIOSK_CASE=Coste2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_SHOT=<dir> target/release/game` → `4_fine.png`.
 - [x] 2026-10-12 simulazione più veloce: `RUN_SPEED` 40 → 80 e selettore «velocità ×20 / ×40 / ×80 / ×160 / ×300» nella barra laterale (`kiosk/ui.rs::status`, non durante le crisi); resta il campo libero nel pannello operatore F2. Da verificare a occhio: ritmo delle finestre critiche a ×80.
 
