@@ -151,6 +151,9 @@ pub struct Kiosk {
     /// Zoom asked from the on-screen buttons, as a distance factor; the
     /// camera takes it and puts it back to 1.
     pub zoom: f32,
+    /// Logical pixels the side bar takes on the right; the camera draws the
+    /// map in the rest (`view::camera`).
+    pub side_w: f32,
     /// Where the camera is flying to, if anywhere; it clears it on arrival.
     pub shot: Option<Shot>,
     /// The step of the tour being shown (`tutorial`), if any.
@@ -190,6 +193,7 @@ impl Kiosk {
             operator: false,
             reset_view: false,
             zoom: 1.0,
+            side_w: 0.0,
             shot: None,
             tour: None,
             toured: false,

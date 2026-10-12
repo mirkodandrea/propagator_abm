@@ -174,34 +174,31 @@ pub fn draw(
         focus.pointer = true;
         return;
     }
-    let top = top_bar(ctx, k, &sim, cam);
-    view_controls(ctx, k);
     speech.update(&sim, ctx.input(|i| i.time));
     if k.phase == Phase::Fine {
+        k.side_w = 0.0;
+        let top = top_bar(ctx, k, &sim, cam);
         debrief(ctx, k, &mut sim, &mut restarted, top);
         leaderboard(ctx, k, &sim, top);
     } else {
-        legend(ctx, top);
+        // everything but the map in the side bar; on the map only what
+        // points at a place, the opened chip and the speaker (user, 2026-10-12)
+        sidebar(ctx, k, &mut sim, cam);
+        let map = ctx.available_rect();
+        k.side_w = ctx.screen_rect().width() - map.width();
         if k.phase == Phase::Crisi {
-            crisis(ctx, k, &mut sim, faces);
+            crisis_bubble(ctx, k, faces);
         } else if k.tour.is_none() {
             speaker(ctx, k, &sim, &speech, faces);
         }
         if k.phase == Phase::Pianifica && k.started {
-            paused_veil(ctx, k, &sim, top);
+            paused_veil(ctx, map);
         } else if k.phase == Phase::Crisi {
-            slow_motion_frame(ctx);
-            crisis_banner(ctx, k, top);
+            slow_motion_frame(ctx, map);
         }
         fire_marker(ctx, &sim, cam);
         unit_labels(ctx, &sim, cam);
-        plan_panel(ctx, k, &sim, top);
-        // the pause and crisis bands sit under the top bar
-        let band = if (k.phase == Phase::Pianifica && k.started) || k.phase == Phase::Crisi { 44.0 } else { 0.0 };
-        district_chips(ctx, k, &sim, cam, top + band);
-
-        side(ctx, k, &sim);
-        action(ctx, k, &mut sim);
+        district_chips(ctx, k, &sim, cam, map.top());
         tutorial::draw(ctx, k, &sim, cam, faces);
     }
     if k.operator {
@@ -210,8 +207,8 @@ pub fn draw(
     focus.pointer = ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
 
-/// Wind, time as a bar, and the pace as an icon; under it at the start, one
-/// short line of what to do. Returns where the band ends.
+/// At the end, over the debrief: wind, time as a bar, and the pace as an
+/// icon. Returns where the band ends.
 fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTransform)) -> f32 {
     egui::Area::new(egui::Id::new("barra")).order(egui::Order::Foreground).anchor(Align2::CENTER_TOP, [0.0, 10.0]).interactable(false).show(ctx, |ui| {
         panel().show(ui, |ui| {
@@ -221,20 +218,7 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
                     ui.add_space(6.0);
                 }
                 let w = sim.fire.weather();
-                // an arrow the way the wind pushes the fire, as seen on screen
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(38.0, 38.0), egui::Sense::hover());
-                let from = (w.wind_dir_deg as f32).to_radians();
-                let at = sim.case.ignition();
-                let to = Pos { x: at.x - from.sin() * 400.0, y: at.y - from.cos() * 400.0 };
-                if let (Some(a), Some(b)) = (screen(cam, sim, at, 0.0), screen(cam, sim, to, 0.0)) {
-                    let d = (b - a).normalized() * 15.0;
-                    let c = rect.center();
-                    let stroke = egui::Stroke::new(4.0, Color32::WHITE);
-                    ui.painter().line_segment([c - d, c + d], stroke);
-                    let side = egui::vec2(-d.y, d.x) * 0.5;
-                    ui.painter().line_segment([c + d, c + d * 0.35 + side], stroke);
-                    ui.painter().line_segment([c + d, c + d * 0.35 - side], stroke);
-                }
+                wind_arrow(ui, sim, cam);
                 ui.label(RichText::new(format!("da {} {:.0} km/h", rocca::words::compass(w.wind_dir_deg), w.wind_speed_kmh)).size(22.0).strong().color(Color32::WHITE));
                 ui.add_space(14.0);
                 // the three hours as a bar
@@ -267,6 +251,24 @@ fn top_bar(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTran
     .response
     .rect
     .bottom()
+}
+
+/// An arrow the way the wind pushes the fire, as seen on screen.
+fn wind_arrow(ui: &mut egui::Ui, sim: &Sim, cam: (&Camera, &GlobalTransform)) {
+    let w = sim.fire.weather();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(38.0, 38.0), egui::Sense::hover());
+    let from = (w.wind_dir_deg as f32).to_radians();
+    let at = sim.case.ignition();
+    let to = Pos { x: at.x - from.sin() * 400.0, y: at.y - from.cos() * 400.0 };
+    if let (Some(a), Some(b)) = (screen(cam, sim, at, 0.0), screen(cam, sim, to, 0.0)) {
+        let d = (b - a).normalized() * 15.0;
+        let c = rect.center();
+        let stroke = egui::Stroke::new(4.0, Color32::WHITE);
+        ui.painter().line_segment([c - d, c + d], stroke);
+        let side = egui::vec2(-d.y, d.x) * 0.5;
+        ui.painter().line_segment([c + d, c + d * 0.35 + side], stroke);
+        ui.painter().line_segment([c + d, c + d * 0.35 - side], stroke);
+    }
 }
 
 /// The CIMA logo, as an egui texture.
@@ -506,24 +508,31 @@ fn news(k: &Kiosk, sim: &Sim) -> Vec<(String, bool)> {
 /// The crisis, told by the person it concerns: what is happening, the
 /// actions that answer it, what the change would do to the units, the
 /// countdown and the button.
-fn crisis(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, faces: Option<&Portraits>) {
+fn crisis_bubble(ctx: &egui::Context, k: &Kiosk, faces: Option<&Portraits>) {
+    let Some(c) = &k.crisis else { return };
+    let (who, mood) = characters::for_crisis(c.kind);
+    speaking(ctx, faces, who, mood, |ui| {
+        characters::bubble(ui, who, |ui| {
+            characters::says(ui, who, &c.text, BUBBLE_W);
+            ui.label(RichText::new("Decidi nella barra a destra.").size(16.0).strong().color(Color32::from_rgb(170, 80, 10)));
+        });
+    });
+}
+
+/// In the side bar at a crisis, in place of the time's button: the
+/// countdown, the answers, what the change does to the units, and the
+/// button.
+fn crisis_choice(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
     let Some(c) = k.crisis.clone() else { return };
     let d = crisis_district(k);
-    let (who, mood) = characters::for_crisis(c.kind);
     let mut close = false;
-    speaking(ctx, faces, who, mood, |ui| {
-        characters::bubble(ui, who, |ui| characters::says(ui, who, &c.text, BUBBLE_W));
-        ui.add_space(8.0);
+    {
         egui::Frame::none().fill(Color32::from_rgb(64, 30, 10)).stroke(egui::Stroke::new(3.0, ORANGE)).rounding(10.0).inner_margin(12.0).show(ui, |ui| {
+            ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 icons::show(ui, Icon::Alert, 24.0, ORANGE);
                 ui.label(RichText::new("Decisione urgente").size(21.0).strong().color(ORANGE));
-            });
-            ui.label(RichText::new("Il tempo è rallentato, non fermo: il fuoco avanza ancora. Se non scegli, allo scadere resta il piano attuale.").size(15.0).color(ORANGE));
-            // one row as wide as the screen allows, wrapped only when it
-            // does not fit, so «Conferma» stays on screen at 900 px
-            let room = ui.ctx().screen_rect().width() - FACE - 80.0;
-            ui.allocate_ui(egui::vec2(room, 0.0), |ui| ui.horizontal_wrapped(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // the countdown as a shrinking ring around the seconds
                 let (r, _) = ui.allocate_exact_size(egui::vec2(56.0, 56.0), egui::Sense::hover());
                 let left = (1.0 - k.phase_t / k.crisis_s).clamp(0.0, 1.0);
@@ -539,14 +548,17 @@ fn crisis(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, faces: Option<&Port
                     ui.painter().add(egui::Shape::line(pts, egui::Stroke::new(5.0, ORANGE)));
                 }
                 ui.painter().text(r.center(), Align2::CENTER_CENTER, format!("{:.0}", (k.crisis_s - k.phase_t).max(0.0).ceil()), egui::FontId::proportional(22.0), Color32::WHITE);
-                ui.add_space(6.0);
+                });
+            });
+            ui.label(RichText::new("Il tempo è rallentato, non fermo: il fuoco avanza ancora. Se non scegli, allo scadere resta il piano attuale.").size(15.0).color(ORANGE));
+            ui.horizontal_wrapped(|ui| {
                 // A unit lost: the choice is who comes first with the units
                 // left (playtest 3: a countdown with only «Continua» was a
                 // decision without options).
                 if d.is_none() && matches!(c.kind, rocca::crisis::Kind::MezzoPerso { .. }) {
                     ui.vertical(|ui| {
                         ui.label(RichText::new("Con i mezzi rimasti, chi difendere per primo?").size(15.0).color(Color32::WHITE));
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             for x in 0..sim.districts.len() {
                                 let first = k.proposed.priorities.first() == Some(&x);
                                 if icons::button(ui, Icon::Up, &sim.districts[x].name, first, AMBER, !first).clicked() {
@@ -576,12 +588,12 @@ fn crisis(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, faces: Option<&Port
                         }
                     }
                 }
-                ui.add_space(12.0);
-                let pending = k.proposed != sim.active;
-                if ui.add(primary(if pending { "Conferma" } else { "Continua" })).clicked() {
-                    close = true;
-                }
-            }));
+            });
+            ui.add_space(6.0);
+            let pending = k.proposed != sim.active;
+            if big_button(ui, None, if pending { "Conferma" } else { "Continua" }, AMBER).clicked() {
+                close = true;
+            }
             // what the change does to the units, as engine icons
             if let Some(p) = &k.preview {
                 let moves = (0..sim.districts.len()).any(|x| sim.posts.iter().flatten().filter(|q| q.district == x).count() != p.units_on(x));
@@ -600,61 +612,31 @@ fn crisis(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, faces: Option<&Port
                 }
             }
         });
-    });
+    }
     if close {
         close_crisis(k, sim);
     }
 }
 
-/// Back to the home view, zoom in and out.
-fn view_controls(ctx: &egui::Context, k: &mut Kiosk) {
-    egui::Area::new(egui::Id::new("vista")).anchor(Align2::RIGHT_TOP, [-12.0, 12.0]).show(ctx, |ui| {
-        panel().show(ui, |ui| {
-            ui.horizontal(|ui| {
-                if icons::button(ui, Icon::Plus, "", false, GREY, true).clicked() {
-                    k.zoom *= 0.8;
-                }
-                if icons::button(ui, Icon::Minus, "", false, GREY, true).clicked() {
-                    k.zoom *= 1.25;
-                }
-                if icons::button(ui, Icon::Home, "", false, GREY, true).clicked() {
-                    k.reset_view = true;
-                }
-            });
-        });
+/// Back to the home view, zoom in and out: the foot of the side bar.
+fn view_controls(ui: &mut egui::Ui, k: &mut Kiosk) {
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Vista").size(16.0).color(GREY));
+        if icons::button(ui, Icon::Plus, "", false, GREY, true).clicked() {
+            k.zoom *= 0.8;
+        }
+        if icons::button(ui, Icon::Minus, "", false, GREY, true).clicked() {
+            k.zoom *= 1.25;
+        }
+        if icons::button(ui, Icon::Home, "", false, GREY, true).clicked() {
+            k.reset_view = true;
+        }
     });
 }
 
-/// What the marks on the map mean.
-fn legend(ctx: &egui::Context, top: f32) {
-    // below the operator bar when that is open
-    let below = ctx.memory(|m| m.area_rect(egui::Id::new("operatore"))).filter(|_| ctx.memory(|m| m.areas().visible_last_frame(&egui::LayerId::new(egui::Order::Foreground, egui::Id::new("operatore"))))).map_or(12.0, |r| r.bottom() + 8.0);
-    // closed at first; `KIOSK_LEGEND=1` opens it, for screenshots
-    let roomy = std::env::var("KIOSK_LEGEND").is_ok();
-    // the switch top left; the legend itself opens under the top bar, so
-    // it never hides wind and clock
-    let open = egui::Area::new(egui::Id::new("legenda")).order(egui::Order::Foreground).anchor(Align2::LEFT_TOP, [12.0, below]).show(ctx, |ui| {
-        panel().fill(Color32::from_rgb(18, 20, 24)).show(ui, |ui| {
-            egui::CollapsingHeader::new(RichText::new("Legenda e tempi").size(15.0).strong().color(Color32::WHITE)).default_open(roomy).show_unindented(ui, |_| ()).openness > 0.0
-        }).inner
-    }).inner;
-    if !open {
-        return;
-    }
-    let at = top.max(below + 40.0) + 8.0;
-    egui::Area::new(egui::Id::new("legenda_corpo")).order(egui::Order::Foreground).fixed_pos(egui::pos2(12.0, at)).show(ctx, |ui| {
-        panel().fill(Color32::from_rgb(18, 20, 24)).show(ui, |ui| {
-            {
-                // two columns, so it fits without scrolling on a short screen
-                // (playtest 6: the last line cut off at 824 px); the scroll
-                // bar, always shown, only for smaller ones
-                let wide = ctx.screen_rect().width() >= 760.0;
-                ui.set_width(if wide { 700.0 } else { 340.0 });
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, true])
-                    .max_height(ctx.screen_rect().height() - at - 40.0)
-                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
-                    .show(ui, |ui| {
+/// What the marks on the map mean, in the side bar, closed at first
+/// (`KIOSK_LEGEND=1` opens it, for screenshots).
+fn legend(ui: &mut egui::Ui) {
                 #[derive(Clone, Copy)]
                 enum Mark {
                     Fill(Color32),
@@ -665,7 +647,7 @@ fn legend(ctx: &egui::Context, top: f32) {
                 }
                 // Most asked first: what the plants on the map are and why they
                 // matter, then the families bar; the rest folds away.
-                ui.columns(if wide { 2 } else { 1 }, |cols| {
+                ui.columns(1, |cols| {
                 let right = cols.len() - 1;
                 {
                 let ui = &mut cols[0];
@@ -760,12 +742,6 @@ fn legend(ctx: &egui::Context, top: f32) {
                         "I nuclei con lo stesso nome condividono gli ordini della stessa scheda.",
                     ] { ui.label(RichText::new(text).size(14.0).color(GREY)); }
                 });
-                // room for the last line: the columns above measure short
-                ui.add_space(8.0);
-                });
-            }
-        });
-    });
 }
 
 /// «~3 min» or «~2–6 min».
@@ -906,7 +882,7 @@ pub(super) fn chip_anchor(sim: &Sim, d: usize) -> Pos {
 
 /// One chip over each district: rank, fire distance, units, controls.
 fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, &GlobalTransform), top: f32) {
-    let screen_rect = ctx.screen_rect();
+    let screen_rect = ctx.available_rect();
     let n = sim.districts.len();
     let mut order = k.proposed.priorities.clone();
     let mut civil = k.proposed.civil.clone();
@@ -933,7 +909,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
         clamp(at, *size);
     }
     // the fixed panels (last frame's), which a chip must not cover
-    let obstacles: Vec<egui::Rect> = ["lato", "personaggio", "azione", "vista", "legenda", "piano"]
+    let obstacles: Vec<egui::Rect> = ["personaggio"]
         .iter()
         .filter_map(|n| ctx.memory(|m| m.area_rect(egui::Id::new(*n))))
         .map(|r| r.expand(6.0))
@@ -1319,7 +1295,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
 /// civil order, then what is ordered without a defence, who stays at base and
 /// who is left out. The one in force while it runs; the proposal while it is
 /// composed. A row opens that district's chip.
-fn plan_panel(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, top: f32) {
+fn plan(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim) {
     let pending = k.phase == Phase::Pianifica || k.proposed != sim.active;
     let plan = if pending { &k.proposed } else { &sim.active };
     let n = sim.districts.len();
@@ -1332,11 +1308,10 @@ fn plan_panel(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, top: f32) {
     let ordered: Vec<usize> = (0..n).filter(|&d| plan.civil[d] != Civil::Nessuno).collect();
     let empty = plan.priorities.is_empty() && ordered.is_empty();
     let mut open: Option<usize> = None;
-    egui::Area::new(egui::Id::new("piano")).fixed_pos(egui::pos2(12.0, top.max(56.0) + 8.0)).order(egui::Order::Middle).show(ctx, |ui| {
-        panel().show(ui, |ui| {
-            ui.set_width(250.0);
-            let title = RichText::new("Il piano").size(17.0).strong().color(Color32::WHITE);
-            egui::CollapsingHeader::new(title).id_source("piano_h").default_open(true).show(ui, |ui| {
+    {
+        {
+            heading(ui, "Il piano");
+            {
                 let (tag, colour) = if !k.started {
                     ("nessun ordine ancora", Color32::from_gray(150))
                 } else if pending && k.phase != Phase::Pianifica {
@@ -1354,7 +1329,9 @@ fn plan_panel(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, top: f32) {
                         let (c, _) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
                         ui.painter().circle_filled(c.center(), 11.0, AMBER);
                         ui.painter().text(c.center(), Align2::CENTER_CENTER, (r + 1).to_string(), egui::FontId::proportional(15.0), Color32::BLACK);
-                        if ui.add(egui::Label::new(RichText::new(&sim.districts[d].name).size(16.0).color(Color32::WHITE)).sense(egui::Sense::click())).clicked() {
+                        let name = RichText::new(&sim.districts[d].name).size(17.0).color(Color32::WHITE);
+                        let name = if k.selected == Some(d) { name.strong().underline() } else { name };
+                        if ui.add(egui::Label::new(name).sense(egui::Sense::click())).clicked() {
                             open = Some(d);
                         }
                         match plan.civil[d] {
@@ -1390,11 +1367,11 @@ fn plan_panel(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, top: f32) {
                     ui.label(RichText::new(format!("Senza ordini: {}", left.join(", "))).size(14.0).color(Color32::from_gray(160)));
                 }
                 if empty {
-                    ui.label(RichText::new("Tocca un borgo sulla mappa per decidere.").size(14.0).color(GREY));
+                    ui.label(RichText::new("Tocca un paese sulla mappa per decidere.").size(15.0).color(GREY));
                 }
-            });
-        });
-    });
+            }
+        }
+    }
     if let Some(d) = open {
         k.selected = Some(d);
     }
@@ -1437,7 +1414,7 @@ fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
         let mut at = ground + egui::vec2(0.0, 28.0 * below as f32);
         // egui keeps an area on screen; do the same here so the panel test
         // below sees where the label will really be drawn
-        let sr = ctx.screen_rect();
+        let sr = ctx.available_rect();
         at.x = at.x.clamp(sr.left() + 60.0, sr.right() - 60.0);
         at.y = at.y.clamp(sr.top() + 24.0, sr.bottom());
         // nor under a badge (playtest 6: A2 and SQ hidden under two of them):
@@ -1449,7 +1426,7 @@ fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
         }
         // Behind a fixed panel (updates, speaker, button): just above it, with
         // a thin line down to where the unit is.
-        for name in ["lato", "personaggio", "azione"] {
+        for name in ["personaggio"] {
             let Some(panel) = ctx.memory(|m| m.area_rect(egui::Id::new(name))) else { continue };
             if panel.expand(4.0).intersects(egui::Rect::from_center_size(at - egui::vec2(0.0, 12.0), egui::vec2(110.0, 24.0))) {
                 let lifted = egui::pos2(at.x, panel.top() - 6.0 - 28.0 * below as f32);
@@ -1495,10 +1472,9 @@ fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
 fn proposal(ui: &mut egui::Ui, k: &Kiosk, sim: &Sim) {
     let Some(p) = &k.preview else { return };
     let pending = k.proposed != sim.active || k.phase == Phase::Pianifica;
-        panel().show(ui, |ui| {
-            ui.set_max_width(430.0);
+        {
             let title = if pending { "Il coordinatore propone" } else { "I mezzi" };
-            egui::CollapsingHeader::new(RichText::new(title).size(15.0).strong().color(Color32::WHITE)).id_source("proposta_h").default_open(false).show(ui, |ui| {
+            egui::CollapsingHeader::new(RichText::new(title).size(16.0).strong().color(Color32::WHITE)).id_source("proposta_h").default_open(false).show(ui, |ui| {
             if !pending {
                 // Nothing to confirm: what the units are doing now, not the
                 // reasons given when they were sent (those are in the log).
@@ -1528,13 +1504,13 @@ fn proposal(ui: &mut egui::Ui, k: &Kiosk, sim: &Sim) {
                 ui.label(RichText::new("Nessun luogo da difendere: i mezzi restano alla base.").size(15.0).color(ORANGE));
             }
             });
-        });
+        }
 }
 
 /// The one button, play / pause like a video: «Avvia» or «Riprendi» while
 /// paused, «Pausa» while the time runs (user, 2026-10-09). Before it, the
 /// gate (the opening screen).
-fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
+fn time_button(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
     let wait = k.pause_wait_min(sim.time_s());
     let left = if k.pauses_left == 1 { "l'ultima".to_string() } else { format!("{} rimaste", k.pauses_left) };
     let pause_label = if wait > 0 { format!("Pausa tra {wait} min · {left}") } else { format!("Pausa · {left}") };
@@ -1546,8 +1522,7 @@ fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
         Phase::Esegui => (Some(Icon::Pause), &*pause_label, Color32::from_gray(200)),
         Phase::Crisi | Phase::Fine => return,
     };
-    egui::Area::new(egui::Id::new("azione")).anchor(Align2::CENTER_BOTTOM, [FACE, -18.0]).show(ctx, |ui| {
-        ui.set_width(320.0);
+    {
         ui.vertical_centered(|ui| {
             if k.phase == Phase::Esegui {
                 ui.label(RichText::new("Per cambiare gli ordini metti in pausa").size(16.0).color(Color32::WHITE));
@@ -1567,12 +1542,12 @@ fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
                 }
             }
         });
-    });
+    }
 }
 
 /// A wide button with an optional icon before the word.
 fn big_button(ui: &mut egui::Ui, icon: Option<Icon>, label: &str, fill: Color32) -> egui::Response {
-    let size = egui::vec2(320.0, 58.0);
+    let size = egui::vec2(ui.available_width(), 58.0);
     let (r, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     let p = ui.painter();
     p.rect_filled(r, 10.0, if resp.hovered() { fill.gamma_multiply(0.85) } else { fill });
@@ -1591,24 +1566,10 @@ fn big_button(ui: &mut egui::Ui, icon: Option<Icon>, label: &str, fill: Color32)
     resp
 }
 
-/// While paused, the map is dimmed and says so, so a pause never passes for
-/// a turn waiting to be played.
-fn paused_veil(ctx: &egui::Context, k: &Kiosk, sim: &Sim, top: f32) {
-    let screen = ctx.screen_rect();
-    ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("velo"))).rect_filled(screen, 0.0, Color32::from_black_alpha(90));
-    let text = if sim.time_s() > rocca::STEP_S {
-        "IN PAUSA · il fuoco è fermo finché non premi «Riprendi»"
-    } else {
-        "IN PAUSA · prepara gli ordini: con «Avvia» il tempo comincia a scorrere"
-    };
-    egui::Area::new(egui::Id::new("pausa")).anchor(Align2::CENTER_TOP, [0.0, top + 8.0]).interactable(false).order(egui::Order::Foreground).show(ctx, |ui| {
-        egui::Frame::none().fill(Color32::from_rgba_unmultiplied(20, 22, 26, 230)).stroke(egui::Stroke::new(2.0, AMBER)).rounding(8.0).inner_margin(egui::Margin::symmetric(14.0, 6.0)).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                icons::show(ui, Icon::Pause, 24.0, AMBER);
-                ui.label(RichText::new(text).size(18.0).strong().color(AMBER));
-            });
-        });
-    });
+/// While paused, the map is dimmed, so a pause never passes for a turn
+/// waiting to be played; the side bar says so.
+fn paused_veil(ctx: &egui::Context, map: egui::Rect) {
+    ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("velo"))).rect_filled(map, 0.0, Color32::from_black_alpha(90));
 }
 
 /// Simulated seconds the start of the fire stays marked on the map.
@@ -1622,7 +1583,7 @@ fn fire_marker(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
         return;
     }
     let Some(p) = screen(cam, sim, sim.case.ignition(), 0.0) else { return };
-    if !ctx.screen_rect().contains(p) {
+    if !ctx.available_rect().contains(p) {
         return;
     }
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("innesco")));
@@ -1638,38 +1599,20 @@ fn fire_marker(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
     ctx.request_repaint();
 }
 
-/// At a crisis, under the top bar: that a decision is due and how long is
-/// left, so it is seen wherever the eye is (playtest 6: a crisis ran out
-/// unseen).
-fn crisis_banner(ctx: &egui::Context, k: &Kiosk, top: f32) {
-    let left = (k.crisis_s - k.phase_t).max(0.0).ceil();
-    // blinking in the last seconds
-    let strong = left > 8.0 || (ctx.input(|i| i.time) * 2.0).fract() < 0.6;
-    egui::Area::new(egui::Id::new("crisi_banda")).anchor(Align2::CENTER_TOP, [0.0, top + 8.0]).interactable(false).order(egui::Order::Foreground).show(ctx, |ui| {
-        egui::Frame::none().fill(if strong { ORANGE } else { Color32::from_rgb(120, 60, 20) }).rounding(8.0).inner_margin(egui::Margin::symmetric(16.0, 6.0)).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                icons::show(ui, Icon::Alert, 26.0, Color32::BLACK);
-                ui.label(RichText::new(format!("DECISIONE URGENTE · {left:.0} s · scegli in basso a sinistra")).size(20.0).strong().color(Color32::BLACK));
-            });
-        });
-    });
-}
 
 /// At a crisis the time slows but does not stop: an orange frame round the
-/// screen, like a slow-motion shot.
-fn slow_motion_frame(ctx: &egui::Context) {
-    let screen = ctx.screen_rect();
+/// map, like a slow-motion shot.
+fn slow_motion_frame(ctx: &egui::Context, map: egui::Rect) {
     let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("rallentatore")));
     for (w, a) in [(18.0, 60u8), (8.0, 120)] {
-        p.rect_stroke(screen.shrink(w * 0.5), 0.0, egui::Stroke::new(w, Color32::from_rgba_unmultiplied(255, 140, 30, a)));
+        p.rect_stroke(map.shrink(w * 0.5), 0.0, egui::Stroke::new(w, Color32::from_rgba_unmultiplied(255, 140, 30, a)));
     }
 }
 
 /// Recent updates stay visible; the full history remains available.
 fn events(ui: &mut egui::Ui, sim: &Sim) {
-    panel().show(ui, |ui| {
-        ui.set_width(300.0);
-        ui.label(RichText::new("Ultimi aggiornamenti").size(16.0).strong().color(Color32::WHITE));
+    {
+        heading(ui, "Ultimi aggiornamenti");
         if sim.log.is_empty() {
             ui.label(RichText::new("In attesa del primo piano").color(GREY));
         }
@@ -1698,17 +1641,107 @@ fn events(ui: &mut egui::Ui, sim: &Sim) {
                 for e in sim.log.iter().rev() { show(ui, e); ui.separator(); }
             });
         });
+    }
+}
+
+/// Width of the side bar during the game.
+const SIDE_W: f32 = 400.0;
+
+/// A section's title in the side bar.
+fn heading(ui: &mut egui::Ui, text: &str) {
+    ui.label(RichText::new(text).size(19.0).strong().color(Color32::WHITE));
+}
+
+/// Remember where a part of the side bar was drawn, for the tour.
+fn mark(ui: &egui::Ui, name: &str, r: egui::Rect) {
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(("sezione", name)), r));
+}
+
+/// Where a part of the side bar («piano», «azione») was drawn last frame.
+pub(super) fn section_rect(ctx: &egui::Context, name: &str) -> Option<egui::Rect> {
+    ctx.data(|d| d.get_temp(egui::Id::new(("sezione", name))))
+}
+
+/// The state of the game as a coloured strip: paused (amber), running
+/// (green), a crisis (orange, blinking in the last seconds).
+fn pace(ui: &mut egui::Ui, k: &Kiosk, sim: &Sim) {
+    let left = (k.crisis_s - k.phase_t).max(0.0).ceil();
+    let (icon, colour, text) = match k.phase {
+        Phase::Pianifica if sim.time_s() > rocca::STEP_S => (Icon::Pause, AMBER, "In pausa: il fuoco è fermo finché non premi «Riprendi».".to_string()),
+        Phase::Pianifica => (Icon::Pause, AMBER, "In pausa: prepara gli ordini, poi premi «Avvia».".to_string()),
+        Phase::Esegui if sim.speed > k.speed => (Icon::Fast, GREEN, format!("Il tempo scorre · non succede nulla, ×{:.0}", sim.speed)),
+        Phase::Esegui => (Icon::Play, GREEN, format!("Il tempo scorre · ×{:.0}", sim.speed)),
+        Phase::Crisi => (Icon::Alert, ORANGE, format!("DECISIONE URGENTE · {left:.0} s · tempo rallentato")),
+        Phase::Fine => (Icon::Check, GREY, "Concluso".to_string()),
+    };
+    // blinking in the last seconds of a crisis (playtest 6: one ran out unseen)
+    let loud = k.phase == Phase::Crisi && (left > 8.0 || (ui.input(|i| i.time) * 2.0).fract() < 0.6);
+    let (fill, ink) = if loud { (ORANGE, Color32::BLACK) } else { (colour.gamma_multiply(0.15), colour) };
+    egui::Frame::none().fill(fill).stroke(egui::Stroke::new(1.5, colour)).rounding(8.0).inner_margin(egui::Margin::symmetric(10.0, 6.0)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            icons::show(ui, icon, 24.0, ink);
+            ui.add(egui::Label::new(RichText::new(text).size(16.0).strong().color(ink)).wrap());
+        });
     });
 }
 
-/// Bottom right, one above the other: what the coordinator proposes and the
-/// latest events, both closed until asked for.
-fn side(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
-    egui::Area::new(egui::Id::new("lato")).anchor(Align2::RIGHT_BOTTOM, [-12.0, -12.0]).show(ctx, |ui| {
-        ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
-            proposal(ui, k, sim);
+/// Level, wind, the clock with the hours as a bar, and the pace.
+fn status(ui: &mut egui::Ui, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTransform)) {
+    ui.horizontal(|ui| {
+        if let Some(l) = k.level.and_then(|i| k.territory.levels.get(i)) {
+            pill(ui, &l.name, Color32::from_gray(200));
             ui.add_space(6.0);
-            events(ui, sim);
+        }
+        let w = sim.fire.weather();
+        wind_arrow(ui, sim, cam);
+        ui.label(RichText::new(format!("vento da {} {:.0} km/h", rocca::words::compass(w.wind_dir_deg), w.wind_speed_kmh)).size(19.0).strong().color(Color32::WHITE));
+    });
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(format!("ore {}", clock(sim.time_s()))).size(26.0).strong().color(Color32::WHITE).monospace());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(RichText::new(format!("fine {}", clock(sim.case.duration_s()))).size(15.0).color(GREY));
+        });
+    });
+    let frac = (sim.time_s() as f32 / sim.case.duration_s() as f32).clamp(0.0, 1.0);
+    let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 10.0), egui::Sense::hover());
+    ui.painter().rect_filled(r, 4.0, Color32::from_gray(60));
+    ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(r.width() * frac, r.height())), 4.0, ORANGE);
+    ui.add_space(8.0);
+    pace(ui, k, sim);
+}
+
+/// During the game, everything but the map, top to bottom (user,
+/// 2026-10-12): the state, the time's button or the crisis's choice, the
+/// plan, what the coordinator proposes, the latest events and the legend;
+/// the view buttons at the foot. Only the opened chip and the speaker stay
+/// on the map.
+fn sidebar(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform)) {
+    let frame = egui::Frame::none().fill(Color32::from_rgb(18, 20, 24)).inner_margin(egui::Margin::symmetric(16.0, 14.0));
+    egui::SidePanel::right("barra_laterale").exact_width(SIDE_W).resizable(false).show_separator_line(false).frame(frame).show(ctx, |ui| {
+        status(ui, k, sim, cam);
+        ui.add_space(10.0);
+        let r = ui.scope(|ui| if k.phase == Phase::Crisi { crisis_choice(ui, k, sim) } else { time_button(ui, k, sim) }).response.rect;
+        mark(ui, "azione", r);
+        ui.add_space(6.0);
+        ui.separator();
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+            ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 52.0), egui::Layout::left_to_right(egui::Align::Center), |ui| view_controls(ui, k));
+            ui.separator();
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    let r = ui.scope(|ui| plan(ui, k, sim)).response.rect;
+                    mark(ui, "piano", r);
+                    ui.add_space(6.0);
+                    ui.separator();
+                    proposal(ui, k, sim);
+                    ui.separator();
+                    events(ui, sim);
+                    ui.separator();
+                    let title = RichText::new("Legenda").size(16.0).strong().color(Color32::WHITE);
+                    egui::CollapsingHeader::new(title).id_source("legenda_h").default_open(std::env::var("KIOSK_LEGEND").is_ok()).show_unindented(ui, legend);
+                });
+            });
         });
     });
 }

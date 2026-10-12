@@ -61,7 +61,7 @@ fn fit_distance(camera: &Camera, sim: &Sim, focus: Vec3, yaw: f32, pitch: f32) -
         let gt = GlobalTransform::from(eye(focus, yaw, pitch, d));
         pts.iter().all(|p| {
             camera.world_to_viewport(&gt, *p).is_some_and(|s| {
-                s.x >= 0.10 * size.x && s.x <= 0.90 * size.x && s.y >= 0.30 * size.y && s.y <= 0.78 * size.y
+                s.x >= 0.08 * size.x && s.x <= 0.92 * size.x && s.y >= 0.18 * size.y && s.y <= 0.80 * size.y
             })
         })
     };
@@ -129,12 +129,13 @@ pub fn camera(
     focus: Res<crate::ui::UiFocus>,
     mut input: ViewInput,
     windows: Query<&Window, With<PrimaryWindow>>,
-    mut query: Query<(&mut OrbitCamera, &mut Transform, &Camera, &mut bevy::core_pipeline::dof::DepthOfFieldSettings)>,
+    mut query: Query<(&mut OrbitCamera, &mut Transform, &mut Camera, &mut bevy::core_pipeline::dof::DepthOfFieldSettings)>,
     time: Res<Time>,
     mut drag: Local<Drag>,
     mut released: Local<Option<(Phase, f32)>>,
     mut settled: Local<u64>,
     mut home_view: Local<Option<(f32, f32)>>,
+    mut refit: Local<(Option<UVec2>, u8)>,
     mut last_cursor: Local<Option<Vec2>>,
 ) {
     // Drag deltas from the cursor's own movement: `MouseMotion` (raw device
@@ -161,7 +162,21 @@ pub fn camera(
     let pinch: f32 = input.pinch.read().map(|e| e.0).sum();
     let rotation: f32 = input.rotation.read().map(|e| e.0).sum();
     let buttons = &input.buttons;
-    let Ok((mut orbit, mut tf, camera, mut dof)) = query.get_single_mut() else { return };
+    let Ok((mut orbit, mut tf, mut camera, mut dof)) = query.get_single_mut() else { return };
+    // The map is drawn left of the side bar, so it is framed and centred in
+    // what can be seen. A new size takes a frame to reach the projection:
+    // the home view is fitted again two frames later.
+    if let Some(w) = windows.get_single().ok() {
+        let side = (kiosk.side_w * w.scale_factor()).round() as u32;
+        let full = UVec2::new(w.physical_width(), w.physical_height());
+        let size = UVec2::new(full.x.saturating_sub(side).max(1), full.y.max(1));
+        if refit.0 != Some(size) {
+            refit.0 = Some(size);
+            refit.1 = 2;
+            camera.viewport = (size != full).then(|| bevy::render::camera::Viewport { physical_position: UVec2::ZERO, physical_size: size, ..default() });
+        }
+    }
+    let camera = &*camera;
     let home = home_focus(&sim);
     let t = kiosk.phase_t;
     let scene_pitch = -0.80;
@@ -246,6 +261,22 @@ pub fn camera(
                     orbit.yaw = yaw;
                     orbit.pitch = scene_pitch;
                     orbit.distance = d * shot_zoom();
+                }
+            }
+            // the map's size changed (the side bar came or went): fit the
+            // home view to it, and go there if the game has not begun
+            if refit.1 > 0 {
+                refit.1 -= 1;
+                if refit.1 == 0 {
+                    if let Some((yaw, d)) = fit_view(camera, &sim, home, scene_pitch) {
+                        *home_view = Some((yaw, d));
+                        if sim.time_s() <= rocca::STEP_S && !user_has_it && kiosk.shot.is_none() {
+                            orbit.focus = home;
+                            orbit.yaw = yaw;
+                            orbit.pitch = scene_pitch;
+                            orbit.distance = d * shot_zoom();
+                        }
+                    }
                 }
             }
             // the on-screen zoom buttons

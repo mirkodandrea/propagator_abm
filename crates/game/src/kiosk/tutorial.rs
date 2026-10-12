@@ -9,7 +9,7 @@ use bevy_egui::egui;
 use egui::{Color32, RichText};
 
 use super::characters::{self, Mood, Portraits, Who};
-use super::ui::{chip_anchor, primary, screen, secondary, the_fire, AMBER, FACE, ORANGE};
+use super::ui::{chip_anchor, primary, screen, secondary, section_rect, the_fire, AMBER, FACE, ORANGE};
 use super::{Kiosk, Shot, MAX_PAUSES};
 use crate::sim::Sim;
 
@@ -63,7 +63,7 @@ fn text(step: Step, k: &Kiosk, sim: &Sim) -> String {
         Step::Fuoco => format!("{} Il cerchio arancione segna il punto in cui è partito.", the_fire(k, sim)),
         Step::Paesi => "Questi sono i paesi da proteggere. Su ogni etichetta vedi quanto è lontano il fuoco, i mezzi che ci lavorano e gli ordini dati alle famiglie.".into(),
         Step::Scheda => "Cliccando su un paese si apre la sua scheda. «Difendi» ci manda autobotti e squadre. «Preallerta» fa preparare le famiglie in casa, «Evacua» le fa partire subito. Un ordine dato non si ritira.".into(),
-        Step::Piano => "Qui c'è il tuo piano: i paesi da difendere, in ordine. Le squadre vanno dove indichi, se ci arrivano in tempo: essere primi non garantisce di essere salvati.".into(),
+        Step::Piano => "Nella barra a destra c'è il tuo piano: i paesi da difendere, in ordine. Le squadre vanno dove indichi, se ci arrivano in tempo: essere primi non garantisce di essere salvati.".into(),
         Step::Avvia => format!(
             "Quando sei pronto premi «Avvia»: il tempo comincia a scorrere. Per cambiare gli ordini servono le pause, e ne hai solo {MAX_PAUSES}. Se succede qualcosa di grave il tempo rallenta, ma non si ferma: avrai {:.0} secondi per decidere.",
             k.crisis_s
@@ -86,8 +86,8 @@ fn targets(step: Step, ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTra
             let both = [area(egui::Id::new(("badge", d))), area(egui::Id::new(("quartiere", d)))];
             both.into_iter().flatten().reduce(|a, b| a.union(b)).into_iter().collect()
         }
-        Step::Piano => area(egui::Id::new("piano")).into_iter().collect(),
-        Step::Avvia => area(egui::Id::new("azione")).into_iter().collect(),
+        Step::Piano => section_rect(ctx, "piano").into_iter().collect(),
+        Step::Avvia => section_rect(ctx, "azione").into_iter().collect(),
     }
 }
 
@@ -114,12 +114,12 @@ fn veil(screen: egui::Rect, holes: &[egui::Rect]) -> Vec<egui::Rect> {
     out
 }
 
-/// Where the bubble goes: above the button if free, else at the top, the
-/// right or the left, the first place clear of what the step points at.
+/// Where the bubble goes on the map: at the foot if free, else at the top,
+/// the right or the left, the first place clear of what the step points at.
 fn place(screen: egui::Rect, holes: &[egui::Rect], size: egui::Vec2) -> egui::Pos2 {
     let mid = screen.center();
     let spots = [
-        egui::pos2(mid.x - size.x * 0.5, screen.bottom() - size.y - 110.0),
+        egui::pos2(mid.x - size.x * 0.5, screen.bottom() - size.y - 40.0),
         egui::pos2(mid.x - size.x * 0.5, screen.top() + 80.0),
         egui::pos2(screen.right() - size.x - 24.0, mid.y - size.y * 0.5),
         egui::pos2(screen.left() + 290.0, mid.y - size.y * 0.5),
@@ -137,7 +137,8 @@ pub fn draw(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, &Globa
     let holes: Vec<egui::Rect> = targets(step, ctx, sim, cam).into_iter().map(|r| r.expand(10.0)).collect();
     let size_id = egui::Id::new("tutorial_fumetto");
     let size = ctx.data(|d| d.get_temp::<egui::Vec2>(size_id)).unwrap_or(egui::vec2(TOUR_W + FACE * 0.7 + 60.0, 220.0));
-    let at = place(whole, &holes, size);
+    // the bubble on the map, clear of the side bar
+    let at = place(ctx.available_rect(), &holes, size);
     let t = ctx.input(|i| i.time) as f32;
     let mut next = None;
     egui::Area::new(egui::Id::new("tutorial")).fixed_pos(whole.min).order(egui::Order::Tooltip).show(ctx, |ui| {
@@ -167,12 +168,18 @@ pub fn draw(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, &Globa
                             next = Some(STEPS.len());
                         }
                         ui.label(RichText::new(format!("{}/{}", i + 1, STEPS.len())).size(15.0).color(Color32::from_gray(110)));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let b = primary(if last { "Ho capito, gioca" } else { "Avanti" }).min_size(egui::vec2(180.0, 48.0));
-                            if ui.add(b).clicked() {
-                                next = Some(i + 1);
-                            }
-                        });
+                        // pushed right by a space, not by a right-to-left
+                        // layout: that one also puts the text at the
+                        // button's right edge (playtest colleghi: «Ho capito»
+                        // aligned at random)
+                        let label = if last { "Ho capito, gioca" } else { "Avanti" };
+                        let text_w = ui.painter().layout_no_wrap(label.into(), egui::FontId::proportional(24.0), Color32::BLACK).size().x;
+                        let w = (text_w + 2.0 * ui.spacing().button_padding.x).max(180.0);
+                        let b = primary(label).min_size(egui::vec2(w, 48.0));
+                        ui.add_space((ui.available_width() - w).max(0.0));
+                        if ui.add(b).clicked() {
+                            next = Some(i + 1);
+                        }
                     });
                 }));
             });
