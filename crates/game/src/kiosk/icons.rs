@@ -141,10 +141,14 @@ pub fn button(ui: &mut egui::Ui, icon: Icon, text: &str, on: bool, colour: Color
     let galley = (!text.is_empty()).then(|| ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(18.0), fg));
     let w = H + galley.as_ref().map_or(0.0, |g| g.size().x + 14.0);
     let (r, resp) = ui.allocate_exact_size(vec2(w, H), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    let fill = if on { colour } else if resp.hovered() && enabled { Color32::from_gray(70) } else { Color32::from_gray(46) };
+    let hot = resp.hovered() && enabled;
+    let fill = if on { colour } else if hot { Color32::from_gray(70) } else { Color32::from_gray(46) };
     let p = ui.painter();
     p.rect_filled(r, 9.0, fill);
     p.rect_stroke(r, 9.0, Stroke::new(2.0, colour));
+    if hot {
+        p.rect_stroke(r.expand(2.0), 10.0, Stroke::new(2.0, Color32::WHITE));
+    }
     let icon_rect = Rect::from_min_size(r.min, vec2(H, H)).shrink(11.0);
     draw(p, icon_rect, icon, if on { Color32::BLACK } else { colour });
     if let Some(g) = galley {
@@ -153,7 +157,41 @@ pub fn button(ui: &mut egui::Ui, icon: Icon, text: &str, on: bool, colour: Color
     if !enabled {
         p.rect_filled(r, 9.0, Color32::from_black_alpha(120));
     }
-    resp
+    pointing(resp)
+}
+
+/// A hand over what can be pressed (playtest colleghi: the arrow over the
+/// level buttons did not say they were buttons). egui's own buttons get it
+/// from `Visuals::interact_cursor`; drawn ones call this.
+pub fn pointing(resp: egui::Response) -> egui::Response {
+    if resp.enabled() && resp.sense.click {
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        resp
+    }
+}
+
+/// An order on a card: the icon above, the word below, a fixed width so
+/// three sit on one row (playtest colleghi).
+pub fn tall_button(ui: &mut egui::Ui, icon: Icon, text: &str, on: bool, colour: Color32, enabled: bool, width: f32) -> egui::Response {
+    const H: f32 = 70.0;
+    let (r, resp) = ui.allocate_exact_size(vec2(width, H), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let hot = resp.hovered() && enabled;
+    let fill = if on { colour } else if hot { Color32::from_gray(70) } else { Color32::from_gray(46) };
+    let fg = if on { Color32::BLACK } else { Color32::WHITE };
+    let p = ui.painter();
+    p.rect_filled(r, 9.0, fill);
+    p.rect_stroke(r, 9.0, Stroke::new(2.0, colour));
+    if hot {
+        p.rect_stroke(r.expand(2.0), 10.0, Stroke::new(2.0, Color32::WHITE));
+    }
+    draw(p, Rect::from_center_size(pos2(r.center().x, r.top() + 22.0), vec2(28.0, 28.0)), icon, if on { Color32::BLACK } else { colour });
+    let g = p.layout_no_wrap(text.to_string(), egui::FontId::proportional(17.0), fg);
+    p.galley(pos2(r.center().x - g.size().x / 2.0, r.bottom() - 10.0 - g.size().y), g, fg);
+    if !enabled {
+        p.rect_filled(r, 9.0, Color32::from_black_alpha(120));
+    }
+    pointing(resp)
 }
 
 /// A bar split into coloured parts, proportional to the counts.

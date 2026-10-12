@@ -132,11 +132,14 @@ pub struct Speech {
     caught_checked: f64,
     /// Simulated time last frame: going back means a new game.
     last_s: i64,
+    /// The player's name, to speak to them by it ([`to`]); kept across games.
+    pub player: String,
 }
 
 impl Speech {
     pub fn clear(&mut self) {
-        *self = Speech::default();
+        let player = std::mem::take(&mut self.player);
+        *self = Speech { player, ..Speech::default() };
     }
 
     fn say(&mut self, l: Line) {
@@ -153,7 +156,7 @@ impl Speech {
         }
         self.last_s = sim.time_s();
         for e in &sim.log[self.seen..] {
-            if let Some(l) = from_log(&e.text) {
+            if let Some(l) = from_log(&e.text, &self.player) {
                 self.say(l);
             }
         }
@@ -168,7 +171,7 @@ impl Speech {
                     let n = x.caught - self.caught[d];
                     let name = &sim.districts[d].name;
                     let who = if n == 1 { "una famiglia ancora in casa".to_string() } else { format!("{n} famiglie ancora in casa") };
-                    self.say(Line::new(Who::Sindaca, Mood::Preoccupato, format!("A {name} il fuoco ha raggiunto {who}!")));
+                    self.say(Line::new(Who::Sindaca, Mood::Preoccupato, to(&self.player, &format!("A {name} il fuoco ha raggiunto {who}!"))));
                     self.caught[d] = x.caught;
                 }
             }
@@ -182,9 +185,9 @@ impl Speech {
 
 /// Who says a log entry, and how. Entries the player caused by their own
 /// plan (priorities, the coordinator's reasons) stay in the events list.
-fn from_log(text: &str) -> Option<Line> {
+fn from_log(text: &str, player: &str) -> Option<Line> {
     if let Some(rest) = text.strip_prefix("il vento gira: ") {
-        return Some(Line::new(Who::Meteo, Mood::Preoccupato, format!("Il vento è girato: {rest}.")));
+        return Some(Line::new(Who::Meteo, Mood::Preoccupato, to(player, &format!("Il vento è girato: {rest}."))));
     }
     // "evacuazione: Le Ghiande (12 famiglie)": the place is enough
     // (playtest 3: the long lines were skipped).
@@ -199,6 +202,17 @@ fn from_log(text: &str) -> Option<Line> {
         return Some(Line::new(Who::Dos, Mood::Preoccupato, format!("{text}.")));
     }
     None
+}
+
+/// A line said to the player by name, if they gave one (user, 2026-10-12):
+/// «Il vento è girato» → «Giulia, il vento è girato». The first letter is
+/// lowered, so pass only lines that open with a common word, not a place.
+pub fn to(player: &str, text: &str) -> String {
+    let mut c = text.chars();
+    match c.next() {
+        Some(f) if !player.is_empty() => format!("{player}, {}", f.to_lowercase().chain(c).collect::<String>()),
+        _ => text.to_string(),
+    }
 }
 
 /// Who brings a crisis to the player.

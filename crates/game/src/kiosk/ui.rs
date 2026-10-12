@@ -15,7 +15,7 @@
 //! - **Bottom right**: what the coordinator proposes and why, and the
 //!   latest events, both closed by default.
 //! - **Fine**: the debrief, against the same fire with no orders, with
-//!   «Riprova» and «Altro incendio».
+//!   «Riprova», back to the opening screen to pick a level.
 //! - **F2**: the operator bar (case, seed, speed, new game). Hidden by default.
 //!
 //! Reads the game and the plan being composed; every change goes through
@@ -148,6 +148,18 @@ pub fn draw(
     if ctx.input(|i| i.key_pressed(egui::Key::F2)) {
         k.operator = !k.operator;
     }
+    // A hand over every button, and the hover shown at once with a white
+    // edge (playtest colleghi: a late, faint hover over the level buttons
+    // did not say they were buttons). Drawn buttons: `icons::pointing`.
+    if ctx.style().visuals.interact_cursor.is_none() {
+        ctx.style_mut(|s| {
+            s.visuals.interact_cursor = Some(egui::CursorIcon::PointingHand);
+            s.animation_time = 0.0;
+            s.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(3.0, Color32::WHITE);
+            s.visuals.widgets.active.bg_stroke = egui::Stroke::new(3.0, Color32::WHITE);
+        });
+    }
+    speech.player.clone_from(&k.player);
 
     if k.intro {
         intro(ctx, k, &sim, logo.as_deref().map(|l| l.0), faces);
@@ -156,7 +168,7 @@ pub fn draw(
             tutorial::go(k, &sim, 0);
         }
         // a level picked: play its case (a new game if it changes, or if
-        // the choice came from a finished game's «Cambia difficoltà»)
+        // the choice came from a finished game's «Riprova»)
         if let Some(i) = k.picked_level.take() {
             if let Some(l) = k.territory.levels.get(i).cloned() {
                 if l.case != k.case || k.phase == Phase::Fine {
@@ -359,18 +371,40 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                     }
                 });
             } else {
-                ui.label(RichText::new("Scegli la difficoltà e inizia").size(20.0).strong().color(Color32::WHITE));
-                ui.add_space(4.0);
+                // the name first, so the characters can speak to the player
+                // (user, 2026-10-12); a level starts only with one
                 ui.horizontal(|ui| {
-                    for (i, l) in levels.iter().enumerate() {
-                        ui.vertical(|ui| {
-                            ui.set_width(250.0);
-                            let b = egui::Button::new(RichText::new(&l.name).size(28.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0);
-                            if ui.add_sized([250.0, 64.0], b).clicked() {
+                    ui.label(RichText::new("Come ti chiami?").size(20.0).strong().color(Color32::WHITE));
+                    ui.add_space(8.0);
+                    let edit = egui::TextEdit::singleline(&mut k.player)
+                        .hint_text("Il tuo nome")
+                        .font(egui::FontId::proportional(24.0))
+                        .char_limit(rocca::score::NAME_MAX)
+                        .desired_width(320.0)
+                        .margin(egui::vec2(10.0, 8.0));
+                    let r = ui.add(edit);
+                    if ui.ctx().memory(|m| m.focused().is_none()) {
+                        r.request_focus();
+                    }
+                });
+                let named = !rocca::score::name(&k.player).is_empty();
+                ui.add_space(12.0);
+                let ask = if named { "Scegli la difficoltà e inizia" } else { "Scrivi il tuo nome, poi scegli la difficoltà" };
+                ui.label(RichText::new(ask).size(20.0).strong().color(if named { Color32::WHITE } else { GREY }));
+                ui.add_space(4.0);
+                // as wide as the panel, so the margins left and right match
+                // (playtest colleghi)
+                ui.columns(levels.len(), |cols| {
+                    for ((i, l), ui) in levels.iter().enumerate().zip(cols.iter_mut()) {
+                        let b = egui::Button::new(RichText::new(&l.name).size(28.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0);
+                        // a centred layout, or the word sits at the button's left
+                        ui.vertical_centered_justified(|ui| {
+                            if ui.add_enabled(named, b.min_size(egui::vec2(0.0, 64.0))).clicked() {
+                                k.player = rocca::score::name(&k.player);
                                 k.picked_level = Some(i);
                             }
-                            ui.add(egui::Label::new(RichText::new(&l.about).size(15.0).color(GREY)).wrap());
                         });
+                        ui.add(egui::Label::new(RichText::new(&l.about).size(15.0).color(GREY)).wrap());
                     }
                 });
             }
@@ -427,9 +461,9 @@ fn speaker(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, speech: &Speech, faces
         }
         None if k.phase == Phase::Pianifica => {
             let text = if sim.time_s() <= rocca::STEP_S {
-                format!("{} Scegli chi difendere per primo e chi avvisare, poi premi «Avvia».", the_fire(k, sim))
+                format!("{} {}", the_fire(k, sim), characters::to(&k.player, "Scegli chi difendere per primo e chi avvisare, poi premi «Avvia»."))
             } else {
-                "Siamo in pausa: il fuoco è fermo. Cambia gli ordini, poi premi «Riprendi».".into()
+                characters::to(&k.player, "Siamo in pausa: il fuoco è fermo. Cambia gli ordini, poi premi «Riprendi».")
             };
             tip = Line { who: Who::Volontaria, mood: Mood::Calmo, text };
             &tip
@@ -637,111 +671,105 @@ fn view_controls(ui: &mut egui::Ui, k: &mut Kiosk) {
 /// What the marks on the map mean, in the side bar, closed at first
 /// (`KIOSK_LEGEND=1` opens it, for screenshots).
 fn legend(ui: &mut egui::Ui) {
-                #[derive(Clone, Copy)]
-                enum Mark {
-                    Fill(Color32),
-                    Ring(Color32),
-                    Line(Color32, bool),
-                    Arrow,
-                    Diamond,
+    #[derive(Clone, Copy)]
+    enum Mark {
+        Fill(Color32),
+        Ring(Color32),
+        Line(Color32, bool),
+        Arrow,
+        Diamond,
+        Stem,
+    }
+    // Only what is on the map or on the cards, short (playtest colleghi:
+    // too much, and some of it seen only in the debrief). The cards say
+    // what each order does; the plants come first, the most asked.
+    let line = |ui: &mut egui::Ui, text: &str| {
+        ui.add(egui::Label::new(RichText::new(text).size(14.0).color(GREY)).wrap());
+    };
+    section(ui, "Vegetazione: come brucia", true, |ui| {
+        for (kind, text) in [
+            (Plant::Grass, "Prato secco: corre veloce, fiamme basse."),
+            (Plant::Shrub, "Macchia: brucia forte, lancia faville."),
+            (Plant::Pine, "Pineta: fiamme alte, faville lontane."),
+            (Plant::Chestnut, "Castagneto: il fuoco avanza più lento."),
+        ] {
+            ui.horizontal(|ui| {
+                plant_sample(ui, kind);
+                line(ui, text);
+            });
+        }
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(40.0, 26.0), egui::Sense::hover());
+            ui.painter().rect_filled(r.shrink(2.0), 4.0, Color32::from_rgb(214, 207, 189));
+            line(ui, "Strade, case, orti: non bruciano.");
+        });
+    });
+    section(ui, "Segni sulla mappa", true, |ui| {
+        let items = [
+            (Mark::Fill(Color32::from_rgb(255, 120, 40)), "fuoco attivo"),
+            (Mark::Fill(Color32::from_rgb(70, 50, 40)), "area già bruciata"),
+            (Mark::Arrow, "dove il vento spinge il fuoco"),
+            (Mark::Stem, "un mezzo: il punto è dove si trova"),
+            (Mark::Ring(GREEN), "case difese da un mezzo"),
+            (Mark::Line(GREEN, false), "strada che un mezzo sta facendo"),
+            (Mark::Line(Color32::WHITE, true), "spostamento proposto, da confermare"),
+            (Mark::Ring(AMBER), "paese in preallerta"),
+            (Mark::Ring(BLUE), "paese in evacuazione"),
+            (Mark::Diamond, "famiglia in casa con il fuoco vicino"),
+            (Mark::Fill(Color32::from_rgb(60, 120, 220)), "cartello blu: area di attesa sicura"),
+        ];
+        for (m, text) in items {
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(26.0, 16.0), egui::Sense::hover());
+                let p = ui.painter();
+                let c = r.center();
+                match m {
+                    Mark::Fill(col) => {
+                        p.rect_filled(r.shrink2(egui::vec2(4.0, 2.0)), 3.0, col);
+                    }
+                    Mark::Ring(col) => {
+                        p.circle_stroke(c, 6.5, egui::Stroke::new(2.5, col));
+                    }
+                    Mark::Line(col, dashed) => {
+                        let (a, b) = (egui::pos2(r.left() + 2.0, c.y), egui::pos2(r.right() - 2.0, c.y));
+                        if dashed {
+                            p.add(egui::Shape::dashed_line(&[a, b], egui::Stroke::new(3.0, col), 5.0, 3.0));
+                        } else {
+                            p.line_segment([a, b], egui::Stroke::new(3.0, col));
+                        }
+                    }
+                    Mark::Arrow => {
+                        let st = egui::Stroke::new(3.0, Color32::from_gray(230));
+                        p.line_segment([egui::pos2(r.left() + 3.0, c.y), egui::pos2(r.right() - 3.0, c.y)], st);
+                        p.line_segment([egui::pos2(r.right() - 3.0, c.y), egui::pos2(r.right() - 9.0, c.y - 5.0)], st);
+                        p.line_segment([egui::pos2(r.right() - 3.0, c.y), egui::pos2(r.right() - 9.0, c.y + 5.0)], st);
+                    }
+                    Mark::Diamond => {
+                        let pts = vec![c + egui::vec2(0.0, -7.0), c + egui::vec2(6.0, 0.0), c + egui::vec2(0.0, 7.0), c + egui::vec2(-6.0, 0.0)];
+                        p.add(egui::Shape::convex_polygon(pts, RED, egui::Stroke::NONE));
+                    }
+                    Mark::Stem => {
+                        // as `unit_labels` draws it: the label, the stem, the dot
+                        p.rect_stroke(egui::Rect::from_center_size(egui::pos2(c.x, r.top() + 2.0), egui::vec2(16.0, 6.0)), 2.0, egui::Stroke::new(1.5, GREEN));
+                        p.line_segment([egui::pos2(c.x, r.top() + 5.0), egui::pos2(c.x, r.bottom() - 3.0)], egui::Stroke::new(2.0, GREEN));
+                        p.circle_filled(egui::pos2(c.x, r.bottom() - 3.0), 3.5, GREEN);
+                    }
                 }
-                // Most asked first: what the plants on the map are and why they
-                // matter, then the families bar; the rest folds away.
-                ui.columns(1, |cols| {
-                let right = cols.len() - 1;
-                {
-                let ui = &mut cols[0];
-                section(ui, "Vegetazione: come brucia", true, |ui| {
-                    for (kind, text) in [
-                        (Plant::Grass, "Prato secco: il fuoco corre veloce, con fiamme basse."),
-                        (Plant::Shrub, "Macchia: cespugli fitti, brucia forte e lancia faville."),
-                        (Plant::Pine, "Pineta di pino marittimo: fiamme alte e faville lontane; può correre veloce."),
-                        (Plant::Chestnut, "Castagneto (latifoglie): il fuoco avanza più lento."),
-                    ] {
-                        ui.horizontal(|ui| {
-                            plant_sample(ui, kind);
-                            ui.add(egui::Label::new(RichText::new(text).size(14.0).color(GREY)).wrap());
-                        });
-                    }
-                    ui.horizontal(|ui| {
-                        let (r, _) = ui.allocate_exact_size(egui::vec2(40.0, 26.0), egui::Sense::hover());
-                        ui.painter().rect_filled(r.shrink(2.0), 4.0, Color32::from_rgb(214, 207, 189));
-                        ui.label(RichText::new("Strade, case, orti: non bruciano.").size(14.0).color(GREY));
-                    });
-                    ui.label(RichText::new("Anche vento e pendenza spingono il fuoco.").size(14.0).color(GREY));
-                });
-                section(ui, "Barra delle famiglie", true, |ui| {
-                    for (colour, text) in [(GREEN, "Evacuate: in sicurezza"), (BLUE, "In viaggio"), (AMBER, "In preparazione"), (Color32::from_gray(150), "A casa"), (RED, "Intrappolate / vittime")] {
-                        ui.horizontal(|ui| {
-                            let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 12.0), egui::Sense::hover());
-                            ui.painter().rect_filled(r, 2.0, colour);
-                            ui.label(RichText::new(text).size(14.0).color(GREY));
-                        });
-                    }
-                });
-                }
-                let ui = &mut cols[right];
-                section(ui, "Segni sulla mappa", true, |ui| {
-                    let items = [
-                        (Mark::Fill(Color32::from_rgb(255, 120, 40)), "fuoco attivo"),
-                        (Mark::Fill(Color32::from_rgb(70, 50, 40)), "area già bruciata"),
-                        (Mark::Arrow, "dove il vento spinge il fuoco"),
-                        (Mark::Ring(GREEN), "case difese da un mezzo"),
-                        (Mark::Line(GREEN, false), "strada che un mezzo sta facendo"),
-                        (Mark::Line(Color32::WHITE, true), "spostamento proposto, da confermare"),
-                        (Mark::Ring(AMBER), "preallerta"),
-                        (Mark::Ring(BLUE), "evacuazione"),
-                        (Mark::Diamond, "famiglia in casa con il fuoco vicino"),
-                        (Mark::Fill(Color32::from_rgb(60, 120, 220)), "cartello blu: area di attesa sicura"),
-                    ];
-                    for (m, text) in items {
-                        ui.horizontal(|ui| {
-                            let (r, _) = ui.allocate_exact_size(egui::vec2(26.0, 16.0), egui::Sense::hover());
-                            let p = ui.painter();
-                            let c = r.center();
-                            match m {
-                                Mark::Fill(col) => {
-                                    p.rect_filled(r.shrink2(egui::vec2(4.0, 2.0)), 3.0, col);
-                                }
-                                Mark::Ring(col) => {
-                                    p.circle_stroke(c, 6.5, egui::Stroke::new(2.5, col));
-                                }
-                                Mark::Line(col, dashed) => {
-                                    let (a, b) = (egui::pos2(r.left() + 2.0, c.y), egui::pos2(r.right() - 2.0, c.y));
-                                    if dashed {
-                                        p.add(egui::Shape::dashed_line(&[a, b], egui::Stroke::new(3.0, col), 5.0, 3.0));
-                                    } else {
-                                        p.line_segment([a, b], egui::Stroke::new(3.0, col));
-                                    }
-                                }
-                                Mark::Arrow => {
-                                    let st = egui::Stroke::new(3.0, Color32::from_gray(230));
-                                    p.line_segment([egui::pos2(r.left() + 3.0, c.y), egui::pos2(r.right() - 3.0, c.y)], st);
-                                    p.line_segment([egui::pos2(r.right() - 3.0, c.y), egui::pos2(r.right() - 9.0, c.y - 5.0)], st);
-                                    p.line_segment([egui::pos2(r.right() - 3.0, c.y), egui::pos2(r.right() - 9.0, c.y + 5.0)], st);
-                                }
-                                Mark::Diamond => {
-                                    let pts = vec![c + egui::vec2(0.0, -7.0), c + egui::vec2(6.0, 0.0), c + egui::vec2(0.0, 7.0), c + egui::vec2(-6.0, 0.0)];
-                                    p.add(egui::Shape::convex_polygon(pts, RED, egui::Stroke::NONE));
-                                }
-                            }
-                            ui.label(RichText::new(text).size(14.0).color(GREY));
-                        });
-                    }
-                });
-                });
-                section(ui, "Schede dei paesi", false, |ui| {
-                    for text in [
-                        "1, 2, 3: priorità di difesa. Cerchio vuoto: escluso dalla difesa.",
-                        "Fiamma + km: distanza del fronte dalla casa più vicina, non tempo d’arrivo.",
-                        "Famiglia + numero: famiglie del paese. Evacuate X/Y: già arrivate in sicurezza su totale.",
-                        "Mezzo verde: assegnato, può essere in viaggio. Giallo: da assegnare alla conferma. Barrato: da trasferire.",
-                        "Preallerta prepara; Evacua ordina di partire. Gli ordini confermati non si possono ritirare.",
-                        "Tutti i tempi sono minuti nel mondo simulato. A ×40, 40 minuti passano in 1 minuto reale; quando non succede nulla il gioco accelera.",
-                        "Evacuazione: avviso, preparazione, viaggio. La stima indica solo la strada: il tempo tipico e quello delle famiglie più lontane, senza preparazione né code; qualcuno può tardare o restare.",
-                        "I nuclei con lo stesso nome condividono gli ordini della stessa scheda.",
-                    ] { ui.label(RichText::new(text).size(14.0).color(GREY)); }
-                });
+                line(ui, text);
+            });
+        }
+    });
+    section(ui, "Famiglie e tempi", true, |ui| {
+        for (colour, text) in [(GREEN, "in salvo"), (BLUE, "in viaggio"), (AMBER, "si preparano"), (Color32::from_gray(150), "a casa"), (RED, "raggiunte dal fuoco")] {
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 12.0), egui::Sense::hover());
+                ui.painter().rect_filled(r, 2.0, colour);
+                line(ui, text);
+            });
+        }
+        line(ui, "Dall'ordine alla partenza passano minuti: l'avviso deve arrivare e le famiglie devono prepararsi. La scheda stima preparazione e strada, senza le code. La preallerta accorcia la preparazione.");
+        line(ui, "Le ore sono quelle del gioco: a ×40, 40 minuti passano in 1 minuto vero.");
+    });
 }
 
 /// «~3 min» or «~2–6 min».
@@ -1079,7 +1107,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     }
                 });
             });
-            let hit = ui.interact(framed.response.rect, egui::Id::new(("badge_hit", d)), egui::Sense::click());
+            let hit = icons::pointing(ui.interact(framed.response.rect, egui::Id::new(("badge_hit", d)), egui::Sense::click()));
             if hit.clicked() {
                 clicked = Some(d);
             }
@@ -1208,12 +1236,18 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     ui.allocate_ui(egui::vec2(CHIP_W - 20.0, 60.0), |ui| {
                         ui.label(RichText::new(defence_line(k, sim, d)).size(14.0).color(GREEN));
                         let road = |a: u32, b: u32| if b > a { format!("~{a} min di strada, le ultime ~{b} min") } else { format!("~{a} min di strada") };
+                        // how long before they leave, too (playtest colleghi:
+                        // when to order it was guesswork)
+                        let ready = match k.readying.get(d).copied().flatten() {
+                            Some(m) => format!("~{m} min per prepararsi, poi "),
+                            None => String::new(),
+                        };
                         let journey = match k.evacuation.get(d) {
-                            Some((Some((a, b)), 0)) => format!("Evacua: {}", road(*a, *b)),
-                            Some((Some((a, b)), blocked)) => format!("{} · {blocked} con la strada tagliata", road(*a, *b)),
+                            Some((Some((a, b)), 0)) => format!("Evacua: {ready}{}", road(*a, *b)),
+                            Some((Some((a, b)), blocked)) => format!("Evacua: {ready}{} · {blocked} con la strada tagliata", road(*a, *b)),
                             _ => "Evacua: viaggio non disponibile".into(),
                         };
-                        ui.label(RichText::new(journey).size(14.0).color(BLUE));
+                        ui.add(egui::Label::new(RichText::new(journey).size(14.0).color(BLUE)).wrap());
                     });
                 }
                 // While the time runs nothing changes: orders are given in a
@@ -1231,51 +1265,57 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     ui.label(RichText::new(text).size(14.0).color(AMBER));
                     return;
                 }
-                // controls, greyed until the game has started
+                // The three orders on one row, icon over word, what each does
+                // under them (playtest colleghi); greyed until the game has started.
+                ui.add_space(10.0);
                 ui.add_enabled_ui(can_order, |ui| {
-                ui.horizontal(|ui| match rank {
-                    Some(r) => {
-                        if r == 0 { ui.allocate_space(egui::vec2(44.0, 44.0)); }
-                        if r > 0 && icons::button(ui, Icon::Up, "Prima", false, AMBER, true).clicked() {
+                    ui.horizontal(|ui| {
+                        let gap = ui.spacing().item_spacing.x;
+                        let w = ((CHIP_W - 20.0) - 2.0 * gap) / 3.0;
+                        // «Difendi» on: ranked; pressed again, not defended
+                        if icons::tall_button(ui, Icon::Shield, "Difendi", rank.is_some(), AMBER, true, w).clicked() {
+                            if rank.is_some() {
+                                order.retain(|&x| x != d);
+                            } else {
+                                order.push(d);
+                            }
+                            changed = true;
+                        }
+                        let active = sim.active.civil[d];
+                        for (c, icon, label, colour) in [(Civil::Preallerta, Icon::Bell, "Preallerta", AMBER), (Civil::Evacua, Icon::Exit, "Evacua", BLUE)] {
+                            let on = civil[d] == c || (active >= c && civil[d] <= c);
+                            if icons::tall_button(ui, icon, label, on, colour, active < c, w).clicked() {
+                                civil[d] = if civil[d] == c { active } else { c.max(active) };
+                                changed = true;
+                            }
+                        }
+                    });
+                    if let Some(r) = rank.filter(|&r| r > 0) {
+                        ui.add_space(4.0);
+                        if icons::button(ui, Icon::Up, &format!("Priorità {}: metti per primo", r + 1), false, AMBER, true).clicked() {
                             order.retain(|&x| x != d);
                             order.insert(0, d);
                             changed = true;
                         }
-                        if icons::button(ui, Icon::Cross, "Non difendere", false, GREY, true).clicked() {
-                            order.retain(|&x| x != d);
-                            changed = true;
-                        }
-                    }
-                    None => {
-                        if icons::button(ui, Icon::Shield, "Difendi", false, AMBER, true).clicked() {
-                            order.push(d);
-                            changed = true;
-                        }
-                        // what it does, on the card (playtest 4)
-                        ui.label(RichText::new("manda i mezzi a\nproteggere le case").size(13.0).color(GREY));
                     }
                 });
-                ui.horizontal(|ui| {
-                    let active = sim.active.civil[d];
-                    for (c, icon, label, colour) in [(Civil::Preallerta, Icon::Bell, "Preallerta", AMBER), (Civil::Evacua, Icon::Exit, "Evacua", BLUE)] {
-                        let on = civil[d] == c || (active >= c && civil[d] <= c);
-                        if icons::button(ui, icon, label, on, colour, active < c).clicked() {
-                            civil[d] = if civil[d] == c { active } else { c.max(active) };
-                            changed = true;
-                        }
-                    }
-                });
-                });
+                ui.add_space(10.0);
                 if !can_order {
                     // playtest 6: grey buttons with no reason given
                     ui.label(RichText::new("Scegli la difficoltà per cominciare.").size(14.0).strong().color(AMBER));
-                } else if (civil[d] != sim.active.civil[d] || next != now) && k.phase != Phase::Pianifica {
-                    pill(ui, "da confermare", AMBER);
-                } else if civil[d] != Civil::Evacua && sim.active.civil[d] != Civil::Evacua {
+                } else {
+                    if (civil[d] != sim.active.civil[d] || next != now) && k.phase != Phase::Pianifica {
+                        pill(ui, "da confermare", AMBER);
+                    }
                     // as the model does it (`Abm::prealert_of`): ready at home,
                     // a few leave on their own, the order then reaches them sooner
-                    ui.add(egui::Label::new(RichText::new("Preallerta: si preparano a casa e qualcuno parte da sé; un'evacuazione dopo li raggiunge prima.").size(13.0).color(GREY)).wrap());
-                    ui.add(egui::Label::new(RichText::new("Evacua: partono tutti adesso.").size(13.0).color(GREY)).wrap());
+                    for (colour, text) in [
+                        (AMBER, "Difendi: manda i mezzi a proteggere le case. Ripremi per toglierlo."),
+                        (AMBER, "Preallerta: si preparano a casa e qualcuno parte da sé; un'evacuazione dopo li raggiunge prima."),
+                        (BLUE, "Evacua: si preparano e partono; qualcuno aspetta di vedere il fuoco. Gli ordini alle famiglie non si ritirano."),
+                    ] {
+                        ui.add(egui::Label::new(RichText::new(text).size(13.0).color(colour.gamma_multiply(0.85))).wrap());
+                    }
                 }
             });
         });
@@ -1331,7 +1371,7 @@ fn plan(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim) {
                         ui.painter().text(c.center(), Align2::CENTER_CENTER, (r + 1).to_string(), egui::FontId::proportional(15.0), Color32::BLACK);
                         let name = RichText::new(&sim.districts[d].name).size(17.0).color(Color32::WHITE);
                         let name = if k.selected == Some(d) { name.strong().underline() } else { name };
-                        if ui.add(egui::Label::new(name).sense(egui::Sense::click())).clicked() {
+                        if icons::pointing(ui.add(egui::Label::new(name).sense(egui::Sense::click()))).clicked() {
                             open = Some(d);
                         }
                         match plan.civil[d] {
@@ -1351,7 +1391,7 @@ fn plan(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim) {
                             _ => { icons::show(ui, Icon::Bell, 18.0, AMBER); }
                         }
                         let what = if plan.civil[d] == Civil::Evacua { "evacuazione" } else { "preallerta" };
-                        if ui.add(egui::Label::new(RichText::new(format!("{}: {what}", sim.districts[d].name)).size(15.0).color(GREY)).sense(egui::Sense::click())).clicked() {
+                        if icons::pointing(ui.add(egui::Label::new(RichText::new(format!("{}: {what}", sim.districts[d].name)).size(15.0).color(GREY)).sense(egui::Sense::click()))).clicked() {
                             open = Some(d);
                         }
                     });
@@ -1424,13 +1464,11 @@ fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
             let Some(r) = badges.iter().find(|r| r.intersects(label)) else { break };
             at.y = r.bottom() + 26.0;
         }
-        // Behind a fixed panel (updates, speaker, button): just above it, with
-        // a thin line down to where the unit is.
+        // Behind the speaker: just above it; the stem still reaches the unit.
         for name in ["personaggio"] {
             let Some(panel) = ctx.memory(|m| m.area_rect(egui::Id::new(name))) else { continue };
             if panel.expand(4.0).intersects(egui::Rect::from_center_size(at - egui::vec2(0.0, 12.0), egui::vec2(110.0, 24.0))) {
                 let lifted = egui::pos2(at.x, panel.top() - 6.0 - 28.0 * below as f32);
-                ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("guide"))).line_segment([lifted, at], egui::Stroke::new(1.5, Color32::from_white_alpha(150)));
                 at = lifted;
             }
         }
@@ -1443,6 +1481,19 @@ fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
         }
         badges.push(egui::Rect::from_center_size(at - egui::vec2(0.0, 12.0), egui::vec2(label_w - 8.0, 22.0)));
         let colour = trouble.map_or(if fire_near { ORANGE } else { GREEN }, |t| t.0);
+        // Always a stem from the label down to a dot where the unit is, in
+        // its colour (playtest colleghi: labels "flew in the void", and the
+        // white line drawn only when a label was lifted said nothing).
+        // Not for a unit off the map (behind the side bar): its label stays
+        // at the map's edge, without a stem across the bar.
+        if let Some(foot) = screen(cam, sim, u.pos, 0.0).filter(|f| sr.contains(*f)) {
+            let guide = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("guide")));
+            if (foot - at).length() > 8.0 {
+                guide.line_segment([at, foot], egui::Stroke::new(2.0, colour.gamma_multiply(0.8)));
+            }
+            guide.circle_filled(foot, 5.0, colour);
+            guide.circle_stroke(foot, 5.0, egui::Stroke::new(1.5, Color32::BLACK));
+        }
         egui::Area::new(egui::Id::new(("mezzo", i))).fixed_pos(at).pivot(Align2::CENTER_BOTTOM).interactable(false).order(egui::Order::Background).show(ctx, |ui| {
             egui::Frame::none().fill(Color32::from_rgb(14, 16, 18)).stroke(egui::Stroke::new(2.0, colour)).rounding(6.0).inner_margin(egui::Margin::symmetric(5.0, 2.0)).show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -1563,7 +1614,10 @@ fn big_button(ui: &mut egui::Ui, icon: Option<Icon>, label: &str, fill: Color32)
         icons::draw(p, egui::Rect::from_min_size(egui::pos2(x, r.center().y - 15.0), egui::vec2(30.0, 30.0)), i, Color32::BLACK);
     }
     p.galley(egui::pos2(x + icon_w, r.center().y - g.size().y / 2.0), g, Color32::BLACK);
-    resp
+    if resp.hovered() {
+        p.rect_stroke(r.expand(2.0), 11.0, egui::Stroke::new(3.0, Color32::WHITE));
+    }
+    icons::pointing(resp)
 }
 
 /// While paused, the map is dimmed, so a pause never passes for a turn
@@ -1821,6 +1875,9 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             ui.set_width(width);
             let started = ui.cursor().top();
             let b = base.as_ref().and_then(|r| r.as_ref().ok());
+            let title = if k.player.is_empty() { "Com'è andata".to_string() } else { format!("Com'è andata, {}", k.player) };
+            ui.label(RichText::new(title).size(24.0).strong().color(Color32::WHITE));
+            ui.add_space(6.0);
             // the two numbers that matter, big
             ui.horizontal_top(|ui| {
                 for (icon, what, mine, theirs, colour) in [
@@ -1927,15 +1984,17 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 let big = |t: &str| egui::Button::new(RichText::new(t).size(24.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(240.0, 60.0));
+                // one way on (playtest colleghi): «Riprova» goes back to the
+                // levels, the name kept; without levels, the same fire again
                 if ui.add(big("Riprova")).clicked() {
-                    again = Some(k.case.clone());
-                }
-                if k.territory.levels.is_empty() {
-                    if ui.add(big("Altro incendio")).clicked() {
-                        again = Some(k.next_case());
+                    if k.territory.levels.is_empty() {
+                        again = Some(k.case.clone());
+                    } else {
+                        k.intro = true;
                     }
-                } else if ui.add(big("Cambia difficoltà")).clicked() {
-                    k.intro = true;
+                }
+                if k.territory.levels.is_empty() && ui.add(big("Altro incendio")).clicked() {
+                    again = Some(k.next_case());
                 }
             });
         });
@@ -1984,30 +2043,20 @@ fn leaderboard(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, top: f32) {
                 ui.label(RichText::new("Nessun punto: è andata come senza ordini.").size(14.0).color(GREY));
             }
             ui.add_space(8.0);
-            // three letters, arcade style, while the game may enter the board
-            if k.placed.is_none() && k.board.qualifies(s.total) {
-                ui.label(RichText::new("Sei in classifica! Le tue iniziali:").size(15.0).strong().color(Color32::WHITE));
-                ui.horizontal(|ui| {
-                    for i in 0..3 {
-                        ui.vertical(|ui| {
-                            if icons::button(ui, Icon::Plus, "", false, GREY, true).clicked() {
-                                k.initials[i] = (k.initials[i] + 1) % 26;
-                            }
-                            let letter = rocca::score::initials(k.initials)[i..i + 1].to_string();
-                            ui.add_sized(egui::vec2(46.0, 44.0), egui::Label::new(RichText::new(letter).size(34.0).strong().monospace().color(Color32::WHITE)));
-                            if icons::button(ui, Icon::Minus, "", false, GREY, true).clicked() {
-                                k.initials[i] = (k.initials[i] + 25) % 26;
-                            }
-                        });
-                    }
-                });
-                if icons::button(ui, Icon::Check, "Salva", true, AMBER, true).clicked() {
-                    let at = k.board.insert(rocca::score::Entry { initials: rocca::score::initials(k.initials), score: s.total, case: sim.case.name.clone() });
-                    k.placed = Some(at);
+            // the name given at the start goes on the board by itself, once
+            // a game (user, 2026-10-12: no more initials to choose)
+            if k.placed.is_none() {
+                let name = if k.player.is_empty() { "Anonimo".to_string() } else { k.player.clone() };
+                let at = k.board.insert(rocca::score::Entry { name, score: s.total, case: sim.case.name.clone() });
+                k.placed = Some(at);
+                if at.is_some() {
                     if let Err(e) = board::save(&k.board) {
                         k.error = Some(e);
                     }
                 }
+            }
+            if let Some(Some(at)) = k.placed {
+                ui.label(RichText::new(format!("Sei in classifica, al {}° posto!", at + 1)).size(15.0).strong().color(AMBER));
                 ui.add_space(8.0);
             }
             ui.label(RichText::new("Classifica").size(18.0).strong().color(Color32::WHITE));
@@ -2019,7 +2068,7 @@ fn leaderboard(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, top: f32) {
                 let colour = if mine { AMBER } else { Color32::WHITE };
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(format!("{:>2}.", i + 1)).size(16.0).monospace().color(GREY));
-                    ui.label(RichText::new(&e.initials).size(16.0).strong().monospace().color(colour));
+                    ui.label(RichText::new(&e.name).size(16.0).strong().color(colour));
                     // one board for every level: say which each game was
                     if let Some(l) = k.territory.levels.iter().find(|l| l.case == e.case) {
                         ui.label(RichText::new(&l.name).size(13.0).color(GREY));
@@ -2072,6 +2121,8 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
                         new_game(k, sim, restarted);
                         k.intro = true;
                         k.toured = false;
+                        // a new visitor: a new name
+                        k.player.clear();
                     }
                 }
                 if k.phase == Phase::Esegui && ui.add(secondary("Pausa")).clicked() {

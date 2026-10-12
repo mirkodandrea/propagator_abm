@@ -51,8 +51,11 @@ pub fn score(mine: &Outcome, without: &Outcome) -> Score {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
-    /// Three letters, arcade style: no personal data at a school event.
-    pub initials: String,
+    /// The first name the player gave at the start (user, 2026-10-12: the
+    /// characters speak to them by it). Boards saved before carry three
+    /// letters under `initials`.
+    #[serde(alias = "initials")]
+    pub name: String,
     pub score: i64,
     /// The fire played, for the operator; one board for all of them.
     pub case: String,
@@ -92,9 +95,18 @@ impl Board {
     }
 }
 
-/// Three letters from what was typed: upper case A-Z, padded with «A».
-pub fn initials(letters: [u8; 3]) -> String {
-    letters.iter().map(|&l| (b'A' + l % 26) as char).collect()
+/// Longest name kept, in characters.
+pub const NAME_MAX: usize = 16;
+
+/// The name as typed, tidied: no spaces around it, at most [`NAME_MAX`]
+/// characters, first letter in capital. Empty if nothing was typed.
+pub fn name(typed: &str) -> String {
+    let t: String = typed.trim().chars().take(NAME_MAX).collect();
+    let mut c = t.trim_end().chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().chain(c).collect(),
+        None => String::new(),
+    }
 }
 
 #[cfg(test)]
@@ -133,18 +145,26 @@ mod tests {
     fn the_board_keeps_the_best_ten() {
         let mut b = Board::default();
         for k in 1..=12 {
-            b.insert(Entry { initials: "AAA".into(), score: k * 100, case: "c".into() });
+            b.insert(Entry { name: "Anna".into(), score: k * 100, case: "c".into() });
         }
         assert_eq!(b.entries.len(), TOP);
         assert_eq!(b.entries[0].score, 1200);
         assert!(!b.qualifies(300));
-        assert_eq!(b.insert(Entry { initials: "BBB".into(), score: 1200, case: "c".into() }), Some(1), "a tie goes below the earlier game");
+        assert_eq!(b.insert(Entry { name: "Bruno".into(), score: 1200, case: "c".into() }), Some(1), "a tie goes below the earlier game");
         assert_eq!(Board::from_json(&b.to_json()), b);
         assert_eq!(Board::from_json("not json"), Board::default());
     }
 
     #[test]
-    fn initials_are_three_letters() {
-        assert_eq!(initials([0, 1, 25]), "ABZ");
+    fn a_name_is_tidied() {
+        assert_eq!(name("  giulia "), "Giulia");
+        assert_eq!(name("   "), "");
+        assert_eq!(name("élodie maria rossi bianchi"), "Élodie maria ros");
+    }
+
+    #[test]
+    fn a_board_saved_with_initials_still_reads() {
+        let b = Board::from_json(r#"{"entries":[{"initials":"ABC","score":500,"case":"c"}]}"#);
+        assert_eq!(b.entries[0].name, "ABC");
     }
 }

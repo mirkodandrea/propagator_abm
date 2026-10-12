@@ -108,6 +108,10 @@ pub struct Kiosk {
     /// Per district, the evacuation journey in minutes (median, longest)
     /// and the families with no way out.
     pub evacuation: Vec<(Option<(u32, u32)>, usize)>,
+    /// Per district, the typical minutes families still at home would take
+    /// to get ready once ordered out (the preparation the pre-alert has not
+    /// already done), if anyone is at home.
+    pub readying: Vec<Option<u32>>,
     /// The same case and seed with no orders, run beside the game for the
     /// debrief: (case, seed) and the result when it is ready.
     pub baseline: Arc<Mutex<Option<(String, u64, Result<Outcome, String>)>>>,
@@ -115,8 +119,9 @@ pub struct Kiosk {
     pub operator: bool,
     /// «Vista iniziale» was pressed: the camera goes back to the home view.
     pub reset_view: bool,
-    /// The opening screen is showing (a new visitor): at launch and after the
-    /// operator's «Nuova partita», not after «Riprova» / «Altro incendio».
+    /// The opening screen is showing: at launch, after the operator's «Nuova
+    /// partita» (a new visitor) and after «Riprova» (the same one, to pick a
+    /// level; the name is kept).
     pub intro: bool,
     /// The visitor picked a difficulty on the opening screen. Before that the map, the fire
     /// and the chips show, but no order can be given (user, 2026-10-09).
@@ -134,9 +139,12 @@ pub struct Kiosk {
     pub resumed_at_s: i64,
     /// The leaderboard, one for all fires (user, 2026-10-09).
     pub board: rocca::score::Board,
-    /// The initials being chosen at the debrief (letter indices), and the
-    /// place this game took once saved.
-    pub initials: [u8; 3],
+    /// The player's first name, typed on the opening screen before the
+    /// first game (user, 2026-10-12): the characters speak to them by it and
+    /// the board shows it. Kept for «Riprova», cleared by the operator's
+    /// «Nuova partita» (a new visitor).
+    pub player: String,
+    /// The place this game took on the board once saved.
     pub placed: Option<Option<usize>>,
     /// Real time «Azzera classifica» was first pressed (operator bar).
     pub board_reset_armed: Option<f64>,
@@ -158,8 +166,8 @@ pub struct Kiosk {
     pub shot: Option<Shot>,
     /// The step of the tour being shown (`tutorial`), if any.
     pub tour: Option<usize>,
-    /// The tour was shown to this visitor: not again at «Riprova» or
-    /// «Cambia difficoltà», again after the operator's «Nuova partita».
+    /// The tour was shown to this visitor: not again at «Riprova», again
+    /// after the operator's «Nuova partita».
     pub toured: bool,
     /// The operator can turn the tour off (F2, or `KIOSK_TUTORIAL=0`).
     pub tour_on: bool,
@@ -189,6 +197,7 @@ impl Kiosk {
             crisis: None,
             risk: vec![],
             evacuation: vec![],
+            readying: vec![],
             baseline: Arc::new(Mutex::new(None)),
             operator: false,
             reset_view: false,
@@ -207,7 +216,7 @@ impl Kiosk {
             selected: None,
             resumed_at_s: 0,
             board: board::load(),
-            initials: [0; 3],
+            player: String::new(),
             placed: None,
             board_reset_armed: None,
             pick: String::new(),
@@ -428,6 +437,17 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
             minutes.sort_unstable();
             (minutes.last().map(|&b| (minutes[minutes.len() / 2], b)), blocked)
         }).collect();
+        // the households' own preparation, less what a pre-alert has done
+        // (`Abm::prealert_of`): a fact of the population, not a rule
+        kiosk.readying = sim.districts.iter().map(|d| {
+            let mut minutes: Vec<u32> = d.households.iter()
+                .map(|&i| &sim.agents.households[i])
+                .filter(|h| matches!(h.status, scenario::population::Status::Normal | scenario::population::Status::Warned | scenario::population::Status::Defending))
+                .map(|h| ((h.prep_time_min * 60.0 - h.readied_s).max(60.0) / 60.0).round() as u32)
+                .collect();
+            minutes.sort_unstable();
+            minutes.get(minutes.len() / 2).copied()
+        }).collect();
         kiosk.preview_at = sim.generation;
         kiosk.dirty = false;
     }
@@ -454,6 +474,11 @@ pub fn shots(
         let _ = mgr.save_screenshot_to_disk(window, format!("{dir}/{name}.png"));
     };
     match stage.0 {
+        // a name typed, as a visitor would, so the intro and the lines show it
+        0 if kiosk.intro && kiosk.player.is_empty() && stage.1 > 4.0 => {
+            snap("0_intro_vuota");
+            kiosk.player = "Giulia".into();
+        }
         0 if kiosk.intro && stage.1 > 8.0 => {
             snap("0_intro");
             kiosk.intro = false;

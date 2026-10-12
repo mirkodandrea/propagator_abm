@@ -60,9 +60,13 @@ pub fn go(k: &mut Kiosk, sim: &Sim, i: usize) {
 
 fn text(step: Step, k: &Kiosk, sim: &Sim) -> String {
     match step {
-        Step::Fuoco => format!("{} Il cerchio arancione segna il punto in cui è partito.", the_fire(k, sim)),
+        Step::Fuoco => {
+            // «benvenuto/a» would guess the player's gender from a name
+            let hello = if k.player.is_empty() { "Ciao, grazie dell'aiuto!".to_string() } else { format!("Ciao {}, grazie dell'aiuto!", k.player) };
+            format!("{hello} {} Il cerchio arancione segna il punto in cui è partito.", the_fire(k, sim))
+        }
         Step::Paesi => "Questi sono i paesi da proteggere. Su ogni etichetta vedi quanto è lontano il fuoco, i mezzi che ci lavorano e gli ordini dati alle famiglie.".into(),
-        Step::Scheda => "Cliccando su un paese si apre la sua scheda. «Difendi» ci manda autobotti e squadre. «Preallerta» fa preparare le famiglie in casa, «Evacua» le fa partire subito. Un ordine dato non si ritira.".into(),
+        Step::Scheda => "Cliccando su un paese si apre la sua scheda. «Difendi» ci manda autobotti e squadre. «Preallerta» fa preparare le famiglie in casa, «Evacua» le fa preparare e partire. Un ordine alle famiglie non si ritira.".into(),
         Step::Piano => "Nella barra a destra c'è il tuo piano: i paesi da difendere, in ordine. Le squadre vanno dove indichi, se ci arrivano in tempo: essere primi non garantisce di essere salvati.".into(),
         Step::Avvia => format!(
             "Quando sei pronto premi «Avvia»: il tempo comincia a scorrere. Per cambiare gli ordini servono le pause, e ne hai solo {MAX_PAUSES}. Se succede qualcosa di grave il tempo rallenta, ma non si ferma: avrai {:.0} secondi per decidere.",

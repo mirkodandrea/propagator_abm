@@ -20,9 +20,14 @@ pub fn load() -> Board {
     std::fs::read_to_string(path()).map(|s| Board::from_json(&s)).unwrap_or_default()
 }
 
-/// Save the board; a failure is reported, never fatal.
+/// Save the board; a failure is reported, never fatal. Never from the
+/// scripted game (`KIOSK_SHOT`): it plays as «Giulia», and the board now
+/// saves by itself, so it would enter the kiosk's real board.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn save(b: &Board) -> Result<(), String> {
+    if std::env::var_os("KIOSK_SHOT").is_some() {
+        return Ok(());
+    }
     let p = path();
     if let Some(dir) = p.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("classifica: {e}"))?;

@@ -4,6 +4,23 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
+- **2026-10-12, playtest dei colleghi** (commenti incollati dall'utente, 18 punti). Decisioni dell'utente (2026-10-12): **il nome del giocatore si chiede all'inizio, non più le iniziali, così i personaggi si rivolgono a lui**; «procedi con i fix semplici».
+  - [x] 2026-10-12 nome nell'intro («Come ti chiami?»): i livelli si attivano solo dopo aver scritto il nome. Lo usano la volontaria nel tutorial, i consigli in pausa, la sindaca e il meteo nelle battute (`characters::to`) e il titolo del finale. La classifica salva il nome da sola (`score::Entry::name`; le classifiche già salvate con `initials` si leggono ancora). «Nuova partita» dell'operatore cancella il nome; la partita scriptata gioca come «Giulia» e non scrive la classifica (`board::save`);
+  - [x] 2026-10-12 cursore a mano e bordo bianco immediato su tutti i pulsanti (`interact_cursor`, `animation_time` 0, `icons::pointing`); pulsanti dei livelli su tutta la larghezza, testo centrato;
+  - [x] 2026-10-12 finale: solo «Riprova», che torna all'intro e alla scelta del livello;
+  - [x] 2026-10-12 scheda: Difendi, Preallerta ed Evacua su una riga, icona sopra e testo sotto (`icons::tall_button`); «Difendi» ripremuto toglie la difesa; «metti per primo» sotto; le tre spiegazioni sempre in fondo, con più spazio;
+  - [x] 2026-10-12 tempo di evacuazione: la scheda dice «~N min per prepararsi, poi ~M min di strada» (`Kiosk::readying`, dai `prep_time_min` della popolazione meno la preparazione già fatta con la preallerta); il testo di «Evacua» non dice più «partono subito» e spiega che qualcuno aspetta (perché non si arriva al 100 %);
+  - [x] 2026-10-12 etichette dei mezzi: sempre un'asta del colore del mezzo fino a un punto dove il mezzo si trova; tolta la riga bianca che compariva solo quando l'etichetta veniva spostata;
+  - [x] 2026-10-12 legenda sfoltita: solo ciò che è sulla mappa o nelle schede, più una riga sui tempi di evacuazione;
+  - [x] 2026-10-12 «Ho capito» allineato (`tutorial.rs`, nel commit `6dfa637`); pannelli laterali uniformi con la barra laterale dell'altra sessione (`6dfa637`);
+  - [ ] decidere con l'utente: **distribuzione dei mezzi** (punti 6, 16, 17). Il «2-1-0» è la regola 2 del coordinatore; i paesi non ancora minacciati non ricevono mezzi (regola 1). Spiegarlo meglio, distribuire a rotazione o far scegliere quanti mezzi per paese? Prima l'A/B «concentrare contro distribuire»;
+  - [ ] messaggi dei personaggi più visibili (ingrandimento al cambio, bip facoltativo) e storico delle battute (punto 4);
+  - [ ] riprodurre headless «senza ordini meglio che con ordini» in un paese (punto 14): le squadre bagnano la vegetazione e il fuoco cambia strada? Poi raccontarlo nel «Perché» o correggere;
+  - [ ] freccia del vento più visibile sul territorio (punto 15); primi piani automatici sull'area colpita con `Kiosk::shot` (punto 18);
+  - [ ] chiedere ai colleghi se hanno giocato nel browser o nativo (punto 1, «pesante»);
+  - [ ] con la barra laterale, i badge dei paesi dietro la barra hanno ancora una linea che attraversa la barra (vista in `0_tour_2`);
+  - [ ] serve una tastiera al chiosco per il nome (o lo scrive l'operatore).
+
 - **2026-10-12, barra laterale** (richiesta dell'utente: «tutto nella barra tranne la scheda del paese quando si clicca, e il fumetto che può rimanere nella parte opposta, isolato»).
   - [x] 2026-10-12 `kiosk/ui.rs::sidebar`: a destra, larga 400 px, dall'alto: vento, ora con la barra delle ore, stato (in pausa / il tempo scorre / DECISIONE URGENTE con i secondi, lampeggiante alla fine), il pulsante del tempo oppure la scelta della crisi, il piano (righe cliccabili, apre la scheda), il coordinatore / i mezzi, gli ultimi aggiornamenti, la legenda (chiusa); in fondo la vista (zoom e vista iniziale). Sulla mappa restano le etichette dei paesi, la scheda aperta, le etichette dei mezzi, il segno del fuoco e il fumetto in basso a sinistra (alla crisi: «Decidi nella barra a destra»). La camera disegna la mappa solo a sinistra della barra (`Camera::viewport`, `kiosk/view.rs`) e rifà l'inquadratura iniziale sulla nuova misura. Tolti barra in alto (resta solo nel finale), bande «IN PAUSA» / «DECISIONE URGENTE», pannelli sparsi. Il tutorial punta alle sezioni della barra. Prova: stesso comando `KIOSK_SHOT` a 1920×1080;
   - [ ] provarlo con una persona: si nota la crisi nella barra? la lista del piano basta o serve trascinare per riordinare?
