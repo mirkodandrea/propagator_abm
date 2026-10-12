@@ -994,7 +994,8 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
     let alarm = crisis_district(k);
     // A chip moved off its place (by another chip, a panel, the screen edge)
     // keeps a thin line to it, so it is never a label of nowhere.
-    let leaders = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("guide")));
+    // Clipped to the map: a district behind the side bar draws no line across it.
+    let leaders = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("guide"))).with_clip_rect(screen_rect);
     for d in 0..n {
         let (Some((at, _)), Some(p)) = (place[d], screen(cam, sim, chip_anchor(sim, d), 0.0)) else { continue };
         if at.distance(p) > 30.0 {
