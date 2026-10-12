@@ -45,12 +45,20 @@ Durata a ×80 (×240 nei tratti quieti), un piano semplice: 2,2–3,1 minuti rea
 
 ## Incognite
 
-- **Le squadre di avviso non si vedono nel chiosco**: né sulla mappa né nelle schede (quanta parte del quartiere è avvisata). Il giocatore paga un costo che non vede.
-- Il testo dell'intro e della scheda non dice che gli avvisi li portano poche squadre.
+- ~~Le squadre di avviso non si vedono nel chiosco~~ e ~~la scheda non dice che gli avvisi li portano poche squadre~~: risolto, vedi «Aggiornamento».
 - Piano3, Le Ghiande in priorità 1: l'autobotte 1 resta in «rifornimento» da T+50 a T+170. Da capire.
 - Build web non rifatta (`scripts/build_web.sh`).
 - 4 squadre e 1 famiglia al minuto restano ipotesi.
 
+## Aggiornamento: pattuglie e avvisi nel chiosco (2026-10-12)
+
+Richiesta dell'utente: «indicare sui paesi come procede l'allertamento» e «anche i mezzi in movimento con la grafica». Nelle schermate le squadre di avviso si chiamano **pattuglie** (Polizia Locale), per non confonderle con la Squadra A dell'antincendio boschivo; anche le frasi del registro.
+- **Badge del paese**: dopo la campanella o l'uscita, «172/190» famiglie che hanno sentito l'ordine, finché non le hanno sentito tutte; poi, come prima, le famiglie evacuate (`Game::alerted`).
+- **Scheda**: mentre il tempo scorre, «Avvisate N famiglie su M: le pattuglie bussano porta a porta»; sotto i pulsanti, una riga sulle 4 pattuglie e sull'allerta sul telefono.
+- **Mappa**: un'auto della Polizia Locale per pattuglia (`toy::patrol`: banda blu, lampeggiante, altoparlante; `units::update_teams`), nascosta quando è parcheggiata in caserma, scura se il fuoco la raggiunge. Etichetta con l'asta come i mezzi: «P1», o «×3» per le pattuglie vicine. Riga nella legenda.
+
+Prova: `KIOSK_SIZE=1920x1080 KIOSK_CASE=Borgo2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_TUTORIAL=0 KIOSK_SHOT=<dir> target/release/game` → `3_esegui.png` (Castelvento «🔔 172/190», «×3» e «P3» sulla mappa), `2_anteprima.png` (scheda).
+
 ## Proposta (una)
 
-Mostrare le squadre di avviso: un segno sulla mappa per ogni squadra e, nella scheda di ogni quartiere, «avvisate N di M».
+Rifare la build web e provare la partita con una persona: si capisce che ordinare tutti i paesi rallenta gli avvisi?

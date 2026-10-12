@@ -52,6 +52,8 @@ const CHIP_H_COMPACT: f32 = 201.0;
 /// A district's badge on the map: rank, name, fire, units, order. Clicking it
 /// opens the full chip beside it.
 const BADGE_W: f32 = 196.0;
+/// The messenger patrols on the map (`units::PATROL`), for the legend.
+const PATROL: Color32 = Color32::from_rgb(40, 110, 230);
 const BADGE_H: f32 = 66.0;
 /// What the simulated families do is not what to do: said where it shows.
 const REAL_LIFE: &str = "Nella realtà, quando arriva l'ordine di evacuazione si parte subito. Aspettare di vedere il fuoco è uno degli errori più pericolosi.";
@@ -655,12 +657,12 @@ fn view_controls(ui: &mut egui::Ui, k: &mut Kiosk) {
         }
         if icons::button(ui, Icon::Home, "", false, GREY, true).clicked() {
             k.reset_view = true;
-        }
-    });
             k.follow = false;
         }
         if icons::button(ui, Icon::Fire, "Segui il fuoco", k.follow, ORANGE, true).clicked() {
             k.follow = !k.follow;
+        }
+    });
 }
 
 /// What the marks on the map mean, in the side bar, closed at first
@@ -674,6 +676,7 @@ fn legend(ui: &mut egui::Ui) {
         Arrow,
         Diamond,
         Stem,
+        Patrol,
     }
     // Only what is on the map or on the cards, short (playtest colleghi:
     // too much, and some of it seen only in the debrief). The cards say
@@ -705,6 +708,7 @@ fn legend(ui: &mut egui::Ui) {
             (Mark::Fill(Color32::from_rgb(70, 50, 40)), "area già bruciata"),
             (Mark::Arrow, "dove il vento spinge il fuoco"),
             (Mark::Stem, "un mezzo: il punto è dove si trova"),
+            (Mark::Patrol, "pattuglia che porta gli avvisi casa per casa"),
             (Mark::Ring(GREEN), "case difese da un mezzo"),
             (Mark::Line(GREEN, false), "strada che un mezzo sta facendo"),
             (Mark::Line(Color32::WHITE, true), "spostamento proposto, da confermare"),
@@ -748,6 +752,12 @@ fn legend(ui: &mut egui::Ui) {
                         p.rect_stroke(egui::Rect::from_center_size(egui::pos2(c.x, r.top() + 2.0), egui::vec2(16.0, 6.0)), 2.0, egui::Stroke::new(1.5, GREEN));
                         p.line_segment([egui::pos2(c.x, r.top() + 5.0), egui::pos2(c.x, r.bottom() - 3.0)], egui::Stroke::new(2.0, GREEN));
                         p.circle_filled(egui::pos2(c.x, r.bottom() - 3.0), 3.5, GREEN);
+                    }
+                    Mark::Patrol => {
+                        // as `patrol_labels` draws it: a bell on a stem
+                        icons::draw(p, egui::Rect::from_center_size(egui::pos2(c.x, r.top() + 4.0), egui::vec2(10.0, 10.0)), Icon::Bell, PATROL);
+                        p.line_segment([egui::pos2(c.x, r.top() + 9.0), egui::pos2(c.x, r.bottom() - 3.0)], egui::Stroke::new(2.0, PATROL));
+                        p.circle_filled(egui::pos2(c.x, r.bottom() - 3.0), 3.5, PATROL);
                     }
                 }
                 line(ui, text);
@@ -1092,12 +1102,17 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         Civil::Preallerta => { icons::show(ui, Icon::Bell, 20.0, AMBER); }
                         Civil::Nessuno => {}
                     }
-                    // the families: how many are out
+                    // the families: how many have heard the order while the
+                    // patrols are still knocking, then how many are out
                     let hh = &dist.households;
                     let safe = hh.iter().filter(|&&i| sim.agents.households[i].status == Status::Evacuated).count();
                     let reached = hh.iter().filter(|&&i| matches!(sim.agents.households[i].status, Status::Trapped | Status::Casualty)).count();
+                    let telling = sim.alerted(d).filter(|&(heard, all)| heard < all);
                     if reached > 0 {
                         icons::show(ui, Icon::Alert, 18.0, RED);
+                    } else if let Some((heard, all)) = telling {
+                        let colour = if sim.active.civil[d] == Civil::Evacua { BLUE } else { AMBER };
+                        ui.label(RichText::new(format!("{heard}/{all}")).size(13.0).color(colour));
                     } else if safe > 0 {
                         ui.label(RichText::new(format!("{safe}/{}", hh.len())).size(13.0).color(GREEN));
                     }
@@ -1250,6 +1265,9 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                 // pause, so changes of plan are few (user, 2026-10-09). The
                 // crises have their own answers.
                 if k.phase == Phase::Esegui {
+                    if let Some((heard, all)) = sim.alerted(d).filter(|&(heard, all)| heard < all) {
+                        ui.label(RichText::new(format!("Avvisate {heard} famiglie su {all}: le pattuglie bussano porta a porta")).size(14.0).color(GREY));
+                    }
                     let wait = k.pause_wait_min(sim.time_s());
                     let text = if k.pauses_left == 0 {
                         "Nessuna pausa rimasta: gli ordini restano questi".to_string()
@@ -1311,6 +1329,10 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         (BLUE, "Evacua: si preparano e partono; qualcuno aspetta di vedere il fuoco. Gli ordini alle famiglie non si ritirano."),
                     ] {
                         ui.add(egui::Label::new(RichText::new(text).size(13.0).color(colour.gamma_multiply(0.85))).wrap());
+                    }
+                    if let Some(m) = sim.messengers {
+                        let text = format!("Gli avvisi li portano {} pattuglie, casa per casa; chi ha l'allerta sul telefono la riceve subito. Più paesi avvisi insieme, più tardi arrivano a ciascuno.", m.teams);
+                        ui.add(egui::Label::new(RichText::new(text).size(13.0).color(GREY)).wrap());
                     }
                 }
             });
@@ -1509,6 +1531,56 @@ fn unit_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
                     if let Some((c, word)) = trouble {
                         ui.add(egui::Label::new(RichText::new(word).size(14.0).strong().color(c)).extend());
                     }
+                });
+            });
+        });
+    }
+    patrol_labels(ctx, sim, cam, &badges);
+}
+
+/// The messenger patrols' labels: a bell and «P1», or how many when several
+/// knock in the same place, on a stem down to the cars, as the units'; none
+/// while a patrol is parked at its station (`units::update_teams` hides it
+/// there too).
+fn patrol_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform), taken: &[egui::Rect]) {
+    use rocca::messengers::Task as T;
+    let sr = ctx.available_rect();
+    let mut taken = taken.to_vec();
+    // (where on screen, who, any lost), patrols within 40 px together
+    let mut groups: Vec<(egui::Pos2, Vec<usize>, bool)> = vec![];
+    for (i, t) in sim.teams.iter().enumerate() {
+        let parked = matches!(t.task, T::Idle { .. }) && (t.pos.x - t.base.x).hypot(t.pos.y - t.base.y) < 40.0;
+        if parked {
+            continue;
+        }
+        let Some(foot) = screen(cam, sim, t.pos, 0.0).filter(|f| sr.contains(*f)) else { continue };
+        let lost = t.task == T::Lost;
+        match groups.iter_mut().find(|g| g.2 == lost && (g.0 - foot).length() < 40.0) {
+            Some(g) => g.1.push(i),
+            None => groups.push((foot, vec![i], lost)),
+        }
+    }
+    for (foot, who, lost) in groups {
+        let colour = if lost { RED } else { PATROL };
+        let mut at = foot - egui::vec2(0.0, 34.0);
+        // not on a badge or another label: a little higher, a few times
+        for _ in 0..4 {
+            let label = egui::Rect::from_center_size(at - egui::vec2(0.0, 12.0), egui::vec2(64.0, 24.0));
+            let Some(r) = taken.iter().find(|r| r.intersects(label)) else { break };
+            at.y = r.top() - 4.0;
+        }
+        taken.push(egui::Rect::from_center_size(at - egui::vec2(0.0, 12.0), egui::vec2(60.0, 22.0)));
+        let guide = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("guide")));
+        guide.line_segment([at, foot], egui::Stroke::new(2.0, colour.gamma_multiply(0.8)));
+        guide.circle_filled(foot, 5.0, colour);
+        guide.circle_stroke(foot, 5.0, egui::Stroke::new(1.5, Color32::BLACK));
+        let text = if who.len() == 1 { format!("P{}", who[0] + 1) } else { format!("×{}", who.len()) };
+        egui::Area::new(egui::Id::new(("pattuglia", who[0]))).fixed_pos(at).pivot(Align2::CENTER_BOTTOM).interactable(false).order(egui::Order::Background).show(ctx, |ui| {
+            egui::Frame::none().fill(Color32::from_rgb(14, 16, 18)).stroke(egui::Stroke::new(2.0, colour)).rounding(6.0).inner_margin(egui::Margin::symmetric(5.0, 2.0)).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    icons::show(ui, Icon::Bell, 18.0, colour);
+                    ui.add(egui::Label::new(RichText::new(text).size(15.0).strong().color(Color32::WHITE)).extend());
                 });
             });
         });

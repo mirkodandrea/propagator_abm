@@ -169,6 +169,25 @@ pub fn car() -> Mesh {
     t.finish()
 }
 
+/// Polizia Locale patrol car, carrying the orders door to door: the toy car
+/// with a blue side band, a light bar and a loudspeaker horn on the roof.
+/// Body takes the tint; nose +Z.
+pub fn patrol() -> Mesh {
+    let mut t = Toy::default();
+    t.cuboid(V3::new(0.0, 0.62, 0.0), V3::new(0.95, 0.38, 2.15), WHITE);
+    t.cuboid(V3::new(0.0, 0.62, 0.0), V3::new(0.97, 0.10, 2.0), [0.10, 0.30, 0.85]); // band
+    t.cuboid(V3::new(0.0, 1.12, -0.2), V3::new(0.80, 0.34, 1.05), GLASS);
+    t.cuboid(V3::new(0.0, 1.30, -0.2), V3::new(0.78, 0.18, 0.95), WHITE);
+    t.cuboid(V3::new(0.0, 1.56, 0.1), V3::new(0.62, 0.10, 0.20), [0.15, 0.35, 1.0]); // light bar
+    t.cylinder(V3::new(0.0, 1.48, -0.7), 0.30, 0.42, [0.75, 0.75, 0.78]); // loudspeaker
+    for (x, z) in [(-0.95, 1.3), (0.95, 1.3), (-0.95, -1.3), (0.95, -1.3)] {
+        t.cuboid(V3::new(x, 0.32, z), V3::new(0.14, 0.32, 0.38), TYRE);
+    }
+    t.cuboid(V3::new(-0.6, 0.7, 2.17), V3::new(0.22, 0.12, 0.05), [1.0, 0.97, 0.7]);
+    t.cuboid(V3::new(0.6, 0.7, 2.17), V3::new(0.22, 0.12, 0.05), [1.0, 0.97, 0.7]);
+    t.finish()
+}
+
 /// Fire engine: tall cab, long tank, ladder rack, blue lights. 7 m, nose +Z.
 pub fn engine() -> Mesh {
     let mut t = Toy::default();

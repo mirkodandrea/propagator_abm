@@ -6,7 +6,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 - **2026-10-12, variante A e layout 5 nel gioco** (l'utente: «le modifiche per testare l'evacuazione totale non sono state portate nel gioco?»; scelta: **variante A**). Resoconto `docs/fase5/livelli_l5/README.md`.
   - [x] 2026-10-12 layout 5 pubblicato in `data/scenarios/rocca_ventosa`; `messengers` nel `game.json` (4 squadre, 1 famiglia/min, allerta sul telefono, parti uguali), letto da `Territory` e `Game::new`: chiosco e runner uguali. Livelli: Facile Rocco3, **Medio Terra1_gira**, **Esperto Borgo2_gira**. «Evacua tutti» perde più di 20 punti in 6/10/7 incendi (semi 1–3), come la prova headless. 39 target verdi (`fase3` e `authored_unit_policy` adattati);
-  - [ ] **mostrare le squadre di avviso**: segno sulla mappa e «avvisate N di M» nella scheda; dirlo nell'intro e nel tutorial;
+  - [x] 2026-10-12 **avvisi nel chiosco** (l'utente: «indicare sui paesi come procede l'allertamento», «anche i mezzi in movimento con la grafica»): «N/M» sul badge, riga nella scheda, auto della Polizia Locale sulla mappa con etichetta «P1»/«×3», legenda; nelle schermate si chiamano «pattuglie» (`docs/fase5/livelli_l5/README.md`, «Aggiornamento»);
+  - [ ] dirlo anche nel tutorial (passo della scheda) se nel playtest non si capisce;
   - [ ] rifare la build web e provarla;
   - [ ] Piano3, Le Ghiande priorità 1: autobotte 1 in «rifornimento» da T+50 a T+170, da capire;
   - [ ] rivedere le battute e il «Perché» per i livelli nuovi (frasi scritte per Coste2_gira/Forna3_gira?).

@@ -235,6 +235,22 @@ impl Game {
         self.fire.time_s()
     }
 
+    /// How far the active civil order of district `d` has got: the households
+    /// that have heard it (over their channel or from a team at the door) and
+    /// all of them. `None` while the district has no order.
+    pub fn alerted(&self, d: usize) -> Option<(usize, usize)> {
+        let hh = &self.districts.get(d)?.households;
+        let heard = |i: usize| {
+            let h = &self.agents.households[i];
+            match self.active.civil[d] {
+                Civil::Evacua => h.warning_received,
+                Civil::Preallerta => h.prealert_received || h.warning_received,
+                Civil::Nessuno => false,
+            }
+        };
+        (self.active.civil[d] != Civil::Nessuno).then(|| (hh.iter().filter(|&&i| heard(i)).count(), hh.len()))
+    }
+
     pub fn district_index(&self, name: &str) -> Option<usize> {
         self.districts.iter().position(|d| d.name.eq_ignore_ascii_case(name) || d.name.to_lowercase().contains(&name.to_lowercase()))
     }
@@ -344,7 +360,7 @@ impl Game {
             }
             if t.heat_s >= BURNOVER_S {
                 t.task = T::Lost;
-                let text = format!("una squadra che portava gli avvisi è stata raggiunta dal fuoco vicino a {}", self.near(self.teams[k].pos));
+                let text = format!("una pattuglia che portava gli avvisi è stata raggiunta dal fuoco vicino a {}", self.near(self.teams[k].pos));
                 self.log.push(LogEntry { at_s: now, text });
                 continue;
             }
@@ -379,7 +395,7 @@ impl Game {
                         t.left += 1;
                         t.unreachable.push((district, now + abm::drive::REROUTE_S as i64));
                         t.task = T::Idle { retry_s: now };
-                        self.say_once(now, format!("il fuoco è troppo vicino: le squadre lasciano {} senza finire gli avvisi", self.districts[district].name));
+                        self.say_once(now, format!("il fuoco è troppo vicino: le pattuglie lasciano {} senza finire gli avvisi", self.districts[district].name));
                     } else {
                         self.teams[k].task = T::Door { district, carry };
                     }
@@ -417,7 +433,7 @@ impl Game {
                 };
                 let to = if best != district && (closed || reach) {
                     self.teams[k].diverted += 1;
-                    let text = format!("una squadra diretta a {} va invece a {}", self.districts[district].name, self.districts[best].name);
+                    let text = format!("una pattuglia diretta a {} va invece a {}", self.districts[district].name, self.districts[best].name);
                     self.log.push(LogEntry { at_s: now, text });
                     best
                 } else {
@@ -430,7 +446,7 @@ impl Game {
                     Leg::Moving => T::Driving { district: to },
                     Leg::Arrived { .. } => {
                         if !self.teams.iter().any(|t| matches!(t.task, T::Door { district, .. } if district == to)) {
-                            let text = format!("una squadra arriva a {} per avvisare le famiglie", self.districts[to].name);
+                            let text = format!("una pattuglia arriva a {} per avvisare le famiglie", self.districts[to].name);
                             self.log.push(LogEntry { at_s: now, text });
                         }
                         T::Door { district: to, carry: 0.0 }

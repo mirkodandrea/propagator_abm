@@ -54,6 +54,19 @@ pub struct UnitView {
     pub id: usize,
 }
 
+/// A messenger patrol (`rocca::messengers`), by its index in `Game::teams`.
+#[derive(Component)]
+pub struct TeamView {
+    pub id: usize,
+}
+
+/// The patrols' colour: white and blue, as the Polizia Locale's cars.
+pub const PATROL: Color = Color::srgb(0.85, 0.90, 1.0);
+
+/// A patrol idle within this of its station is parked there, not drawn: the
+/// station is the fire station, and its engines are drawn on it.
+const PARKED_M: f32 = 40.0;
+
 /// A ring or ribbon belonging to a unit's current order. Rebuilt wholesale
 /// whenever the orders change, which is rare and cheap.
 #[derive(Component)]
@@ -155,6 +168,23 @@ pub fn setup(
     }
     info!("suppression layer: {} unit symbols", sim.crews.units.len());
 
+    // The messenger patrols, when the territory has them. Their number is
+    // fixed by `game.json`, so a restart keeps the same entities.
+    let patrol = meshes.add(crate::toy::patrol());
+    let patrols = sim.messengers.map_or(0, |m| m.teams);
+    for id in 0..patrols {
+        commands.spawn((
+            MaterialMeshBundle::<RetroMaterial> {
+                mesh: patrol.clone(),
+                material: mat(PATROL, 0.9),
+                transform: Transform::from_scale(Vec3::splat(symbol_scale)),
+                visibility: Visibility::Hidden,
+                ..default()
+            },
+            TeamView { id },
+        ));
+    }
+
     let mut unlit = |r: f32, g: f32, b: f32, a: f32| {
         materials.add(retro::material(StandardMaterial {
             base_color: Color::srgba(r, g, b, a),
@@ -167,9 +197,9 @@ pub fn setup(
         }, vr))
     };
     commands.insert_resource(UnitAssets {
-        order_ring: unlit(0.30, 0.95, 1.00, 0.85),
+        order_ring: unlit(1.00, 0.90, 0.10, 0.9),
         line_cut: unlit(0.55, 0.42, 0.30, 0.95),
-        line_todo: unlit(0.30, 0.95, 1.00, 0.35),
+        line_todo: unlit(1.00, 0.90, 0.10, 0.45),
         // Cut line reads as bare earth; wetted ground as a cool wash. The wash
         // is deliberately faint: a busy pair of aircraft saturates a hundred
         // cells inside an hour, and at any higher alpha that is a lake painted
@@ -271,6 +301,44 @@ pub fn update_units(
             if m.base.base_color != c {
                 m.base.base_color = c;
                 m.base.emissive = c.to_linear() * 1.2;
+            }
+        }
+    }
+}
+
+/// Move the messenger patrols: on the road, at the door they knock on, hidden
+/// while parked at their station; dark once caught by the fire.
+pub fn update_teams(
+    sim: Res<Sim>,
+    mut materials: ResMut<Assets<RetroMaterial>>,
+    mut query: Query<(&TeamView, &mut Transform, &mut Visibility, &Handle<RetroMaterial>)>,
+) {
+    use rocca::messengers::Task as T;
+    if !sim.is_changed() {
+        return;
+    }
+    for (view, mut tf, mut vis, mat) in &mut query {
+        let parked = |t: &rocca::messengers::Team| {
+            matches!(t.task, T::Idle { .. }) && (t.pos.x - t.base.x).hypot(t.pos.y - t.base.y) < PARKED_M
+        };
+        let Some(t) = sim.teams.get(view.id).filter(|t| !parked(t)) else {
+            if *vis != Visibility::Hidden {
+                *vis = Visibility::Hidden;
+            }
+            continue;
+        };
+        if *vis != Visibility::Inherited {
+            *vis = Visibility::Inherited;
+        }
+        let ground = sim.scn.terrain.height_at(t.pos);
+        tf.translation = frame::to_bevy(t.pos, ground + 0.05);
+        // as the ground units: heading zero is east, the mesh's nose is +Z
+        tf.rotation = Quat::from_rotation_y(t.heading + std::f32::consts::FRAC_PI_2);
+        if let Some(m) = materials.get_mut(mat) {
+            let c = if t.task == T::Lost { Color::srgb(0.10, 0.10, 0.10) } else { PATROL };
+            if m.base.base_color != c {
+                m.base.base_color = c;
+                m.base.emissive = c.to_linear() * 0.9;
             }
         }
     }
