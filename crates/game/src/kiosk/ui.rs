@@ -32,7 +32,7 @@ use scenario::Pos;
 use super::characters::{self, Line, Mood, Portraits, Speech, Who};
 use super::icons::{self, Icon};
 use super::tutorial;
-use super::{board, close_crisis, commit, new_game, Kiosk, Phase};
+use super::{board, close_crisis, commit, new_game, to_title, Kiosk, Phase};
 use crate::sim::{Sim, SimRestarted};
 
 const PANEL: Color32 = Color32::from_rgba_premultiplied(18, 20, 24, 250);
@@ -163,6 +163,26 @@ pub fn draw(
     }
     speech.player.clone_from(&k.player);
 
+    // abandoned, or finished and sent back: the title screen
+    if std::mem::take(&mut k.leave) {
+        to_title(k, &mut sim, &mut restarted);
+    }
+    if k.title {
+        k.side_w = 0.0;
+        if title(ctx, k, logo.as_deref().map(|l| l.0)) {
+            // a new game from the start; its no-orders run begins now, while
+            // the visitor reads the opening screen and types a name
+            k.title = false;
+            k.case = k.pick.clone();
+            new_game(k, &mut sim, &mut restarted);
+            k.intro = true;
+        }
+        if k.operator {
+            operator(ctx, k, &mut sim, &mut restarted);
+        }
+        focus.pointer = true;
+        return;
+    }
     if k.intro {
         intro(ctx, k, &sim, logo.as_deref().map(|l| l.0), faces);
         // a level picked: play its case (a new game if it changes, or if
@@ -257,6 +277,54 @@ pub fn load_logo(mut commands: Commands, mut images: ResMut<Assets<Image>>, mut 
     };
     let id = contexts.add_image(images.add(img));
     commands.insert_resource(Logo(id));
+}
+
+/// The title screen: a game plays behind it (`kiosk::demo`), here only the
+/// name and «Gioca». True when «Gioca» was pressed.
+fn title(ctx: &egui::Context, k: &Kiosk, logo: Option<egui::TextureId>) -> bool {
+    let screen = ctx.screen_rect();
+    let mut play = false;
+    egui::Area::new(egui::Id::new("titolo_fondo")).fixed_pos(screen.min).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
+        let p = ui.painter();
+        p.rect_filled(screen, 0.0, Color32::from_black_alpha(70));
+        // darker toward the middle, where the words are: one mesh whose
+        // vertex opacity follows a bell, so the band has no edge and no seams
+        let (h, n) = (640.0, 32);
+        let mut mesh = egui::Mesh::default();
+        for i in 0..=n {
+            let t = i as f32 / n as f32;
+            let bell = (std::f32::consts::PI * t).sin().powi(2);
+            let y = screen.center().y - h / 2.0 + h * t;
+            let c = Color32::from_black_alpha((170.0 * bell) as u8);
+            mesh.colored_vertex(egui::pos2(screen.left(), y), c);
+            mesh.colored_vertex(egui::pos2(screen.right(), y), c);
+            if i > 0 {
+                let k = 2 * i as u32;
+                mesh.add_triangle(k - 2, k - 1, k);
+                mesh.add_triangle(k - 1, k + 1, k);
+            }
+        }
+        p.add(egui::Shape::mesh(mesh));
+    });
+    egui::Area::new(egui::Id::new("titolo")).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+        ui.set_width(screen.width().min(900.0));
+        ui.vertical_centered(|ui| {
+            if let Some(t) = logo {
+                ui.add(egui::Image::new(egui::load::SizedTexture::new(t, egui::vec2(64.0, 80.0))));
+                ui.add_space(6.0);
+            }
+            ui.label(RichText::new("Rocca Ventosa").size(96.0).strong().color(Color32::WHITE));
+            ui.label(RichText::new("Aiutaci a gestire un incendio.").size(26.0).color(AMBER));
+            ui.add_space(34.0);
+            let b = egui::Button::new(RichText::new("Gioca").size(44.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(16.0).min_size(egui::vec2(360.0, 96.0));
+            play = icons::pointing(ui.add(b)).clicked();
+        });
+    });
+    egui::Area::new(egui::Id::new("titolo_nota")).anchor(Align2::LEFT_BOTTOM, [18.0, -14.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
+        ui.label(RichText::new(format!("Simulazione dimostrativa · {}", k.case)).size(14.0).color(GREY.gamma_multiply(0.75)));
+    });
+    ctx.request_repaint();
+    play
 }
 
 /// The opening screen: who made it, the situation, how to play, «Inizia».
@@ -402,11 +470,17 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                 });
             }
             ui.add_space(14.0);
+            ui.horizontal(|ui| {
+                if icons::pointing(ui.add(secondary("Indietro"))).clicked() {
+                    k.leave = true;
+                }
+                ui.add_space(8.0);
             ui.label(
                 RichText::new("Territorio immaginario, fuoco simulato con PROPAGATOR di Fondazione CIMA. Nella realtà segui sempre le indicazioni delle autorità.")
                     .size(13.0)
                     .color(GREY.gamma_multiply(0.75)),
             );
+            });
         });
     });
 }
@@ -1858,6 +1932,8 @@ fn sidebar(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &Gl
         ui.add_space(6.0);
         ui.separator();
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+            ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 40.0), egui::Layout::left_to_right(egui::Align::Center), |ui| abort_button(ui, k));
+            ui.separator();
             ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 52.0), egui::Layout::left_to_right(egui::Align::Center), |ui| view_controls(ui, k));
             ui.separator();
             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
@@ -1876,6 +1952,32 @@ fn sidebar(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &Gl
             });
         });
     });
+}
+
+/// «Abbandona la partita» at the foot of the side bar: asks once more, then
+/// goes back to the title screen (`Kiosk::leave`).
+fn abort_button(ui: &mut egui::Ui, k: &mut Kiosk) {
+    let now = ui.input(|i| i.time);
+    if k.abort_armed.is_some_and(|t| now - t > 6.0) {
+        k.abort_armed = None;
+    }
+    {
+        if k.abort_armed.is_none() {
+            if icons::pointing(ui.add(secondary("Abbandona la partita"))).clicked() {
+                k.abort_armed = Some(now);
+            }
+        } else {
+            ui.label(RichText::new("Abbandoni?").size(16.0).color(Color32::WHITE));
+            let yes = egui::Button::new(RichText::new("Sì, esci").size(18.0).strong().color(Color32::WHITE)).fill(RED.gamma_multiply(0.8)).rounding(8.0);
+            if icons::pointing(ui.add(yes)).clicked() {
+                k.abort_armed = None;
+                k.leave = true;
+            }
+            if icons::pointing(ui.add(secondary("No"))).clicked() {
+                k.abort_armed = None;
+            }
+        }
+    }
 }
 
 /// The game on a line: the three hours, with what the player decided and
@@ -2122,6 +2224,10 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                 if k.territory.levels.is_empty() && icons::pointing(ui.add_sized([BOARD_W, 64.0], big("Altro incendio"))).clicked() {
                     again = Some(k.next_case());
                 }
+                // for the next visitor: the title screen, the name forgotten
+                if icons::pointing(ui.add_sized([BOARD_W, 44.0], secondary("Schermata iniziale"))).clicked() {
+                    k.leave = true;
+                }
             });
             });
             });
@@ -2274,12 +2380,9 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
                         k.reset_armed = Some(now);
                     } else {
                         k.reset_armed = None;
-                        k.case = k.pick.clone();
-                        new_game(k, sim, restarted);
-                        k.intro = true;
-                        k.toured = false;
-                        // a new visitor: a new name
-                        k.player.clear();
+                        // a new visitor: the title screen, a new name; the
+                        // case picked here is the one «Gioca» starts
+                        to_title(k, sim, restarted);
                     }
                 }
                 if k.phase == Phase::Esegui && ui.add(secondary("Pausa")).clicked() {

@@ -171,6 +171,9 @@ pub fn draw(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, &Globa
                         if !last && ui.add(secondary("Salta")).clicked() {
                             next = Some(STEPS.len());
                         }
+                        if ui.add(secondary("Esci")).clicked() {
+                            k.leave = true;
+                        }
                         ui.label(RichText::new(format!("{}/{}", i + 1, STEPS.len())).size(15.0).color(Color32::from_gray(110)));
                         // pushed right by a space, not by a right-to-left
                         // layout: that one also puts the text at the

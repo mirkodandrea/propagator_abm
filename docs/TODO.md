@@ -4,6 +4,14 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
+- **2026-10-12, schermata del titolo con partita di sfondo, abbandono, ritorno all'inizio** (richiesta dell'utente; sottotitolo scelto da lui: «Aiutaci a gestire un incendio.»). `kiosk/mod.rs` (`Kiosk::title`, `demo`, `to_title`, `demo_shot`), `kiosk/ui.rs::title`, `kiosk/view.rs` (regia della camera), `main.rs` (registrazione di `hide_game_overlays`).
+  - [x] 2026-10-12 all'avvio: titolo + «Gioca» sopra una partita scriptata (stesso motore, piano fisso, crisi chiuse da un timer, passa al caso successivo a fine partita; niente classifica). Nessun elemento di UI di gioco. «Gioca» porta all'intro con il nome e i livelli;
+  - [x] 2026-10-12 regia: ogni 26 s un'inquadratura (fronte intero, paese più vicino al fuoco, squadra vicina al fuoco, fronte da vicino) con angolo diverso e velocità ×1,5/×0,8/×0,4; profondità di campo più stretta e bloom più forte (solo sul titolo, tornano i valori di gioco in partita);
+  - [x] 2026-10-12 abbandono in ogni momento: «Abbandona la partita» in fondo alla barra (chiede conferma), «Esci» nel tutorial, «Indietro» nell'intro; **«Schermata iniziale»** nel finale. Tutti portano al titolo (nome, tutorial e livello dimenticati: nuovo visitatore); «Nuova partita» dell'operatore pure;
+  - [x] 2026-10-12 sul titolo nessun segno del gioco, nemmeno nel mondo 3D: `kiosk/view.rs::hide_game_overlays` nasconde freccia del vento, anelli degli ordini, tracciati, segnali sulle case e marcatori; la freccia, che con `Hidden` si disegnava lo stesso, è anche ridotta a scala 0. Regia più lenta (26 s a inquadratura, soggetto scelto da `pick_shot`: fronte, paese più vicino al fuoco, squadra vicina al fuoco);
+  - [ ] provarlo con una persona e nel browser (profondità di campo in WebGL; carico della partita di sfondo);
+  - [ ] altre idee: fumo e brace più vivi, lettere del titolo che appaiono, una frase che cambia con l'inquadratura.
+
 - **Fase corrente: fase 6, playtest finale** (`docs/03-PIANO-DI-AZIONE.md`). **Fase 5 chiusa il 2026-10-12** (l'utente: «dichiariamo chiusa questa fase 5»). L'utente sta curando dettagli grafici in un'altra sessione.
 - **Prossimo checkpoint umano: 6**, sui risultati dei playtest con persone: durata misurata, prima azione intuitiva, almeno un compromesso spiegato dal giocatore, nessun blocco o crash, riavvio manuale verificato.
 - Gioco attuale: layout 5, pattuglie di avviso (variante A), livelli Facile Rocco3, Medio Terra1_gira, Esperto Borgo2_gira (`docs/fase5/livelli_l5/README.md`).

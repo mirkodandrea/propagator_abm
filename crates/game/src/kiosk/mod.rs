@@ -11,6 +11,12 @@
 //! **Fine** (facts per district, against the same fire with no orders). No
 //! inactivity reset: a new game starts from the debrief's «Riprova» / «Altro
 //! incendio» or from the operator bar (F2), never by itself.
+//!
+//! Before all of it, the **title screen**: a scripted game plays behind the
+//! title (same engine, same camera, a fixed plan, crises closed by a timer)
+//! until someone presses «Gioca». A game can be abandoned at any time
+//! (`Kiosk::leave`) and a finished one goes back to the title: both reach the
+//! title the same way, by [`to_title`].
 
 pub mod board;
 pub mod characters;
@@ -122,6 +128,20 @@ pub struct Kiosk {
     /// While time runs the camera follows the fire; a hand on the map (or
     /// the button in the view controls) turns it off.
     pub follow: bool,
+    /// The title screen is showing, with a scripted game behind it ([`demo`]).
+    pub title: bool,
+    /// Real seconds the title screen's game has been on show: the camera
+    /// director's clock ([`demo_shot`]).
+    pub demo_t: f32,
+    /// The simulation speed the director asks for, eased.
+    demo_speed: f32,
+    /// The shot being held (its index) and what it looks at.
+    pub demo_pick: (usize, Subject),
+    /// Leave the game for the title screen at the next frame (the sidebar's
+    /// «Abbandona», the tour's «Esci», the debrief's «Schermata iniziale»).
+    pub leave: bool,
+    /// Real time «Abbandona» was pressed, waiting for the confirmation.
+    pub abort_armed: Option<f64>,
     /// The opening screen is showing: at launch, after the operator's «Nuova
     /// partita» (a new visitor) and after «Riprova» (the same one, to pick a
     /// level; the name is kept).
@@ -212,7 +232,13 @@ impl Kiosk {
             toured: false,
             tour_on: std::env::var("KIOSK_TUTORIAL").map_or(true, |v| v != "0"),
             crisis_s: CRISIS_S,
-            intro: true,
+            title: true,
+            demo_t: 0.0,
+            demo_speed: 1.0,
+            demo_pick: (usize::MAX, Subject::Crew(usize::MAX)),
+            leave: false,
+            abort_armed: None,
+            intro: false,
             started: false,
             pauses_left: MAX_PAUSES,
             level: None,
@@ -329,7 +355,6 @@ pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<Next
         Ok((mut k, sim)) => {
             k.proposed = Plan::new(sim.districts.len());
             k.pick = k.case.clone();
-            k.start_baseline();
             commands.insert_resource(k);
             commands.insert_resource(sim);
             commands.insert_resource(characters::Speech::default());
@@ -344,6 +369,110 @@ pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<Next
 
 /// New game, same territory: the operator's manual restart.
 pub fn new_game(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+    restart(kiosk, sim, restarted, true);
+}
+
+/// Back to the title screen: a new visitor (the name, the tour and the level
+/// are forgotten) and the next case of the playlist playing by itself.
+pub fn to_title(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+    kiosk.title = true;
+    kiosk.demo_t = 0.0;
+    kiosk.demo_pick = (usize::MAX, Subject::Crew(usize::MAX));
+    kiosk.intro = false;
+    kiosk.leave = false;
+    kiosk.abort_armed = None;
+    kiosk.tour = None;
+    kiosk.toured = false;
+    kiosk.level = None;
+    kiosk.picked_level = None;
+    kiosk.player.clear();
+    kiosk.case = kiosk.next_case();
+    restart(kiosk, sim, restarted, false);
+}
+
+/// The place a crisis is about, if it is about one.
+fn crisis_place(c: &rocca::Crisis) -> Option<usize> {
+    match c.kind {
+        rocca::crisis::Kind::Scoperto { district } | rocca::crisis::Kind::Previsione { district } | rocca::crisis::Kind::Vento { district } => Some(district),
+        rocca::crisis::Kind::MezzoPerso { .. } => None,
+    }
+}
+
+/// Real seconds a shot of the title screen's camera lasts: long enough to
+/// see something happen, not a montage.
+pub const SHOT_S: f32 = 26.0;
+
+/// What the title screen's camera is looking at; chosen once per shot, by
+/// what the game is showing (`view::pick_shot`).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Subject {
+    /// The whole burning front and the towns near it.
+    Wide,
+    /// The front, close.
+    Front,
+    /// The town the fire is nearest to.
+    District(usize),
+    /// A ground crew working near the fire.
+    Crew(usize),
+}
+
+impl Subject {
+    /// How fast the game runs while this is on show, against the kiosk's
+    /// speed: fast over the whole front, slow enough on a crew to see it move.
+    fn pace(self) -> f32 {
+        match self {
+            Subject::Wide => 1.5,
+            Subject::Front => 0.8,
+            Subject::District(_) => 0.8,
+            Subject::Crew(_) => 0.4,
+        }
+    }
+}
+
+/// The index of the shot at real time `t` of the title screen.
+pub fn demo_shot(t: f32) -> usize {
+    (t / SHOT_S) as usize
+}
+
+/// The plan every scripted game starts with: the place the fire was picked
+/// for first, the others after it, a pre-alert there.
+fn scripted_plan(sim: &Sim) -> Plan {
+    let near = sim.district_index(&sim.case.near).unwrap_or(0);
+    let mut prio = vec![near];
+    prio.extend((0..sim.districts.len()).filter(|&d| d != near));
+    Plan::new(sim.districts.len()).with_priorities(&prio).with_civil(near, rocca::Civil::Preallerta)
+}
+
+/// The game behind the title screen, played by a script: the plan above, the
+/// place a crisis names put first after a few seconds, and when the case has
+/// run its course the next one starts. Nothing here is scored or saved.
+fn demo(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+    match kiosk.phase {
+        Phase::Pianifica if kiosk.phase_t > 2.0 => {
+            kiosk.proposed = scripted_plan(sim);
+            commit(kiosk, sim);
+            kiosk.resumed_at_s = sim.time_s();
+            kiosk.enter(Phase::Esegui);
+        }
+        Phase::Crisi if kiosk.phase_t > 3.0 => {
+            if let Some(d) = kiosk.crisis.as_ref().and_then(crisis_place) {
+                let mut prio = vec![d];
+                prio.extend(kiosk.proposed.priorities.iter().copied().filter(|&x| x != d));
+                kiosk.proposed.priorities = prio;
+            }
+            close_crisis(kiosk, sim);
+        }
+        Phase::Fine if kiosk.phase_t > 6.0 => {
+            kiosk.case = kiosk.next_case();
+            restart(kiosk, sim, restarted, false);
+        }
+        _ => {}
+    }
+}
+
+/// Start the case again from its beginning; `baseline` also starts the
+/// no-orders run the debrief compares with (not needed by the scripted game).
+fn restart(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, baseline: bool) {
     match sim.restart(&kiosk.case, kiosk.seed) {
         Ok(()) => {
             kiosk.proposed = Plan::new(sim.districts.len());
@@ -355,7 +484,9 @@ pub fn new_game(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<Si
             kiosk.selected = None;
             kiosk.resumed_at_s = 0;
             kiosk.placed = None;
-            kiosk.start_baseline();
+            if baseline {
+                kiosk.start_baseline();
+            }
             kiosk.enter(Phase::Pianifica);
             restarted.send(SimRestarted);
         }
@@ -386,13 +517,21 @@ pub fn commit(kiosk: &mut Kiosk, sim: &mut Sim) {
 }
 
 /// Run the clock and keep the preview current.
-pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
+pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: EventWriter<SimRestarted>) {
     let dt = time.delta_seconds();
     #[cfg(target_arch = "wasm32")]
     kiosk.advance_baseline();
     kiosk.phase_t += dt;
+    if kiosk.title {
+        kiosk.demo_t += dt;
+        demo(&mut kiosk, &mut sim, &mut restarted);
+        // the director's pace: eased, so speed changes are felt, not jumped
+        let want = kiosk.demo_pick.1.pace();
+        kiosk.demo_speed += (want - kiosk.demo_speed) * (1.0 - (-0.4 * dt).exp());
+    }
     sim.speed = match kiosk.phase {
         // faster while nothing is happening and nothing is being composed
+        Phase::Esegui if kiosk.title => kiosk.speed * kiosk.demo_speed,
         Phase::Esegui if kiosk.proposed == sim.active && sim.is_quiet(QUIET_S) => kiosk.speed * QUIET_BOOST,
         Phase::Esegui => kiosk.speed,
         Phase::Crisi => 1.0,
@@ -424,7 +563,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
     // The preview follows the plan being composed and the world as it moves,
     // at most once a simulated review interval while running.
     let stale = kiosk.dirty || (kiosk.phase != Phase::Pianifica && sim.generation >= kiosk.preview_at.saturating_add(20));
-    if stale && kiosk.phase != Phase::Fine {
+    if stale && kiosk.phase != Phase::Fine && !kiosk.title {
         kiosk.preview = sim.preview(&kiosk.proposed).ok();
         kiosk.risk = sim.districts.iter().map(|d| rocca::district::exposure(d, &sim.agents, &sim.fire, &sim.scn)).collect();
         kiosk.evacuation = sim.districts.iter().map(|d| {
@@ -483,6 +622,8 @@ pub fn shots(
     match stage.0 {
         0 if end_only && stage.1 > 3.0 => {
             kiosk.player = "Giulia".into();
+            kiosk.title = false;
+            new_game(&mut kiosk, &mut sim, &mut restarted);
             kiosk.intro = false;
             kiosk.started = true;
             let near = sim.district_index(&sim.case.near).unwrap_or(0);
@@ -497,6 +638,15 @@ pub fn shots(
             sim.generation += 1;
             kiosk.enter(Phase::Fine);
             *stage = (6, 0.0);
+        }
+        // the title screen with its game behind, then «Gioca»
+        0 if kiosk.title && stage.1 > 12.0 => {
+            snap("0_titolo");
+            kiosk.title = false;
+            kiosk.case = kiosk.pick.clone();
+            new_game(&mut kiosk, &mut sim, &mut restarted);
+            kiosk.intro = true;
+            stage.1 = 0.0;
         }
         // a name typed, as a visitor would, so the intro and the lines show it
         0 if kiosk.intro && kiosk.player.is_empty() && stage.1 > 4.0 => {
@@ -546,10 +696,7 @@ pub fn shots(
         }
         // at the first crisis, put the place it names first, and show the proposal
         5 if kiosk.phase == Phase::Crisi && kiosk.phase_t > 1.0 => {
-            if let Some(d) = kiosk.crisis.as_ref().and_then(|c| match c.kind {
-                rocca::crisis::Kind::Scoperto { district } | rocca::crisis::Kind::Previsione { district } | rocca::crisis::Kind::Vento { district } => Some(district),
-                rocca::crisis::Kind::MezzoPerso { .. } => None,
-            }) {
+            if let Some(d) = kiosk.crisis.as_ref().and_then(crisis_place) {
                 let mut prio = vec![d];
                 prio.extend(kiosk.proposed.priorities.iter().copied().filter(|&x| x != d));
                 kiosk.proposed.priorities = prio;

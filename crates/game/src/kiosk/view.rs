@@ -11,7 +11,7 @@ use bevy::window::PrimaryWindow;
 
 use scenario::Pos;
 
-use super::{Kiosk, Phase};
+use super::{Kiosk, Phase, Subject};
 use rocca::Game;
 use crate::camera::OrbitCamera;
 use crate::sim::Sim;
@@ -207,7 +207,8 @@ pub fn camera(
     let touched = input.touches.iter().any(|t| t.delta() != Vec2::ZERO)
         || delta.length_squared() > 0.0 && (drag.left || drag.right || drag.middle)
         || over_map && (scroll != 0.0 || trackpad != Vec2::ZERO || pinch != 0.0 || rotation != 0.0);
-    if touched {
+    // the scripted game behind the title screen is nobody's to steer
+    if touched && !kiosk.title {
         kiosk.shot = None;
         kiosk.follow = false;
         *released = Some((kiosk.phase, t));
@@ -304,10 +305,51 @@ pub fn camera(
                     kiosk.shot = None;
                 }
             }
+            // Behind the title screen: a director, not a follower. A shot
+            // lasts `SHOT_S`; its subject is picked when it begins, from what
+            // the game shows then, and the camera glides to it slowly.
+            if kiosk.title {
+                if let Some((yaw0, d)) = *home_view {
+                    let n = super::demo_shot(kiosk.demo_t);
+                    if kiosk.demo_pick.0 != n {
+                        kiosk.demo_pick = (n, pick_shot(&sim, n, kiosk.demo_pick.1));
+                    }
+                    let on = |p: Pos| crate::frame::to_bevy(p, sim.scn.terrain.height_at(p));
+                    let front = fire_extent(&sim);
+                    let wide = |front: Option<(Vec2, f32)>| match front {
+                        Some((mid, span)) => (Vec3::new(mid.x, orbit.focus.y, mid.y), (span * 2.8).clamp(d * 0.5, d), scene_pitch, 0.0),
+                        None => (home, d, scene_pitch, 0.0),
+                    };
+                    let (goal, dist, pitch, sway) = match kiosk.demo_pick.1 {
+                        Subject::Front => match front {
+                            Some((mid, _)) => (Vec3::new(mid.x, orbit.focus.y, mid.y), d * 0.32, -0.62, 0.6),
+                            None => wide(front),
+                        },
+                        Subject::District(i) if i < sim.districts.len() => (on(sim.districts[i].centre), d * 0.26, -0.55, -0.5),
+                        Subject::Crew(i) if i < sim.crews.units.len() => (on(sim.crews.units[i].pos), d * 0.17, -0.5, 0.7),
+                        _ => wide(front),
+                    };
+                    let off = Vec2::new(goal.x - home.x, goal.z - home.z).clamp_length_max(PAN_RADIUS_M);
+                    let goal = Vec3::new(home.x + off.x, goal.y, home.z + off.y);
+                    // the goal itself is smoothed (a crew moves in jumps), then
+                    // the camera eases to it: two slow stages, no sudden move
+                    let dt = time.delta_seconds().min(0.1);
+                    let (g, gd) = tracked.get_or_insert((Vec2::new(goal.x, goal.z), dist));
+                    let s = 1.0 - (-0.9 * dt).exp();
+                    *g += (Vec2::new(goal.x, goal.z) - *g) * s;
+                    *gd += (dist - *gd) * s;
+                    let a = 1.0 - (-0.5 * dt).exp();
+                    orbit.focus = orbit.focus.lerp(Vec3::new(g.x, goal.y, g.y), a);
+                    orbit.distance += (*gd - orbit.distance) * a;
+                    orbit.pitch += (pitch - orbit.pitch) * a;
+                    // always a slow drift of the angle on top of the shot's
+                    let yaw = yaw0 + sway * 0.5 + 0.2 * (kiosk.demo_t * 0.08).sin();
+                    orbit.yaw += (yaw - orbit.yaw) * (1.0 - (-0.35 * dt).exp());
+                }
             // Time is running: follow the fire, slowly, keeping it framed.
             // The goal is smoothed first (the front's middle jumps as cells
             // catch), then the camera eases to it.
-            if kiosk.follow && matches!(kiosk.phase, Phase::Esegui | Phase::Crisi) && kiosk.shot.is_none() && !user_has_it {
+            } else if kiosk.follow && matches!(kiosk.phase, Phase::Esegui | Phase::Crisi) && kiosk.shot.is_none() && !user_has_it {
                 if let (Some((_, d)), Some((mid, span))) = (*home_view, fire_extent(&sim)) {
                     let dt = time.delta_seconds().min(0.1);
                     let (t_mid, t_span) = tracked.get_or_insert((mid, span));
@@ -381,6 +423,40 @@ fn fire_extent(sim: &Sim) -> Option<(Vec2, f32)> {
     Some(((lo + hi) * 0.5, (hi - lo).max_element().max(400.0)))
 }
 
+/// What the title screen's shot `n` looks at: the whole front first, then, in
+/// turn, the town the fire is nearest to, a crew working close to it and the
+/// front close; a subject that is not there (no crew near the fire) is
+/// skipped, and the one just shown is not shown again.
+fn pick_shot(sim: &Sim, n: usize, last: Subject) -> Subject {
+    let cells = sim.fire.active_cells();
+    if cells.is_empty() {
+        return Subject::Wide;
+    }
+    let step = (cells.len() / 300).max(1);
+    let fire: Vec<Pos> = cells.iter().step_by(step).map(|&c| sim.scn.world.centre_of(c)).collect();
+    let gap = |p: Pos| fire.iter().map(|f| (f.x - p.x).hypot(f.y - p.y)).fold(f32::MAX, f32::min);
+    // towns by how near the fire is, within what the eye can take in
+    let mut towns: Vec<(usize, f32)> = sim.districts.iter().enumerate().map(|(i, d)| (i, gap(d.centre))).filter(|t| t.1 < 3000.0).collect();
+    towns.sort_by(|a, b| a.1.total_cmp(&b.1));
+    // ground crews close to the fire, not parked at the base
+    let mut crews: Vec<(usize, f32)> = sim.crews.units.iter().enumerate().filter(|(_, u)| !u.kind.is_air()).map(|(i, u)| (i, gap(u.pos))).filter(|t| t.1 < 900.0).collect();
+    crews.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let order = [0usize, 1, 2, 3, 0, 1, 2];
+    for k in 0..order.len() {
+        let want = order[(n + k) % order.len()];
+        let subject = match want {
+            0 => Some(Subject::Wide),
+            1 => towns.iter().map(|t| Subject::District(t.0)).find(|s| *s != last),
+            2 => crews.iter().map(|t| Subject::Crew(t.0)).find(|s| *s != last),
+            _ => Some(Subject::Front),
+        };
+        if let Some(s) = subject.filter(|s| *s != last) {
+            return s;
+        }
+    }
+    Subject::Wide
+}
+
 /// `KIOSK_SHOT_ZOOM=<k>` scales the play distance, to photograph close-ups.
 fn shot_zoom() -> f32 {
     static Z: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
@@ -395,4 +471,47 @@ fn shot_focus() -> Option<(f32, f32)> {
         let (a, b) = v.split_once(',')?;
         Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
     })
+}
+
+/// Behind the title screen only the landscape and the people in it show: the
+/// layer of the game's own signs (wind arrow, order rings, routes, beacons,
+/// marks on homes) is hidden, and shown again when a game begins. Runs after
+/// the systems that build it, so nothing flashes.
+#[allow(clippy::type_complexity)]
+pub fn hide_game_overlays(
+    kiosk: Res<Kiosk>,
+    mut hidden: Local<bool>,
+    mut arrow: Query<&mut Transform, With<crate::overlays::WindArrow>>,
+    mut signs: Query<
+        &mut Visibility,
+        Or<(
+            With<crate::overlays::WindArrow>,
+            With<crate::overlays::DynamicMarker>,
+            With<crate::overlays::BeaconLayer>,
+            With<crate::overlays::OrderRing>,
+            With<crate::overlays::RouteMark>,
+            With<crate::units::OrderMarker>,
+            With<crate::units::WorkOverlay>,
+        )>,
+    >,
+) {
+    if kiosk.title {
+        // every frame: signs are rebuilt while the game runs
+        for mut v in &mut signs {
+            if *v != Visibility::Hidden {
+                *v = Visibility::Hidden;
+            }
+        }
+        // the wind arrow still draws when hidden: shrunk to nothing as well
+        // (`update_wind` sets its size again every frame of a game)
+        for mut t in &mut arrow {
+            t.scale = Vec3::ZERO;
+        }
+        *hidden = true;
+    } else if *hidden {
+        for mut v in &mut signs {
+            *v = Visibility::Inherited;
+        }
+        *hidden = false;
+    }
 }
