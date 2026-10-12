@@ -311,19 +311,27 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
         ui.painter().rect_filled(screen, 0.0, Color32::from_rgba_premultiplied(8, 10, 14, 200));
     });
     egui::Area::new(egui::Id::new("intro")).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
-        egui::Frame::none().fill(Color32::from_rgb(18, 20, 24)).stroke(egui::Stroke::new(1.0, Color32::from_gray(80))).rounding(14.0).inner_margin(28.0).show(ui, |ui| {
-            ui.set_width((screen.width() - 64.0).min(860.0));
+        egui::Frame::none()
+            .fill(Color32::from_rgb(18, 20, 24))
+            .stroke(egui::Stroke::new(1.5, AMBER.gamma_multiply(0.55)))
+            .shadow(egui::epaint::Shadow { offset: egui::vec2(0.0, 10.0), blur: 40.0, spread: 4.0, color: Color32::from_black_alpha(160) })
+            .rounding(18.0)
+            .inner_margin(egui::Margin { left: 36.0, right: 36.0, top: 30.0, bottom: 24.0 })
+            .show(ui, |ui| {
+            ui.set_width((screen.width() - 72.0).min(900.0));
             ui.horizontal(|ui| {
                 if let Some(t) = logo {
                     ui.add(egui::Image::new(egui::load::SizedTexture::new(t, egui::vec2(77.0, 96.0))));
                     ui.add_space(14.0);
                 }
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Rocca Ventosa").size(42.0).strong().color(Color32::WHITE));
-                    ui.label(RichText::new("Aiutaci a gestire questa emergenza.").size(20.0).color(AMBER));
+                    ui.label(RichText::new("Rocca Ventosa").size(48.0).strong().color(Color32::WHITE));
+                    ui.label(RichText::new("Aiutaci a gestire questa emergenza.").size(22.0).color(AMBER));
                 });
             });
-            ui.add_space(12.0);
+            ui.add_space(14.0);
+            ui.separator();
+            ui.add_space(10.0);
             ui.horizontal(|ui| {
                 characters::portrait(ui, faces, Who::Volontaria, Mood::Preoccupato, 110.0);
                 ui.add_space(18.0);
@@ -343,21 +351,30 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
             ui.add_space(10.0);
             // the people the player works with, who speak during the game: a
             // team photo, faces and names only
-            ui.label(RichText::new("La squadra con cui lavori").size(16.0).color(GREY));
-            ui.add_space(4.0);
+            ui.label(RichText::new("LA SQUADRA CON CUI LAVORI").size(13.0).strong().color(GREY.gamma_multiply(0.7)));
+            ui.add_space(6.0);
             let team = [Who::Sindaca, Who::Dos, Who::Meteo, Who::Volontaria];
-            ui.columns(team.len(), |cols| {
-                for (ui, who) in cols.iter_mut().zip(team) {
-                    ui.vertical_centered(|ui| {
-                        characters::portrait(ui, faces, who, Mood::Calmo, 64.0);
-                        ui.label(RichText::new(who.short()).size(15.0).strong().color(who.colour()));
-                    });
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 14.0;
+                for who in team {
+                    egui::Frame::none()
+                        .fill(who.colour().gamma_multiply(0.10))
+                        .stroke(egui::Stroke::new(1.0, who.colour().gamma_multiply(0.35)))
+                        .rounding(40.0)
+                        .inner_margin(egui::Margin { left: 6.0, right: 14.0, top: 6.0, bottom: 6.0 })
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                characters::portrait(ui, faces, who, Mood::Calmo, 48.0);
+                                ui.label(RichText::new(who.short()).size(16.0).strong().color(who.colour()));
+                            });
+                        });
                 }
             });
             // how to play is shown on the map once the game starts (`tutorial`)
-            ui.add_space(16.0);
-            ui.label(RichText::new("Alla fine vedrai com'è andata, confrontata con lo stesso incendio senza ordini.").size(15.0).color(GREY));
-            ui.add_space(6.0);
+            ui.add_space(12.0);
+            ui.label(RichText::new("Alla fine vedrai com'è andata, confrontata con lo stesso incendio senza ordini.").size(15.0).italics().color(GREY));
+            ui.add_space(10.0);
+            ui.separator();
             ui.add_space(10.0);
             // the difficulty, as three fires (user, 2026-10-10); without
             // levels in game.json, the single button of before
@@ -381,38 +398,59 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                         .font(egui::FontId::proportional(24.0))
                         .char_limit(rocca::score::NAME_MAX)
                         .desired_width(320.0)
-                        .margin(egui::vec2(10.0, 8.0));
+                        .margin(egui::vec2(12.0, 8.0));
                     let r = ui.add(edit);
                     if ui.ctx().memory(|m| m.focused().is_none()) {
                         r.request_focus();
                     }
                 });
                 let named = !rocca::score::name(&k.player).is_empty();
-                ui.add_space(12.0);
+                ui.add_space(14.0);
                 let ask = if named { "Scegli la difficoltà e inizia" } else { "Scrivi il tuo nome, poi scegli la difficoltà" };
                 ui.label(RichText::new(ask).size(20.0).strong().color(if named { Color32::WHITE } else { GREY }));
-                ui.add_space(4.0);
-                // as wide as the panel, so the margins left and right match
-                // (playtest colleghi)
+                ui.add_space(6.0);
+                // three cards, green to red, as wide as the panel; the whole
+                // card is the button
+                let tints = [GREEN, AMBER, RED];
                 ui.columns(levels.len(), |cols| {
                     for ((i, l), ui) in levels.iter().enumerate().zip(cols.iter_mut()) {
-                        let b = egui::Button::new(RichText::new(&l.name).size(28.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0);
-                        // a centred layout, or the word sits at the button's left
-                        ui.vertical_centered_justified(|ui| {
-                            if ui.add_enabled(named, b.min_size(egui::vec2(0.0, 64.0))).clicked() {
+                        let tint = tints[i.min(tints.len() - 1)];
+                        let tint = if named { tint } else { tint.gamma_multiply(0.7) };
+                        let id = ui.id().with(("livello", i));
+                        let hover = ui.ctx().memory(|m| m.data.get_temp::<bool>(id)).unwrap_or(false) && named;
+                        let card = egui::Frame::none()
+                            .fill(if hover { tint.gamma_multiply(0.30) } else { tint.gamma_multiply(0.12) })
+                            .stroke(egui::Stroke::new(if hover { 2.5 } else { 1.5 }, tint))
+                            .rounding(14.0)
+                            .inner_margin(14.0)
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.set_min_height(96.0);
+                                ui.vertical_centered(|ui| {
+                                    ui.label(RichText::new(&l.name).size(30.0).strong().color(tint));
+                                });
+                                ui.add_space(4.0);
+                                ui.vertical_centered(|ui| {
+                                    ui.add(egui::Label::new(RichText::new(&l.about).size(15.0).color(if named { GREY } else { GREY.gamma_multiply(0.8) })).wrap());
+                                });
+                            });
+                        let r = ui.interact(card.response.rect, id.with("clic"), egui::Sense::click());
+                        ui.ctx().memory_mut(|m| m.data.insert_temp(id, r.hovered()));
+                        if named {
+                            let r = icons::pointing(r);
+                            if r.clicked() {
                                 k.player = rocca::score::name(&k.player);
                                 k.picked_level = Some(i);
                             }
-                        });
-                        ui.add(egui::Label::new(RichText::new(&l.about).size(15.0).color(GREY)).wrap());
+                        }
                     }
                 });
             }
-            ui.add_space(10.0);
+            ui.add_space(14.0);
             ui.label(
                 RichText::new("Territorio immaginario, fuoco simulato con PROPAGATOR di Fondazione CIMA. Nella realtà segui sempre le indicazioni delle autorità.")
-                    .size(14.0)
-                    .color(GREY),
+                    .size(13.0)
+                    .color(GREY.gamma_multiply(0.75)),
             );
         });
     });

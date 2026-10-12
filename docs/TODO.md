@@ -20,6 +20,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - [x] 2026-10-12 caricamento nel browser: barra di avanzamento del download del `.wasm` (`web/index.html::download`, il sed di `scripts/build_web.sh` aggiornato), poi «Avvio della simulazione…». Non provato in un browser (serve `scripts/build_web.sh`);
   - [ ] chiedere ai colleghi se hanno giocato nel browser o nativo (punto 1, «pesante»);
   - [x] 2026-10-12 con la barra laterale, i badge dei paesi dietro la barra avevano una linea che attraversava la barra: linee ritagliate sulla mappa (`bf744a0`);
+  - [x] 2026-10-12 schermata iniziale ridisegnata (`kiosk/ui.rs::intro`): cornice con ombra e bordo ambra, separatori, squadra come «pillole» con ritratto, livelli come tre carte verde/ambra/rosso cliccabili per intero (disattivate finché manca il nome);
   - [ ] serve una tastiera al chiosco per il nome (o lo scrive l'operatore).
 
 - **2026-10-12, barra laterale** (richiesta dell'utente: «tutto nella barra tranne la scheda del paese quando si clicca, e il fumetto che può rimanere nella parte opposta, isolato»).
