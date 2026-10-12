@@ -60,7 +60,8 @@ use fire::{FireSim, Intervention};
 use scenario::{Cell, Pos, Scenario};
 
 use crate::behaviour::{unit_kind_of, unit_outcome_of, UnitOutcome, UnitRuntime};
-use crate::network::{self, NodeId, RoadNetwork, NO_NODE};
+use crate::drive::{Drive, Leg, Vehicle};
+use crate::network::RoadNetwork;
 use crate::traffic::Traffic;
 
 // --- rates and capacities ---------------------------------------------------
@@ -124,18 +125,15 @@ pub const CREW_WALK_SPEED: f32 = 1.1;
 pub const WORK_LIMIT: f32 = 0.35;
 /// Seconds of direct flame exposure a unit survives. Shorter than a civilian's
 /// shelter time: they are in the open with PPE, not in a house.
-const BURNOVER_S: f32 = 90.0;
+pub const BURNOVER_S: f32 = 90.0;
 /// Recovery of accumulated heat once clear, per second of clear air.
-const HEAT_RECOVERY: f32 = 0.5;
+pub const HEAT_RECOVERY: f32 = 0.5;
 
 /// How close a unit has to get to count as arrived, metres.
 const ARRIVE_M: f32 = 15.0;
 /// Longest sub-step the unit model integrates in. Matches the civilian model's
 /// `MAX_SUBSTEP_S`; see [`Suppression::step`] for why it is needed at all.
 const SUBSTEP_S: f32 = 4.0;
-/// Ground units re-plan at most this often, so a cut road is noticed within a
-/// minute without re-running A* every step.
-const REROUTE_S: f32 = 60.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnitKind {
@@ -261,19 +259,9 @@ pub struct Unit {
     /// Empty when it is simply getting on with it.
     pub note: &'static str,
 
-    /// Nodes still to visit. Ground units only; air flies straight.
-    route: Vec<NodeId>,
-    at_node: NodeId,
-    /// Simulated time the route was planned, for [`REROUTE_S`].
-    planned_at_s: f32,
-    /// What the current route was planned *toward*.
-    ///
-    /// The re-plan trigger, together with [`REROUTE_S`]. An empty route is
-    /// deliberately not a trigger: a unit that has arrived has an empty route
-    /// for the rest of the incident, and re-planning on that ran a 61 k-node A*
-    /// per unit per sub-step, which is how the model went from milliseconds to
-    /// minutes.
-    route_to: Option<Pos>,
+    /// Route and progress on the network ([`crate::drive`]). Ground units
+    /// only; air flies straight.
+    drive: Drive,
     /// Task to resume once refilling is done.
     resume: Option<Task>,
     /// Simulated time this unit's current order was given, for
@@ -501,13 +489,7 @@ impl Suppression {
                 line_cut_m: 0.0,
                 drops: 0,
                 note: "",
-                route: Vec::new(),
-                at_node: NO_NODE,
-                // Negative infinity, not zero: a unit that has never been
-                // given an order must plan on the first step it needs to
-                // move, and `stale` is what makes that happen.
-                planned_at_s: f32::NEG_INFINITY,
-                route_to: None,
+                drive: Drive::default(),
                 resume: None,
                 tasked_at_s: 0.0,
                 policy,
@@ -590,8 +572,7 @@ impl Suppression {
         unit.line_done_m = 0.0;
         unit.note = "";
         unit.resume = None;
-        unit.route.clear();
-        unit.planned_at_s = f32::NEG_INFINITY;
+        unit.drive.reset();
         unit.tasked_at_s = self.time_s;
         // An inbound aircraft keeps its state: the order is a briefing, and
         // `arrive_if_due` picks it up the moment it is on station.
@@ -659,7 +640,7 @@ impl Suppression {
         let Some(u) = self.units.get(id) else { return 0.0 };
         let mut at = u.pos;
         let mut m = 0.0;
-        for &n in &u.route {
+        for &n in u.drive.route() {
             let p = net.pos(n);
             m += dist(at, p);
             at = p;
@@ -670,10 +651,10 @@ impl Suppression {
     /// The road still ahead of a ground unit, from where it is: for the map.
     pub fn route_points(&self, id: usize, net: &RoadNetwork) -> Vec<Pos> {
         let Some(u) = self.units.get(id) else { return vec![] };
-        if u.route.is_empty() {
+        if u.drive.route().is_empty() {
             return vec![];
         }
-        std::iter::once(u.pos).chain(u.route.iter().map(|&n| net.pos(n))).collect()
+        std::iter::once(u.pos).chain(u.drive.route().iter().map(|&n| net.pos(n))).collect()
     }
 
     /// The hydrant an engine at `p` would refill from, if the map has one.
@@ -926,8 +907,7 @@ impl Suppression {
                     let u = &mut self.units[i];
                     u.state = UnitState::Withdrawing;
                     u.note = "pulled back: not survivable here";
-                    u.route.clear();
-                    u.planned_at_s = f32::NEG_INFINITY;
+                    u.drive.reset();
                 }
                 false
             }
@@ -952,7 +932,7 @@ impl Suppression {
                     u.state = UnitState::Staged;
                     u.task = Task::Hold;
                     u.note = "holding: nothing useful to do here";
-                    u.route.clear();
+                    u.drive.reset();
                 }
                 true
             }
@@ -972,8 +952,7 @@ impl Suppression {
                     u.task = Task::Return;
                     u.state = UnitState::Moving;
                     u.note = "returning to staging";
-                    u.route.clear();
-                    u.planned_at_s = f32::NEG_INFINITY;
+                    u.drive.reset();
                     u.tasked_at_s = self.time_s;
                 }
                 false
@@ -1108,7 +1087,7 @@ impl Suppression {
     ) {
         self.drive_toward(i, at, dt, net, traffic, fire, scn);
         let pos = self.units[i].pos;
-        if !self.units[i].route.is_empty() {
+        if !self.units[i].drive.route().is_empty() {
             self.units[i].state = UnitState::Moving;
             return;
         }
@@ -1280,8 +1259,7 @@ impl Suppression {
         u.state = UnitState::Refilling;
         u.resume = Some(resume);
         u.note = "out of water, going for more";
-        u.route.clear();
-        u.planned_at_s = f32::NEG_INFINITY;
+        u.drive.reset();
     }
 
     fn step_refill(
@@ -1312,8 +1290,7 @@ impl Suppression {
                 Some(task) => {
                     u.task = task;
                     u.state = UnitState::Moving;
-                    u.route.clear();
-                    u.planned_at_s = f32::NEG_INFINITY;
+                    u.drive.reset();
                 }
                 None => u.state = UnitState::Staged,
             }
@@ -1337,111 +1314,48 @@ impl Suppression {
         fire: &FireSim,
         scn: &Scenario,
     ) {
-        let (kind, pos) = (self.units[i].kind, self.units[i].pos);
-        let drivable_only = kind.drivable_only();
-
-        // Re-plan periodically, not every step: a road the fire has cut has to
-        // be noticed, but A* on 61 k nodes every 2 s for every unit would not
-        // be free.
-        let stale = self.time_s - self.units[i].planned_at_s >= REROUTE_S;
-        let moved_goal = self.units[i]
-            .route_to
-            .map_or(true, |old| dist(old, target) > ARRIVE_M);
-        if stale || moved_goal {
-            self.units[i].route_to = Some(target);
-            let from = net.nearest(pos, drivable_only);
-            // Reachable, not merely nearest: see `nearest_reachable`.
-            let to = from.and_then(|a| net.nearest_reachable(target, drivable_only, a));
-            if let (Some(a), Some(b)) = (from, to) {
-                match network::route(net, a, b, fire.threat(), drivable_only) {
-                    // `route(b, b)` is empty, which reads as "arrived": but a
-                    // unit re-planning on its last edge is nearest to the node
-                    // it is driving to, not at it, and used to stop mid-edge
-                    // wherever the re-plan caught it. Finish the edge.
-                    Some(path) if drivable_only && path.is_empty() && a == b && dist(pos, net.pos(b)) > ARRIVE_M => {
-                        self.units[i].route = vec![b];
-                        self.units[i].note = "";
-                    }
-                    Some(path) => {
-                        self.units[i].route = path;
-                        self.units[i].note = "";
-                    }
-                    None => {
-                        self.units[i].note = "no road to there that is still open";
-                    }
-                }
-            }
-            self.units[i].planned_at_s = self.time_s;
+        const NO_ROAD: &str = "no road to there that is still open";
+        let kind = self.units[i].kind;
+        // Crews ride their vehicle on carriageways and go at [`CREW_SPEED`]
+        // on tracks and paths.
+        let how = Vehicle {
+            drivable_only: kind.drivable_only(),
+            road_speed: ENGINE_SPEED,
+            path_speed: if kind == UnitKind::HandCrew { CREW_SPEED } else { ENGINE_SPEED },
+        };
+        let now = self.time_s;
+        let u = &mut self.units[i];
+        let leg = u.drive.step(&mut u.pos, &mut u.heading, target, now, dt, how, net, traffic, fire.threat());
+        if leg == Leg::NoRoad {
+            u.note = NO_ROAD;
+        } else if u.note == NO_ROAD {
+            u.note = "";
         }
-
-        // Time budget for this sub-step, spent link by link at the speed of
-        // the link: crews ride their vehicle on carriageways and go at
-        // [`CREW_SPEED`] on tracks and paths.
-        let mut time = dt;
-
-        // Civilian traffic on the link ahead. A unit is never *in* the queue —
-        // it is not subject to storage, it does not take a place in the line
-        // and it cannot be spilled back into — but a jammed street still costs
-        // it time, which is the whole reason an engine dispatched into a mass
-        // departure arrives late. Sampled on the link it is about to travel,
-        // because that is the traffic it is about to be in.
-        let mut jam = 1.0;
-        if !self.units[i].route.is_empty() {
-            let next = self.units[i].route[0];
-            let from = self.units[i].at_node;
-            if let Some(edge) = net.edge_between(from, next) {
-                jam = traffic.emergency_factor(Traffic::link_id(edge, from, next));
-            }
-        }
-
-        // Follow the network.
-        while time > 0.0 {
-            let Some(&next) = self.units[i].route.first() else {
-                break;
-            };
-            let from = self.units[i].at_node;
-            let drivable = from == NO_NODE || net.neighbours(from).iter().find(|e| e.to == next).is_none_or(|e| e.drivable);
-            let speed = jam * match kind {
-                UnitKind::Engine => ENGINE_SPEED,
-                UnitKind::HandCrew if drivable => ENGINE_SPEED,
-                UnitKind::HandCrew => CREW_SPEED,
-                UnitKind::AirTanker => TANKER_SPEED,
-            };
-            let np = net.pos(next);
-            let d = dist(self.units[i].pos, np);
-            let u = &mut self.units[i];
-            if d > speed * time {
-                let f = speed * time / d.max(1e-3);
-                u.heading = (np.y - u.pos.y).atan2(np.x - u.pos.x);
-                u.pos.x += (np.x - u.pos.x) * f;
-                u.pos.y += (np.y - u.pos.y) * f;
-                time = 0.0;
-            } else {
-                u.pos = np;
-                u.at_node = next;
-                u.route.remove(0);
-                time -= d / speed.max(1e-3);
-            }
-        }
-        let budget = time;
 
         // Off-network walk-in, crews only. Deliberately *not* a loop: closing
         // the last metres by repeatedly taking `on_foot / d` of the remaining
         // gap never quite reaches zero in f32, and the residue is small enough
         // that the loop runs until the heat death of the process. One straight
         // move per sub-step covers at most 4.4 m, which needs no iteration.
-        if budget > 0.0 && self.units[i].route.is_empty() && kind == UnitKind::HandCrew {
-            let slope = scn.terrain.slope_deg_at(self.units[i].pos);
-            let walk = CREW_WALK_SPEED * (1.0 - slope / 45.0).clamp(0.35, 1.0);
-            // The remaining time, on foot.
-            let on_foot = budget * walk;
-            let u = &mut self.units[i];
-            let d = dist(u.pos, target);
-            if d > 0.1 {
-                let f = (on_foot / d).min(1.0);
-                u.heading = (target.y - u.pos.y).atan2(target.x - u.pos.x);
-                u.pos.x += (target.x - u.pos.x) * f;
-                u.pos.y += (target.y - u.pos.y) * f;
+        // With no road left open a crew walks the whole way, across country.
+        let spare_s = match leg {
+            Leg::Arrived { spare_s } => Some(spare_s),
+            Leg::NoRoad if u.drive.route().is_empty() => Some(dt),
+            _ => None,
+        };
+        if let Some(spare_s) = spare_s {
+            if spare_s > 0.0 && kind == UnitKind::HandCrew {
+                let slope = scn.terrain.slope_deg_at(u.pos);
+                let walk = CREW_WALK_SPEED * (1.0 - slope / 45.0).clamp(0.35, 1.0);
+                // The remaining time, on foot.
+                let on_foot = spare_s * walk;
+                let d = dist(u.pos, target);
+                if d > 0.1 {
+                    let f = (on_foot / d).min(1.0);
+                    u.heading = (target.y - u.pos.y).atan2(target.x - u.pos.x);
+                    u.pos.x += (target.x - u.pos.x) * f;
+                    u.pos.y += (target.y - u.pos.y) * f;
+                }
             }
         }
     }

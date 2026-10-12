@@ -49,3 +49,21 @@ Tutti i 36 incendi. «Minacciati» sono i quartieri che lo stesso incendio senza
 ## Proposta (una, da decidere)
 
 Variante A nel gioco, sul layout 5: 4 squadre divise in parti uguali e allerta sul telefono attiva. Insieme vanno riscelti i livelli (Medio) e va mostrato l'avanzamento degli avvisi su ogni scheda di quartiere. Prima di farlo, decidere fra parti uguali (A) e priorità (C).
+
+## Aggiornamento 2026-10-12: squadre che guidano davvero
+
+Le squadre ora percorrono le strade come i mezzi (`abm::drive`: traffico, strade tagliate dal fuoco, dirottamenti in viaggio), bussano porta a porta e lasciano il quartiere se il fuoco arriva alle porte. «Parti uguali» diventa: una squadra libera va al quartiere aperto con meno squadre, a parità **secondo le priorità**. Stessa prova sul layout 5, semi 1/2/3, uscite in `guida/`:
+
+| variante | evacua tutti peggio di evacua i minacciati (> 20 punti) | medi tutti / minacciati / preallerta tutti (seme 1) | prima (vecchio modello) |
+|---|---|---|---|
+| nessuna squadra | 0 / 0 / 0 | 669 / 669 / 628 | 0 |
+| A, parti uguali, allerta sul telefono | **6 / 10 / 7** | 624 / 640 / 581 | 9 / 12 / 12 |
+| A senza priorità a parità (`A0`, prova) | 14 / 15 / 12 | 544 / 641 / 529 | — |
+| B, come A senza allerta sul telefono | **16 / 17 / 16** | 526 / 609 / 471 | 16 |
+| C, squadre secondo le priorità | 0 / 0 / 0 | 621 / 621 / 577 | 0 |
+| C con priorità rovesciate (`PRIORITA=sbagliate`) | 21 / 23 / 22 | 23 / 393 / 22 | — |
+| A con priorità rovesciate | 21 / 19 / 22 | 328 / 528 / 324 | — |
+
+- In A il costo di «evacua tutti» si riduce (6–10 incendi invece di 9–12), perché a parità le squadre vanno prima nei quartieri in priorità. Senza questa regola (A0) torna più forte, ma dipende dall'ordine dei quartieri, non dalle scelte del giocatore.
+- Con C l'ordine a tutti costa solo se le priorità sono sbagliate, e allora costa moltissimo. Le colonne «rovesciate» cambiano anche le priorità dei mezzi: misurano l'effetto complessivo, non solo le squadre.
+- In nessuna variante «evacua tutti» è in media il piano migliore, se le squadre sono limitate.

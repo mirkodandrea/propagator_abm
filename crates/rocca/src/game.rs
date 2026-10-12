@@ -130,6 +130,8 @@ pub struct Game {
     /// order over the households' own channels ([`crate::messengers`]).
     pub messengers: Option<crate::Messengers>,
     rounds: Vec<crate::messengers::Round>,
+    /// The teams, built on the first round.
+    pub teams: Vec<crate::messengers::Team>,
 }
 
 impl Game {
@@ -177,6 +179,7 @@ impl Game {
             logged: crews.units.iter().map(|u| u.state).collect(),
             messengers: None,
             rounds: vec![],
+            teams: vec![],
             scn,
             fire,
             agents,
@@ -271,34 +274,175 @@ impl Game {
         queue.sort_by(|&a, &b| dist(homes[a].home, centre).total_cmp(&dist(homes[b].home, centre)).then(a.cmp(&b)));
         self.rounds.retain(|r| r.district != d);
         let n = by_channel.len() + queue.len();
-        self.rounds.push(crate::messengers::Round { district: d, evacuate, queue: queue.into(), progress: 0.0 });
+        self.rounds.push(crate::messengers::Round { district: d, evacuate, queue: queue.into() });
         n
     }
 
-    /// One step of the messengers' rounds.
+    /// One step of the messengers: the fire's heat on the teams, then they
+    /// knock, pick a district, drive (and are diverted on the road when the
+    /// rounds change), or pull back from the fire.
     fn knock(&mut self) {
+        use crate::messengers::{Task as T, VEHICLE};
+        use abm::drive::Leg;
+        use abm::suppression::{BURNOVER_S, HEAT_RECOVERY, WORK_LIMIT};
         let Some(m) = self.messengers else { return };
+        if self.teams.len() != m.teams {
+            let st = &self.territory.stations;
+            self.teams = (0..m.teams).map(|k| crate::messengers::Team::new(Pos::from(st[k % st.len()].pos))).collect();
+        }
         self.rounds.retain(|r| !r.queue.is_empty());
-        if self.rounds.is_empty() {
-            return;
-        }
-        let rank = |d: usize| self.active.priorities.iter().position(|&p| p == d).unwrap_or(usize::MAX);
-        let share: Vec<f32> = if m.by_priority {
-            let first = (0..self.rounds.len()).min_by_key(|&k| (rank(self.rounds[k].district), k)).unwrap();
-            (0..self.rounds.len()).map(|k| if k == first { m.teams } else { 0.0 }).collect()
-        } else {
-            vec![m.teams / self.rounds.len() as f32; self.rounds.len()]
-        };
-        for (r, teams) in self.rounds.iter_mut().zip(share) {
-            r.progress += STEP_S as f32 / 60.0 * m.per_min * teams;
-            let mut told = vec![];
-            while r.progress >= 1.0 {
-                let Some(i) = r.queue.pop_front() else { break };
-                told.push(i);
-                r.progress -= 1.0;
+        let now = self.time_s();
+        let dt = STEP_S as f32;
+        let open = |rounds: &[crate::messengers::Round], d: usize| rounds.iter().position(|r| r.district == d);
+        for k in 0..self.teams.len() {
+            if self.teams[k].task == T::Lost {
+                continue;
             }
-            self.agents.tell_in_person(&told, r.evacuate);
+            self.teams[k].unreachable.retain(|&(_, until)| now < until);
+            // As for the units: standing in flame is not a decision.
+            let danger = self.fire.threat().at(self.teams[k].pos);
+            let t = &mut self.teams[k];
+            if danger >= fire::threat::IMPASSABLE {
+                t.heat_s += dt * danger;
+            } else {
+                t.heat_s = (t.heat_s - dt * HEAT_RECOVERY).max(0.0);
+            }
+            if t.heat_s >= BURNOVER_S {
+                t.task = T::Lost;
+                let text = format!("una squadra che portava gli avvisi è stata raggiunta dal fuoco vicino a {}", self.near(self.teams[k].pos));
+                self.log.push(LogEntry { at_s: now, text });
+                continue;
+            }
+            if let T::Door { district, carry } = self.teams[k].task {
+                if let Some(r) = open(&self.rounds, district) {
+                    // Door to door: the team stands at each door it knocks
+                    // on, and does not walk up to one the fire is at.
+                    let hot = |g: &Game, i: usize| g.fire.threat().at(g.agents.households[i].home) >= WORK_LIMIT;
+                    let mut carry = carry + dt / 60.0 * m.per_min;
+                    let (mut told, mut skipped) = (vec![], 0);
+                    while carry >= 1.0 && skipped < self.rounds[r].queue.len() {
+                        let i = self.rounds[r].queue.pop_front().unwrap();
+                        if hot(self, i) {
+                            self.rounds[r].queue.push_back(i);
+                            skipped += 1;
+                            continue;
+                        }
+                        told.push(i);
+                        carry -= 1.0;
+                    }
+                    if let Some(&i) = told.last() {
+                        self.teams[k].pos = self.agents.households[i].home;
+                        self.teams[k].drive.reset();
+                    }
+                    self.agents.tell_in_person(&told, self.rounds[r].evacuate);
+                    self.teams[k].told += told.len();
+                    let all_hot = !self.rounds[r].queue.is_empty() && self.rounds[r].queue.iter().all(|&i| hot(self, i));
+                    if danger >= WORK_LIMIT || all_hot {
+                        // Out, as the units disengage: the district is
+                        // skipped for a while and its households left untold.
+                        let t = &mut self.teams[k];
+                        t.left += 1;
+                        t.unreachable.push((district, now + abm::drive::REROUTE_S as i64));
+                        t.task = T::Idle { retry_s: now };
+                        self.say_once(now, format!("il fuoco è troppo vicino: le squadre lasciano {} senza finire gli avvisi", self.districts[district].name));
+                    } else {
+                        self.teams[k].task = T::Door { district, carry };
+                    }
+                } else {
+                    self.teams[k].task = T::Idle { retry_s: now };
+                }
+            }
+            if let T::Idle { retry_s } = self.teams[k].task {
+                if let Some(d) = (now >= retry_s).then(|| self.choose(k, m, now)).flatten() {
+                    self.teams[k].task = T::Driving { district: d };
+                } else {
+                    // Nothing to do: back to the station, as the units go
+                    // back to staging, rather than waiting at the last door.
+                    let t = &mut self.teams[k];
+                    let base = t.base;
+                    t.drive.step(&mut t.pos, &mut t.heading, base, now as f32, dt, VEHICLE, &self.agents.network, &self.agents.traffic, self.fire.threat());
+                }
+            }
+            if let T::Driving { district } = self.teams[k].task {
+                let Some(best) = self.choose(k, m, now) else {
+                    self.teams[k].task = T::Idle { retry_s: now };
+                    continue;
+                };
+                let closed = open(&self.rounds, district).is_none();
+                let better = m.by_priority && self.team_rank(best, m) < self.team_rank(district, m);
+                // Only for a district a road still leads to: otherwise the
+                // team would turn round every minute for one it cannot reach.
+                let reach = best != district && !closed && better && {
+                    let t = &self.teams[k];
+                    let ok = t.drive.can_reach(t.pos, self.districts[best].centre, VEHICLE, &self.agents.network, self.fire.threat());
+                    if !ok {
+                        self.teams[k].unreachable.push((best, now + 60));
+                    }
+                    ok
+                };
+                let to = if best != district && (closed || reach) {
+                    self.teams[k].diverted += 1;
+                    let text = format!("una squadra diretta a {} va invece a {}", self.districts[district].name, self.districts[best].name);
+                    self.log.push(LogEntry { at_s: now, text });
+                    best
+                } else {
+                    district
+                };
+                let goal = self.districts[to].centre;
+                let t = &mut self.teams[k];
+                let leg = t.drive.step(&mut t.pos, &mut t.heading, goal, now as f32, dt, VEHICLE, &self.agents.network, &self.agents.traffic, self.fire.threat());
+                self.teams[k].task = match leg {
+                    Leg::Moving => T::Driving { district: to },
+                    Leg::Arrived { .. } => {
+                        if !self.teams.iter().any(|t| matches!(t.task, T::Door { district, .. } if district == to)) {
+                            let text = format!("una squadra arriva a {} per avvisare le famiglie", self.districts[to].name);
+                            self.log.push(LogEntry { at_s: now, text });
+                        }
+                        T::Door { district: to, carry: 0.0 }
+                    }
+                    Leg::NoRoad => {
+                        // Said once: the teams try again every minute.
+                        self.say_once(now, format!("nessuna strada aperta per portare l'ordine a {}", self.districts[to].name));
+                        self.teams[k].unreachable.push((to, now + 60));
+                        T::Idle { retry_s: now }
+                    }
+                };
+            }
         }
+    }
+
+    fn say_once(&mut self, at_s: i64, text: String) {
+        if !self.log.iter().any(|e| e.text == text) {
+            self.log.push(LogEntry { at_s, text });
+        }
+    }
+
+    /// The name of the district nearest `p`.
+    fn near(&self, p: Pos) -> &str {
+        self.districts.iter().min_by(|a, b| dist(a.centre, p).total_cmp(&dist(b.centre, p))).map_or("", |d| d.name.as_str())
+    }
+
+    /// Where team `k` should go now: an open round it can reach, one without
+    /// a team per household left, by priority or by fewest teams.
+    fn choose(&self, k: usize, m: crate::Messengers, now: i64) -> Option<usize> {
+        let on = |d: usize| self.teams.iter().enumerate().filter(|&(j, t)| j != k && t.district() == Some(d)).count();
+        self.rounds
+            .iter()
+            .filter(|r| !self.teams[k].cut_off(r.district, now))
+            .map(|r| {
+                let (d, n) = (r.district, on(r.district));
+                let full = n >= r.queue.len();
+                let key = if m.by_priority { (full, self.team_rank(d, m), n) } else { (full, n, self.team_rank(d, m)) };
+                (key, d)
+            })
+            .min()
+            .map(|(_, d)| d)
+    }
+
+    /// District `d`'s place in the priorities as the teams read them.
+    fn team_rank(&self, d: usize, m: crate::Messengers) -> usize {
+        let r = self.active.priorities.iter().position(|&p| p == d).unwrap_or(usize::MAX);
+        if m.reversed { usize::MAX - r } else { r }
     }
 
     /// Re-plan the active plan and hand the units their tasks; a periodic

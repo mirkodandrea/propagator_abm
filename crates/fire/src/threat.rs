@@ -95,6 +95,18 @@ impl ThreatField {
         self.peak_fli[c.row * self.world.fire_cols + c.col]
     }
 
+    /// Set the danger at a position by hand, for tests: the next
+    /// [`ThreatField::update`] clears it like any other.
+    pub fn paint(&mut self, p: Pos, danger: f32) {
+        if !self.world.contains(p) {
+            return;
+        }
+        let c = self.world.cell_of(p);
+        let i = c.row * self.world.fire_cols + c.col;
+        self.danger[i] = danger;
+        self.dirty.push(i as u32);
+    }
+
     /// True where a person on foot or in a vehicle cannot pass.
     pub fn blocked(&self, p: Pos) -> bool {
         self.at(p) >= IMPASSABLE

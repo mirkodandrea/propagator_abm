@@ -45,6 +45,7 @@ use scenario::{Pos, Scenario};
 
 pub mod behaviour;
 pub mod comms;
+pub mod drive;
 pub mod haven;
 pub mod network;
 pub mod orders;
