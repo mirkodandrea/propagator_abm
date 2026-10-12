@@ -1,11 +1,11 @@
 {
   "id": "rocca_ventosa",
-  "name": "Rocca Ventosa",
-  "description": "Un borgo in piano, un nucleo di fondovalle e case sparse sul versante, separati da un crinale con un valico. Territorio sintetico.",
+  "name": "Isola di Roccavento",
+  "description": "Un'isola con un borgo in piano, un nucleo di fondovalle e case sparse sul versante, separati da un crinale con un valico, una rocca sulla cima e una torre di pietra sulla costa. Spiaggia e porto a est, scogliera sul resto della costa. Territorio sintetico.",
   "location": "Luogo immaginario",
   "country": "Italia",
   "nationality": "Italian",
-  "region": "territorio sintetico (Scenario Factory)",
+  "region": "territorio sintetico (Scenario Factory, isola)",
   "localities": [
     "Castelvento",
     "Pian dei Grilli",
@@ -27,7 +27,7 @@
     400,
     400
   ],
-  "buildings_count": 375,
+  "buildings_count": 392,
   "households_count": 538,
   "people_count": 1521,
   "scenario_type": "synthetic",
@@ -35,6 +35,7 @@
   "version": "0.1.0",
   "tags": [
     "factory",
+    "island",
     "town"
   ],
   "is_dev": false
