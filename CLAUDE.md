@@ -4,14 +4,14 @@
 
 Il lavoro parte **dal repository esistente** e da questi **quattro documenti aggiornati** (da leggere in ordine):
 
-1. `docs/rocca-ventosa/00-LEGGIMI-PRIMA.md` — decisioni e parametri da approvare.
-2. `docs/rocca-ventosa/01-SPEC-GIOCO.md` — regole, coordinatore, fasi decisionali e UX.
-3. `docs/rocca-ventosa/02-SCENARIO-FACTORY.md` — territorio sintetico e prove headless.
-4. `docs/rocca-ventosa/03-PIANO-DI-AZIONE.md` — fasi, output e checkpoint umani.
+1. `docs/00-LEGGIMI-PRIMA.md` — decisioni e parametri da approvare.
+2. `docs/01-SPEC-GIOCO.md` — regole, coordinatore, fasi decisionali e UX.
+3. `docs/02-SCENARIO-FACTORY.md` — territorio sintetico e prove headless.
+4. `docs/03-PIANO-DI-AZIONE.md` — fasi, output e checkpoint umani.
 
 **Non cercare, recuperare o ricreare documenti di specifica non presenti nel repository.** I documenti qui sopra definiscono **cosa** costruire. Il codice presente serve a capire **come** farlo, non stabilisce i requisiti di gameplay. Se codice e specifiche non coincidono, prevalgono le specifiche; segnala il conflitto durante l'audit.
 
-`docs/rocca-ventosa/TECHNICAL-FINDINGS.md`, se presente, è **solo una raccolta facoltativa di note tecniche**: verificare sempre nel codice che i dettagli siano ancora validi. Non è una specifica funzionale.
+`docs/TECHNICAL-FINDINGS.md`, se presente, è **solo una raccolta facoltativa di note tecniche**: verificare sempre nel codice che i dettagli siano ancora validi. Non è una specifica funzionale.
 
 ## Todo list: `docs/TODO.md`
 

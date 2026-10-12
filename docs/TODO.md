@@ -4,120 +4,81 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
-- **2026-10-12, variante A e layout 5 nel gioco** (l'utente: «le modifiche per testare l'evacuazione totale non sono state portate nel gioco?»; scelta: **variante A**). Resoconto `docs/fase5/livelli_l5/README.md`.
-  - [x] 2026-10-12 layout 5 pubblicato in `data/scenarios/rocca_ventosa`; `messengers` nel `game.json` (4 squadre, 1 famiglia/min, allerta sul telefono, parti uguali), letto da `Territory` e `Game::new`: chiosco e runner uguali. Livelli: Facile Rocco3, **Medio Terra1_gira**, **Esperto Borgo2_gira**. «Evacua tutti» perde più di 20 punti in 6/10/7 incendi (semi 1–3), come la prova headless. 39 target verdi (`fase3` e `authored_unit_policy` adattati);
-  - [x] 2026-10-12 **avvisi nel chiosco** (l'utente: «indicare sui paesi come procede l'allertamento», «anche i mezzi in movimento con la grafica»): «N/M» sul badge, riga nella scheda, auto della Polizia Locale sulla mappa con etichetta «P1»/«×3», legenda; nelle schermate si chiamano «pattuglie» (`docs/fase5/livelli_l5/README.md`, «Aggiornamento»);
-  - [ ] dirlo anche nel tutorial (passo della scheda) se nel playtest non si capisce;
-  - [ ] rifare la build web e provarla;
-  - [ ] Piano3, Le Ghiande priorità 1: autobotte 1 in «rifornimento» da T+50 a T+170, da capire;
-  - [ ] rivedere le battute e il «Perché» per i livelli nuovi (frasi scritte per Coste2_gira/Forna3_gira?).
+- **Fase corrente: fase 6, playtest finale** (`docs/03-PIANO-DI-AZIONE.md`). **Fase 5 chiusa il 2026-10-12** (l'utente: «dichiariamo chiusa questa fase 5»). L'utente sta curando dettagli grafici in un'altra sessione.
+- **Prossimo checkpoint umano: 6**, sui risultati dei playtest con persone: durata misurata, prima azione intuitiva, almeno un compromesso spiegato dal giocatore, nessun blocco o crash, riavvio manuale verificato.
+- Gioco attuale: layout 5, pattuglie di avviso (variante A), livelli Facile Rocco3, Medio Terra1_gira, Esperto Borgo2_gira (`docs/fase5/livelli_l5/README.md`).
 
 - **2026-10-12, camera che segue il fuoco** (richiesta dell'utente: interfaccia più dinamica). `kiosk/view.rs::fire_extent` + `Kiosk::follow`: in ×N e alle crisi la camera scorre dolcemente verso il centro del fronte e stringe l'inquadratura sulla sua estensione (tra 0,3× e 1× la vista iniziale); un gesto sulla mappa la disattiva, «Segui il fuoco» nella barra (vista) la riattiva, «Vista iniziale» la spegne. Provata in esecuzione (`Coste2_gira`, `KIOSK_SPEED=600`, 1920×1080): inquadra il fronte più i paesi con una casa entro 1,5 km (zoom minimo 0,5× la vista iniziale); pulsante «Segui il fuoco» con icona.
   - [ ] provarla con una persona e con altri casi (innesco ai margini, vento che gira): velocità di movimento (oggi lenta, 0,6/s sul bersaglio, 1,2/s sulla camera) e se serve una transizione più marcata alla crisi;
   - [ ] altre idee dinamiche: piccolo zoom sul paese a una crisi, fumo/brace più vivi, contatori che pulsano.
 
-- **2026-10-12, playtest dei colleghi** (commenti incollati dall'utente, 18 punti). Decisioni dell'utente (2026-10-12): **il nome del giocatore si chiede all'inizio, non più le iniziali, così i personaggi si rivolgono a lui**; «procedi con i fix semplici».
-  - [x] 2026-10-12 nome nell'intro («Come ti chiami?»): i livelli si attivano solo dopo aver scritto il nome. Lo usano la volontaria nel tutorial, i consigli in pausa, la sindaca e il meteo nelle battute (`characters::to`) e il titolo del finale. La classifica salva il nome da sola (`score::Entry::name`; le classifiche già salvate con `initials` si leggono ancora). «Nuova partita» dell'operatore cancella il nome; la partita scriptata gioca come «Giulia» e non scrive la classifica (`board::save`);
-  - [x] 2026-10-12 cursore a mano e bordo bianco immediato su tutti i pulsanti (`interact_cursor`, `animation_time` 0, `icons::pointing`); pulsanti dei livelli su tutta la larghezza, testo centrato;
-  - [x] 2026-10-12 finale: solo «Riprova», che torna all'intro e alla scelta del livello;
-  - [x] 2026-10-12 scheda: Difendi, Preallerta ed Evacua su una riga, icona sopra e testo sotto (`icons::tall_button`); «Difendi» ripremuto toglie la difesa; «metti per primo» sotto; le tre spiegazioni sempre in fondo, con più spazio;
-  - [x] 2026-10-12 tempo di evacuazione: la scheda dice «~N min per prepararsi, poi ~M min di strada» (`Kiosk::readying`, dai `prep_time_min` della popolazione meno la preparazione già fatta con la preallerta); il testo di «Evacua» non dice più «partono subito» e spiega che qualcuno aspetta (perché non si arriva al 100 %);
-  - [x] 2026-10-12 etichette dei mezzi: sempre un'asta del colore del mezzo fino a un punto dove il mezzo si trova; tolta la riga bianca che compariva solo quando l'etichetta veniva spostata;
-  - [x] 2026-10-12 legenda sfoltita: solo ciò che è sulla mappa o nelle schede, più una riga sui tempi di evacuazione;
-  - [x] 2026-10-12 «Ho capito» allineato (`tutorial.rs`, nel commit `6dfa637`); pannelli laterali uniformi con la barra laterale dell'altra sessione (`6dfa637`);
-  - [ ] decidere con l'utente: **distribuzione dei mezzi** (punti 6, 16, 17). Il «2-1-0» è la regola 2 del coordinatore; i paesi non ancora minacciati non ricevono mezzi (regola 1). Spiegarlo meglio, distribuire a rotazione o far scegliere quanti mezzi per paese? Prima l'A/B «concentrare contro distribuire»;
-  - [ ] messaggi dei personaggi più visibili (ingrandimento al cambio, bip facoltativo) e storico delle battute (punto 4);
-  - [ ] riprodurre headless «senza ordini meglio che con ordini» in un paese (punto 14): le squadre bagnano la vegetazione e il fuoco cambia strada? Poi raccontarlo nel «Perché» o correggere;
-  - [ ] freccia del vento più visibile sul territorio (punto 15); primi piani automatici sull'area colpita con `Kiosk::shot` (punto 18);
-  - [x] 2026-10-12 caricamento nel browser: barra di avanzamento del download del `.wasm` (`web/index.html::download`, il sed di `scripts/build_web.sh` aggiornato), poi «Avvio della simulazione…». Non provato in un browser (serve `scripts/build_web.sh`);
-  - [ ] chiedere ai colleghi se hanno giocato nel browser o nativo (punto 1, «pesante»);
-  - [x] 2026-10-12 con la barra laterale, i badge dei paesi dietro la barra avevano una linea che attraversava la barra: linee ritagliate sulla mappa (`bf744a0`);
-  - [x] 2026-10-12 schermata iniziale ridisegnata (`kiosk/ui.rs::intro`): cornice con ombra e bordo ambra, separatori, squadra come «pillole» con ritratto, livelli come tre carte verde/ambra/rosso cliccabili per intero (disattivate finché manca il nome);
-  - [ ] serve una tastiera al chiosco per il nome (o lo scrive l'operatore).
 
-- **2026-10-12, barra laterale** (richiesta dell'utente: «tutto nella barra tranne la scheda del paese quando si clicca, e il fumetto che può rimanere nella parte opposta, isolato»).
-  - [x] 2026-10-12 `kiosk/ui.rs::sidebar`: a destra, larga 400 px, dall'alto: vento, ora con la barra delle ore, stato (in pausa / il tempo scorre / DECISIONE URGENTE con i secondi, lampeggiante alla fine), il pulsante del tempo oppure la scelta della crisi, il piano (righe cliccabili, apre la scheda), il coordinatore / i mezzi, gli ultimi aggiornamenti, la legenda (chiusa); in fondo la vista (zoom e vista iniziale). Sulla mappa restano le etichette dei paesi, la scheda aperta, le etichette dei mezzi, il segno del fuoco e il fumetto in basso a sinistra (alla crisi: «Decidi nella barra a destra»). La camera disegna la mappa solo a sinistra della barra (`Camera::viewport`, `kiosk/view.rs`) e rifà l'inquadratura iniziale sulla nuova misura. Tolti barra in alto (resta solo nel finale), bande «IN PAUSA» / «DECISIONE URGENTE», pannelli sparsi. Il tutorial punta alle sezioni della barra. Prova: stesso comando `KIOSK_SHOT` a 1920×1080;
-  - [ ] provarlo con una persona: si nota la crisi nella barra? la lista del piano basta o serve trascinare per riordinare?
+## Fase 6: playtest finale
 
-- **2026-10-12, mini-tutorial a inizio partita** (richiesta dell'utente). Decisioni dell'utente (2026-10-12): **lo schermo del chiosco è almeno 1080p, il vincolo 900×600 cade**; il tutorial è **non interattivo**: solo «Avanti» e «Salta».
-  - [x] 2026-10-12 `crates/game/src/kiosk/tutorial.rs`: cinque passi (fuoco e vento, paesi, scheda con Difendi/Preallerta/Evacua, piano, «Avvia»). La camera si sposta con un movimento graduale (`Kiosk::shot`, `kiosk/view.rs`), il resto dello schermo si scurisce e la volontaria spiega in un fumetto con una freccia. Parte solo per un nuovo visitatore (non a «Riprova» o «Cambia difficoltà»; di nuovo dopo «Nuova partita» dell'operatore); si spegne da F2 o con `KIOSK_TUTORIAL=0`. Prova: `KIOSK_SIZE=1920x1080 KIOSK_CASE=Coste2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_SHOT=<dir> target/release/game` → `0_tour_0..4.png`;
-  - [ ] provarlo nel browser con una persona: durata (5 passi), testi, se «Salta» viene usato subito;
-  - [x] 2026-10-12 (approvato dall'utente) tolti i doppioni del tutorial: «Come si gioca» dall'intro (`how_steps`) e la frase della volontaria nei primi 10 minuti (`TUTORIAL_S`), che ora dà subito le notizie della partita; nell'intro «puoi mettere in pausa quando vuoi» → «puoi fermarlo poche volte per cambiare gli ordini» (le pause sono 3).
+Preparazione (agente):
+- [ ] build web rifatta e provata nel browser (`scripts/build_web.sh`); pubblicarla su Pages solo con il via dell'utente (push);
+- [ ] prova di stabilità: molte partite scriptate di fila, con «Riprova» e «Nuova partita» dell'operatore, senza crash, effetti che restano dopo il riavvio o memoria che cresce;
+- [ ] scheda di osservazione per chi assiste ai playtest (una pagina): durata, prima azione, compromesso spiegato, blocchi, domande finali;
+- [ ] riavvio manuale verificato (F2 → «Nuova partita», chiusura e riapertura dell'app).
 
-- **2026-10-12, riferimenti normativi letti** (richiesta dell'utente): Raccomandazioni AIB 2026 (GU n. 133, 11/6/2026), Codice di prevenzione incendi (DM 3/8/2015, testo coordinato 2021), Direttiva PCM 10/1/2020 sul DOS (GU n. 56, 5/3/2020). Non sono specifiche: servono come lessico e per ancorare i parametri. L'utente ha detto «ok» alla proposta «prima il punto 5, poi i punti 1–3».
-  - [x] 2026-10-12 **punto 5 (preallerta ≠ evacuazione secondo il tempo di esodo del Codice M.3.4, rivelazione + allarme + pre-movimento + movimento): già così nel modello.** Un ordine creduto fa partire la preparazione (`block.order_response` → `action.prepare` → `prep_seconds`); la preallerta anticipa la preparazione in casa (`readied_s`) e accorcia il tempo d'allarme (`PREALERTED_ORDER_DELAY_S`). La partenza a T+40–58 degli «aspetta e vedi» con ordine a T+0 è la somma di canale (1,5–20 min) e preparazione (25 min ± 15 %), non un ordine che non fa preparare. Resta una questione di **taratura**, non di struttura: il Codice dà 1′30″–3′30″ per persone sveglie e pratiche dei luoghi che escono da un edificio, non per una famiglia che carica l'auto;
-  - [x] 2026-10-12 **punto 1, versione semplice chiesta dall'utente** («basta "aiutaci a gestire questa emergenza" con i vari personaggi che lavorano con noi», niente battute): sottotitolo dell'intro «Aiutaci a gestire questa emergenza.», la volontaria chiede aiuto, sotto «La squadra con cui lavori» con i quattro ritratti e i nomi (`kiosk/ui.rs::intro`, `Who::short`);
-  - [ ] ~~punto 1, ruolo reale~~ (superato dalla versione semplice): ~~il giocatore è il Sindaco~~ (2026-10-12, l'utente: la sindaca è già un personaggio) → il giocatore è **in sala operativa del Comune (COC), accanto alla sindaca**: propone priorità e ordini, lei li firma senza passaggi in più (l'ordinanza è sua per legge). Da sistemare anche `Who::Dos`, oggi «Il caposquadra dei vigili del fuoco»: per la Direttiva il DOS dirige le operazioni AIB, non è un caposquadra; il coordinatore è «DOS e Vigili del Fuoco». Unità: «Vigili del Fuoco: difendono le case» (ROS, Direttiva §3: vita e insediamenti sono prioritari e in capo al ROS), «Squadre antincendio boschivo: lavorano sul fronte». Risponde anche a «effetto dei mezzi non spiegato» (playtest 6);
-  - [ ] **punto 2, bollettino incendi** nel briefing iniziale: vento, livello di pericolo, quartieri esposti (Raccomandazioni 2026, lettera a);
-  - [ ] **punto 3, debrief come «rapporto di intervento»** (Direttiva §4h): tipo d'incendio, dove hanno lavorato le squadre, cosa ha funzionato; in fondo **una** norma di comportamento legata alla partita (stile «Io non rischio»);
-  - [ ] punto 4, «concentrare le forze» (principio AIB, Direttiva All. A): prima un A/B a parità di seed, una priorità contro molte; solo se il modello lo premia almeno talvolta, consiglio nella guida e frase nel debrief;
-  - [ ] punto 6, regola LACES per le postazioni: valide solo con via di fuga verso un'area sicura; evento visibile «squadra ritirata». Soglie possibili: civili 2,5 kW/m², soccorritori 3 kW/m² (Codice M.3.5, tab. M.3-2);
-  - [ ] punto 7, crisi ×1 quando l'incendio diventa «complesso» (Direttiva §3): quartieri minacciati più di quanti le squadre possano coprire (fase 4);
-  - [ ] idee per dopo il checkpoint 5: Canadair su richiesta (flotta di Stato via SOUP/COAU, razionata e dirottabile) come decisione di crisi; verifica dei rifugi come «luogo sicuro» (≤ 2,5 kW/m², capienza, Codice S.4.5.1); strade fuori norma per le autobotti (larghezza 3,5 m, pendenza ≤ 10 %, Codice S.9.5) come vincolo della Scenario Factory; mezzi aerei fermi di notte, se una partita arriva al tramonto (DA VERIFICARE);
-  - da non mostrare al giocatore: kW/m², indici FWI/FFMC, ICS, radio TBT, procedure COAU.
+Con persone (utente):
+- [ ] playtest con studenti e colleghi che non conoscono il progetto;
+- [ ] FPS sulla macchina del chiosco (oggi ~40 su M4 Pro con vegetazione dimezzata);
+- [ ] touchscreen sì o no; tastiera per il nome, oppure lo scrive l'operatore;
+- [ ] browser o nativo (punto 1 dei colleghi: «pesante»);
+- [ ] **Checkpoint umano 6.**
 
-- **2026-10-12, «Come sono andati i tuoi ordini» nel finale** (richiesta dell'utente: «ok, let's add words»; solo parole, il punteggio non cambia). `Game::order_review` e `Game::needless_evacuations` in `rocca`: per ogni borgo l'ordine civile giudicato da quanto si è avvicinato il fuoco in questa partita. Rosso: famiglie colte in casa (ordine mancante o tardivo). Ambra: evacuazione con il fuoco rimasto oltre `QUIET_FIRE_M` (1,5 km, «Forse bastava la preallerta»), oppure nessun ordine con il fuoco vicino. Verde: evacuazione prudente o in tempo, preallerta sufficiente. «Alle case» = minaccia alla porta ≥ `ALARMING`, la stessa soglia delle famiglie colte. Nel finale sopra «I borghi», le righe rosse per prime; il runner `rocca` le stampa. Test `the_review_judges_each_order_by_the_fire`; schermata `docs/fase5/img/fine_ordini.png` (`KIOSK_CASE=Rocco3`, 1920×1080).
-  - [ ] il giudizio è col senno di poi; versione più giusta: confrontare l'ordine con la previsione disponibile in quel momento (la stessa della crisi «previsione»);
-  - [ ] se serve: una riga anche per i mezzi in postazione dove il fuoco non è mai arrivato.
-- **2026-10-12, playtest 8 (Haiku, strategie headless, dopo `c777919`)**: `docs/fase5/playtest8_strategie/report.md`, 19 numeri riverificati. Nuova ricetta: «preallerta tutti T+0, evacua tutti T+30 + mezzi sul borgo più vicino» ≥ «evacua tutti T+0» in 24/24 confronti (+39/+56/+47); Esperto 10–218, mai sopra ~220; Esperto S5 167 → 149 (probabile `c777919`).
-  - [ ] decidere con l'utente: playtest headless con personaggi e screenshot (`KIOSK_AGENT`, click iniettati, tempo fermo tranne alle crisi ×1), proposta del 2026-10-12;
-- **2026-10-10, playtest 7 (Haiku, strategie headless)**: `docs/fase5/playtest7_strategie/report.md`. Ricetta quasi ottimale «evacua tutti a T+0 + tutti i mezzi sul borgo più vicino al fuoco» (entro il 5 % del migliore); evacuare non costa nulla; Esperto quasi insensibile alle decisioni (91–299). Il runner `rocca` ora stampa il punteggio del chiosco.
-- **2026-10-11, perché evacuare non costa (headless)**: `docs/fase5/intasamento/README.md`, esempi `intasamento` e `intasamento_mezzi`. Le code si formano (fino a 220 auto) ma a Castelvento, lontano dal fuoco: 0 famiglie travolte in 90 partite, mezzi rallentati al più di 1 min. «Preallerta tutti, evacua a T+30» ≥ «evacua tutti a T+0» in 18/18 confronti. Decisione dell'utente (2026-10-11): costo **reale** nel modello, interessato alle famiglie in coda travolte dal fuoco.
-  - [x] 2026-10-11 mappare le uscite dei borghi (`docs/fase5/uscite/README.md`, esempi `uscite` e `uscita_condivisa`): i rifugi sono dentro i centri incombustibili (Castelvento, Pian dei Grilli) e il tratto in comune è dentro Castelvento. In 36 casi nessuna uscita in comune viene tagliata; anche dove l'accesso di un borgo è tagliato presto, 0 famiglie colte fuori e al massimo 15 s di calore su 90 letali. Nessun innesco attiva il costo: serve una modifica del territorio;
-  - [x] 2026-10-11 l'utente sceglie di modificare il territorio invece dei rifugi: **layout 5** (`T4_L5`, non pubblicato), con San Rocco a 1 km lungo la SP 12 e la strada nella macchia (`Layout.verges`), poi la caserma all'ingresso nord-ovest. Resoconto in `docs/fase5/layout5/README.md`. Ritardare l'ordine ora costa (Rocco2: 692 → 392), ma nessuna famiglia viene travolta in coda e la coda di Castelvento non tocca San Rocco; la caserma fuori non cambia nulla. **La preallerta batte «evacua tutti a T+0» in 9 confronti su 9**;
-  - [x] 2026-10-11 l'utente scarta le aree di attesa fuori dai centri («irrealistico per la protezione civile»), approva il fumo sul traffico e chiede vegetazione più vicina / paese più sparso. Fatto: `abm::traffic::smoke_flow` (portata ridotta sui tratti col fumo) e **layout 6** (`T4_L6`, non pubblicato: case sparse di Castelvento lungo la SP 12 nella macchia, San Rocco senza nucleo, `Layout.wooded_roads`), esempio `strategie_civili`. Resoconto in `docs/fase5/layout6/README.md`: su layout 4, 5 e 6, in 0 incendi «evacua tutti» perde più di 20 punti rispetto a «evacua i minacciati»; 0 famiglie colte in strada; al massimo 38 auto ferme. Il traffico non diventa mai il collo di bottiglia a questa scala;
-  - [x] 2026-10-11 l'utente tiene il **layout 5** e chiede di provare lì gli ordini portati da squadre limitate. Fatto, spento di serie: `rocca::messengers`, `Game::messengers`, `Abm::tell_in_person`, `MESSAGGERI` in `strategie_civili`. Resoconto `docs/fase5/messaggeri/README.md`: con 4 squadre, 1 famiglia/min, allerta sul telefono e squadre in parti uguali, «evacua tutti» perde più di 20 punti rispetto a «evacua i minacciati» in 9/26, 12/28 e 12/26 incendi (semi 1–3). Con le squadre secondo le priorità il costo sparisce; Esperto resta insensibile (567);
-  - [x] 2026-10-12 su richiesta dell'utente le squadre guidano davvero: `abm::drive::Drive` (le stesse regole dei mezzi: A* attorno al fuoco, nuovo calcolo ogni 60 s, rallentate dalle code con `Traffic::emergency_factor`, inversione immediata se il fuoco taglia il tratto davanti), squadre dirottate in viaggio verso un quartiere di priorità più alta solo se una strada ci arriva ancora, nessun quartiere con più squadre che famiglie da avvisare. Test `crates/rocca/tests/messaggeri.rs` (riproducibilità, viaggio guidato, dirottamento). `strategie_civili` gira in parallelo su tutti i core (5′49″ → 44″) e conta per le squadre famiglie avvisate, km, tagli e dirottamenti. Esito con `MESSAGGERI=4,2,1,1`, seme 1, 145 partite: 1 sola riga cambia rispetto al viaggio a tempo fisso (Piano3, «preallerta tutti»: 675 → 707), 0 tagli del fuoco davanti a una squadra; in Terra2_gira Pian dei Grilli e Le Ghiande sono irraggiungibili per tutta la partita;
-  - [x] 2026-10-12 punti aperti chiusi (richiesta dell'utente). **Una sola regola di guida**: anche i mezzi a terra usano `abm::drive` (i campi `route`/`at_node`/`planned_at_s`/`route_to` di `Unit` diventano `Unit::drive`); le squadre AIB a piedi percorrono i sentieri a `CREW_SPEED` e, se nessuna strada è aperta, raggiungono il punto a piedi fuori strada, come prima. Correzione in `Drive::plan`: un mezzo arrivato che ha proseguito a piedi non viene riportato al nodo stradale a ogni nuovo calcolo. **Squadre esposte al fuoco** come i mezzi: calore accumulato sopra `IMPASSABLE`, persa a `BURNOVER_S`; porta a porta fisico (la squadra sta alla porta a cui bussa, salta le porte con minaccia ≥ `WORK_LIMIT`, lascia il quartiere se lo sono tutte o se lo è il punto in cui si trova); una squadra senza compiti torna alla sua stazione. Test: `crates/abm/tests/drive.rs` (fuoco dipinto con `ThreatField::paint`: inversione sul tratto tagliato e giro alternativo; quartiere circondato → nessuna strada) e `the_teams_leave_a_district_the_fire_reaches` (Coste2). Effetto dei mezzi sulla prova senza squadre: 12 righe su 145 cambiano (5 meglio, 7 peggio; colte in casa 1007 → 1010); **Coste2_gira, caso del chiosco, peggiora** («evacua tutti» 91 → 30 punti, colte in casa 20 → 22) perché i mezzi non proseguono più su un percorso che il fuoco ha tagliato. Con le squadre: 0 tagli, 0 quartieri lasciati, 0 squadre perse in 145 partite;
-  - [x] 2026-10-12 l'utente ricorda l'obiettivo: **«evacua tutti» non deve essere la strategia migliore**. Rifatta la prova sul layout 5 (semi 1–3) con le squadre che guidano: tabella in `docs/fase5/messaggeri/README.md` («Aggiornamento 2026-10-12»), uscite in `docs/fase5/messaggeri/guida/`. «Evacua tutti» perde più di 20 punti in 6/10/7 incendi con A (prima 9/12/12), 16/17/16 con B, 0 con C (21–23 con priorità rovesciate);
-  - [x] 2026-10-12 decidere con l'utente quale variante portare nel gioco: **A** (`docs/fase5/livelli_l5/README.md`);
-  - [x] 2026-10-12 peggioramento di Coste2_gira: superato, non è più un livello (layout 5);
-  - [x] 2026-10-12 variante A nel gioco, parti uguali; livelli riscelti e layout 5 pubblicato. L'avanzamento degli avvisi nelle schede è in cima;
-  - [ ] il punteggio non conta le famiglie morte o intrappolate dopo la partenza (`rocca::score`): oggi 0, da correggere se un modello le produce;
-  - [ ] decidere con l'utente: un ordine di evacuazione deve far preparare la famiglia almeno quanto una preallerta? Oggi `readied_s` cresce solo con la preallerta (`crates/abm/src/lib.rs:1368`): le famiglie «aspetta e vedi» con un ordine a T+0 partono a T+40–58;
-  - [x] 2026-10-12 layout 5 adottato: livelli riscelti, pubblicato, test adattati;
-  - [ ] capire perché su Coste2_gira, dopo T+34, i mezzi non raggiungono i borghi diversi da Le Ghiande.
-  - [x] 2026-10-11 decidere con l'utente: costo reale dell'evacuazione (code, famiglie in strada esposte) e/o casi in cui la decisione arriva dopo T+0; rivedere `Coste2_gira` come Esperto.
-- **2026-10-10, usabilità schermata per schermata** (richiesta dell'utente): finale che sta nella finestra con pulsanti fissi, segno «Il fuoco è partito qui», mezzi non più nascosti dai badge, banda di crisi, legenda su due colonne, punteggio spiegato, testi del coordinatore e della guida. Prove e tabella in `docs/fase5/usabilita/README.md`. Da verificare con un playtest nel browser (playtest 7).
-- **2026-10-09, nuclei più grandi: layout 4 `t4_paese4` adottato** (richiesta e «fai tu» dell'utente): sei distretti, 538 famiglie, borghi organici, nuovi inneschi e casi del kiosk (`Forna3_gira`, `Coste2_gira`, `Rocco3`). Test adattati, 37 target verdi. Note e incognite in `docs/fase5/ingrandimento_nuclei.md`; playtest 5: browser fallito (scheda nascosta), solo partite scriptate native; schede e debrief da sistemare, playtest vero da rifare. Committato e inviato con push il 2026-10-10 (`900351c`).
-- **Fase corrente: fase 5, iterazioni 5b e 5c chiuse** (2026-10-09, inviate con push fino ad `a16a043`):
-  - 5b: punti 1–10 (`docs/fase5/iterazione5b.md`), compreso il playtest automatico 3 (`docs/fase5/playtest_gpt3/README.md`);
-  - 5c: punti 1–5 del playtest 3 (`docs/fase5/iterazione5c.md`).
-- **Prossima azione: checkpoint 5, umano** (`docs/fase5/README.md`). Una partita al chiosco per caso (Coste2_gira, Piano2, Borgo2), con prima azione e debrief. Non procedere senza conferma dell'utente; dopo viene la fase 6 (playtest).
-- **Playtest 6 (Sonnet 5.5, 2026-10-10, build `3ff28cd`)** fatto, nel browser in primo piano: `docs/fase5/playtest6/report.md`. Partite: Facile 742, Facile 869 (evacuare presto), Medio 360; Esperto solo avviato. Da correggere, verificato sugli screenshot:
-  - [x] 2026-10-10 (`docs/fase5/usabilita/README.md`) **debrief più alto della finestra** (824 px CSS): barra in alto sopra il titolo, «Perché» tagliato, pulsanti per rigiocare o cambiare difficoltà irraggiungibili (`p1-06-finale-tagliato.jpg`). Bloccante: tra una partita e l'altra Giulia ha ricaricato la pagina;
-  - [x] 2026-10-10 legenda tagliata in basso (ora su due colonne sotto la barra) (`p4-01`);
-  - [x] 2026-10-10 il badge di Le Terrazze copre l'etichetta A2 (`p3-02`);
-  - [x] 2026-10-10 (banda «DECISIONE URGENTE» con i secondi) crisi persa (P3, 14:45): scaduta senza che Giulia la vedesse. Molto dipende dalla lentezza dello strumento, ma conviene renderla più evidente;
-  - [x] 2026-10-10 dal playtest 5: fuoco poco visibile all'inizio (segno sull'innesco), pulsanti grigi senza spiegazione, Preallerta ed Evacua poco distinte (due righe nella scheda);
-  - [ ] effetto dei mezzi non spiegato nel «Perché» (P1 e P2: case identiche, 59/76): riguarda modello e racconto, non la schermata.
-- **Playtest 5 (Sonnet 5.5)** fatto: `docs/fase5/playtest_sonnet/report.md`. Il punteggio va rivisto, perché la classifica unica non è coerente con un punteggio relativo all'incendio.
-- **Tempo reale, pause, punteggio e classifica** fatti (`docs/fase5/tempo_reale.md`); nove difetti trovati giocando, elencati lì e nella sezione «Tempo reale» della fase 5.
-- **Playtest 4** (Giulia, prima volta, Haiku 5.5): fatto, difetti da decidere con l'utente (`docs/fase5/playtest_haiku/`, sezione «Playtest 4» della fase 5).
-- **Ancora aperti** (vedi «Dal playtest 3» in fondo alla fase 5):
-  - ~~layout a 900×600~~ (2026-10-12, l'utente: lo schermo del chiosco è almeno 1080p, vincolo tolto);
-  - FPS nel browser a finestra in primo piano;
-  - apertura delle schede al tocco;
-  - durata di Piano2 (1,8 min di esecuzione);
-  - crisi del mezzo perso con la nuova scelta, mai vista in una partita vera.
-- **Playtest automatico** (stessi quattro personaggi):
-  - copiare `docs/fase5/playtest_gpt3/prompt/` fuori dal repository e lanciare `run.sh` (circa 1 h);
-  - servire la build web su `localhost:8765`: `./scripts/build_web.sh` e `python3 -m http.server 8765 --directory target/web`;
-  - i resoconti vanno riassunti all'utente in italiano.
-- **Per riprendere:**
-  - **Comandi:**
-    - `cargo test --release --workspace` (37 target verdi);
-    - `target/release/rocca <caso> --priorita A,B --b-priorita B,A`;
-    - esempi `rocca`: `ab_sweep`, `crisi`, `civili`, `porta`, `durata` (minuti reali per ritmo), `debrief` (righe del «Perché»), `preallerta_vs_evacua` (semi);
-    - kiosk: `KIOSK_CASE=Coste2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_SHOT=<dir> target/release/game` (partita scriptata fino a «Altro incendio»);
-    - kiosk: F2 apre la barra operatore; `KIOSK_FPS=1` scrive gli FPS; `KIOSK_VEG_DENSITY` regola la vegetazione (0,5 di serie); `KIOSK_SCALE=1` forza 1 pixel per punto;
-    - kiosk: `KIOSK_LEGEND=1` apre la legenda; `KIOSK_SHOT_ZOOM` e `KIOSK_SHOT_FOCUS=x,y` per i primi piani. La partita scriptata fotografa anche T+1:40 (`3d_esegui_dopo`);
-    - velocità di serie ×40, ×120 nei tratti quieti (`kiosk/mod.rs`);
-    - modelli della vegetazione: `/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build_models.py`.
-  - **Territorio:** si rigenera con `scenario_factory.py build-town --layout 3`, `town-fires --scenario t4_paese3 --ignitions-from t4_paese2` e `publish --scenario t4_paese3`.
+## Aperti dopo la fase 5
+
+Raccolti il 2026-10-12 dalle sezioni della fase 5 (lì segnati `[>]`). Molti difetti di UX vengono da build vecchie: prima di correggerli, ricontrollare che ci siano ancora.
+
+Da decidere con l'utente:
+- [ ] distribuzione dei mezzi (punti 6, 16, 17 dei colleghi): spiegare meglio la regola «2-1-0», distribuire a rotazione o far scegliere? Prima l'A/B «concentrare contro distribuire» (anche punto 4 dei riferimenti normativi);
+- [ ] un ordine di evacuazione deve far preparare la famiglia almeno quanto una preallerta? (`readied_s`, `crates/abm/src/lib.rs`);
+- [ ] playtest headless con personaggi e screenshot (`KIOSK_AGENT`, click iniettati), proposta del 2026-10-12;
+- [ ] Borgo3 non raggiunge Castelvento: serve un innesco nuovo?
+- [ ] tempo di pianificazione senza limite: serve un limite? (spec: ~40 s indicativi).
+
+Modello e racconto:
+- [ ] riprodurre headless «senza ordini meglio che con ordini» (punto 14 dei colleghi), poi spiegarlo nel «Perché» o correggerlo;
+- [ ] il «Perché» non spiega l'effetto dei mezzi (playtest 6) né il ~22 % di famiglie che non partono nonostante l'ordine;
+- [ ] il punteggio non conta le famiglie colte dopo la partenza (`rocca::score`): oggi 0;
+- [ ] Piano3, Le Ghiande priorità 1: autobotte 1 in «rifornimento» da T+50 a T+170;
+- [ ] Coste2_gira: dopo T+34 i mezzi non raggiungono i borghi diversi da Le Ghiande;
+- [ ] coordinatore: con la prima priorità irraggiungibile un mezzo rientra alla base (non mandarlo al quartiere successivo: provato, annullava la crisi);
+- [ ] il giudizio degli ordini nel finale è col senno di poi: confrontarlo con la previsione di quel momento;
+- [ ] difesa delle strade: misurare prima l'effetto sulla percorribilità (spec);
+- [ ] bollettino meteo con incertezza; preallerta come osservazione del grafo (`HouseholdObs`); countdown nel `Game` per i replay;
+- [ ] parametri da rivedere: `EMBER_DECAY_M`, `PROTECTED_EMBER`, `PROTECTED_RADIANT`, soglie del coordinatore;
+- [ ] territorio: quali strade sono tagliafuoco (SP 12 con vento da N); tratti della popolazione copiati da `demo_traits`;
+- [ ] dai riferimenti normativi: bollettino incendi nel briefing, debrief come «rapporto di intervento», regola LACES per le postazioni, crisi quando l'incendio diventa «complesso»; idee per dopo: Canadair su richiesta, rifugi come «luogo sicuro», strade fuori norma per le autobotti.
+
+UX (verificare nei playtest):
+- [ ] messaggi dei personaggi più visibili e storico delle battute (punto 4 dei colleghi); il fumetto si nota durante la crisi?
+- [ ] freccia del vento più visibile (punto 15); primi piani automatici sull'area colpita (punto 18);
+- [ ] nella barra laterale si nota la crisi? Serve trascinare per riordinare il piano?
+- [ ] tutorial: durata, testi, «Salta» usato subito? Le pattuglie vanno spiegate anche lì?
+- [ ] alla crisi, priorità a un paese irraggiungibile: avviso prima della conferma;
+- [ ] Preallerta ed Evacua poco distinguibili sulla mappa; indicatori delle evacuazioni sulla mappa;
+- [ ] dai playtest 4–5 (forse già risolti): schede che si spostano, primo click a vuoto, etichette dei nuclei sopra i mezzi, «fuoco a 0,0 km», segni sovrapposti nella cronologia, mezzi fermi a fine partita, etichette A1/A2 sovrapposte nel finale;
+- [ ] dai roast: navigazione da tastiera, forme oltre ai colori, stato perso ricaricando la pagina, icone dei mezzi leggibili nella vista generale, mezzi assegnati / in viaggio / sul posto, perché una postazione è irraggiungibile;
+- [ ] da verificare a occhio: colore del suolo da `cover.u8` da vicino; primo piano di tornanti e piazzole.
+
+## Per riprendere
+
+- `cargo test --release --workspace` (39 target verdi il 2026-10-12);
+- `target/release/rocca <caso> --priorita A,B --b-priorita B,A`; esempi `rocca`: `strategie_civili` (`MESSAGGERI=0` spegne le pattuglie), `durata` (i livelli del `game.json`, semi 1–3), `ab_sweep`, `crisi`, `debrief`;
+- chiosco, partita scriptata: `KIOSK_SIZE=1920x1080 KIOSK_CASE=Borgo2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_TUTORIAL=0 KIOSK_SHOT=<dir> target/release/game`; solo il finale con `KIOSK_SHOT_END=1`; F2 barra operatore; `KIOSK_FPS=1`, `KIOSK_LEGEND=1`, `KIOSK_SHOT_ZOOM`, `KIOSK_SHOT_FOCUS=x,y`;
+- velocità: ×80 di serie, ×240 nei tratti quieti (`kiosk/mod.rs`);
+- territorio: `.venv/bin/python tools/scenario_factory.py game-cases --scenario t4_paese5` e `publish --scenario t4_paese5` (livelli e pattuglie in `tools/factory/cases.py`);
+- playtest automatico: `docs/fase5/playtest_gpt3/prompt/` copiato fuori dal repository, build web servita con `python3 -m http.server 8765 --directory target/web`; resoconti all'utente in italiano;
+- modelli della vegetazione: `/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build_models.py`.
 
 ## Decisioni dell'utente
 
+- 2026-10-12: **fase 5 chiusa**; avanti con la fase 6.
+- 2026-10-12: **variante A delle pattuglie nel gioco**, sul **layout 5**; livelli Rocco3 / Terra1_gira / Borgo2_gira; l'avanzamento degli avvisi sui paesi e le pattuglie disegnate sulla mappa.
+- 2026-10-12: il nome del giocatore all'inizio al posto delle iniziali; lo schermo del chiosco è almeno 1080p; tutorial non interattivo («Avanti» / «Salta»).
 - 2026-10-09: **tempo reale dichiarato** («non è chiaro se è real time o a turni»; «Va bene» alla proposta in 7 punti): pulsante unico play/pausa, ordini immediati durante il gioco, pausa visibile, orologio «ore 14:26», crisi come rallentatore, accelerazione solo se è davvero tutto fermo, intro esplicita.
 - 2026-10-09: **massimo 3 pause** a partita (le crisi non contano).
 - 2026-10-10: **selettore di difficoltà** all'avvio: Facile = `Rocco3`, Medio = `Forna3_gira`, Esperto = `Coste2_gira` (`levels` in `game.json`, `LEVELS` in `tools/factory/cases.py`). Nel finale «Cambia difficoltà» al posto di «Altro incendio»; classifica unica con il livello accanto.
@@ -153,19 +114,19 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - 2026-10-08: **niente altro lavoro grafico ora**: seguire il piano, proseguire con sistemi e gameplay (fase 3).
 - 2026-10-08: **risoluzione fine approvata** ("commit and push … continua"): terreno a 5 m e passo ritracciato a 8,9 km nello stesso corridoio. Avanti con `cover.u8` nel kiosk.
 
-## Da fare
+## Da fare (fasi precedenti)
 
-### Fase 2: insediamenti (in corso)
+### Fase 2: insediamenti
 
 - [x] **Checkpoint umano 2** superato (2026-10-08). Ritocchi possibili più avanti, se servono per la giocabilità: Borgo più esposto (meno orti irrigui, bosco più vicino), passo più corto.
-- [ ] Rivedere quali strade sono tagliafuoco: oggi solo la provinciale e le vie del paese sono non combustibili (vedi Borgo2 nella sezione sulla risoluzione fine).
-- [ ] Popolazione: oggi tratti "compiacenti" copiati dal vecchio `demo_traits`. Va ripensata insieme alla preallerta (fase 3). Auto sistemate il 2026-10-08: case colpite invariate, famiglie colte in casa a Le Coste un po' meno (`docs/fase4/ab_sweep.md` e `crisi.md` rigenerati).
+- [>] Rivedere quali strade sono tagliafuoco: oggi solo la provinciale e le vie del paese sono non combustibili (vedi Borgo2 nella sezione sulla risoluzione fine).
+- [>] Popolazione: oggi tratti "compiacenti" copiati dal vecchio `demo_traits`. Va ripensata insieme alla preallerta (fase 3). Auto sistemate il 2026-10-08: case colpite invariate, famiglie colte in casa a Le Coste un po' meno (`docs/fase4/ab_sweep.md` e `crisi.md` rigenerati).
 
 ### Risoluzione fine (approvata il 2026-10-08)
 
-- [ ] Verificare in fase 5, a distanza ravvicinata, il colore del suolo da `cover.u8` (ora visibile: niente più palette VR) e le macchie chiare attorno alle case de Le Coste.
-- [ ] Primo piano nel kiosk di tornanti e piazzole (draping a livello di pixel).
-- [ ] Strade come tagliafuoco: Borgo2 con vento da N supera o no la SP 12 secondo pochi metri di tracciato (spotting). Decidere se la provinciale è una fascia parafuoco più larga o solo una strada.
+- [>] Verificare in fase 5, a distanza ravvicinata, il colore del suolo da `cover.u8` (ora visibile: niente più palette VR) e le macchie chiare attorno alle case de Le Coste.
+- [>] Primo piano nel kiosk di tornanti e piazzole (draping a livello di pixel).
+- [>] Strade come tagliafuoco: Borgo2 con vento da N supera o no la SP 12 secondo pochi metri di tracciato (spotting). Decidere se la provinciale è una fascia parafuoco più larga o solo una strada.
 
 ### Fase 4: crisi e bilanciamento
 
@@ -178,20 +139,119 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - [x] 2026-10-08 Crisi **previsione** (bollettino 20 min prima del cambio di vento) e preposizionamento per la prima priorità (`PREEMPT_M` 3,5 km).
 - [x] 2026-10-08 Report di fase 4 (`docs/fase4/README.md`): le priorità iniziali cambiano gli esiti in 4 casi; la crisi conta in Coste2_gira (58 case colpite rispondendo subito, 71 rispondendo tardi o ignorandola).
 - [x] 2026-10-08 **Checkpoint umano 4** approvato.
-- [ ] Bollettino meteo con incertezza (orario ± e probabilità), senza leggere il futuro dell'incendio.
+- [>] Bollettino meteo con incertezza (orario ± e probabilità), senza leggere il futuro dell'incendio.
 - [x] 2026-10-08 Mezzi bloccati: `Game::unit_status` dice «bloccato: strada tagliata dal fuoco» se un mezzo in movimento è fermo da 5 min (`STUCK_S`); etichetta rossa sulla mappa.
-- [ ] (prima versione, superata dal layout 2) Misura «la decisione alla crisi conta» (`examples/crisi.rs`, tabella in `docs/fase4/crisi.md`):
+- [>] (prima versione, superata dal layout 2) Misura «la decisione alla crisi conta» (`examples/crisi.rs`, tabella in `docs/fase4/crisi.md`):
   - effetto netto in Coste2_gira: case colpite 76 se si ignora, 61 rispondendo subito, 47 rispondendo 20 min dopo; famiglie colte in casa 24 se si ignora, 12 rispondendo subito con evacuazione;
   - nella maggior parte dei casi rispondere cambia poco: vanno scelti casi in cui la crisi è un vero dilemma, o rivisto il territorio (piano d'azione: «si torna a case/strade e inneschi»).
 - [x] 2026-10-08 Kiosk: fase **Crisi** a ×1 con countdown di 25 s. Il piano attivo prosegue; il proposto si applica alla conferma o alla scadenza (rivalidato), e se non cambia resta il piano attuale. Verificato con screenshot su Coste2_gira (crisi del vento a T+46).
-- [ ] Le fasi ×0/×N/×1 sono tempo reale del kiosk; l'headless le simula con strategie (`examples/crisi.rs`). Valutare se spostare il countdown nel `Game` per i replay.
+- [>] Le fasi ×0/×N/×1 sono tempo reale del kiosk; l'headless le simula con strategie (`examples/crisi.rs`). Valutare se spostare il countdown nel `Game` per i replay.
 - [x] 2026-10-08 Casi scelti: Coste2_gira, Piano2, Borgo2 (`featured` in `game.json`).
-- [ ] Preallerta come osservazione del grafo comportamentale (`HouseholdObs`).
+- [>] Preallerta come osservazione del grafo comportamentale (`HouseholdObs`).
 - [x] **Rettificato (2026-10-08):** la «scoperta» del porting dei test era sbagliata. Sui casi veri la minaccia alla porta supera 0,35 in 9 casi su 18; non supera mai 0,55 (celle da 20 m). Il testo originale diceva: sul territorio la minaccia per le persone davanti alle case vale sempre 0, perché ogni casa ha una radura di circa 13 m. Il blocco comportamentale «fuoco alla porta» non scatta mai, e con lui i rami evacua-subito, riparo e ultima risorsa. Test `incident_gaps::the_last_resort_profile…` ignorato con motivazione. Decidere se è calibrazione del comportamento o del territorio.
-- [ ] Difesa delle strade: misurare prima l'effetto sulla percorribilità (spec).
-- [ ] Rivedere i parametri nuovi: `EMBER_DECAY_M` 700 m, `PROTECTED_EMBER` 0,85 e `PROTECTED_RADIANT` 0,5, soglie del coordinatore.
+- [>] Difesa delle strade: misurare prima l'effetto sulla percorribilità (spec).
+- [>] Rivedere i parametri nuovi: `EMBER_DECAY_M` 700 m, `PROTECTED_EMBER` 0,85 e `PROTECTED_RADIANT` 0,5, soglie del coordinatore.
 
-### Fase 5: nuova UX
+### Debito tecnico
+
+- [x] 2026-10-12 `CLAUDE.md` citava `docs/rocca-ventosa/…`: percorsi corretti in `docs/…`.
+- [ ] File ignorati dei vecchi scenari (circa 190 MB, non usati dal codice): da cancellare a mano (2026-10-12: la cancellazione automatica è stata bloccata). Comando: `rm -rf data/scenarios/{mati,pedrogao,rhodes,spotorno} data/osm_raw.json data/spotorno_render_terrain.tif dist results`. Poi togliere dal `.gitignore` le righe `/results`, `/dist`, `data/osm_raw.json`, `data/spotorno_render_terrain.tif` e i commenti su `fetch_osm.py` e `build_render_terrain.py`, script che non esistono più.
+- [ ] `.mcp.json` avvia un server MCP «spotorno» (`tools/mcp/server.py`, non in git) del vecchio scenario: chiedere all'utente se serve ancora.
+- [x] 2026-10-08 Kiosk: pannello provvisorio sostituito dalla UX della fase 5.
+
+## Fatto
+
+### Fase 5 (chiusa il 2026-10-12)
+
+Le voci `[>]` sono riportate in «Aperti dopo la fase 5».
+
+- **2026-10-12, variante A e layout 5 nel gioco** (l'utente: «le modifiche per testare l'evacuazione totale non sono state portate nel gioco?»; scelta: **variante A**). Resoconto `docs/fase5/livelli_l5/README.md`.
+  - [x] 2026-10-12 layout 5 pubblicato in `data/scenarios/rocca_ventosa`; `messengers` nel `game.json` (4 squadre, 1 famiglia/min, allerta sul telefono, parti uguali), letto da `Territory` e `Game::new`: chiosco e runner uguali. Livelli: Facile Rocco3, **Medio Terra1_gira**, **Esperto Borgo2_gira**. «Evacua tutti» perde più di 20 punti in 6/10/7 incendi (semi 1–3), come la prova headless. 39 target verdi (`fase3` e `authored_unit_policy` adattati);
+  - [x] 2026-10-12 **avvisi nel chiosco** (l'utente: «indicare sui paesi come procede l'allertamento», «anche i mezzi in movimento con la grafica»): «N/M» sul badge, riga nella scheda, auto della Polizia Locale sulla mappa con etichetta «P1»/«×3», legenda; nelle schermate si chiamano «pattuglie» (`docs/fase5/livelli_l5/README.md`, «Aggiornamento»);
+  - [>] dirlo anche nel tutorial (passo della scheda) se nel playtest non si capisce;
+  - [>] rifare la build web e provarla;
+  - [>] Piano3, Le Ghiande priorità 1: autobotte 1 in «rifornimento» da T+50 a T+170, da capire;
+  - [>] rivedere le battute e il «Perché» per i livelli nuovi (frasi scritte per Coste2_gira/Forna3_gira?).
+
+- **2026-10-12, playtest dei colleghi** (commenti incollati dall'utente, 18 punti). Decisioni dell'utente (2026-10-12): **il nome del giocatore si chiede all'inizio, non più le iniziali, così i personaggi si rivolgono a lui**; «procedi con i fix semplici».
+  - [x] 2026-10-12 nome nell'intro («Come ti chiami?»): i livelli si attivano solo dopo aver scritto il nome. Lo usano la volontaria nel tutorial, i consigli in pausa, la sindaca e il meteo nelle battute (`characters::to`) e il titolo del finale. La classifica salva il nome da sola (`score::Entry::name`; le classifiche già salvate con `initials` si leggono ancora). «Nuova partita» dell'operatore cancella il nome; la partita scriptata gioca come «Giulia» e non scrive la classifica (`board::save`);
+  - [x] 2026-10-12 cursore a mano e bordo bianco immediato su tutti i pulsanti (`interact_cursor`, `animation_time` 0, `icons::pointing`); pulsanti dei livelli su tutta la larghezza, testo centrato;
+  - [x] 2026-10-12 finale: solo «Riprova», che torna all'intro e alla scelta del livello;
+  - [x] 2026-10-12 scheda: Difendi, Preallerta ed Evacua su una riga, icona sopra e testo sotto (`icons::tall_button`); «Difendi» ripremuto toglie la difesa; «metti per primo» sotto; le tre spiegazioni sempre in fondo, con più spazio;
+  - [x] 2026-10-12 tempo di evacuazione: la scheda dice «~N min per prepararsi, poi ~M min di strada» (`Kiosk::readying`, dai `prep_time_min` della popolazione meno la preparazione già fatta con la preallerta); il testo di «Evacua» non dice più «partono subito» e spiega che qualcuno aspetta (perché non si arriva al 100 %);
+  - [x] 2026-10-12 etichette dei mezzi: sempre un'asta del colore del mezzo fino a un punto dove il mezzo si trova; tolta la riga bianca che compariva solo quando l'etichetta veniva spostata;
+  - [x] 2026-10-12 legenda sfoltita: solo ciò che è sulla mappa o nelle schede, più una riga sui tempi di evacuazione;
+  - [x] 2026-10-12 «Ho capito» allineato (`tutorial.rs`, nel commit `6dfa637`); pannelli laterali uniformi con la barra laterale dell'altra sessione (`6dfa637`);
+  - [>] decidere con l'utente: **distribuzione dei mezzi** (punti 6, 16, 17). Il «2-1-0» è la regola 2 del coordinatore; i paesi non ancora minacciati non ricevono mezzi (regola 1). Spiegarlo meglio, distribuire a rotazione o far scegliere quanti mezzi per paese? Prima l'A/B «concentrare contro distribuire»;
+  - [>] messaggi dei personaggi più visibili (ingrandimento al cambio, bip facoltativo) e storico delle battute (punto 4);
+  - [>] riprodurre headless «senza ordini meglio che con ordini» in un paese (punto 14): le squadre bagnano la vegetazione e il fuoco cambia strada? Poi raccontarlo nel «Perché» o correggere;
+  - [>] freccia del vento più visibile sul territorio (punto 15); primi piani automatici sull'area colpita con `Kiosk::shot` (punto 18);
+  - [x] 2026-10-12 caricamento nel browser: barra di avanzamento del download del `.wasm` (`web/index.html::download`, il sed di `scripts/build_web.sh` aggiornato), poi «Avvio della simulazione…». Non provato in un browser (serve `scripts/build_web.sh`);
+  - [>] chiedere ai colleghi se hanno giocato nel browser o nativo (punto 1, «pesante»);
+  - [x] 2026-10-12 con la barra laterale, i badge dei paesi dietro la barra avevano una linea che attraversava la barra: linee ritagliate sulla mappa (`bf744a0`);
+  - [x] 2026-10-12 schermata iniziale ridisegnata (`kiosk/ui.rs::intro`): cornice con ombra e bordo ambra, separatori, squadra come «pillole» con ritratto, livelli come tre carte verde/ambra/rosso cliccabili per intero (disattivate finché manca il nome);
+  - [>] serve una tastiera al chiosco per il nome (o lo scrive l'operatore).
+
+- **2026-10-12, barra laterale** (richiesta dell'utente: «tutto nella barra tranne la scheda del paese quando si clicca, e il fumetto che può rimanere nella parte opposta, isolato»).
+  - [x] 2026-10-12 `kiosk/ui.rs::sidebar`: a destra, larga 400 px, dall'alto: vento, ora con la barra delle ore, stato (in pausa / il tempo scorre / DECISIONE URGENTE con i secondi, lampeggiante alla fine), il pulsante del tempo oppure la scelta della crisi, il piano (righe cliccabili, apre la scheda), il coordinatore / i mezzi, gli ultimi aggiornamenti, la legenda (chiusa); in fondo la vista (zoom e vista iniziale). Sulla mappa restano le etichette dei paesi, la scheda aperta, le etichette dei mezzi, il segno del fuoco e il fumetto in basso a sinistra (alla crisi: «Decidi nella barra a destra»). La camera disegna la mappa solo a sinistra della barra (`Camera::viewport`, `kiosk/view.rs`) e rifà l'inquadratura iniziale sulla nuova misura. Tolti barra in alto (resta solo nel finale), bande «IN PAUSA» / «DECISIONE URGENTE», pannelli sparsi. Il tutorial punta alle sezioni della barra. Prova: stesso comando `KIOSK_SHOT` a 1920×1080;
+  - [>] provarlo con una persona: si nota la crisi nella barra? la lista del piano basta o serve trascinare per riordinare?
+
+- **2026-10-12, mini-tutorial a inizio partita** (richiesta dell'utente). Decisioni dell'utente (2026-10-12): **lo schermo del chiosco è almeno 1080p, il vincolo 900×600 cade**; il tutorial è **non interattivo**: solo «Avanti» e «Salta».
+  - [x] 2026-10-12 `crates/game/src/kiosk/tutorial.rs`: cinque passi (fuoco e vento, paesi, scheda con Difendi/Preallerta/Evacua, piano, «Avvia»). La camera si sposta con un movimento graduale (`Kiosk::shot`, `kiosk/view.rs`), il resto dello schermo si scurisce e la volontaria spiega in un fumetto con una freccia. Parte solo per un nuovo visitatore (non a «Riprova» o «Cambia difficoltà»; di nuovo dopo «Nuova partita» dell'operatore); si spegne da F2 o con `KIOSK_TUTORIAL=0`. Prova: `KIOSK_SIZE=1920x1080 KIOSK_CASE=Coste2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_SHOT=<dir> target/release/game` → `0_tour_0..4.png`;
+  - [>] provarlo nel browser con una persona: durata (5 passi), testi, se «Salta» viene usato subito;
+  - [x] 2026-10-12 (approvato dall'utente) tolti i doppioni del tutorial: «Come si gioca» dall'intro (`how_steps`) e la frase della volontaria nei primi 10 minuti (`TUTORIAL_S`), che ora dà subito le notizie della partita; nell'intro «puoi mettere in pausa quando vuoi» → «puoi fermarlo poche volte per cambiare gli ordini» (le pause sono 3).
+
+- **2026-10-12, riferimenti normativi letti** (richiesta dell'utente): Raccomandazioni AIB 2026 (GU n. 133, 11/6/2026), Codice di prevenzione incendi (DM 3/8/2015, testo coordinato 2021), Direttiva PCM 10/1/2020 sul DOS (GU n. 56, 5/3/2020). Non sono specifiche: servono come lessico e per ancorare i parametri. L'utente ha detto «ok» alla proposta «prima il punto 5, poi i punti 1–3».
+  - [x] 2026-10-12 **punto 5 (preallerta ≠ evacuazione secondo il tempo di esodo del Codice M.3.4, rivelazione + allarme + pre-movimento + movimento): già così nel modello.** Un ordine creduto fa partire la preparazione (`block.order_response` → `action.prepare` → `prep_seconds`); la preallerta anticipa la preparazione in casa (`readied_s`) e accorcia il tempo d'allarme (`PREALERTED_ORDER_DELAY_S`). La partenza a T+40–58 degli «aspetta e vedi» con ordine a T+0 è la somma di canale (1,5–20 min) e preparazione (25 min ± 15 %), non un ordine che non fa preparare. Resta una questione di **taratura**, non di struttura: il Codice dà 1′30″–3′30″ per persone sveglie e pratiche dei luoghi che escono da un edificio, non per una famiglia che carica l'auto;
+  - [x] 2026-10-12 **punto 1, versione semplice chiesta dall'utente** («basta "aiutaci a gestire questa emergenza" con i vari personaggi che lavorano con noi», niente battute): sottotitolo dell'intro «Aiutaci a gestire questa emergenza.», la volontaria chiede aiuto, sotto «La squadra con cui lavori» con i quattro ritratti e i nomi (`kiosk/ui.rs::intro`, `Who::short`);
+  - [>] ~~punto 1, ruolo reale~~ (superato dalla versione semplice): ~~il giocatore è il Sindaco~~ (2026-10-12, l'utente: la sindaca è già un personaggio) → il giocatore è **in sala operativa del Comune (COC), accanto alla sindaca**: propone priorità e ordini, lei li firma senza passaggi in più (l'ordinanza è sua per legge). Da sistemare anche `Who::Dos`, oggi «Il caposquadra dei vigili del fuoco»: per la Direttiva il DOS dirige le operazioni AIB, non è un caposquadra; il coordinatore è «DOS e Vigili del Fuoco». Unità: «Vigili del Fuoco: difendono le case» (ROS, Direttiva §3: vita e insediamenti sono prioritari e in capo al ROS), «Squadre antincendio boschivo: lavorano sul fronte». Risponde anche a «effetto dei mezzi non spiegato» (playtest 6);
+  - [>] **punto 2, bollettino incendi** nel briefing iniziale: vento, livello di pericolo, quartieri esposti (Raccomandazioni 2026, lettera a);
+  - [>] **punto 3, debrief come «rapporto di intervento»** (Direttiva §4h): tipo d'incendio, dove hanno lavorato le squadre, cosa ha funzionato; in fondo **una** norma di comportamento legata alla partita (stile «Io non rischio»);
+  - [>] punto 4, «concentrare le forze» (principio AIB, Direttiva All. A): prima un A/B a parità di seed, una priorità contro molte; solo se il modello lo premia almeno talvolta, consiglio nella guida e frase nel debrief;
+  - [>] punto 6, regola LACES per le postazioni: valide solo con via di fuga verso un'area sicura; evento visibile «squadra ritirata». Soglie possibili: civili 2,5 kW/m², soccorritori 3 kW/m² (Codice M.3.5, tab. M.3-2);
+  - [>] punto 7, crisi ×1 quando l'incendio diventa «complesso» (Direttiva §3): quartieri minacciati più di quanti le squadre possano coprire (fase 4);
+  - [>] idee per dopo il checkpoint 5: Canadair su richiesta (flotta di Stato via SOUP/COAU, razionata e dirottabile) come decisione di crisi; verifica dei rifugi come «luogo sicuro» (≤ 2,5 kW/m², capienza, Codice S.4.5.1); strade fuori norma per le autobotti (larghezza 3,5 m, pendenza ≤ 10 %, Codice S.9.5) come vincolo della Scenario Factory; mezzi aerei fermi di notte, se una partita arriva al tramonto (DA VERIFICARE);
+  - da non mostrare al giocatore: kW/m², indici FWI/FFMC, ICS, radio TBT, procedure COAU.
+
+- **2026-10-12, «Come sono andati i tuoi ordini» nel finale** (richiesta dell'utente: «ok, let's add words»; solo parole, il punteggio non cambia). `Game::order_review` e `Game::needless_evacuations` in `rocca`: per ogni borgo l'ordine civile giudicato da quanto si è avvicinato il fuoco in questa partita. Rosso: famiglie colte in casa (ordine mancante o tardivo). Ambra: evacuazione con il fuoco rimasto oltre `QUIET_FIRE_M` (1,5 km, «Forse bastava la preallerta»), oppure nessun ordine con il fuoco vicino. Verde: evacuazione prudente o in tempo, preallerta sufficiente. «Alle case» = minaccia alla porta ≥ `ALARMING`, la stessa soglia delle famiglie colte. Nel finale sopra «I borghi», le righe rosse per prime; il runner `rocca` le stampa. Test `the_review_judges_each_order_by_the_fire`; schermata `docs/fase5/img/fine_ordini.png` (`KIOSK_CASE=Rocco3`, 1920×1080).
+  - [>] il giudizio è col senno di poi; versione più giusta: confrontare l'ordine con la previsione disponibile in quel momento (la stessa della crisi «previsione»);
+  - [>] se serve: una riga anche per i mezzi in postazione dove il fuoco non è mai arrivato.
+- **2026-10-12, playtest 8 (Haiku, strategie headless, dopo `c777919`)**: `docs/fase5/playtest8_strategie/report.md`, 19 numeri riverificati. Nuova ricetta: «preallerta tutti T+0, evacua tutti T+30 + mezzi sul borgo più vicino» ≥ «evacua tutti T+0» in 24/24 confronti (+39/+56/+47); Esperto 10–218, mai sopra ~220; Esperto S5 167 → 149 (probabile `c777919`).
+  - [>] decidere con l'utente: playtest headless con personaggi e screenshot (`KIOSK_AGENT`, click iniettati, tempo fermo tranne alle crisi ×1), proposta del 2026-10-12;
+- **2026-10-10, playtest 7 (Haiku, strategie headless)**: `docs/fase5/playtest7_strategie/report.md`. Ricetta quasi ottimale «evacua tutti a T+0 + tutti i mezzi sul borgo più vicino al fuoco» (entro il 5 % del migliore); evacuare non costa nulla; Esperto quasi insensibile alle decisioni (91–299). Il runner `rocca` ora stampa il punteggio del chiosco.
+- **2026-10-11, perché evacuare non costa (headless)**: `docs/fase5/intasamento/README.md`, esempi `intasamento` e `intasamento_mezzi`. Le code si formano (fino a 220 auto) ma a Castelvento, lontano dal fuoco: 0 famiglie travolte in 90 partite, mezzi rallentati al più di 1 min. «Preallerta tutti, evacua a T+30» ≥ «evacua tutti a T+0» in 18/18 confronti. Decisione dell'utente (2026-10-11): costo **reale** nel modello, interessato alle famiglie in coda travolte dal fuoco.
+  - [x] 2026-10-11 mappare le uscite dei borghi (`docs/fase5/uscite/README.md`, esempi `uscite` e `uscita_condivisa`): i rifugi sono dentro i centri incombustibili (Castelvento, Pian dei Grilli) e il tratto in comune è dentro Castelvento. In 36 casi nessuna uscita in comune viene tagliata; anche dove l'accesso di un borgo è tagliato presto, 0 famiglie colte fuori e al massimo 15 s di calore su 90 letali. Nessun innesco attiva il costo: serve una modifica del territorio;
+  - [x] 2026-10-11 l'utente sceglie di modificare il territorio invece dei rifugi: **layout 5** (`T4_L5`, non pubblicato), con San Rocco a 1 km lungo la SP 12 e la strada nella macchia (`Layout.verges`), poi la caserma all'ingresso nord-ovest. Resoconto in `docs/fase5/layout5/README.md`. Ritardare l'ordine ora costa (Rocco2: 692 → 392), ma nessuna famiglia viene travolta in coda e la coda di Castelvento non tocca San Rocco; la caserma fuori non cambia nulla. **La preallerta batte «evacua tutti a T+0» in 9 confronti su 9**;
+  - [x] 2026-10-11 l'utente scarta le aree di attesa fuori dai centri («irrealistico per la protezione civile»), approva il fumo sul traffico e chiede vegetazione più vicina / paese più sparso. Fatto: `abm::traffic::smoke_flow` (portata ridotta sui tratti col fumo) e **layout 6** (`T4_L6`, non pubblicato: case sparse di Castelvento lungo la SP 12 nella macchia, San Rocco senza nucleo, `Layout.wooded_roads`), esempio `strategie_civili`. Resoconto in `docs/fase5/layout6/README.md`: su layout 4, 5 e 6, in 0 incendi «evacua tutti» perde più di 20 punti rispetto a «evacua i minacciati»; 0 famiglie colte in strada; al massimo 38 auto ferme. Il traffico non diventa mai il collo di bottiglia a questa scala;
+  - [x] 2026-10-11 l'utente tiene il **layout 5** e chiede di provare lì gli ordini portati da squadre limitate. Fatto, spento di serie: `rocca::messengers`, `Game::messengers`, `Abm::tell_in_person`, `MESSAGGERI` in `strategie_civili`. Resoconto `docs/fase5/messaggeri/README.md`: con 4 squadre, 1 famiglia/min, allerta sul telefono e squadre in parti uguali, «evacua tutti» perde più di 20 punti rispetto a «evacua i minacciati» in 9/26, 12/28 e 12/26 incendi (semi 1–3). Con le squadre secondo le priorità il costo sparisce; Esperto resta insensibile (567);
+  - [x] 2026-10-12 su richiesta dell'utente le squadre guidano davvero: `abm::drive::Drive` (le stesse regole dei mezzi: A* attorno al fuoco, nuovo calcolo ogni 60 s, rallentate dalle code con `Traffic::emergency_factor`, inversione immediata se il fuoco taglia il tratto davanti), squadre dirottate in viaggio verso un quartiere di priorità più alta solo se una strada ci arriva ancora, nessun quartiere con più squadre che famiglie da avvisare. Test `crates/rocca/tests/messaggeri.rs` (riproducibilità, viaggio guidato, dirottamento). `strategie_civili` gira in parallelo su tutti i core (5′49″ → 44″) e conta per le squadre famiglie avvisate, km, tagli e dirottamenti. Esito con `MESSAGGERI=4,2,1,1`, seme 1, 145 partite: 1 sola riga cambia rispetto al viaggio a tempo fisso (Piano3, «preallerta tutti»: 675 → 707), 0 tagli del fuoco davanti a una squadra; in Terra2_gira Pian dei Grilli e Le Ghiande sono irraggiungibili per tutta la partita;
+  - [x] 2026-10-12 punti aperti chiusi (richiesta dell'utente). **Una sola regola di guida**: anche i mezzi a terra usano `abm::drive` (i campi `route`/`at_node`/`planned_at_s`/`route_to` di `Unit` diventano `Unit::drive`); le squadre AIB a piedi percorrono i sentieri a `CREW_SPEED` e, se nessuna strada è aperta, raggiungono il punto a piedi fuori strada, come prima. Correzione in `Drive::plan`: un mezzo arrivato che ha proseguito a piedi non viene riportato al nodo stradale a ogni nuovo calcolo. **Squadre esposte al fuoco** come i mezzi: calore accumulato sopra `IMPASSABLE`, persa a `BURNOVER_S`; porta a porta fisico (la squadra sta alla porta a cui bussa, salta le porte con minaccia ≥ `WORK_LIMIT`, lascia il quartiere se lo sono tutte o se lo è il punto in cui si trova); una squadra senza compiti torna alla sua stazione. Test: `crates/abm/tests/drive.rs` (fuoco dipinto con `ThreatField::paint`: inversione sul tratto tagliato e giro alternativo; quartiere circondato → nessuna strada) e `the_teams_leave_a_district_the_fire_reaches` (Coste2). Effetto dei mezzi sulla prova senza squadre: 12 righe su 145 cambiano (5 meglio, 7 peggio; colte in casa 1007 → 1010); **Coste2_gira, caso del chiosco, peggiora** («evacua tutti» 91 → 30 punti, colte in casa 20 → 22) perché i mezzi non proseguono più su un percorso che il fuoco ha tagliato. Con le squadre: 0 tagli, 0 quartieri lasciati, 0 squadre perse in 145 partite;
+  - [x] 2026-10-12 l'utente ricorda l'obiettivo: **«evacua tutti» non deve essere la strategia migliore**. Rifatta la prova sul layout 5 (semi 1–3) con le squadre che guidano: tabella in `docs/fase5/messaggeri/README.md` («Aggiornamento 2026-10-12»), uscite in `docs/fase5/messaggeri/guida/`. «Evacua tutti» perde più di 20 punti in 6/10/7 incendi con A (prima 9/12/12), 16/17/16 con B, 0 con C (21–23 con priorità rovesciate);
+  - [x] 2026-10-12 decidere con l'utente quale variante portare nel gioco: **A** (`docs/fase5/livelli_l5/README.md`);
+  - [x] 2026-10-12 peggioramento di Coste2_gira: superato, non è più un livello (layout 5);
+  - [x] 2026-10-12 variante A nel gioco, parti uguali; livelli riscelti e layout 5 pubblicato. L'avanzamento degli avvisi nelle schede è in cima;
+  - [>] il punteggio non conta le famiglie morte o intrappolate dopo la partenza (`rocca::score`): oggi 0, da correggere se un modello le produce;
+  - [>] decidere con l'utente: un ordine di evacuazione deve far preparare la famiglia almeno quanto una preallerta? Oggi `readied_s` cresce solo con la preallerta (`crates/abm/src/lib.rs:1368`): le famiglie «aspetta e vedi» con un ordine a T+0 partono a T+40–58;
+  - [x] 2026-10-12 layout 5 adottato: livelli riscelti, pubblicato, test adattati;
+  - [>] capire perché su Coste2_gira, dopo T+34, i mezzi non raggiungono i borghi diversi da Le Ghiande.
+  - [x] 2026-10-11 decidere con l'utente: costo reale dell'evacuazione (code, famiglie in strada esposte) e/o casi in cui la decisione arriva dopo T+0; rivedere `Coste2_gira` come Esperto.
+- **2026-10-10, usabilità schermata per schermata** (richiesta dell'utente): finale che sta nella finestra con pulsanti fissi, segno «Il fuoco è partito qui», mezzi non più nascosti dai badge, banda di crisi, legenda su due colonne, punteggio spiegato, testi del coordinatore e della guida. Prove e tabella in `docs/fase5/usabilita/README.md`. Da verificare con un playtest nel browser (playtest 7).
+- **2026-10-09, nuclei più grandi: layout 4 `t4_paese4` adottato** (richiesta e «fai tu» dell'utente): sei distretti, 538 famiglie, borghi organici, nuovi inneschi e casi del kiosk (`Forna3_gira`, `Coste2_gira`, `Rocco3`). Test adattati, 37 target verdi. Note e incognite in `docs/fase5/ingrandimento_nuclei.md`; playtest 5: browser fallito (scheda nascosta), solo partite scriptate native; schede e debrief da sistemare, playtest vero da rifare. Committato e inviato con push il 2026-10-10 (`900351c`).
+- **Fase corrente: fase 5, iterazioni 5b e 5c chiuse** (2026-10-09, inviate con push fino ad `a16a043`):
+  - 5b: punti 1–10 (`docs/fase5/iterazione5b.md`), compreso il playtest automatico 3 (`docs/fase5/playtest_gpt3/README.md`);
+  - 5c: punti 1–5 del playtest 3 (`docs/fase5/iterazione5c.md`).
+- **Playtest 6 (Sonnet 5.5, 2026-10-10, build `3ff28cd`)** fatto, nel browser in primo piano: `docs/fase5/playtest6/report.md`. Partite: Facile 742, Facile 869 (evacuare presto), Medio 360; Esperto solo avviato. Da correggere, verificato sugli screenshot:
+  - [x] 2026-10-10 (`docs/fase5/usabilita/README.md`) **debrief più alto della finestra** (824 px CSS): barra in alto sopra il titolo, «Perché» tagliato, pulsanti per rigiocare o cambiare difficoltà irraggiungibili (`p1-06-finale-tagliato.jpg`). Bloccante: tra una partita e l'altra Giulia ha ricaricato la pagina;
+  - [x] 2026-10-10 legenda tagliata in basso (ora su due colonne sotto la barra) (`p4-01`);
+  - [x] 2026-10-10 il badge di Le Terrazze copre l'etichetta A2 (`p3-02`);
+  - [x] 2026-10-10 (banda «DECISIONE URGENTE» con i secondi) crisi persa (P3, 14:45): scaduta senza che Giulia la vedesse. Molto dipende dalla lentezza dello strumento, ma conviene renderla più evidente;
+  - [x] 2026-10-10 dal playtest 5: fuoco poco visibile all'inizio (segno sull'innesco), pulsanti grigi senza spiegazione, Preallerta ed Evacua poco distinte (due righe nella scheda);
+  - [>] effetto dei mezzi non spiegato nel «Perché» (P1 e P2: case identiche, 59/76): riguarda modello e racconto, non la schermata.
+- **Playtest 5 (Sonnet 5.5)** fatto: `docs/fase5/playtest_sonnet/report.md`. Il punteggio va rivisto, perché la classifica unica non è coerente con un punteggio relativo all'incendio.
+- **Tempo reale, pause, punteggio e classifica** fatti (`docs/fase5/tempo_reale.md`); nove difetti trovati giocando, elencati lì e nella sezione «Tempo reale» della fase 5.
+- **Playtest 4** (Giulia, prima volta, Haiku 5.5): fatto, difetti da decidere con l'utente (`docs/fase5/playtest_haiku/`, sezione «Playtest 4» della fase 5).
+
+#### Sezione «Fase 5: nuova UX»
 
 - [x] 2026-10-09 **Feedback del playtest umano: leggibilità e tempi** (`docs/fase5/playtest_feedback.md`): etichette per i nuclei separati di Le Ghiande, collegamenti alla scheda comune; legenda di numeri/barre/mezzi e combustibili; stato delle famiglie e stime di arrivo nelle schede; viaggio dell'evacuazione dai percorsi reali (distinto da avviso, preparazione e code); aggiornamenti recenti sempre visibili e cronologia completa; indicazioni persistenti e pulsante «Pausa e modifica piano». Verificati test ABM/Rocca e build nativa; controllo visivo con partita scriptata.
 - [x] 2026-10-09 (utente) Proporzioni da diorama, solo grafica (`crates/game/src/visual_scale.rs`): edifici ×1,9 in pianta e ×2,5 in altezza, auto ×3, persone ×4,5, mezzi ×7, alberi ×1,6, arbusti ×1,25. Coordinate, fuoco e percorsi invariati.
@@ -203,13 +263,13 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
    - Esecuzione dimezzata: Coste2_gira da 5,8 a 3,3 minuti reali, Piano2 da 3,6 a 1,8, Borgo2 da 4,1 a 2,1.
    - Corretto `Sim::tick`: un frame lungo eseguiva step oltre la crisi e oltre la fine del caso. Test `game::sim::tests::the_speed_does_not_change_the_game`: a ×20, a ×120 e con frame lenti, stesse crisi e stesso esito.
    - FPS invariati tra ×0 e ×120. Nessuna frase dei personaggi persa.
-   - [ ] Da confermare nel playtest 3: Piano2 a 1,8 minuti potrebbe risultare troppo breve per seguire il fuoco.
+   - [>] Da confermare nel playtest 3: Piano2 a 1,8 minuti potrebbe risultare troppo breve per seguire il fuoco.
 2. [x] 2026-10-09 **Vegetazione riconoscibile** (`docs/fase5/iterazione5b.md` §2), solo grafica:
    - nuovi modelli `pine` (pino marittimo) e `chestnut` (castagno) in `scripts/build_models.py`, `bush` più basso;
    - un solo modello per gruppo, colori distinti per gruppo e per classe, tinte del suolo per gruppo;
    - legenda con miniature e colori campionati dal rendering.
    - Piante invariate (551 mila), triangoli da 34,0 a 32,4 M. FPS nativi invariati (mediana 30 → 32).
-   - [ ] FPS nel browser da misurare a finestra in primo piano: la scheda automatizzata in secondo piano viene rallentata da Chrome.
+   - [>] FPS nel browser da misurare a finestra in primo piano: la scheda automatizzata in secondo piano viene rallentata da Chrome.
 3. [x] 2026-10-09 **Stima d'arrivo dallo stato reale** (`iterazione5b.md` §3–4):
    - `Game::arrivals` durante Esegui; anteprima solo con un piano da confermare;
    - «~2 min» quando gli estremi coincidono;
@@ -228,7 +288,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 7. [x] 2026-10-09 **Schede che si coprono** (`iterazione5b.md` §7):
    - schede compatte durante Esegui; si aprono al passaggio del puntatore; collisioni sulla dimensione compatta;
    - fondo più opaco, testo secondario a 14 punti.
-   - [ ] Verificare l'apertura con il tocco su touchscreen.
+   - [>] Verificare l'apertura con il tocco su touchscreen.
 8. [x] 2026-10-09 **Ritmo a metà partita** (`iterazione5b.md` §8):
    - all'avvio, la volontaria dice da dove parte il fuoco e verso chi lo spinge il vento;
    - dopo 10 minuti simulati, un fatto nuovo ogni 8 s (prossimo arrivo, fronte più vicino, famiglie ancora in casa).
@@ -285,31 +345,31 @@ Prompt e resoconto in `docs/fase5/playtest_haiku/`. Codex aveva finito i crediti
 - [x] 2026-10-09 3 pause (`MAX_PAUSES`); ×120 solo senza partenze in corso e con il fuoco a più di 1,5 km da chi è in casa (`QUIET_FIRE_M`). Durata: 4,5–5,3 min reali;
 - [x] 2026-10-09 `rocca::score` (punteggio e classifica, 4 test) e `kiosk/board.rs` (file o `localStorage`); «Azzera classifica» in F2;
 - [x] 2026-10-09 playtest mio nel browser, tre partite: 1/71 → 2/24 → Borgo2 1/6 con 1720 punti;
-- [ ] schede che si spostano di ~20 px a ogni cambio di fumetto o di ordine (click sbagliati);
-- [ ] primo click a vuoto mentre la telecamera inquadra un nuovo incendio;
-- [ ] «Come si gioca» ricompare dopo «Riprova»;
-- [ ] etichette dei nuclei sopra i mezzi; «Le Ghiande · nucleo 1» a volte in cima allo schermo;
-- [ ] «fuoco a 0,0 km» nei motivi del coordinatore; «si ritira vicino a» con il paese sbagliato;
-- [ ] cronologia del finale: segni alle 14:00 sovrapposti;
-- [ ] scheda compatta senza l'ordine dato;
-- [ ] tre iniziali lente (20 click per «GIU»): griglia di lettere;
-- [ ] mezzi fermi a fine partita («acqua», «in arrivo ~1 min» per oltre 20 min simulati).
+- [>] schede che si spostano di ~20 px a ogni cambio di fumetto o di ordine (click sbagliati);
+- [>] primo click a vuoto mentre la telecamera inquadra un nuovo incendio;
+- [>] «Come si gioca» ricompare dopo «Riprova»;
+- [>] etichette dei nuclei sopra i mezzi; «Le Ghiande · nucleo 1» a volte in cima allo schermo;
+- [>] «fuoco a 0,0 km» nei motivi del coordinatore; «si ritira vicino a» con il paese sbagliato;
+- [>] cronologia del finale: segni alle 14:00 sovrapposti;
+- [>] scheda compatta senza l'ordine dato;
+- [>] tre iniziali lente (20 click per «GIU»): griglia di lettere;
+- [>] mezzi fermi a fine partita («acqua», «in arrivo ~1 min» per oltre 20 min simulati).
 
 #### Playtest 5: Giulia con Sonnet 5.5 (2026-10-09, `docs/fase5/playtest_sonnet/report.md`)
 
 Esiti: 3/70 (1330 punti), 3/71 (1470), 2/12 (770).
 
 - [x] 2026-10-10 **punteggio contro esito** (utente: «procedi»): ora è da 0 a 1000 sulla quota salvata rispetto a nessun ordine, 70 % famiglie e 30 % case, senza bonus delle pause (`rocca::score`). La partita 3 (2/12) supera la 2 (3/71). Nuova classifica (`classifica2.json`, `rocca_ventosa_classifica2`);
-- [ ] priorità a un paese irraggiungibile alla crisi: i mezzi lasciano un paese per uno che non raggiungono. Serve un avviso prima della conferma;
-- [ ] in pausa Evacua è un interruttore: il secondo click toglie l'ordine proposto. Renderlo univoco o mostrare «ordinata alle …»;
-- [ ] Preallerta ed Evacua poco distinguibili sulla mappa;
-- [ ] il «Perché» non spiega le famiglie che non partono nonostante l'ordine (circa 22 %, comportamento del modello);
-- [ ] pulsanti grigi prima di «Ho capito», senza spiegazione;
+- [>] priorità a un paese irraggiungibile alla crisi: i mezzi lasciano un paese per uno che non raggiungono. Serve un avviso prima della conferma;
+- [>] in pausa Evacua è un interruttore: il secondo click toglie l'ordine proposto. Renderlo univoco o mostrare «ordinata alle …»;
+- [>] Preallerta ed Evacua poco distinguibili sulla mappa;
+- [>] il «Perché» non spiega le famiglie che non partono nonostante l'ordine (circa 22 %, comportamento del modello);
+- [>] pulsanti grigi prima di «Ho capito», senza spiegazione;
 - [x] 2026-10-10 bonus delle pause non usate tolto;
-- [ ] fuoco poco visibile all'inizio; crisi assenti in un caso;
-- [ ] finale: numeri piccoli sulle barre; etichette A1 e A2 sovrapposte; schede sopra Castelvento.
+- [>] fuoco poco visibile all'inizio; crisi assenti in un caso;
+- [>] finale: numeri piccoli sulle barre; etichette A1 e A2 sovrapposte; schede sopra Castelvento.
 
-- [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen (900×600 non più richiesto, 2026-10-12).
+- [>] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen (900×600 non più richiesto, 2026-10-12).
 
 - [x] 2026-10-08 Mappa a tutto schermo con schede per quartiere (rango, fuoco, mezzi ora e dopo la conferma, Difendi / più importante / non difendere, Preallerta / Evacua), etichette dei mezzi, rotte attive (verdi) e proposte (bianche tratteggiate), barra in alto, crisi con countdown, pulsante unico, debrief contro «senza ordini» con Riprova / Altro incendio, barra operatore F2 (`docs/fase5/README.md`).
 - [x] 2026-10-08 Crisi: «scoperto» solo se il fuoco può arrivare entro 45 min (`URGENT_S`); nessuna crisi negli ultimi 10 min (`LAST_CALL_S`).
@@ -401,33 +461,23 @@ Esiti: 3/70 (1330 punti), 3/71 (1470), 2/12 (770).
   - **Correzione:** la nota precedente («0 case in tutti i 18 casi») era sbagliata. Già prima Borgo2 colpiva 31 case senza difesa e Borgo1 3.
   - **Ora, Borgo2:** senza ordini ai civili 18 famiglie colte in casa (prima 5); con preallerta o evacuazione 3 (prima 0).
   - **Invariati:** Coste2_gira, Piano2 e 14 casi su 18. Rapporti `docs/fase4/{ab_sweep,crisi,porta}.md` rigenerati.
-- [ ] Borgo3 non raggiunge Castelvento: 600 m di latifoglie umide, 11 ha in 3 h. Estendere le latifoglie secche a 750 m non cambia nulla (provato, annullato). Un caso con innesco nella macchia a sud-ovest richiede un nuovo innesco: da decidere con l'utente.
+- [>] Borgo3 non raggiunge Castelvento: 600 m di latifoglie umide, 11 ha in 3 h. Estendere le latifoglie secche a 750 m non cambia nulla (provato, annullato). Un caso con innesco nella macchia a sud-ovest richiede un nuovo innesco: da decidere con l'utente.
 - [x] 2026-10-09 (utente) **Personaggi che parlano**, in basso a sinistra con fumetto (`crates/game/src/kiosk/characters.rs`). Ritratti generati da Codex (gpt-6.1-sol, generazione immagini), ridotti a 256 px in `assets/characters/`:
   - **sindaca**: ordini di preallerta ed evacuazione, famiglie raggiunte in casa, crisi «quartiere scoperto»;
   - **caposquadra VVF (DOS)**: mezzi che si ritirano o vanno fuori servizio, crisi «mezzo perso»;
   - **previsore meteo**: cambi di vento, crisi «previsione» e «vento»;
   - **volontaria di protezione civile**: intro, consiglio di partenza, «nella realtà» del debrief.
   Ogni frase nasce da una voce del registro, da una crisi o dall'esito già prodotti dal motore: nessuna regola nuova. La crisi ora si legge nel fumetto, con countdown e risposte subito sotto; proposta del coordinatore ed eventi spostati in basso a destra. Immagine: `docs/fase5/img/personaggi_crisi.jpg`.
-- [ ] Personaggi: verificare in un playtest che il fumetto in basso a sinistra si noti durante la crisi (prima era in alto al centro) e che le frasi a ×20 non si accavallino (coda di 2, minimo 2,5 s ciascuna).
-- [ ] Dai roast, ancora aperto: navigazione da tastiera (egui sul canvas), forme oltre ai colori per gli anelli, ~~layout a finestra stretta (900×600)~~ (tolto 2026-10-12), stato perso con la ricarica della pagina, verifica dei percorsi verso le aree di attesa, supporto ai ritardatari dell'evacuazione (scelta di design).
-- [ ] Dal playtest GPT, ancora aperto: icone dei mezzi leggibili nella vista generale (oggi si leggono le etichette); indicatori aggregati per le evacuazioni sulla mappa; click che a volte sembrano non rispondere (forse solo per l'input automatizzato, da verificare con persone vere); distinguere mezzi assegnati / in viaggio / sul posto; mostrare sulla mappa perché una postazione è irraggiungibile.
-- [ ] **Checkpoint umano 5.**
+- [>] Personaggi: verificare in un playtest che il fumetto in basso a sinistra si noti durante la crisi (prima era in alto al centro) e che le frasi a ×20 non si accavallino (coda di 2, minimo 2,5 s ciascuna).
+- [>] Dai roast, ancora aperto: navigazione da tastiera (egui sul canvas), forme oltre ai colori per gli anelli, ~~layout a finestra stretta (900×600)~~ (tolto 2026-10-12), stato perso con la ricarica della pagina, verifica dei percorsi verso le aree di attesa, supporto ai ritardatari dell'evacuazione (scelta di design).
+- [>] Dal playtest GPT, ancora aperto: icone dei mezzi leggibili nella vista generale (oggi si leggono le etichette); indicatori aggregati per le evacuazioni sulla mappa; click che a volte sembrano non rispondere (forse solo per l'input automatizzato, da verificare con persone vere); distinguere mezzi assegnati / in viaggio / sul posto; mostrare sulla mappa perché una postazione è irraggiungibile.
+- [x] 2026-10-12 **Checkpoint umano 5**: l'utente dichiara chiusa la fase 5.
 - [x] 2026-10-08 Schede dei quartieri separate quando si sovrappongono sullo schermo; etichette dei mezzi impilate e spostate sotto la scheda che le copre. Resta: una scheda può coprire il fuoco.
-- [ ] Coordinatore: con la prima priorità irraggiungibile un mezzo rientra alla base (ora spiegato a schermo). Mandarlo al quartiere successivo annullava l'effetto della crisi in Coste2_gira (58 → 71): provato e annullato.
-- [ ] Tempo di pianificazione senza limite: decidere nei playtest se serve (spec: ~40 s indicativi).
-- [ ] FPS circa 40 su M4 Pro con vegetazione dimezzata: misurare sulla macchina del chiosco (fase 6).
+- [>] Coordinatore: con la prima priorità irraggiungibile un mezzo rientra alla base (ora spiegato a schermo). Mandarlo al quartiere successivo annullava l'effetto della crisi in Coste2_gira (58 → 71): provato e annullato.
+- [>] Tempo di pianificazione senza limite: decidere nei playtest se serve (spec: ~40 s indicativi).
+- [>] FPS circa 40 su M4 Pro con vegetazione dimezzata: misurare sulla macchina del chiosco (fase 6).
 
-### Fase 6
-
-- [ ] Playtest (vedi `03-PIANO-DI-AZIONE.md`).
-
-### Debito tecnico
-
-- [ ] `CLAUDE.md` cita `docs/rocca-ventosa/…`, ma i documenti sono in `docs/`.
-- [ ] File non tracciati rimasti dai vecchi scenari (`data/scenarios/{mati,pedrogao,rhodes,spotorno}/*.tif`, `data/osm_raw.json`, `data/spotorno_render_terrain.tif`, `dist/`, `results/`): da cancellare a mano, non sono in git.
-- [x] 2026-10-08 Kiosk: pannello provvisorio sostituito dalla UX della fase 5.
-
-## Fatto
+### Prima della fase 5
 
 - [x] 2026-10-12 finale in un solo pannello (`kiosk/ui.rs::debrief`, `leaderboard`): tolta la barra in alto con vento e ora (`top_bar`) e il pannello del punteggio separato; a sinistra verdetto, numeri, ordini, borghi e cronologia, a destra punteggio, classifica, nota e «Riprova». Il livello è una pillola accanto al titolo. Prova rapida, senza giocare (13 s): `KIOSK_SIZE=1920x1080 KIOSK_CASE=Coste2_gira KIOSK_WINDOWED=1 KIOSK_SHOT_END=1 KIOSK_SHOT=<dir> target/release/game` → `4_fine.png` (`kiosk/mod.rs::shots`: piano di prova, partita simulata fino in fondo, solo il finale).
 - [x] 2026-10-12 schermata finale ridisegnata (`kiosk/ui.rs::debrief`, `leaderboard`): cornice dell'intro (sfondo scurito, bordo ambra, ombra), verdetto della sindaca con ritratto e fumetto (`verdetto`), due card grandi famiglie/case con «grazie a te» o «senza ordini», una card per borgo (verde al sicuro / ambra case / rossa famiglie) con «Perché» ripiegabile al posto del muro di testo, cronologia in una card; tolto `compare_bars`. Prova: `KIOSK_SIZE=1920x1080 KIOSK_CASE=Coste2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_SHOT=<dir> target/release/game` → `4_fine.png`.
