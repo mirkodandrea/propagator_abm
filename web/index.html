@@ -22,7 +22,6 @@
       <h1>Rocca Ventosa</h1>
       <div id="bar" class="wait"><div id="fill"></div></div>
       <div id="status">Caricamento del territorio e della simulazione…</div>
-      <small>(circa 30 MB; serve un computer con mouse e un browser recente)</small>
     </div>
     <script type="module">
       import init from './game.js';
@@ -31,37 +30,42 @@
       const fill = document.querySelector('#fill');
       const status = document.querySelector('#status');
 
-      // Download the wasm ourselves to show progress, then hand it to init as
-      // a streaming Response. Without a Content-Length the bar just pulses.
+      // Download the wasm ourselves to show how much has arrived, then hand
+      // it to init as a streaming Response. The size is not shown: the
+      // Content-Length is the compressed one, the chunks are not.
       async function download(url) {
         const response = await fetch(url);
         if (!response.ok) throw new Error(`${url}: ${response.status}`);
-        const total = Number(response.headers.get('content-length')) || 0;
-        if (!total || !response.body) return response;
+        if (!response.body) return response;
         let loaded = 0;
         const counted = response.body.pipeThrough(new TransformStream({
           transform(chunk, controller) {
             loaded += chunk.length;
-            bar.classList.remove('wait');
-            fill.style.width = `${Math.min(100, 100 * loaded / total)}%`;
-            status.textContent = `Scaricamento: ${(loaded / 1e6).toFixed(0)} di ${(total / 1e6).toFixed(0)} MB`;
+            status.textContent = `Scaricati ${(loaded / 1e6).toFixed(1)} MB`;
             controller.enqueue(chunk);
           },
           flush() {
-            bar.classList.add('wait');
             status.textContent = 'Avvio della simulazione…';
           },
         }));
         return new Response(counted, { headers: response.headers });
       }
 
+      // The keyboard reaches the game only through the focused canvas.
+      const canvas = document.querySelector('#rocca');
+      canvas.addEventListener('pointerdown', () => canvas.focus());
+      const focusCanvas = () => canvas.focus();
+      focusCanvas();
+      window.addEventListener('focus', focusCanvas);
+
       // Winit throws this on purpose once the browser's event loop has the
       // game: it is running, not failing.
       const winitControlFlow = 'Using exceptions for control flow, don\'t mind me.';
-      init({ module_or_path: download('./game_bg.wasm') }).then(() => loading.remove())
+      init({ module_or_path: download('./game_bg.wasm') }).then(() => { loading.remove(); focusCanvas(); })
         .catch(error => {
           if (String(error).includes(winitControlFlow)) {
             loading.remove();
+            focusCanvas();
             return;
           }
           loading.textContent = `Impossibile avviare il gioco: ${error}`;
