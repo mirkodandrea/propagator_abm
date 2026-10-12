@@ -44,6 +44,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - [ ] idee per dopo il checkpoint 5: Canadair su richiesta (flotta di Stato via SOUP/COAU, razionata e dirottabile) come decisione di crisi; verifica dei rifugi come «luogo sicuro» (≤ 2,5 kW/m², capienza, Codice S.4.5.1); strade fuori norma per le autobotti (larghezza 3,5 m, pendenza ≤ 10 %, Codice S.9.5) come vincolo della Scenario Factory; mezzi aerei fermi di notte, se una partita arriva al tramonto (DA VERIFICARE);
   - da non mostrare al giocatore: kW/m², indici FWI/FFMC, ICS, radio TBT, procedure COAU.
 
+- **2026-10-12, playtest 8 (Haiku, strategie headless, dopo `c777919`)**: `docs/fase5/playtest8_strategie/report.md`, 19 numeri riverificati. Nuova ricetta: «preallerta tutti T+0, evacua tutti T+30 + mezzi sul borgo più vicino» ≥ «evacua tutti T+0» in 24/24 confronti (+39/+56/+47); Esperto 10–218, mai sopra ~220; Esperto S5 167 → 149 (probabile `c777919`).
+  - [ ] decidere con l'utente: playtest headless con personaggi e screenshot (`KIOSK_AGENT`, click iniettati, tempo fermo tranne alle crisi ×1), proposta del 2026-10-12;
 - **2026-10-10, playtest 7 (Haiku, strategie headless)**: `docs/fase5/playtest7_strategie/report.md`. Ricetta quasi ottimale «evacua tutti a T+0 + tutti i mezzi sul borgo più vicino al fuoco» (entro il 5 % del migliore); evacuare non costa nulla; Esperto quasi insensibile alle decisioni (91–299). Il runner `rocca` ora stampa il punteggio del chiosco.
 - **2026-10-11, perché evacuare non costa (headless)**: `docs/fase5/intasamento/README.md`, esempi `intasamento` e `intasamento_mezzi`. Le code si formano (fino a 220 auto) ma a Castelvento, lontano dal fuoco: 0 famiglie travolte in 90 partite, mezzi rallentati al più di 1 min. «Preallerta tutti, evacua a T+30» ≥ «evacua tutti a T+0» in 18/18 confronti. Decisione dell'utente (2026-10-11): costo **reale** nel modello, interessato alle famiglie in coda travolte dal fuoco.
   - [x] 2026-10-11 mappare le uscite dei borghi (`docs/fase5/uscite/README.md`, esempi `uscite` e `uscita_condivisa`): i rifugi sono dentro i centri incombustibili (Castelvento, Pian dei Grilli) e il tratto in comune è dentro Castelvento. In 36 casi nessuna uscita in comune viene tagliata; anche dove l'accesso di un borgo è tagliato presto, 0 famiglie colte fuori e al massimo 15 s di calore su 90 letali. Nessun innesco attiva il costo: serve una modifica del territorio;
@@ -411,6 +413,9 @@ Esiti: 3/70 (1330 punti), 3/71 (1470), 2/12 (770).
 - [x] 2026-10-08 Kiosk: pannello provvisorio sostituito dalla UX della fase 5.
 
 ## Fatto
+
+- [x] 2026-10-12 schermata finale ridisegnata (`kiosk/ui.rs::debrief`, `leaderboard`): cornice dell'intro (sfondo scurito, bordo ambra, ombra), verdetto della sindaca con ritratto e fumetto (`verdetto`), due card grandi famiglie/case con «grazie a te» o «senza ordini», una card per borgo (verde al sicuro / ambra case / rossa famiglie) con «Perché» ripiegabile al posto del muro di testo, cronologia in una card; tolto `compare_bars`. Prova: `KIOSK_SIZE=1920x1080 KIOSK_CASE=Coste2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_SHOT=<dir> target/release/game` → `4_fine.png`.
+- [x] 2026-10-12 simulazione più veloce: `RUN_SPEED` 40 → 80 e selettore «velocità ×20 / ×40 / ×80 / ×160 / ×300» nella barra laterale (`kiosk/ui.rs::status`, non durante le crisi); resta il campo libero nel pannello operatore F2. Da verificare a occhio: ritmo delle finestre critiche a ×80.
 
 - [x] 2026-10-08 **Un solo motore, un solo scenario, una sola modalità:**
   - lo scenario è pubblicato in `data/scenarios/rocca_ventosa` (`scenario_factory.py publish`) e `Scenario::load(data)` carica solo quello;

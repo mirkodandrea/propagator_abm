@@ -31,9 +31,9 @@ use crate::sim::{Sim, SimRestarted};
 use crate::{AppState, DataPath};
 
 pub const TITLE: &str = "Rocca Ventosa";
-/// Simulated seconds per real second while the game runs (spec §2: ×40;
-/// ×20 gave 9-minute games and a lull after the orders).
-pub const RUN_SPEED: f32 = 40.0;
+/// Simulated seconds per real second while the game runs (spec §2: ×40; user,
+/// 2026-10-12: faster, with a selector in the side bar).
+pub const RUN_SPEED: f32 = 80.0;
 /// Real seconds the player has at a crisis (spec: ~25 s at ×1).
 pub const CRISIS_S: f32 = 25.0;
 /// Pauses a game allows once the time runs (user, 2026-10-09): few enough
