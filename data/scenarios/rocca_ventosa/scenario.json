@@ -27,9 +27,9 @@
     400,
     400
   ],
-  "buildings_count": 479,
+  "buildings_count": 478,
   "households_count": 538,
-  "people_count": 1600,
+  "people_count": 1521,
   "scenario_type": "synthetic",
   "creation_date": "2026-10-08",
   "version": "0.1.0",

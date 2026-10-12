@@ -1,8 +1,10 @@
 //! Who carries the order to the door (headless trial, 2026-10-11).
 //!
-//! Off by default ([`Game::messengers`](crate::Game) is `None`): every order
-//! then travels over each household's own channel, 90 s to 20 minutes, however
-//! many districts are ordered at once. A wildfire evacuation in Italy is
+//! On when the territory's `game.json` has `messengers` (variant A, chosen by
+//! the user on 2026-10-12: 4 teams, 1 household a minute, mobile alerts on,
+//! teams shared out evenly). Without it every order travels over each
+//! household's own channel, 90 s to 20 minutes, however many districts are
+//! ordered at once. A wildfire evacuation in Italy is
 //! carried door to door by the municipal police, the carabinieri and the
 //! volunteers, with loudspeakers: a few teams, and a district ordered for
 //! nothing takes them away from the one in the fire's path. That trade-off is
@@ -19,9 +21,10 @@ use std::collections::VecDeque;
 use abm::drive::{Drive, Vehicle};
 use abm::suppression::ENGINE_SPEED;
 use scenario::Pos;
+use serde::Deserialize;
 
 /// The teams carrying orders.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 pub struct Messengers {
     /// How many teams there are, staged at the stations in turn.
     pub teams: usize,
@@ -38,6 +41,7 @@ pub struct Messengers {
     /// Trial only: the teams read the priorities backwards, the unranked
     /// districts first, so a wrong order of the teams alone can be measured
     /// with the units' priorities right.
+    #[serde(default)]
     pub reversed: bool,
 }
 

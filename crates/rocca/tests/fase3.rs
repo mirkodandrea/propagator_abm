@@ -43,13 +43,24 @@ fn same_seed_same_plan_same_game() {
 
 #[test]
 fn inverting_priorities_changes_posts_and_outcomes() {
-    let (ga, a) = run("Piano3", &["Grilli", "Ghiande"], &[], 180);
-    let (gb, b) = run("Piano3", &["Ghiande", "Grilli"], &[], 180);
+    let start = |prio: &[&str]| {
+        let mut g = game("Piano3");
+        let p: Vec<usize> = prio.iter().map(|n| idx(&g, n)).collect();
+        g.commit(Plan::new(g.districts.len()).with_priorities(&p)).unwrap();
+        g
+    };
+    let (mut ga, mut gb) = (start(&["Grilli", "Ghiande"]), start(&["Ghiande", "Grilli"]));
     let (piano, coste) = (idx(&ga, "Grilli"), idx(&ga, "Ghiande"));
     let on = |g: &Game, d: usize| g.posts.iter().flatten().filter(|p| p.district == d).count();
-    // the first-ranked district gets two units
+    // the first-ranked district gets two units once the plan is under way (at
+    // the end one may be between a refill and its post)
+    ga.run_until(30 * 60).unwrap();
+    gb.run_until(30 * 60).unwrap();
     assert_eq!(on(&ga, piano), 2, "{:?}", ga.posts);
     assert_eq!(on(&gb, coste), 2, "{:?}", gb.posts);
+    ga.run_until(180 * 60).unwrap();
+    gb.run_until(180 * 60).unwrap();
+    let (a, b) = (ga.outcome(), gb.outcome());
     // and it is the homes that change, not only the icons
     assert!(
         a.districts[piano].homes_hit < b.districts[piano].homes_hit,
@@ -190,3 +201,4 @@ fn the_story_tells_what_happened() {
     let other = g.story(idx(&g, "Grilli"));
     assert!(other.iter().any(|l| l == "Nessun mezzo: non era tra le priorità."), "{other:?}");
 }
+

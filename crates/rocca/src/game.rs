@@ -159,8 +159,8 @@ pub struct Game {
     moved: Vec<(Pos, i64)>,
     /// Per unit: the state last logged, to log a withdrawal or a loss once.
     logged: Vec<UnitState>,
-    /// Teams carrying orders to the door; `None` (the default) sends every
-    /// order over the households' own channels ([`crate::messengers`]).
+    /// Teams carrying orders to the door, from `game.json`; `None` sends
+    /// every order over the households' own channels ([`crate::messengers`]).
     pub messengers: Option<crate::Messengers>,
     rounds: Vec<crate::messengers::Round>,
     /// The teams, built on the first round.
@@ -212,7 +212,7 @@ impl Game {
             nearest_m: vec![f32::INFINITY; districts.len()],
             moved: crews.units.iter().map(|u| (u.pos, 0)).collect(),
             logged: crews.units.iter().map(|u| u.state).collect(),
-            messengers: None,
+            messengers: territory.messengers,
             rounds: vec![],
             teams: vec![],
             scn,

@@ -89,6 +89,10 @@ pub struct Territory {
     /// What the visitor chooses at the start, easiest first.
     #[serde(default)]
     pub levels: Vec<Level>,
+    /// Teams carrying the orders door to door; absent, every order travels
+    /// over the households' own channels.
+    #[serde(default)]
+    pub messengers: Option<crate::Messengers>,
     pub cases: Vec<Case>,
 }
 

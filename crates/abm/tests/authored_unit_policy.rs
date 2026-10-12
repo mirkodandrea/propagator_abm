@@ -62,7 +62,11 @@ fn setup(policy: Option<UnitRuntime>) -> World {
 
 impl World {
     fn run(&mut self, minutes: i64, dt: i64) {
-        for _ in 0..(minutes * 60 / dt) {
+        self.run_s(minutes * 60, dt);
+    }
+
+    fn run_s(&mut self, seconds: i64, dt: i64) {
+        for _ in 0..(seconds / dt) {
             self.fire.advance(dt).unwrap();
             let actions = self.crews.step(dt as f32, &self.agents.network, &self.agents.traffic, &self.fire, &self.scn);
             for a in actions {
@@ -277,27 +281,29 @@ fn raising_the_refill_threshold_sends_engines_for_water_earlier() {
         let engine = w.unit(UnitKind::Engine);
         w.crews.assign(engine, Task::Attack { at: target }).unwrap();
         // Engines hold their water until the front is within `PREWET_M`, and
-        // the nearest road here is further than that from the front. This
-        // test is about refilling, not waiting: once the engine is there,
-        // light a patch next to it so it has a front to work.
-        w.run(15, 10);
-        let p = w.crews.units[engine].pos;
-        // (the engine may stand in a built-up core, so look all round for fuel)
-        let near = (0..16)
-            .map(|k| {
-                let a = k as f32 * std::f32::consts::TAU / 16.0;
-                w.scn.world.cell_of(scenario::Pos { x: p.x + 150.0 * a.cos(), y: p.y + 150.0 * a.sin() })
-            })
-            .find(|c| w.scn.is_burnable(*c))
-            .expect("fuel within 150 m of the engine");
-        w.fire.ignite_patch(near, 60.0, &w.scn).unwrap();
-        // The tank level at which it first breaks off for water, if it does
-        // within the next 40 minutes.
-        for _ in 0..40 {
-            w.run(1, 10);
+        // the nearest road may be further than that from the front. This
+        // test is about refilling, not waiting: once the engine is working,
+        // light a patch next to it so it has a front to work. The tank level
+        // at which it first breaks off for water, if it does within the hour.
+        let mut lit = false;
+        for _ in 0..60 * 6 {
+            w.run_s(10, 10);
             let u = &w.crews.units[engine];
             if u.state == UnitState::Refilling {
                 return Some(u.water_frac());
+            }
+            if !lit && u.state == UnitState::Working {
+                let p = u.pos;
+                // (the engine may stand in a built-up core, so look all round for fuel)
+                let near = (0..16)
+                    .map(|k| {
+                        let a = k as f32 * std::f32::consts::TAU / 16.0;
+                        w.scn.world.cell_of(scenario::Pos { x: p.x + 150.0 * a.cos(), y: p.y + 150.0 * a.sin() })
+                    })
+                    .find(|c| w.scn.is_burnable(*c))
+                    .expect("fuel within 150 m of the engine");
+                w.fire.ignite_patch(near, 60.0, &w.scn).unwrap();
+                lit = true;
             }
         }
         None

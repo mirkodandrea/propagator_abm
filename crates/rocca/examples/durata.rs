@@ -2,11 +2,12 @@
 //! `crates/game/src/kiosk` applied to a plain plan: ×base, ×base·3 while the
 //! game is quiet (`Game::is_quiet`, 10 min), crises at ×1 for 25 s. Also
 //! counts the lines the characters would have to drop: their queue holds 2
-//! and each stays at least 2.5 real seconds (`kiosk/characters.rs`).
+//! and each stays at least 2.5 real seconds (`kiosk/characters.rs`). Plays
+//! the kiosk's levels from `game.json`, seeds 1–3.
 use rocca::{Civil, Game, Plan, STEP_S};
 
-/// Speeds compared: before and after iteration 5b.
-const PACES: [(f64, f64); 2] = [(20.0, 60.0), (40.0, 120.0)];
+/// The kiosk's speeds (`kiosk::RUN_SPEED`, `QUIET_BOOST`).
+const PACES: [(f64, f64); 1] = [(80.0, 240.0)];
 const CRISIS_S: f64 = 25.0;
 const QUEUE: usize = 2;
 const MIN_S: f64 = 2.5;
@@ -18,11 +19,12 @@ fn spoken(text: &str) -> bool {
 
 fn main() -> anyhow::Result<()> {
     let data = std::path::Path::new("data");
-    println!("| caso | ritmo | minuti reali | di cui crisi | quota «tranquilla» | crisi a | frasi | frasi perse |");
-    println!("|---|---|---|---|---|---|---|---|");
-    for case in ["Coste2_gira", "Piano2", "Borgo2"] {
+    println!("| livello | caso | seme | ritmo | minuti reali | di cui crisi | quota «tranquilla» | crisi a | frasi | frasi perse |");
+    println!("|---|---|---|---|---|---|---|---|---|---|");
+    let levels = rocca::Territory::load(data)?.levels;
+    for (level, case, seed) in levels.iter().flat_map(|l| (1..=3).map(move |s| (l.name.as_str(), l.case.as_str(), s))) {
         for (base, quiet_speed) in PACES {
-            let mut g = Game::new(data, case, 1)?;
+            let mut g = Game::new(data, case, seed)?;
             let n = g.districts.len();
             let near = g.district_index(&g.case.near.clone()).unwrap_or(0);
             g.commit(Plan::new(n).with_priorities(&[near]).with_civil(near, Civil::Evacua))?;
@@ -64,7 +66,7 @@ fn main() -> anyhow::Result<()> {
                 }
             }
             println!(
-                "| {case} | ×{base:.0} / ×{quiet_speed:.0} | {:.1} | {:.1} | {:.0} % | {} | {lines} | {dropped} |",
+                "| {level} | {case} | {seed} | ×{base:.0} / ×{quiet_speed:.0} | {:.1} | {:.1} | {:.0} % | {} | {lines} | {dropped} |",
                 real / 60.0,
                 crisis_real / 60.0,
                 100.0 * quiet as f64 / steps as f64,

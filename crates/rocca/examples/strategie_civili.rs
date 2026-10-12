@@ -5,8 +5,9 @@
 //! home, which the score does not count (`rocca::score` weighs caught at home).
 //!
 //! MESSAGGERI=squadre,famiglie_al_minuto_alla_porta,broadcast(0|1),per_priorita(0|1)[,rovesciate(0|1)]
-//! carries the orders door to door (`rocca::messengers`) instead of over each
-//! household's channel.
+//! carries the orders door to door (`rocca::messengers`) with these teams
+//! instead of the ones in `game.json`; MESSAGGERI=0 sends every order over
+//! each household's channel.
 //!
 //! PRIORITA=sbagliate ranks the districts the fire misses first and the ones it
 //! reaches last, whatever the plan.
@@ -26,7 +27,13 @@ fn main() -> anyhow::Result<()> {
     let data = std::path::Path::new("data");
     let messengers = std::env::var("MESSAGGERI").ok().map(|v| {
         let f: Vec<f32> = v.split(',').map(|x| x.trim().parse().unwrap()).collect();
-        rocca::Messengers { teams: f[0] as usize, per_min: f[1], broadcast: f[2] > 0.0, by_priority: f[3] > 0.0, reversed: f.get(4).is_some_and(|&x| x > 0.0) }
+        (f[0] > 0.0).then(|| rocca::Messengers {
+            teams: f[0] as usize,
+            per_min: f[1],
+            broadcast: f[2] > 0.0,
+            by_priority: f[3] > 0.0,
+            reversed: f.get(4).is_some_and(|&x| x > 0.0),
+        })
     });
     let wrong = std::env::var("PRIORITA").is_ok_and(|v| v == "sbagliate");
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -65,7 +72,9 @@ fn main() -> anyhow::Result<()> {
     let rows = par_map(&jobs, |(k, hit, plan)| -> anyhow::Result<String> {
         let ((case, seed), without) = (&pairs[*k], withouts[*k].as_ref().unwrap());
         let mut g = Game::new(data, case, *seed)?;
-        g.messengers = messengers;
+        if let Some(m) = messengers {
+            g.messengers = m;
+        }
         let n = g.districts.len();
         let names: Vec<String> = hit.iter().map(|&d| g.districts[d].name.clone()).collect();
         let order: Vec<usize> = if wrong {

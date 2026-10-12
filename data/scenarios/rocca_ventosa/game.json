@@ -32,8 +32,8 @@
   }
  ],
  "featured": [
-  "Forna3_gira",
-  "Coste2_gira",
+  "Borgo2_gira",
+  "Terra1_gira",
   "Rocco3"
  ],
  "levels": [
@@ -44,21 +44,27 @@
   },
   {
    "name": "Medio",
-   "case": "Forna3_gira",
-   "about": "Più paesi in pericolo e il vento che gira."
+   "case": "Terra1_gira",
+   "about": "Pi\u00f9 paesi in pericolo e il vento che gira."
   },
   {
    "name": "Esperto",
-   "case": "Coste2_gira",
-   "about": "Un fuoco velocissimo: ogni minuto conta."
+   "case": "Borgo2_gira",
+   "about": "Il fuoco punta due paesi e le squadre non bastano per tutti."
   }
  ],
+ "messengers": {
+  "teams": 4,
+  "per_min": 1.0,
+  "broadcast": true,
+  "by_priority": false
+ },
  "cases": [
   {
    "name": "Borgo1",
    "near": "Castelvento",
    "ignition": [
-    5030.0,
+    5010.0,
     6190.0
    ],
    "radius_m": 60.0,
@@ -70,8 +76,8 @@
    "name": "Borgo2",
    "near": "Castelvento",
    "ignition": [
-    5950.0,
-    4650.0
+    5870.0,
+    4750.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 119.0,
@@ -82,8 +88,8 @@
    "name": "Borgo3",
    "near": "Castelvento",
    "ignition": [
-    4150.0,
-    4690.0
+    4190.0,
+    4570.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 239.0,
@@ -95,7 +101,7 @@
    "near": "Fornaci",
    "ignition": [
     5250.0,
-    6250.0
+    6230.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 40.0,
@@ -106,8 +112,8 @@
    "name": "Forna2",
    "near": "Fornaci",
    "ignition": [
-    5030.0,
-    4350.0
+    4950.0,
+    4370.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 160.0,
@@ -119,7 +125,7 @@
    "near": "Fornaci",
    "ignition": [
     3630.0,
-    5670.0
+    5650.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 280.0,
@@ -130,8 +136,8 @@
    "name": "Coste1",
    "near": "Le Ghiande",
    "ignition": [
-    4330.0,
-    3730.0
+    4430.0,
+    3830.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 80.0,
@@ -142,8 +148,8 @@
    "name": "Coste2",
    "near": "Le Ghiande",
    "ignition": [
-    3090.0,
-    2470.0
+    3450.0,
+    2830.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 200.0,
@@ -154,8 +160,8 @@
    "name": "Coste3",
    "near": "Le Ghiande",
    "ignition": [
-    2710.0,
-    4330.0
+    2790.0,
+    4410.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 320.0,
@@ -166,8 +172,8 @@
    "name": "Terra1",
    "near": "Le Terrazze",
    "ignition": [
-    5650.0,
-    4330.0
+    5590.0,
+    4370.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 119.0,
@@ -226,7 +232,7 @@
    "name": "Piano3",
    "near": "Pian dei Grilli",
    "ignition": [
-    2950.0,
+    2910.0,
     3290.0
    ],
    "radius_m": 60.0,
@@ -238,8 +244,8 @@
    "name": "Rocco1",
    "near": "San Rocco",
    "ignition": [
-    5030.0,
-    3890.0
+    5830.0,
+    3330.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 200.0,
@@ -250,8 +256,8 @@
    "name": "Rocco2",
    "near": "San Rocco",
    "ignition": [
-    4910.0,
-    5910.0
+    5670.0,
+    4970.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 320.0,
@@ -262,8 +268,8 @@
    "name": "Rocco3",
    "near": "San Rocco",
    "ignition": [
-    6370.0,
-    5010.0
+    7170.0,
+    4430.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 80.0,
@@ -274,7 +280,7 @@
    "name": "Borgo1_gira",
    "near": "Castelvento",
    "ignition": [
-    5030.0,
+    5010.0,
     6190.0
    ],
    "radius_m": 60.0,
@@ -283,7 +289,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 30.4,
+    "wind_from_deg": 28.8,
     "wind_kmh": 40.0,
     "toward": "Fornaci"
    }
@@ -292,8 +298,8 @@
    "name": "Borgo2_gira",
    "near": "Castelvento",
    "ignition": [
-    5950.0,
-    4650.0
+    5870.0,
+    4750.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 119.0,
@@ -301,7 +307,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 107.9,
+    "wind_from_deg": 327.3,
     "wind_kmh": 40.0,
     "toward": "San Rocco"
    }
@@ -310,8 +316,8 @@
    "name": "Borgo3_gira",
    "near": "Castelvento",
    "ignition": [
-    4150.0,
-    4690.0
+    4190.0,
+    4570.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 239.0,
@@ -319,7 +325,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 254.0,
+    "wind_from_deg": 243.3,
     "wind_kmh": 40.0,
     "toward": "Le Terrazze"
    }
@@ -329,7 +335,7 @@
    "near": "Fornaci",
    "ignition": [
     5250.0,
-    6250.0
+    6230.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 40.0,
@@ -337,7 +343,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 12.0,
+    "wind_from_deg": 12.8,
     "wind_kmh": 40.0,
     "toward": "Castelvento"
    }
@@ -346,8 +352,8 @@
    "name": "Forna2_gira",
    "near": "Fornaci",
    "ignition": [
-    5030.0,
-    4350.0
+    4950.0,
+    4370.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 160.0,
@@ -355,7 +361,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 154.0,
+    "wind_from_deg": 161.5,
     "wind_kmh": 40.0,
     "toward": "Le Terrazze"
    }
@@ -365,7 +371,7 @@
    "near": "Fornaci",
    "ignition": [
     3630.0,
-    5670.0
+    5650.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 280.0,
@@ -373,7 +379,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 304.9,
+    "wind_from_deg": 304.1,
     "wind_kmh": 40.0,
     "toward": "Le Terrazze"
    }
@@ -382,8 +388,8 @@
    "name": "Coste1_gira",
    "near": "Le Ghiande",
    "ignition": [
-    4330.0,
-    3730.0
+    4430.0,
+    3830.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 80.0,
@@ -391,7 +397,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 201.4,
+    "wind_from_deg": 198.8,
     "wind_kmh": 40.0,
     "toward": "Le Terrazze"
    }
@@ -400,8 +406,8 @@
    "name": "Coste2_gira",
    "near": "Le Ghiande",
    "ignition": [
-    3090.0,
-    2470.0
+    3450.0,
+    2830.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 200.0,
@@ -409,7 +415,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 100.9,
+    "wind_from_deg": 76.9,
     "wind_kmh": 40.0,
     "toward": "Pian dei Grilli"
    }
@@ -418,8 +424,8 @@
    "name": "Coste3_gira",
    "near": "Le Ghiande",
    "ignition": [
-    2710.0,
-    4330.0
+    2790.0,
+    4410.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 320.0,
@@ -427,7 +433,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 8.5,
+    "wind_from_deg": 10.6,
     "wind_kmh": 40.0,
     "toward": "Pian dei Grilli"
    }
@@ -436,8 +442,8 @@
    "name": "Terra1_gira",
    "near": "Le Terrazze",
    "ignition": [
-    5650.0,
-    4330.0
+    5590.0,
+    4370.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 119.0,
@@ -445,7 +451,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 151.7,
+    "wind_from_deg": 280.1,
     "wind_kmh": 40.0,
     "toward": "San Rocco"
    }
@@ -463,7 +469,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 34.8,
+    "wind_from_deg": 33.2,
     "wind_kmh": 40.0,
     "toward": "Le Ghiande"
    }
@@ -481,7 +487,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 28.7,
+    "wind_from_deg": 28.0,
     "wind_kmh": 40.0,
     "toward": "Fornaci"
    }
@@ -499,7 +505,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 196.3,
+    "wind_from_deg": 198.0,
     "wind_kmh": 40.0,
     "toward": "Le Ghiande"
    }
@@ -517,7 +523,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 247.1,
+    "wind_from_deg": 245.9,
     "wind_kmh": 40.0,
     "toward": "Le Ghiande"
    }
@@ -526,7 +532,7 @@
    "name": "Piano3_gira",
    "near": "Pian dei Grilli",
    "ignition": [
-    2950.0,
+    2910.0,
     3290.0
    ],
    "radius_m": 60.0,
@@ -535,7 +541,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 235.7,
+    "wind_from_deg": 235.8,
     "wind_kmh": 40.0,
     "toward": "Le Ghiande"
    }
@@ -544,8 +550,8 @@
    "name": "Rocco1_gira",
    "near": "San Rocco",
    "ignition": [
-    5030.0,
-    3890.0
+    5830.0,
+    3330.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 200.0,
@@ -553,7 +559,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 165.5,
+    "wind_from_deg": 145.8,
     "wind_kmh": 40.0,
     "toward": "Le Terrazze"
    }
@@ -562,8 +568,8 @@
    "name": "Rocco2_gira",
    "near": "San Rocco",
    "ignition": [
-    4910.0,
-    5910.0
+    5670.0,
+    4970.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 320.0,
@@ -571,17 +577,17 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 34.6,
+    "wind_from_deg": 108.5,
     "wind_kmh": 40.0,
-    "toward": "Fornaci"
+    "toward": "Castelvento"
    }
   },
   {
    "name": "Rocco3_gira",
    "near": "San Rocco",
    "ignition": [
-    6370.0,
-    5010.0
+    7170.0,
+    4430.0
    ],
    "radius_m": 60.0,
    "wind_from_deg": 80.0,
@@ -589,7 +595,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 97.5,
+    "wind_from_deg": 109.4,
     "wind_kmh": 40.0,
     "toward": "Castelvento"
    }

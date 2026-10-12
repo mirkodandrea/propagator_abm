@@ -27,17 +27,24 @@ CASE_MINUTES = 180
 # fire at the nearest other locality (01-SPEC-GIOCO §3: a wind change that
 # overturns the exposure is one of the crises the game is about).
 SHIFT_AT_MIN = 45
-# The cases the kiosk plays, in its order (checkpoint 4, 2026-10-08): the main
-# dilemma, the non-obvious one, the introductory one. The others stay in
-# game.json for the headless runner and the operator.
-FEATURED = ["Forna3_gira", "Coste2_gira", "Rocco3"]
+# The cases the kiosk plays, in its order: the main dilemma, the non-obvious
+# one, the introductory one. The others stay in game.json for the headless
+# runner and the operator. Re-picked on layout 5 with the messengers
+# (2026-10-12, docs/fase5/livelli_l5/README.md): Forna3_gira takes hold in one
+# seed out of three there, and Coste2_gira scores the same with every plan.
+FEATURED = ["Borgo2_gira", "Terra1_gira", "Rocco3"]
 # What the visitor chooses at the start (user, 2026-10-10: «facile, medio,
 # esperto»): one featured case per level, from the role each was chosen for.
 LEVELS = [
     {"name": "Facile", "case": "Rocco3", "about": "Un paese minacciato, il vento non cambia."},
-    {"name": "Medio", "case": "Forna3_gira", "about": "Più paesi in pericolo e il vento che gira."},
-    {"name": "Esperto", "case": "Coste2_gira", "about": "Un fuoco velocissimo: ogni minuto conta."},
+    {"name": "Medio", "case": "Terra1_gira", "about": "Più paesi in pericolo e il vento che gira."},
+    {"name": "Esperto", "case": "Borgo2_gira", "about": "Il fuoco punta due paesi e le squadre non bastano per tutti."},
 ]
+# Who carries the orders to the door (`rocca::messengers`): variant A of
+# docs/fase5/messaggeri/README.md, chosen by the user on 2026-10-12. Four
+# teams, one household a minute each, mobile alerts still reach their
+# households, the teams shared out evenly (by priority on a tie).
+MESSENGERS = {"teams": 4, "per_min": 1.0, "broadcast": True, "by_priority": False}
 
 
 def build(cid: str) -> dict:
@@ -76,6 +83,7 @@ def build(cid: str) -> dict:
         "roster": ROSTER,
         "featured": [n for n in FEATURED if any(c["name"] == n for c in cases)],
         "levels": [lv for lv in LEVELS if any(c["name"] == lv["case"] for c in cases)],
+        "messengers": MESSENGERS,
         "cases": cases,
     }
 
