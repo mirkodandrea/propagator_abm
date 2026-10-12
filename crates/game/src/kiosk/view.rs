@@ -137,6 +137,7 @@ pub fn camera(
     mut home_view: Local<Option<(f32, f32)>>,
     mut refit: Local<(Option<UVec2>, u8)>,
     mut last_cursor: Local<Option<Vec2>>,
+    mut tracked: Local<Option<(Vec2, f32)>>,
 ) {
     // Drag deltas from the cursor's own movement: `MouseMotion` (raw device
     // motion) does not arrive in the browser, and dragging the map did nothing.
@@ -208,6 +209,7 @@ pub fn camera(
         || over_map && (scroll != 0.0 || trackpad != Vec2::ZERO || pinch != 0.0 || rotation != 0.0);
     if touched {
         kiosk.shot = None;
+        kiosk.follow = false;
         *released = Some((kiosk.phase, t));
     }
     let user_has_it = released.map(|(p, _)| p) == Some(kiosk.phase);
@@ -256,6 +258,8 @@ pub fn camera(
             if *settled != sim.generation.max(1) && sim.time_s() <= rocca::STEP_S && !user_has_it {
                 if let Some((yaw, d)) = fit_view(camera, &sim, home, scene_pitch) {
                     *settled = sim.generation.max(1);
+                    kiosk.follow = true;
+                    *tracked = None;
                     *home_view = Some((yaw, d));
                     orbit.focus = home;
                     orbit.yaw = yaw;
@@ -300,6 +304,23 @@ pub fn camera(
                     kiosk.shot = None;
                 }
             }
+            // Time is running: follow the fire, slowly, keeping it framed.
+            // The goal is smoothed first (the front's middle jumps as cells
+            // catch), then the camera eases to it.
+            if kiosk.follow && matches!(kiosk.phase, Phase::Esegui | Phase::Crisi) && kiosk.shot.is_none() && !user_has_it {
+                if let (Some((_, d)), Some((mid, span))) = (*home_view, fire_extent(&sim)) {
+                    let dt = time.delta_seconds().min(0.1);
+                    let (t_mid, t_span) = tracked.get_or_insert((mid, span));
+                    let s = 1.0 - (-0.6 * dt).exp();
+                    *t_mid += (mid - *t_mid) * s;
+                    *t_span += (span - *t_span) * s;
+                    let goal_d = (*t_span * 2.8).clamp(d * 0.5, d);
+                    let goal = Vec3::new(t_mid.x, orbit.focus.y, t_mid.y);
+                    let a = 1.0 - (-1.2 * dt).exp();
+                    orbit.focus = orbit.focus.lerp(goal, a);
+                    orbit.distance += (goal_d - orbit.distance) * a;
+                }
+            }
             // «Vista iniziale»: back to the home view of this game.
             if kiosk.reset_view {
                 kiosk.reset_view = false;
@@ -334,6 +355,30 @@ pub fn camera(
     tf.translation.y = tf.translation.y.max(ground + 25.0);
     tf.look_at(orbit.focus, Vec3::Y);
     dof.focal_distance = tf.translation.distance(orbit.focus);
+}
+
+/// What the follow camera frames: the burning front and the districts it
+/// is near (a home within `NEAR_M` of it). Returns the middle (Bevy x, z)
+/// and the widest extent in metres. `None` if nothing burns.
+fn fire_extent(sim: &Sim) -> Option<(Vec2, f32)> {
+    const NEAR_M: f32 = 1500.0;
+    let cells = sim.fire.active_cells();
+    if cells.is_empty() {
+        return None;
+    }
+    let step = (cells.len() / 400).max(1);
+    let fire: Vec<Pos> = cells.iter().step_by(step).map(|&c| sim.scn.world.centre_of(c)).collect();
+    let mut pts = fire.clone();
+    for d in &sim.districts {
+        let homes = d.households.iter().map(|&i| sim.agents.households[i].home);
+        let near = homes.clone().any(|h| fire.iter().any(|f| (f.x - h.x).hypot(f.y - h.y) < NEAR_M));
+        if near {
+            pts.extend(homes);
+        }
+    }
+    let v: Vec<Vec2> = pts.iter().map(|&p| { let b = crate::frame::to_bevy(p, 0.0); Vec2::new(b.x, b.z) }).collect();
+    let (lo, hi) = v.iter().fold((Vec2::MAX, Vec2::MIN), |(l, h), p| (l.min(*p), h.max(*p)));
+    Some(((lo + hi) * 0.5, (hi - lo).max_element().max(400.0)))
 }
 
 /// `KIOSK_SHOT_ZOOM=<k>` scales the play distance, to photograph close-ups.

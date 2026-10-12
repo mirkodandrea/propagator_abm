@@ -657,6 +657,10 @@ fn view_controls(ui: &mut egui::Ui, k: &mut Kiosk) {
             k.reset_view = true;
         }
     });
+            k.follow = false;
+        }
+        if icons::button(ui, Icon::Fire, "Segui il fuoco", k.follow, ORANGE, true).clicked() {
+            k.follow = !k.follow;
 }
 
 /// What the marks on the map mean, in the side bar, closed at first

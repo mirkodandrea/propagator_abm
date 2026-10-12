@@ -119,6 +119,9 @@ pub struct Kiosk {
     pub operator: bool,
     /// «Vista iniziale» was pressed: the camera goes back to the home view.
     pub reset_view: bool,
+    /// While time runs the camera follows the fire; a hand on the map (or
+    /// the button in the view controls) turns it off.
+    pub follow: bool,
     /// The opening screen is showing: at launch, after the operator's «Nuova
     /// partita» (a new visitor) and after «Riprova» (the same one, to pick a
     /// level; the name is kept).
@@ -201,6 +204,7 @@ impl Kiosk {
             baseline: Arc::new(Mutex::new(None)),
             operator: false,
             reset_view: false,
+            follow: true,
             zoom: 1.0,
             side_w: 0.0,
             shot: None,
