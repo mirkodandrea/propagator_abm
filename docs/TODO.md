@@ -18,7 +18,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - [ ] riprodurre headless «senza ordini meglio che con ordini» in un paese (punto 14): le squadre bagnano la vegetazione e il fuoco cambia strada? Poi raccontarlo nel «Perché» o correggere;
   - [ ] freccia del vento più visibile sul territorio (punto 15); primi piani automatici sull'area colpita con `Kiosk::shot` (punto 18);
   - [ ] chiedere ai colleghi se hanno giocato nel browser o nativo (punto 1, «pesante»);
-  - [ ] con la barra laterale, i badge dei paesi dietro la barra hanno ancora una linea che attraversa la barra (vista in `0_tour_2`);
+  - [x] 2026-10-12 con la barra laterale, i badge dei paesi dietro la barra avevano una linea che attraversava la barra: linee ritagliate sulla mappa (`bf744a0`);
   - [ ] serve una tastiera al chiosco per il nome (o lo scrive l'operatore).
 
 - **2026-10-12, barra laterale** (richiesta dell'utente: «tutto nella barra tranne la scheda del paese quando si clicca, e il fumetto che può rimanere nella parte opposta, isolato»).
