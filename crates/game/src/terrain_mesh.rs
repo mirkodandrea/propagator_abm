@@ -11,6 +11,8 @@
 //! colour dithering hides that. Vegetation is now drawn as actual plants (see
 //! [`crate::vegetation`]), and this layer paints only what is under them:
 //! soil, rock on the steep faces, sand at the shore, sea below the waterline.
+//! Along the coast the ground has two materials of its own ([`coast_rock`],
+//! [`coast_sand`]): banded limestone on the cliffs, rippled sand on the beaches.
 //! Ground colour therefore varies with slope, elevation and noise — geology,
 //! not land cover — which is both honest and far better looking.
 
@@ -32,6 +34,147 @@ const STRIDE: usize = if cfg!(target_arch = "wasm32") { 4 } else { 1 };
 
 #[derive(Component)]
 pub struct TerrainChunk;
+
+/// Static rendered geometry used by the optional native pause playground.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Component)]
+pub struct PauseSolid;
+
+/// Elevation at or below which a non-burnable fire cell is water: the rule
+/// `abm::haven::is_water` uses, so the picture and the model agree.
+const SEA_FIRE_DEM_M: f64 = 2.0;
+
+/// Distance, metres, from each fire cell to the nearest water cell: what the
+/// coast's materials key off, since a vertex does not know where the sea is.
+struct ShoreField {
+    cols: usize,
+    rows: usize,
+    cell: f32,
+    height_m: f32,
+    d: Vec<f32>,
+}
+
+impl ShoreField {
+    fn new(scn: &Scenario) -> Self {
+        let w = &scn.world;
+        let (cols, rows) = (w.fire_cols, w.fire_rows);
+        let mut d = vec![f32::INFINITY; cols * rows];
+        for r in 0..rows {
+            for c in 0..cols {
+                let i = r * cols + c;
+                if !scn.is_burnable(Cell { row: r, col: c }) && scn.dem.get(i).is_some_and(|e| *e <= SEA_FIRE_DEM_M) {
+                    d[i] = 0.0;
+                }
+            }
+        }
+        // two-pass chamfer distance (1, sqrt 2 in cells)
+        const D2: f32 = std::f32::consts::SQRT_2;
+        for r in 0..rows {
+            for c in 0..cols {
+                let i = r * cols + c;
+                let mut v = d[i];
+                if c > 0 { v = v.min(d[i - 1] + 1.0); }
+                if r > 0 {
+                    v = v.min(d[i - cols] + 1.0);
+                    if c > 0 { v = v.min(d[i - cols - 1] + D2); }
+                    if c + 1 < cols { v = v.min(d[i - cols + 1] + D2); }
+                }
+                d[i] = v;
+            }
+        }
+        for r in (0..rows).rev() {
+            for c in (0..cols).rev() {
+                let i = r * cols + c;
+                let mut v = d[i];
+                if c + 1 < cols { v = v.min(d[i + 1] + 1.0); }
+                if r + 1 < rows {
+                    v = v.min(d[i + cols] + 1.0);
+                    if c + 1 < cols { v = v.min(d[i + cols + 1] + D2); }
+                    if c > 0 { v = v.min(d[i + cols - 1] + D2); }
+                }
+                d[i] = v;
+            }
+        }
+        for v in &mut d {
+            *v = if v.is_finite() { *v * w.cellsize } else { 1.0e6 };
+        }
+        ShoreField { cols, rows, cell: w.cellsize, height_m: w.height_m, d }
+    }
+
+    /// Bilinear between cell centres.
+    fn at(&self, p: Pos) -> f32 {
+        let fx = (p.x / self.cell - 0.5).clamp(0.0, (self.cols - 1) as f32);
+        let fy = ((self.height_m - p.y) / self.cell - 0.5).clamp(0.0, (self.rows - 1) as f32);
+        let (x0, y0) = (fx.floor() as usize, fy.floor() as usize);
+        let (x1, y1) = ((x0 + 1).min(self.cols - 1), (y0 + 1).min(self.rows - 1));
+        let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+        let g = |r: usize, c: usize| self.d[r * self.cols + c];
+        let top = g(y0, x0) * (1.0 - tx) + g(y0, x1) * tx;
+        let bot = g(y1, x0) * (1.0 - tx) + g(y1, x1) * tx;
+        top * (1.0 - ty) + bot * ty
+    }
+}
+
+fn smooth(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
+fn mix3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+}
+
+/// Limestone cliff: pale and ochre bands with a dark iron seam, whose
+/// elevation wanders with noise so the strata dip and fault; vertical streaks
+/// where water runs; dark and wet in the spray zone at the foot. The bands are
+/// ~14 m thick: thinner than that and a 5 m vertex grid aliases them.
+fn coast_rock(elev: f32, p: Pos) -> [f32; 3] {
+    const PALE: [f32; 3] = [0.80, 0.76, 0.66];
+    const OCHRE: [f32; 3] = [0.70, 0.57, 0.40];
+    const GREY: [f32; 3] = [0.55, 0.54, 0.51];
+    const IRON: [f32; 3] = [0.36, 0.30, 0.26];
+    const WET: [f32; 3] = [0.27, 0.26, 0.25];
+    let dip = noise(p.x / 160.0, p.y / 160.0, 0x5A) * 26.0 + noise(p.x / 38.0, p.y / 38.0, 0x5B) * 5.0;
+    let t = ((elev + dip) / 14.0).rem_euclid(1.0);
+    let band = if t < 0.34 {
+        PALE
+    } else if t < 0.40 {
+        mix3(PALE, OCHRE, smooth((t - 0.34) / 0.06))
+    } else if t < 0.62 {
+        OCHRE
+    } else if t < 0.70 {
+        mix3(OCHRE, PALE, smooth((t - 0.62) / 0.08))
+    } else if t < 0.86 {
+        PALE
+    } else if t < 0.92 {
+        mix3(PALE, GREY, smooth((t - 0.86) / 0.06))
+    } else if t < 0.96 {
+        mix3(GREY, IRON, smooth((t - 0.92) / 0.04))
+    } else {
+        mix3(IRON, PALE, smooth((t - 0.96) / 0.04))
+    };
+    let streak = 0.86 + 0.28 * noise(p.x / 4.0, p.y / 30.0, 0x5C);
+    let grain = 0.94 + 0.12 * noise(p.x / 7.0, p.y / 7.0, 0x5D);
+    let lit = [band[0] * streak * grain, band[1] * streak * grain, band[2] * streak * grain];
+    mix3(lit, WET, (1.0 - elev / 3.5).clamp(0.0, 1.0) * 0.65)
+}
+
+/// Beach sand: dark and wet at the waterline, pale and dry above it, with
+/// ripples, a little shell, and tufts of dune grass on the high back beach.
+fn coast_sand(elev: f32, p: Pos) -> [f32; 3] {
+    const WET: [f32; 3] = [0.58, 0.52, 0.40];
+    const DRY: [f32; 3] = [0.91, 0.84, 0.66];
+    const GRASS: [f32; 3] = [0.60, 0.63, 0.38];
+    let dry = smooth((elev - 0.7) / 1.6);
+    let mut c = mix3(WET, DRY, dry);
+    let ripple = (noise(p.x / 3.0, p.y / 8.0, 0x6C) - 0.5) * 0.10 + (noise(p.x / 20.0, p.y / 20.0, 0x6D) - 0.5) * 0.08;
+    c = [c[0] + ripple, c[1] + ripple, c[2] + ripple * 0.9];
+    if noise(p.x / 1.7, p.y / 1.7, 0x6E) > 0.92 {
+        c = mix3(c, [0.96, 0.95, 0.90], 0.5);
+    }
+    let tuft = smooth((noise(p.x / 28.0, p.y / 28.0, 0x6F) - 0.52) / 0.2) * smooth((elev - 1.8) / 1.6);
+    mix3(c, GRASS, tuft * 0.55)
+}
 
 const PAVING: [f32; 3] = [0.84, 0.81, 0.74];
 const GARDEN: [f32; 3] = [0.50, 0.66, 0.36];
@@ -113,7 +256,7 @@ fn cover_tint(scn: &Scenario, p: Pos) -> [f32; 3] {
 /// `slope_cos` is the vertical component of the surface normal: 1 on the flat,
 /// falling toward 0 on a cliff. Ligurian ground is dry pale limestone soil,
 /// with bare rock showing wherever it is too steep to hold any.
-fn ground_color(scn: &Scenario, elev: f32, slope_cos: f32, p: Pos) -> [f32; 3] {
+fn ground_color(scn: &Scenario, elev: f32, slope_cos: f32, p: Pos, shore: f32) -> [f32; 3] {
     if elev <= 0.5 {
         return [0.07, 0.13, 0.26]; // sea
     }
@@ -168,7 +311,19 @@ fn ground_color(scn: &Scenario, elev: f32, slope_cos: f32, p: Pos) -> [f32; 3] {
         let base = soil[i] * (1.0 - rockiness) + rock[i] * rockiness;
         c[i] = (base * (1.0 - beach) + sand[i] * beach) * mottle;
     }
-    c
+
+    // The coast has its own materials. The non-burnable shore strip would
+    // otherwise take the garden green of the cover tint.
+    // Rocky scrub along the cliff edge, then bare banded limestone where it
+    // is steep; sand where it is low and flat.
+    let strip = 1.0 - smooth((shore - 40.0) / 70.0);
+    c = mix3(c, [0.62 * mottle, 0.58 * mottle, 0.46 * mottle], strip * smooth((elev - 5.0) / 4.0));
+    let cliff = smooth((0.95 - slope_cos) / 0.14) * (1.0 - smooth((shore - 90.0) / 280.0));
+    c = mix3(c, coast_rock(elev, p), cliff);
+    let flat = smooth((slope_cos - 0.88) / 0.08);
+    let low = 1.0 - smooth((elev - 5.0) / 5.0);
+    let sand_w = flat * low * (1.0 - smooth((shore - 90.0) / 80.0));
+    mix3(c, coast_sand(elev, p), sand_w)
 }
 
 
@@ -196,6 +351,7 @@ pub fn build(
     let chunks_x = (cols - 1).div_ceil(CHUNK);
     let chunks_y = (rows - 1).div_ceil(CHUNK);
     let mut count = 0;
+    let shore = ShoreField::new(scn);
 
     for cy in 0..chunks_y {
         for cx in 0..chunks_x {
@@ -232,7 +388,7 @@ pub fn build(
                     let n = t.normal_at(p);
                     normals.push([n[0], n[1], -n[2]]);
 
-                    let col = ground_color(scn, elev, n[1], p);
+                    let col = ground_color(scn, elev, n[1], p, shore.at(p));
                     let col = Color::srgb(col[0], col[1], col[2]).to_linear();
                     colors.push([col.red, col.green, col.blue, 1.0]);
                     uvs.push([c as f32 / cn as f32, r as f32 / rn as f32]);
@@ -267,6 +423,8 @@ pub fn build(
                     ..default()
                 },
                 TerrainChunk,
+                #[cfg(not(target_arch = "wasm32"))]
+                PauseSolid,
             ));
             count += 1;
         }

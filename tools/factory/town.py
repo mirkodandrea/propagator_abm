@@ -60,6 +60,12 @@ class Settlement:
     irrigated: list = field(default_factory=list)  # (u0, u1, v0, v1) irrigated plots, non-vegetated
     wild: list = field(default_factory=list)  # (u0, u1, v0, v1, fuel) untended land, painted under the rest
     lanes: list = field(default_factory=list)  # Lane, in order: a lane's parent comes before it
+    # organic layouts: the built-up fabric inside the core (aligned rows) and
+    # how it is built
+    mix: list = field(default_factory=lambda: [("house", .55), ("terrace", .25), ("villa", .1), ("shop", .1)])
+    urban: tuple | None = None  # (u0, u1, v0, v1) of the aligned rows, when wider than the core
+    urban_gap: float = 1.5      # m between houses of a row: ~0 = attached, larger = detached
+    block_m: float = 58.0       # distance between the parallel streets
 
 
 @dataclass
@@ -83,6 +89,11 @@ class Layout:
     # the stretch whose points fall between u0 and u1 in the settlement's frame
     # (a box misses a road that bends)
     wooded_roads: list = field(default_factory=list)
+    # Hand-drawn look (2026-10-12, user: the villages looked square): cores and
+    # irrigated plots get a rounded, irregular outline instead of a box, and
+    # houses vary in size, sit looser on the lane and keep more apart. The
+    # outlines draw nothing from the layout's rng.
+    organic: bool = False
 
 
 T4_L1 = Layout(
@@ -356,7 +367,22 @@ T4_L6 = dataclasses.replace(
     households={**T4_L5.households, "Castelvento": 230},
 )
 
-LAYOUTS = {("t4", 1): T4_L1, ("t4", 2): T4_L2, ("t4", 3): T4_L3, ("t4", 4): T4_L4, ("t4", 5): T4_L5, ("t4", 6): T4_L6}
+# Layout 7 (2026-10-12, user request): layout 5 with the hand-drawn look
+# (`Layout.organic`): irregular cores, houses of different sizes turned a little
+# more, and kept apart by 21 m (the kiosk draws them 1.9x, `visual_scale`).
+T4_L7 = dataclasses.replace(
+    T4_L5, id="t4_paese7", organic=True,
+    settlements=[
+        dataclasses.replace(T4_L5.settlements[0], mix=[("terrace", .4), ("house", .3), ("shop", .2), ("apartments", .1)],
+                            block_m=54.0),
+        dataclasses.replace(T4_L5.settlements[1], mix=[("house", .5), ("terrace", .2), ("shop", .1), ("villa", .2)]),
+        dataclasses.replace(T4_L5.settlements[2], mix=_OLD, urban=(-200, 200, -70, 110)),
+        dataclasses.replace(T4_L5.settlements[3], mix=_NEW, urban=(-190, 190, -70, 110), urban_gap=7.0, block_m=62.0),
+        T4_L5.settlements[4],
+    ],
+)
+
+LAYOUTS = {("t4", 7): T4_L7, ("t4", 1): T4_L1, ("t4", 2): T4_L2, ("t4", 3): T4_L3, ("t4", 4): T4_L4, ("t4", 5): T4_L5, ("t4", 6): T4_L6}
 
 
 # --------------------------------------------------------------------------- geometry
@@ -385,6 +411,55 @@ def paint_poly(fuel, poly, value):
                          for a, b in zip(poly, poly[1:] + poly[:1]))
             if inside:
                 fuel[r, c] = value
+
+
+def _vnoise(x, y, seed):
+    """Smooth 2-D value noise in [-1, 1], deterministic, no rng."""
+    def h(i, j):
+        n = (i * 374761393 + j * 668265263 + seed * 1442695041) & 0xFFFFFFFF
+        n = ((n ^ (n >> 13)) * 1274126177) & 0xFFFFFFFF
+        return ((n ^ (n >> 16)) & 0xFFFF) / 32767.5 - 1.0
+    i, j = math.floor(x), math.floor(y)
+    fx, fy = x - i, y - j
+    fx, fy = fx * fx * (3 - 2 * fx), fy * fy * (3 - 2 * fy)
+    return (h(i, j) * (1 - fx) + h(i + 1, j) * fx) * (1 - fy) + (h(i, j + 1) * (1 - fx) + h(i + 1, j + 1) * fx) * fy
+
+
+def organic_box(w, u0, u1, v0, v1, seed, corner=70.0, wobble=26.0, step=22.0):
+    """Outline of a rounded box whose edge wanders by up to `wobble` m: the
+    footprint of a village that grew, not a plot that was surveyed. Returns
+    world points of a (generally non-convex) polygon."""
+    cu, cv = (u0 + u1) / 2, (v0 + v1) / 2
+    hu, hv = (u1 - u0) / 2, (v1 - v0) / 2
+    corner = min(corner, hu, hv)
+    pts = []
+    n = max(24, int(2 * math.pi * max(hu, hv) / step))
+    for k in range(n):
+        t = 2 * math.pi * k / n
+        # superellipse: rounded corners with the same half-axes as the box
+        c, s_ = math.cos(t), math.sin(t)
+        e = 2.0 + 6.0 * (corner / max(hu, hv))
+        r = (abs(c / hu) ** e + abs(s_ / hv) ** e) ** (-1.0 / e)
+        u, v = r * c, r * s_
+        nrm = math.hypot(u / hu ** 2, v / hv ** 2) or 1.0
+        nu, nv = u / hu ** 2 / nrm, v / hv ** 2 / nrm
+        d = wobble * (0.7 * _vnoise((cu + u) / 90.0, (cv + v) / 90.0, seed)
+                      + 0.3 * _vnoise((cu + u) / 35.0, (cv + v) / 35.0, seed + 1)) - wobble * 0.2
+        pts.append(w(cu + u + nu * d, cv + v + nv * d))
+    return pts
+
+
+def paint_poly_any(fuel, poly, value):
+    """`paint_poly` for a polygon that need not be convex."""
+    from matplotlib.path import Path as MplPath
+    xs, ys = [p[0] for p in poly], [p[1] for p in poly]
+    r0, c0 = to_cell(min(xs), max(ys))
+    r1, c1 = to_cell(max(xs), min(ys))
+    r0, r1, c0, c1 = max(0, r0 - 1), min(N, r1 + 2), max(0, c0 - 1), min(N, c1 + 2)
+    rr, cc = np.mgrid[r0:r1, c0:c1]
+    P = np.c_[((cc + 0.5) * CELL_M).ravel(), (WORLD_M - (rr + 0.5) * CELL_M).ravel()]
+    m = MplPath(np.asarray(poly)).contains_points(P).reshape(rr.shape)
+    fuel[r0:r1, c0:c1][m] = value
 
 
 def paint_line(fuel, line, value, half_width_m=0.0):
@@ -472,7 +547,7 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
     #    shared vertices (connect_junctions) because they are laid across it.
     homes = []
     lane_lines, road_pts = {}, []
-    for s in layout.settlements:
+    for si, s in enumerate(layout.settlements):
         w = frame(s)
         in_trunk = any(f"{s.name}:" in str(a) and f"{s.name}:" in str(b)
                        for _, _, wps in layout.trunk for a, b in zip(wps[:-1], wps[1:]))
@@ -499,20 +574,35 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
         for sname, (u0, v0), (u1, v1), lname in layout.links:
             if sname == s.name:
                 add(f"{s.name} - {lname}", R.resample([w(u0, v0), w(u1, v1)], 40.0), "residential")
+        ring_core = None
+        ring_urban = None
+        if layout.organic and s.core[1] > s.core[0]:
+            ring_core = organic_box(w, *s.core, seed=layout.seed + si)
+            ring_urban = organic_box(w, *(s.urban or s.core), seed=layout.seed + si + 20, wobble=34.0) \
+                if s.urban else ring_core
         if s.lanes:
             main_line = next((built[n]["line"] for n, _, wps in layout.trunk
                               if any(f"{s.name}:" in str(a) and f"{s.name}:" in str(b) for a, b in zip(wps[:-1], wps[1:]))),
                              next((r_["line"] for r_ in roads if r_["name"] == f"{s.name} - via 0"), None))
-            _lanes(s, w, layout, roads, add, main_line, lane_lines, road_pts, homes)
+            _lanes(s, w, layout, roads, add, main_line, lane_lines, road_pts, homes, ring_urban)
+            if ring_urban is not None:
+                _urban(s, w, layout, ring_urban, add, main_line, road_pts, homes, _civic(layout), layout.seed + 99 + si)
         for (cu, v0, v1) in s.cross:
             add(f"{s.name} - vicolo {cu:+.0f}", R.resample([w(cu, v0), w(cu, v1)], 40.0), "residential")
         for *box, f in s.wild:
             paint_poly(fuel, rect(w, *box), f)  # vegetation, so not an area: the render reads it from the fuel
-        paint_poly(fuel, rect(w, *s.core), 0)
-        areas.append({"kind": "core", "locality": s.name, "ring": rect(w, *s.core)})
-        for box in s.irrigated:
-            paint_poly(fuel, rect(w, *box), 0)
-            areas.append({"kind": "irrigated", "locality": s.name, "ring": rect(w, *box)})
+        for kind, boxes in (("core", [s.core]), ("irrigated", s.irrigated)):
+            for bi, box in enumerate(boxes):
+                if layout.organic and kind == "core" and box[1] - box[0] > 0:
+                    ring = ring_core
+                    paint_poly_any(fuel, ring, 0)
+                elif layout.organic and kind == "irrigated":
+                    ring = organic_box(w, *box, seed=layout.seed + 50 + bi, corner=40.0, wobble=18.0)
+                    paint_poly_any(fuel, ring, 0)
+                else:
+                    ring = rect(w, *box)
+                    paint_poly(fuel, ring, 0)
+                areas.append({"kind": kind, "locality": s.name, "ring": ring})
 
     # 3. Scattered houses along a road, on gentle enough ground, each with a lane.
     for name, spec in layout.scattered.items():
@@ -634,6 +724,8 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
                 continue
             bid = len(buildings) + 1
             bw, bd = FOOTPRINT[kind]
+            if layout.organic:
+                bw, bd = house_size(kind, x, y)
             a = math.radians(90 - bearing)
             ca, sa = math.cos(a), math.sin(a)
             ring = [[x + u * ca - v * sa, y + u * sa + v * ca]
@@ -668,18 +760,27 @@ def build(layout: Layout, dem: np.ndarray, fuel_nature: np.ndarray) -> dict:
             "households": households, "people": people, "notes": notes}
 
 
-def _lanes(s, w, layout, roads, add, main_line, lane_lines, road_pts, homes):
+def _civic(layout):
+    out = []
+    for _, sn, lu, lv, wd, ht, _ in layout.landmarks:
+        if sn:
+            cs = next(c for c in layout.settlements if c.name == sn)
+            out.append((*frame(cs)(lu, lv), max(wd, ht) / 2 + 12))
+        else:
+            out.append((lu, lv, max(wd, ht) / 2 + 12))
+    return out
+
+
+def _lanes(s, w, layout, roads, add, main_line, lane_lines, road_pts, homes, ring=None):
     """Lay out `s.lanes`: roads and the houses along them."""
     rng = np.random.default_rng(layout.seed + 7 + len(lane_lines))
     a = math.radians(s.axis_deg)
     ux, uy = math.sin(a), math.cos(a)
-    civic = []
-    for _, sn, lu, lv, wd, ht, _ in layout.landmarks:
-        if sn:
-            cs = next(c for c in layout.settlements if c.name == sn)
-            civic.append((*frame(cs)(lu, lv), max(wd, ht) / 2 + 12))
-        else:
-            civic.append((lu, lv, max(wd, ht) / 2 + 12))
+    civic = _civic(layout)
+    zone = None
+    if ring is not None:
+        from matplotlib.path import Path as MplPath
+        zone = MplPath(np.asarray(ring))
 
     def local(x, y):
         dx, dy = x - s.centre[0], y - s.centre[1]
@@ -720,10 +821,27 @@ def _lanes(s, w, layout, roads, add, main_line, lane_lines, road_pts, homes):
                 tx, ty = dense[k1] - dense[k0]
                 n_ = math.hypot(tx, ty) or 1.0
                 tx, ty = tx / n_, ty / n_
-                off = ln.setback + rng.uniform(-2.0, 5.0)
+                off = ln.setback + (rng.uniform(-2.0, 14.0) if layout.organic else rng.uniform(-2.0, 5.0))
                 x, y = dense[k][0] - ty * side * off, dense[k][1] + tx * side * off
                 step = rng.uniform(*ln.step)
                 lu, lv = local(x, y)
+                if zone is not None:
+                    # rural: outside the built-up core, loose, each turned its own way
+                    h = rng.random()
+                    acc, kind = 0.0, ln.mix[-1][0]
+                    for kd, wt in ln.mix:
+                        acc += wt
+                        if h < acc:
+                            kind = kd
+                            break
+                    bearing = math.degrees(math.atan2(tx, ty)) + rng.uniform(-22.0, 22.0)
+                    if not zone.contains_point((x, y)) and rng.random() < ln.p \
+                            and not any(math.hypot(lu - gu, lv - gv) < gr for gu, gv, gr in s.gaps) \
+                            and house_fits(x, y, kind, bearing, homes, 9.0, civic, road_pts,
+                                           skip_road=None if not ln.road else mine):
+                        homes.append((ln.loc or s.name, x, y, kind, bearing))
+                    d += step
+                    continue
                 free = not any(math.hypot(lu - gu, lv - gv) < gr for gu, gv, gr in s.gaps) \
                     and all(math.hypot(x - hx, y - hy) >= 15.0 for _, hx, hy, _, _ in homes) \
                     and all(math.hypot(x - cx, y - cy) >= cr for cx, cy, cr in civic) \
@@ -740,6 +858,163 @@ def _lanes(s, w, layout, roads, add, main_line, lane_lines, road_pts, homes):
                     bearing = math.degrees(math.atan2(tx, ty)) + rng.uniform(-9.0, 9.0)
                     homes.append((ln.loc or s.name, x, y, kind, bearing))
                 d += step
+
+
+# --------------------------------------------------------------------------- house placement
+
+RENDER_SCALE = 1.9      # the kiosk draws footprints this much larger (`visual_scale::BUILDING_FOOTPRINT`)
+STREET_HALF_M = 5.0     # half the painted width of a street, as drawn
+
+
+def house_size(kind, x, y):
+    """Footprint (along the street, across it) in metres, varying from house to
+    house, from the position alone so placement and the written ring agree."""
+    bw, bd = FOOTPRINT[kind]
+    h1 = (int(x * 7.3) * 2654435761 + int(y * 3.1) * 40503) % 1000 / 1000.0
+    h2 = (int(y * 5.7) * 2246822519 + int(x * 1.9) * 3266489917) % 997 / 997.0
+    return bw * (0.78 + 0.3 * h1), bd * (0.82 + 0.25 * h2)
+
+
+def _rect_axes(x, y, kind, bearing):
+    bw, bd = house_size(kind, x, y)
+    a = math.radians(90 - bearing)
+    return (x, y, bw * RENDER_SCALE / 2, bd * RENDER_SCALE / 2, math.cos(a), math.sin(a))
+
+
+def rects_overlap(r1, r2, gap):
+    """Separating-axis test of two rendered footprints kept `gap` m apart."""
+    (x1, y1, a1, b1, c1, s1), (x2, y2, a2, b2, c2, s2) = r1, r2
+    dx, dy = x2 - x1, y2 - y1
+    if dx * dx + dy * dy > (math.hypot(a1, b1) + math.hypot(a2, b2) + gap) ** 2:
+        return False
+    for ux, uy in ((c1, s1), (-s1, c1), (c2, s2), (-s2, c2)):
+        ext1 = a1 * abs(c1 * ux + s1 * uy) + b1 * abs(-s1 * ux + c1 * uy)
+        ext2 = a2 * abs(c2 * ux + s2 * uy) + b2 * abs(-s2 * ux + c2 * uy)
+        if abs(dx * ux + dy * uy) > ext1 + ext2 + gap:
+            return False
+    return True
+
+
+def house_fits(x, y, kind, bearing, homes, gap, civic, road_pts, skip_road=None, free_of=None):
+    """True when the rendered footprint overlaps no house, civic building or
+    road other than `skip_road`, and no `free_of(x, y)` exclusion."""
+    r = _rect_axes(x, y, kind, bearing)
+    reach = math.hypot(r[2], r[3])
+    for _, hx, hy, hk, hb in homes:
+        if abs(hx - x) < 60 and abs(hy - y) < 60 and rects_overlap(r, _rect_axes(hx, hy, hk, hb), gap):
+            return False
+    for cx, cy, cr in civic:
+        if math.hypot(x - cx, y - cy) < cr + reach * 0.6:
+            return False
+    near = STREET_HALF_M + min(r[2], r[3]) * 0.9
+    for j, pts in enumerate(road_pts):
+        if j == skip_road:
+            continue
+        if np.min(np.hypot(pts[:, 0] - x, pts[:, 1] - y)) < near:
+            return False
+    return not (free_of and free_of(x, y))
+
+
+def _urban(s, w, layout, ring, add, main_line, road_pts, homes, civic, seed):
+    """The built-up fabric inside the core: streets parallel to the main one,
+    joined by cross streets, with houses in aligned rows facing them, attached
+    or nearly so. Rural land outside the core keeps its scattered lanes."""
+    from matplotlib.path import Path as MplPath
+    zone = MplPath(np.asarray(ring))
+    inside = lambda x, y: bool(zone.contains_point((x, y)))
+    a = math.radians(s.axis_deg)
+    ux, uy = math.sin(a), math.cos(a)
+    cu0, cu1, cv0, cv1 = s.urban or s.core
+    rng = np.random.default_rng(seed)
+
+    def local(x, y):
+        dx, dy = x - s.centre[0], y - s.centre[1]
+        return dx * ux + dy * uy, -dx * uy + dy * ux
+
+    streets = []        # (road_pts index or None, dense polyline)
+    # 1. parallels, wavering a little, clipped to the core
+    k_max = int(max(abs(cv0), abs(cv1)) // s.block_m)
+    for k in range(-k_max, k_max + 1):
+        if k == 0:
+            continue
+        v0 = k * s.block_m
+        if not (cv0 + 12 < v0 < cv1 - 12):
+            continue
+        pts = []
+        u = cu0
+        while u <= cu1:
+            v = v0 + 7.0 * _vnoise(u / 140.0, k * 3.7, seed)
+            pts.append(w(u, v))
+            u += 12.0
+        run = []
+        for p in pts + [None]:
+            if p is not None and inside(*p):
+                run.append(p)
+                continue
+            if len(run) >= 5:
+                line = R.resample(R.chaikin(run[::2] + [run[-1]], 1), 25.0)
+                add(f"{s.name} - via {k:+d}", line, "residential")
+                dense = np.array(R.resample(line, 2.0))
+                road_pts.append(dense)
+                streets.append((len(road_pts) - 1, dense))
+            run = []
+    # 2. cross streets between the outermost parallels, at varied spacing
+    vs = sorted({round(v) for v in [cv0 + 12, cv1 - 12]})
+    u = cu0 + 55.0
+    n = 0
+    while u < cu1 - 30:
+        uu = u + 12.0 * _vnoise(u / 60.0, 11.3, seed)
+        va, vb = vs[0], vs[-1]
+        line = [w(uu + 6 * _vnoise(v / 50.0, 5.0, seed), v) for v in np.linspace(va, vb, 9)]
+        run = []
+        for p in line + [None]:
+            if p is not None and inside(*p):
+                run.append(p)
+                continue
+            if len(run) >= 3:
+                add(f"{s.name} - vicolo {n}", R.resample(run, 25.0), "residential")
+                road_pts.append(np.array(R.resample(run, 2.0)))
+                n += 1
+            run = []
+        u += 78.0 + 30.0 * (_vnoise(u / 30.0, 2.0, seed) + 1) / 2
+    # 3. the main street itself
+    if main_line is not None:
+        dense = np.array(R.resample([tuple(q) for q in main_line], 2.0))
+        streets.append((None, dense))
+    # 4. houses along every street, both sides, in a row
+    for road_idx, dense in streets:
+        seg = np.hypot(*np.diff(dense, axis=0).T)
+        cum = np.concatenate([[0.0], np.cumsum(seg)])
+        for side in (-1, 1):
+            d = rng.uniform(0, 8)       # the row's leading edge, along the street
+            while d < cum[-1]:
+                mh = rng.random()
+                acc, kind = 0.0, s.mix[-1][0]
+                for kd, wt in s.mix:
+                    acc += wt
+                    if mh < acc:
+                        kind = kd
+                        break
+                kk = min(int(np.searchsorted(cum, d)), len(dense) - 1)
+                bw, bd = house_size(kind, *dense[kk])
+                dc = d + bw * RENDER_SCALE / 2
+                k = min(int(np.searchsorted(cum, dc)), len(dense) - 1)
+                k0, k1 = max(k - 4, 0), min(k + 4, len(dense) - 1)
+                tx, ty = dense[k1] - dense[k0]
+                nn = math.hypot(tx, ty) or 1.0
+                tx, ty = tx / nn, ty / nn
+                bearing = math.degrees(math.atan2(tx, ty)) + rng.uniform(-2.0, 2.0)
+                setback = STREET_HALF_M + bd * RENDER_SCALE / 2 + rng.uniform(0.8, 2.5)
+                x = dense[k][0] - ty * side * setback
+                y = dense[k][1] + tx * side * setback
+                lu, lv = local(x, y)
+                free = inside(x, y) and not any(math.hypot(lu - gu, lv - gv) < gr for gu, gv, gr in s.gaps) \
+                    and house_fits(x, y, kind, bearing, homes, s.urban_gap * 0.5, civic, road_pts, skip_road=road_idx)
+                if free and rng.random() < 0.96:
+                    homes.append((s.name, x, y, kind, bearing))
+                    d += bw * RENDER_SCALE + s.urban_gap * rng.uniform(0.3, 1.2)
+                else:
+                    d += 3.0     # try again a little further on: an alley, a yard
 
 
 def allocate(target: int, caps: list[int]) -> list[int]:

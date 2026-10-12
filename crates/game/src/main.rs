@@ -14,6 +14,7 @@ pub enum AppState {
 }
 
 mod agents;
+mod boats;
 mod buildings;
 mod camera;
 mod field;
@@ -21,15 +22,19 @@ mod fire_shader;
 mod fire_view;
 mod frame;
 mod kiosk;
+mod landmarks;
 mod models;
+#[cfg(not(target_arch = "wasm32"))]
+mod mario;
 mod overlays;
 mod life;
 mod people;
-mod plinth;
 mod pick;
 mod retro;
 mod rings;
 mod roads;
+mod sea;
+mod sky;
 mod sim;
 mod terrain_mesh;
 mod toy;
@@ -82,14 +87,15 @@ fn main() -> anyhow::Result<()> {
         }),
         ..default()
     }))
-    .insert_resource(ClearColor(Color::srgb(0.80, 0.76, 0.70)))
     // WebGL2 has no multisampled HDR targets.
     .insert_resource(if cfg!(target_arch = "wasm32") { Msaa::Off } else { Msaa::default() })
-    .insert_resource(AmbientLight { color: Color::srgb(0.85, 0.88, 1.0), brightness: 420.0 })
     .add_plugins(EguiPlugin)
     .add_plugins(fire_shader::FireShaderPlugin)
     .add_plugins(retro::RetroShaderPlugin)
+    // sun, sky and ambient light from the game's clock; the sea and its wind; the boats
+    .add_plugins((sky::SkyPlugin, sea::SeaPlugin, boats::BoatsPlugin, landmarks::LandmarksPlugin))
     .init_state::<AppState>()
+    .init_resource::<kiosk::snap::SnapView>()
     .init_resource::<ui::UiFocus>()
     .add_event::<sim::SimRestarted>()
     .insert_resource(DataPath(std::path::PathBuf::from(&data)))
@@ -119,6 +125,8 @@ fn main() -> anyhow::Result<()> {
         app.add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
             .add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::filtered(vec![bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS]));
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    app.add_plugins(mario::MarioPlugin);
     kiosk_systems(&mut app);
     app.run();
     Ok(())
@@ -132,12 +140,11 @@ fn setup_scene(
 ) {
     terrain_mesh::build(&sim.scn, &mut commands, &mut meshes, &mut materials);
     roads::build(&sim.scn, &mut commands, &mut meshes, &mut materials);
-    plinth::build(&sim.scn, &mut commands, &mut meshes, &mut materials);
 
-    // One fixed sun: no clock, no day/night (spec decisions).
-    commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight { shadows_enabled: true, illuminance: 11_000.0, color: Color::srgb(1.0, 0.93, 0.80), ..default() },
-        transform: Transform::from_xyz(-0.55, 0.85, 0.45).looking_at(Vec3::ZERO, Vec3::Y),
+    // The sun: `sky::update_sky` places and colours it from the game's clock
+    // (14:00 to 17:00), so the shadows lengthen and the light warms as it runs.
+    commands.spawn((DirectionalLightBundle {
+        directional_light: DirectionalLight { shadows_enabled: true, ..default() },
         cascade_shadow_config: CascadeShadowConfigBuilder {
             num_cascades: 4,
             minimum_distance: 2.0,
@@ -147,7 +154,7 @@ fn setup_scene(
         }
         .into(),
         ..default()
-    });
+    }, sky::Sun));
 
     let (p, h) = terrain_mesh::cell_ground(&sim.scn, sim.scn.world.cell_of(sim.case.ignition()));
     let distance = 2600.0;
@@ -162,6 +169,8 @@ fn setup_scene(
         },
         BloomSettings { intensity: 0.20, ..BloomSettings::NATURAL },
         OrbitCamera { focus, distance, ..default() },
+        // colour and reach are set every frame by `sky::update_sky`
+        bevy::pbr::FogSettings::default(),
         bevy::core_pipeline::prepass::DepthPrepass,
         bevy::core_pipeline::dof::DepthOfFieldSettings {
             mode: bevy::core_pipeline::dof::DepthOfFieldMode::Gaussian,
@@ -194,7 +203,7 @@ fn kiosk_systems(app: &mut App) {
         Update,
         (
             kiosk::launch.run_if(in_state(AppState::SelectingScenario)),
-            (kiosk::ui::draw, kiosk::step, kiosk::snap::drive, kiosk::view::camera, kiosk::shots)
+            (kiosk::ui::draw, kiosk::step, kiosk::snap::drive, kiosk::view::camera.run_if(map_camera_allowed), kiosk::snap::hold, kiosk::shots)
                 .chain()
                 .run_if(in_state(AppState::Playing)),
             kiosk::view::hide_game_overlays
@@ -221,14 +230,14 @@ fn kiosk_systems(app: &mut App) {
                 units::update_teams,
                 overlays::update_markers,
                 overlays::update_wind,
-                overlays::update_orders,
-                overlays::update_routes,
-                units::sync_orders,
                 overlays::animate_wind,
-                units::update_work_overlay,
+                overlays::update_orders,
                 overlays::pulse_rings,
                 rings::spin,
                 overlays::no_ui_shadows,
+                overlays::update_routes,
+                units::sync_orders,
+                units::update_work_overlay,
             )
                 .after(fire_view::reset)
                 .after(buildings::reset)
@@ -237,4 +246,13 @@ fn kiosk_systems(app: &mut App) {
                 .run_if(in_state(AppState::Playing)),
         ),
     );
+}
+
+fn map_camera_allowed(
+    #[cfg(not(target_arch = "wasm32"))] mario: Res<mario::Playground>,
+) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    { !mario.active }
+    #[cfg(target_arch = "wasm32")]
+    { true }
 }

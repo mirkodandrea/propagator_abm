@@ -7,6 +7,7 @@ Phase 1 commands, in order:
   python tools/scenario_factory.py fires  [--candidates ...]     headless sweeps (Rust fire_sweep)
   python tools/scenario_factory.py atlas  [--candidates ...]     PNGs + metrics in docs/factory/fase1
   python tools/scenario_factory.py all                           the three above
+  python tools/scenario_factory.py island                        the territory as an island -> out/island_data
 
 Raw output goes to out/factory/ (gitignored, regenerable from the saved seeds and
 parameters); the atlas images go to docs/factory/fase1/. Set up once with
@@ -172,7 +173,7 @@ def cmd_publish(cid):
 
 def main(argv):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["nature", "fires", "atlas", "all", "build-town", "verify", "town-fires", "plate", "fine-plate", "game-cases", "publish"])
+    p.add_argument("command", choices=["nature", "fires", "atlas", "all", "build-town", "verify", "town-fires", "plate", "fine-plate", "game-cases", "publish", "island"])
     p.add_argument("--terrain", default="t4")
     p.add_argument("--layout", type=int, default=1)
     p.add_argument("--scenario", default="t4_paese")
@@ -189,6 +190,9 @@ def main(argv):
         return cmd_fine_plate(a.scenario, a.terrain)
     if a.command == "publish":
         return cmd_publish(a.scenario)
+    if a.command == "island":
+        from factory import island
+        return island.main()
     if a.command == "game-cases":
         return cmd_game_cases(a.scenario)
     if a.command == "plate":

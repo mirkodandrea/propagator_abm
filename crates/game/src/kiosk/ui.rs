@@ -313,7 +313,7 @@ fn title(ctx: &egui::Context, k: &Kiosk, logo: Option<egui::TextureId>) -> bool 
                 ui.add(egui::Image::new(egui::load::SizedTexture::new(t, egui::vec2(64.0, 80.0))));
                 ui.add_space(6.0);
             }
-            ui.label(RichText::new("Rocca Ventosa").size(96.0).strong().color(Color32::WHITE));
+            ui.label(RichText::new("Isola di Roccavento").size(84.0).strong().color(Color32::WHITE));
             ui.label(RichText::new("Aiutaci a gestire un incendio.").size(26.0).color(AMBER));
             ui.add_space(34.0);
             let b = egui::Button::new(RichText::new("Gioca").size(44.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(16.0).min_size(egui::vec2(360.0, 96.0));
@@ -348,7 +348,7 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                     ui.add_space(14.0);
                 }
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Rocca Ventosa").size(48.0).strong().color(Color32::WHITE));
+                    ui.label(RichText::new("Isola di Roccavento").size(44.0).strong().color(Color32::WHITE));
                     ui.label(RichText::new("Aiutaci a gestire questa emergenza.").size(22.0).color(AMBER));
                 });
             });

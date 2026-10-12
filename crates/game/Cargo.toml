@@ -16,7 +16,19 @@ serde_json.workspace = true
 bevy = { version = "0.14", default-features = true }
 bevy_egui = { version = "0.28", default-features = false, features = ["open_url", "default_fonts", "render"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+libsm64-native = { path = "../libsm64-native" }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["Window", "Storage"] }
 uuid.workspace = true
 getrandom.workspace = true
+
+# Vista dall'alto dei paesi, per giudicarne il disegno: stessi moduli del gioco.
+[[bin]]
+name = "game"
+path = "src/main.rs"
+
+[[bin]]
+name = "town_shot"
+path = "src/town_shot.rs"

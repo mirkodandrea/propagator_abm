@@ -45,10 +45,10 @@ fn fbm(p_in: vec2<f32>) -> f32 {
 
 fn fire_ramp(h: f32) -> vec3<f32> {
     // ember red -> orange -> yellow -> near white, h in 0..1
-    let c0 = vec3<f32>(0.55, 0.06, 0.02);
-    let c1 = vec3<f32>(1.60, 0.38, 0.05);
-    let c2 = vec3<f32>(2.20, 1.10, 0.18);
-    let c3 = vec3<f32>(2.60, 2.00, 0.90);
+    let c0 = vec3<f32>(0.80, 0.08, 0.02);
+    let c1 = vec3<f32>(2.50, 0.60, 0.06);
+    let c2 = vec3<f32>(3.60, 1.80, 0.28);
+    let c3 = vec3<f32>(4.40, 3.50, 1.60);
     let a = clamp(h * 3.0, 0.0, 1.0);
     let b = clamp(h * 3.0 - 1.0, 0.0, 1.0);
     let c = clamp(h * 3.0 - 2.0, 0.0, 1.0);
@@ -77,12 +77,15 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
         // Hot cells are where local heat beats the noise threshold: the
         // front breaks into patches and fingers, with a ragged border.
-        let local = heat * 1.5 - (1.0 - n) * 0.75 + (crackle - 0.5) * 0.18;
+        // Slow breathing of the whole front, offset by position so it rolls
+        // along the line instead of pulsing in unison.
+        let breath = 0.5 + 0.5 * sin(t * 2.2 + wp.x * 0.035 + wp.y * 0.027);
+        let local = heat * 1.75 - (1.0 - n) * 0.70 + (crackle - 0.5) * 0.30 + breath * 0.10;
         let hot = smoothstep(0.0, 0.18, local);
 
-        let fire = fire_ramp(clamp(local, 0.0, 1.0)) * (0.8 + 0.4 * crackle);
+        let fire = fire_ramp(clamp(local, 0.0, 1.0)) * (0.85 + 0.55 * crackle);
         // What the cooler gaps look like: dark char with a faint red glint.
-        let char_col = vec3<f32>(0.07, 0.035, 0.03) + vec3<f32>(0.35, 0.05, 0.0) * (1.0 - hot) * heat * n;
+        let char_col = vec3<f32>(0.06, 0.03, 0.025) + vec3<f32>(0.9, 0.12, 0.0) * (1.0 - hot) * heat * n;
         let fractal = mix(char_col, fire, hot);
         let rgb = mix(col.rgb, fractal, w);
 

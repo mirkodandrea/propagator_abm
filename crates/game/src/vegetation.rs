@@ -265,11 +265,14 @@ pub fn spawn(
             let drawn = vec![CellFire::Unburnt as u8; plants.len()];
             let mesh = meshes.add(builder.finish());
 
-            commands.spawn(MaterialMeshBundle::<RetroMaterial> {
+            commands.spawn((MaterialMeshBundle::<RetroMaterial> {
                 mesh: mesh.clone(),
                 material: material.clone(),
                 ..default()
-            });
+            },
+                #[cfg(not(target_arch = "wasm32"))]
+                crate::terrain_mesh::PauseSolid,
+            ));
             chunks.push(Chunk {
                 mesh,
                 plants,

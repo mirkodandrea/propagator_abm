@@ -209,11 +209,14 @@ pub fn spawn(
         tris += builder.indices.len() / 3;
         let base = builder.colors.clone();
         let mesh = meshes.add(builder.finish());
-        commands.spawn(MaterialMeshBundle::<RetroMaterial> {
+        commands.spawn((MaterialMeshBundle::<RetroMaterial> {
             mesh: mesh.clone(),
             material: material.clone(),
             ..default()
-        });
+        },
+            #[cfg(not(target_arch = "wasm32"))]
+            crate::terrain_mesh::PauseSolid,
+        ));
         chunks.push(Chunk {
             mesh,
             structures,

@@ -52,30 +52,54 @@ pub struct Kit {
     pub footprint: Option<[f32; 2]>,
 }
 
+fn parse_kit(json: &str, what: &str) -> HashMap<String, Kit> {
+    let value: serde_json::Value = serde_json::from_str(json).unwrap_or_else(|_| panic!("valid {what} bake"));
+    value
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(name, v)| {
+            (
+                name.clone(),
+                Kit {
+                    positions: serde_json::from_value(v["positions"].clone()).unwrap(),
+                    normals: serde_json::from_value(v["normals"].clone()).unwrap(),
+                    colors: serde_json::from_value(v["colors"].clone()).unwrap(),
+                    indices: serde_json::from_value(v["indices"].clone()).unwrap(),
+                    footprint: serde_json::from_value(v["footprint"].clone()).unwrap_or(None),
+                },
+            )
+        })
+        .collect()
+}
+
 pub fn kit(name: &str) -> &'static Kit {
     static KIT: OnceLock<HashMap<String, Kit>> = OnceLock::new();
-    KIT.get_or_init(|| {
-        let value: serde_json::Value = serde_json::from_str(include_str!("../../../assets/models/town.json")).expect("valid town kit bake");
-        value
-            .as_object()
-            .unwrap()
-            .iter()
-            .map(|(name, v)| {
-                (
-                    name.clone(),
-                    Kit {
-                        positions: serde_json::from_value(v["positions"].clone()).unwrap(),
-                        normals: serde_json::from_value(v["normals"].clone()).unwrap(),
-                        colors: serde_json::from_value(v["colors"].clone()).unwrap(),
-                        indices: serde_json::from_value(v["indices"].clone()).unwrap(),
-                        footprint: serde_json::from_value(v["footprint"].clone()).unwrap_or(None),
-                    },
-                )
-            })
-            .collect()
-    })
-    .get(name)
-    .unwrap_or_else(|| panic!("town kit has no `{name}`"))
+    KIT.get_or_init(|| parse_kit(include_str!("../../../assets/models/town.json"), "town kit"))
+        .get(name)
+        .unwrap_or_else(|| panic!("town kit has no `{name}`"))
+}
+
+/// The island's own models (`scripts/build_island_models.py`): the rocca, the
+/// stone tower, the sailing and moored boats. Same layout as the town kit.
+pub fn island(name: &str) -> &'static Kit {
+    static ISLAND: OnceLock<HashMap<String, Kit>> = OnceLock::new();
+    ISLAND
+        .get_or_init(|| parse_kit(include_str!("../../../assets/models/island.json"), "island kit"))
+        .get(name)
+        .unwrap_or_else(|| panic!("island kit has no `{name}`"))
+}
+
+/// An island model as a mesh.
+pub fn island_mesh(name: &str) -> Mesh {
+    let m = island(name);
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, m.positions.clone());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, m.normals.clone());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, m.colors.iter().map(|c| [c[0], c[1], c[2], 1.0]).collect::<Vec<_>>());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; m.positions.len()]);
+    mesh.insert_indices(Indices::U32(m.indices.clone()));
+    mesh
 }
 
 /// A kit piece as a standalone mesh (people and vehicles, which move).
@@ -107,6 +131,21 @@ pub fn mesh(name: &str) -> Mesh {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_island_models_stand_on_the_ground() {
+        for name in [
+            "rocca", "torre_pietra", "veliero_bianco", "veliero_crema", "veliero_rosso", "veliero_blu", "veliero_giallo",
+            "ormeggiato_bianco", "ormeggiato_blu", "ormeggiato_crema",
+        ] {
+            let m = island(name);
+            assert!(!m.positions.is_empty(), "{name}");
+            assert_eq!(m.indices.len() % 3, 0, "{name}");
+            let low = m.positions.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min);
+            // buildings sit on their ground; hulls a little below the waterline
+            assert!(low >= -1.0 && low <= 0.5, "{name}: lowest point {low}");
+        }
+    }
 
     #[test]
     fn the_town_kit_is_grounded_and_wound_outward() {

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/scenario", "crates/fire", "crates/abm", "crates/game", "crates/propagator-core", "crates/behavior", "crates/rocca", "crates/datafs"]
+members = ["crates/scenario", "crates/fire", "crates/abm", "crates/game", "crates/propagator-core", "crates/behavior", "crates/rocca", "crates/datafs", "crates/libsm64-native"]
 
 [workspace.package]
 version = "0.1.0"

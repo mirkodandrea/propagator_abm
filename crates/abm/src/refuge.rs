@@ -60,7 +60,9 @@ pub fn choose(scn: &Scenario, net: &RoadNetwork, max: usize) -> Vec<Refuge> {
             || p.x > w.width_m - EDGE_M
             || p.y > w.height_m - EDGE_M;
         let frac = burnable_fraction(scn, p, CLEAR_RADIUS_M);
-        if is_exit || frac <= MAX_BURNABLE_FRAC {
+        // The sea is not clear ground: an assembly point has no water round
+        // it (on an island the port is the exit, not a car park on the pier).
+        if is_exit || (frac <= MAX_BURNABLE_FRAC && !near_water(scn, p, CLEAR_RADIUS_M)) {
             candidates.push(Refuge { node: n, pos: p, is_exit, burnable_frac: frac });
         }
     }
@@ -87,6 +89,29 @@ pub fn choose(scn: &Scenario, net: &RoadNetwork, max: usize) -> Vec<Refuge> {
         }
     }
     chosen
+}
+
+/// Whether any fire cell within `radius` of `p` is water (see
+/// [`crate::haven::is_water`]).
+fn near_water(scn: &Scenario, p: Pos, radius: f32) -> bool {
+    let w = scn.world;
+    let c = w.cell_of(p);
+    let span = (radius / w.cellsize).ceil() as i64;
+    for dr in -span..=span {
+        for dc in -span..=span {
+            if (dr * dr + dc * dc) as f32 > (span * span) as f32 {
+                continue;
+            }
+            let (r, col) = (c.row as i64 + dr, c.col as i64 + dc);
+            if r < 0 || col < 0 || r >= w.fire_rows as i64 || col >= w.fire_cols as i64 {
+                continue;
+            }
+            if crate::haven::is_water(scn, Cell { row: r as usize, col: col as usize }) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Fraction of fire cells within `radius` of `p` that carry burnable fuel.

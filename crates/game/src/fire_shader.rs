@@ -29,6 +29,10 @@ pub struct FireMaterial {
     #[texture(0)]
     #[sampler(1)]
     pub texture: Handle<Image>,
+    /// x = 1 for flame tongues (rising, eroding, heat ramp); 0 for embers,
+    /// which keep the plain warped-texture look.
+    #[uniform(2)]
+    pub mode: Vec4,
 }
 
 impl Material for FireMaterial {

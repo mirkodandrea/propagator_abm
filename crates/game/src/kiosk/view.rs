@@ -20,7 +20,7 @@ const MIN_PITCH: f32 = -1.30;
 const MAX_PITCH: f32 = -0.55;
 const MAX_YAW: f32 = 1.75;
 const MIN_DIST: f32 = 90.0;
-const MAX_DIST: f32 = 6000.0;
+const MAX_DIST: f32 = 12000.0;
 const PAN_RADIUS_M: f32 = 1500.0;
 
 /// The places the frame has to hold: every home of every district, and where
@@ -488,6 +488,7 @@ pub fn hide_game_overlays(
             With<crate::overlays::WindArrow>,
             With<crate::overlays::WindChevron>,
             With<crate::overlays::DynamicMarker>,
+            With<crate::overlays::UiGlyph>,
             With<crate::overlays::BeaconLayer>,
             With<crate::overlays::OrderRing>,
             With<crate::overlays::RouteMark>,

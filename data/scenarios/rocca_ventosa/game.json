@@ -289,7 +289,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 28.8,
+    "wind_from_deg": 28.0,
     "wind_kmh": 40.0,
     "toward": "Fornaci"
    }
@@ -307,7 +307,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 327.3,
+    "wind_from_deg": 326.2,
     "wind_kmh": 40.0,
     "toward": "San Rocco"
    }
@@ -325,7 +325,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 243.3,
+    "wind_from_deg": 243.5,
     "wind_kmh": 40.0,
     "toward": "Le Terrazze"
    }
@@ -343,7 +343,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 12.8,
+    "wind_from_deg": 12.9,
     "wind_kmh": 40.0,
     "toward": "Castelvento"
    }
@@ -361,7 +361,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 161.5,
+    "wind_from_deg": 162.5,
     "wind_kmh": 40.0,
     "toward": "Le Terrazze"
    }
@@ -379,7 +379,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 304.1,
+    "wind_from_deg": 303.9,
     "wind_kmh": 40.0,
     "toward": "Le Terrazze"
    }
@@ -397,7 +397,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 198.8,
+    "wind_from_deg": 199.2,
     "wind_kmh": 40.0,
     "toward": "Le Terrazze"
    }
@@ -415,7 +415,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 76.9,
+    "wind_from_deg": 78.0,
     "wind_kmh": 40.0,
     "toward": "Pian dei Grilli"
    }
@@ -433,7 +433,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 10.6,
+    "wind_from_deg": 10.3,
     "wind_kmh": 40.0,
     "toward": "Pian dei Grilli"
    }
@@ -451,7 +451,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 280.1,
+    "wind_from_deg": 279.4,
     "wind_kmh": 40.0,
     "toward": "San Rocco"
    }
@@ -487,7 +487,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 28.0,
+    "wind_from_deg": 26.8,
     "wind_kmh": 40.0,
     "toward": "Fornaci"
    }
@@ -559,7 +559,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 145.8,
+    "wind_from_deg": 146.0,
     "wind_kmh": 40.0,
     "toward": "Le Terrazze"
    }
@@ -577,7 +577,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 108.5,
+    "wind_from_deg": 107.8,
     "wind_kmh": 40.0,
     "toward": "Castelvento"
    }
@@ -595,7 +595,7 @@
    "minutes": 180,
    "shift": {
     "at_min": 45,
-    "wind_from_deg": 109.4,
+    "wind_from_deg": 109.2,
     "wind_kmh": 40.0,
     "toward": "Castelvento"
    }

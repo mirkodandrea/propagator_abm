@@ -18,6 +18,13 @@
 //! | `yaw`, `pitch` | camera angles in degrees (default: as it is, pitch -46)        |
 //! | `select` | district whose badge is open                                         |
 //!
+//! The view asked for is held *after* the kiosk camera has run
+//! ([`hold`]), with none of its play limits: the kiosk camera keeps the focus
+//! within 1.5 km of the home view, the pitch between -74 and -31 degrees, and
+//! eases toward the fire, none of which a screenshot of the far coast wants.
+//! `pitch` may be anything from -89 to -3 degrees, `yaw` any angle, `dist`
+//! from 20 m.
+//!
 //! Time only goes forward within a case: a state with an earlier `t` (or
 //! another `case`) restarts the game. The world is frozen at the shot, so
 //! only the UI's own animations move. The district and case names are printed
@@ -37,6 +44,17 @@ use scenario::Pos;
 use super::{commit, restart, Kiosk, Phase};
 use crate::camera::OrbitCamera;
 use crate::sim::{Sim, SimRestarted};
+
+/// The view the state on show asks for, in radians and Bevy space; each part
+/// `None` when the state leaves it as the kiosk camera has it. Written by
+/// [`drive`], held by [`hold`].
+#[derive(Resource, Default, Clone, Copy)]
+pub struct SnapView {
+    pub focus: Option<Vec3>,
+    pub dist: Option<f32>,
+    pub yaw: Option<f32>,
+    pub pitch: Option<f32>,
+}
 
 /// Real seconds a state is shown before its picture is taken: the overlays,
 /// meshes and the camera have to settle.
@@ -213,6 +231,7 @@ pub fn drive(
     mut mgr: ResMut<ScreenshotManager>,
     mut exit: EventWriter<AppExit>,
     mut restarted: EventWriter<SimRestarted>,
+    mut view: ResMut<SnapView>,
     mut p: Local<Progress>,
 ) {
     let Ok(dir) = std::env::var("KIOSK_SNAP") else { return };
@@ -238,20 +257,31 @@ pub fn drive(
         p.waited = 0.0;
     }
     p.waited += dt;
-    // the camera is held where the state asks, every frame, until the shot
-    if let (Some((focus, dist, yaw, pitch)), Ok(mut o)) = (p.goal, orbit.get_single_mut()) {
-        if !focus.is_nan() {
-            o.focus = focus;
+    // the camera is held where the state asks, every frame, until the shot:
+    // here the orbit, which the kiosk camera then reads; `hold` has the last word
+    if let Some((focus, dist, yaw, pitch)) = p.goal {
+        *view = SnapView {
+            focus: (!focus.is_nan()).then_some(focus),
+            dist,
+            yaw: yaw.map(f32::to_radians),
+            pitch: pitch.map(f32::to_radians),
+        };
+        if let Ok(mut o) = orbit.get_single_mut() {
+            if let Some(f) = view.focus {
+                o.focus = f;
+            }
+            if let Some(d) = view.dist {
+                o.distance = d;
+            }
+            if let Some(y) = view.yaw {
+                o.yaw = y;
+            }
+            if let Some(pt) = view.pitch {
+                o.pitch = pt;
+            }
         }
-        if let Some(d) = dist {
-            o.distance = d;
-        }
-        if let Some(y) = yaw {
-            o.yaw = y.to_radians();
-        }
-        if let Some(pt) = pitch {
-            o.pitch = pt.to_radians();
-        }
+    } else {
+        *view = SnapView::default();
     }
     let ready = st.phase != "fine" || kiosk.baseline().is_some();
     if p.waited > SETTLE_S && ready {
@@ -260,4 +290,37 @@ pub fn drive(
         p.at += 1;
         p.applied = false;
     }
+}
+
+/// Runs after the kiosk camera: puts the camera exactly where the state on
+/// show asks, past the limits the camera keeps for play (see the module doc).
+pub fn hold(
+    view: Res<SnapView>,
+    sim: Res<Sim>,
+    mut cam: Query<(&mut OrbitCamera, &mut Transform, &mut bevy::core_pipeline::dof::DepthOfFieldSettings)>,
+) {
+    if !active() || (view.focus.is_none() && view.dist.is_none() && view.yaw.is_none() && view.pitch.is_none()) {
+        return;
+    }
+    let Ok((mut orbit, mut tf, mut dof)) = cam.get_single_mut() else { return };
+    if let Some(f) = view.focus {
+        orbit.focus = f;
+    }
+    if let Some(d) = view.dist {
+        orbit.distance = d.max(20.0);
+    }
+    if let Some(y) = view.yaw {
+        orbit.yaw = y;
+    }
+    if let Some(p) = view.pitch {
+        orbit.pitch = p.clamp(-1.553, -0.05);
+    }
+    orbit.focus.y = sim.scn.terrain.height_at(crate::frame::to_world(orbit.focus));
+    let dir = Vec3::new(orbit.yaw.sin() * orbit.pitch.cos(), -orbit.pitch.sin(), orbit.yaw.cos() * orbit.pitch.cos());
+    tf.translation = orbit.focus + dir * orbit.distance;
+    // not under the ground, but a low camera is what a shot of a cliff wants
+    let ground = sim.scn.terrain.height_at(crate::frame::to_world(tf.translation));
+    tf.translation.y = tf.translation.y.max(ground + 4.0);
+    tf.look_at(orbit.focus, Vec3::Y);
+    dof.focal_distance = tf.translation.distance(orbit.focus);
 }

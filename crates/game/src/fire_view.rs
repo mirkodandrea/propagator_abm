@@ -174,8 +174,8 @@ pub fn setup(
     // Vertex colours run above 1.0 so the camera's bloom pass catches them,
     // and the fragment shader domain-warps the texture lookup so the flame
     // edge roils instead of sitting still.
-    let flame_mat = fire_materials.add(FireMaterial { texture: flame_tex });
-    let spark_mat = fire_materials.add(FireMaterial { texture: spark_tex });
+    let flame_mat = fire_materials.add(FireMaterial { texture: flame_tex, mode: Vec4::X });
+    let spark_mat = fire_materials.add(FireMaterial { texture: spark_tex, mode: Vec4::ZERO });
     // Smoke occludes: alpha blending, and unlit so a plume does not flicker
     // as it crosses the terrain's shadow line.
     let smoke_mat = materials.add(StandardMaterial {
@@ -663,10 +663,10 @@ pub fn update_flames(
         // Toy scale, like the houses (`buildings::TOY_SCALE`): from the play
         // camera a true-height flame is a few pixels and the fire read as a
         // dark smudge; the front has to be the brightest thing on the table.
-        let flame_m = (flame_length_m(fli) * 2.8).clamp(18.0, 90.0) * (0.45 + 0.55 * flaming);
+        let flame_m = (flame_length_m(fli) * 3.4).clamp(22.0, 110.0) * (0.45 + 0.55 * flaming);
         // A hot cell carries several tongues, a creeping one carries a single
         // flicker. Sub-cell placement is what stops them lining up on a grid.
-        let tongues = (1.0 + (fli / 700.0).min(4.0) * flaming).round() as usize;
+        let tongues = (1.0 + (fli / 450.0).min(6.0) * flaming).round() as usize;
         let centre = scn.world.centre_of(*cell);
         let half = scn.world.cellsize * 0.5;
 
@@ -685,7 +685,7 @@ pub fn update_flames(
             // across the cell, so tongues differ within one cell too.
             let local = field.intensity(p).max(fli * 0.4);
             let h_m = flame_m * flicker * (0.6 + 0.4 * (local / fli.max(1.0)).min(1.5));
-            let half_w = (h_m * 0.42).min(scn.world.cellsize * 1.3);
+            let half_w = (h_m * 0.38).min(scn.world.cellsize * 1.3);
             let sway = (t * 2.6 + phase).sin() * h_m * 0.16;
 
             // Additive light competing with a daylit hillside: the multiplier

@@ -37,7 +37,7 @@ use rocca::{Game, Outcome, Plan, Proposal, Territory};
 use crate::sim::{Sim, SimRestarted};
 use crate::{AppState, DataPath};
 
-pub const TITLE: &str = "Rocca Ventosa";
+pub const TITLE: &str = "Isola di Roccavento";
 /// Simulated seconds per real second while the game runs (spec §2: ×40; user,
 /// 2026-10-12: faster, with a selector in the side bar).
 pub const RUN_SPEED: f32 = 80.0;

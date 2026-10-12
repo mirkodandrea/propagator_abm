@@ -1,0 +1,12 @@
+[package]
+name = "libsm64-native"
+version.workspace = true
+edition.workspace = true
+license = "CC0-1.0"
+description = "Main-thread native libsm64 wrapper for the pause playground"
+
+[dependencies]
+blake3 = "1"
+
+[build-dependencies]
+cc = "1"
