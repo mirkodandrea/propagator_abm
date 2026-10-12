@@ -518,8 +518,20 @@ pub fn commit(kiosk: &mut Kiosk, sim: &mut Sim) {
 }
 
 /// Run the clock and keep the preview current.
-pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: EventWriter<SimRestarted>) {
+pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: EventWriter<SimRestarted>,
+    #[cfg(not(target_arch = "wasm32"))] mario: Res<crate::mario::Playground>,
+    #[cfg(not(target_arch = "wasm32"))] mut was_mario: Local<bool>,
+) {
     let dt = time.delta_seconds();
+    #[cfg(not(target_arch = "wasm32"))]
+    let mario_clock = {
+        let active = mario.active && kiosk.phase == Phase::Pianifica;
+        if *was_mario && !active { kiosk.dirty = true; }
+        *was_mario = active;
+        active
+    };
+    #[cfg(target_arch = "wasm32")]
+    let mario_clock = false;
     #[cfg(target_arch = "wasm32")]
     kiosk.advance_baseline();
     kiosk.phase_t += dt;
@@ -531,6 +543,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         kiosk.demo_speed += (want - kiosk.demo_speed) * (1.0 - (-0.4 * dt).exp());
     }
     sim.speed = match kiosk.phase {
+        Phase::Pianifica if mario_clock => 1.0,
         // faster while nothing is happening and nothing is being composed
         Phase::Esegui if kiosk.title => kiosk.speed * kiosk.demo_speed,
         Phase::Esegui if kiosk.proposed == sim.active && sim.is_quiet(QUIET_S) => kiosk.speed * QUIET_BOOST,
@@ -538,13 +551,13 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         Phase::Crisi => 1.0,
         _ => 0.0,
     };
-    if matches!(kiosk.phase, Phase::Esegui | Phase::Crisi) {
+    if matches!(kiosk.phase, Phase::Esegui | Phase::Crisi) || mario_clock {
         if let Err(e) = sim.tick(dt) {
             kiosk.error = Some(format!("{e:#}"));
             kiosk.enter(Phase::Fine);
         }
         if let Some(c) = sim.take_crisis() {
-            if kiosk.phase == Phase::Esegui {
+            if kiosk.phase == Phase::Esegui || mario_clock {
                 kiosk.crisis = Some(c);
                 kiosk.proposed = sim.active.clone();
                 kiosk.dirty = true;
@@ -563,7 +576,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
     }
     // The preview follows the plan being composed and the world as it moves,
     // at most once a simulated review interval while running.
-    let stale = kiosk.dirty || (kiosk.phase != Phase::Pianifica && sim.generation >= kiosk.preview_at.saturating_add(20));
+    let stale = kiosk.dirty || ((kiosk.phase != Phase::Pianifica || mario_clock) && sim.generation >= kiosk.preview_at.saturating_add(20));
     if stale && kiosk.phase != Phase::Fine && !kiosk.title {
         kiosk.preview = sim.preview(&kiosk.proposed).ok();
         kiosk.risk = sim.districts.iter().map(|d| rocca::district::exposure(d, &sim.agents, &sim.fire, &sim.scn)).collect();
@@ -740,5 +753,51 @@ pub fn shots(
             exit.send(AppExit::Success);
         }
         _ => {}
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod mario_clock_tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn mario_uses_the_real_clock_at_one_x_and_returns_to_pause() {
+        let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let territory = Territory::load(&data).unwrap();
+        let mut kiosk = Kiosk::new(territory, data.clone());
+        kiosk.title = false;
+        kiosk.intro = false;
+        kiosk.started = true;
+        let sim = Sim::new(&data, &kiosk.case, 1).unwrap();
+        kiosk.proposed = Plan::new(sim.districts.len());
+        let active = sim.active.clone();
+        let proposed = kiosk.proposed.clone();
+        let pauses = kiosk.pauses_left;
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .insert_resource(kiosk)
+            .insert_resource(sim)
+            .init_resource::<crate::mario::Playground>()
+            .add_event::<SimRestarted>()
+            .add_systems(Update, step);
+        app.world_mut().resource_mut::<Time>().advance_by(std::time::Duration::from_secs(6));
+        app.update();
+        assert_eq!(app.world().resource::<Sim>().time_s(), 0);
+        app.world_mut().resource_mut::<crate::mario::Playground>().active = true;
+        app.update();
+        assert_eq!(app.world().resource::<Sim>().speed, 1.0);
+        assert_eq!(app.world().resource::<Sim>().time_s(), 6);
+        assert_eq!(app.world().resource::<Kiosk>().phase, Phase::Pianifica);
+        app.world_mut().resource_mut::<crate::mario::Playground>().active = false;
+        app.update();
+        let sim = app.world().resource::<Sim>();
+        let kiosk = app.world().resource::<Kiosk>();
+        assert_eq!(sim.speed, 0.0);
+        assert_eq!(sim.time_s(), 6);
+        assert_eq!(sim.active, active);
+        assert_eq!(kiosk.proposed, proposed);
+        assert_eq!(kiosk.pauses_left, pauses);
+        assert_eq!(kiosk.preview_at, sim.generation, "refresh the plan when Mario returns");
     }
 }

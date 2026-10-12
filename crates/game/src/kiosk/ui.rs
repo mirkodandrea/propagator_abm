@@ -142,9 +142,15 @@ pub fn draw(
     logo: Option<Res<Logo>>,
     portraits: Option<Res<Portraits>>,
     mut speech: ResMut<Speech>,
+    #[cfg(not(target_arch = "wasm32"))] mario: Res<crate::mario::Playground>,
 ) {
     let faces = portraits.as_deref();
     let ctx = contexts.ctx_mut();
+    #[cfg(not(target_arch = "wasm32"))]
+    if mario.active {
+        focus.pointer = ctx.is_pointer_over_area();
+        return;
+    }
     let k = &mut *kiosk;
     let Ok(cam) = cameras.get_single() else { return };
     if ctx.input(|i| i.key_pressed(egui::Key::F2)) {

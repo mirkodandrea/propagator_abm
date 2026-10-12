@@ -1,7 +1,11 @@
 //! Small, main-thread-only owner of libsm64's global state. No ROM is embedded.
 #![cfg(not(target_arch = "wasm32"))]
 
-use std::{marker::PhantomData, rc::Rc, sync::atomic::{AtomicBool, Ordering}};
+use std::{
+    marker::PhantomData,
+    rc::Rc,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 pub const TEXTURE_WIDTH: u32 = 704;
 pub const TEXTURE_HEIGHT: u32 = 64;
@@ -87,24 +91,38 @@ impl Engine {
     pub fn new(rom: &[u8]) -> Result<(Self, Vec<u8>), &'static str> {
         // libsm64 trusts ROM offsets and compressed data. Reject unknown ROMs
         // before entering C, including byte-swapped and modified images.
-        if rom.len() != 8 * 1024 * 1024 || blake3::hash(rom).to_hex().as_str() != "670d517ddaac88a517468a6466c8a6d08aa9901c0b235ae6081498e7c296c770" {
+        if rom.len() != 8 * 1024 * 1024
+            || blake3::hash(rom).to_hex().as_str()
+                != "670d517ddaac88a517468a6466c8a6d08aa9901c0b235ae6081498e7c296c770"
+        {
             return Err("Serve la ROM originale Super Mario 64 (USA), formato .z64.");
         }
         if IN_USE.swap(true, Ordering::SeqCst) {
             return Err("libsm64 è già in uso.");
         }
         let mut atlas = vec![0; TEXTURE_WIDTH as usize * TEXTURE_HEIGHT as usize * 4];
-        unsafe { sm64_global_init(rom.as_ptr(), atlas.as_mut_ptr()); }
-        Ok((Self {
-            id: None, state: State::default(),
-            positions: vec![[0.; 3]; VERTICES], normals: vec![[0.; 3]; VERTICES],
-            colors: vec![[0.; 3]; VERTICES], uvs: vec![[0.; 2]; VERTICES],
-            vertex_count: 0, _main_thread: PhantomData,
-        }, atlas))
+        unsafe {
+            sm64_global_init(rom.as_ptr(), atlas.as_mut_ptr());
+        }
+        Ok((
+            Self {
+                id: None,
+                state: State::default(),
+                positions: vec![[0.; 3]; VERTICES],
+                normals: vec![[0.; 3]; VERTICES],
+                colors: vec![[0.; 3]; VERTICES],
+                uvs: vec![[0.; 2]; VERTICES],
+                vertex_count: 0,
+                _main_thread: PhantomData,
+            },
+            atlas,
+        ))
     }
 
     pub fn load_surfaces(&mut self, surfaces: &[Surface]) {
-        unsafe { sm64_static_surfaces_load(surfaces.as_ptr(), surfaces.len().try_into().unwrap()); }
+        unsafe {
+            sm64_static_surfaces_load(surfaces.as_ptr(), surfaces.len().try_into().unwrap());
+        }
     }
 
     pub fn floor_height(&self, p: [f32; 3]) -> f32 {
@@ -114,42 +132,74 @@ impl Engine {
     pub fn spawn(&mut self, p: [f32; 3]) -> bool {
         self.despawn();
         let id = unsafe { sm64_mario_create(p[0], p[1], p[2]) };
-        if id < 0 { return false; }
+        if id < 0 {
+            return false;
+        }
         self.id = Some(id);
-        self.state = State { position: p, health: 0x880, ..Default::default() };
+        self.state = State {
+            position: p,
+            health: 0x880,
+            ..Default::default()
+        };
         self.vertex_count = 0;
         true
     }
 
     pub fn despawn(&mut self) {
-        if let Some(id) = self.id.take() { unsafe { sm64_mario_delete(id); } }
+        if let Some(id) = self.id.take() {
+            unsafe {
+                sm64_mario_delete(id);
+            }
+        }
         self.vertex_count = 0;
     }
 
     pub fn tick(&mut self, input: &Input) {
         let Some(id) = self.id else { return };
         let mut buffers = Buffers {
-            position: self.positions.as_mut_ptr().cast(), normal: self.normals.as_mut_ptr().cast(),
-            color: self.colors.as_mut_ptr().cast(), uv: self.uvs.as_mut_ptr().cast(), triangles: 0,
+            position: self.positions.as_mut_ptr().cast(),
+            normal: self.normals.as_mut_ptr().cast(),
+            color: self.colors.as_mut_ptr().cast(),
+            uv: self.uvs.as_mut_ptr().cast(),
+            triangles: 0,
         };
-        unsafe { sm64_mario_tick(id, input, &mut self.state, &mut buffers); }
+        unsafe {
+            sm64_mario_tick(id, input, &mut self.state, &mut buffers);
+        }
         self.vertex_count = buffers.triangles as usize * 3;
     }
 
     pub fn position(&mut self, p: [f32; 3]) {
-        if let Some(id) = self.id { unsafe { sm64_set_mario_position(id, p[0], p[1], p[2]); } }
+        if let Some(id) = self.id {
+            unsafe {
+                sm64_set_mario_position(id, p[0], p[1], p[2]);
+            }
+        }
         self.state.position = p;
     }
 
     pub fn water_level(&mut self, level: i32) {
-        if let Some(id) = self.id { unsafe { sm64_set_mario_water_level(id, level); } }
+        if let Some(id) = self.id {
+            unsafe {
+                sm64_set_mario_water_level(id, level);
+            }
+        }
     }
 
     pub fn hurt(&mut self, source: [f32; 3], fire: bool) {
         let Some(id) = self.id else { return };
-        if self.state.invincibility > 0 { return; }
+        if self.state.invincibility > 0 {
+            return;
+        }
         unsafe {
-            sm64_mario_take_damage(id, if fire { 2 } else { 1 }, 0, source[0], source[1], source[2]);
+            sm64_mario_take_damage(
+                id,
+                if fire { 2 } else { 1 },
+                0,
+                source[0],
+                source[1],
+                source[2],
+            );
             if fire {
                 sm64_set_mario_action(id, 0x010208B4); // ACT_BURNING_JUMP
                 sm64_set_mario_velocity(id, 0., 45., 0.);
@@ -159,13 +209,16 @@ impl Engine {
     }
 
     pub fn attacking(&mut self, p: [f32; 3], height: f32) -> bool {
-        self.id.is_some_and(|id| unsafe { sm64_mario_attack(id, p[0], p[1], p[2], height) })
+        self.id
+            .is_some_and(|id| unsafe { sm64_mario_attack(id, p[0], p[1], p[2], height) })
     }
 }
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        unsafe { sm64_global_terminate(); }
+        unsafe {
+            sm64_global_terminate();
+        }
         IN_USE.store(false, Ordering::SeqCst);
     }
 }
@@ -184,35 +237,81 @@ mod tests {
         let (mut engine, texture) = Engine::new(&rom).unwrap();
         assert_eq!(texture.len(), 704 * 64 * 4);
         assert!(texture.iter().any(|&b| b != 0));
-        assert!(Engine::new(&rom).is_err(), "C globals have exactly one owner");
+        assert!(
+            Engine::new(&rom).is_err(),
+            "C globals have exactly one owner"
+        );
         let floor = [
-            Surface { vertices: [[-8000, 0, -8000], [-8000, 0, 8000], [8000, 0, -8000]], ..Default::default() },
-            Surface { vertices: [[8000, 0, -8000], [-8000, 0, 8000], [8000, 0, 8000]], ..Default::default() },
+            Surface {
+                vertices: [[-8000, 0, -8000], [-8000, 0, 8000], [8000, 0, -8000]],
+                ..Default::default()
+            },
+            Surface {
+                vertices: [[8000, 0, -8000], [-8000, 0, 8000], [8000, 0, 8000]],
+                ..Default::default()
+            },
         ];
         engine.load_surfaces(&floor);
         assert!(engine.spawn([0., 200., 0.]));
         engine.water_level(-10000);
-        let neutral = Input { camera_z: -1., ..Default::default() };
-        for _ in 0..90 { engine.tick(&neutral); }
+        let neutral = Input {
+            camera_z: -1.,
+            ..Default::default()
+        };
+        for _ in 0..90 {
+            engine.tick(&neutral);
+        }
         assert!(engine.state.position[1].abs() < 1.);
         assert!(engine.vertex_count > 0 && engine.vertex_count <= VERTICES);
-        assert!(engine.positions[..engine.vertex_count].iter().flatten().all(|x| x.is_finite()));
-        let walk = Input { camera_z: -1., stick_y: -1., ..Default::default() };
-        for _ in 0..30 { engine.load_surfaces(&floor); engine.tick(&walk); }
-        assert!(engine.state.position[2] < -100., "forward moves away from the camera: {:?}", engine.state);
-        let jump = Input { camera_z: -1., jump: 1, ..Default::default() };
-        for _ in 0..4 { engine.tick(&jump); }
+        assert!(engine.positions[..engine.vertex_count]
+            .iter()
+            .flatten()
+            .all(|x| x.is_finite()));
+        let walk = Input {
+            camera_z: -1.,
+            stick_y: -1.,
+            ..Default::default()
+        };
+        for _ in 0..30 {
+            engine.load_surfaces(&floor);
+            engine.tick(&walk);
+        }
+        assert!(
+            engine.state.position[2] < -100.,
+            "forward moves away from the camera: {:?}",
+            engine.state
+        );
+        let jump = Input {
+            camera_z: -1.,
+            jump: 1,
+            ..Default::default()
+        };
+        for _ in 0..4 {
+            engine.tick(&jump);
+        }
         assert!(engine.state.position[1] > 30.);
         let before = engine.state.health;
         engine.hurt([0., 0., 0.], true);
-        for _ in 0..20 { engine.tick(&neutral); }
+        for _ in 0..20 {
+            engine.tick(&neutral);
+        }
         assert!(engine.state.health < before, "fire causes real SM64 damage");
         assert!(engine.spawn([0., 200., 0.]));
         engine.water_level(600);
-        for _ in 0..45 { engine.tick(&neutral); }
-        assert_ne!(engine.state.action & (1 << 13), 0, "Mario swims below the waterline");
-        engine.despawn(); engine.load_surfaces(&[]);
+        for _ in 0..45 {
+            engine.tick(&neutral);
+        }
+        assert_ne!(
+            engine.state.action & (1 << 13),
+            0,
+            "Mario swims below the waterline"
+        );
+        engine.despawn();
+        engine.load_surfaces(&[]);
         drop(engine);
-        assert!(Engine::new(&rom).is_ok(), "cleanup releases global ownership");
+        assert!(
+            Engine::new(&rom).is_ok(),
+            "cleanup releases global ownership"
+        );
     }
 }
