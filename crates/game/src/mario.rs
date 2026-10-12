@@ -37,6 +37,12 @@ pub struct Playground {
     message: &'static str,
 }
 
+impl Playground {
+    pub(crate) fn request_start_for_snapshot(&mut self) {
+        self.toggle = true;
+    }
+}
+
 #[derive(Component)]
 struct Avatar;
 
@@ -99,6 +105,7 @@ impl Plugin for MarioPlugin {
                 (hud, drive)
                     .chain()
                     .after(crate::kiosk::view::camera)
+                    .after(crate::kiosk::snap::hold)
                     .after(crate::people::update_people)
                     .after(crate::people::update_vehicles)
                     .after(crate::life::update)
@@ -145,7 +152,7 @@ fn hud(
                         .map_or("Gamepad non connesso".to_string(), |name| format!("Gamepad: {name}")));
                     ui.label("WASD / stick sinistro · Spazio / A (×): salto · J / X (□): pugno");
                     ui.label("Shift / LT: accovacciati · Frecce / stick destro: camera · R / Y (△): ricomincia");
-                    ui.label(format!("Energia: {} / 8   {}", ((mode.health - 0xff).max(0) / 0x100).min(8), mode.message));
+                    ui.label(format!("Energia: {} / 8   {}", (mode.health.max(0) / 0x100).min(8), mode.message));
                 }
                 if let Some(error) = &mode.error { ui.colored_label(egui::Color32::LIGHT_RED, error); }
             });
@@ -311,12 +318,16 @@ fn drive(
         ref mut images,
     } = assets;
     let can_play = available(&k, &sim);
-    let keyboard_free = !contexts.ctx_mut().wants_keyboard_input();
-    let focused = windows.get_single().is_ok_and(|w| w.focused);
+    let reading = !crate::kiosk::snap::active();
+    let keyboard_free = reading && (mode.active || !contexts.ctx_mut().wants_keyboard_input());
+    let axis = |a| if reading { controls.axis(a) } else { 0. };
+    let held = |b| reading && controls.held(b);
+    let pressed = |b| reading && controls.pressed(b);
+    let focused = crate::kiosk::snap::active() || windows.get_single().is_ok_and(|w| w.focused);
     let reset = restarted.read().count() > 0;
     let toggle = std::mem::take(&mut mode.toggle)
         || focused && keyboard_free && controls.keys.just_pressed(KeyCode::KeyM)
-        || focused && controls.pressed(GamepadButtonType::Start);
+        || focused && pressed(GamepadButtonType::Start);
     let stop = mode.active
         && (!can_play
             || reset
@@ -389,7 +400,8 @@ fn drive(
             blur: dof.max_circle_of_confusion_diameter,
             viewport: render_camera.viewport.clone(),
         });
-        let base = road_spawn(&sim, camera.focus);
+        let rocca = rocca_start(&sim);
+        let base = rocca.map_or_else(|| road_spawn(&sim, camera.focus), |(p, _)| p);
         runtime.origin = base;
         runtime.spawn = base + Vec3::Y * 2.;
         runtime.patch = Vec3::splat(f32::INFINITY);
@@ -443,6 +455,9 @@ fn drive(
         );
         camera.distance = 36.;
         camera.pitch = -0.45;
+        if let Some((_, yaw)) = rocca {
+            camera.yaw = yaw;
+        }
         dof.max_circle_of_confusion_diameter = 0.;
         render_camera.viewport = None;
         mode.active = true;
@@ -460,29 +475,28 @@ fn drive(
             0.
         }
     };
-    camera.yaw -= (controls.axis(GamepadAxisType::RightStickX)
+    camera.yaw -= (axis(GamepadAxisType::RightStickX)
         + keyboard(KeyCode::ArrowRight, KeyCode::ArrowLeft))
         * dt
         * 2.0;
     camera.pitch = (camera.pitch
-        + (controls.axis(GamepadAxisType::RightStickY)
-            + keyboard(KeyCode::ArrowUp, KeyCode::ArrowDown))
+        + (axis(GamepadAxisType::RightStickY) + keyboard(KeyCode::ArrowUp, KeyCode::ArrowDown))
             * dt)
         .clamp(-1.1, 0.1);
     let stick = Vec2::new(
-        controls.axis(GamepadAxisType::LeftStickX) + keyboard(KeyCode::KeyD, KeyCode::KeyA),
-        -controls.axis(GamepadAxisType::LeftStickY) + keyboard(KeyCode::KeyS, KeyCode::KeyW),
+        axis(GamepadAxisType::LeftStickX) + keyboard(KeyCode::KeyD, KeyCode::KeyA),
+        -axis(GamepadAxisType::LeftStickY) + keyboard(KeyCode::KeyS, KeyCode::KeyW),
     )
     .clamp_length_max(1.);
-    let jump = controls.held(GamepadButtonType::South)
-        || keyboard_free && controls.keys.pressed(KeyCode::Space);
-    let attack = controls.held(GamepadButtonType::West)
-        || keyboard_free && controls.keys.pressed(KeyCode::KeyJ);
-    runtime.jump_latched |= controls.pressed(GamepadButtonType::South)
+    let jump =
+        held(GamepadButtonType::South) || keyboard_free && controls.keys.pressed(KeyCode::Space);
+    let attack =
+        held(GamepadButtonType::West) || keyboard_free && controls.keys.pressed(KeyCode::KeyJ);
+    runtime.jump_latched |= pressed(GamepadButtonType::South)
         || keyboard_free && controls.keys.just_pressed(KeyCode::Space);
-    runtime.attack_latched |= controls.pressed(GamepadButtonType::West)
+    runtime.attack_latched |= pressed(GamepadButtonType::West)
         || keyboard_free && controls.keys.just_pressed(KeyCode::KeyJ);
-    let respawn = controls.pressed(GamepadButtonType::North)
+    let respawn = pressed(GamepadButtonType::North)
         || keyboard_free && controls.keys.just_pressed(KeyCode::KeyR);
     if respawn {
         let p = to_sm64(runtime.spawn, runtime.origin);
@@ -512,7 +526,7 @@ fn drive(
             stick_y: stick.y,
             jump: u8::from(jump || runtime.jump_latched),
             attack: u8::from(attack || runtime.attack_latched),
-            crouch: u8::from(controls.crouch()),
+            crouch: u8::from(reading && controls.crouch()),
         };
         runtime.jump_latched = false;
         runtime.attack_latched = false;
@@ -671,6 +685,29 @@ fn road_spawn(sim: &Sim, focus: Vec3) -> Vec3 {
         y: p.y,
     });
     crate::frame::to_bevy(p, sim.scn.terrain.height_at(p))
+}
+
+fn rocca_start(sim: &Sim) -> Option<(Vec3, f32)> {
+    let path = sim
+        .data
+        .join("scenarios")
+        .join(&sim.scn.id)
+        .join("island.json");
+    let island: serde_json::Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    let rocca = &island["landmarks"]["rocca"];
+    let centre = Vec3::new(
+        rocca["pos"][0].as_f64()? as f32,
+        0.,
+        -rocca["pos"][1].as_f64()? as f32,
+    );
+    let yaw = (rocca["yaw_deg"].as_f64().unwrap_or(0.) as f32).to_radians();
+    let half = rocca["wall_half_m"].as_f64().unwrap_or(31.) as f32;
+    let scale = rocca["scale"].as_f64().unwrap_or(1.) as f32;
+    // The authored gate faces +X. Start outside its jambs, looking inward.
+    let outward = Quat::from_rotation_y(yaw) * Vec3::X;
+    let p = centre + outward * ((half + 20.) * scale);
+    let ground = sim.scn.terrain.height_at(crate::frame::to_world(p));
+    Some((p.with_y(ground), outward.x.atan2(outward.z)))
 }
 
 fn mesh_bounds(mesh: &Mesh, tf: &Transform) -> Option<(Vec3, Vec3)> {

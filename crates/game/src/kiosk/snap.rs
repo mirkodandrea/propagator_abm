@@ -75,6 +75,8 @@ struct State {
     yaw: Option<f32>,
     pitch: Option<f32>,
     select: Option<String>,
+    #[cfg(not(target_arch = "wasm32"))]
+    mario: bool,
 }
 
 fn names(v: &str) -> Vec<String> {
@@ -104,6 +106,8 @@ fn parse(spec: &str) -> Vec<State> {
                     "yaw" => st.yaw = v.parse().ok(),
                     "pitch" => st.pitch = v.parse().ok(),
                     "select" => st.select = Some(v.into()),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    "mario" => st.mario = v == "1",
                     other => eprintln!("snap: unknown key `{other}`"),
                 }
             }
@@ -233,6 +237,7 @@ pub fn drive(
     mut restarted: EventWriter<SimRestarted>,
     mut view: ResMut<SnapView>,
     mut p: Local<Progress>,
+    #[cfg(not(target_arch = "wasm32"))] mut mario: ResMut<crate::mario::Playground>,
 ) {
     let Ok(dir) = std::env::var("KIOSK_SNAP") else { return };
     let Ok(window) = windows.get_single() else { return };
@@ -257,31 +262,42 @@ pub fn drive(
         p.waited = 0.0;
     }
     p.waited += dt;
+    #[cfg(not(target_arch = "wasm32"))]
+    let mario_view = {
+        if st.mario && p.waited > 0.25 && !mario.active {
+            mario.request_start_for_snapshot();
+        }
+        mario.active
+    };
+    #[cfg(target_arch = "wasm32")]
+    let mario_view = false;
     // the camera is held where the state asks, every frame, until the shot:
     // here the orbit, which the kiosk camera then reads; `hold` has the last word
-    if let Some((focus, dist, yaw, pitch)) = p.goal {
-        *view = SnapView {
-            focus: (!focus.is_nan()).then_some(focus),
-            dist,
-            yaw: yaw.map(f32::to_radians),
-            pitch: pitch.map(f32::to_radians),
-        };
-        if let Ok(mut o) = orbit.get_single_mut() {
-            if let Some(f) = view.focus {
-                o.focus = f;
+    if !mario_view {
+        if let Some((focus, dist, yaw, pitch)) = p.goal {
+            *view = SnapView {
+                focus: (!focus.is_nan()).then_some(focus),
+                dist,
+                yaw: yaw.map(f32::to_radians),
+                pitch: pitch.map(f32::to_radians),
+            };
+            if let Ok(mut o) = orbit.get_single_mut() {
+                if let Some(f) = view.focus {
+                    o.focus = f;
+                }
+                if let Some(d) = view.dist {
+                    o.distance = d;
+                }
+                if let Some(y) = view.yaw {
+                    o.yaw = y;
+                }
+                if let Some(pt) = view.pitch {
+                    o.pitch = pt;
+                }
             }
-            if let Some(d) = view.dist {
-                o.distance = d;
-            }
-            if let Some(y) = view.yaw {
-                o.yaw = y;
-            }
-            if let Some(pt) = view.pitch {
-                o.pitch = pt;
-            }
+        } else {
+            *view = SnapView::default();
         }
-    } else {
-        *view = SnapView::default();
     }
     let ready = st.phase != "fine" || kiosk.baseline().is_some();
     if p.waited > SETTLE_S && ready {
@@ -298,7 +314,10 @@ pub fn hold(
     view: Res<SnapView>,
     sim: Res<Sim>,
     mut cam: Query<(&mut OrbitCamera, &mut Transform, &mut bevy::core_pipeline::dof::DepthOfFieldSettings)>,
+    #[cfg(not(target_arch = "wasm32"))] mario: Res<crate::mario::Playground>,
 ) {
+    #[cfg(not(target_arch = "wasm32"))]
+    if mario.active { return; }
     if !active() || (view.focus.is_none() && view.dist.is_none() && view.yaw.is_none() && view.pitch.is_none()) {
         return;
     }
