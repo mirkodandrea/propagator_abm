@@ -19,7 +19,7 @@ wasm-bindgen --target web --no-typescript --out-dir target/web --out-name game \
 # A version in the URLs, so a browser that has the previous build cached
 # fetches the new one (python's server and GitHub Pages both let it cache).
 v="$(shasum target/web/game_bg.wasm | cut -c1-12)"
-sed -e "s#'./game.js'#'./game.js?v=$v'#" -e "s#init()#init({ module_or_path: './game_bg.wasm?v=$v' })#" web/index.html > target/web/index.html
+sed -e "s#'./game.js'#'./game.js?v=$v'#" -e "s#download('./game_bg.wasm')#download('./game_bg.wasm?v=$v')#" web/index.html > target/web/index.html
 if command -v wasm-opt >/dev/null; then
   wasm-opt -Os --strip-debug -o target/web/game.opt.wasm target/web/game_bg.wasm
   mv target/web/game.opt.wasm target/web/game_bg.wasm

@@ -17,6 +17,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - [ ] messaggi dei personaggi più visibili (ingrandimento al cambio, bip facoltativo) e storico delle battute (punto 4);
   - [ ] riprodurre headless «senza ordini meglio che con ordini» in un paese (punto 14): le squadre bagnano la vegetazione e il fuoco cambia strada? Poi raccontarlo nel «Perché» o correggere;
   - [ ] freccia del vento più visibile sul territorio (punto 15); primi piani automatici sull'area colpita con `Kiosk::shot` (punto 18);
+  - [x] 2026-10-12 caricamento nel browser: barra di avanzamento del download del `.wasm` (`web/index.html::download`, il sed di `scripts/build_web.sh` aggiornato), poi «Avvio della simulazione…». Non provato in un browser (serve `scripts/build_web.sh`);
   - [ ] chiedere ai colleghi se hanno giocato nel browser o nativo (punto 1, «pesante»);
   - [x] 2026-10-12 con la barra laterale, i badge dei paesi dietro la barra avevano una linea che attraversava la barra: linee ritagliate sulla mappa (`bf744a0`);
   - [ ] serve una tastiera al chiosco per il nome (o lo scrive l'operatore).
