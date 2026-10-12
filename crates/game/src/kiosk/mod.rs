@@ -107,11 +107,10 @@ pub struct Kiosk {
     /// The opening screen is showing (a new visitor): at launch and after the
     /// operator's «Nuova partita», not after «Riprova» / «Altro incendio».
     pub intro: bool,
-    /// The visitor pressed «Inizia la partita». Before that the map, the fire
+    /// The visitor picked a difficulty on the opening screen. Before that the map, the fire
     /// and the chips show, but no order can be given (user, 2026-10-09).
     pub started: bool,
     /// How to play, shown once the game has started, until «Ho capito».
-    pub help: bool,
     /// Pauses left in this game ([`MAX_PAUSES`]).
     pub pauses_left: u32,
     /// The level being played (`Territory::levels`), and the one just
@@ -174,7 +173,6 @@ impl Kiosk {
             crisis_s: CRISIS_S,
             intro: true,
             started: false,
-            help: false,
             pauses_left: MAX_PAUSES,
             level: None,
             picked_level: None,
@@ -261,10 +259,9 @@ impl Kiosk {
         }
     }
 
-    /// Whether the chips take orders: not before «Inizia la partita», nor
-    /// while how to play is on screen.
+    /// Whether the chips take orders: not before the opening screen's start.
     pub fn can_order(&self) -> bool {
-        self.started && !self.help
+        self.started
     }
 
     /// Minutes until a pause is allowed again; 0 when it is.
@@ -313,7 +310,6 @@ pub fn new_game(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<Si
             kiosk.error = None;
             kiosk.crisis = None;
             kiosk.started = false;
-            kiosk.help = false;
             kiosk.pauses_left = MAX_PAUSES;
             kiosk.selected = None;
             kiosk.resumed_at_s = 0;
@@ -435,16 +431,8 @@ pub fn shots(
             kiosk.intro = false;
             stage.1 = 0.0;
         }
-        // before «Inizia la partita» (orders locked), then how to play
         0 if !kiosk.intro && !kiosk.started && stage.1 > 3.0 => {
-            snap("0b_pronto");
             kiosk.started = true;
-            kiosk.help = true;
-            stage.1 = 0.0;
-        }
-        0 if kiosk.help && stage.1 > 1.5 => {
-            snap("0c_come_si_gioca");
-            kiosk.help = false;
             stage.1 = 0.0;
         }
         0 if kiosk.can_order() && stage.1 > 1.5 => {

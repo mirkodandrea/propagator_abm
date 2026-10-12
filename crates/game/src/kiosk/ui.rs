@@ -161,6 +161,7 @@ pub fn draw(
                 k.level = Some(i);
             }
             k.intro = false;
+            k.started = true;
         }
         if k.operator {
             operator(ctx, k, &mut sim, &mut restarted);
@@ -191,7 +192,7 @@ pub fn draw(
         unit_labels(ctx, &sim, cam);
         plan_panel(ctx, k, &sim, top);
         // the pause and crisis bands sit under the top bar
-        let band = if (k.phase == Phase::Pianifica && k.started && !k.help) || k.phase == Phase::Crisi { 44.0 } else { 0.0 };
+        let band = if (k.phase == Phase::Pianifica && k.started) || k.phase == Phase::Crisi { 44.0 } else { 0.0 };
         district_chips(ctx, k, &sim, cam, top + band);
 
         side(ctx, k, &sim);
@@ -320,22 +321,16 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                 });
             });
             ui.add_space(16.0);
-            ui.horizontal(|ui| {
-                for (icon, colour, title) in [
-                    (Icon::Shield, AMBER, "Scegli chi difendere"),
-                    (Icon::Exit, BLUE, "Avvisa o fai evacuare"),
-                    (Icon::Play, GREEN, "Il tempo scorre: il fuoco non aspetta"),
-                ] {
-                    egui::Frame::none().fill(Color32::from_gray(32)).rounding(10.0).inner_margin(14.0).show(ui, |ui| {
-                        ui.set_width(230.0);
-                        ui.set_min_height(110.0);
-                        ui.vertical_centered(|ui| {
-                            icons::show(ui, icon, 64.0, colour);
-                            ui.label(RichText::new(title).size(19.0).strong().color(Color32::WHITE));
-                        });
-                    });
-                }
-            });
+            ui.label(RichText::new("Come si gioca").size(20.0).strong().color(Color32::WHITE));
+            ui.add_space(4.0);
+            for (icon, colour, text) in how_steps(k) {
+                ui.horizontal(|ui| {
+                    egui::Frame::none().fill(Color32::from_gray(40)).rounding(6.0).inner_margin(4.0).show(ui, |ui| icons::show(ui, icon, 26.0, colour));
+                    ui.add(egui::Label::new(RichText::new(text).size(17.0).color(Color32::WHITE)).wrap());
+                });
+                ui.add_space(2.0);
+            }
+            ui.label(RichText::new("Alla fine vedrai com'è andata, confrontata con lo stesso incendio senza ordini.").size(15.0).color(GREY));
             ui.add_space(6.0);
             ui.add_space(10.0);
             // the difficulty, as three fires (user, 2026-10-10); without
@@ -346,10 +341,11 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                     let b = egui::Button::new(RichText::new("Inizia").size(30.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(320.0, 70.0));
                     if ui.add(b).clicked() {
                         k.intro = false;
+                        k.started = true;
                     }
                 });
             } else {
-                ui.label(RichText::new("Scegli la difficoltà").size(20.0).strong().color(Color32::WHITE));
+                ui.label(RichText::new("Scegli la difficoltà e inizia").size(20.0).strong().color(Color32::WHITE));
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     for (i, l) in levels.iter().enumerate() {
@@ -407,15 +403,11 @@ fn speaking<R>(ctx: &egui::Context, faces: Option<&Portraits>, who: Who, mood: M
 
 /// Outside a crisis: the latest line, or at the start how to begin.
 fn speaker(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, speech: &Speech, faces: Option<&Portraits>) {
-    if k.phase == Phase::Pianifica && k.help {
-        how_to_play(ctx, k, faces);
-        return;
-    }
     let tip;
     let line = match &speech.now {
         Some((l, _)) => l,
         None if k.phase == Phase::Pianifica && !k.started => {
-            let text = format!("{} Guarda la mappa: dove sono i paesi e dove va il fuoco. Poi premi «Inizia la partita».", the_fire(k, sim));
+            let text = format!("{} Guarda la mappa: dove sono i paesi e dove va il fuoco. Poi scegli la difficoltà.", the_fire(k, sim));
             tip = Line { who: Who::Volontaria, mood: Mood::Preoccupato, text };
             &tip
         }
@@ -450,38 +442,14 @@ fn speaker(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, speech: &Speech, faces
     });
 }
 
-/// Just after «Inizia la partita»: what to do, in four steps, told by the
-/// volunteer; the orders unlock at «Ho capito».
-fn how_to_play(ctx: &egui::Context, k: &mut Kiosk, faces: Option<&Portraits>) {
-    let who = Who::Volontaria;
-    let steps = [
+/// How to play, in four steps, shown on the opening screen.
+fn how_steps(k: &Kiosk) -> [(Icon, Color32, String); 4] {
+    [
         (Icon::Shield, AMBER, "«Difendi»: scegli i paesi da difendere e in che ordine. Autobotti e squadra vanno dove indichi, se ci arrivano in tempo.".to_string()),
         (Icon::Bell, AMBER, "«Preallerta» fa preparare le famiglie; «Evacua» le fa partire. Un ordine dato non si ritira.".to_string()),
         (Icon::Play, GREEN, format!("Premi «Avvia»: da lì il tempo scorre da solo. Gli ordini si cambiano solo in pausa: hai {} pause in tutto, e tra una e l'altra devono passare {} minuti di gioco.", crate::kiosk::MAX_PAUSES, crate::kiosk::PAUSE_GAP_S / 60)),
         (Icon::Alert, ORANGE, format!("Se succede qualcosa di grave il tempo rallenta, ma non si ferma: hai {:.0} secondi per decidere.", k.crisis_s)),
-    ];
-    let mut done = false;
-    speaking(ctx, faces, who, Mood::Calmo, |ui| {
-        characters::bubble(ui, who, |ui| {
-            ui.set_max_width(BUBBLE_W + 80.0);
-            ui.label(RichText::new("Come si gioca").size(20.0).strong().color(Color32::BLACK));
-            ui.add_space(4.0);
-            for (icon, colour, text) in &steps {
-                ui.horizontal(|ui| {
-                    egui::Frame::none().fill(Color32::from_gray(40)).rounding(6.0).inner_margin(4.0).show(ui, |ui| icons::show(ui, *icon, 26.0, *colour));
-                    ui.add(egui::Label::new(RichText::new(text).size(17.0).color(Color32::BLACK)).wrap());
-                });
-                ui.add_space(2.0);
-            }
-            ui.label(RichText::new("Alla fine vedrai com'è andata, confrontata con lo stesso incendio senza ordini.").size(15.0).color(Color32::from_gray(70)));
-        });
-        ui.add_space(8.0);
-        let b = egui::Button::new(RichText::new("Ho capito").size(24.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(10.0).min_size(egui::vec2(150.0, 52.0));
-        done = ui.add(b).clicked();
-    });
-    if done {
-        k.help = false;
-    }
+    ]
 }
 
 /// Simulated seconds the volunteer explains how to play, after which she
@@ -1330,8 +1298,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                 });
                 if !can_order {
                     // playtest 6: grey buttons with no reason given
-                    let why = if k.help { "Gli ordini si sbloccano con «Ho capito»." } else { "Gli ordini si sbloccano con «Inizia la partita»." };
-                    ui.label(RichText::new(why).size(14.0).strong().color(AMBER));
+                    ui.label(RichText::new("Scegli la difficoltà per cominciare.").size(14.0).strong().color(AMBER));
                 } else if (civil[d] != sim.active.civil[d] || next != now) && k.phase != Phase::Pianifica {
                     pill(ui, "da confermare", AMBER);
                 } else if civil[d] != Civil::Evacua && sim.active.civil[d] != Civil::Evacua {
@@ -1572,15 +1539,12 @@ fn proposal(ui: &mut egui::Ui, k: &Kiosk, sim: &Sim) {
 
 /// The one button, play / pause like a video: «Avvia» or «Riprendi» while
 /// paused, «Pausa» while the time runs (user, 2026-10-09). Before it, the
-/// gate «Inizia la partita».
+/// gate (the opening screen).
 fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
     let wait = k.pause_wait_min(sim.time_s());
     let left = if k.pauses_left == 1 { "l'ultima".to_string() } else { format!("{} rimaste", k.pauses_left) };
     let pause_label = if wait > 0 { format!("Pausa tra {wait} min · {left}") } else { format!("Pausa · {left}") };
     let (icon, label, fill) = match k.phase {
-        // how to play is on screen: «Ho capito» is the button
-        Phase::Pianifica if k.help => return,
-        Phase::Pianifica if !k.started => (None, "Inizia la partita", AMBER),
         Phase::Pianifica if sim.time_s() > rocca::STEP_S => (Some(Icon::Play), "Riprendi", AMBER),
         Phase::Pianifica => (Some(Icon::Play), "Avvia", AMBER),
         Phase::Esegui if k.pauses_left == 0 => (None, "Nessuna pausa rimasta", Color32::from_gray(90)),
@@ -1596,10 +1560,6 @@ fn action(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
             }
             if big_button(ui, icon, label, fill).clicked() {
                 match k.phase {
-                    Phase::Pianifica if !k.started => {
-                        k.started = true;
-                        k.help = true;
-                    }
                     Phase::Pianifica => {
                         commit(k, sim);
                         k.resumed_at_s = sim.time_s();
@@ -1640,9 +1600,6 @@ fn big_button(ui: &mut egui::Ui, icon: Option<Icon>, label: &str, fill: Color32)
 /// While paused, the map is dimmed and says so, so a pause never passes for
 /// a turn waiting to be played.
 fn paused_veil(ctx: &egui::Context, k: &Kiosk, sim: &Sim, top: f32) {
-    if k.help {
-        return;
-    }
     let screen = ctx.screen_rect();
     ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("velo"))).rect_filled(screen, 0.0, Color32::from_black_alpha(90));
     let text = if sim.time_s() > rocca::STEP_S {
