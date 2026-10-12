@@ -31,13 +31,14 @@ use scenario::Pos;
 
 use super::characters::{self, Line, Mood, Portraits, Speech, Who};
 use super::icons::{self, Icon};
+use super::tutorial;
 use super::{board, close_crisis, commit, new_game, Kiosk, Phase};
 use crate::sim::{Sim, SimRestarted};
 
 const PANEL: Color32 = Color32::from_rgba_premultiplied(18, 20, 24, 250);
-const ORANGE: Color32 = Color32::from_rgb(240, 140, 50);
+pub(super) const ORANGE: Color32 = Color32::from_rgb(240, 140, 50);
 const RED: Color32 = Color32::from_rgb(255, 105, 85);
-const AMBER: Color32 = Color32::from_rgb(250, 195, 70);
+pub(super) const AMBER: Color32 = Color32::from_rgb(250, 195, 70);
 const BLUE: Color32 = Color32::from_rgb(110, 185, 255);
 const GREEN: Color32 = Color32::from_rgb(110, 230, 150);
 /// What the two civil orders do, as the model does it (`Abm::prealert_of`,
@@ -97,7 +98,7 @@ fn trucks(ui: &mut egui::Ui, now: usize, next: usize) {
 
 /// One family of controls: a secondary action (grey), an order that can be
 /// on (filled with its colour) or off, and the one primary action (yellow).
-fn secondary(text: &str) -> egui::Button<'static> {
+pub(super) fn secondary(text: &str) -> egui::Button<'static> {
     // 44 px: a finger, not a mouse pointer
     egui::Button::new(RichText::new(text.to_string()).size(17.0).color(Color32::WHITE))
         .fill(Color32::from_gray(62))
@@ -106,7 +107,7 @@ fn secondary(text: &str) -> egui::Button<'static> {
         .min_size(egui::vec2(44.0, 44.0))
 }
 
-fn primary(text: &str) -> egui::Button<'static> {
+pub(super) fn primary(text: &str) -> egui::Button<'static> {
     egui::Button::new(RichText::new(text.to_string()).size(24.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(10.0).min_size(egui::vec2(300.0, 54.0))
 }
 
@@ -122,7 +123,7 @@ fn panel() -> egui::Frame {
 }
 
 /// World point to screen point, `lift_m` above the ground.
-fn screen(cam: (&Camera, &GlobalTransform), sim: &Sim, p: Pos, lift_m: f32) -> Option<egui::Pos2> {
+pub(super) fn screen(cam: (&Camera, &GlobalTransform), sim: &Sim, p: Pos, lift_m: f32) -> Option<egui::Pos2> {
     let v = crate::frame::to_bevy(p, sim.scn.terrain.height_at(p) + lift_m);
     let s = cam.0.world_to_viewport(cam.1, v)?;
     Some(egui::pos2(s.x, s.y))
@@ -150,6 +151,10 @@ pub fn draw(
 
     if k.intro {
         intro(ctx, k, &sim, logo.as_deref().map(|l| l.0), faces);
+        // a new visitor starts playing: show them the screen first
+        if !k.intro && k.tour_on && !k.toured {
+            tutorial::go(k, &sim, 0);
+        }
         // a level picked: play its case (a new game if it changes, or if
         // the choice came from a finished game's «Cambia difficoltà»)
         if let Some(i) = k.picked_level.take() {
@@ -179,7 +184,7 @@ pub fn draw(
         legend(ctx, top);
         if k.phase == Phase::Crisi {
             crisis(ctx, k, &mut sim, faces);
-        } else {
+        } else if k.tour.is_none() {
             speaker(ctx, k, &sim, &speech, faces);
         }
         if k.phase == Phase::Pianifica && k.started {
@@ -197,6 +202,7 @@ pub fn draw(
 
         side(ctx, k, &sim);
         action(ctx, k, &mut sim);
+        tutorial::draw(ctx, k, &sim, cam, faces);
     }
     if k.operator {
         operator(ctx, k, &mut sim, &mut restarted);
@@ -314,7 +320,7 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                     let crews = roster.len() - engines;
                     let n = |k: usize, one: &str, many: &str| if k == 1 { format!("1 {one}") } else { format!("{k} {many}") };
                     let text = format!(
-                        "Un incendio minaccia i nostri borghi e ci serve il tuo aiuto! Abbiamo {} e {} per {} borghi: non bastano per tutti. Decidi tu come usarli. Il tempo scorre da solo, ma puoi mettere in pausa quando vuoi.",
+                        "Un incendio minaccia i nostri borghi e ci serve il tuo aiuto! Abbiamo {} e {} per {} borghi: non bastano per tutti. Decidi tu come usarli. Il tempo scorre da solo: puoi fermarlo poche volte per cambiare gli ordini.",
                         n(engines, "autobotte", "autobotti"), n(crews, "squadra", "squadre"), sim.districts.len()
                     );
                     characters::says(ui, Who::Volontaria, &text, 600.0);
@@ -334,16 +340,8 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                     });
                 }
             });
+            // how to play is shown on the map once the game starts (`tutorial`)
             ui.add_space(16.0);
-            ui.label(RichText::new("Come si gioca").size(20.0).strong().color(Color32::WHITE));
-            ui.add_space(4.0);
-            for (icon, colour, text) in how_steps(k) {
-                ui.horizontal(|ui| {
-                    egui::Frame::none().fill(Color32::from_gray(40)).rounding(6.0).inner_margin(4.0).show(ui, |ui| icons::show(ui, icon, 26.0, colour));
-                    ui.add(egui::Label::new(RichText::new(text).size(17.0).color(Color32::WHITE)).wrap());
-                });
-                ui.add_space(2.0);
-            }
             ui.label(RichText::new("Alla fine vedrai com'è andata, confrontata con lo stesso incendio senza ordini.").size(15.0).color(GREY));
             ui.add_space(6.0);
             ui.add_space(10.0);
@@ -394,7 +392,7 @@ fn crisis_district(k: &Kiosk) -> Option<usize> {
 }
 
 /// Size of the portraits bottom left.
-const FACE: f32 = 132.0;
+pub(super) const FACE: f32 = 132.0;
 /// Widest a speech bubble gets.
 const BUBBLE_W: f32 = 380.0;
 
@@ -434,12 +432,7 @@ fn speaker(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, speech: &Speech, faces
             tip = Line { who: Who::Volontaria, mood: Mood::Calmo, text };
             &tip
         }
-        // how to play only at first; then something new from the game
-        None if k.phase == Phase::Esegui && sim.time_s() < TUTORIAL_S => {
-            tip = Line { who: Who::Volontaria, mood: Mood::Calmo,
-                text: "Il tempo scorre e il fuoco non aspetta. Per cambiare gli ordini serve una pausa, e le pause sono poche: tienile per quando servono.".into() };
-            &tip
-        }
+        // what is new in the game (how to play was told by the tour)
         None if k.phase == Phase::Esegui => {
             let facts = news(k, sim);
             if facts.is_empty() {
@@ -456,25 +449,12 @@ fn speaker(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, speech: &Speech, faces
     });
 }
 
-/// How to play, in four steps, shown on the opening screen.
-fn how_steps(k: &Kiosk) -> [(Icon, Color32, String); 4] {
-    [
-        (Icon::Shield, AMBER, "«Difendi»: scegli i paesi da difendere e in che ordine. Autobotti e squadra vanno dove indichi, se ci arrivano in tempo.".to_string()),
-        (Icon::Bell, AMBER, "«Preallerta» fa preparare le famiglie; «Evacua» le fa partire. Un ordine dato non si ritira.".to_string()),
-        (Icon::Play, GREEN, format!("Premi «Avvia»: da lì il tempo scorre da solo. Gli ordini si cambiano solo in pausa: hai {} pause in tutto, e tra una e l'altra devono passare {} minuti di gioco.", crate::kiosk::MAX_PAUSES, crate::kiosk::PAUSE_GAP_S / 60)),
-        (Icon::Alert, ORANGE, format!("Se succede qualcosa di grave il tempo rallenta, ma non si ferma: hai {:.0} secondi per decidere.", k.crisis_s)),
-    ]
-}
-
-/// Simulated seconds the volunteer explains how to play, after which she
-/// says what is new instead (playtest 2: the tutorial repeated all game).
-const TUTORIAL_S: i64 = 10 * 60;
 /// Real seconds each piece of news stays before the next.
 const NEWS_S: f64 = 8.0;
 
 /// Where this fire starts and whom the wind drives it at: the case's `near`,
 /// its wind, and the districts the fire is downwind of now.
-fn the_fire(k: &Kiosk, sim: &Sim) -> String {
+pub(super) fn the_fire(k: &Kiosk, sim: &Sim) -> String {
     let w = sim.fire.weather();
     let wind = format!("il vento da {} a {:.0} km/h", rocca::words::compass(w.wind_dir_deg), w.wind_speed_kmh);
     let mut toward: Vec<(f32, &str)> = k.risk.iter().enumerate()
@@ -914,7 +894,7 @@ fn plant_sample(ui: &mut egui::Ui, kind: Plant) {
 /// Where a district's chip stands: over the home nearest the district's
 /// middle, so a district of scattered hamlets is labelled on a hamlet and not
 /// on the woods between them.
-fn chip_anchor(sim: &Sim, d: usize) -> Pos {
+pub(super) fn chip_anchor(sim: &Sim, d: usize) -> Pos {
     let c = sim.districts[d].centre;
     sim.districts[d]
         .households
@@ -2044,6 +2024,7 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
                 });
                 ui.label("seme");
                 ui.add(egui::DragValue::new(&mut k.seed).range(1..=999));
+                ui.checkbox(&mut k.tour_on, "Tutorial a inizio partita");
             });
             ui.horizontal(|ui| {
                 // a game under way is thrown away only on a second press
@@ -2057,6 +2038,7 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
                         k.case = k.pick.clone();
                         new_game(k, sim, restarted);
                         k.intro = true;
+                        k.toured = false;
                     }
                 }
                 if k.phase == Phase::Esegui && ui.add(secondary("Pausa")).clicked() {

@@ -4,6 +4,11 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
+- **2026-10-12, mini-tutorial a inizio partita** (richiesta dell'utente). Decisioni dell'utente (2026-10-12): **lo schermo del chiosco è almeno 1080p, il vincolo 900×600 cade**; il tutorial è **non interattivo**: solo «Avanti» e «Salta».
+  - [x] 2026-10-12 `crates/game/src/kiosk/tutorial.rs`: cinque passi (fuoco e vento, paesi, scheda con Difendi/Preallerta/Evacua, piano, «Avvia»). La camera si sposta con un movimento graduale (`Kiosk::shot`, `kiosk/view.rs`), il resto dello schermo si scurisce e la volontaria spiega in un fumetto con una freccia. Parte solo per un nuovo visitatore (non a «Riprova» o «Cambia difficoltà»; di nuovo dopo «Nuova partita» dell'operatore); si spegne da F2 o con `KIOSK_TUTORIAL=0`. Prova: `KIOSK_SIZE=1920x1080 KIOSK_CASE=Coste2_gira KIOSK_SPEED=300 KIOSK_WINDOWED=1 KIOSK_SHOT=<dir> target/release/game` → `0_tour_0..4.png`;
+  - [ ] provarlo nel browser con una persona: durata (5 passi), testi, se «Salta» viene usato subito;
+  - [x] 2026-10-12 (approvato dall'utente) tolti i doppioni del tutorial: «Come si gioca» dall'intro (`how_steps`) e la frase della volontaria nei primi 10 minuti (`TUTORIAL_S`), che ora dà subito le notizie della partita; nell'intro «puoi mettere in pausa quando vuoi» → «puoi fermarlo poche volte per cambiare gli ordini» (le pause sono 3).
+
 - **2026-10-12, riferimenti normativi letti** (richiesta dell'utente): Raccomandazioni AIB 2026 (GU n. 133, 11/6/2026), Codice di prevenzione incendi (DM 3/8/2015, testo coordinato 2021), Direttiva PCM 10/1/2020 sul DOS (GU n. 56, 5/3/2020). Non sono specifiche: servono come lessico e per ancorare i parametri. L'utente ha detto «ok» alla proposta «prima il punto 5, poi i punti 1–3».
   - [x] 2026-10-12 **punto 5 (preallerta ≠ evacuazione secondo il tempo di esodo del Codice M.3.4, rivelazione + allarme + pre-movimento + movimento): già così nel modello.** Un ordine creduto fa partire la preparazione (`block.order_response` → `action.prepare` → `prep_seconds`); la preallerta anticipa la preparazione in casa (`readied_s`) e accorcia il tempo d'allarme (`PREALERTED_ORDER_DELAY_S`). La partenza a T+40–58 degli «aspetta e vedi» con ordine a T+0 è la somma di canale (1,5–20 min) e preparazione (25 min ± 15 %), non un ordine che non fa preparare. Resta una questione di **taratura**, non di struttura: il Codice dà 1′30″–3′30″ per persone sveglie e pratiche dei luoghi che escono da un edificio, non per una famiglia che carica l'auto;
   - [x] 2026-10-12 **punto 1, versione semplice chiesta dall'utente** («basta "aiutaci a gestire questa emergenza" con i vari personaggi che lavorano con noi», niente battute): sottotitolo dell'intro «Aiutaci a gestire questa emergenza.», la volontaria chiede aiuto, sotto «La squadra con cui lavori» con i quattro ritratti e i nomi (`kiosk/ui.rs::intro`, `Who::short`);
@@ -45,7 +50,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 - **Tempo reale, pause, punteggio e classifica** fatti (`docs/fase5/tempo_reale.md`); nove difetti trovati giocando, elencati lì e nella sezione «Tempo reale» della fase 5.
 - **Playtest 4** (Giulia, prima volta, Haiku 5.5): fatto, difetti da decidere con l'utente (`docs/fase5/playtest_haiku/`, sezione «Playtest 4» della fase 5).
 - **Ancora aperti** (vedi «Dal playtest 3» in fondo alla fase 5):
-  - layout a 900×600: schede sovrapposte e barra in alto sopra legenda e zoom (punti 6–9 del playtest 3 chiusi il 2026-10-09);
+  - ~~layout a 900×600~~ (2026-10-12, l'utente: lo schermo del chiosco è almeno 1080p, vincolo tolto);
   - FPS nel browser a finestra in primo piano;
   - apertura delle schede al tocco;
   - durata di Piano2 (1,8 min di esecuzione);
@@ -207,7 +212,7 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
    - **cronologia del finale:** pallino sulla linea e icona piccola sopra, senza disco; didascalia «Le tue decisioni e gli imprevisti, ora per ora»;
    - **contrasto:** bordo scuro sotto anelli e percorsi (`rings.rs::halo_mesh`, `overlays.rs::spawn_outlined`);
    - **crisi a 900 px:** la riga dei pulsanti va a capo, quindi «Conferma» resta sullo schermo (prima era tagliata).
-   - [ ] A 900×600 restano due problemi: le schede si sovrappongono tra loro e la barra in alto copre «Legenda» e lo zoom.
+   - [x] ~~A 900×600 restano due problemi~~ (2026-10-12, vincolo tolto: schermo almeno 1080p): le schede si sovrappongono tra loro e la barra in alto copre «Legenda» e lo zoom.
    - Il punto «ritratti illustrati e diorama low-poly sono due stili» resta come osservazione: non ci sono interventi previsti.
 
 #### Playtest 4: Giulia, prima volta, tre partite (2026-10-09, Haiku 5.5)
@@ -259,7 +264,7 @@ Esiti: 3/70 (1330 punti), 3/71 (1470), 2/12 (770).
 - [ ] fuoco poco visibile all'inizio; crisi assenti in un caso;
 - [ ] finale: numeri piccoli sulle barre; etichette A1 e A2 sovrapposte; schede sopra Castelvento.
 
-- [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen e a 900×600.
+- [ ] 2026-10-09 Riprovare con persone: comprensione delle stime di viaggio (non tempo garantito di evacuazione), legenda, etichette dei nuclei e aggiornamenti; verificare il layout su touchscreen (900×600 non più richiesto, 2026-10-12).
 
 - [x] 2026-10-08 Mappa a tutto schermo con schede per quartiere (rango, fuoco, mezzi ora e dopo la conferma, Difendi / più importante / non difendere, Preallerta / Evacua), etichette dei mezzi, rotte attive (verdi) e proposte (bianche tratteggiate), barra in alto, crisi con countdown, pulsante unico, debrief contro «senza ordini» con Riprova / Altro incendio, barra operatore F2 (`docs/fase5/README.md`).
 - [x] 2026-10-08 Crisi: «scoperto» solo se il fuoco può arrivare entro 45 min (`URGENT_S`); nessuna crisi negli ultimi 10 min (`LAST_CALL_S`).
@@ -359,7 +364,7 @@ Esiti: 3/70 (1330 punti), 3/71 (1470), 2/12 (770).
   - **volontaria di protezione civile**: intro, consiglio di partenza, «nella realtà» del debrief.
   Ogni frase nasce da una voce del registro, da una crisi o dall'esito già prodotti dal motore: nessuna regola nuova. La crisi ora si legge nel fumetto, con countdown e risposte subito sotto; proposta del coordinatore ed eventi spostati in basso a destra. Immagine: `docs/fase5/img/personaggi_crisi.jpg`.
 - [ ] Personaggi: verificare in un playtest che il fumetto in basso a sinistra si noti durante la crisi (prima era in alto al centro) e che le frasi a ×20 non si accavallino (coda di 2, minimo 2,5 s ciascuna).
-- [ ] Dai roast, ancora aperto: navigazione da tastiera (egui sul canvas), forme oltre ai colori per gli anelli, layout a finestra stretta (900×600), stato perso con la ricarica della pagina, verifica dei percorsi verso le aree di attesa, supporto ai ritardatari dell'evacuazione (scelta di design).
+- [ ] Dai roast, ancora aperto: navigazione da tastiera (egui sul canvas), forme oltre ai colori per gli anelli, ~~layout a finestra stretta (900×600)~~ (tolto 2026-10-12), stato perso con la ricarica della pagina, verifica dei percorsi verso le aree di attesa, supporto ai ritardatari dell'evacuazione (scelta di design).
 - [ ] Dal playtest GPT, ancora aperto: icone dei mezzi leggibili nella vista generale (oggi si leggono le etichette); indicatori aggregati per le evacuazioni sulla mappa; click che a volte sembrano non rispondere (forse solo per l'input automatizzato, da verificare con persone vere); distinguere mezzi assegnati / in viaggio / sul posto; mostrare sulla mappa perché una postazione è irraggiungibile.
 - [ ] **Checkpoint umano 5.**
 - [x] 2026-10-08 Schede dei quartieri separate quando si sovrappongono sullo schermo; etichette dei mezzi impilate e spostate sotto la scheda che le copre. Resta: una scheda può coprire il fuoco.

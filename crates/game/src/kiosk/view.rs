@@ -192,6 +192,7 @@ pub fn camera(
         || delta.length_squared() > 0.0 && (drag.left || drag.right || drag.middle)
         || over_map && (scroll != 0.0 || trackpad != Vec2::ZERO || pinch != 0.0 || rotation != 0.0);
     if touched {
+        kiosk.shot = None;
         *released = Some((kiosk.phase, t));
     }
     let user_has_it = released.map(|(p, _)| p) == Some(kiosk.phase);
@@ -251,6 +252,22 @@ pub fn camera(
             if kiosk.zoom != 1.0 {
                 orbit.distance *= kiosk.zoom;
                 kiosk.zoom = 1.0;
+            }
+            // a move asked by the interface (the tour): eased, not a jump
+            if let (Some(shot), Some((yaw, d))) = (kiosk.shot, *home_view) {
+                let mut goal = shot.at.map_or(home, |p| crate::frame::to_bevy(p, sim.scn.terrain.height_at(p)));
+                let off = Vec2::new(goal.x - home.x, goal.z - home.z).clamp_length_max(PAN_RADIUS_M);
+                goal = Vec3::new(home.x + off.x, goal.y, home.z + off.y);
+                let distance = (d * shot_zoom() * shot.zoom).clamp(MIN_DIST, MAX_DIST);
+                let a = 1.0 - (-3.5 * time.delta_seconds()).exp();
+                orbit.focus = orbit.focus.lerp(goal, a);
+                orbit.distance += (distance - orbit.distance) * a;
+                orbit.yaw += (yaw - orbit.yaw) * a;
+                orbit.pitch += (scene_pitch - orbit.pitch) * a;
+                let near = Vec2::new(orbit.focus.x - goal.x, orbit.focus.z - goal.z).length() < 2.0;
+                if near && (orbit.distance / distance - 1.0).abs() < 0.01 && (orbit.yaw - yaw).abs() < 0.01 && (orbit.pitch - scene_pitch).abs() < 0.01 {
+                    kiosk.shot = None;
+                }
             }
             // «Vista iniziale»: back to the home view of this game.
             if kiosk.reset_view {

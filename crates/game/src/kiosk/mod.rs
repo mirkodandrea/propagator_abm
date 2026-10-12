@@ -5,7 +5,8 @@
 //! preview, commits it on request and runs the clock. No rules live here.
 //!
 //! Flow: **Pianifica** (×0: first the map with orders locked until «Inizia
-//! la partita», then how to play, then the proposed plan is previewed) →
+//! la partita», then a short tour of the screen (`tutorial`), then the
+//! proposed plan is previewed) →
 //! **Esegui** (×N) ⇄ **Crisi** (×1 with a countdown, raised by the game) →
 //! **Fine** (facts per district, against the same fire with no orders). No
 //! inactivity reset: a new game starts from the debrief's «Riprova» / «Altro
@@ -14,6 +15,7 @@
 pub mod board;
 pub mod characters;
 pub mod icons;
+pub mod tutorial;
 pub mod ui;
 pub mod view;
 
@@ -68,6 +70,15 @@ pub enum Phase {
     Crisi,
     /// The case has run its course.
     Fine,
+}
+
+/// A camera move asked by the interface: look at `at` (the home view's
+/// middle if `None`) from `zoom` times the home view's distance, with the
+/// home view's yaw and pitch.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Shot {
+    pub at: Option<scenario::Pos>,
+    pub zoom: f32,
 }
 
 #[derive(Resource)]
@@ -140,6 +151,15 @@ pub struct Kiosk {
     /// Zoom asked from the on-screen buttons, as a distance factor; the
     /// camera takes it and puts it back to 1.
     pub zoom: f32,
+    /// Where the camera is flying to, if anywhere; it clears it on arrival.
+    pub shot: Option<Shot>,
+    /// The step of the tour being shown (`tutorial`), if any.
+    pub tour: Option<usize>,
+    /// The tour was shown to this visitor: not again at «Riprova» or
+    /// «Cambia difficoltà», again after the operator's «Nuova partita».
+    pub toured: bool,
+    /// The operator can turn the tour off (F2, or `KIOSK_TUTORIAL=0`).
+    pub tour_on: bool,
     /// In the browser (no threads) the no-orders game runs here, a few steps
     /// a frame.
     #[cfg(target_arch = "wasm32")]
@@ -170,6 +190,10 @@ impl Kiosk {
             operator: false,
             reset_view: false,
             zoom: 1.0,
+            shot: None,
+            tour: None,
+            toured: false,
+            tour_on: std::env::var("KIOSK_TUTORIAL").map_or(true, |v| v != "0"),
             crisis_s: CRISIS_S,
             intro: true,
             started: false,
@@ -433,9 +457,19 @@ pub fn shots(
         }
         0 if !kiosk.intro && !kiosk.started && stage.1 > 3.0 => {
             kiosk.started = true;
+            if kiosk.tour_on {
+                tutorial::go(&mut kiosk, &sim, 0);
+            }
             stage.1 = 0.0;
         }
-        0 if kiosk.can_order() && stage.1 > 1.5 => {
+        // each step of the tour once the camera has arrived
+        0 if kiosk.shot.is_none() && stage.1 > 1.5 && kiosk.tour.is_some() => {
+            let i = kiosk.tour.unwrap_or(0);
+            snap(&format!("0_tour_{i}"));
+            tutorial::go(&mut kiosk, &sim, i + 1);
+            stage.1 = 0.0;
+        }
+        0 if kiosk.tour.is_none() && kiosk.shot.is_none() && kiosk.can_order() && stage.1 > 1.5 => {
             snap("1_pianifica");
             // the locality the fire was picked for first, then the others
             let near = sim.district_index(&sim.case.near).unwrap_or(0);
@@ -476,7 +510,7 @@ pub fn shots(
             *stage = (3, 0.0);
         }
         5 if kiosk.phase == Phase::Fine => *stage = (3, 0.0),
-        // later in the game: what the volunteer says once the tutorial is over
+        // later in the game: what the volunteer says from the game
         3 if kiosk.phase == Phase::Esegui && sim.time_s() >= 100 * 60 => {
             snap("3d_esegui_dopo");
             *stage = (11, 0.0);
