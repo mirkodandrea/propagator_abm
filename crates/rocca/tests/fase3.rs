@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rocca::{Civil, Game, Outcome, Plan};
+use rocca::{Civil, Game, Outcome, Plan, Verdict};
 use scenario::population::Status;
 
 fn data() -> PathBuf {
@@ -153,6 +153,27 @@ fn arrivals_follow_the_units() {
         }
     }
     assert!(arrived, "no unit reached its post in 30 min");
+}
+
+/// «Come sono andati i tuoi ordini»: evacuating a place the fire stays far
+/// from is called out, a place it came near is prudence, and families the
+/// fire reached at home are a missed or late order.
+#[test]
+fn the_review_judges_each_order_by_the_fire() {
+    let all = ["Castelvento", "Pian dei Grilli", "Fornaci", "San Rocco", "Le Terrazze", "Le Ghiande"];
+    let evac: Vec<(&str, Civil)> = all.iter().map(|&n| (n, Civil::Evacua)).collect();
+    let (g, _) = run("Rocco3", &["San Rocco"], &evac, 180);
+    let far = g.order_review(idx(&g, "Pian dei Grilli"));
+    assert_eq!(far.verdict, Verdict::Forse, "{far:?}");
+    assert!(far.text.contains("Forse bastava la preallerta"), "{far:?}");
+    assert!(g.needless_evacuations() > 0);
+    let near = g.order_review(idx(&g, "Le Terrazze"));
+    assert!(near.verdict == Verdict::Bene && near.text.contains("prudente"), "{near:?}");
+    // no orders: nothing evacuated in vain, families caught where it struck
+    let (g, _) = run("Rocco3", &["San Rocco"], &[], 180);
+    assert_eq!(g.needless_evacuations(), 0);
+    let hit = g.order_review(idx(&g, "San Rocco"));
+    assert!(hit.verdict == Verdict::Male && hit.text.contains("colte in casa"), "{hit:?}");
 }
 
 /// The debrief's lines come from what happened: an evacuation order shows up

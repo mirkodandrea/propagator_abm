@@ -93,6 +93,33 @@ impl Outcome {
 /// count the game as quiet ([`Game::is_quiet`]).
 pub const QUIET_FIRE_M: f32 = 1500.0;
 
+/// How often the debrief's "nearest the fire came" is sampled.
+const NEAREST_EVERY_S: i64 = 60;
+
+/// How the debrief judges an order ([`Game::order_review`]): it helped, it may not
+/// have been needed, or it was missing or late.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    Bene,
+    Forse,
+    Male,
+}
+
+/// How close the fire came to a district: farther than [`QUIET_FIRE_M`],
+/// nearer but never at its doors, or at its doors from a time.
+enum Reach {
+    Far,
+    Near,
+    Doors(i64),
+}
+
+/// One line of «Come sono andati i tuoi ordini», for one district.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Review {
+    pub verdict: Verdict,
+    pub text: String,
+}
+
 pub struct Game {
     pub scn: Scenario,
     pub fire: FireSim,
@@ -121,6 +148,12 @@ pub struct Game {
     ordered_at: Vec<(Option<i64>, Option<i64>)>,
     /// Per district: simulated seconds with at least one unit on its post.
     defended_s: Vec<i64>,
+    /// Per district: when the threat at one of its doors first reached
+    /// [`fire::threat::ALARMING`], the level that counts a family caught.
+    threatened_at: Vec<Option<i64>>,
+    /// Per district: the nearest the burning front came to one of its homes,
+    /// sampled every [`NEAREST_EVERY_S`].
+    nearest_m: Vec<f32>,
     /// Per unit: where it last moved and when, to tell a unit stuck on a
     /// closed road from one on its way.
     moved: Vec<(Pos, i64)>,
@@ -175,6 +208,8 @@ impl Game {
             left_at: vec![None; n],
             ordered_at: vec![(None, None); districts.len()],
             defended_s: vec![0; districts.len()],
+            threatened_at: vec![None; districts.len()],
+            nearest_m: vec![f32::INFINITY; districts.len()],
             moved: crews.units.iter().map(|u| (u.pos, 0)).collect(),
             logged: crews.units.iter().map(|u| u.state).collect(),
             messengers: None,
@@ -684,6 +719,22 @@ impl Game {
         for (d, h) in held.into_iter().enumerate() {
             self.defended_s[d] += STEP_S * h as i64;
         }
+        // whether the fire reached each district's doors, at home or not:
+        // the same level that counts a family caught
+        for (d, district) in self.districts.iter().enumerate() {
+            if self.threatened_at[d].is_none()
+                && district.households.iter().any(|&i| self.fire.threat().at(self.agents.households[i].home) >= fire::threat::ALARMING)
+            {
+                self.threatened_at[d] = Some(now);
+            }
+        }
+        if now % NEAREST_EVERY_S == 0 {
+            for (d, district) in self.districts.iter().enumerate() {
+                if let Some(e) = district::exposure(district, &self.agents, &self.fire, &self.scn) {
+                    self.nearest_m[d] = self.nearest_m[d].min(e.distance_m);
+                }
+            }
+        }
         let ex = self.fire.exposure().fields();
         for (i, h) in self.agents.households.iter().enumerate() {
             if self.caught_at[i].is_some() || !Self::at_home(h.status) {
@@ -801,5 +852,88 @@ impl Game {
             });
         }
         out
+    }
+
+    /// «Come sono andati i tuoi ordini»: the civil order given to district
+    /// `d`, judged by how close the fire came in this game. An order cannot
+    /// change where the fire burns, so this is the player's own fire. Only a
+    /// fire that stayed farther than [`QUIET_FIRE_M`] (the kiosk's own "far
+    /// from homes") makes an evacuation look unneeded; one that came close
+    /// without reaching the doors makes it prudent, not wasted.
+    pub fn order_review(&self, d: usize) -> Review {
+        let hh = &self.districts[d].households;
+        let name = &self.districts[d].name;
+        let clock = crate::words::clock;
+        let fam = |k: usize| if k == 1 { "1 famiglia".to_string() } else { format!("{k} famiglie") };
+        let caught = hh.iter().filter(|&&i| self.caught_at[i].is_some()).count();
+        let nearest = match self.nearest_m[d] {
+            m if m.is_finite() => format!("a {} dalle case", crate::words::km(m)),
+            _ => "lontano".to_string(),
+        };
+        let (pre, evac) = self.ordered_at[d];
+        let (verdict, text) = match (evac, pre, self.reach(d)) {
+            (Some(e), _, Reach::Far) => {
+                let left = hh.iter().filter(|&&i| self.left_at[i].is_some_and(|t| t >= e)).count();
+                (Verdict::Forse, format!("{name}: hai fatto evacuare {}, ma il fuoco è rimasto {nearest}. Forse bastava la preallerta.", fam(left)))
+            }
+            (Some(e), _, Reach::Near) => {
+                (Verdict::Bene, format!("{name}: evacuazione alle {} prudente: il fuoco è arrivato {nearest}, non oltre.", clock(e)))
+            }
+            (Some(e), _, Reach::Doors(t)) if caught == 0 => (
+                Verdict::Bene,
+                if e <= t {
+                    format!("{name}: evacuazione alle {}, {} min prima che il fuoco arrivasse alle case. Nessuna famiglia colta in casa.", clock(e), (t - e) / 60)
+                } else {
+                    format!("{name}: evacuazione alle {}, con il fuoco già alle case. Nessuna famiglia colta in casa.", clock(e))
+                },
+            ),
+            (Some(e), _, Reach::Doors(t)) => (
+                Verdict::Male,
+                if e <= t {
+                    format!("{name}: evacuazione alle {}, il fuoco alle case alle {}: troppo poco tempo per {}.", clock(e), clock(t), fam(caught))
+                } else {
+                    format!("{name}: evacuazione alle {}, ma il fuoco era alle case dalle {}. Colte in casa: {}.", clock(e), clock(t), fam(caught))
+                },
+            ),
+            (None, Some(_), Reach::Far | Reach::Near) => (Verdict::Bene, format!("{name}: solo preallerta, ed è bastata: il fuoco è rimasto {nearest}.")),
+            (None, Some(_), Reach::Doors(_)) if caught == 0 => {
+                (Verdict::Bene, format!("{name}: solo preallerta, e il fuoco è arrivato alle case. Nessuna famiglia colta in casa."))
+            }
+            (None, Some(p), Reach::Doors(t)) => (
+                Verdict::Male,
+                format!("{name}: preallerta alle {} ma nessuna evacuazione. Il fuoco è arrivato alle case alle {}: colte in casa {}.", clock(p), clock(t), fam(caught)),
+            ),
+            (None, None, Reach::Far) => (Verdict::Bene, format!("{name}: nessun ordine, e non serviva: il fuoco è rimasto {nearest}.")),
+            (None, None, Reach::Near) => {
+                (Verdict::Forse, format!("{name}: nessun ordine. Il fuoco è arrivato {nearest}: una preallerta sarebbe stata prudente."))
+            }
+            (None, None, Reach::Doors(_)) if caught == 0 => {
+                (Verdict::Forse, format!("{name}: nessun ordine. Il fuoco è arrivato alle case, ma le famiglie erano già partite da sole."))
+            }
+            (None, None, Reach::Doors(t)) => {
+                (Verdict::Male, format!("{name}: nessun ordine. Il fuoco è arrivato alle case alle {}: colte in casa {}.", clock(t), fam(caught)))
+            }
+        };
+        Review { verdict, text }
+    }
+
+    /// How close the fire came to district `d` in this game.
+    fn reach(&self, d: usize) -> Reach {
+        match self.threatened_at[d] {
+            Some(t) => Reach::Doors(t),
+            None if self.nearest_m[d] > QUIET_FIRE_M => Reach::Far,
+            None => Reach::Near,
+        }
+    }
+
+    /// Families that left on an evacuation order from a district the fire
+    /// stayed far from: the sum of the «Forse bastava la preallerta» lines.
+    pub fn needless_evacuations(&self) -> usize {
+        (0..self.districts.len())
+            .filter_map(|d| match (self.ordered_at[d].1, self.reach(d)) {
+                (Some(e), Reach::Far) => Some(self.districts[d].households.iter().filter(|&&i| self.left_at[i].is_some_and(|t| t >= e)).count()),
+                _ => None,
+            })
+            .sum()
     }
 }

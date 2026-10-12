@@ -1990,6 +1990,33 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                 .auto_shrink([false, true])
                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
                 .show(ui, |ui| {
+            // each civil order against how close the fire came
+            // (`Game::order_review`), the missed ones first
+            ui.label(RichText::new("COME SONO ANDATI I TUOI ORDINI").size(13.0).strong().color(GREY.gamma_multiply(0.7)));
+            ui.add_space(4.0);
+            let mut reviews: Vec<rocca::Review> = (0..sim.districts.len()).map(|d| sim.order_review(d)).collect();
+            reviews.sort_by_key(|r| match r.verdict {
+                rocca::Verdict::Male => 0,
+                rocca::Verdict::Forse => 1,
+                rocca::Verdict::Bene => 2,
+            });
+            egui::Frame::none().fill(Color32::from_gray(28)).rounding(12.0).inner_margin(egui::Margin::symmetric(14.0, 10.0)).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                for r in &reviews {
+                    let colour = match r.verdict {
+                        rocca::Verdict::Male => RED,
+                        rocca::Verdict::Forse => AMBER,
+                        rocca::Verdict::Bene => GREEN,
+                    };
+                    ui.horizontal_top(|ui| {
+                        let (dot, _) = ui.allocate_exact_size(egui::vec2(14.0, 20.0), egui::Sense::hover());
+                        ui.painter().circle_filled(dot.center(), 5.0, colour);
+                        ui.add(egui::Label::new(RichText::new(&r.text).size(15.0).color(Color32::WHITE)).wrap());
+                    });
+                    ui.add_space(3.0);
+                }
+            });
+            ui.add_space(10.0);
             // per place, a card: green if nobody was reached, amber for
             // houses, red for families still at home
             ui.label(RichText::new("I BORGHI").size(13.0).strong().color(GREY.gamma_multiply(0.7)));

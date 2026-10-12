@@ -132,6 +132,12 @@ fn main() -> Result<()> {
         }
     }
     table(&ga, &oa, ob.as_ref());
+    // the debrief's «Come sono andati i tuoi ordini», for plan A
+    println!("ordini di A (evacuazioni dove il fuoco è rimasto lontano: {} famiglie):", ga.needless_evacuations());
+    for d in 0..ga.districts.len() {
+        let r = ga.order_review(d);
+        println!("  {:<5} {}", format!("{:?}", r.verdict).to_lowercase(), r.text);
+    }
     // the kiosk's score: against the same fire with no orders
     let base = Game::without_orders(&data, &case, seed)?;
     let line = |name: &str, o: &Outcome| {
