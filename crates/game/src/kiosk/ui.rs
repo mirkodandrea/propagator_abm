@@ -1954,33 +1954,6 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                 .auto_shrink([false, true])
                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
                 .show(ui, |ui| {
-            // each civil order against how close the fire came
-            // (`Game::order_review`), the missed ones first
-            ui.label(RichText::new("COME SONO ANDATI I TUOI ORDINI").size(13.0).strong().color(GREY.gamma_multiply(0.7)));
-            ui.add_space(4.0);
-            let mut reviews: Vec<rocca::Review> = (0..sim.districts.len()).map(|d| sim.order_review(d)).collect();
-            reviews.sort_by_key(|r| match r.verdict {
-                rocca::Verdict::Male => 0,
-                rocca::Verdict::Forse => 1,
-                rocca::Verdict::Bene => 2,
-            });
-            egui::Frame::none().fill(Color32::from_gray(28)).rounding(12.0).inner_margin(egui::Margin::symmetric(14.0, 10.0)).show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                for r in &reviews {
-                    let colour = match r.verdict {
-                        rocca::Verdict::Male => RED,
-                        rocca::Verdict::Forse => AMBER,
-                        rocca::Verdict::Bene => GREEN,
-                    };
-                    ui.horizontal_top(|ui| {
-                        let (dot, _) = ui.allocate_exact_size(egui::vec2(14.0, 20.0), egui::Sense::hover());
-                        ui.painter().circle_filled(dot.center(), 5.0, colour);
-                        ui.add(egui::Label::new(RichText::new(&r.text).size(15.0).color(Color32::WHITE)).wrap());
-                    });
-                    ui.add_space(3.0);
-                }
-            });
-            ui.add_space(10.0);
             // per place, a card: green if nobody was reached, amber for
             // houses, red for families still at home
             ui.label(RichText::new("I BORGHI").size(13.0).strong().color(GREY.gamma_multiply(0.7)));
@@ -2053,6 +2026,8 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             ui.vertical(|ui| {
             ui.set_width(BOARD_W);
             card(AMBER).show(ui, |ui| ui.vertical(|ui| leaderboard(ui, k, sim)));
+            ui.add_space(10.0);
+            order_reviews(ui, sim);
             // a real-world note, not advice on the game
             ui.add_space(8.0);
             ui.add(egui::Label::new(RichText::new(REAL_LIFE).size(13.0).italics().color(AMBER)).wrap());
@@ -2080,6 +2055,35 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
         k.case = case;
         new_game(k, sim, restarted);
     }
+}
+
+/// Each civil order against how close the fire came (`Game::order_review`),
+/// the missed ones first.
+fn order_reviews(ui: &mut egui::Ui, sim: &Sim) {
+    ui.label(RichText::new("COME SONO ANDATI I TUOI ORDINI").size(13.0).strong().color(GREY.gamma_multiply(0.7)));
+    ui.add_space(4.0);
+    let mut reviews: Vec<rocca::Review> = (0..sim.districts.len()).map(|d| sim.order_review(d)).collect();
+    reviews.sort_by_key(|r| match r.verdict {
+        rocca::Verdict::Male => 0,
+        rocca::Verdict::Forse => 1,
+        rocca::Verdict::Bene => 2,
+    });
+    egui::Frame::none().fill(Color32::from_gray(28)).rounding(12.0).inner_margin(egui::Margin::symmetric(12.0, 8.0)).show(ui, |ui| {
+        ui.set_width(BOARD_W - 24.0);
+        for r in &reviews {
+            let colour = match r.verdict {
+                rocca::Verdict::Male => RED,
+                rocca::Verdict::Forse => AMBER,
+                rocca::Verdict::Bene => GREEN,
+            };
+            ui.horizontal_top(|ui| {
+                let (dot, _) = ui.allocate_exact_size(egui::vec2(14.0, 20.0), egui::Sense::hover());
+                ui.painter().circle_filled(dot.center(), 5.0, colour);
+                ui.add(egui::Label::new(RichText::new(&r.text).size(14.0).color(Color32::WHITE)).wrap());
+            });
+            ui.add_space(3.0);
+        }
+    });
 }
 
 /// Beside the debrief: the score, made of the debrief's numbers
