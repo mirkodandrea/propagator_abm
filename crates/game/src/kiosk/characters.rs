@@ -30,6 +30,16 @@ impl Who {
         }
     }
 
+    /// A short label for the team row of the opening screen.
+    pub fn short(self) -> &'static str {
+        match self {
+            Who::Sindaca => "La sindaca",
+            Who::Dos => "I vigili del fuoco",
+            Who::Meteo => "Il meteo",
+            Who::Volontaria => "La volontaria",
+        }
+    }
+
     /// The colour of their frame, so they are told apart without reading.
     pub fn colour(self) -> egui::Color32 {
         match self {

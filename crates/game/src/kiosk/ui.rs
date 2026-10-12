@@ -300,7 +300,7 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                 }
                 ui.vertical(|ui| {
                     ui.label(RichText::new("Rocca Ventosa").size(42.0).strong().color(Color32::WHITE));
-                    ui.label(RichText::new("Un incendio, sei borghi, poche squadre. Decidi tu le priorità.").size(20.0).color(AMBER));
+                    ui.label(RichText::new("Aiutaci a gestire questa emergenza.").size(20.0).color(AMBER));
                 });
             });
             ui.add_space(12.0);
@@ -314,11 +314,25 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                     let crews = roster.len() - engines;
                     let n = |k: usize, one: &str, many: &str| if k == 1 { format!("1 {one}") } else { format!("{k} {many}") };
                     let text = format!(
-                        "Un incendio minaccia i nostri borghi! Abbiamo {} e {} per {} borghi: non bastano per tutti. Decidi tu come usarli. Il tempo scorre da solo, ma puoi mettere in pausa quando vuoi.",
+                        "Un incendio minaccia i nostri borghi e ci serve il tuo aiuto! Abbiamo {} e {} per {} borghi: non bastano per tutti. Decidi tu come usarli. Il tempo scorre da solo, ma puoi mettere in pausa quando vuoi.",
                         n(engines, "autobotte", "autobotti"), n(crews, "squadra", "squadre"), sim.districts.len()
                     );
                     characters::says(ui, Who::Volontaria, &text, 600.0);
                 });
+            });
+            ui.add_space(10.0);
+            // the people the player works with, who speak during the game: a
+            // team photo, faces and names only
+            ui.label(RichText::new("La squadra con cui lavori").size(16.0).color(GREY));
+            ui.add_space(4.0);
+            let team = [Who::Sindaca, Who::Dos, Who::Meteo, Who::Volontaria];
+            ui.columns(team.len(), |cols| {
+                for (ui, who) in cols.iter_mut().zip(team) {
+                    ui.vertical_centered(|ui| {
+                        characters::portrait(ui, faces, who, Mood::Calmo, 64.0);
+                        ui.label(RichText::new(who.short()).size(15.0).strong().color(who.colour()));
+                    });
+                }
             });
             ui.add_space(16.0);
             ui.label(RichText::new("Come si gioca").size(20.0).strong().color(Color32::WHITE));
