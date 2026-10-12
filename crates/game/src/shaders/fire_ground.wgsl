@@ -29,17 +29,67 @@ fn value_noise(p: vec2<f32>) -> f32 {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
+// Fractal Brownian motion, domain-warped: the warp is what turns blobby
+// noise into the tendrilled, branching texture of a real fire front.
+fn fbm(p_in: vec2<f32>) -> f32 {
+    var p = p_in;
+    var a = 0.5;
+    var s = 0.0;
+    for (var i = 0; i < 5; i++) {
+        s += a * value_noise(p);
+        p = p * 2.07 + vec2<f32>(17.3, 9.1);
+        a *= 0.5;
+    }
+    return s / 0.96875;
+}
+
+fn fire_ramp(h: f32) -> vec3<f32> {
+    // ember red -> orange -> yellow -> near white, h in 0..1
+    let c0 = vec3<f32>(0.55, 0.06, 0.02);
+    let c1 = vec3<f32>(1.60, 0.38, 0.05);
+    let c2 = vec3<f32>(2.20, 1.10, 0.18);
+    let c3 = vec3<f32>(2.60, 2.00, 0.90);
+    let a = clamp(h * 3.0, 0.0, 1.0);
+    let b = clamp(h * 3.0 - 1.0, 0.0, 1.0);
+    let c = clamp(h * 3.0 - 2.0, 0.0, 1.0);
+    return mix(mix(mix(c0, c1, a), c2, b), c3, c);
+}
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     var col = in.color;
-    if col.r > 1.0 {
+    // `w` fades the fractal treatment in smoothly over the glow gradient so
+    // there is no seam where the CPU colour crosses the hot threshold.
+    let w = smoothstep(0.35, 1.0, col.r);
+    if w > 0.0 {
         let t = globals.time;
-        // World-space noise, not UV: the overlay lattice spacing changes with
-        // `OVERLAY_SUBDIV`, and this needs to look the same regardless.
-        let p = vec2<f32>(in.world_position.x * 0.06 + t * 2.4, in.world_position.z * 0.06 - t * 1.9);
-        let n = value_noise(p) * 0.6 + value_noise(p * 2.3 + 5.0) * 0.4;
-        let flicker = 0.72 + 0.55 * n;
-        col = vec4<f32>(col.r * flicker, col.g * flicker, col.b * flicker, col.a);
+        let wp = in.world_position.xz;
+        // Heat decoded from the CPU glow (r = char + 2.4 * glow).
+        let heat = clamp((col.r - 0.3) / 2.4, 0.0, 1.0);
+
+        // Domain warp, slowly advected by the wind-ish drift.
+        let q = wp * 0.05 + vec2<f32>(t * 0.35, -t * 0.28);
+        let warp = vec2<f32>(fbm(q + 3.7), fbm(q + 11.2)) - 0.5;
+        let p = wp * 0.11 + warp * 2.6;
+        let n = fbm(p + vec2<f32>(t * 0.6, -t * 0.45));
+        // Fine, fast crackle on top: individual embers winking.
+        let crackle = value_noise(wp * 0.9 + vec2<f32>(t * 3.0, t * 2.1));
+
+        // Hot cells are where local heat beats the noise threshold: the
+        // front breaks into patches and fingers, with a ragged border.
+        let local = heat * 1.5 - (1.0 - n) * 0.75 + (crackle - 0.5) * 0.18;
+        let hot = smoothstep(0.0, 0.18, local);
+
+        let fire = fire_ramp(clamp(local, 0.0, 1.0)) * (0.8 + 0.4 * crackle);
+        // What the cooler gaps look like: dark char with a faint red glint.
+        let char_col = vec3<f32>(0.07, 0.035, 0.03) + vec3<f32>(0.35, 0.05, 0.0) * (1.0 - hot) * heat * n;
+        let fractal = mix(char_col, fire, hot);
+        let rgb = mix(col.rgb, fractal, w);
+
+        // Ragged outer edge: alpha is a smooth coverage ramp on the CPU.
+        let edge = smoothstep(0.12, 0.5, col.a + (n - 0.5) * 0.55);
+        let alpha = mix(col.a, col.a * edge, w);
+        col = vec4<f32>(rgb, alpha);
     }
     return col;
 }
