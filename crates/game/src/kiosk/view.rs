@@ -402,7 +402,7 @@ pub fn camera(
 /// What the follow camera frames: the burning front and the districts it
 /// is near (a home within `NEAR_M` of it). Returns the middle (Bevy x, z)
 /// and the widest extent in metres. `None` if nothing burns.
-fn fire_extent(sim: &Sim) -> Option<(Vec2, f32)> {
+pub(super) fn fire_extent(sim: &Sim) -> Option<(Vec2, f32)> {
     const NEAR_M: f32 = 1500.0;
     let cells = sim.fire.active_cells();
     if cells.is_empty() {
@@ -486,6 +486,7 @@ pub fn hide_game_overlays(
         &mut Visibility,
         Or<(
             With<crate::overlays::WindArrow>,
+            With<crate::overlays::WindChevron>,
             With<crate::overlays::DynamicMarker>,
             With<crate::overlays::BeaconLayer>,
             With<crate::overlays::OrderRing>,

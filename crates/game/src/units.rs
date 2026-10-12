@@ -31,7 +31,7 @@ use scenario::{Cell, Pos, Scenario};
 use crate::frame;
 use crate::retro;
 use crate::retro::RetroMaterial;
-use crate::rings::{ring_mesh, RING_LIFT_M};
+use crate::rings::{ring_mesh, tube_transform, wall_mesh, TubeSpin, RING_LIFT_M};
 use crate::sim::Sim;
 
 /// How far above life size units are drawn.
@@ -185,6 +185,7 @@ pub fn setup(
         ));
     }
 
+    let (order_ring, line_todo) = (hdr_blue(&mut materials, vr, 0.95), hdr_blue(&mut materials, vr, 0.5));
     let mut unlit = |r: f32, g: f32, b: f32, a: f32| {
         materials.add(retro::material(StandardMaterial {
             base_color: Color::srgba(r, g, b, a),
@@ -197,9 +198,9 @@ pub fn setup(
         }, vr))
     };
     commands.insert_resource(UnitAssets {
-        order_ring: unlit(1.00, 0.90, 0.10, 0.9),
+        order_ring,
         line_cut: unlit(0.55, 0.42, 0.30, 0.95),
-        line_todo: unlit(1.00, 0.90, 0.10, 0.45),
+        line_todo,
         // Cut line reads as bare earth; wetted ground as a cool wash. The wash
         // is deliberately faint: a busy pair of aircraft saturates a hundred
         // cells inside an hour, and at any higher alpha that is a lake painted
@@ -344,6 +345,19 @@ pub fn update_teams(
     }
 }
 
+/// UI-in-3D blue, overbright: unlit output goes through the tone mapper, which
+/// greys anything at or under 1.0 against the terrain, so the glow is >1.
+fn hdr_blue(materials: &mut Assets<RetroMaterial>, vr: bool, a: f32) -> Handle<RetroMaterial> {
+    materials.add(retro::material(StandardMaterial {
+        base_color: Color::LinearRgba(LinearRgba::new(0.15, 1.2, 3.0, a)),
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        double_sided: true,
+        cull_mode: None,
+        ..default()
+    }, vr))
+}
+
 /// Rebuild the order markers when the orders change.
 pub fn sync_orders(
     mut commands: Commands,
@@ -378,6 +392,16 @@ pub fn sync_orders(
                         ..default()
                     },
                     OrderMarker,
+                ));
+                commands.spawn((
+                    MaterialMeshBundle::<RetroMaterial> {
+                        mesh: meshes.add(wall_mesh(&sim.scn, at, ORDER_RING_M)),
+                        material: assets.order_ring.clone(),
+                        transform: tube_transform(at),
+                        ..default()
+                    },
+                    OrderMarker,
+                    TubeSpin,
                 ));
             }
             Task::Line { from, to } => {

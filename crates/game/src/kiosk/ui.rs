@@ -51,10 +51,10 @@ const CHIP_H: f32 = 400.0;
 const CHIP_H_COMPACT: f32 = 201.0;
 /// A district's badge on the map: rank, name, fire, units, order. Clicking it
 /// opens the full chip beside it.
-const BADGE_W: f32 = 196.0;
+const BADGE_W: f32 = 150.0;
 /// The messenger patrols on the map (`units::PATROL`), for the legend.
 const PATROL: Color32 = Color32::from_rgb(40, 110, 230);
-const BADGE_H: f32 = 66.0;
+const BADGE_H: f32 = 46.0;
 /// What the simulated families do is not what to do: said where it shows.
 const REAL_LIFE: &str = "Nella realtà, quando arriva l'ordine di evacuazione si parte subito. Aspettare di vedere il fuoco è uno degli errori più pericolosi.";
 const GREY: Color32 = Color32::from_rgb(205, 208, 212);
@@ -1136,22 +1136,22 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
         let selected = k.selected == Some(d);
         let (border, width) = if alarm == Some(d) { (ORANGE, 4.0) } else if selected { (Color32::WHITE, 3.0) } else if rank == Some(0) { (AMBER, 2.0) } else { (Color32::from_gray(90), 1.5) };
         egui::Area::new(egui::Id::new(("badge", d))).fixed_pos(at).pivot(Align2::CENTER_BOTTOM).order(egui::Order::Middle).show(ctx, |ui| {
-            let framed = egui::Frame::none().fill(PANEL).stroke(egui::Stroke::new(width, border)).rounding(12.0).inner_margin(7.0).show(ui, |ui| {
-                ui.set_width(BADGE_W - 14.0);
-                ui.set_min_height(BADGE_H - 14.0);
+            let framed = egui::Frame::none().fill(Color32::from_rgba_unmultiplied(18, 20, 24, 150)).stroke(egui::Stroke::new(width, border)).rounding(9.0).inner_margin(5.0).show(ui, |ui| {
+                ui.set_width(BADGE_W - 10.0);
+                ui.set_min_height(BADGE_H - 10.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 5.0;
-                    let (r, _) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
+                    let (r, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
                     match rank {
                         Some(n) => {
-                            ui.painter().circle_filled(r.center(), 13.0, AMBER);
-                            ui.painter().text(r.center(), Align2::CENTER_CENTER, (n + 1).to_string(), egui::FontId::proportional(17.0), Color32::BLACK);
+                            ui.painter().circle_filled(r.center(), 9.5, AMBER);
+                            ui.painter().text(r.center(), Align2::CENTER_CENTER, (n + 1).to_string(), egui::FontId::proportional(13.0), Color32::BLACK);
                         }
                         None => {
-                            ui.painter().circle_stroke(r.center(), 12.0, egui::Stroke::new(2.0, Color32::from_gray(110)));
+                            ui.painter().circle_stroke(r.center(), 9.0, egui::Stroke::new(2.0, Color32::from_gray(110)));
                         }
                     }
-                    ui.label(RichText::new(&dist.name).size(16.0).strong().color(Color32::WHITE));
+                    ui.label(RichText::new(&dist.name).size(13.0).strong().color(Color32::WHITE));
                 });
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
@@ -1161,19 +1161,19 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         egui::Frame::none().fill(colour).rounding(5.0).inner_margin(egui::Margin::symmetric(4.0, 0.0)).show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 2.0;
-                                icons::show(ui, Icon::Fire, 14.0, Color32::from_rgb(120, 20, 0));
-                                ui.label(RichText::new(text).size(13.0).strong().color(Color32::BLACK));
+                                icons::show(ui, Icon::Fire, 11.0, Color32::from_rgb(120, 20, 0));
+                                ui.label(RichText::new(text).size(11.0).strong().color(Color32::BLACK));
                             });
                         });
                     }
                     // trucks on it (now, or after the confirm), and the civil order
                     if now.max(next) > 0 {
-                        icons::show(ui, Icon::Engine, 20.0, if next >= now { GREEN } else { AMBER });
-                        ui.label(RichText::new(format!("{next}")).size(14.0).color(Color32::WHITE));
+                        icons::show(ui, Icon::Engine, 14.0, if next >= now { GREEN } else { AMBER });
+                        ui.label(RichText::new(format!("{next}")).size(11.0).color(Color32::WHITE));
                     }
                     match civil[d] {
-                        Civil::Evacua => { icons::show(ui, Icon::Exit, 20.0, BLUE); }
-                        Civil::Preallerta => { icons::show(ui, Icon::Bell, 20.0, AMBER); }
+                        Civil::Evacua => { icons::show(ui, Icon::Exit, 14.0, BLUE); }
+                        Civil::Preallerta => { icons::show(ui, Icon::Bell, 14.0, AMBER); }
                         Civil::Nessuno => {}
                     }
                     // the families: how many have heard the order while the
@@ -1183,12 +1183,12 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     let reached = hh.iter().filter(|&&i| matches!(sim.agents.households[i].status, Status::Trapped | Status::Casualty)).count();
                     let telling = sim.alerted(d).filter(|&(heard, all)| heard < all);
                     if reached > 0 {
-                        icons::show(ui, Icon::Alert, 18.0, RED);
+                        icons::show(ui, Icon::Alert, 14.0, RED);
                     } else if let Some((heard, all)) = telling {
                         let colour = if sim.active.civil[d] == Civil::Evacua { BLUE } else { AMBER };
-                        ui.label(RichText::new(format!("{heard}/{all}")).size(13.0).color(colour));
+                        ui.label(RichText::new(format!("{heard}/{all}")).size(11.0).color(colour));
                     } else if safe > 0 {
-                        ui.label(RichText::new(format!("{safe}/{}", hh.len())).size(13.0).color(GREEN));
+                        ui.label(RichText::new(format!("{safe}/{}", hh.len())).size(11.0).color(GREEN));
                     }
                 });
             });
@@ -2259,7 +2259,7 @@ fn order_reviews(ui: &mut egui::Ui, sim: &Sim) {
                 rocca::Verdict::Bene => GREEN,
             };
             ui.horizontal_top(|ui| {
-                let (dot, _) = ui.allocate_exact_size(egui::vec2(14.0, 20.0), egui::Sense::hover());
+                let (dot, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
                 ui.painter().circle_filled(dot.center(), 5.0, colour);
                 ui.add(egui::Label::new(RichText::new(&r.text).size(14.0).color(Color32::WHITE)).wrap());
             });

@@ -15,7 +15,7 @@ use scenario::Pos;
 use crate::frame;
 use crate::retro;
 use crate::retro::RetroMaterial;
-use crate::rings::{halo_mesh, path_mesh, ring_mesh, HALO};
+use crate::rings::{path_mesh, ring_mesh, tube_transform, wall_mesh, TubeSpin, HALO};
 
 /// Width of a route on the map.
 const ROUTE_M: f32 = 9.0;
@@ -29,6 +29,10 @@ const PIN_LIFT_M: f32 = 30.0;
 pub struct WindArrow;
 #[derive(Component)]
 pub struct DynamicMarker;
+
+/// Any other 3D UI mesh that must not take part in shadows.
+#[derive(Component)]
+pub struct UiGlyph;
 #[derive(Component)]
 pub struct BeaconLayer;
 
@@ -48,9 +52,7 @@ pub struct OverlayAssets {
     key: (usize, usize, i64),
     /// What the order rings were built for: (warned districts, engine posts).
     order_key: (usize, usize),
-    ring_blue: Handle<RetroMaterial>,
-    ring_amber: Handle<RetroMaterial>,
-    ring_green: Handle<RetroMaterial>,
+    ring_cover: Handle<RetroMaterial>,
     ring_white: Handle<RetroMaterial>,
     /// Dark, under rings and routes.
     halo: Handle<RetroMaterial>,
@@ -58,9 +60,19 @@ pub struct OverlayAssets {
     route_key: u64,
 }
 
+/// The colour of a glowing UI element: `c` as sRGB, its linear value scaled by
+/// `gain`. Unlit output ignores emissive and goes through the tone mapper, so
+/// anything near 1.0 comes out as muted as the terrain; >1 stays saturated and
+/// feeds the bloom. No gain (0) is a plain colour.
+fn hdr(c: [f32; 3], a: f32, gain: f32) -> Color {
+    let l = Color::srgb(c[0], c[1], c[2]).to_linear();
+    let g = if gain > 0.0 { gain } else { 1.0 };
+    Color::LinearRgba(LinearRgba::new(l.red * g, l.green * g, l.blue * g, a))
+}
+
 fn glow(c: [f32; 3], a: f32, boost: f32) -> StandardMaterial {
     StandardMaterial {
-        base_color: Color::srgba(c[0], c[1], c[2], a),
+        base_color: hdr(c, a, boost),
         emissive: LinearRgba::rgb(c[0] * boost, c[1] * boost, c[2] * boost),
         unlit: true,
         alpha_mode: if a < 1.0 { AlphaMode::Blend } else { AlphaMode::Opaque },
@@ -91,13 +103,48 @@ fn arrow_mesh() -> Mesh {
     m
 }
 
+/// A chevron pointing along -Z, in the arrow's unit space: the flow marks that
+/// run down the shaft so the wind reads as moving air, not as a signpost.
+fn chevron_mesh() -> Mesh {
+    let pts: [[f32; 3]; 6] = [
+        [-0.20, 0.0, 0.08],
+        [0.0, 0.0, -0.05],
+        [0.20, 0.0, 0.08],
+        [-0.20, 0.0, 0.17],
+        [0.0, 0.0, 0.04],
+        [0.20, 0.0, 0.17],
+    ];
+    let idx = [0u32, 1, 3, 1, 4, 3, 1, 2, 4, 2, 5, 4];
+    let mut m = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    m.insert_attribute(Mesh::ATTRIBUTE_POSITION, pts.to_vec());
+    m.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; 6]);
+    m.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32, 0.0]; 6]);
+    m.insert_indices(Indices::U32(idx.to_vec()));
+    m
+}
+
+/// Flow chevrons of the wind arrow, with their phase in 0..1.
+#[derive(Component)]
+pub struct WindChevron(f32);
+
+/// Slide the chevrons down the shaft, fading in at the tail and out at the head.
+pub fn animate_wind(time: Res<Time>, mut q: Query<(&WindChevron, &mut Transform)>) {
+    for (c, mut tf) in &mut q {
+        let k = (time.elapsed_seconds() * 0.45 + c.0).fract();
+        tf.translation = Vec3::new(0.0, 4.0, 0.45 - k * 0.8);
+        let s = (k * std::f32::consts::PI).sin();
+        tf.scale = Vec3::new(0.4 + 0.6 * s, 1.0, 0.4 + 0.6 * s);
+    }
+}
+
 pub fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
     let mut mat = |c: [f32; 3], a: f32, boost: f32| materials.add(retro::material(glow(c, a, boost), false));
-    let arrow_mat = mat([1.0, 1.0, 1.0], 0.78, 0.9);
+    let arrow_mat = mat([0.10, 0.40, 1.0], 0.95, 3.0);
+    let chevron_mat = mat([0.70, 0.95, 1.0], 1.0, 4.0);
     let unlit_white = mat([1.0, 1.0, 1.0], 1.0, 1.4);
     let ring_orange = mat([1.0, 0.62, 0.1], 0.9, 1.6);
     let beacons = meshes.add(Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default()));
@@ -110,18 +157,24 @@ pub fn setup(
         bevy::render::view::NoFrustumCulling,
         BeaconLayer,
     ));
-    commands.spawn((
-        MaterialMeshBundle::<RetroMaterial> {
-            mesh: meshes.add(arrow_mesh()),
-            material: arrow_mat,
-            ..default()
-        },
-        WindArrow,
-    ));
-    let ring_blue = mat([0.35, 0.75, 1.0], 0.85, 1.6);
-    let ring_amber = mat([1.0, 0.75, 0.25], 0.85, 1.6);
-    let ring_green = mat([0.35, 1.0, 0.6], 0.85, 1.4);
-    let ring_white = mat([1.0, 1.0, 1.0], 0.9, 1.6);
+    let arrow = meshes.add(arrow_mesh());
+    let chevron = meshes.add(chevron_mesh());
+    commands
+        .spawn((
+            MaterialMeshBundle::<RetroMaterial> { mesh: arrow.clone(), material: arrow_mat, ..default() },
+            WindArrow,
+        ))
+        .with_children(|p| {
+            for i in 0..3 {
+                p.spawn((
+                    MaterialMeshBundle::<RetroMaterial> { mesh: chevron.clone(), material: chevron_mat.clone(), ..default() },
+                    WindChevron(i as f32 / 3.0),
+                ));
+            }
+        });
+    // UI in 3D is all blues: cyan = defended area and active routes, ice = proposed plan.
+    let ring_cover = mat([0.00, 0.90, 1.00], 0.9, 1.6);
+    let ring_white = mat([0.65, 0.90, 1.00], 0.9, 1.6);
     let halo = mat([0.03, 0.05, 0.06], 0.75, 0.0);
     commands.insert_resource(OverlayAssets {
         halo,
@@ -130,12 +183,44 @@ pub fn setup(
         beacons,
         key: (usize::MAX, 0, 0),
         order_key: (usize::MAX, 0),
-        ring_blue,
-        ring_amber,
-        ring_green,
+        ring_cover,
         ring_white,
         route_key: u64::MAX,
     });
+}
+
+/// 3D UI is a graphic layer, not part of the scene: it casts and receives no
+/// shadows. Runs on whatever was just spawned.
+pub fn no_ui_shadows(
+    mut commands: Commands,
+    new: Query<
+        Entity,
+        (
+            Or<(Added<OrderRing>, Added<RouteMark>, Added<WindArrow>, Added<WindChevron>, Added<DynamicMarker>, Added<BeaconLayer>, Added<UiGlyph>, Added<crate::units::OrderMarker>)>,
+            Without<bevy::pbr::NotShadowCaster>,
+        ),
+    >,
+) {
+    for e in &new {
+        // may already be despawned this frame (rings are rebuilt eagerly)
+        commands.entity(e).try_insert((bevy::pbr::NotShadowCaster, bevy::pbr::NotShadowReceiver));
+    }
+}
+
+/// Rings and routes breathe: a slow pulse of alpha and glow, out of phase per
+/// colour, so they read as UI laid over the landscape and not as scenery.
+pub fn pulse_rings(time: Res<Time>, assets: Res<OverlayAssets>, mut materials: ResMut<Assets<RetroMaterial>>) {
+    let t = time.elapsed_seconds();
+    let set = [
+        (&assets.ring_cover, [0.00, 0.90, 1.00], 2.2),
+        (&assets.ring_white, [0.65, 0.90, 1.00], 3.3),
+    ];
+    for (h, c, phase) in set {
+        let k = 0.5 + 0.5 * (t * 2.6 + phase).sin();
+        if let Some(m) = materials.get_mut(h) {
+            m.base.base_color = hdr(c, 0.70 + 0.30 * k, 2.2 + 1.8 * k);
+        }
+    }
 }
 
 /// The plan in force, on the ground: a ring round each district with a civil
@@ -158,69 +243,35 @@ pub fn update_orders(
     for e in &old {
         commands.entity(e).despawn();
     }
-    for (k, d) in sim.districts.iter().enumerate() {
-        let mat = match sim.active.civil[k] {
-            rocca::Civil::Nessuno => continue,
-            rocca::Civil::Preallerta => assets.ring_amber.clone(),
-            rocca::Civil::Evacua => assets.ring_blue.clone(),
-        };
-        let homes: Vec<Pos> = d.households.iter().map(|&i| sim.agents.households[i].home).collect();
-        for (centre, radius) in clusters(&homes) {
-            let (ring, halo) = (meshes.add(ring_mesh(&sim.scn, centre, radius + 40.0)), meshes.add(halo_mesh(&sim.scn, centre, radius + 40.0)));
-            spawn_outlined(&mut commands, ring, halo, mat.clone(), assets.halo.clone(), OrderRing);
-        }
-    }
     for p in sim.posts.iter().flatten() {
-        let r = rocca::coordinator::DEFEND_REACH_M;
-        let (ring, halo) = (meshes.add(ring_mesh(&sim.scn, p.at, r)), meshes.add(halo_mesh(&sim.scn, p.at, r)));
-        spawn_outlined(&mut commands, ring, halo, assets.ring_green.clone(), assets.halo.clone(), OrderRing);
+        cover_zone(&mut commands, &mut meshes, &sim, p.at, &assets.ring_cover, OrderRing);
+    }
+}
+
+/// The area a post defends, exactly as the simulation sees it
+/// (`Abm::protection`: homes within `DEFEND_REACH_M` of the post): a filled
+/// faded tube with a sharp rim on the ground, and a mark on each home that is inside it.
+fn cover_zone<M: Component + Copy>(commands: &mut Commands, meshes: &mut Assets<Mesh>, sim: &Sim, at: Pos, rim: &Handle<RetroMaterial>, tag: M) {
+    let r = rocca::coordinator::DEFEND_REACH_M;
+    commands.spawn((MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(wall_mesh(&sim.scn, at, r)), material: rim.clone(), transform: tube_transform(at), ..default() }, tag, TubeSpin));
+    commands.spawn((MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(ring_mesh(&sim.scn, at, r)), material: rim.clone(), ..default() }, tag));
+    for h in &sim.agents.households {
+        if (h.home.x - at.x).hypot(h.home.y - at.y) <= r {
+            commands.spawn((MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(ring_mesh(&sim.scn, h.home, 14.0)), material: rim.clone(), ..default() }, tag));
+        }
     }
 }
 
 /// A ring or route with its dark halo just under it. The halo sits lower, so
 /// the transparent pass draws it first.
 fn spawn_outlined<M: Component + Copy>(commands: &mut Commands, mesh: Handle<Mesh>, halo_mesh: Handle<Mesh>, mat: Handle<RetroMaterial>, halo: Handle<RetroMaterial>, tag: M) {
-    commands.spawn((MaterialMeshBundle::<RetroMaterial> { mesh: halo_mesh, material: halo, transform: Transform::from_xyz(0.0, -HALO_DROP_M, 0.0), ..default() }, tag));
+    // no dark halo: it read as a drop shadow under the blue UI
+    let _ = (halo_mesh, halo);
     commands.spawn((MaterialMeshBundle::<RetroMaterial> { mesh, material: mat, ..default() }, tag));
 }
 
 /// How far under its ring or route a halo lies.
 const HALO_DROP_M: f32 = 1.5;
-
-/// Homes grouped into the places a ring can hold: a district of four hamlets
-/// gets four rings, not one across the woods between them.
-fn clusters(homes: &[Pos]) -> Vec<(Pos, f32)> {
-    const LINK_M: f32 = 250.0;
-    let mut group: Vec<usize> = (0..homes.len()).collect();
-    fn root(g: &mut [usize], i: usize) -> usize {
-        let mut r = i;
-        while g[r] != r {
-            r = g[r];
-        }
-        g[i] = r;
-        r
-    }
-    for i in 0..homes.len() {
-        for j in 0..i {
-            if rocca::district::dist(homes[i], homes[j]) <= LINK_M {
-                let (a, b) = (root(&mut group, i), root(&mut group, j));
-                group[a] = b;
-            }
-        }
-    }
-    let mut out = vec![];
-    for r in 0..homes.len() {
-        let members: Vec<Pos> = (0..homes.len()).filter(|&i| root(&mut group, i) == r).map(|i| homes[i]).collect();
-        if members.is_empty() {
-            continue;
-        }
-        let n = members.len() as f32;
-        let c = Pos { x: members.iter().map(|p| p.x).sum::<f32>() / n, y: members.iter().map(|p| p.y).sum::<f32>() / n };
-        let radius = members.iter().map(|p| rocca::district::dist(*p, c)).fold(0.0, f32::max);
-        out.push((c, radius));
-    }
-    out
-}
 
 /// Routes: green and solid for the way each unit is driving now; white and
 /// dashed, with a white ring at the post, for a proposed move the player has
@@ -257,7 +308,7 @@ pub fn update_routes(
         let pts = sim.crews.route_points(k, &sim.agents.network);
         if pts.len() >= 2 {
             let (route, halo) = (meshes.add(path_mesh(&sim.scn, &pts, ROUTE_M, None)), meshes.add(path_mesh(&sim.scn, &pts, ROUTE_M * HALO, None)));
-            spawn_outlined(&mut commands, route, halo, assets.ring_green.clone(), assets.halo.clone(), RouteMark);
+            spawn_outlined(&mut commands, route, halo, assets.ring_cover.clone(), assets.halo.clone(), RouteMark);
         }
     }
     if kiosk.phase == crate::kiosk::Phase::Fine {
@@ -268,9 +319,7 @@ pub fn update_routes(
             let (route, halo) = (meshes.add(path_mesh(&sim.scn, &p.route, ROUTE_M, Some(30.0))), meshes.add(path_mesh(&sim.scn, &p.route, ROUTE_M * HALO, None)));
             spawn_outlined(&mut commands, route, halo, assets.ring_white.clone(), assets.halo.clone(), RouteMark);
         }
-        let r = rocca::coordinator::DEFEND_REACH_M;
-        let (ring, halo) = (meshes.add(ring_mesh(&sim.scn, p.at, r)), meshes.add(halo_mesh(&sim.scn, p.at, r)));
-        spawn_outlined(&mut commands, ring, halo, assets.ring_white.clone(), assets.halo.clone(), RouteMark);
+        cover_zone(&mut commands, &mut meshes, &sim, p.at, &assets.ring_white, RouteMark);
     }
 }
 

@@ -21,6 +21,7 @@
 pub mod board;
 pub mod characters;
 pub mod icons;
+pub mod snap;
 pub mod tutorial;
 pub mod ui;
 pub mod view;

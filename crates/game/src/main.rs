@@ -194,7 +194,7 @@ fn kiosk_systems(app: &mut App) {
         Update,
         (
             kiosk::launch.run_if(in_state(AppState::SelectingScenario)),
-            (kiosk::ui::draw, kiosk::step, kiosk::view::camera, kiosk::shots)
+            (kiosk::ui::draw, kiosk::step, kiosk::snap::drive, kiosk::view::camera, kiosk::shots)
                 .chain()
                 .run_if(in_state(AppState::Playing)),
             kiosk::view::hide_game_overlays
@@ -224,7 +224,11 @@ fn kiosk_systems(app: &mut App) {
                 overlays::update_orders,
                 overlays::update_routes,
                 units::sync_orders,
+                overlays::animate_wind,
                 units::update_work_overlay,
+                overlays::pulse_rings,
+                rings::spin,
+                overlays::no_ui_shadows,
             )
                 .after(fire_view::reset)
                 .after(buildings::reset)

@@ -4,6 +4,9 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
+- **2026-10-12, `KIOSK_SNAP`: screenshot di stati arbitrari senza giocare** (richiesta dell'utente). `kiosk/snap.rs`. `KIOSK_SNAP=<cartella> KIOSK_SNAP_SPEC='name=a,t=40,at=district:Castelvento,dist=700,pitch=-35;name=b,t=120,phase=fine' cargo run -p game --release`: ogni stato (separati da `;`) salta al tempo simulato `t` (minuti, in modo headless), con piano scriptato o `prio`/`pre`/`evac` per nome, fase `esegui` (mondo fermo)/`pianifica`/`fine`, camera `at` = `home`|`fire`|`district:<nome>`|`post:<n>`|`unit:<n>`|`x:y`, `dist`, `yaw`, `pitch`, `select`. Casi e quartieri disponibili stampati all'avvio. Non sostituisce `KIOSK_SHOT` (partita intera).
+  - [ ] non gestisce ancora le crisi (il piano resta quello scriptato: le crisi sorte vengono scartate) né un `speed` diverso da ×0 (la barra mostra «×0»).
+
 - **2026-10-12, schermata del titolo con partita di sfondo, abbandono, ritorno all'inizio** (richiesta dell'utente; sottotitolo scelto da lui: «Aiutaci a gestire un incendio.»). `kiosk/mod.rs` (`Kiosk::title`, `demo`, `to_title`, `demo_shot`), `kiosk/ui.rs::title`, `kiosk/view.rs` (regia della camera), `main.rs` (registrazione di `hide_game_overlays`).
   - [x] 2026-10-12 all'avvio: titolo + «Gioca» sopra una partita scriptata (stesso motore, piano fisso, crisi chiuse da un timer, passa al caso successivo a fine partita; niente classifica). Nessun elemento di UI di gioco. «Gioca» porta all'intro con il nome e i livelli;
   - [x] 2026-10-12 regia: ogni 26 s un'inquadratura (fronte intero, paese più vicino al fuoco, squadra vicina al fuoco, fronte da vicino) con angolo diverso e velocità ×1,5/×0,8/×0,4; profondità di campo più stretta e bloom più forte (solo sul titolo, tornano i valori di gioco in partita);

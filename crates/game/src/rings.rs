@@ -73,6 +73,87 @@ fn annulus(scn: &Scenario, centre: Pos, radius_m: f32, width_m: f32) -> Mesh {
     mesh
 }
 
+/// A translucent vertical tube standing on a ring: straight, not draped. Its
+/// foot is buried under the lowest ground inside the ring and its top is above
+/// the highest, so the terrain cuts through it like a pipe through a table-top.
+/// Full strength up to the crest, fading to nothing over `wall_height` above it
+/// (vertex alpha), a sci-fi column of light.
+pub(crate) fn wall_height(radius_m: f32) -> f32 {
+    (radius_m * 0.7).clamp(110.0, 260.0)
+}
+
+/// Slow turn of a tube about its own axis: its slanted, banded fade sweeps
+/// round it, so it reads as a moving beam and not as a still wall.
+#[derive(Component, Clone, Copy)]
+pub(crate) struct TubeSpin;
+
+/// Where a tube's entity goes: its mesh is built about its own axis.
+pub(crate) fn tube_transform(centre: Pos) -> Transform {
+    Transform::from_xyz(centre.x, 0.0, -centre.y)
+}
+
+/// Turn every tube (`overlays::spin_tubes` runs this each frame).
+pub(crate) fn spin(time: Res<Time>, mut q: Query<&mut Transform, With<TubeSpin>>) {
+    let a = time.elapsed_seconds() * 0.35;
+    for mut tf in &mut q {
+        tf.rotation = Quat::from_rotation_y(a);
+    }
+}
+
+/// Built about its axis (x, z relative to `centre`; y absolute), to be placed
+/// with [`tube_transform`]. The top edge of the fade is cut obliquely, and the
+/// strength runs in diagonal bands, so the turn is visible.
+pub(crate) fn wall_mesh(scn: &Scenario, centre: Pos, radius_m: f32) -> Mesh {
+    const ROWS: usize = 8;
+    let at = |i: usize| {
+        let a = i as f32 / RING_SEGMENTS as f32 * std::f32::consts::TAU;
+        let (s, c) = a.sin_cos();
+        Pos { x: centre.x + c * radius_m, y: centre.y + s * radius_m }
+    };
+    let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+    for i in 0..RING_SEGMENTS {
+        let h = scn.terrain.height_at(at(i));
+        lo = lo.min(h);
+        hi = hi.max(h);
+    }
+    let height = wall_height(radius_m);
+    let mut positions = Vec::with_capacity((RING_SEGMENTS + 1) * (ROWS + 1));
+    let mut colors: Vec<[f32; 4]> = Vec::with_capacity((RING_SEGMENTS + 1) * (ROWS + 1));
+    let mut indices = Vec::with_capacity(RING_SEGMENTS * 6 * ROWS);
+    for i in 0..=RING_SEGMENTS {
+        let a = i as f32 / RING_SEGMENTS as f32 * std::f32::consts::TAU;
+        let p = at(i);
+        // the fade ends higher on one side than the other: a slanted cut
+        let top = hi + height * (0.55 + 0.45 * a.cos());
+        for j in 0..=ROWS {
+            let f = j as f32 / ROWS as f32;
+            // below the crest, solid; above it, down to nothing at the slanted top
+            let y = if j == 0 { lo - 40.0 } else { hi + (top - hi) * (j as f32 / ROWS as f32) };
+            let fade = if j == 0 { 1.0 } else { (1.0 - f).powf(1.3) };
+            // diagonal bands: the strength depends on the angle and on the height together
+            let band = 0.8 + 0.2 * (a * 3.0 + f * 9.0).sin();
+            positions.push([p.x - centre.x, y, -(p.y - centre.y)]);
+            colors.push([1.0, 1.0, 1.0, (1.0 * fade * band).min(1.0)]);
+        }
+    }
+    let stride = ROWS as u32 + 1;
+    for i in 0..RING_SEGMENTS as u32 {
+        for j in 0..ROWS as u32 {
+            let a = i * stride + j;
+            let b = a + stride;
+            indices.extend_from_slice(&[a, b, a + 1, a + 1, b, b + 1]);
+        }
+    }
+    let n = positions.len();
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32, 0.0]; n]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
 /// A route drawn on the map: a ribbon `width_m` wide along `pts`, draped like
 /// the rings. With `dash_m`, drawn and skipped in turns of that length, so a
 /// proposed route reads apart from one being driven.

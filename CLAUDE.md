@@ -81,3 +81,18 @@ Python gestisce generazione e analisi; il motore Rust esistente esegue incendi e
 - **Gestione operatore**: nessun timeout di inattività. Avvio/riavvio manuale affidabili e funzionamento offline senza audio.
 
 **Prima azione autorizzata: solo fase 0, audit del repository. Non implementare feature finché l'audit non è stato revisionato.**
+
+## Screenshot di stati arbitrari (`KIOSK_SNAP`)
+
+Per controllare grafica e UX **non giocare una partita**: `kiosk/snap.rs` porta il gioco a uno stato descritto in una riga e salva il PNG (build `--release`, finestra vera: serve uno schermo). Non sostituisce `KIOSK_SHOT` (partita scriptata intera) né `KIOSK_SHOT_END` (solo il finale).
+
+```
+KIOSK_SNAP=<cartella> KIOSK_SNAP_SPEC='name=a,t=40,at=district:Castelvento,dist=700,pitch=-35;name=b,t=120,phase=fine' cargo run -p game --release
+```
+
+- Stati separati da `;`, campi da `,`. Chiavi: `name`, `case`, `t` (minuti simulati, headless), `plan` (`scripted`|`none`|`keep`), `prio`/`pre`/`evac` (quartieri per nome, separati da `+`), `phase` (`esegui` a mondo fermo|`pianifica`|`fine`), `at` (`home`|`fire`|`district:<nome>`|`post:<n>`|`unit:<n>`|`x:y` in metri), `dist`, `yaw`, `pitch` (gradi), `select` (scheda aperta).
+- Casi e quartieri disponibili sono stampati all'avvio (stderr). Il tempo va solo avanti: un `t` minore del precedente, o un altro `case`, rifà la partita da capo.
+- Il mondo è fermo (×0): si muovono solo le animazioni della UI. Le crisi sorte durante il salto sono scartate; il piano è quello scriptato (o quello dato con `prio`/`pre`/`evac`).
+- Ogni stato resta in posa 2 s prima dello scatto (overlay e camera devono assestarsi). Per le prove di grafica basta un solo avvio con più stati: più veloce di più `cargo run`.
+- Per i dettagli di inquadratura usare `at=district:…`/`post:…` con `dist` 600–900 e `pitch` −35…−45; `at=fire` per il fronte. Con `at=home` la camera resta quella di partenza.
+- Dopo un avvio con `KIOSK_SNAP` guardare sempre l'immagine (Read): l'esito `0 panic` nel log non dice com'è la grafica.
