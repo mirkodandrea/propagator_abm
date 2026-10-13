@@ -27,8 +27,8 @@ Una priorità alta **non garantisce protezione**. Il coordinatore non può ordin
 
 1. **Primo momento delle scelte (×1):** presentazione di fuoco, vento e paese; il fuoco è ancora piccolo, quindi è di fatto la pianificazione, ma il mondo è già vivo. Il giocatore ordina le priorità e può dare la preallerta. Sulla mappa appare il **piano proposto**. Finisce con «Conferma».
 2. **Esegui (×N):** il tempo scorre accelerato, a velocità scelta dal gioco (non dal giocatore). Il coordinatore adatta le postazioni all'interno delle priorità confermate; unità e cittadini operano nel mondo simulato. Gli eventi che non aprono un momento delle scelte (strada tagliata, case raggiunte, mezzi arrivati) arrivano come notizie.
-3. **Momento delle scelte chiesto dal giocatore (×1):** il fuoco continua ad avanzare. Il giocatore rivede le priorità, dà preallerte ed evacua i quartieri già autorizzati. Si esce con «Conferma» o «Annulla»; senza azioni, torna da solo a ×N dopo ~60 s reali. Limiti attuali (decisione 2026-10-09, da rivedere nei playtest perché ora il mondo non si ferma): al massimo 3 a partita, a ≥15 minuti simulati l'uno dall'altro.
-4. **Momento delle scelte aperto dalla sindaca (×1):** «Fornaci può essere evacuata». Countdown reale (~45 s); stesse scelte del punto 3. Non consuma le richieste del giocatore.
+3. **Momento delle scelte chiesto dal giocatore (×1):** il fuoco continua ad avanzare. Il giocatore rivede le priorità, dà preallerte ed evacua i quartieri già autorizzati. Si esce con «Conferma» o «Annulla»; senza azioni, torna da solo a ×N dopo ~60 s reali. **Nessun numero massimo** (2026-10-13: tolto il limite di 3 pause del 2026-10-09); resta solo l'intervallo di ≥15 minuti simulati dalla ripresa precedente, da rivedere nei playtest.
+4. **Momento delle scelte aperto dalla sindaca (×1):** «Fornaci può essere evacuata». Countdown reale (~45 s); stesse scelte del punto 3. Non conta per l'intervallo del giocatore.
 5. **Conferma o scadenza:** si applica l'ultimo **piano proposto valido**, compresi i comandi civili selezionati esplicitamente. Se non ha fatto nulla, rimane il piano precedente. La partita torna a ×N.
 6. **Conclusione:** il mondo mostra il risultato e un confronto con lo stesso incendio senza ordini. «Riprova» ripete lo stesso caso, «Altro incendio» cambia innesco/meteo sullo **stesso territorio**.
 
@@ -77,7 +77,7 @@ Il piano proposto si ricalcola usando lo stato più recente quando necessario; i
 - stato delle squadre **sulla mappa**, rotte attive e rotte proposte distinguibili;
 - indicazione del vento, del rischio e del tempo (×N / ×1, con countdown quando il momento delle scelte l'ha aperto la sindaca);
 - due azioni chiare per i cittadini: **Preallerta / Evacua**; «Evacua» visibilmente bloccato, con il motivo («serve l'autorizzazione della sindaca»), finché il quartiere non è autorizzato;
-- un pulsante **Decidi** durante ×N (con le richieste rimaste) e un solo pulsante centrale **Conferma** nel momento delle scelte;
+- un pulsante **Decidi** durante ×N (con l'attesa residua, se c'è) e un solo pulsante centrale **Conferma** nel momento delle scelte;
 - finale molto breve: persone rimaste in pericolo, case **colpite** (non chiamarle «distrutte» se è un proxy), effetto di almeno una scelta e possibilità di riprovare;
 - **tempi e motivi dallo stato reale:** arrivi dei mezzi da ciò che stanno facendo, non dall'anteprima; quando un luogo prioritario resta senza mezzi, il motivo si legge nella sua scheda, già prima della conferma;
 - **vegetazione riconoscibile a colpo d'occhio** (decisione 2026-10-09): pini marittimi (pineta), castagni (latifoglie), cespugli (macchia) e prateria distinti per forma e colore anche nella vista generale; una legenda breve dice perché contano (l'erba corre, la macchia brucia forte, il bosco è più lento). Solo grafica: il combustibile simulato non cambia.
