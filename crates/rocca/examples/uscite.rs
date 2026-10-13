@@ -50,6 +50,8 @@ fn main() -> anyhow::Result<()> {
     println!("|---|---|---|---|---|---|");
     for case in &cases {
         let mut g = Game::new(data, case, 1)?;
+        // the rules before 2026-10-13: any evacuation at any time (`examples/sindaca.rs` plays the mayor's)
+        g.mayor = None;
         let n = g.districts.len();
         let near = g.district_index(&g.case.near.clone()).unwrap_or(0);
         let plan = (0..n).fold(Plan::new(n).with_priorities(&[near]), |p, d| p.with_civil(d, Civil::Evacua));

@@ -9,6 +9,8 @@ fn main() -> anyhow::Result<()> {
     let a: Vec<String> = std::env::args().collect();
     for civil in [Civil::Nessuno, Civil::Preallerta, Civil::Evacua] {
         let mut g = Game::new("data".as_ref(), &a[1], 1)?;
+        // the rules before 2026-10-13: any evacuation at any time (`examples/sindaca.rs` plays the mayor's)
+        g.mayor = None;
         let d = g.district_index(&a[2]).unwrap();
         g.commit(Plan::new(g.districts.len()).with_civil(d, civil))?;
         let mut s = format!("{:<10}", format!("{civil:?}"));

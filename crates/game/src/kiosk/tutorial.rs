@@ -10,7 +10,7 @@ use egui::{Color32, RichText};
 
 use super::characters::{self, Mood, Portraits, Who};
 use super::ui::{chip_anchor, primary, screen, secondary, section_rect, the_fire, AMBER, FACE, ORANGE};
-use super::{Kiosk, Shot, MAX_PAUSES};
+use super::{Kiosk, Shot};
 use crate::sim::Sim;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -66,10 +66,10 @@ fn text(step: Step, k: &Kiosk, sim: &Sim) -> String {
             format!("{hello} {} Il cerchio arancione segna il punto in cui è partito.", the_fire(k, sim))
         }
         Step::Paesi => "Questi sono i paesi da proteggere. Su ogni etichetta vedi quanto è lontano il fuoco, i mezzi che ci lavorano e gli ordini dati alle famiglie.".into(),
-        Step::Scheda => "Cliccando su un paese si apre la sua scheda. «Difendi» ci manda autobotti e squadre. «Preallerta» fa preparare le famiglie in casa, «Evacua» le fa preparare e partire. Un ordine alle famiglie non si ritira.".into(),
+        Step::Scheda => "Cliccando su un paese si apre la sua scheda. «Difendi» ci manda autobotti e squadre. «Preallerta» fa preparare le famiglie in casa, «Evacua» le fa preparare e partire, ma solo dopo che la sindaca l'ha autorizzata. Un ordine alle famiglie non si ritira.".into(),
         Step::Piano => "Nella barra a destra c'è il tuo piano: i paesi da difendere, in ordine. Le squadre vanno dove indichi, se ci arrivano in tempo: essere primi non garantisce di essere salvati.".into(),
         Step::Avvia => format!(
-            "Quando sei pronto premi «Avvia»: il tempo comincia a scorrere. Per cambiare gli ordini servono le pause, e ne hai solo {MAX_PAUSES}. Se succede qualcosa di grave il tempo rallenta, ma non si ferma: avrai {:.0} secondi per decidere.",
+            "Quando sei pronto premi «Avvia»: il tempo scorre veloce. Per cambiare gli ordini premi «Decidi»: il tempo rallenta, ma il fuoco non si ferma. Quando un paese è in pericolo la sindaca ti autorizza a evacuarlo: avrai {:.0} secondi per decidere.",
             k.crisis_s
         ),
     }

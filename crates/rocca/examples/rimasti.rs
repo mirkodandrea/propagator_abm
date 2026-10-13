@@ -6,6 +6,8 @@ fn main() -> anyhow::Result<()> {
     let data = std::path::Path::new("data");
     for case in ["Coste2_gira", "Borgo2"] {
         let mut g = Game::new(data, case, 1)?;
+        // the rules before 2026-10-13: any evacuation at any time (`examples/sindaca.rs` plays the mayor's)
+        g.mayor = None;
         let n = g.districts.len();
         let borgo = g.district_index("Castelvento").unwrap();
         g.commit(Plan::new(n).with_priorities(&[borgo]).with_civil(borgo, Civil::Evacua))?;

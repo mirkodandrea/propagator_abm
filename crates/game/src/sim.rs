@@ -104,10 +104,7 @@ mod tests {
             sim.tick(frame_s).unwrap();
             if let Some(c) = sim.take_crisis() {
                 met.push(sim.time_s());
-                let d = match c.kind {
-                    rocca::crisis::Kind::Scoperto { district } | rocca::crisis::Kind::Previsione { district } | rocca::crisis::Kind::Vento { district } => district,
-                    rocca::crisis::Kind::MezzoPerso { .. } => continue,
-                };
+                let Some(d) = c.kind.district() else { continue };
                 let mut plan = sim.active.clone();
                 plan.priorities.retain(|&x| x != d);
                 plan.priorities.insert(0, d);

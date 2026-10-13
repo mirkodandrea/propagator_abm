@@ -59,6 +59,9 @@
     "broadcast": true,
     "by_priority": false
   },
+  "mayor": {
+    "lead_s": 1200
+  },
   "cases": [
     {
       "name": "Borgo1",

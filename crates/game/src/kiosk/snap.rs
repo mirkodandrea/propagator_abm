@@ -11,7 +11,7 @@
 //! | `plan`   | `scripted` (default: near place first, pre-alert there), `none`, `keep` |
 //! | `prio`   | district names in priority order, `+` between (overrides the plan)   |
 //! | `pre`    | districts with a pre-alert, `+` between                              |
-//! | `evac`   | districts with an evacuation order, `+` between                      |
+//! | `evac`   | districts evacuated at `t` if the mayor authorised them, `+` between |
 //! | `phase`  | `esegui` (default, time frozen), `pianifica`, `fine`                 |
 //! | `at`     | camera focus: `home`, `fire`, `district:<name>`, `post:<n>`, `unit:<n>`, `<x>:<y>` (metres) |
 //! | `dist`   | camera distance in metres (default: 1200, or the fire's span for `fire`) |
@@ -151,6 +151,7 @@ fn apply(st: &State, kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWrit
     kiosk.follow = false;
     kiosk.shot = None;
     kiosk.speed = 0.0;
+    kiosk.still = true;
     if kiosk.player.is_empty() {
         kiosk.player = "Giulia".into();
     }
@@ -160,7 +161,7 @@ fn apply(st: &State, kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWrit
     }
     kiosk.started = true;
     let n = sim.districts.len();
-    let idx = |l: &[String]| -> Vec<usize> { l.iter().filter_map(|s| sim.district_index(s)).collect() };
+    let idx = |sim: &Sim, l: &[String]| -> Vec<usize> { l.iter().filter_map(|s| sim.district_index(s)).collect() };
     if st.plan != "keep" {
         let near = sim.district_index(&sim.case.near).unwrap_or(0);
         let mut plan = Plan::new(n);
@@ -170,16 +171,13 @@ fn apply(st: &State, kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWrit
             plan = plan.with_priorities(&prio).with_civil(near, Civil::Preallerta);
         }
         if !st.prio.is_empty() {
-            let mut prio = idx(&st.prio);
+            let mut prio = idx(sim, &st.prio);
             let rest: Vec<usize> = (0..n).filter(|d| !prio.contains(d)).collect();
             prio.extend(rest);
             plan = plan.with_priorities(&prio);
         }
-        for d in idx(&st.pre) {
+        for d in idx(sim, &st.pre) {
             plan = plan.with_civil(d, Civil::Preallerta);
-        }
-        for d in idx(&st.evac) {
-            plan = plan.with_civil(d, Civil::Evacua);
         }
         kiosk.proposed = plan;
         commit(kiosk, sim);
@@ -187,16 +185,31 @@ fn apply(st: &State, kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWrit
     if let Err(e) = sim.run_until(t_s) {
         kiosk.error = Some(format!("{e:#}"));
     }
+    // the evacuations at `t`, where the mayor has authorised them by then
+    // (spec §1, 2026-10-13: none before her authorisation)
+    if st.plan != "keep" && !st.evac.is_empty() {
+        let mut plan = sim.active.clone();
+        for d in idx(sim, &st.evac) {
+            if sim.may_evacuate(d) {
+                plan = plan.with_civil(d, Civil::Evacua);
+            } else {
+                eprintln!("snap: {}: evacuazione di {} non ancora autorizzata a t={} min", st.name, sim.districts[d].name, st.t_min);
+            }
+        }
+        kiosk.proposed = plan;
+        commit(kiosk, sim);
+    }
     // a crisis raised on the way is nobody's to answer here
     let _ = sim.take_crisis();
     sim.generation += 1;
     kiosk.dirty = true;
-    kiosk.selected = st.select.as_deref().and_then(|s| sim.district_index(s));
     kiosk.enter(match st.phase.as_str() {
         "pianifica" => Phase::Pianifica,
         "fine" => Phase::Fine,
         _ => Phase::Esegui,
     });
+    // after the phase: entering one closes the opened chip
+    kiosk.selected = st.select.as_deref().and_then(|s| sim.district_index(s));
     // Ahead of the clock the quiet-time boost would not run the world: speed is 0.
 
     let on = |p: Pos| crate::frame::to_bevy(p, sim.scn.terrain.height_at(p));

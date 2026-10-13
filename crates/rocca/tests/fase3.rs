@@ -10,8 +10,12 @@ fn data() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data")
 }
 
+/// The effects of the orders, under the rules before 2026-10-13 (any
+/// evacuation at any time); the mayor's rule has its own tests below.
 fn game(case: &str) -> Game {
-    Game::new(&data(), case, 1).unwrap()
+    let mut g = Game::new(&data(), case, 1).unwrap();
+    g.mayor = None;
+    g
 }
 
 fn idx(g: &Game, name: &str) -> usize {
@@ -203,3 +207,31 @@ fn the_story_tells_what_happened() {
     assert!(other.iter().any(|l| l == "Nessun mezzo: non era tra le priorità."), "{other:?}");
 }
 
+
+/// The mayor's rule (`game.json`, 2026-10-13): no evacuation before her
+/// authorisation; she gives it as a crisis about one district, and after it
+/// that district's evacuation is accepted.
+#[test]
+fn evacuation_waits_for_the_mayor() {
+    let mut g = Game::new(&data(), "Rocco3", 1).unwrap();
+    assert!(g.mayor.is_some(), "game.json turns the mayor's rule on");
+    let n = g.districts.len();
+    let near = idx(&g, &g.case.near.clone());
+    let early = Plan::new(n).with_priorities(&[near]).with_civil(near, Civil::Evacua);
+    assert!(g.commit(early).is_err(), "evacuation before the authorisation");
+    g.commit(Plan::new(n).with_priorities(&[near]).with_civil(near, Civil::Preallerta)).unwrap();
+    let mut asked = None;
+    while asked.is_none() && g.time_s() < g.case.duration_s() {
+        g.step().unwrap();
+        if let Some(c) = g.take_crisis() {
+            assert!(matches!(c.kind, rocca::crisis::Kind::Autorizzazione { .. }), "with the mayor, her crises only: {c:?}");
+            asked = c.kind.district();
+        }
+    }
+    let d = asked.expect("Rocco3 threatens a district: the mayor authorises it");
+    assert!(g.may_evacuate(d) && g.authorised_at(d).is_some());
+    assert!(g.log.iter().any(|e| e.text.starts_with("la sindaca autorizza")));
+    let plan = g.active.clone().with_civil(d, Civil::Evacua);
+    g.commit(plan).unwrap();
+    assert_eq!(g.active.civil[d], Civil::Evacua);
+}

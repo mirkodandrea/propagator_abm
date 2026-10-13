@@ -64,6 +64,8 @@ fn main() -> anyhow::Result<()> {
             let without = Game::without_orders(data, case, seed)?;
             for civ in plans {
                 let mut g = Game::new(data, case, seed)?;
+                // the rules before 2026-10-13: any evacuation at any time (`examples/sindaca.rs` plays the mayor's)
+                g.mayor = None;
                 let n = g.districts.len();
                 // PRIORITA="San Rocco,Castelvento" overrides the playtest-7 best.
                 let prio: Vec<usize> = match std::env::var("PRIORITA") {

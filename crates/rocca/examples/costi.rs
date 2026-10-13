@@ -11,6 +11,8 @@ fn main() -> anyhow::Result<()> {
     println!("|---|---|---|---|---|---|");
     for at_min in [None, Some(0), Some(20), Some(40), Some(60), Some(90)] {
         let mut g = Game::new(data, &case, 1)?;
+        // the rules before 2026-10-13: any evacuation at any time (`examples/sindaca.rs` plays the mayor's)
+        g.mayor = None;
         let n = g.districts.len();
         let piano = g.district_index("Grilli").unwrap();
         let mut plan = Plan::new(n).with_priorities(&[piano]);

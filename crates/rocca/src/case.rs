@@ -93,6 +93,10 @@ pub struct Territory {
     /// over the households' own channels.
     #[serde(default)]
     pub messengers: Option<crate::Messengers>,
+    /// Evacuation needs the mayor's authorisation ([`crate::mayor`]);
+    /// absent, any district may be evacuated at any time.
+    #[serde(default)]
+    pub mayor: Option<crate::Mayor>,
     pub cases: Vec<Case>,
 }
 

@@ -238,9 +238,8 @@ pub fn draw(
         } else if k.tour.is_none() {
             speaker(ctx, k, &sim, &speech, faces);
         }
-        if k.phase == Phase::Pianifica && k.started {
-            paused_veil(ctx, map);
-        } else if k.phase == Phase::Crisi {
+        // the decision moment and the mayor's both run at ×1: the same frame
+        if (k.phase == Phase::Pianifica && k.started) || k.phase == Phase::Crisi {
             slow_motion_frame(ctx, map);
         }
         fire_marker(ctx, &sim, cam);
@@ -379,7 +378,7 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                     let crews = roster.len() - engines;
                     let n = |k: usize, one: &str, many: &str| if k == 1 { format!("1 {one}") } else { format!("{k} {many}") };
                     let text = format!(
-                        "Un incendio minaccia i nostri borghi e ci serve il tuo aiuto! Abbiamo {} e {} per {} borghi: non bastano per tutti. Decidi tu come usarli. Il tempo scorre da solo: puoi fermarlo poche volte per cambiare gli ordini.",
+                        "Un incendio minaccia i nostri borghi e ci serve il tuo aiuto! Abbiamo {} e {} per {} borghi: non bastano per tutti. Decidi tu come usarli. Il tempo scorre da solo e non si ferma: quando vuoi cambiare gli ordini rallentalo con «Decidi».",
                         n(engines, "autobotte", "autobotti"), n(crews, "squadra", "squadre"), sim.districts.len()
                     );
                     characters::says(ui, Who::Volontaria, &text, 600.0);
@@ -501,11 +500,7 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
 
 /// The district a crisis is about, if any.
 fn crisis_district(k: &Kiosk) -> Option<usize> {
-    use rocca::crisis::Kind;
-    match k.crisis.as_ref()?.kind {
-        Kind::Scoperto { district } | Kind::Previsione { district } | Kind::Vento { district } => Some(district),
-        Kind::MezzoPerso { .. } => None,
-    }
+    k.crisis.as_ref()?.kind.district()
 }
 
 /// Size of the portraits bottom left.
@@ -541,10 +536,10 @@ fn speaker(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, speech: &Speech, faces
             &tip
         }
         None if k.phase == Phase::Pianifica => {
-            let text = if sim.time_s() <= rocca::STEP_S {
+            let text = if !k.begun {
                 format!("{} {}", the_fire(k, sim), characters::to(&k.player, "Scegli chi difendere per primo e chi avvisare, poi premi «Avvia»."))
             } else {
-                characters::to(&k.player, "Siamo in pausa: il fuoco è fermo. Cambia gli ordini, poi premi «Riprendi».")
+                characters::to(&k.player, "Il tempo è rallentato, ma il fuoco avanza. Cambia gli ordini, poi premi «Conferma».")
             };
             tip = Line { who: Who::Volontaria, mood: Mood::Calmo, text };
             &tip
@@ -666,6 +661,17 @@ fn crisis_choice(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
                 });
             });
             ui.label(RichText::new("Il tempo è rallentato, non fermo: il fuoco avanza ancora. Se non scegli, allo scadere resta il piano attuale.").size(15.0).color(ORANGE));
+            // the other districts the mayor has authorised and nobody has evacuated yet
+            let more: Vec<usize> = (0..sim.districts.len())
+                .filter(|&x| Some(x) != d && sim.mayor.is_some() && sim.may_evacuate(x) && sim.active.civil[x] != Civil::Evacua)
+                .collect();
+            for x in more {
+                let on = k.proposed.civil[x] == Civil::Evacua;
+                if icons::button(ui, Icon::Exit, &format!("Evacua anche {}", sim.districts[x].name), on, BLUE, true).clicked() {
+                    k.proposed.civil[x] = if on { sim.active.civil[x] } else { Civil::Evacua };
+                    k.dirty = true;
+                }
+            }
             ui.horizontal_wrapped(|ui| {
                 // A unit lost: the choice is who comes first with the units
                 // left (playtest 3: a countdown with only «Continua» was a
@@ -697,7 +703,8 @@ fn crisis_choice(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
                     for (o, icon, colour) in [(Civil::Preallerta, Icon::Bell, AMBER), (Civil::Evacua, Icon::Exit, BLUE)] {
                         let on = k.proposed.civil[d] == o || active >= o;
                         let label = if o == Civil::Preallerta { "Preallerta" } else { "Evacua" };
-                        if icons::button(ui, icon, label, on, colour, active < o).clicked() {
+                        let allowed = o != Civil::Evacua || sim.may_evacuate(d);
+                        if icons::button(ui, icon, label, on, colour, active < o && allowed).clicked() {
                             k.proposed.civil[d] = if k.proposed.civil[d] == o { active } else { o };
                             k.dirty = true;
                         }
@@ -1357,12 +1364,10 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         ui.label(RichText::new(format!("Avvisate {heard} famiglie su {all}: le pattuglie bussano porta a porta")).size(14.0).color(GREY));
                     }
                     let wait = k.pause_wait_min(sim.time_s());
-                    let text = if k.pauses_left == 0 {
-                        "Nessuna pausa rimasta: gli ordini restano questi".to_string()
-                    } else if wait > 0 {
-                        format!("Ordini: si cambiano in pausa, tra {wait} min")
+                    let text = if wait > 0 {
+                        format!("Ordini: si cambiano con «Decidi», tra {wait} min")
                     } else {
-                        "Ordini: metti in pausa per cambiarli".to_string()
+                        "Ordini: premi «Decidi» per cambiarli".to_string()
                     };
                     ui.label(RichText::new(text).size(14.0).color(AMBER));
                     return;
@@ -1386,7 +1391,9 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                         let active = sim.active.civil[d];
                         for (c, icon, label, colour) in [(Civil::Preallerta, Icon::Bell, "Preallerta", AMBER), (Civil::Evacua, Icon::Exit, "Evacua", BLUE)] {
                             let on = civil[d] == c || (active >= c && civil[d] <= c);
-                            if icons::tall_button(ui, icon, label, on, colour, active < c, w).clicked() {
+                            // the evacuation is the mayor's to authorise (spec §1)
+                            let allowed = c != Civil::Evacua || sim.may_evacuate(d);
+                            if icons::tall_button(ui, icon, label, on, colour, active < c && allowed, w).clicked() {
                                 civil[d] = if civil[d] == c { active } else { c.max(active) };
                                 changed = true;
                             }
@@ -1406,6 +1413,9 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     // playtest 6: grey buttons with no reason given
                     ui.label(RichText::new("Scegli la difficoltà per cominciare.").size(14.0).strong().color(AMBER));
                 } else {
+                    if !sim.may_evacuate(d) {
+                        ui.label(RichText::new("«Evacua» serve l'autorizzazione della sindaca: arriva quando il fuoco minaccia il paese.").size(14.0).strong().color(BLUE));
+                    }
                     if (civil[d] != sim.active.civil[d] || next != now) && k.phase != Phase::Pianifica {
                         pill(ui, "da confermare", AMBER);
                     }
@@ -1462,8 +1472,10 @@ fn plan(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim) {
                     ("nessun ordine ancora", Color32::from_gray(150))
                 } else if pending && k.phase != Phase::Pianifica {
                     ("da confermare", AMBER)
-                } else if pending {
+                } else if pending && !k.begun {
                     ("proposta: parte con «Avvia»", AMBER)
+                } else if pending {
+                    ("proposta: parte con «Conferma»", AMBER)
                 } else {
                     ("in vigore", GREEN)
                 };
@@ -1714,38 +1726,49 @@ fn proposal(ui: &mut egui::Ui, k: &Kiosk, sim: &Sim) {
         }
 }
 
-/// The one button, play / pause like a video: «Avvia» or «Riprendi» while
-/// paused, «Pausa» while the time runs (user, 2026-10-09). Before it, the
-/// gate (the opening screen).
+/// The time's buttons (spec §2, 2026-10-13: the world never stops for the
+/// player). «Avvia» confirms the first plan; while the time runs, «Decidi»
+/// opens a decision moment at ×1, at most one every [`super::PAUSE_GAP_S`]
+/// simulated; in it, «Conferma» applies the proposed plan and «Annulla»
+/// drops it. Before it, the gate (the opening screen).
 fn time_button(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
     let wait = k.pause_wait_min(sim.time_s());
-    let left = if k.pauses_left == 1 { "l'ultima".to_string() } else { format!("{} rimaste", k.pauses_left) };
-    let pause_label = if wait > 0 { format!("Pausa tra {wait} min · {left}") } else { format!("Pausa · {left}") };
+    let decide_label = if wait > 0 { format!("Decidi tra {wait} min") } else { "Decidi".to_string() };
     let (icon, label, fill) = match k.phase {
-        Phase::Pianifica if sim.time_s() > rocca::STEP_S => (Some(Icon::Play), "Riprendi", AMBER),
+        Phase::Pianifica if k.begun => (Some(Icon::Check), "Conferma", AMBER),
         Phase::Pianifica => (Some(Icon::Play), "Avvia", AMBER),
-        Phase::Esegui if k.pauses_left == 0 => (None, "Nessuna pausa rimasta", Color32::from_gray(90)),
-        Phase::Esegui if wait > 0 => (Some(Icon::Pause), &*pause_label, Color32::from_gray(90)),
-        Phase::Esegui => (Some(Icon::Pause), &*pause_label, Color32::from_gray(200)),
+        Phase::Esegui if wait > 0 => (Some(Icon::Pause), &*decide_label, Color32::from_gray(90)),
+        Phase::Esegui => (Some(Icon::Pause), &*decide_label, Color32::from_gray(200)),
         Phase::Crisi | Phase::Fine => return,
     };
     {
         ui.vertical_centered(|ui| {
             if k.phase == Phase::Esegui {
-                ui.label(RichText::new("Per cambiare gli ordini metti in pausa").size(16.0).color(Color32::WHITE));
+                ui.label(RichText::new("Per cambiare gli ordini premi «Decidi»: il tempo rallenta").size(16.0).color(Color32::WHITE));
             }
             if big_button(ui, icon, label, fill).clicked() {
                 match k.phase {
                     Phase::Pianifica => {
                         commit(k, sim);
                         k.resumed_at_s = sim.time_s();
+                        k.begun = true;
                         k.enter(Phase::Esegui);
                     }
-                    Phase::Esegui if k.pauses_left > 0 && wait == 0 => {
-                        k.pauses_left -= 1;
+                    Phase::Esegui if wait == 0 => {
+                        k.proposed = sim.active.clone();
+                        k.dirty = true;
                         k.enter(Phase::Pianifica);
                     }
                     _ => {}
+                }
+            }
+            if k.phase == Phase::Pianifica && k.begun {
+                ui.add_space(4.0);
+                if ui.add_sized([ui.available_width(), 36.0], secondary("Annulla: lascia gli ordini come sono")).clicked() {
+                    k.proposed = sim.active.clone();
+                    k.dirty = true;
+                    k.resumed_at_s = sim.time_s();
+                    k.enter(Phase::Esegui);
                 }
             }
         });
@@ -1759,7 +1782,7 @@ fn big_button(ui: &mut egui::Ui, icon: Option<Icon>, label: &str, fill: Color32)
     let p = ui.painter();
     p.rect_filled(r, 10.0, if resp.hovered() { fill.gamma_multiply(0.85) } else { fill });
     let icon_w = if icon.is_some() { 40.0 } else { 0.0 };
-    // a long label («Pausa tra 14 min · 2 rimaste») shrinks to fit
+    // a long label shrinks to fit
     let mut g = p.layout_no_wrap(label.to_string(), egui::FontId::proportional(26.0), Color32::BLACK);
     if g.size().x + icon_w > size.x - 24.0 {
         let fit = 26.0 * (size.x - 24.0 - icon_w) / g.size().x;
@@ -1774,12 +1797,6 @@ fn big_button(ui: &mut egui::Ui, icon: Option<Icon>, label: &str, fill: Color32)
         p.rect_stroke(r.expand(2.0), 11.0, egui::Stroke::new(3.0, Color32::WHITE));
     }
     icons::pointing(resp)
-}
-
-/// While paused, the map is dimmed, so a pause never passes for a turn
-/// waiting to be played; the side bar says so.
-fn paused_veil(ctx: &egui::Context, map: egui::Rect) {
-    ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("velo"))).rect_filled(map, 0.0, Color32::from_black_alpha(90));
 }
 
 /// Simulated seconds the start of the fire stays marked on the map.
@@ -1810,8 +1827,8 @@ fn fire_marker(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform))
 }
 
 
-/// At a crisis the time slows but does not stop: an orange frame round the
-/// map, like a slow-motion shot.
+/// In a decision moment the time slows but does not stop: an orange frame
+/// round the map, like a slow-motion shot.
 fn slow_motion_frame(ctx: &egui::Context, map: egui::Rect) {
     let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("rallentatore")));
     for (w, a) in [(18.0, 60u8), (8.0, 120)] {
@@ -1831,7 +1848,7 @@ fn events(ui: &mut egui::Ui, sim: &Sim) {
                 (Icon::Alert, ORANGE)
             } else if e.text.contains("nessun mezzo") || e.text.contains("mezzi insufficienti") || e.text.contains("non possono avvicinarsi") {
                 (Icon::Engine, ORANGE)
-            } else if e.text.starts_with("evacuazione") { (Icon::Exit, BLUE) }
+            } else if e.text.starts_with("evacuazione") || e.text.starts_with("la sindaca autorizza") { (Icon::Exit, BLUE) }
             else if e.text.starts_with("preallerta") { (Icon::Bell, AMBER) }
             else { (Icon::Engine, GREEN) };
             ui.horizontal_top(|ui| {
@@ -1872,16 +1889,19 @@ pub(super) fn section_rect(ctx: &egui::Context, name: &str) -> Option<egui::Rect
     ctx.data(|d| d.get_temp(egui::Id::new(("sezione", name))))
 }
 
-/// The state of the game as a coloured strip: paused (amber), running
-/// (green), a crisis (orange, blinking in the last seconds).
+/// The state of the game as a coloured strip: a decision moment (amber),
+/// running (green), the mayor's authorisation (orange, blinking in the last
+/// seconds), stopped by the operator (grey).
 fn pace(ui: &mut egui::Ui, k: &Kiosk, sim: &Sim) {
     let left = (k.crisis_s - k.phase_t).max(0.0).ceil();
     let (icon, colour, text) = match k.phase {
-        Phase::Pianifica if sim.time_s() > rocca::STEP_S => (Icon::Pause, AMBER, "In pausa: il fuoco è fermo finché non premi «Riprendi».".to_string()),
-        Phase::Pianifica => (Icon::Pause, AMBER, "In pausa: prepara gli ordini, poi premi «Avvia».".to_string()),
+        _ if k.frozen => (Icon::Pause, GREY, "Fermato dall'operatore".to_string()),
+        Phase::Pianifica if !k.started => (Icon::Pause, AMBER, "Il fuoco aspetta: scegli la difficoltà.".to_string()),
+        Phase::Pianifica if k.begun => (Icon::Pause, AMBER, "Decidi · tempo rallentato ×1: cambia gli ordini, poi «Conferma».".to_string()),
+        Phase::Pianifica => (Icon::Pause, AMBER, "Tempo rallentato ×1: prepara gli ordini, poi premi «Avvia».".to_string()),
         Phase::Esegui if sim.speed > k.speed => (Icon::Fast, GREEN, format!("Il tempo scorre · non succede nulla, ×{:.0}", sim.speed)),
         Phase::Esegui => (Icon::Play, GREEN, format!("Il tempo scorre · ×{:.0}", sim.speed)),
-        Phase::Crisi => (Icon::Alert, ORANGE, format!("DECISIONE URGENTE · {left:.0} s · tempo rallentato")),
+        Phase::Crisi => (Icon::Alert, ORANGE, format!("LA SINDACA ASPETTA · {left:.0} s · tempo rallentato")),
         Phase::Fine => (Icon::Check, GREY, "Concluso".to_string()),
     };
     // blinking in the last seconds of a crisis (playtest 6: one ran out unseen)
@@ -1918,17 +1938,9 @@ fn status(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim, cam: (&Camera, &GlobalTra
     ui.painter().rect_filled(r, 4.0, Color32::from_gray(60));
     ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(r.width() * frac, r.height())), 4.0, ORANGE);
     ui.add_space(8.0);
+    // the game chooses the speed (spec §2, 2026-10-13); the operator can
+    // change it from the menu
     pace(ui, k, sim);
-    // how fast the time runs: a few presets, any phase but the crisis (×1)
-    if k.phase != Phase::Crisi {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("velocità").size(15.0).color(GREY));
-            for v in [20.0, 40.0, 80.0, 160.0, 300.0] {
-                ui.selectable_value(&mut k.speed, v, RichText::new(format!("×{v:.0}")).size(15.0));
-            }
-        });
-    }
 }
 
 /// During the game, everything but the map, top to bottom (user,
@@ -2217,7 +2229,7 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             ui.add_space(14.0);
             ui.vertical(|ui| {
             ui.set_width(BOARD_W);
-            card(AMBER).show(ui, |ui| ui.vertical(|ui| leaderboard(ui, k, sim)));
+            card(AMBER).show(ui, |ui| ui.vertical(|ui| stars_and_players(ui, k, sim)));
             ui.add_space(10.0);
             order_reviews(ui, sim);
             // a real-world note, not advice on the game
@@ -2282,80 +2294,119 @@ fn order_reviews(ui: &mut egui::Ui, sim: &Sim) {
     });
 }
 
-/// Beside the debrief: the score, made of the debrief's numbers
-/// (`rocca::score`), three letters to enter the board, and the board.
-/// Width of the score panel beside the debrief.
+/// Width of the stars panel beside the debrief.
 const BOARD_W: f32 = 310.0;
 
-fn leaderboard(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim) {
+/// One star, filled or empty, `size` across.
+fn star(ui: &mut egui::Ui, filled: bool, size: f32) {
+    let (r, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    let c = r.center() + egui::vec2(0.0, size * 0.05);
+    let pts: Vec<egui::Pos2> = (0..10)
+        .map(|i| {
+            let a = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 5.0;
+            let rad = if i % 2 == 0 { size * 0.5 } else { size * 0.2 };
+            c + egui::vec2(a.cos(), a.sin()) * rad
+        })
+        .collect();
+    let fill = if filled { AMBER } else { Color32::from_gray(70) };
+    let p = ui.painter();
+    // a star is not convex: the inner pentagon, then a triangle per point
+    p.add(egui::Shape::convex_polygon((0..5).map(|i| pts[2 * i + 1]).collect(), fill, egui::Stroke::NONE));
+    for i in 0..5 {
+        p.add(egui::Shape::convex_polygon(vec![pts[2 * i], pts[(2 * i + 1) % 10], pts[(2 * i + 9) % 10]], fill, egui::Stroke::NONE));
+    }
+}
+
+/// The colour that tells the levels apart in the list of the last players.
+fn level_colour(name: &str) -> Color32 {
+    match name {
+        "Facile" => GREEN,
+        "Medio" => AMBER,
+        "Esperto" => RED,
+        _ => Color32::from_gray(200),
+    }
+}
+
+/// Beside the debrief (spec §5, 2026-10-13): the four stars, each with why,
+/// from the game's facts (`rocca::score::stars`); then the last players, the
+/// level well in sight, no leaderboard.
+fn stars_and_players(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim) {
+    ui.set_width(BOARD_W - 28.0);
     let base = k.baseline();
-    let score = match base.as_ref() {
-        Some(Ok(b)) => Some(rocca::score::score(&sim.outcome(), b)),
-        _ => None,
+    let Some(Ok(b)) = base.as_ref() else {
+        ui.label(RichText::new("Stelle: calcolo…").size(17.0).color(GREY));
+        return;
     };
-    {
-        {
-            ui.set_width(BOARD_W - 28.0);
-            let Some(s) = score else {
-                ui.label(RichText::new("Punteggio: calcolo…").size(17.0).color(GREY));
-                return;
-            };
-            ui.label(RichText::new("Il tuo punteggio").size(16.0).color(GREY));
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(s.total.to_string()).size(44.0).strong().color(AMBER));
-                ui.label(RichText::new(format!("su {}", rocca::score::MAX)).size(16.0).color(GREY));
-            });
-            // what it is made of: shares of what the fire would have taken
-            // (playtest 6: «8 salvate su 11» did not say 11 of what)
-            let line = |ui: &mut egui::Ui, text: String| { ui.add(egui::Label::new(RichText::new(text).size(14.0).color(GREY)).wrap()); };
-            if s.families_at_risk > 0 {
-                line(ui, format!("Senza ordini il fuoco avrebbe colto in casa {} famiglie: tu ne hai salvate {}.", s.families_at_risk, s.families));
-            }
-            if s.homes_at_risk > 0 {
-                line(ui, format!("Avrebbe colpito {} case: tu ne hai risparmiate {}.", s.homes_at_risk, s.homes));
-            }
-            let w = (rocca::score::FAMILY_WEIGHT * 100.0).round();
-            ui.add(egui::Label::new(RichText::new(format!("Punti: {w:.0} % dalle famiglie salvate, {:.0} % dalle case.", 100.0 - w)).size(13.0).color(GREY)).wrap());
-            if s.total == 0 {
-                ui.label(RichText::new("Nessun punto: è andata come senza ordini.").size(14.0).color(GREY));
-            }
-            ui.add_space(8.0);
-            // the name given at the start goes on the board by itself, once
-            // a game (user, 2026-10-12: no more initials to choose)
-            if k.placed.is_none() {
-                let name = if k.player.is_empty() { "Anonimo".to_string() } else { k.player.clone() };
-                let at = k.board.insert(rocca::score::Entry { name, score: s.total, case: sim.case.name.clone() });
-                k.placed = Some(at);
-                if at.is_some() {
-                    if let Err(e) = board::save(&k.board) {
-                        k.error = Some(e);
+    let s = rocca::score::score(&sim.outcome(), b);
+    let st = rocca::score::stars(&s, sim.timing(), sim.measure());
+    let needless = sim.needless_evacuations();
+    let fam = |n: usize| if n == 1 { "1 famiglia".to_string() } else { format!("{n} famiglie") };
+    let rows = [
+        ("Persone", st.persone, if s.families_at_risk > 0 {
+            format!("Senza ordini il fuoco avrebbe colto in casa {}: ne hai salvate {}.", fam(s.families_at_risk), s.families)
+        } else {
+            "Nessuna famiglia era in pericolo in casa.".to_string()
+        }),
+        ("Case", st.case, if s.homes_at_risk > 0 {
+            format!("Senza difesa il fuoco avrebbe colpito {} case: ne hai risparmiate {}.", s.homes_at_risk, s.homes)
+        } else {
+            "Nessuna casa era in pericolo.".to_string()
+        }),
+        ("Tempismo", st.tempismo, if st.tempismo.is_some() {
+            "Quanto prima del fuoco hai avvisato i paesi che ha raggiunto: pieno da 30 minuti prima.".to_string()
+        } else {
+            "Il fuoco non è arrivato alle case di nessun paese.".to_string()
+        }),
+        ("Misura", Some(st.misura), if needless == 0 {
+            "Nessuna famiglia mandata in strada senza che il fuoco arrivasse.".to_string()
+        } else {
+            format!("{} in strada da paesi dove il fuoco non è arrivato alle case.", fam(needless))
+        }),
+    ];
+    ui.label(RichText::new("Le tue stelle").size(18.0).strong().color(Color32::WHITE));
+    for (name, n, why) in rows {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(name).size(16.0).strong().color(Color32::WHITE));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| match n {
+                // right to left: the empty stars first
+                Some(n) => {
+                    for i in (0..5).rev() {
+                        star(ui, i < n as usize, 20.0);
                     }
                 }
-            }
-            if let Some(Some(at)) = k.placed {
-                ui.label(RichText::new(format!("Sei in classifica, al {}° posto!", at + 1)).size(15.0).strong().color(AMBER));
-                ui.add_space(8.0);
-            }
-            ui.label(RichText::new("Classifica").size(18.0).strong().color(Color32::WHITE));
-            if k.board.entries.is_empty() {
-                ui.label(RichText::new("Ancora vuota: sii la prima o il primo!").size(14.0).color(GREY));
-            }
-            for (i, e) in k.board.entries.iter().enumerate() {
-                let mine = k.placed == Some(Some(i));
-                let colour = if mine { AMBER } else { Color32::WHITE };
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("{:>2}.", i + 1)).size(16.0).monospace().color(GREY));
-                    ui.label(RichText::new(&e.name).size(16.0).strong().color(colour));
-                    // one board for every level: say which each game was
-                    if let Some(l) = k.territory.levels.iter().find(|l| l.case == e.case) {
-                        ui.label(RichText::new(&l.name).size(13.0).color(GREY));
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(RichText::new(e.score.to_string()).size(16.0).monospace().color(colour));
-                    });
-                });
-            }
+                None => {
+                    ui.label(RichText::new("—").size(16.0).color(GREY));
+                }
+            });
+        });
+        ui.add(egui::Label::new(RichText::new(why).size(13.0).color(GREY)).wrap());
+    }
+    // this game joins the list by itself, once (the name given at the start)
+    let level = k.level.and_then(|i| k.territory.levels.get(i)).map_or_else(|| sim.case.name.clone(), |l| l.name.clone());
+    if !k.saved {
+        let name = if k.player.is_empty() { "Anonimo".to_string() } else { k.player.clone() };
+        k.board.push(rocca::score::Played { name, level, stars: st.all() });
+        k.saved = true;
+        if let Err(e) = board::save(&k.board) {
+            k.error = Some(e);
         }
+    }
+    ui.add_space(10.0);
+    ui.label(RichText::new("Ultimi giocatori").size(18.0).strong().color(Color32::WHITE));
+    ui.label(RichText::new("stelle: persone · case · tempismo · misura").size(12.0).color(GREY));
+    for (i, e) in k.board.entries.iter().enumerate() {
+        let colour = if i == 0 { AMBER } else { Color32::WHITE };
+        // the stars first, right-aligned, so a long name is what gets cut
+        let n = |x: Option<u8>| x.map_or("–".to_string(), |x| x.to_string());
+        let text = e.stars.iter().map(|&x| n(x)).collect::<Vec<_>>().join("·");
+        ui.horizontal(|ui| {
+            pill(ui, &e.level, level_colour(&e.level));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(RichText::new(text).size(15.0).monospace().color(colour));
+                ui.add(egui::Label::new(RichText::new(&e.name).size(16.0).strong().color(colour)).truncate());
+            });
+        });
     }
 }
 
@@ -2399,34 +2450,34 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
                         to_title(k, sim, restarted);
                     }
                 }
-                if k.phase == Phase::Esegui && ui.add(secondary("Pausa")).clicked() {
-                    k.enter(Phase::Pianifica);
+                // the one way the world stands still (spec §2)
+                if k.phase != Phase::Fine && ui.add(secondary(if k.frozen { "Riprendi il mondo" } else { "Ferma il mondo" })).clicked() {
+                    k.frozen = !k.frozen;
                 }
             });
             ui.horizontal(|ui| {
                 ui.label("velocità ×");
                 ui.add(egui::DragValue::new(&mut k.speed).range(1.0..=300.0));
-                ui.label("secondi per le crisi");
-                for s in [25.0, 40.0, 60.0] {
+                ui.label("secondi per la sindaca");
+                for s in [30.0, 45.0, 60.0] {
                     ui.selectable_value(&mut k.crisis_s, s, format!("{s:.0}"));
                 }
             });
             ui.horizontal(|ui| {
-                // the board is emptied only on a second press
-                let label = if k.board_reset_armed.is_some() { "Sicuro? Premi di nuovo: la classifica si cancella" } else { "Azzera classifica" };
+                // the list is emptied only on a second press
+                let label = if k.board_reset_armed.is_some() { "Sicuro? Premi di nuovo: l'elenco si cancella" } else { "Azzera elenco ultimi giocatori" };
                 if ui.add(secondary(label)).clicked() {
                     if k.board_reset_armed.is_none() {
                         k.board_reset_armed = Some(now);
                     } else {
                         k.board_reset_armed = None;
-                        k.board = rocca::score::Board::default();
-                        k.placed = None;
+                        k.board = rocca::score::Recent::default();
                         if let Err(e) = board::save(&k.board) {
                             k.error = Some(e);
                         }
                     }
                 }
-                ui.label(RichText::new(format!("{} in classifica", k.board.entries.len())).color(GREY));
+                ui.label(RichText::new(format!("{} nell'elenco", k.board.entries.len())).color(GREY));
             });
             ui.horizontal(|ui| {
                 use crate::quality::Graphics;

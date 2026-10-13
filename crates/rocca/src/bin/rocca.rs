@@ -2,10 +2,12 @@
 //!
 //!   rocca <caso> [--seme N] [--minuti M] [--priorita Borgo,Coste]
 //!                [--civili "0:Coste=preallerta,30:Coste=evacua"]
-//!                [--b-priorita ...] [--b-civili ...] [--dati data] [--registro]
+//!                [--b-priorita ...] [--b-civili ...] [--dati data] [--registro] [--senza-sindaca]
 //!
 //! Plan A, and plan B if any `--b-*` is given (B = A plus what they change),
 //! on the same fire, seed and territory. Civil orders are given at their minute; priorities from T+0.
+//! An evacuation the mayor has not authorised yet (`rocca::mayor`) waits for
+//! her authorisation; `--senza-sindaca` plays the rules before 2026-10-13.
 //! Ends with the kiosk's score of each plan, against the same fire with no orders.
 
 use std::path::PathBuf;
@@ -34,24 +36,33 @@ fn parse_civil(s: &str) -> Result<Vec<(i64, String, Civil)>> {
     Ok(out)
 }
 
-fn play(data: &std::path::Path, case: &str, seed: u64, minutes: i64, s: &Script) -> Result<(Game, Outcome)> {
+fn play(data: &std::path::Path, case: &str, seed: u64, minutes: i64, s: &Script, mayor: bool) -> Result<(Game, Outcome)> {
     let mut g = Game::new(data, case, seed)?;
+    if !mayor {
+        g.mayor = None;
+    }
     let idx = |g: &Game, n: &str| g.district_index(n).with_context(|| format!("quartiere {n:?} sconosciuto"));
     let prio: Vec<usize> = s.priorities.iter().map(|n| idx(&g, n)).collect::<Result<_>>()?;
     let mut plan = Plan::new(g.districts.len()).with_priorities(&prio);
+    // the orders whose minute has come, given as soon as they are allowed
+    let mut due: Vec<(usize, Civil)> = vec![];
     let mut next = 0;
-    while next < s.civil.len() && s.civil[next].0 == 0 {
-        plan = plan.with_civil(idx(&g, &s.civil[next].1)?, s.civil[next].2);
-        next += 1;
-    }
-    g.commit(plan.clone())?;
     let end = minutes * 60;
-    while g.time_s() < end {
-        if next < s.civil.len() && s.civil[next].0 <= g.time_s() {
-            plan = plan.with_civil(idx(&g, &s.civil[next].1)?, s.civil[next].2);
+    loop {
+        while next < s.civil.len() && s.civil[next].0 <= g.time_s() {
+            due.push((idx(&g, &s.civil[next].1)?, s.civil[next].2));
             next += 1;
+        }
+        let ready: Vec<(usize, Civil)> = due.iter().copied().filter(|&(d, c)| c != Civil::Evacua || g.may_evacuate(d)).collect();
+        if !ready.is_empty() || g.time_s() <= rocca::STEP_S {
+            due.retain(|x| !ready.contains(x));
+            for (d, c) in ready {
+                plan = plan.with_civil(d, c);
+            }
             g.commit(plan.clone())?;
-            continue;
+        }
+        if g.time_s() >= end {
+            break;
         }
         g.step()?;
     }
@@ -89,6 +100,7 @@ fn main() -> Result<()> {
     let mut a = Script { priorities: vec![], civil: vec![] };
     let mut b = Script { priorities: vec![], civil: vec![] };
     let (mut has_b, mut registro) = (false, false);
+    let mut mayor = true;
     let (mut b_prio, mut b_civil) = (false, false);
     let mut it = args.iter();
     while let Some(x) = it.next() {
@@ -110,6 +122,7 @@ fn main() -> Result<()> {
                 b.civil = parse_civil(&val()?)?
             }
             "--registro" => registro = true,
+            "--senza-sindaca" => mayor = false,
             c if !c.starts_with("--") => case = Some(c.to_string()),
             c => bail!("opzione sconosciuta {c}"),
         }
@@ -123,8 +136,8 @@ fn main() -> Result<()> {
     }
     let case = case.context("uso: rocca <caso> [opzioni]; vedi l'intestazione di src/bin/rocca.rs")?;
     let t = std::time::Instant::now();
-    let (ga, oa) = play(&data, &case, seed, minutes, &a)?;
-    let ob = if has_b { Some(play(&data, &case, seed, minutes, &b)?.1) } else { None };
+    let (ga, oa) = play(&data, &case, seed, minutes, &a, mayor)?;
+    let ob = if has_b { Some(play(&data, &case, seed, minutes, &b, mayor)?.1) } else { None };
     println!("caso {case}, seme {seed}, {minutes} min simulati ({:.1} s)", t.elapsed().as_secs_f32());
     if registro {
         for e in &ga.log {

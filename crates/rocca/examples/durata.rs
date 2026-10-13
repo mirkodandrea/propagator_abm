@@ -25,6 +25,8 @@ fn main() -> anyhow::Result<()> {
     for (level, case, seed) in levels.iter().flat_map(|l| (1..=3).map(move |s| (l.name.as_str(), l.case.as_str(), s))) {
         for (base, quiet_speed) in PACES {
             let mut g = Game::new(data, case, seed)?;
+            // the rules before 2026-10-13: any evacuation at any time (`examples/sindaca.rs` plays the mayor's)
+            g.mayor = None;
             let n = g.districts.len();
             let near = g.district_index(&g.case.near.clone()).unwrap_or(0);
             g.commit(Plan::new(n).with_priorities(&[near]).with_civil(near, Civil::Evacua))?;

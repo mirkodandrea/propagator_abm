@@ -63,3 +63,17 @@ Dati per partita: [`tutto.md`](tutto.md) e [`grezzi.csv`](grezzi.csv).
 
 1. Decidi il criterio di Misura.
 2. Poi attivo la regola nel chiosco: «Evacua» bloccato con il motivo, la sindaca che apre il momento a ×1, «Decidi» a ×1, finale a stelle, ultimi 8 giocatori.
+
+## Nel chiosco (2026-10-13)
+
+Regola attiva in `game.json` (`"mayor": {"lead_s": 1200}`, anche in `tools/factory/cases.py`). Prova: `KIOSK_CASE=Borgo2_gira KIOSK_SPEED=300 KIOSK_SHOT=out/sindaca_shot target/release/game`, più `KIOSK_SNAP` per la scheda.
+
+- **Momento delle scelte a ×1** al posto delle pause: «Avvia» all'inizio, poi «Decidi» (nessun limite, ≥ 15 min simulati tra due), «Conferma» / «Annulla». Si torna da soli a ×N dopo 60 s se non si cambia nulla. Il giocatore non sceglie più la velocità. L'operatore può fermare il mondo da F2.
+- **La sindaca apre la crisi** ([immagine](chiosco_sindaca.jpg)): rischio, tempo, famiglie in casa e costo. Countdown di 45 s. «Evacua anche X» per gli altri paesi autorizzati. Le vecchie crisi (vento, previsione, mezzo perso) ora sono notizie.
+- **«Evacua» bloccato con il motivo** finché non c'è l'autorizzazione ([immagine](chiosco_scheda.jpg)).
+- **Finale** ([immagine](chiosco_fine.jpg)): quattro stelle, ciascuna con il «perché», e l'elenco degli ultimi 8 giocatori con il livello colorato, salvato in `~/.rocca_ventosa/ultimi.json`. Niente punteggio e niente classifica: il vecchio `classifica2.json` non viene più letto.
+- **Esempi e test delle vecchie regole:** ora spengono la sindaca in modo esplicito. `rocca … --senza-sindaca`; senza questa opzione, un'evacuazione programmata aspetta l'autorizzazione.
+
+**Incognite:**
+- Nel livello Esperto (Borgo2_gira) la sindaca autorizza Castelvento quando il fuoco è a circa 9 minuti dalle case: è la stima della velocità d'avvicinamento all'inizio dell'incendio. Senza preallerta l'evacuazione arriva tardi. Da valutare in un playtest: è un dilemma o un'ingiustizia?
+- Non ho ancora provato la build web.

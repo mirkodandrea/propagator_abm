@@ -72,6 +72,8 @@ fn main() -> anyhow::Result<()> {
     let rows = par_map(&jobs, |(k, hit, plan)| -> anyhow::Result<String> {
         let ((case, seed), without) = (&pairs[*k], withouts[*k].as_ref().unwrap());
         let mut g = Game::new(data, case, *seed)?;
+        // the rules before 2026-10-13: any evacuation at any time (`examples/sindaca.rs` plays the mayor's)
+        g.mayor = None;
         if let Some(m) = messengers {
             g.messengers = m;
         }

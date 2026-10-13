@@ -22,6 +22,8 @@ fn main() -> anyhow::Result<()> {
         let mut row = vec![names[target].clone()];
         for plan_kind in 0..3 {
             let mut g = Game::new(data, &case, 1)?;
+            // the rules before 2026-10-13: any evacuation at any time (`examples/sindaca.rs` plays the mayor's)
+            g.mayor = None;
             let all = |p: Plan, c: Civil| (0..n).fold(p, |p, d| p.with_civil(d, c));
             // Start on the district farthest from the target, so the move is real.
             let start = (0..n)

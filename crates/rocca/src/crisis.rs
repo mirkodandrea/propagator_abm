@@ -12,6 +12,10 @@
 //! - the wind has turned and now drives the fire at a district (**vento**);
 //! - a unit has been lost (**mezzo perso**).
 //!
+//! With the mayor's rule on (`game.json`, 2026-10-13) these are news in the
+//! log, and the one crisis is hers (**autorizzazione**, [`crate::mayor`]):
+//! a district may now be evacuated.
+//!
 //! Each crisis fires once, at most [`MAX_CRISES`] per game and at least
 //! [`MIN_GAP_S`] apart. The message states risk, estimated time and the
 //! trade-off; it never says what to choose.
@@ -45,6 +49,18 @@ pub enum Kind {
     Previsione { district: usize },
     Vento { district: usize },
     MezzoPerso { unit: usize },
+    /// The mayor authorises the district's evacuation.
+    Autorizzazione { district: usize },
+}
+
+impl Kind {
+    /// The district the crisis is about, if it is about one.
+    pub fn district(self) -> Option<usize> {
+        match self {
+            Kind::Scoperto { district } | Kind::Previsione { district } | Kind::Vento { district } | Kind::Autorizzazione { district } => Some(district),
+            Kind::MezzoPerso { .. } => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -250,7 +266,7 @@ impl Detector {
 /// Where a crisis is, for the camera and the map marker.
 pub fn place(v: &View, c: &Crisis) -> Option<Pos> {
     match c.kind {
-        Kind::Scoperto { district } | Kind::Previsione { district } | Kind::Vento { district } => Some(v.districts[district].centre),
         Kind::MezzoPerso { unit } => Some(v.crews.units[unit].pos),
+        k => k.district().map(|d| v.districts[d].centre),
     }
 }

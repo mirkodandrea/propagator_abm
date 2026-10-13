@@ -169,9 +169,9 @@ pub struct Game {
     rounds: Vec<crate::messengers::Round>,
     /// The teams, built on the first round.
     pub teams: Vec<crate::messengers::Team>,
-    /// Evacuation needs the mayor's authorisation ([`crate::mayor`]); `None`
-    /// lets the player evacuate any district at any time (the rules before
-    /// 2026-10-13).
+    /// Evacuation needs the mayor's authorisation ([`crate::mayor`]), from
+    /// `game.json`; `None` lets the player evacuate any district at any time
+    /// (the rules before 2026-10-13).
     pub mayor: Option<crate::Mayor>,
     /// Per district: when the mayor authorised its evacuation.
     authorised_at: Vec<Option<i64>>,
@@ -228,7 +228,7 @@ impl Game {
             messengers: territory.messengers,
             rounds: vec![],
             teams: vec![],
-            mayor: None,
+            mayor: territory.mayor,
             authorised_at: vec![None; districts.len()],
             fresh: vec![],
             closing: Closing::default(),
@@ -561,13 +561,22 @@ impl Game {
             }
             self.authorised_at[d] = Some(now);
             self.fresh.push(d);
+            let name = &self.districts[d].name;
             let when = if self.threatened_at[d].is_some() {
                 "il fuoco è alle case".to_string()
             } else {
                 format!("il fuoco può arrivare in circa {} min", ((eta_s / 60.0).ceil() as i64).max(1))
             };
-            let text = format!("la sindaca autorizza l'evacuazione di {}: {when}", self.districts[d].name);
-            self.log.push(LogEntry { at_s: now, text });
+            self.log.push(LogEntry { at_s: now, text: format!("la sindaca autorizza l'evacuazione di {name}: {when}") });
+            // the decision it opens: risk, time and the cost, never the answer
+            let home = self.districts[d].households.iter().filter(|&&i| Self::at_home(self.agents.households[i].status)).count();
+            let text = format!(
+                "A {name} {when}, e {} ancora in casa. Ho firmato: ora puoi ordinare l'evacuazione. Se il fuoco poi non arriva, le famiglie saranno partite per niente.",
+                if home == 1 { "c'è 1 famiglia".to_string() } else { format!("ci sono {home} famiglie") }
+            );
+            if self.crisis.is_none() {
+                self.crisis = Some(Crisis { at_s: now, kind: crate::crisis::Kind::Autorizzazione { district: d }, text });
+            }
         }
     }
 
@@ -657,8 +666,14 @@ impl Game {
         }
         let forecast = self.territory.shifted(&self.case).map(|(at, w)| (at, w.wind_dir_deg));
         if let Some(c) = self.detector.check(&v, &self.posts, now, forecast) {
-            self.log.push(LogEntry { at_s: now, text: format!("CRISI: {}", c.text) });
-            self.crisis = Some(c);
+            // with the mayor's rule, her authorisations are the crises
+            // ([`Game::authorise`]); the detector's findings are news
+            if self.mayor.is_some() {
+                self.log.push(LogEntry { at_s: now, text: c.text });
+            } else {
+                self.log.push(LogEntry { at_s: now, text: format!("CRISI: {}", c.text) });
+                self.crisis = Some(c);
+            }
         }
         p
     }

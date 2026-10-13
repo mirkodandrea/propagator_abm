@@ -7,6 +7,8 @@ fn main() -> anyhow::Result<()> {
     for case in ["Coste2_gira", "Piano2", "Borgo2"] {
         for (label, civil) in [("nessun ordine", None), ("preallerta", Some(Civil::Preallerta)), ("evacua", Some(Civil::Evacua))] {
             let mut g = Game::new(data, case, 1)?;
+            // the rules before 2026-10-13: any evacuation at any time (`examples/sindaca.rs` plays the mayor's)
+            g.mayor = None;
             let near = g.district_index(&g.case.near.clone()).unwrap_or(0);
             let mut plan = Plan::new(g.districts.len()).with_priorities(&[near]);
             if let Some(c) = civil {

@@ -45,6 +45,10 @@ LEVELS = [
 # teams, one household a minute each, mobile alerts still reach their
 # households, the teams shared out evenly (by priority on a tie).
 MESSENGERS = {"teams": 4, "per_min": 1.0, "broadcast": True, "by_priority": False}
+# Evacuation needs the mayor's authorisation (`rocca::mayor`, user
+# 2026-10-13, docs/fase6/sindaca/README.md): she gives it when the front could
+# reach a district within 20 minutes.
+MAYOR = {"lead_s": 1200}
 
 
 def build(cid: str) -> dict:
@@ -84,6 +88,7 @@ def build(cid: str) -> dict:
         "featured": [n for n in FEATURED if any(c["name"] == n for c in cases)],
         "levels": [lv for lv in LEVELS if any(c["name"] == lv["case"] for c in cases)],
         "messengers": MESSENGERS,
+        "mayor": MAYOR,
         "cases": cases,
     }
 

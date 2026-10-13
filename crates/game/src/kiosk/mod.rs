@@ -4,11 +4,14 @@
 //! what the player is composing (the proposed plan), asks the game for its
 //! preview, commits it on request and runs the clock. No rules live here.
 //!
-//! Flow: **Pianifica** (×0: first the map with orders locked until «Inizia
-//! la partita», then a short tour of the screen (`tutorial`), then the
-//! proposed plan is previewed) →
-//! **Esegui** (×N) ⇄ **Crisi** (×1 with a countdown, raised by the game) →
-//! **Fine** (facts per district, against the same fire with no orders). No
+//! Flow (01-SPEC-GIOCO §2, 2026-10-13: the world never stops for the player):
+//! **Pianifica**, the decision moment at ×1 (first the map with orders
+//! locked and the world still until a level is picked, then a short tour of
+//! the screen (`tutorial`), then the proposed plan is previewed; later the
+//! same moment on «Decidi») → **Esegui** (×N, speed chosen by the game) ⇄
+//! **Crisi** (×1 with a countdown: the mayor authorises an evacuation) →
+//! **Fine** (stars and facts per district, against the same fire with no
+//! orders). No
 //! inactivity reset: a new game starts from the debrief's «Riprova» / «Altro
 //! incendio» or from the operator bar (F2), never by itself.
 //!
@@ -41,16 +44,16 @@ pub const TITLE: &str = "Isola di Roccavento";
 /// Simulated seconds per real second while the game runs (spec §2: ×40; user,
 /// 2026-10-12: faster, with a selector in the side bar).
 pub const RUN_SPEED: f32 = 80.0;
-/// Real seconds the player has at a crisis (spec: ~25 s at ×1).
-pub const CRISIS_S: f32 = 25.0;
-/// Pauses a game allows once the time runs (user, 2026-10-09): few enough
-/// that the game is played in real time, not a pause per order. Crises do
-/// not count.
-pub const MAX_PAUSES: u32 = 3;
-/// Simulated seconds after «Avvia» / «Riprendi» before the next pause
-/// (user, 2026-10-09: no pause straight after another). Orders change only
-/// in a pause, so this also spaces the changes of plan.
+/// Real seconds the player has when the mayor authorises an evacuation
+/// (spec §2: ~45 s at ×1).
+pub const CRISIS_S: f32 = 45.0;
+/// Simulated seconds after a decision moment before «Decidi» opens the next
+/// (user, 2026-10-09: none straight after another; 2026-10-13: no cap on
+/// how many). Orders change only in a decision moment.
 pub const PAUSE_GAP_S: i64 = 15 * 60;
+/// Real seconds a decision moment asked with «Decidi» waits, with nothing
+/// changed, before the time runs fast again (spec §2: ~60 s).
+pub const DECIDE_IDLE_S: f32 = 60.0;
 /// How many times faster the game runs while nothing is happening
 /// (`rocca::Game::is_quiet`): the waits after the orders were the dull part.
 /// ×40·3 = ×120.
@@ -68,12 +71,13 @@ pub fn window_mode() -> WindowMode {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Phase {
-    /// ×0: the player ranks places and chooses civil orders.
+    /// The decision moment, ×1 (×0 only before the game has started): the
+    /// player ranks places and chooses civil orders.
     Pianifica,
     /// ×N: the plan in force is being carried out.
     Esegui,
-    /// ×1: a crisis. The active plan goes on; the proposed one is applied on
-    /// confirmation or when the countdown runs out.
+    /// ×1: a crisis, the mayor's authorisation. The active plan goes on; the
+    /// proposed one is applied on confirmation or when the countdown runs out.
     Crisi,
     /// The case has run its course.
     Fine,
@@ -150,9 +154,13 @@ pub struct Kiosk {
     /// The visitor picked a difficulty on the opening screen. Before that the map, the fire
     /// and the chips show, but no order can be given (user, 2026-10-09).
     pub started: bool,
-    /// How to play, shown once the game has started, until «Ho capito».
-    /// Pauses left in this game ([`MAX_PAUSES`]).
-    pub pauses_left: u32,
+    /// The first plan was confirmed («Avvia»): later decision moments are
+    /// asked with «Decidi» and can be left with «Annulla».
+    pub begun: bool,
+    /// The operator stopped the world (F2): the one way it stands still.
+    pub frozen: bool,
+    /// The world held for a screenshot (`KIOSK_SNAP`), without saying so.
+    pub still: bool,
     /// The level being played (`Territory::levels`), and the one just
     /// picked on the opening screen, for `ui::draw` to start.
     pub level: Option<usize>,
@@ -161,16 +169,16 @@ pub struct Kiosk {
     pub selected: Option<usize>,
     /// Simulated time the clock last started running («Avvia», «Riprendi»).
     pub resumed_at_s: i64,
-    /// The leaderboard, one for all fires (user, 2026-10-09).
-    pub board: rocca::score::Board,
+    /// The last players with their stars (no leaderboard since 2026-10-13).
+    pub board: rocca::score::Recent,
     /// The player's first name, typed on the opening screen before the
     /// first game (user, 2026-10-12): the characters speak to them by it and
     /// the board shows it. Kept for «Riprova», cleared by the operator's
     /// «Nuova partita» (a new visitor).
     pub player: String,
-    /// The place this game took on the board once saved.
-    pub placed: Option<Option<usize>>,
-    /// Real time «Azzera classifica» was first pressed (operator bar).
+    /// This game is in the list of the last players.
+    pub saved: bool,
+    /// Real time «Azzera elenco» was first pressed (operator bar).
     pub board_reset_armed: Option<f64>,
     /// Real seconds the player has at a crisis; the operator can lengthen it
     /// for slow readers.
@@ -241,14 +249,16 @@ impl Kiosk {
             abort_armed: None,
             intro: false,
             started: false,
-            pauses_left: MAX_PAUSES,
+            begun: false,
+            frozen: false,
+            still: false,
             level: None,
             picked_level: None,
             selected: None,
             resumed_at_s: 0,
             board: board::load(),
             player: String::new(),
-            placed: None,
+            saved: false,
             board_reset_armed: None,
             pick: String::new(),
             reset_armed: None,
@@ -332,7 +342,7 @@ impl Kiosk {
         self.started
     }
 
-    /// Minutes until a pause is allowed again; 0 when it is.
+    /// Minutes until «Decidi» is allowed again; 0 when it is.
     pub fn pause_wait_min(&self, now_s: i64) -> i64 {
         ((self.resumed_at_s + PAUSE_GAP_S - now_s).max(0) + 59) / 60
     }
@@ -393,10 +403,7 @@ pub fn to_title(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<Si
 
 /// The place a crisis is about, if it is about one.
 fn crisis_place(c: &rocca::Crisis) -> Option<usize> {
-    match c.kind {
-        rocca::crisis::Kind::Scoperto { district } | rocca::crisis::Kind::Previsione { district } | rocca::crisis::Kind::Vento { district } => Some(district),
-        rocca::crisis::Kind::MezzoPerso { .. } => None,
-    }
+    c.kind.district()
 }
 
 /// Real seconds a shot of the title screen's camera lasts: long enough to
@@ -453,6 +460,7 @@ fn demo(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestart
             kiosk.proposed = scripted_plan(sim);
             commit(kiosk, sim);
             kiosk.resumed_at_s = sim.time_s();
+            kiosk.begun = true;
             kiosk.enter(Phase::Esegui);
         }
         Phase::Crisi if kiosk.phase_t > 3.0 => {
@@ -460,6 +468,10 @@ fn demo(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestart
                 let mut prio = vec![d];
                 prio.extend(kiosk.proposed.priorities.iter().copied().filter(|&x| x != d));
                 kiosk.proposed.priorities = prio;
+                // the mayor's authorisation: the scripted player takes it
+                if sim.may_evacuate(d) {
+                    kiosk.proposed.civil[d] = rocca::Civil::Evacua;
+                }
             }
             close_crisis(kiosk, sim);
         }
@@ -481,10 +493,11 @@ fn restart(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRest
             kiosk.error = None;
             kiosk.crisis = None;
             kiosk.started = false;
-            kiosk.pauses_left = MAX_PAUSES;
+            kiosk.begun = false;
+            kiosk.frozen = false;
             kiosk.selected = None;
             kiosk.resumed_at_s = 0;
-            kiosk.placed = None;
+            kiosk.saved = false;
             if baseline {
                 kiosk.start_baseline();
             }
@@ -498,10 +511,16 @@ fn restart(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRest
 /// End a crisis: the proposed plan becomes active if the player changed it
 /// (revalidated now); otherwise the active plan simply goes on.
 pub fn close_crisis(kiosk: &mut Kiosk, sim: &mut Sim) {
-    if kiosk.proposed != sim.active {
+    if kiosk.proposed != sim.active || !kiosk.begun {
         commit(kiosk, sim);
     }
     kiosk.crisis = None;
+    // the mayor's moments do not count for the gap between «Decidi»; the
+    // opening one, if she cut it short, does
+    if !kiosk.begun {
+        kiosk.begun = true;
+        kiosk.resumed_at_s = sim.time_s();
+    }
     kiosk.enter(Phase::Esegui);
 }
 
@@ -534,7 +553,10 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
     let mario_clock = false;
     #[cfg(target_arch = "wasm32")]
     kiosk.advance_baseline();
-    kiosk.phase_t += dt;
+    // the operator's stop holds the countdowns too
+    if !kiosk.frozen {
+        kiosk.phase_t += dt;
+    }
     if kiosk.title {
         kiosk.demo_t += dt;
         demo(&mut kiosk, &mut sim, &mut restarted);
@@ -542,8 +564,12 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         let want = kiosk.demo_pick.1.pace();
         kiosk.demo_speed += (want - kiosk.demo_speed) * (1.0 - (-0.4 * dt).exp());
     }
+    // The decision moment runs at ×1 once the game has started (spec §2,
+    // 2026-10-13); before, and during the tour, the world waits.
+    let deciding = kiosk.phase == Phase::Pianifica && kiosk.started && !kiosk.title && kiosk.tour.is_none();
     sim.speed = match kiosk.phase {
-        Phase::Pianifica if mario_clock => 1.0,
+        _ if kiosk.frozen || kiosk.still => 0.0,
+        Phase::Pianifica if mario_clock || deciding => 1.0,
         // faster while nothing is happening and nothing is being composed
         Phase::Esegui if kiosk.title => kiosk.speed * kiosk.demo_speed,
         Phase::Esegui if kiosk.proposed == sim.active && sim.is_quiet(QUIET_S) => kiosk.speed * QUIET_BOOST,
@@ -551,18 +577,26 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         Phase::Crisi => 1.0,
         _ => 0.0,
     };
-    if matches!(kiosk.phase, Phase::Esegui | Phase::Crisi) || mario_clock {
+    if sim.speed > 0.0 {
         if let Err(e) = sim.tick(dt) {
             kiosk.error = Some(format!("{e:#}"));
             kiosk.enter(Phase::Fine);
         }
         if let Some(c) = sim.take_crisis() {
-            if kiosk.phase == Phase::Esegui || mario_clock {
-                kiosk.crisis = Some(c);
+            // while running, the plan in force is what the crisis starts
+            // from; in a decision moment, what the player is composing stays
+            // (the mayor only adds an option)
+            if kiosk.phase == Phase::Esegui {
                 kiosk.proposed = sim.active.clone();
-                kiosk.dirty = true;
-                kiosk.enter(Phase::Crisi);
             }
+            kiosk.crisis = Some(c);
+            kiosk.dirty = true;
+            kiosk.enter(Phase::Crisi);
+        }
+        // a «Decidi» left with nothing changed: the time runs fast again
+        if deciding && kiosk.begun && kiosk.proposed == sim.active && kiosk.phase_t >= DECIDE_IDLE_S {
+            kiosk.resumed_at_s = sim.time_s();
+            kiosk.enter(Phase::Esegui);
         }
         if kiosk.phase == Phase::Crisi && kiosk.phase_t >= kiosk.crisis_s {
             let now = sim.time_s();
@@ -576,7 +610,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
     }
     // The preview follows the plan being composed and the world as it moves,
     // at most once a simulated review interval while running.
-    let stale = kiosk.dirty || ((kiosk.phase != Phase::Pianifica || mario_clock) && sim.generation >= kiosk.preview_at.saturating_add(20));
+    let stale = kiosk.dirty || (sim.speed > 0.0 && sim.generation >= kiosk.preview_at.saturating_add(20));
     if stale && kiosk.phase != Phase::Fine && !kiosk.title {
         kiosk.preview = sim.preview(&kiosk.proposed).ok();
         kiosk.risk = sim.districts.iter().map(|d| rocca::district::exposure(d, &sim.agents, &sim.fire, &sim.scn)).collect();
@@ -645,6 +679,7 @@ pub fn shots(
             prio.extend((0..sim.districts.len()).filter(|&d| d != near));
             kiosk.proposed = Plan::new(sim.districts.len()).with_priorities(&prio).with_civil(near, rocca::Civil::Preallerta);
             commit(&mut kiosk, &mut sim);
+            kiosk.begun = true;
             let end = sim.case.duration_s();
             if let Err(e) = sim.run_until(end) {
                 kiosk.error = Some(format!("{e:#}"));
@@ -701,6 +736,8 @@ pub fn shots(
         1 if stage.1 > 2.0 => {
             snap("2_anteprima");
             commit(&mut kiosk, &mut sim);
+            kiosk.begun = true;
+            kiosk.resumed_at_s = sim.time_s();
             kiosk.enter(Phase::Esegui);
             *stage = (2, 0.0);
         }
@@ -768,13 +805,17 @@ mod mario_clock_tests {
         let mut kiosk = Kiosk::new(territory, data.clone());
         kiosk.title = false;
         kiosk.intro = false;
-        kiosk.started = true;
-        let sim = Sim::new(&data, &kiosk.case, 1).unwrap();
+        // before the game has started: the world waits unless Mario plays
+        // (once started, the decision moment runs at ×1 anyway)
+        kiosk.started = false;
+        let mut sim = Sim::new(&data, &kiosk.case, 1).unwrap();
+        // a fire already close: the mayor may authorise on the first step,
+        // and the clock stops on a crisis nobody has taken
+        let _ = sim.take_crisis();
         let initial_time = sim.time_s();
         kiosk.proposed = Plan::new(sim.districts.len());
         let active = sim.active.clone();
         let proposed = kiosk.proposed.clone();
-        let pauses = kiosk.pauses_left;
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
             .insert_resource(kiosk)
@@ -798,7 +839,6 @@ mod mario_clock_tests {
         assert_eq!(sim.time_s(), initial_time + 6);
         assert_eq!(sim.active, active);
         assert_eq!(kiosk.proposed, proposed);
-        assert_eq!(kiosk.pauses_left, pauses);
         assert_eq!(kiosk.preview_at, sim.generation, "refresh the plan when Mario returns");
     }
 }

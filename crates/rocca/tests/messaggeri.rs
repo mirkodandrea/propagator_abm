@@ -13,6 +13,8 @@ fn data() -> PathBuf {
 
 fn game(case: &str, teams: usize) -> Game {
     let mut g = Game::new(&data(), case, 1).unwrap();
+    // the teams, not the mayor's rule: orders at any time
+    g.mayor = None;
     g.messengers = Some(Messengers { teams, per_min: 2.0, broadcast: false, by_priority: true, reversed: false });
     g
 }

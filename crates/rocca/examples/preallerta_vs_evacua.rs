@@ -10,6 +10,8 @@ fn main() -> anyhow::Result<()> {
     for seed in 1..=6 {
         for (label, first, late) in [("evacua tutti a T+0", Civil::Evacua, None), ("preallerta tutti, evacua a T+1:20", Civil::Preallerta, Some(80 * 60)), ("preallerta tutti, evacua a T+0:30", Civil::Preallerta, Some(30 * 60))] {
             let mut g = Game::new(data, "Coste2_gira", seed)?;
+            // the rules before 2026-10-13: any evacuation at any time (`examples/sindaca.rs` plays the mayor's)
+            g.mayor = None;
             let n = g.districts.len();
             let ghiande = g.district_index("Ghiande").unwrap();
             let mut plan = Plan::new(n).with_priorities(&[ghiande]);

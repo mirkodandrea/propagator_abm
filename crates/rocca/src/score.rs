@@ -1,4 +1,6 @@
-//! The score and the leaderboard (user, 2026-10-09).
+//! The score, the stars and the list of the last players. Since 2026-10-13
+//! the kiosk shows stars ([`Stars`]) and the last games ([`Recent`]), no
+//! leaderboard; the 0-1000 score stays for the headless comparisons.
 //!
 //! The score is made of the debrief's own numbers, so the screen and the
 //! points never disagree: of the families the same fire with no orders
@@ -18,8 +20,8 @@ use crate::Outcome;
 pub const MAX: i64 = 1000;
 /// Weight of the families' share; the homes take the rest. People first.
 pub const FAMILY_WEIGHT: f64 = 0.7;
-/// Places on the leaderboard.
-pub const TOP: usize = 10;
+/// Games in the list of the last players.
+pub const RECENT: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Score {
@@ -86,44 +88,39 @@ pub fn stars(s: &Score, timing: Option<f64>, measure: f64) -> Stars {
     }
 }
 
+/// One game in the list of the last players (01-SPEC-GIOCO §5, 2026-10-13:
+/// no leaderboard): the name, the level, well in sight because stars are
+/// not comparable between levels, and the stars.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Entry {
-    /// The first name the player gave at the start (user, 2026-10-12: the
-    /// characters speak to them by it). Boards saved before carry three
-    /// letters under `initials`.
-    #[serde(alias = "initials")]
+pub struct Played {
     pub name: String,
-    pub score: i64,
-    /// The fire played, for the operator; one board for all of them.
-    pub case: String,
+    pub level: String,
+    /// Persone, Case, Tempismo, Misura; `None` where nothing was at stake.
+    pub stars: [Option<u8>; 4],
 }
 
-/// The best [`TOP`] games, highest first; ties keep the earlier game above.
+impl Stars {
+    /// Persone, Case, Tempismo, Misura.
+    pub fn all(&self) -> [Option<u8>; 4] {
+        [self.persone, self.case, self.tempismo, Some(self.misura)]
+    }
+}
+
+/// The last [`RECENT`] games, newest first.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Board {
-    pub entries: Vec<Entry>,
+pub struct Recent {
+    pub entries: Vec<Played>,
 }
 
-impl Board {
-    /// Whether a score would enter the board.
-    pub fn qualifies(&self, score: i64) -> bool {
-        score > 0 && (self.entries.len() < TOP || self.entries.last().is_some_and(|e| score > e.score))
+impl Recent {
+    pub fn push(&mut self, p: Played) {
+        self.entries.insert(0, p);
+        self.entries.truncate(RECENT);
     }
 
-    /// Add a game; returns its place (0 = first) if it stays on the board.
-    pub fn insert(&mut self, e: Entry) -> Option<usize> {
-        if !self.qualifies(e.score) {
-            return None;
-        }
-        let at = self.entries.iter().position(|x| e.score > x.score).unwrap_or(self.entries.len());
-        self.entries.insert(at, e);
-        self.entries.truncate(TOP);
-        Some(at)
-    }
-
-    /// Read a saved board; anything unreadable is an empty board, so a
+    /// Read a saved list; anything unreadable is an empty list, so a
     /// damaged file never stops the kiosk.
-    pub fn from_json(s: &str) -> Board {
+    pub fn from_json(s: &str) -> Recent {
         serde_json::from_str(s).unwrap_or_default()
     }
 
@@ -187,17 +184,15 @@ mod tests {
     }
 
     #[test]
-    fn the_board_keeps_the_best_ten() {
-        let mut b = Board::default();
-        for k in 1..=12 {
-            b.insert(Entry { name: "Anna".into(), score: k * 100, case: "c".into() });
+    fn the_list_keeps_the_last_eight() {
+        let mut r = Recent::default();
+        for k in 1..=10u8 {
+            r.push(Played { name: format!("P{k}"), level: "Facile".into(), stars: [Some(k % 5 + 1), None, Some(3), Some(5)] });
         }
-        assert_eq!(b.entries.len(), TOP);
-        assert_eq!(b.entries[0].score, 1200);
-        assert!(!b.qualifies(300));
-        assert_eq!(b.insert(Entry { name: "Bruno".into(), score: 1200, case: "c".into() }), Some(1), "a tie goes below the earlier game");
-        assert_eq!(Board::from_json(&b.to_json()), b);
-        assert_eq!(Board::from_json("not json"), Board::default());
+        assert_eq!(r.entries.len(), RECENT);
+        assert_eq!(r.entries[0].name, "P10", "newest first");
+        assert_eq!(Recent::from_json(&r.to_json()), r);
+        assert_eq!(Recent::from_json("not json"), Recent::default());
     }
 
     #[test]
@@ -205,11 +200,5 @@ mod tests {
         assert_eq!(name("  giulia "), "Giulia");
         assert_eq!(name("   "), "");
         assert_eq!(name("élodie maria rossi bianchi"), "Élodie maria ros");
-    }
-
-    #[test]
-    fn a_board_saved_with_initials_still_reads() {
-        let b = Board::from_json(r#"{"entries":[{"initials":"ABC","score":500,"case":"c"}]}"#);
-        assert_eq!(b.entries[0].name, "ABC");
     }
 }

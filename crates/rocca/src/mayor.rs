@@ -10,7 +10,7 @@
 /// Lead time the authorisation starts from (spec: ~20 simulated minutes).
 pub const LEAD_S: i64 = 20 * 60;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 pub struct Mayor {
     /// Authorise a district when the front could be at its homes within this.
     pub lead_s: i64,

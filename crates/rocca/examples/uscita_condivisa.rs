@@ -37,6 +37,8 @@ fn main() -> anyhow::Result<()> {
             for at in [0i64, 15, 30, 45] {
                 for who in ["solo il borgo", "tutti tranne Castelvento", "tutti"] {
                     let mut g = Game::new(data, case, seed)?;
+                    // the rules before 2026-10-13: any evacuation at any time (`examples/sindaca.rs` plays the mayor's)
+                    g.mayor = None;
                     let n = g.districts.len();
                     let h = g.district_index(hamlet).unwrap();
                     let cv = g.district_index("Castelvento").unwrap();

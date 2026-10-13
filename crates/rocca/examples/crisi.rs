@@ -20,6 +20,8 @@ enum Strategy {
 
 fn run(case: &str, s: Strategy) -> anyhow::Result<(Outcome, Vec<String>)> {
     let mut g = Game::new("data".as_ref(), case, 1)?;
+    // the rules before 2026-10-13: any evacuation at any time (`examples/sindaca.rs` plays the mayor's)
+    g.mayor = None;
     let near = g.district_index(&g.case.near.clone()).unwrap();
     let mut prio = vec![near];
     prio.extend((0..g.districts.len()).filter(|&d| d != near));
