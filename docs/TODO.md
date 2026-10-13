@@ -4,6 +4,9 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
+- **2026-10-13, nuvole nel cielo** (richiesta dell'utente): strato procedurale nello shader del cielo (`shaders/sky.wgsl`, uniform in `sky.rs`), portato dal vento di `sea::wind_drift` (integrato, quindi un cambio di vento gira la deriva senza salti; tempo reale, non simulato). Copertura sparsa, ombreggiatura verso il sole, colori legati a ora del giorno. Verificato con `KIOSK_SNAP`.
+  - [ ] non provato di notte/all'alba né con vento diverso; copertura (`CLOUD_COVERAGE`) e velocità (`CLOUD_SPEED_FACTOR`) da tarare a occhio.
+
 - **2026-10-13, nuove meccaniche: tempo sempre in movimento ed evacuazione autorizzata dalla sindaca** (decisione dell'utente, motivata dal bilanciamento: «evacua tutti» non deve dominare). Regole scritte in `docs/01-SPEC-GIOCO.md` (§1, §2, §3 «Autorizzazione della sindaca», §5) e `docs/00-LEGGIMI-PRIMA.md`: niente ×0 per il giocatore; velocità alta scelta dal gioco; un unico **momento delle scelte a ×1**, chiesto dal giocatore («Decidi», nessun numero massimo dal 2026-10-13, ≥15 min simulati tra uno e l'altro) o aperto dalla sindaca; «Evacua» solo per i quartieri autorizzati, uno alla volta, autorizzazione valida fino alla fine; preallerta sempre libera. Supera, solo per l'evacuazione, la decisione 2026-10-12 «la sindaca firma senza passaggi in più».
   - [x] 2026-10-13 spec aggiornata (questo commit).
   - [x] 2026-10-13 spec approvata dall'utente («procedi al playtest headless»);

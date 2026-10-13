@@ -48,6 +48,13 @@ const SKY_SHADER_HANDLE: Handle<Shader> =
 /// orbit camera can reach around an 8 km scenario.
 pub const SKY_RADIUS: f32 = 30_000.0;
 
+/// Clouds travel faster than the surface wind the sea and the smoke read, and
+/// a drift that is barely visible at 5 m/s would look like a still picture.
+const CLOUD_SPEED_FACTOR: f32 = 5.0;
+
+/// Fraction of the sky the clouds cover: scattered, so the sun still shows.
+const CLOUD_COVERAGE: f32 = 0.45;
+
 /// Local solar time at `T+0`, in hours.
 #[derive(Resource)]
 pub struct DayClock {
@@ -122,6 +129,13 @@ pub struct SkyUniform {
     pub horizon_color: Vec4,
     pub moon_dir: Vec4,
     pub moon_color: Vec4,
+    /// xy: how far the cloud layer has been carried downwind, metres (Bevy XZ).
+    /// z: coverage, 0..1.
+    pub cloud: Vec4,
+    /// rgb: sunlit cloud tops; a: unused.
+    pub cloud_lit: Vec4,
+    /// rgb: cloud undersides.
+    pub cloud_shade: Vec4,
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
@@ -404,7 +418,15 @@ pub fn update_sky(
     mut sun_q: Query<(&mut Transform, &mut DirectionalLight), With<Sun>>,
     mut fog_q: Query<&mut FogSettings>,
     mut dome_q: Query<&mut Visibility, With<SkyDome>>,
+    time: Res<Time>,
+    mut cloud_offset: Local<Vec2>,
 ) {
+    // The layer is carried by the wind the sea reads, and integrated, so a
+    // wind shift turns the drift without making the clouds jump. Real time,
+    // not sim time: at ×0 the sky stays alive, at ×N it does not race.
+    let (drift, wind) = crate::sea::wind_drift(&sim);
+    *cloud_offset += drift * wind * CLOUD_SPEED_FACTOR * time.delta_seconds();
+
     let hour = day.hour(sim.time_s() as f32);
     let (el, az) = solar_position(hour);
     let el_deg = el.to_degrees();
@@ -464,6 +486,13 @@ pub fn update_sky(
                 horizon_color: Vec3::from(horizon).extend(1.0),
                 moon_dir: moon_dir.extend(moon_gate),
                 moon_color: Vec3::from(moon_color).extend(1.0),
+                cloud: Vec4::new(cloud_offset.x, cloud_offset.y, CLOUD_COVERAGE, 0.0),
+                cloud_lit: (Vec3::from(sun_color) * (0.12 + 0.88 * brightness)
+                    + Vec3::splat(0.05 * moon_gate))
+                .extend(1.0),
+                cloud_shade: (Vec3::from(horizon) * 0.55 * (0.2 + 0.8 * brightness)
+                    + Vec3::splat(0.03 * moon_gate))
+                .extend(1.0),
             };
         }
     }
