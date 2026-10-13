@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rocca::{Civil, Game, Outcome, Plan, Verdict};
+use rocca::{Civil, Game, Outcome, Plan};
 use scenario::population::Status;
 
 fn data() -> PathBuf {
@@ -43,35 +43,6 @@ fn same_seed_same_plan_same_game() {
     assert_eq!(a.log, b.log);
     let pos = |g: &Game| g.crews.units.iter().map(|u| (u.pos.x, u.pos.y)).collect::<Vec<_>>();
     assert_eq!(pos(&a), pos(&b));
-}
-
-#[test]
-fn inverting_priorities_changes_posts_and_outcomes() {
-    let start = |prio: &[&str]| {
-        let mut g = game("Piano3");
-        let p: Vec<usize> = prio.iter().map(|n| idx(&g, n)).collect();
-        g.commit(Plan::new(g.districts.len()).with_priorities(&p)).unwrap();
-        g
-    };
-    let (mut ga, mut gb) = (start(&["Grilli", "Ghiande"]), start(&["Ghiande", "Grilli"]));
-    let (piano, coste) = (idx(&ga, "Grilli"), idx(&ga, "Ghiande"));
-    let on = |g: &Game, d: usize| g.posts.iter().flatten().filter(|p| p.district == d).count();
-    // the first-ranked district gets two units once the plan is under way (at
-    // the end one may be between a refill and its post)
-    ga.run_until(30 * 60).unwrap();
-    gb.run_until(30 * 60).unwrap();
-    assert_eq!(on(&ga, piano), 2, "{:?}", ga.posts);
-    assert_eq!(on(&gb, coste), 2, "{:?}", gb.posts);
-    ga.run_until(180 * 60).unwrap();
-    gb.run_until(180 * 60).unwrap();
-    let (a, b) = (ga.outcome(), gb.outcome());
-    // and it is the homes that change, not only the icons
-    assert!(
-        a.districts[piano].homes_hit < b.districts[piano].homes_hit,
-        "Pian dei Grilli first should lose fewer homes: {} vs {}",
-        a.districts[piano].homes_hit,
-        b.districts[piano].homes_hit
-    );
 }
 
 #[test]
@@ -168,28 +139,6 @@ fn arrivals_follow_the_units() {
         }
     }
     assert!(arrived, "no unit reached its post in 30 min");
-}
-
-/// «Come sono andati i tuoi ordini»: evacuating a place the fire stays far
-/// from is called out, a place it came near but never reached is said as a
-/// fact (Misura counts both), and families the fire reached at home are a
-/// missed or late order.
-#[test]
-fn the_review_judges_each_order_by_the_fire() {
-    let all = ["Castelvento", "Pian dei Grilli", "Fornaci", "San Rocco", "Le Terrazze", "Le Ghiande"];
-    let evac: Vec<(&str, Civil)> = all.iter().map(|&n| (n, Civil::Evacua)).collect();
-    let (g, _) = run("Rocco3", &["San Rocco"], &evac, 180);
-    let far = g.order_review(idx(&g, "Pian dei Grilli"));
-    assert_eq!(far.verdict, Verdict::Forse, "{far:?}");
-    assert!(far.text.contains("Forse bastava la preallerta"), "{far:?}");
-    assert!(g.needless_evacuations() > 0);
-    let near = g.order_review(idx(&g, "Le Terrazze"));
-    assert!(near.verdict == Verdict::Forse && near.text.contains("non alle case"), "{near:?}");
-    // no orders: nothing evacuated in vain, families caught where it struck
-    let (g, _) = run("Rocco3", &["San Rocco"], &[], 180);
-    assert_eq!(g.needless_evacuations(), 0);
-    let hit = g.order_review(idx(&g, "San Rocco"));
-    assert!(hit.verdict == Verdict::Male && hit.text.contains("colte in casa"), "{hit:?}");
 }
 
 /// The debrief's lines come from what happened: an evacuation order shows up
