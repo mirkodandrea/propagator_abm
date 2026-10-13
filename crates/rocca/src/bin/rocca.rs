@@ -137,7 +137,8 @@ fn main() -> Result<()> {
     let case = case.context("uso: rocca <caso> [opzioni]; vedi l'intestazione di src/bin/rocca.rs")?;
     let t = std::time::Instant::now();
     let (ga, oa) = play(&data, &case, seed, minutes, &a, mayor)?;
-    let ob = if has_b { Some(play(&data, &case, seed, minutes, &b, mayor)?.1) } else { None };
+    let gb = if has_b { Some(play(&data, &case, seed, minutes, &b, mayor)?) } else { None };
+    let ob = gb.as_ref().map(|(_, o)| o.clone());
     println!("caso {case}, seme {seed}, {minutes} min simulati ({:.1} s)", t.elapsed().as_secs_f32());
     if registro {
         for e in &ga.log {
@@ -153,16 +154,24 @@ fn main() -> Result<()> {
     }
     // the kiosk's score: against the same fire with no orders
     let base = Game::without_orders(&data, &case, seed)?;
-    let line = |name: &str, o: &Outcome| {
+    // and the kiosk's summary: the mayor's authorisations and the stars
+    let line = |name: &str, g: &Game, o: &Outcome| {
         let s = rocca::score::score(o, &base);
         println!(
             "punteggio {name}: {} su {} (famiglie salvate {} di {}, case risparmiate {} di {})",
             s.total, rocca::score::MAX, s.families, s.families_at_risk, s.homes, s.homes_at_risk
         );
+        let auth: Vec<String> = (0..g.districts.len())
+            .filter_map(|d| g.authorised_at(d).map(|t| format!("{} T+{}", g.districts[d].name, t / 60)))
+            .collect();
+        println!("autorizzazioni della sindaca {name}: {}", if auth.is_empty() { "nessuna".to_string() } else { auth.join(", ") });
+        let st = rocca::score::stars(&s, g.timing(), g.measure());
+        let n = |x: Option<u8>| x.map_or("–".to_string(), |x| x.to_string());
+        println!("stelle {name}: persone {} · case {} · tempismo {} · misura {}", n(st.persone), n(st.case), n(st.tempismo), st.misura);
     };
-    line("A", &oa);
-    if let Some(ob) = &ob {
-        line("B", ob);
+    line("A", &ga, &oa);
+    if let Some((gb, ob)) = &gb {
+        line("B", gb, ob);
     }
     Ok(())
 }
