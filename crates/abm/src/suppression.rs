@@ -85,6 +85,10 @@ pub const ENGINE_TANK_L: f32 = 2_500.0;
 pub const ENGINE_PUMP_LPM: f32 = 400.0;
 /// How far from the road an engine can work: one standard hose lay.
 pub const ENGINE_REACH_M: f32 = 60.0;
+/// Cells one engine wets at a time. With `UnitEffect::water_x` above 1 the same
+/// tank covers proportionally more cells at the same density, instead of
+/// saturating the same four.
+pub const ENGINE_CELLS: usize = 4;
 /// An engine starts wetting the fuel around it once the burning front is this
 /// close (or anything in reach is already under threat): roughly the last
 /// 10-20 minutes before a wind-driven front arrives.
@@ -1520,7 +1524,7 @@ impl Suppression {
         // threshold, so an engine can genuinely hold a couple of cells and
         // nothing wider. Spreading the same tank over everything in reach would
         // put it below extinction everywhere and hold nothing.
-        cells.truncate(4);
+        cells.truncate((ENGINE_CELLS as f32 * self.effect.water_x).round().max(1.0) as usize);
         cells
     }
 }
