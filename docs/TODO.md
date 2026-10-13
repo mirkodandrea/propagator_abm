@@ -72,6 +72,7 @@ Le regole complete sono in `docs/01-GIOCO.md`. Qui le decisioni recenti, per ori
 - 2026-10-13: previsione stocastica a +1 h e +3 h, isocrone al 50 %, senza interventi.
 - 2026-10-13: capacità di uscita a 6 famiglie al minuto (versione B: chi vede il fuoco parte comunque). Attiva, da confermare.
 - 2026-10-13: il territorio è l'isola con il valico; nuovi livelli Facile, Medio ed Esperto.
+- 2026-10-13: costa est rifatta (baia, promontorio, niente tratti dritti) e valico dal bordo naturale (`costa_est.py`, `valico.py`; immagini `docs/factory/valico/costa_est.png`, `valico_naturale.png`).
 - 2026-10-13: «evacua appena autorizzato» può vincere ai punti; il suo costo resta nella stella Misura.
 - 2026-10-13: riscritte da zero le istruzioni (`CLAUDE.md`, `docs/01–03`) e cancellato lo storico; nuove fasi A–E.
 - 2026-10-12: 4 pattuglie portano gli avvisi porta a porta (1 famiglia al minuto ciascuna, allerta sul telefono attiva).
