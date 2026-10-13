@@ -173,6 +173,9 @@ struct Plant {
     /// The same plant in the distant proxy mesh.
     low_start: u32,
     low_end: u32,
+    /// Its undersides in the close-range mesh (see [`CLOSE_M`]).
+    under_start: u32,
+    under_end: u32,
 }
 
 struct Chunk {
@@ -181,8 +184,14 @@ struct Chunk {
     low_mesh: Handle<Mesh>,
     full: Entity,
     low: Entity,
+    /// The faces `full` leaves out because they look down (see
+    /// [`crate::models::split_plant`]), shown only within [`CLOSE_M`]. `None`
+    /// for a chunk without trees.
+    under: Option<(Handle<Mesh>, Entity)>,
     /// Which of the two is on show.
     near: bool,
+    /// Whether the undersides are on show.
+    close: bool,
     /// World-space bounds (Bevy frame) of the plants, for the LOD distance.
     bounds: (Vec3, Vec3),
     /// Fire cells the chunk covers, `(row0, row1, col0, col1)`, end exclusive.
@@ -191,6 +200,7 @@ struct Chunk {
     /// Colours as generated, before any fire damage.
     base: Vec<[f32; 4]>,
     low_base: Vec<[f32; 4]>,
+    under_base: Vec<[f32; 4]>,
     /// Fire state each plant was last drawn with, so a chunk is rebuilt only
     /// when something in it actually changed.
     drawn: Vec<u8>,
@@ -268,6 +278,7 @@ pub fn spawn(
                     for _ in 0..n {
                         let start = builder.full.positions.len() as u32;
                         let low_start = builder.low.positions.len() as u32;
+                        let under_start = builder.under.positions.len() as u32;
                         let Some(pos) = scatter_plant(scn, cell, species, &mut rng, &mut builder)
                         else {
                             continue;
@@ -279,6 +290,8 @@ pub fn spawn(
                             vert_end: builder.full.positions.len() as u32,
                             low_start,
                             low_end: builder.low.positions.len() as u32,
+                            under_start,
+                            under_end: builder.under.positions.len() as u32,
                         });
                     }
                 }
@@ -297,9 +310,19 @@ pub fn spawn(
             );
             let base = builder.full.colors.clone();
             let low_base = builder.low.colors.clone();
+            let under_base = builder.under.colors.clone();
             let drawn = vec![CellFire::Unburnt as u8; plants.len()];
             let mesh = meshes.add(builder.full.finish());
             let low_mesh = meshes.add(builder.low.finish());
+            let under = (!builder.under.positions.is_empty()).then(|| {
+                let mesh = meshes.add(builder.under.finish());
+                let entity = commands.spawn(MaterialMeshBundle::<RetroMaterial> {
+                    mesh: mesh.clone(),
+                    material: material.clone(),
+                    ..default()
+                }).id();
+                (mesh, entity)
+            });
 
             // Vegetation is visual only: Mario can run through trunks and
             // canopies, and the follow camera is not clipped by the forest.
@@ -321,7 +344,9 @@ pub fn spawn(
                 low_mesh,
                 full,
                 low,
+                under,
                 near: true,
+                close: true,
                 bounds,
                 cells: (
                     cy * CHUNK_CELLS,
@@ -332,6 +357,7 @@ pub fn spawn(
                 plants,
                 base,
                 low_base,
+                under_base,
                 drawn,
                 touched: false,
             });
@@ -488,12 +514,16 @@ fn grass(out: &mut Lods, base: Vec3, scale: f32, yaw: f32, foliage: [f32; 3], rn
 struct Lods {
     full: Builder,
     low: Builder,
+    /// Only the faces the full models leave out, see [`CLOSE_M`].
+    under: Builder,
 }
 
 impl Lods {
     fn model(&mut self, name: &str, base: Vec3, scale: Vec3, yaw: f32,
         foliage: [f32; 3], wood: [f32; 3]) {
-        self.full.model(name, base, scale, yaw, foliage, wood);
+        let (up, down) = crate::models::split_plant(name);
+        self.full.model(up, base, scale, yaw, foliage, wood);
+        self.under.model(down, base, scale, yaw, foliage, wood);
         self.low.proxy(name, base, scale, yaw, foliage, wood);
     }
 }
@@ -555,9 +585,8 @@ struct Builder {
 }
 
 impl Builder {
-    fn model(&mut self, name: &str, base: Vec3, scale: Vec3, yaw: f32,
+    fn model(&mut self, model: &crate::models::Model, base: Vec3, scale: Vec3, yaw: f32,
         foliage: [f32; 3], wood: [f32; 3]) {
-        let model = crate::models::model(name);
         let start = self.positions.len() as u32;
         let rotation = Quat::from_rotation_y(yaw);
         for (i, p) in model.positions.iter().enumerate() {
@@ -793,6 +822,7 @@ pub fn burn(
 
         let mut colors = chunk.base.clone();
         let mut low_colors = chunk.low_base.clone();
+        let mut under_colors = chunk.under_base.clone();
         chunk.touched = false;
         for ((plant, drawn), s) in chunk.plants.iter().zip(&mut chunk.drawn).zip(wanted) {
             *drawn = s;
@@ -805,6 +835,7 @@ pub fn burn(
             let k = (field.intensity(plant.pos) / 4000.0).clamp(0.2, 1.0);
             paint(&mut colors[plant.vert_start as usize..plant.vert_end as usize], s, k);
             paint(&mut low_colors[plant.low_start as usize..plant.low_end as usize], s, k);
+            paint(&mut under_colors[plant.under_start as usize..plant.under_end as usize], s, k);
         }
 
         if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
@@ -812,6 +843,9 @@ pub fn burn(
         }
         if let Some(mesh) = meshes.get_mut(&chunk.low_mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, low_colors);
+        }
+        if let Some(mesh) = chunk.under.as_ref().and_then(|(m, _)| meshes.get_mut(m)) {
+            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, under_colors);
         }
     }
 }
@@ -840,6 +874,10 @@ fn paint(colors: &mut [[f32; 4]], state: u8, k: f32) {
     }
 }
 
+/// Within this distance a chunk also draws the undersides of its crowns: the
+/// kiosk camera never sees them, but Mario's, close to the ground, does.
+const CLOSE_M: f32 = 250.0;
+
 /// Show each chunk's full models near the camera and its proxies beyond
 /// [`Vegetation::lod_m`], with a 10 % band so a chunk on the edge does not
 /// flicker while the camera drifts.
@@ -864,13 +902,21 @@ pub fn lod(
         let (lo, hi) = chunk.bounds;
         let d = eye.distance(eye.clamp(lo, hi));
         let near = if chunk.near { d < lod_m * 1.1 } else { d < lod_m };
-        if near == chunk.near {
-            continue;
+        let close = if chunk.close { d < CLOSE_M * 1.1 } else { d < CLOSE_M };
+        if near != chunk.near {
+            chunk.near = near;
+            for (e, on) in [(chunk.full, near), (chunk.low, !near)] {
+                if let Ok(mut v) = visibility.get_mut(e) {
+                    *v = if on { Visibility::Inherited } else { Visibility::Hidden };
+                }
+            }
         }
-        chunk.near = near;
-        for (e, on) in [(chunk.full, near), (chunk.low, !near)] {
-            if let Ok(mut v) = visibility.get_mut(e) {
-                *v = if on { Visibility::Inherited } else { Visibility::Hidden };
+        if close != chunk.close {
+            chunk.close = close;
+            if let Some((_, e)) = &chunk.under {
+                if let Ok(mut v) = visibility.get_mut(*e) {
+                    *v = if close { Visibility::Inherited } else { Visibility::Hidden };
+                }
             }
         }
     }

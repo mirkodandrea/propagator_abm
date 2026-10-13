@@ -19,40 +19,52 @@ pub struct Model {
 const PLANTS: [&str; 6] = ["pine", "oak", "chestnut", "bush", "olive", "cypress"];
 
 impl Model {
-    /// Drops the faces that look steeply downward, and the vertices only they
-    /// used. On a crown that is the lower half of each icosphere: from the
-    /// shallowest pitch the kiosk camera allows (-0.55 rad) a face is visible
-    /// only if its normal is above -sin 0.55 ≈ -0.52, so none of them can be
-    /// seen, yet each
-    /// still costs vertex work in every pass, shadow cascades included. Halves
-    /// the triangles of a crown without changing a pixel of the picture.
-    fn drop_undersides(&mut self) {
-        const MIN_NY: f32 = -0.6;
-        let keep: Vec<[u32; 3]> = self
-            .indices
-            .chunks_exact(3)
-            .filter(|t| t.iter().map(|&i| self.normals[i as usize][1]).sum::<f32>() / 3.0 >= MIN_NY)
-            .map(|t| [t[0], t[1], t[2]])
-            .collect();
+    /// The faces whose indices `tris` lists, with only the vertices they use.
+    fn subset(&self, tris: &[[u32; 3]]) -> Model {
         let mut remap = vec![u32::MAX; self.positions.len()];
-        let (mut positions, mut normals, mut colors, mut wood) = (vec![], vec![], vec![], vec![]);
-        let mut indices = Vec::with_capacity(keep.len() * 3);
-        for tri in keep {
-            for i in tri {
+        let mut out = Model { positions: vec![], normals: vec![], colors: vec![], indices: vec![], wood: vec![] };
+        for tri in tris {
+            for &i in tri {
                 let i = i as usize;
                 if remap[i] == u32::MAX {
-                    remap[i] = positions.len() as u32;
-                    positions.push(self.positions[i]);
-                    normals.push(self.normals[i]);
-                    colors.push(self.colors[i]);
-                    wood.push(self.wood[i]);
+                    remap[i] = out.positions.len() as u32;
+                    out.positions.push(self.positions[i]);
+                    out.normals.push(self.normals[i]);
+                    out.colors.push(self.colors[i]);
+                    out.wood.push(self.wood[i]);
                 }
-                indices.push(remap[i]);
+                out.indices.push(remap[i]);
             }
         }
-        (self.positions, self.normals, self.colors, self.wood, self.indices) =
-            (positions, normals, colors, wood, indices);
+        out
     }
+}
+
+/// A plant archetype split in two: `.0` without its steeply downward-facing
+/// faces (the lower half of each crown icosphere), `.1` only those faces.
+///
+/// From the shallowest pitch the kiosk camera allows (-0.55 rad) a face is
+/// visible only if its normal is above -sin 0.55 ≈ -0.52, so the undersides
+/// can't be seen from there; yet each costs vertex work in every pass, shadow
+/// cascades included. Mario's camera does look up at them, so near chunks draw
+/// both parts and distant ones only the first.
+pub fn split_plant(name: &str) -> &'static (Model, Model) {
+    static SPLIT: OnceLock<HashMap<&'static str, (Model, Model)>> = OnceLock::new();
+    &SPLIT.get_or_init(|| {
+        const MIN_NY: f32 = -0.6;
+        PLANTS
+            .into_iter()
+            .map(|name| {
+                let m = model(name);
+                let (mut up, mut down) = (vec![], vec![]);
+                for t in m.indices.chunks_exact(3) {
+                    let ny = t.iter().map(|&i| m.normals[i as usize][1]).sum::<f32>() / 3.0;
+                    (if ny < MIN_NY { &mut down } else { &mut up }).push([t[0], t[1], t[2]]);
+                }
+                (name, (m.subset(&up), m.subset(&down)))
+            })
+            .collect()
+    })[name]
 }
 
 pub fn model(name: &str) -> &'static Model {
@@ -66,17 +78,16 @@ pub fn model(name: &str) -> &'static Model {
             .unwrap()
             .iter()
             .map(|(name, v)| {
-                let mut model = Model {
-                    positions: serde_json::from_value(v["positions"].clone()).unwrap(),
-                    normals: serde_json::from_value(v["normals"].clone()).unwrap(),
-                    colors: serde_json::from_value(v["colors"].clone()).unwrap(),
-                    indices: serde_json::from_value(v["indices"].clone()).unwrap(),
-                    wood: serde_json::from_value(v["wood"].clone()).unwrap(),
-                };
-                if PLANTS.contains(&name.as_str()) {
-                    model.drop_undersides();
-                }
-                (name.clone(), model)
+                (
+                    name.clone(),
+                    Model {
+                        positions: serde_json::from_value(v["positions"].clone()).unwrap(),
+                        normals: serde_json::from_value(v["normals"].clone()).unwrap(),
+                        colors: serde_json::from_value(v["colors"].clone()).unwrap(),
+                        indices: serde_json::from_value(v["indices"].clone()).unwrap(),
+                        wood: serde_json::from_value(v["wood"].clone()).unwrap(),
+                    },
+                )
             })
             .collect()
     })[name]
