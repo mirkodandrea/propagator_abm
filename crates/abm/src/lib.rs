@@ -1421,7 +1421,12 @@ impl Abm {
             }
             // Getting ready while staying put: bags, documents, the car turned
             // round, the family called home. Bounded by the whole preparation.
-            if h.prealert_received && matches!(h.status, Status::Warned | Status::Defending) {
+            // An order that has arrived readies as much as a pre-alert: a
+            // household told to leave that waits to see the fire packs
+            // meanwhile (2026-10-13: without this, «Evacua» given without a
+            // pre-alert left waiting families less ready than «Preallerta»,
+            // docs/fase6/playtest_haiku_headless/evacuazione.md).
+            if (h.prealert_received || h.warning_received) && matches!(h.status, Status::Warned | Status::Defending) {
                 h.readied_s = (h.readied_s + dt).min(h.prep_time_min * 60.0 * 1.15);
             }
 
