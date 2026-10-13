@@ -19,40 +19,52 @@ struct SkyUniform {
 };
 @group(2) @binding(0) var<uniform> sky: SkyUniform;
 
-const CLOUD_HEIGHT: f32 = 3200.0;
-const CLOUD_SCALE: f32 = 2600.0;
+// Volumetric clouds: a slab between CLOUD_BOTTOM and CLOUD_TOP, ray-marched
+// through a 3D noise density with a short march toward the sun for the
+// self-shadowing. The slab is carried downwind by `sky.cloud.xy`.
+const CLOUD_BOTTOM: f32 = 2300.0;
+const CLOUD_TOP: f32 = 3800.0;
+const CLOUD_SCALE: f32 = 2200.0;
+const CLOUD_STEPS: i32 = 28;
+const CLOUD_SIGMA: f32 = 0.0022;
 
-fn hash2(p: vec2<f32>) -> f32 {
-    let q = fract(p * vec2<f32>(0.1031, 0.1030));
-    let r = q + dot(q, q.yx + 33.33);
-    return fract((r.x + r.y) * r.x);
+fn hash3(p: vec3<f32>) -> f32 {
+    var q = fract(p * 0.1031);
+    q += dot(q, q.zyx + 31.32);
+    return fract((q.x + q.y) * q.z);
 }
 
-fn vnoise(p: vec2<f32>) -> f32 {
+fn vnoise3(p: vec3<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
     let u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash2(i), hash2(i + vec2<f32>(1.0, 0.0)), u.x),
-               mix(hash2(i + vec2<f32>(0.0, 1.0)), hash2(i + vec2<f32>(1.0, 1.0)), u.x), u.y);
+    let x0 = mix(mix(hash3(i), hash3(i + vec3<f32>(1.0, 0.0, 0.0)), u.x),
+                 mix(hash3(i + vec3<f32>(0.0, 1.0, 0.0)), hash3(i + vec3<f32>(1.0, 1.0, 0.0)), u.x), u.y);
+    let x1 = mix(mix(hash3(i + vec3<f32>(0.0, 0.0, 1.0)), hash3(i + vec3<f32>(1.0, 0.0, 1.0)), u.x),
+                 mix(hash3(i + vec3<f32>(0.0, 1.0, 1.0)), hash3(i + vec3<f32>(1.0, 1.0, 1.0)), u.x), u.y);
+    return mix(x0, x1, u.z);
 }
 
-fn fbm(p_in: vec2<f32>) -> f32 {
+fn fbm3(p_in: vec3<f32>, octaves: i32) -> f32 {
     var p = p_in;
     var a = 0.5;
     var s = 0.0;
-    for (var k = 0; k < 5; k++) {
-        s += a * vnoise(p);
-        p = p * 2.03 + vec2<f32>(17.1, 9.7);
+    for (var k = 0; k < octaves; k++) {
+        s += a * vnoise3(p);
+        p = p * 2.03 + vec3<f32>(17.1, 9.7, 5.3);
         a *= 0.5;
     }
     return s;
 }
 
-fn cloud_density(xz: vec2<f32>) -> f32 {
-    let n = fbm((xz - sky.cloud.xy) / CLOUD_SCALE);
-    // coverage 0..1 moves the threshold; the narrow smoothstep keeps edges soft
-    let thr = mix(0.78, 0.30, sky.cloud.z);
-    return smoothstep(thr, thr + 0.22, n);
+fn cloud_density(p: vec3<f32>, octaves: i32) -> f32 {
+    let h = clamp((p.y - CLOUD_BOTTOM) / (CLOUD_TOP - CLOUD_BOTTOM), 0.0, 1.0);
+    // flat bases, rounded tops
+    let profile = smoothstep(0.0, 0.12, h) * smoothstep(1.0, 0.55, h);
+    let q = vec3<f32>(p.x - sky.cloud.x, p.y * 1.6, p.z - sky.cloud.y) / CLOUD_SCALE;
+    let n = fbm3(q, octaves);
+    let thr = mix(0.78, 0.38, sky.cloud.z);
+    return smoothstep(thr, thr + 0.2, n) * profile;
 }
 
 @fragment
@@ -86,19 +98,38 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let moon_glow = pow(moon_amt, 400.0) * 0.4 + pow(moon_amt, 6.0) * 0.05;
     col += sky.moon_color.rgb * (moon_disc * 3.0 + moon_glow) * sky.moon_dir.w;
 
-    // Clouds: a layer on a plane CLOUD_HEIGHT above the ground, sampled where
-    // the view ray crosses it, so they have parallax as the camera orbits and
-    // thin out toward the horizon. Shaded by looking a step toward the sun.
-    if (dir.y > 0.02) {
-        let t = (CLOUD_HEIGHT - view.world_position.y) / dir.y;
-        let xz = view.world_position.xz + dir.xz * t;
-        let d = cloud_density(xz);
-        let sun_xz = normalize(sky.sun_dir.xz + vec2<f32>(1e-4, 0.0));
-        let toward_sun = cloud_density(xz + sun_xz * 220.0);
-        let lit = clamp(1.0 - (toward_sun - d) * 2.2 - d * 0.25, 0.0, 1.0);
-        let ccol = mix(sky.cloud_shade.rgb, sky.cloud_lit.rgb, lit);
-        let fade = smoothstep(0.02, 0.22, dir.y);
-        col = mix(col, ccol, d * fade * 0.92);
+    // Clouds
+    if (dir.y > 0.03) {
+        let o = view.world_position;
+        let t0 = max((CLOUD_BOTTOM - o.y) / dir.y, 0.0);
+        let t1 = min((CLOUD_TOP - o.y) / dir.y, t0 + 5500.0);
+        if (t1 > t0) {
+            let dt = (t1 - t0) / f32(CLOUD_STEPS);
+            let jitter = hash3(vec3<f32>(in.position.xy, 1.0));
+            let sun_d = normalize(sky.sun_dir.xyz);
+            var trans = 1.0;
+            var light = vec3<f32>(0.0);
+            for (var i = 0; i < CLOUD_STEPS; i++) {
+                let p = o + dir * (t0 + (f32(i) + jitter) * dt);
+                let d = cloud_density(p, 4);
+                if (d > 0.01) {
+                    var od = 0.0;
+                    for (var j = 1; j <= 3; j++) {
+                        od += cloud_density(p + sun_d * (f32(j) * 260.0), 2);
+                    }
+                    let beam = exp(-od * 260.0 * CLOUD_SIGMA * 1.3);
+                    let c = sky.cloud_shade.rgb + sky.cloud_lit.rgb * beam * 0.85;
+                    let ext = d * dt * CLOUD_SIGMA;
+                    let step_t = exp(-ext);
+                    light += trans * (1.0 - step_t) * c;
+                    trans *= step_t;
+                    if (trans < 0.03) { break; }
+                }
+            }
+            let fade = smoothstep(0.03, 0.2, dir.y);
+            let alpha = (1.0 - trans) * fade;
+            col = mix(col, light / max(1.0 - trans, 1e-3), alpha);
+        }
     }
 
     return vec4<f32>(col, 1.0);

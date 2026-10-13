@@ -53,7 +53,7 @@ pub const SKY_RADIUS: f32 = 30_000.0;
 const CLOUD_SPEED_FACTOR: f32 = 5.0;
 
 /// Fraction of the sky the clouds cover: scattered, so the sun still shows.
-const CLOUD_COVERAGE: f32 = 0.45;
+const CLOUD_COVERAGE: f32 = 0.5;
 
 /// Local solar time at `T+0`, in hours.
 #[derive(Resource)]
