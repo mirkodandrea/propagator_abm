@@ -12,7 +12,7 @@
 //! | `prio`   | district names in priority order, `+` between (overrides the plan)   |
 //! | `pre`    | districts with a pre-alert, `+` between                              |
 //! | `evac`   | districts evacuated at `t` if the mayor authorised them, `+` between |
-//! | `phase`  | `esegui` (default, time frozen), `pianifica`, `fine`                 |
+//! | `phase`  | `esegui` (default, time frozen), `pianifica`, `fine`, `title`        |
 //! | `at`     | camera focus: `home`, `fire`, `district:<name>`, `post:<n>`, `unit:<n>`, `<x>:<y>` (metres) |
 //! | `dist`   | camera distance in metres (default: 1200, or the fire's span for `fire`) |
 //! | `yaw`, `pitch` | camera angles in degrees (default: as it is, pitch -46)        |
@@ -208,6 +208,8 @@ fn apply(st: &State, kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWrit
         "fine" => Phase::Fine,
         _ => Phase::Esegui,
     });
+    kiosk.title = st.phase == "title";
+    kiosk.started = !kiosk.title;
     // after the phase: entering one closes the opened chip
     kiosk.selected = st.select.as_deref().and_then(|s| sim.district_index(s));
     // Ahead of the clock the quiet-time boost would not run the world: speed is 0.

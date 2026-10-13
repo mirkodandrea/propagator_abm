@@ -9,6 +9,9 @@ use std::{
 
 pub const TEXTURE_WIDTH: u32 = 704;
 pub const TEXTURE_HEIGHT: u32 = 64;
+pub const AUDIO_RATE: u32 = 32_000;
+// Two synthesized blocks, at most 544 stereo frames each.
+pub const AUDIO_BUFFER_SAMPLES: usize = 544 * 2 * 2;
 const VERTICES: usize = 1024 * 3;
 const MARIO_WING_CAP: u32 = 0x00000008;
 static IN_USE: AtomicBool = AtomicBool::new(false);
@@ -62,6 +65,14 @@ struct Buffers {
 extern "C" {
     fn sm64_global_init(rom: *const u8, texture: *mut u8);
     fn sm64_global_terminate();
+    fn sm64_audio_init(rom: *const u8);
+    fn sm64_audio_set_active(active: u8);
+    fn sm64_audio_reset();
+    fn sm64_audio_tick(queued: u32, desired: u32, buffer: *mut i16) -> u32;
+    fn sm64_play_music(player: u8, sequence: u16, fade: u16);
+    fn sm64_stop_background_music(sequence: u16);
+    #[cfg(test)]
+    fn sm64_get_current_background_music() -> u16;
     fn sm64_static_surfaces_load(surfaces: *const Surface, count: u32);
     fn sm64_mario_create(x: f32, y: f32, z: f32) -> i32;
     fn sm64_mario_delete(id: i32);
@@ -85,6 +96,9 @@ pub struct Engine {
     pub colors: Vec<[f32; 3]>,
     pub uvs: Vec<[f32; 2]>,
     pub vertex_count: usize,
+    audio_initialized: bool,
+    audio_active: bool,
+    flight_music: bool,
     // libsm64's globals may only be accessed by their owner on one thread.
     _main_thread: PhantomData<Rc<()>>,
 }
@@ -115,10 +129,48 @@ impl Engine {
                 colors: vec![[0.; 3]; VERTICES],
                 uvs: vec![[0.; 2]; VERTICES],
                 vertex_count: 0,
+                audio_initialized: false,
+                audio_active: false,
+                flight_music: false,
                 _main_thread: PhantomData,
             },
             atlas,
         ))
+    }
+
+    pub fn init_audio(&mut self, rom: &[u8]) -> Result<(), &'static str> {
+        if self.audio_initialized { return Ok(()); }
+        if rom.len() != 8 * 1024 * 1024 || blake3::hash(rom).to_hex().as_str()
+            != "670d517ddaac88a517468a6466c8a6d08aa9901c0b235ae6081498e7c296c770" {
+            return Err("ROM audio non valida.");
+        }
+        unsafe { sm64_audio_init(rom.as_ptr()); }
+        self.audio_initialized = true;
+        self.audio_active = true;
+        Ok(())
+    }
+
+    pub fn set_audio_active(&mut self, active: bool) {
+        if self.audio_initialized {
+            unsafe { sm64_audio_set_active(u8::from(active)); }
+            self.audio_active = active;
+            self.flight_music = false;
+        }
+    }
+
+    /// Called only by the engine owner on the main thread. Audio playback
+    /// consumes copied PCM; it never calls libsm64 from the audio thread.
+    pub fn audio_tick(&mut self, queued_frames: usize, buffer: &mut [i16; AUDIO_BUFFER_SAMPLES]) -> usize {
+        if !self.audio_active { return 0; }
+        let flying = self.state.action == 0x10880899; // ACT_FLYING
+        if flying != self.flight_music {
+            unsafe {
+                if flying { sm64_play_music(0, 0x040E, 0); } // Wing Cap / power-up theme
+                else { sm64_stop_background_music(0x0E); }
+            }
+            self.flight_music = flying;
+        }
+        unsafe { sm64_audio_tick(queued_frames as u32, 1600, buffer.as_mut_ptr()) as usize * 4 }
     }
 
     pub fn load_surfaces(&mut self, surfaces: &[Surface]) {
@@ -148,6 +200,9 @@ impl Engine {
     }
 
     pub fn despawn(&mut self) {
+        // Reset pending sounds before freeing their Mario-owned source pointer.
+        if self.audio_active { unsafe { sm64_audio_reset(); } }
+        self.flight_music = false;
         if let Some(id) = self.id.take() {
             unsafe {
                 sm64_mario_delete(id);
@@ -343,6 +398,34 @@ mod tests {
             0,
             "Mario swims below the waterline"
         );
+        engine.init_audio(&rom).unwrap();
+        assert!(engine.spawn([0., 2000., 0.]));
+        engine.water_level(-10000);
+        engine.set_wing_cap(true);
+        unsafe {
+            sm64_set_mario_action(engine.id.unwrap(), 0x10880899);
+            sm64_set_mario_velocity(engine.id.unwrap(), 0., 0., 40.);
+        }
+        engine.tick(&neutral);
+        assert_eq!(engine.state.action, 0x10880899);
+        let mut pcm = [0; AUDIO_BUFFER_SAMPLES];
+        let mut audible = false;
+        for _ in 0..30 {
+            let count = engine.audio_tick(0, &mut pcm);
+            assert_eq!(count, AUDIO_BUFFER_SAMPLES);
+            audible |= pcm[..count].iter().any(|&s| s != 0);
+        }
+        assert!(audible, "ROM music produces actual PCM samples");
+        assert_eq!(unsafe { sm64_get_current_background_music() } & 0xFF, 0x0E);
+        assert!(engine.spawn([0., 200., 0.]));
+        engine.tick(&neutral);
+        engine.audio_tick(0, &mut pcm);
+        assert!(!engine.flight_music, "respawn stops flight music");
+        assert_eq!(unsafe { sm64_get_current_background_music() }, 0xFFFF);
+        engine.set_audio_active(false);
+        assert_eq!(engine.audio_tick(0, &mut pcm), 0);
+        engine.set_audio_active(true);
+        assert_eq!(engine.audio_tick(0, &mut pcm), AUDIO_BUFFER_SAMPLES);
         engine.despawn();
         engine.load_surfaces(&[]);
         drop(engine);

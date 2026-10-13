@@ -542,6 +542,13 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
     #[cfg(not(target_arch = "wasm32"))] mut was_mario: Local<bool>,
 ) {
     let dt = time.delta_seconds();
+    // Exploring from the title neither starts the visitor's game nor lets the
+    // demo director restart the world beneath Mario. Resume it on return.
+    #[cfg(not(target_arch = "wasm32"))]
+    if mario.active && kiosk.title {
+        sim.speed = 0.0;
+        return;
+    }
     #[cfg(not(target_arch = "wasm32"))]
     let mario_clock = {
         let active = mario.active && kiosk.phase == Phase::Pianifica;
@@ -797,6 +804,37 @@ pub fn shots(
 mod mario_clock_tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn title_mario_freezes_the_demo_without_starting_the_game() {
+        let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let territory = Territory::load(&data).unwrap();
+        let mut kiosk = Kiosk::new(territory, data.clone());
+        kiosk.title = true;
+        kiosk.started = false;
+        kiosk.phase = Phase::Esegui;
+        kiosk.demo_t = 20.0;
+        let sim = Sim::new(&data, &kiosk.case, 1).unwrap();
+        let initial_time = sim.time_s();
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .insert_resource(kiosk).insert_resource(sim)
+            .init_resource::<crate::mario::Playground>()
+            .add_event::<SimRestarted>().add_systems(Update, step);
+        app.world_mut().resource_mut::<crate::mario::Playground>().active = true;
+        app.world_mut().resource_mut::<Time>().advance_by(std::time::Duration::from_secs(6));
+        app.update();
+        assert_eq!(app.world().resource::<Sim>().time_s(), initial_time);
+        assert_eq!(app.world().resource::<Sim>().speed, 0.0);
+        assert_eq!(app.world().resource::<Kiosk>().demo_t, 20.0);
+        assert!(app.world().resource::<Kiosk>().title);
+        assert!(!app.world().resource::<Kiosk>().started);
+        app.world_mut().resource_mut::<crate::mario::Playground>().active = false;
+        app.update();
+        assert!(app.world().resource::<Kiosk>().demo_t > 20.0);
+        assert!(app.world().resource::<Kiosk>().title);
+        assert!(!app.world().resource::<Kiosk>().started);
+    }
 
     #[test]
     fn mario_uses_the_real_clock_at_one_x_and_returns_to_pause() {

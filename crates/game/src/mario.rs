@@ -28,6 +28,10 @@ use bevy::{
 use bevy_egui::{egui, EguiContexts};
 use libsm64_native::{Engine, Input, Surface};
 use std::collections::HashMap;
+#[path = "mario_audio.rs"]
+mod audio;
+use audio::NativeAudio;
+use bevy::audio::AddAudioSource;
 
 // Mario's ~160-unit height becomes 8 m, matching the exaggerated residents.
 const SCALE: f32 = 20.0;
@@ -143,6 +147,11 @@ pub struct Playground {
 }
 
 impl Playground {
+    pub(crate) fn request_start(&mut self) {
+        self.error = None;
+        self.toggle = true;
+    }
+    pub(crate) fn error_message(&self) -> Option<&str> { self.error.as_deref() }
     pub(crate) fn request_start_for_snapshot(&mut self, wing_cap: bool) {
         self.toggle = true;
         self.snapshot_wing_cap = wing_cap;
@@ -230,6 +239,34 @@ fn collision_cell(value: f32) -> i32 {
 }
 
 #[derive(Default)]
+struct RenderPose {
+    positions: Vec<Vec3>,
+    normals: Vec<[f32; 3]>,
+    position: Vec3,
+}
+
+impl RenderPose {
+    fn positions(&self, engine: &Engine, origin: Vec3, alpha: f32) -> Vec<Vec3> {
+        let interpolate = self.positions.len() == engine.vertex_count;
+        engine.positions[..engine.vertex_count].iter().enumerate().map(|(i, &p)| {
+            let current = from_sm64(p, origin);
+            if interpolate { self.positions[i].lerp(current, alpha) } else { current }
+        }).collect()
+    }
+}
+
+fn capture_pose(runtime: &mut Runtime) {
+    let engine = runtime.engine.as_ref().unwrap();
+    let n = engine.vertex_count;
+    runtime.previous_pose.positions.clear();
+    runtime.previous_pose.positions.extend(engine.positions[..n].iter()
+        .map(|&p| from_sm64(p, runtime.origin)));
+    runtime.previous_pose.normals.clear();
+    runtime.previous_pose.normals.extend_from_slice(&engine.normals[..n]);
+    runtime.previous_pose.position = from_sm64(engine.state.position, runtime.origin);
+}
+
+#[derive(Default)]
 struct Runtime {
     engine: Option<Engine>,
     mesh: Option<Handle<Mesh>>,
@@ -255,6 +292,10 @@ struct Runtime {
     last_valid: Vec3,
     empty_ticks: u32,
     accumulator: f32,
+    previous_pose: RenderPose,
+    render_bounds: Option<(Vec3, Vec3)>,
+    audio: NativeAudio,
+    audio_entity: Option<Entity>,
     fire_cooldown: f32,
     jump_latched: bool,
     attack_latched: bool,
@@ -267,6 +308,7 @@ struct Runtime {
 pub struct MarioPlugin;
 impl Plugin for MarioPlugin {
     fn build(&self, app: &mut App) {
+        app.add_audio_source::<NativeAudio>();
         load_internal_asset!(app, MARIO_SHADER, "shaders/mario.wgsl", Shader::from_wgsl);
         load_internal_asset!(app, MARIO_OUTLINE_SHADER, "shaders/mario_outline.wgsl", Shader::from_wgsl);
         load_internal_asset!(app, MARIO_MASK_SHADER, "shaders/mario_mask.wgsl", Shader::from_wgsl);
@@ -315,12 +357,12 @@ impl Plugin for MarioPlugin {
 }
 
 fn available(k: &Kiosk, sim: &Sim) -> bool {
-    !k.title
+    k.title || (!k.title
         && !k.intro
         && k.tour.is_none()
         && k.started
         && k.phase == Phase::Pianifica
-        && sim.speed <= 1.0
+        && sim.speed <= 1.0)
 }
 
 fn hud(
@@ -336,20 +378,26 @@ fn hud(
     if !available(&k, &sim) && !mode.active {
         return;
     }
+    if k.title && !mode.active { return; }
     egui::Area::new(egui::Id::new("pause_mario"))
         .anchor(egui::Align2::LEFT_TOP, [16., 16.])
         .order(egui::Order::Foreground)
         .show(contexts.ctx_mut(), |ui| {
             ui.set_width(if mode.active { 540. } else { 160. });
             egui::Frame::popup(ui.style()).show(ui, |ui| {
-                if ui.button(if mode.active { "Torna al piano · M / Start" } else { "Mario · M / Start" }).clicked() {
+                if ui.button(if mode.active && k.title { "Torna al titolo · M / Start" }
+                    else if mode.active { "Torna al piano · M / Start" } else { "Mario · M / Start" }).clicked() {
                     mode.toggle = true;
                 }
                 if mode.active {
                     if ui.button("Riposiziona sul terreno qui vicino · R / Y (△)").clicked() {
                         mode.respawn_nearby = true;
                     }
-                    ui.label(format!("Simulazione ×1 · {}", rocca::words::clock(sim.time_s())));
+                    if k.title {
+                        ui.label("Esplorazione libera · partita non iniziata");
+                    } else {
+                        ui.label(format!("Simulazione ×1 · {}", rocca::words::clock(sim.time_s())));
+                    }
                     ui.label(controls.pad().and_then(|pad| controls.pads.name(pad))
                         .map_or("Gamepad non connesso".to_string(), |name| format!("Gamepad: {name}")));
                     ui.label("WASD / stick sinistro · Spazio / A (×): salto · J / X (□): pugno");
@@ -376,10 +424,13 @@ fn restore_reactions(mut runtime: NonSendMut<Runtime>, mut transforms: Query<&mu
 }
 
 fn clear(mut commands: Commands, mut runtime: NonSendMut<Runtime>, mut mode: ResMut<Playground>) {
+    runtime.audio.stop();
+    if let Some(entity) = runtime.audio_entity.take() { commands.entity(entity).despawn_recursive(); }
     if let Some(camera) = runtime.mask_camera.take() { commands.entity(camera).despawn_recursive(); }
     if let Some(outline) = runtime.outline.take() { commands.entity(outline).despawn_recursive(); }
     if let Some(engine) = runtime.engine.as_mut() {
         engine.despawn();
+        engine.set_audio_active(false);
         engine.load_surfaces(&[]);
     }
     runtime.avatar = None;
@@ -492,6 +543,7 @@ struct RenderAssets<'w> {
     materials: ResMut<'w, Assets<MarioMaterial>>,
     outline_materials: ResMut<'w, Assets<MarioOutlineMaterial>>,
     mask_materials: ResMut<'w, Assets<MarioMaskMaterial>>,
+    audio_sources: ResMut<'w, Assets<NativeAudio>>,
     images: ResMut<'w, Assets<Image>>,
 }
 
@@ -543,6 +595,7 @@ fn drive(
         ref mut materials,
         ref mut outline_materials,
         ref mut mask_materials,
+        ref mut audio_sources,
         ref mut images,
     } = assets;
     let can_play = available(&k, &sim);
@@ -566,6 +619,8 @@ fn drive(
         return;
     };
     if stop {
+        runtime.audio.stop();
+        if let Some(entity) = runtime.audio_entity.take() { commands.entity(entity).despawn_recursive(); }
         if let Some(saved) = runtime.saved.take() {
             camera.focus = saved.focus;
             camera.distance = saved.distance;
@@ -588,6 +643,7 @@ fn drive(
         if let Some(outline) = runtime.outline.take() { commands.entity(outline).despawn_recursive(); }
         if let Some(engine) = runtime.engine.as_mut() {
             engine.despawn();
+            engine.set_audio_active(false);
             engine.load_surfaces(&[]);
         }
         runtime.collision_world = CollisionWorld::default();
@@ -599,6 +655,7 @@ fn drive(
         return;
     }
     if !mode.active {
+        if reset && toggle { mode.toggle = true; }
         if !can_play || !toggle || !focused || reset {
             return;
         }
@@ -768,10 +825,19 @@ fn drive(
         }
         render_camera.viewport = None;
         mode.active = true;
+        runtime.engine.as_mut().unwrap().set_audio_active(true);
+        runtime.audio.start();
+        runtime.audio_entity = Some(commands.spawn(AudioSourceBundle::<NativeAudio> {
+            source: audio_sources.add(runtime.audio.clone()),
+            settings: PlaybackSettings::ONCE,
+            ..default()
+        }).id());
         mode.message = "";
     }
     if !focused {
         runtime.accumulator = 0.;
+        runtime.audio.clear();
+        capture_pose(&mut runtime);
         return;
     }
     if !depth_prepass {
@@ -872,6 +938,8 @@ fn drive(
     runtime.accumulator += dt;
     while runtime.accumulator >= STEP {
         runtime.accumulator -= STEP;
+        // Save world-space pose before possible floating-origin recentering.
+        capture_pose(&mut runtime);
         runtime.fire_cooldown = (runtime.fire_cooldown - STEP).max(0.);
         let mut pos = from_sm64(
             runtime.engine.as_ref().unwrap().state.position,
@@ -941,11 +1009,17 @@ fn drive(
         } else {
             runtime.last_valid = pos;
         }
+        let queued = runtime.audio.queued_frames();
+        let mut pcm = [0; libsm64_native::AUDIO_BUFFER_SAMPLES];
+        let count = runtime.engine.as_mut().unwrap().audio_tick(queued, &mut pcm);
+        runtime.audio.push(&pcm[..count]);
     }
     // Reactions are visual, reversible, and applied after the ordinary views.
     let origin = runtime.origin;
     let pos = from_sm64(runtime.engine.as_ref().unwrap().state.position, origin);
     let pos = if pos.is_finite() { pos } else { runtime.last_valid };
+    let alpha = (runtime.accumulator / STEP).clamp(0.0, 1.0);
+    let camera_pos = runtime.previous_pose.position.lerp(pos, alpha);
     for (entity, _, mut tf, vis, person) in &mut actors {
         if *vis == Visibility::Hidden {
             continue;
@@ -967,16 +1041,26 @@ fn drive(
     }
     runtime.reactions.retain(|_, t| *t > 0.);
     let engine = runtime.engine.as_ref().unwrap();
+    // Count changes denote cap/visibility topology changes. Eye textures can
+    // switch instantly without interrupting the body's interpolated motion.
+    let interpolate = runtime.previous_pose.positions.len() == engine.vertex_count;
+    let positions = runtime.previous_pose.positions(engine, origin, alpha);
+    let bounds = positions.iter().fold((Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY)),
+        |(lo, hi), &p| (lo.min(p), hi.max(p)));
     if let Some(mesh) = runtime.mesh.as_ref().and_then(|h| meshes.get_mut(h)) {
         let n = engine.vertex_count;
         mesh.insert_attribute(
             Mesh::ATTRIBUTE_POSITION,
-            engine.positions[..n]
-                .iter()
-                .map(|&p| from_sm64(p, origin).to_array())
-                .collect::<Vec<_>>(),
+            positions.iter().map(|p| p.to_array()).collect::<Vec<_>>(),
         );
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, engine.normals[..n].to_vec());
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, engine.normals[..n].iter().enumerate()
+            .map(|(i, &normal)| {
+                let current = Vec3::from_array(normal);
+                if interpolate {
+                    Vec3::from_array(runtime.previous_pose.normals[i]).lerp(current, alpha)
+                        .normalize_or_zero().to_array()
+                } else { normal }
+            }).collect::<Vec<_>>());
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, engine.uvs[..n].to_vec());
         mesh.insert_attribute(
             Mesh::ATTRIBUTE_COLOR,
@@ -986,7 +1070,8 @@ fn drive(
                 .collect::<Vec<_>>(),
         );
     }
-    camera.focus = pos + Vec3::Y * 5.;
+    runtime.render_bounds = Some(bounds);
+    camera.focus = camera_pos + Vec3::Y * 5.;
     let dir = Vec3::new(
         camera.yaw.sin() * camera.pitch.cos(),
         -camera.pitch.sin(),
@@ -1027,10 +1112,7 @@ fn drive(
             material.bounds = Vec4::ZERO;
             return;
         }
-        let (lo, hi) = engine.positions[..engine.vertex_count].iter().fold(
-            (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY)),
-            |(lo, hi), &p| { let p = from_sm64(p, origin); (lo.min(p), hi.max(p)) },
-        );
+        let (lo, hi) = runtime.render_bounds.unwrap();
         let clip_from_world = projection.get_clip_from_view() * camera_tf.compute_matrix().inverse();
         let mut min = Vec2::ONE;
         let mut max = -Vec2::ONE;
@@ -1072,7 +1154,8 @@ fn load_engine_from_rom(
     images: &mut Assets<Image>,
     materials: &mut Assets<MarioMaterial>,
 ) -> Result<(Engine, Handle<MarioMaterial>), String> {
-    let (engine, atlas) = Engine::new(rom).map_err(str::to_owned)?;
+    let (mut engine, atlas) = Engine::new(rom).map_err(str::to_owned)?;
+    engine.init_audio(rom).map_err(str::to_owned)?;
     // Preserve ROM alpha: facial decals blend with shade, wings cut out.
     let mut image = Image::new(
         Extent3d {
@@ -1371,6 +1454,8 @@ fn respawn_nearby(
         } else { -10000 };
         runtime.engine.as_mut().unwrap().water_level(water_level);
         runtime.engine.as_mut().unwrap().tick(&Input::default());
+        runtime.audio.clear();
+        capture_pose(runtime);
         return true;
     }
     if changed_patch {
@@ -1514,6 +1599,34 @@ mod tests {
         assert!(respawn_nearby(&mut runtime, &meshes, &sim, distant, &mut actors));
         assert!((runtime.spawn.x - distant.x).hypot(runtime.spawn.z - distant.z) < 22.0);
         assert!(runtime.engine.as_ref().unwrap().vertex_count > 0);
+        // The render pose survives origin recentering, and a render frame
+        // between physics ticks shows an intermediate animated pose.
+        for _ in 0..90 { runtime.engine.as_mut().unwrap().tick(&Input::default()); }
+        capture_pose(&mut runtime);
+        let old_position = from_sm64(runtime.engine.as_ref().unwrap().state.position, runtime.origin);
+        runtime.origin += Vec3::X * 150.0;
+        let local = to_sm64(old_position, runtime.origin);
+        runtime.engine.as_mut().unwrap().position(local);
+        refresh_patch(&mut runtime, &meshes, &sim, old_position, &mut actors);
+        runtime.engine.as_mut().unwrap().tick(&Input::default());
+        let engine = runtime.engine.as_ref().unwrap();
+        let a = runtime.previous_pose.positions(engine, runtime.origin, 0.0);
+        let b = runtime.previous_pose.positions(engine, runtime.origin, 0.5);
+        let c = runtime.previous_pose.positions(engine, runtime.origin, 1.0);
+        assert!(a == runtime.previous_pose.positions, "interpolation starts at the captured world-space pose");
+        assert!(a.iter().zip(&c).any(|(a, c)| a.distance(*c) > 0.01));
+        for ((a, b), c) in a.iter().zip(&b).zip(&c) {
+            assert!(b.distance((*a + *c) * 0.5) < 0.001);
+            assert!(b.is_finite());
+        }
+        runtime.engine.as_mut().unwrap().set_wing_cap(true);
+        runtime.engine.as_mut().unwrap().tick(&Input::default());
+        let engine = runtime.engine.as_ref().unwrap();
+        assert_ne!(engine.vertex_count, runtime.previous_pose.positions.len());
+        let wing_pose = runtime.previous_pose.positions(engine, runtime.origin, 0.5);
+        assert!(wing_pose == engine.positions[..engine.vertex_count].iter()
+            .map(|&p| from_sm64(p, runtime.origin)).collect::<Vec<_>>(),
+            "topology changes display the new cap immediately");
         assert!(runtime.collision_count < 600);
         let origin = runtime.origin;
         let position = runtime.engine.as_ref().unwrap().state.position;

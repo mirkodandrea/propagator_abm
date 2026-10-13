@@ -138,10 +138,20 @@ SM64_LIB_FN void sm64_global_terminate( void )
     surfaces_unload_all();
     unload_mario_anims();
     memory_terminate();
+    g_is_audio_initialized = false;
 }
 
 SM64_LIB_FN void sm64_audio_init( const uint8_t *rom ) {
     load_audio_banks( rom );
+}
+
+SM64_LIB_FN void sm64_audio_set_active( uint8_t active ) {
+    g_is_audio_initialized = active != 0;
+    if (active) sound_reset(0);
+}
+
+SM64_LIB_FN void sm64_audio_reset( void ) {
+    if (g_is_audio_initialized) sound_reset(0);
 }
 
 #define SAMPLES_HIGH 544
