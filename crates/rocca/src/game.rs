@@ -24,9 +24,11 @@ use crate::plan::{Civil, Plan};
 
 /// Simulated seconds per step (the units' and civilians' decision interval).
 pub const STEP_S: i64 = 6;
-/// Fattore sulla capacità di spegnimento: linea tagliata dalle squadre e acqua
-/// di autobotti e aerei (2026-10-13, richiesta dell'utente).
-pub const SUPPRESSION_X: f32 = 30.0;
+/// Capacità di spegnimento rispetto al modello calibrato (2026-10-13, richiesta
+/// dell'utente): la stessa acqua bagna 30 volte più celle, i getti arrivano 10
+/// volte più lontano, la linea tagliata dalle squadre è 3 volte (30 era
+/// eccessiva: 3900 m a partita contro 205).
+pub const SUPPRESSION: UnitEffect = UnitEffect { line_x: 3.0, water_x: 30.0, reach_x: 10.0, nerve_x: 1.0 };
 /// A unit on the move that has not moved for this long is stuck: its road is
 /// cut and no other is open.
 pub const STUCK_S: i64 = 5 * 60;
@@ -225,7 +227,7 @@ impl Game {
         let roster: Vec<(UnitKind, Pos)> =
             territory.roster.iter().map(|s| (s.kind.unit_kind(), Pos::from(territory.stations[s.station].pos))).collect();
         let mut crews = Suppression::with_roster(&scn, &roster, policy)?;
-        crews.effect = UnitEffect::all(SUPPRESSION_X);
+        crews.effect = SUPPRESSION;
         let districts = district::of(&scn, &agents);
         let n = agents.households.len();
         let units = crews.units.len();
