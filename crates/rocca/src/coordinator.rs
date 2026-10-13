@@ -1,4 +1,4 @@
-//! The operations coordinator (01-SPEC-GIOCO §1, 03-PIANO «Coordinatore
+//! The operations coordinator (docs/01-GIOCO.md, 03-PIANO «Coordinatore
 //! MVP»): turns the player's ranked places into posts for the units.
 //!
 //! Deterministic and **pure**: [`propose`] reads the current state and writes
@@ -45,7 +45,7 @@ pub const ON_POST_M: f32 = 150.0;
 /// How often the coordinator reviews the active plan, simulated seconds.
 pub const REVIEW_S: i64 = 120;
 /// No new post with the burning front closer than this: crew safety comes
-/// before the priorities (01-SPEC-GIOCO §1).
+/// before the priorities (docs/01-GIOCO.md).
 pub const SAFE_M: f32 = 150.0;
 /// A held post is kept while its home is no more than this many times later
 /// to be reached than the district's most threatened home; beyond it the fire

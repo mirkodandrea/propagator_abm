@@ -1,4 +1,4 @@
-//! Phase 3 checks (03-PIANO-DI-AZIONE, fase 3; CLAUDE.md «Verifiche») on the
+//! Phase 3 checks (phase 3 of the old plan; CLAUDE.md «Verifiche») on the
 //! game's territory, `data/scenarios/rocca_ventosa`.
 
 use std::path::{Path, PathBuf};

@@ -1,4 +1,4 @@
-//! The mayor's authorisation to evacuate (01-SPEC-GIOCO §3, 2026-10-13).
+//! The mayor's authorisation to evacuate (docs/01-GIOCO.md, 2026-10-13).
 //!
 //! The evacuation order is the mayor's by law: the player may order «Evacua»
 //! only for a district she has authorised. She authorises one district when,

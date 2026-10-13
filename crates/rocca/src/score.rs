@@ -48,7 +48,7 @@ pub fn score(mine: &Outcome, without: &Outcome) -> Score {
     Score { families_at_risk: fr, families: f, homes_at_risk: hr, homes: h, total: (share * MAX as f64).round() as i64 }
 }
 
-/// The game's summary in stars (01-SPEC-GIOCO §5, 2026-10-13): Persone,
+/// The game's summary in stars (docs/01-GIOCO.md, 2026-10-13): Persone,
 /// Case, Tempismo, Misura, 1 to 5 each; `None` where the fire put nothing at
 /// stake (no family or home at risk, no district reached).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,7 +85,7 @@ pub fn stars(s: &Score, timing: Option<f64>, measure: f64) -> Stars {
     }
 }
 
-/// One finished game on the day's board (01-SPEC-GIOCO §5, 2026-10-13): the
+/// One finished game on the day's board (docs/01-GIOCO.md, 2026-10-13): the
 /// name, the level (stars are not comparable between levels), the stars and
 /// when it was played.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

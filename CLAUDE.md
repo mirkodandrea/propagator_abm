@@ -1,99 +1,118 @@
-# Rocca Ventosa — guida per i coding agent
+# Isola di Roccavento — guida per i coding agent
 
-## Fonte di verità
+## Fonti di verità
 
-Il lavoro parte **dal repository esistente** e da questi **quattro documenti aggiornati** (da leggere in ordine):
+Leggere all'inizio di ogni sessione:
 
-1. `docs/00-LEGGIMI-PRIMA.md` — decisioni e parametri da approvare.
-2. `docs/01-SPEC-GIOCO.md` — regole, coordinatore, fasi decisionali e UX.
-3. `docs/02-SCENARIO-FACTORY.md` — territorio sintetico e prove headless.
-4. `docs/03-PIANO-DI-AZIONE.md` — fasi, output e checkpoint umani.
+1. **`docs/01-GIOCO.md`**: le regole in vigore (che cosa deve fare il gioco).
+2. **`docs/02-TERRITORIO.md`**: l'isola, i livelli, come si modifica il territorio.
+3. **`docs/03-VERIFICHE.md`**: le **fasi** con i loro checkpoint e la batteria di prove.
+4. **`docs/TODO.md`**: la fase corrente, il lavoro aperto e le decisioni recenti.
 
-**Non cercare, recuperare o ricreare documenti di specifica non presenti nel repository.** I documenti qui sopra definiscono **cosa** costruire. Il codice presente serve a capire **come** farlo, non stabilisce i requisiti di gameplay. Se codice e specifiche non coincidono, prevalgono le specifiche; segnala il conflitto durante l'audit.
+I documenti dicono **cosa** costruire; il codice mostra **come**. Se non coincidono, prevalgono i documenti: segnalare il conflitto. Ogni nuova regola o decisione dell'utente va scritta, con la data, nel documento giusto. Lo storico non si conserva nei documenti: sta nella storia git. Documenti di servizio: `docs/MARIO.md` (easter egg), `docs/web.md` (versione browser), `docs/factory/<tema>/` (prove sul territorio).
 
-`docs/TECHNICAL-FINDINGS.md`, se presente, è **solo una raccolta facoltativa di note tecniche**: verificare sempre nel codice che i dettagli siano ancora validi. Non è una specifica funzionale.
+## Il gioco in breve
 
-## Todo list: `docs/TODO.md`
+Gioco strategico offline per un chiosco presidiato alla *Settimana della Protezione Civile*, per studenti delle superiori. Italiano, mouse o trackpad, nessun audio necessario. Un incendio su un'isola immaginaria con sei borghi. Il giocatore ordina le priorità di difesa, dà preallerta ed evacuazione (quest'ultima autorizzata dalla sindaca) e cambia il piano **mentre il tempo scorre**. Il gioco rallenta a ×1 da solo solo in pochi momenti critici. Un coordinatore deterministico muove i mezzi. La simulazione decide gli esiti. Il finale mostra stelle e classifica del giorno. Dettagli in `docs/01-GIOCO.md`.
 
-`docs/TODO.md` è la lista di lavoro condivisa del progetto. **Leggerla all'inizio di ogni sessione e aggiornarla alla fine di ogni iterazione**, nello stesso commit del lavoro:
+## Architettura
 
-- spuntare ciò che è stato completato (con data e riferimento a file/commit o report);
-- aggiungere i nuovi compiti, le incognite emerse e le decisioni prese dall'utente (con data);
-- tenere in cima la fase corrente e il prossimo checkpoint umano.
+**Una sola autorità di simulazione e gameplay: `rocca::Game`**, condivisa da runner headless, test e chiosco. Nella grafica non vanno fisica, punteggio o logica strategica.
 
-Non cancellare le voci completate: spostarle in fondo, nella sezione «Fatto».
+| Crate | Contenuto |
+|---|---|
+| `propagator-core` | Il nucleo PROPAGATOR (automa cellulare del fuoco, checkpoint). |
+| `fire` | `FireSim`, esposizione delle case (`exposure`), pericolo per chi è all'aperto (`threat`), ensemble per la previsione (`ensemble`). |
+| `scenario` | Lettura dei dati dello scenario; `scenario::id()` legge `ROCCA_SCENARIO`. |
+| `abm` | Famiglie e persone, strade e traffico, percorsi, squadre e spegnimento (`suppression`), uscita organizzata. |
+| `behavior` | Libreria dei comportamenti modificabili (`data/behaviours`). |
+| `rocca` | Il gioco: `Game`, `plan`, `coordinator`, `crisis`, `mayor`, `messengers`, `forecast`, `score`, `district`. CLI `rocca`, esempi headless, test. |
+| `game` | Il chiosco Bevy: `sim.rs` (orologio attorno a `Game`), `kiosk/` (flusso, UI egui, tutorial, snap), rendering del diorama, `forecast_view`, Mario. |
+| `datafs`, `libsm64-native` | Accesso ai dati (anche dal web); Mario. |
 
-## Obiettivo
+Dati: `data/scenarios/rocca_ventosa/` (territorio, `game.json` con i livelli, `prove.json` con gli incendi di prova). Python per il territorio: `tools/factory/`.
 
-Realizzare un gioco strategico offline per la *Settimana della Protezione Civile*, rivolto principalmente a studenti delle superiori. Il visitatore gestisce le priorità di difesa di un territorio durante un incendio e sperimenta risorse limitate, incertezza e conseguenze delle decisioni.
+## Come si lavora
 
-- **Un solo territorio sintetico e plausibile**, con diversi inneschi e condizioni di vento.
-- **Il giocatore decide le priorità geografiche** e impartisce esplicitamente ordini di preallerta o evacuazione per quartiere. Non controlla i singoli mezzi.
-- **Un coordinatore operativo deterministico** traduce quelle priorità in postazioni, percorsi e assegnazioni realistiche; adatta la tattica senza modificare le priorità del giocatore.
-- **La simulazione determina gli effetti reali** su fuoco, squadre, civili, viabilità e abitazioni. Un'alta priorità non garantisce la riuscita.
-- **Ciclo di gioco**: pianificazione iniziale a ×0 → simulazione accelerata → eventuali decisioni critiche a ×1 con timer reale e mondo ancora in movimento → debrief. Il piano proposto è un'anteprima, non un futuro garantito.
-- **Durata flessibile**, anche oltre cinque minuti; calibrare ritmo e tempi attraverso i playtest, non cambiando arbitrariamente la fisica.
-- **Chiosco presidiato**: avvio, nuova partita e riavvio **manuali**. Nessun reset automatico per inattività. Il countdown delle decisioni rimane parte del gioco.
-- **Riutilizzare il più possibile la grafica Bevy** (diorama, asset, effetti); **rifare la UX**. Italiano, mouse, offline; non richiedere audio.
+- **Fasi, una alla volta** (`docs/03-VERIFICHE.md`). Ogni fase si chiude con un checkpoint umano: la fase successiva non parte senza conferma. Le richieste puntuali dell'utente si fanno subito, ma non fanno avanzare la fase da sole.
+- Prima di cambiare **regole, bilanciamento o territorio**: prova headless e tabella, poi decide l'utente. Una meccanica nuova va accesa nel chiosco solo dopo la sua conferma, e va detto esplicitamente quando resta spenta.
+- Il bilanciamento si giudica con un criterio: **nessuna strategia semplice deve dominare** («evacua tutti», «evacua appena autorizzato»). Le prove usano gli stessi semi (1–3) e tutti e tre i livelli.
+- **Resoconti all'utente in italiano**, al massimo una pagina: realizzato, evidenza (comando e tabella o immagine), non risolto, una proposta.
+- **`docs/TODO.md`** va aggiornata nello **stesso commit** del lavoro: fase corrente e prossimo checkpoint in cima, aperti, decisioni con data. Le voci chiuse si cancellano: la storia è in git.
+- **Conservare ciò che serve, adattare ciò che può servire, scartare il resto.** Nessuna riscrittura totale senza una ragione verificata. Le API si cambiano dopo averne controllato gli utilizzatori.
 
-## Regola per il codice esistente
+### Altre sessioni nello stesso repository
 
-**Conservare ciò che serve, adattare ciò che può servire, scartare ciò che appartiene a un gameplay differente.** Non mantenere componenti soltanto perché esistono già e non intraprendere una riscrittura totale senza una ragione verificata.
+Spesso più sessioni Claude lavorano in parallelo sullo stesso checkout (branch `settimana-protezione-civile`).
 
-Durante l'audit classificare i componenti con una tabella **RIUSA / ADATTA / RIMUOVI / DA VERIFICARE** e indicare brevemente perché:
+- Prima di mettere file in stage, guardare `git diff`: **non committare modifiche altrui**. Se un file è misto, chiedere alla sessione che lo sta modificando, o all'utente.
+- Coordinarsi con `ListAgents` e `SendMessage`: chi tocca cosa, chi committa per primo.
+- I sotto-agenti con `isolation: worktree` partono da `main`, non dal branch di lavoro. Farli lavorare nel checkout principale, su file distinti, senza commit, e fare il commit alla fine.
+- Prima di un commit su file misti, verificare che l'albero in stage compili.
 
-- **Candidati al riuso**: modello di propagazione, griglie/scenari, ABM, strade e instradamento, popolazione e mezzi, rendering Bevy, asset, effetti, replay e test headless.
-- **Da rivalutare e probabilmente sostituire**: flusso di gioco, turni, comandi diretti ai mezzi, interfaccia e vecchi sistemi di scelta degli obiettivi. In particolare, controllare i percorsi `demo::Session` e runner del kiosk prima di scegliere cosa mantenere.
-- **Da costruire o estendere**: Scenario Factory Python, obiettivi geografici ordinati, coordinatore, piani attivo/proposto, preallerta realmente distinta dall'evacuazione, finestre critiche ×1, nuova UX e test delle strategie.
+## Comandi
 
-Il risultato deve avere **una sola autorità di simulazione e gameplay**, condivisa dal runner headless e dal kiosk. Nessuna fisica, regola di scoring o logica strategica duplicata nell'interfaccia grafica. Preservare le API esistenti solo se aiutano il nuovo disegno; è consentito eliminarle o cambiarle dopo averne verificato gli utilizzatori.
+```
+cargo build --release -p rocca --examples          # prove headless (docs/03-VERIFICHE.md)
+cargo test --release -p rocca -p abm -p fire
+target/release/rocca medium --priorita "Le Terrazze,Castelvento" --b-priorita "Castelvento,Le Terrazze"
+cargo run -p game --bin game --release             # il chiosco (serve --bin: c'è anche town_shot)
+scripts/build_web.sh                               # versione browser (docs/web.md)
+```
 
-## Metodo di lavoro
+Variabili utili del chiosco:
 
-**Una fase alla volta, senza avviare automaticamente la successiva.** Seguire `03-PIANO-DI-AZIONE.md`:
+- `KIOSK_CASE`: il caso da giocare. `KIOSK_SEED` non esiste: il seme si sceglie dal menu operatore.
+- `KIOSK_SPEED`: la velocità.
+- `KIOSK_WINDOWED=1 KIOSK_SIZE=1280x720 KIOSK_SCALE=1`: finestra e dimensioni.
+- `KIOSK_QUALITY=alta|media|bassa`, `KIOSK_GFX`: livello grafico.
+- `KIOSK_FPS=1`: misura degli FPS.
+- `KIOSK_TUTORIAL=0`: senza tutorial.
+- `KIOSK_LEGEND=1`: legenda aperta.
+- `KIOSK_SCORES=<file>`: classifica in un altro file, per le prove (non toccare `~/.rocca_ventosa/`).
+- `ROCCA_SCENARIO=<id>`: un altro territorio.
 
-0. **Audit, senza implementazioni**: esplorare il repository *così com'è*, eseguire compilazione/test di baseline, identificare formati e comandi disponibili, verificare l'efficacia degli interventi. Consegnare `audit.md` di una pagina con classificazione RIUSA/ADATTA/RIMUOVI/DA VERIFICARE, test e incognite. **Attendere revisione umana**.
-1. **Ambiente naturale**: Python genera orografia e combustibili plausibili, con umidità bassa, fissa e uniforme. Simulare incendi headless variando **solo innesco e vento**; presentare mappe e un breve atlante. **Checkpoint umano**.
-2. **Insediamenti**: collocare case, quartieri, viabilità e aree sicure *dopo* aver osservato gli incendi. Rieseguire gli incendi, perché strade e abitati cambiano la continuità dei combustibili. **Checkpoint umano**.
-3. **Gameplay headless**: priorità, coordinatore minimo, ordini dei civili, piano attivo/proposto, confronti A/B a parità di seed.
-4. **Finestre critiche e bilanciamento**: eventi significativi e recuperabili, ×0/×N/×1, countdown, commit e prove che ripianificare può contare.
-5. **UX**: conservare il rendering e sostituire il flusso di interazione; mostrare priorità, anteprime, stato delle unità, eventi e debrief. Riavvio manuale.
-6. **Playtest**: comprensibilità, conseguenze misurabili, prestazioni, stabilità e durata effettiva, senza limite rigido di cinque minuti.
+### Screenshot di stati arbitrari (`KIOSK_SNAP`)
 
-Per ogni fase consegnare **al massimo una pagina** con: file modificati, prova riproducibile (comando + immagine/tabella), incognite, unica proposta per il passo successivo. Non superare i checkpoint senza conferma.
-
-## Scenario Factory: ordine da rispettare
-
-**Orografia → vegetazione → incendi headless → atlante delle propagazioni → abitati e strade → nuova simulazione → verifica strategica.**
-
-Python gestisce generazione e analisi; il motore Rust esistente esegue incendi e ABM. Usare i formati letti dal repository; non duplicare il propagatore in Python. Generare pochi candidati ispezionabili, con seed e parametri salvati. La selezione finale del territorio è umana. Non ottimizzare per il numero di case colpite, ma per compromessi reali e finestre d'intervento utili.
-
-## Verifiche che non si possono saltare
-
-- **Effetti reali**: invertire le priorità deve talvolta cambiare gli esiti, non solo le icone. Un piano migliore alla crisi deve poter essere utile, senza riuscire sempre.
-- **Preallerta ≠ evacuazione**: verificare effetti distinti sui civili. Non rinominare semplicemente un comando esistente.
-- **Difesa delle strade condizionale**: introdurla come obiettivo solo se il modello mostra un effetto sulla percorribilità o sulle conseguenze. Chiudere una strada non equivale a difenderla.
-- **Anteprima senza effetti collaterali**: durante ×1 le operazioni già attive proseguono; il piano proposto non muove davvero le squadre prima di conferma/scadenza. Rivalidarlo al commit.
-- **Stato e misure coerenti**: case su celle non combustibili e pericolo per persone non si valutano necessariamente con la stessa maschera del fuoco; distinguere fatti simulati da proxy di scoring. La grafica e il debrief devono usare gli stessi criteri.
-- **Riproducibilità**: seed, stato, ordini e tempi simulati devono dare risultati replicabili; gli effetti accumulati dipendono dal tempo simulato, non dal numero di update. Verificare scenari con inneschi che si stabiliscono realmente.
-- **Strade e squadre**: percorsi raggiungibili, ETA plausibili, nessun ricalcolo A* a ogni tick senza motivo; rifugi effettivamente esistenti e accessibili.
-- **Rendering**: controllare coordinate, winding delle mesh, draping delle strade, marker visibili oltre la vegetazione e pulizia di effetti persistenti dopo riavvio.
-- **Gestione operatore**: nessun timeout di inattività. Avvio/riavvio manuale affidabili e funzionamento offline senza audio.
-
-**Prima azione autorizzata: solo fase 0, audit del repository. Non implementare feature finché l'audit non è stato revisionato.**
-
-## Screenshot di stati arbitrari (`KIOSK_SNAP`)
-
-Per controllare grafica e UX **non giocare una partita**: `kiosk/snap.rs` porta il gioco a uno stato descritto in una riga e salva il PNG (build `--release`, finestra vera: serve uno schermo). Non sostituisce `KIOSK_SHOT` (partita scriptata intera) né `KIOSK_SHOT_END` (solo il finale).
+Per controllare grafica e UX **non giocare una partita**: `kiosk/snap.rs` porta il gioco a uno stato descritto in una riga e salva il PNG. Serve la build `--release` e una finestra vera, quindi uno schermo. `KIOSK_SHOT` gioca invece una partita scriptata intera; `KIOSK_SHOT_END` mostra solo il finale.
 
 ```
 KIOSK_SNAP=<cartella> KIOSK_SNAP_SPEC='name=a,t=40,at=district:Castelvento,dist=700,pitch=-35;name=b,t=120,phase=fine' cargo run -p game --bin game --release
 ```
 
-- Stati separati da `;`, campi da `,`. Chiavi: `name`, `case`, `t` (minuti simulati, headless), `plan` (`scripted`|`none`|`keep`), `prio`/`pre`/`evac` (quartieri per nome, separati da `+`), `phase` (`esegui` a mondo fermo|`pianifica`|`fine`|`title`|`intro`), `conferma` (quartiere: «Evacua» premuto, conferma e vie di fuga visibili), `at` (`home`|`fire`|`district:<nome>`|`post:<n>`|`unit:<n>`|`x:y` in metri), `dist`, `yaw`, `pitch` (gradi), `select` (scheda aperta).
-- Serve `--bin game`: il crate ha anche il binario `town_shot`. La previsione del fuoco compare da sola con un `t` dopo l'annuncio del cambio di vento (casi `medium`/`expert`, ~t=30).
-- Casi e quartieri disponibili sono stampati all'avvio (stderr). Il tempo va solo avanti: un `t` minore del precedente, o un altro `case`, rifà la partita da capo.
-- Il mondo è fermo (×0): si muovono solo le animazioni della UI. Le crisi sorte durante il salto sono scartate; il piano è quello scriptato (o quello dato con `prio`/`pre`/`evac`).
-- Ogni stato resta in posa 2 s prima dello scatto (overlay e camera devono assestarsi). Per le prove di grafica basta un solo avvio con più stati: più veloce di più `cargo run`.
-- Per i dettagli di inquadratura usare `at=district:…`/`post:…` con `dist` 600–900 e `pitch` −35…−45; `at=fire` per il fronte. Con `at=home` la camera resta quella di partenza.
-- Dopo un avvio con `KIOSK_SNAP` guardare sempre l'immagine (Read): l'esito `0 panic` nel log non dice com'è la grafica.
+- Gli stati sono separati da `;`, i campi da `,`. Chiavi:
+  - `name`, `case`;
+  - `t`: minuti simulati, raggiunti headless;
+  - `plan`: `scripted`, `none` o `keep`;
+  - `prio`, `pre`, `evac`: borghi per nome, separati da `+`;
+  - `phase`: `esegui` (a mondo fermo), `pianifica`, `fine`, `title` o `intro`;
+  - `conferma`: il borgo per cui «Evacua» è stato premuto (conferma e vie di fuga visibili);
+  - `at`: `home`, `fire`, `district:<nome>`, `post:<n>`, `unit:<n>`, oppure `x:y` in metri;
+  - `dist`, `yaw`, `pitch` (gradi): l'inquadratura;
+  - `select`: la scheda aperta.
+- All'avvio vengono stampati su stderr casi e borghi disponibili. Il tempo va solo avanti: un `t` minore del precedente, o un altro `case`, rifà la partita da capo.
+- Il mondo resta fermo: si muovono solo le animazioni della UI. Le crisi nate durante il salto vengono scartate. Il piano è quello scriptato, o quello dato con `prio`, `pre` ed `evac`. La previsione del fuoco compare da sola con un `t` dopo l'annuncio del cambio di vento (casi `medium` ed `expert`, circa t=30).
+- Ogni stato resta in posa 2 s prima dello scatto. Per le prove di grafica conviene un solo avvio con più stati.
+- Inquadrature di dettaglio: `at=district:…` o `post:…` con `dist` 600–900 e `pitch` da −35 a −45; `at=fire` per il fronte; con `at=home` resta la camera di partenza.
+- **Dopo un avvio con `KIOSK_SNAP` guardare sempre l'immagine** (Read): «0 panic» nel log non dice com'è la grafica.
+
+## Trappole note
+
+Sono costate tempo e non si vedono dal codice. Prima di fidarsi, verificare che valgano ancora.
+
+- **Le case non bruciano nell'automa:** stanno su celle non combustibili, come strade e persone. L'esposizione delle case è uno strato a parte (`fire::exposure`). Per chi sta all'aperto c'è un altro strato, `fire::threat`; i due non sono intercambiabili.
+- **Un innesco di una sola cella** non attecchisce in circa il 20 % dei casi: usare sempre `FireSim::ignite_patch`.
+- **Tutto ciò che si accumula va integrato sul tempo simulato**, non sul numero di update. Un controllo di invarianza al passo deve scendere anche sotto il ritmo interno del modello.
+- **`wind_from_deg` / `w_dir` indica da dove soffia il vento** (il sorgente del kernel trae in inganno).
+- **`vegetation_changes` è sparso tramite NaN:** una griglia piena di zeri riclassifica tutta la mappa.
+- **Le strade dipinte come non combustibili** rendono immune chi è in coda: a questa scala il traffico non è mai il collo di bottiglia.
+- **Il nodo carrabile più vicino** spesso è un'isola della rete: usare `nearest_reachable`. Mai un A* a ogni sotto-passo: si ricalcola quando cambia l'obiettivo o allo scadere di `REROUTE_S`.
+- **Rendering:**
+  - una striscia stesa sul terreno con il winding sbagliato è invisibile (avvolgerla `a, a+2, a+1`, e controllare in che verso corrono le righe del reticolo);
+  - le linee drappeggiate vanno ricampionate, circa ogni 5 m;
+  - i segni vanno alzati sopra la chioma (+20 m o più);
+  - un `Material` personalizzato non riceve la nebbia.
+- **Riavvio:** vanno ripuliti gli stati del rendering che si ricordano qualcosa (case annerite, particelle di fumo, veicoli). Tutto il resto si ricalcola da `Sim` a ogni frame.
+- **Scorciatoie da tastiera:** devono rispettare `egui` `wants_keyboard_input()`, altrimenti scattano mentre si scrive il nome.
+- **Un meccanismo nuovo deve essere inerte quando è spento**, anche a T+0. Una derivazione giusta su un territorio può essere sbagliata sul successivo: va verificata su tutti.
+- **Ciò che il giocatore vede e ciò che il finale conta** devono venire dalla stessa regola.

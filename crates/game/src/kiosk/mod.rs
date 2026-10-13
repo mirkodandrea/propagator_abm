@@ -4,7 +4,7 @@
 //! what the player is composing (the proposed plan), asks the game for its
 //! preview, commits it on request and runs the clock. No rules live here.
 //!
-//! Flow (01-SPEC-GIOCO §2, 2026-10-13: the world never stops for the player):
+//! Flow (docs/01-GIOCO.md, 2026-10-13: the world never stops for the player):
 //! **Pianifica**, the decision moment at ×1 (first the map with orders
 //! locked and the world still until a level is picked, then a short tour of
 //! the screen (`tutorial`), then the proposed plan is previewed; later the

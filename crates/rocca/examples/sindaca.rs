@@ -1,4 +1,4 @@
-//! Evacuation authorised by the mayor (01-SPEC-GIOCO §3, 2026-10-13): does
+//! Evacuation authorised by the mayor (docs/01-GIOCO.md, 2026-10-13): does
 //! «evacua appena autorizzato» still dominate, when does the authorisation
 //! come, what stars do the plans earn and how long would a kiosk game last?
 //!

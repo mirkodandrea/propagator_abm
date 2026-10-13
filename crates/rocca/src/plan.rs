@@ -1,4 +1,4 @@
-//! What the player decides (01-SPEC-GIOCO §1): an ordered list of places to
+//! What the player decides (docs/01-GIOCO.md): an ordered list of places to
 //! defend, and per district an explicit civil order. Nothing about units.
 
 use anyhow::{ensure, Result};

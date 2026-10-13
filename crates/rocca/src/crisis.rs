@@ -1,4 +1,4 @@
-//! When the game asks the player to decide (01-SPEC-GIOCO §3).
+//! When the game asks the player to decide (docs/01-GIOCO.md).
 //!
 //! A crisis is proposed only from what is **known now** — where the front is,
 //! how fast it has been closing, where the units are and how long they would

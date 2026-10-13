@@ -651,7 +651,7 @@ impl Game {
         }
     }
 
-    /// Tempismo, 0-1 (01-SPEC-GIOCO §5): over the families of the districts
+    /// Tempismo, 0-1 (docs/01-GIOCO.md): over the families of the districts
     /// the fire reached at the doors, how early the first order (pre-alert
     /// or evacuation) came before it, full marks from [`TIMELY_S`]; nothing
     /// for a family caught, at home or on the road. `None` when the fire
@@ -676,7 +676,7 @@ impl Game {
         (n > 0).then(|| sum / n as f64)
     }
 
-    /// Misura, 0-1 (01-SPEC-GIOCO §5): 1 less the share of the families of
+    /// Misura, 0-1 (docs/01-GIOCO.md): 1 less the share of the families of
     /// districts the fire never reached at the doors that left on an
     /// evacuation order ([`Game::needless_evacuations`]). 1 when the fire
     /// reached every district.
