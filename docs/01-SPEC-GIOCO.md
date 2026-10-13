@@ -83,7 +83,7 @@ Il piano proposto si ricalcola usando lo stato più recente quando necessario; i
   - **Persone:** famiglie risparmiate rispetto allo stesso incendio senza ordini;
   - **Case:** case non colpite rispetto allo stesso incendio senza ordini;
   - **Tempismo:** anticipo tra preallerta/evacuazione e arrivo del fuoco nel quartiere; meno stelle per le famiglie sorprese in strada;
-  - **Misura:** famiglie mandate in strada da quartieri che il fuoco non ha mai raggiunto (meno sono, più stelle).
+  - **Misura:** famiglie mandate in strada da quartieri dove il fuoco non è mai arrivato alle case (meno sono, più stelle). Stesso criterio nel debrief (decisione 2026-10-13): «Fornaci: evacuazione alle 14:20, 12 famiglie in strada. Il fuoco è arrivato a 900 m, non alle case.»; oltre 1,5 km resta «Forse bastava la preallerta».
   Le soglie sono relative al caso (1 stella ≈ stesso incendio senza ordini, 5 ≈ migliore strategia di riferimento) e si tarano con `strategie_civili`. Le stelle giudicano esiti e tempi, non la «bontà» di una scelta con il senno di poi: un buon piano può non riuscire;
 - **niente classifica:** al suo posto gli **ultimi 8 giocatori** (nome dell'intro, **livello ben in evidenza** — Facile / Medio / Esperto, con un colore per livello —, le quattro stelle). Il livello si vede perché le stelle sono assolute e non confrontabili tra livelli: 3 stelle a Esperto possono valere più di 4 a Facile (decisione 2026-10-13), salvati in locale; l'operatore li azzera dalla barra F2;
 - **tempi e motivi dallo stato reale:** arrivi dei mezzi da ciò che stanno facendo, non dall'anteprima; quando un luogo prioritario resta senza mezzi, il motivo si legge nella sua scheda, già prima della conferma;

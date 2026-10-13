@@ -167,8 +167,9 @@ fn arrivals_follow_the_units() {
 }
 
 /// «Come sono andati i tuoi ordini»: evacuating a place the fire stays far
-/// from is called out, a place it came near is prudence, and families the
-/// fire reached at home are a missed or late order.
+/// from is called out, a place it came near but never reached is said as a
+/// fact (Misura counts both), and families the fire reached at home are a
+/// missed or late order.
 #[test]
 fn the_review_judges_each_order_by_the_fire() {
     let all = ["Castelvento", "Pian dei Grilli", "Fornaci", "San Rocco", "Le Terrazze", "Le Ghiande"];
@@ -179,7 +180,7 @@ fn the_review_judges_each_order_by_the_fire() {
     assert!(far.text.contains("Forse bastava la preallerta"), "{far:?}");
     assert!(g.needless_evacuations() > 0);
     let near = g.order_review(idx(&g, "Le Terrazze"));
-    assert!(near.verdict == Verdict::Bene && near.text.contains("prudente"), "{near:?}");
+    assert!(near.verdict == Verdict::Forse && near.text.contains("non alle case"), "{near:?}");
     // no orders: nothing evacuated in vain, families caught where it struck
     let (g, _) = run("Rocco3", &["San Rocco"], &[], 180);
     assert_eq!(g.needless_evacuations(), 0);

@@ -598,19 +598,11 @@ impl Game {
 
     /// Misura, 0-1 (01-SPEC-GIOCO §5): 1 less the share of the families of
     /// districts the fire never reached at the doors that left on an
-    /// evacuation order. 1 when the fire reached every district.
+    /// evacuation order ([`Game::needless_evacuations`]). 1 when the fire
+    /// reached every district.
     pub fn measure(&self) -> f64 {
-        let (mut sent, mut n) = (0usize, 0usize);
-        for (d, district) in self.districts.iter().enumerate() {
-            if self.threatened_at[d].is_some() {
-                continue;
-            }
-            n += district.households.len();
-            if let Some(e) = self.ordered_at[d].1 {
-                sent += district.households.iter().filter(|&&i| self.left_at[i].is_some_and(|t| t >= e)).count();
-            }
-        }
-        if n == 0 { 1.0 } else { 1.0 - sent as f64 / n as f64 }
+        let n: usize = (0..self.districts.len()).filter(|&d| self.threatened_at[d].is_none()).map(|d| self.districts[d].households.len()).sum();
+        if n == 0 { 1.0 } else { 1.0 - self.needless_evacuations() as f64 / n as f64 }
     }
 
     /// Re-plan the active plan and hand the units their tasks; a periodic
@@ -990,10 +982,11 @@ impl Game {
 
     /// «Come sono andati i tuoi ordini»: the civil order given to district
     /// `d`, judged by how close the fire came in this game. An order cannot
-    /// change where the fire burns, so this is the player's own fire. Only a
-    /// fire that stayed farther than [`QUIET_FIRE_M`] (the kiosk's own "far
-    /// from homes") makes an evacuation look unneeded; one that came close
-    /// without reaching the doors makes it prudent, not wasted.
+    /// change where the fire burns, so this is the player's own fire. An
+    /// evacuation where the fire never reached the doors is the cost Misura
+    /// counts (decision 2026-10-13): said as a fact, not as a mistake, when
+    /// the fire came within [`QUIET_FIRE_M`]; farther, it suggests the
+    /// pre-alert would have done.
     pub fn order_review(&self, d: usize) -> Review {
         let hh = &self.districts[d].households;
         let name = &self.districts[d].name;
@@ -1011,7 +1004,8 @@ impl Game {
                 (Verdict::Forse, format!("{name}: hai fatto evacuare {}, ma il fuoco è rimasto {nearest}. Forse bastava la preallerta.", fam(left)))
             }
             (Some(e), _, Reach::Near) => {
-                (Verdict::Bene, format!("{name}: evacuazione alle {} prudente: il fuoco è arrivato {nearest}, non oltre.", clock(e)))
+                let left = hh.iter().filter(|&&i| self.left_at[i].is_some_and(|t| t >= e)).count();
+                (Verdict::Forse, format!("{name}: evacuazione alle {}, {} in strada. Il fuoco è arrivato {nearest}, non alle case.", clock(e), fam(left)))
             }
             (Some(e), _, Reach::Doors(t)) if caught == 0 => (
                 Verdict::Bene,
@@ -1061,11 +1055,14 @@ impl Game {
     }
 
     /// Families that left on an evacuation order from a district the fire
-    /// stayed far from: the sum of the «Forse bastava la preallerta» lines.
+    /// never reached at the doors: the sum of the review's «Forse» lines for
+    /// an evacuation, and what Misura counts.
     pub fn needless_evacuations(&self) -> usize {
         (0..self.districts.len())
             .filter_map(|d| match (self.ordered_at[d].1, self.reach(d)) {
-                (Some(e), Reach::Far) => Some(self.districts[d].households.iter().filter(|&&i| self.left_at[i].is_some_and(|t| t >= e)).count()),
+                (Some(e), Reach::Far | Reach::Near) => {
+                    Some(self.districts[d].households.iter().filter(|&&i| self.left_at[i].is_some_and(|t| t >= e)).count())
+                }
                 _ => None,
             })
             .sum()
