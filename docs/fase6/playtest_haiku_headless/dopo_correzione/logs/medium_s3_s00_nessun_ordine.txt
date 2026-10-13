@@ -1,0 +1,25 @@
+caso medium, seme 3, 180 min simulati (1.2 s)
+  T+  0 min  la sindaca autorizza l'evacuazione di San Rocco: il fuoco può arrivare in circa 20 min
+  T+ 16 min  la sindaca autorizza l'evacuazione di Castelvento: il fuoco può arrivare in circa 16 min
+  T+ 16 min  la sindaca autorizza l'evacuazione di Le Terrazze: il fuoco può arrivare in circa 11 min
+  T+ 26 min  Previsione meteo: tra circa 18 min il vento girerà e soffierà da ovest. Spingerebbe il fuoco verso San Rocco, ora a 0,4 km. Ora San Rocco non ha mezzi.
+  T+ 45 min  il vento gira: ora soffia da ovest
+  T+ 46 min  Il vento è girato: ora spinge il fuoco verso San Rocco, a 0,3 km. Nel piano attuale San Rocco non ha mezzi.
+quartiere     fam. |  case colpite colti in casa      evacuati     in strada    a casa
+Castelvento    190 |             0             0            61             0       129
+Pian dei Grilli    90 |             0             0             0             0        90
+Fornaci         90 |             0             0             2             0        88
+San Rocco      100 |           100            29            86             0         4
+Le Terrazze     30 |             0             1            22             0         8
+Le Ghiande      38 |             0             0             0             0        38
+ettari bruciati: 152   mezzi persi: 0
+ordini di A (evacuazioni dove il fuoco non è arrivato alle case: 0 famiglie):
+  forse Castelvento: nessun ordine. Il fuoco è arrivato a 0,0 km dalle case: una preallerta sarebbe stata prudente.
+  bene  Pian dei Grilli: nessun ordine, e non serviva: il fuoco è rimasto a 3,1 km dalle case.
+  forse Fornaci: nessun ordine. Il fuoco è arrivato a 0,6 km dalle case: una preallerta sarebbe stata prudente.
+  male  San Rocco: nessun ordine. Il fuoco è arrivato alle case alle 15:02: colte in casa 29 famiglie.
+  male  Le Terrazze: nessun ordine. Il fuoco è arrivato alle case alle 14:35: colte in casa 1 famiglia.
+  forse Le Ghiande: nessun ordine. Il fuoco è arrivato a 0,9 km dalle case: una preallerta sarebbe stata prudente.
+punteggio A: 0 su 1000 (famiglie salvate 0 di 30, case risparmiate 0 di 100)
+autorizzazioni della sindaca A: Castelvento T+16, San Rocco T+0, Le Terrazze T+16
+stelle A: persone 1 · case 1 · tempismo 1 · misura 5

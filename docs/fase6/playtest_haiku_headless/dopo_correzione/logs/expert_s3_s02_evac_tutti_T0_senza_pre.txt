@@ -1,0 +1,31 @@
+caso expert, seme 3, 180 min simulati (1.2 s)
+  T+  0 min  la sindaca autorizza l'evacuazione di San Rocco: il fuoco può arrivare in circa 20 min
+  T+  0 min  evacuazione: San Rocco (100 famiglie)
+  T+  2 min  una pattuglia arriva a San Rocco per avvisare le famiglie
+  T+ 14 min  la sindaca autorizza l'evacuazione di Castelvento: il fuoco può arrivare in circa 16 min
+  T+ 14 min  evacuazione: Castelvento (190 famiglie)
+  T+ 18 min  la sindaca autorizza l'evacuazione di Le Terrazze: il fuoco può arrivare in circa 19 min
+  T+ 18 min  evacuazione: Le Terrazze (30 famiglie)
+  T+ 19 min  una pattuglia arriva a Castelvento per avvisare le famiglie
+  T+ 26 min  Previsione meteo: tra circa 18 min il vento girerà e soffierà da nord-ovest. Spingerebbe il fuoco verso San Rocco, ora a 0,3 km. Ora San Rocco non ha mezzi.
+  T+ 45 min  il vento gira: ora soffia da nord-ovest
+  T+ 46 min  Il vento è girato: ora spinge il fuoco verso San Rocco, a 0,3 km. Nel piano attuale San Rocco non ha mezzi.
+  T+ 48 min  una pattuglia arriva a Le Terrazze per avvisare le famiglie
+quartiere     fam. |  case colpite colti in casa      evacuati     in strada    a casa
+Castelvento    190 |             0            11           183             0         7
+Pian dei Grilli    90 |             0             0             0             0        90
+Fornaci         90 |             0             0            21             0        69
+San Rocco      100 |           100             0           100             0         0
+Le Terrazze     30 |             0             0            24             0         6
+Le Ghiande      38 |             0             0             0             0        38
+ettari bruciati: 134   mezzi persi: 0
+ordini di A (evacuazioni dove il fuoco non è arrivato alle case: 24 famiglie):
+  male  Castelvento: evacuazione alle 14:14, il fuoco alle case alle 14:36: troppo poco tempo per 11 famiglie.
+  bene  Pian dei Grilli: nessun ordine, e non serviva: il fuoco è rimasto a 3,2 km dalle case.
+  forse Fornaci: nessun ordine. Il fuoco è arrivato a 0,6 km dalle case: una preallerta sarebbe stata prudente.
+  bene  San Rocco: evacuazione alle 14:00, 74 min prima che il fuoco arrivasse alle case. Nessuna famiglia colta in casa.
+  forse Le Terrazze: evacuazione alle 14:18, 24 famiglie in strada. Il fuoco è arrivato a 0,1 km dalle case, non alle case.
+  forse Le Ghiande: nessun ordine. Il fuoco è arrivato a 1,0 km dalle case: una preallerta sarebbe stata prudente.
+punteggio A: 486 su 1000 (famiglie salvate 25 di 36, case risparmiate 0 di 100)
+autorizzazioni della sindaca A: Castelvento T+14, San Rocco T+0, Le Terrazze T+18
+stelle A: persone 4 · case 1 · tempismo 4 · misura 4

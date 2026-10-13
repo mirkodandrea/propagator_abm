@@ -1,0 +1,46 @@
+caso medium, seme 2, 180 min simulati (1.3 s)
+  T+  0 min  la sindaca autorizza l'evacuazione di San Rocco: il fuoco può arrivare in circa 20 min
+  T+  0 min  evacuazione: San Rocco (100 famiglie)
+  T+  0 min  priorità: Pian dei Grilli > Le Ghiande > Fornaci > Le Terrazze > Castelvento > San Rocco
+  T+  0 min  Autobotte 1 va a Pian dei Grilli (priorità 1) a difendere le case verso cui il vento spinge il fuoco; fuoco a 3,4 km, arrivo in 14 min
+  T+  0 min  Autobotte 2 va a Pian dei Grilli (priorità 1) a difendere le case verso cui il vento spinge il fuoco; fuoco a 3,4 km, arrivo in 13 min
+  T+  0 min  Squadra A va a Le Ghiande (priorità 2) a difendere le case verso cui il vento spinge il fuoco; fuoco a 1,6 km, arrivo in 8 min
+  T+  0 min  Fornaci: nessun mezzo libero, sono già tutti dove la priorità è più alta
+  T+  0 min  Le Terrazze: nessun mezzo libero, sono già tutti dove la priorità è più alta
+  T+  0 min  Castelvento: nessun mezzo libero, sono già tutti dove la priorità è più alta
+  T+  0 min  San Rocco: nessun mezzo libero, sono già tutti dove la priorità è più alta
+  T+  2 min  una pattuglia arriva a San Rocco per avvisare le famiglie
+  T+ 12 min  la sindaca autorizza l'evacuazione di Le Terrazze: il fuoco può arrivare in circa 18 min
+  T+ 12 min  evacuazione: Le Terrazze (30 famiglie)
+  T+ 20 min  una pattuglia arriva a Le Terrazze per avvisare le famiglie
+  T+ 26 min  Previsione meteo: tra circa 18 min il vento girerà e soffierà da ovest. Spingerebbe il fuoco verso San Rocco, ora a 0,4 km. Ora San Rocco non ha mezzi.
+  T+ 36 min  la sindaca autorizza l'evacuazione di Castelvento: il fuoco può arrivare in circa 16 min
+  T+ 36 min  evacuazione: Castelvento (190 famiglie)
+  T+ 36 min  una pattuglia arriva a Castelvento per avvisare le famiglie
+  T+ 45 min  il vento gira: ora soffia da ovest
+  T+ 46 min  Il vento è girato: ora spinge il fuoco verso San Rocco, a 0,3 km. Nel piano attuale San Rocco non ha mezzi.
+  T+ 60 min  la sindaca autorizza l'evacuazione di Fornaci: il fuoco può arrivare in circa 5 min
+  T+ 60 min  la sindaca autorizza l'evacuazione di Le Ghiande: il fuoco può arrivare in circa 8 min
+  T+ 60 min  evacuazione: Fornaci (90 famiglie)
+  T+ 60 min  evacuazione: Le Ghiande (38 famiglie)
+  T+ 67 min  nessuna strada aperta per portare l'ordine a Le Ghiande
+  T+ 67 min  una pattuglia arriva a Fornaci per avvisare le famiglie
+  T+136 min  una pattuglia arriva a Le Ghiande per avvisare le famiglie
+quartiere     fam. |  case colpite colti in casa      evacuati     in strada    a casa
+Castelvento    190 |            46             2           171             0        18
+Pian dei Grilli    90 |             0             0             0             0        90
+Fornaci         90 |             0             1            80             0         9
+San Rocco      100 |            99             0           100             0         0
+Le Terrazze     30 |             1             1            29             0         1
+Le Ghiande      38 |             0             0            28             2         8
+ettari bruciati: 171   mezzi persi: 0
+ordini di A (evacuazioni dove il fuoco non è arrivato alle case: 30 famiglie):
+  male  Castelvento: evacuazione alle 14:36, il fuoco alle case alle 15:01: troppo poco tempo per 2 famiglie.
+  bene  Pian dei Grilli: nessun ordine, e non serviva: il fuoco è rimasto a 3,0 km dalle case.
+  male  Fornaci: evacuazione alle 15:00, il fuoco alle case alle 15:24: troppo poco tempo per 1 famiglia.
+  bene  San Rocco: evacuazione alle 14:00, 74 min prima che il fuoco arrivasse alle case. Nessuna famiglia colta in casa.
+  male  Le Terrazze: evacuazione alle 14:12, il fuoco alle case alle 15:28: troppo poco tempo per 1 famiglia.
+  forse Le Ghiande: evacuazione alle 15:00, 30 famiglie in strada. Il fuoco è arrivato a 0,3 km dalle case, non alle case.
+punteggio A: 618 su 1000 (famiglie salvate 30 di 34, case risparmiate 0 di 146)
+autorizzazioni della sindaca A: Castelvento T+36, Fornaci T+60, San Rocco T+0, Le Terrazze T+12, Le Ghiande T+60
+stelle A: persone 5 · case 1 · tempismo 4 · misura 3

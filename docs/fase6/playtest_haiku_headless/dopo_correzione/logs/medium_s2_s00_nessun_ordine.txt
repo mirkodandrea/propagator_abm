@@ -1,0 +1,27 @@
+caso medium, seme 2, 180 min simulati (1.3 s)
+  T+  0 min  la sindaca autorizza l'evacuazione di San Rocco: il fuoco può arrivare in circa 20 min
+  T+ 12 min  la sindaca autorizza l'evacuazione di Le Terrazze: il fuoco può arrivare in circa 18 min
+  T+ 26 min  Previsione meteo: tra circa 18 min il vento girerà e soffierà da ovest. Spingerebbe il fuoco verso San Rocco, ora a 0,4 km. Ora San Rocco non ha mezzi.
+  T+ 36 min  la sindaca autorizza l'evacuazione di Castelvento: il fuoco può arrivare in circa 16 min
+  T+ 45 min  il vento gira: ora soffia da ovest
+  T+ 46 min  Il vento è girato: ora spinge il fuoco verso San Rocco, a 0,3 km. Nel piano attuale San Rocco non ha mezzi.
+  T+ 60 min  la sindaca autorizza l'evacuazione di Fornaci: il fuoco può arrivare in circa 5 min
+  T+ 60 min  la sindaca autorizza l'evacuazione di Le Ghiande: il fuoco può arrivare in circa 8 min
+quartiere     fam. |  case colpite colti in casa      evacuati     in strada    a casa
+Castelvento    190 |            46             7           135             0        54
+Pian dei Grilli    90 |             0             0             0             0        90
+Fornaci         90 |             0             1            52             0        37
+San Rocco      100 |            99            24            88             0         0
+Le Terrazze     30 |             1             2            28             0         1
+Le Ghiande      38 |             0             0             0             0        38
+ettari bruciati: 171   mezzi persi: 0
+ordini di A (evacuazioni dove il fuoco non è arrivato alle case: 0 famiglie):
+  male  Castelvento: nessun ordine. Il fuoco è arrivato alle case alle 15:01: colte in casa 7 famiglie.
+  bene  Pian dei Grilli: nessun ordine, e non serviva: il fuoco è rimasto a 3,0 km dalle case.
+  male  Fornaci: nessun ordine. Il fuoco è arrivato alle case alle 15:24: colte in casa 1 famiglia.
+  male  San Rocco: nessun ordine. Il fuoco è arrivato alle case alle 15:14: colte in casa 24 famiglie.
+  male  Le Terrazze: nessun ordine. Il fuoco è arrivato alle case alle 15:28: colte in casa 2 famiglie.
+  forse Le Ghiande: nessun ordine. Il fuoco è arrivato a 0,3 km dalle case: una preallerta sarebbe stata prudente.
+punteggio A: 0 su 1000 (famiglie salvate 0 di 34, case risparmiate 0 di 146)
+autorizzazioni della sindaca A: Castelvento T+36, Fornaci T+60, San Rocco T+0, Le Terrazze T+12, Le Ghiande T+60
+stelle A: persone 1 · case 1 · tempismo 1 · misura 5

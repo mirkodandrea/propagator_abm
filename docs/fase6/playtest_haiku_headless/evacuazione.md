@@ -41,3 +41,17 @@ L'ordine delle strategie è lo stesso: nessuna nuova strategia dominante.
 **Da sapere:**
 - `docs/fase6/sindaca/README.md` e le soglie delle stelle sono stati calcolati prima della correzione. I numeri cambiano di poco (+10–50 punti per i piani con evacuazione) e non ho ritarato le soglie.
 - In `abm/tests/incident_gaps.rs` 5 test falliscono anche senza la correzione: sono rotture preesistenti.
+
+## Le 126 partite di Haiku rigiocate con la correzione
+
+`bash docs/fase6/playtest_haiku_headless/dopo_correzione/run.sh all && … extra` (stesso script, uscita in `dopo_correzione/`). Medie dei semi 1–3, prima → dopo:
+
+| strategia (priorità vicine) | Facile | Medio | Esperto | stelle P/C/T/M dopo |
+|---|---|---|---|---|
+| preallerta tutti + evacua all'autorizzazione (s06) | 694 → 694 | 575 → 665 | 497 → 530 | 3,7 / 3,3 / 5,0 / 3,3 |
+| **evacua all'autorizzazione, senza preallerta (s11)** | 493 → **664** | 645 → **757** | 548 → **599** | 4,2 / 3,4 / 3,7 / 3,4 |
+| solo preallerta (s12) | 657 → 657 | 635 → 635 | 508 → 508 | 3,6 / 3,4 / 5,0 / 5,0 |
+| evacua 30 min dopo (s13) | 493 → 664 | 488 → 575 | 396 → 422 | 3,2 / 3,4 / 3,0 / 3,4 |
+| preallerta + evacua, priorità invertite (s07) | 412 → 412 | 238 → 295 | 167 → 185 | – |
+
+Il migliore per livello e seme ora è s11 in 7 casi su 9 (pari al primo posto al Facile semi 1–2). Fanno eccezione Facile seme 3 (s06/s12) ed Esperto seme 1 (preallerta + evacua solo Castelvento e San Rocco). **Sui tre livelli «evacua ogni paese appena la sindaca lo autorizza» è quasi dominante nei punti.** Il costo si vede solo nelle stelle: Misura 3,4 contro 5,0 della sola preallerta. Sugli 82 incendi invece resta debole (404).
