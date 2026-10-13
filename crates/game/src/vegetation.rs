@@ -911,7 +911,7 @@ pub fn lod(
         let q = eye.clamp(lo, hi);
         let (rise, run) = (eye.y - q.y, Vec2::new(eye.x - q.x, eye.z - q.z).length());
         let tan_max = if chunk.close { 1.5 } else { 1.2 };
-        let low_angle = rise < run * tan_max;
+        let low_angle = rise <= run * tan_max;
         let in_range = if chunk.close { d < CLOSE_M * 1.1 } else { d < CLOSE_M };
         let close = in_range && low_angle;
         if near != chunk.near {
