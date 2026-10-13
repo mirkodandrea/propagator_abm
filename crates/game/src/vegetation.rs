@@ -874,8 +874,9 @@ fn paint(colors: &mut [[f32; 4]], state: u8, k: f32) {
     }
 }
 
-/// Within this distance a chunk also draws the undersides of its crowns: the
-/// kiosk camera never sees them, but Mario's, close to the ground, does.
+/// Within this distance, and with the eye low enough over them, a chunk also
+/// draws the undersides of its crowns: the kiosk camera never sees them, but
+/// Mario's, close to the ground, does.
 const CLOSE_M: f32 = 250.0;
 
 /// Show each chunk's full models near the camera and its proxies beyond
@@ -902,7 +903,17 @@ pub fn lod(
         let (lo, hi) = chunk.bounds;
         let d = eye.distance(eye.clamp(lo, hi));
         let near = if chunk.near { d < lod_m * 1.1 } else { d < lod_m };
-        let close = if chunk.close { d < CLOSE_M * 1.1 } else { d < CLOSE_M };
+        // Seen from above a crown's underside is back-facing: a face tilted
+        // 53° below the horizon (the shallowest of them, normal y = -0.6)
+        // shows only to an eye lower than 53° over it, tan 53° ≈ 1.33. The
+        // eye is measured against the chunk's nearest point, so a hillside
+        // chunk (tall bounds) errs on the side of drawing.
+        let q = eye.clamp(lo, hi);
+        let (rise, run) = (eye.y - q.y, Vec2::new(eye.x - q.x, eye.z - q.z).length());
+        let tan_max = if chunk.close { 1.5 } else { 1.2 };
+        let low_angle = rise < run * tan_max;
+        let in_range = if chunk.close { d < CLOSE_M * 1.1 } else { d < CLOSE_M };
+        let close = in_range && low_angle;
         if near != chunk.near {
             chunk.near = near;
             for (e, on) in [(chunk.full, near), (chunk.low, !near)] {
