@@ -8,14 +8,18 @@ use crate::{
     AppState,
 };
 use bevy::{
+    asset::load_internal_asset,
     ecs::system::SystemParam,
     input::gamepad::*,
     input::mouse::{MouseScrollUnit, MouseWheel},
     prelude::*,
+    pbr::{MaterialPipeline, MaterialPipelineKey},
     render::{
-        mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
+        mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology, VertexAttributeValues},
         render_asset::RenderAssetUsages,
-        render_resource::{Extent3d, TextureDimension, TextureFormat},
+        render_resource::{AsBindGroup, Extent3d, RenderPipelineDescriptor, ShaderRef,
+            SpecializedMeshPipelineError, TextureDimension, TextureFormat},
+        texture::ImageSampler,
         view::NoFrustumCulling,
     },
     window::PrimaryWindow,
@@ -29,10 +33,45 @@ const SCALE: f32 = 20.0;
 const STEP: f32 = 1.0 / 30.0;
 const RADIUS: f32 = 70.0;
 
+const MARIO_SHADER: Handle<Shader> =
+    Handle::weak_from_u128(0x64AA_2026_1013_4B20_9000_0000_0000_0001);
+
+/// Mario retains his own N64 shading and texture combiner, independent of PBR.
+#[derive(Asset, TypePath, AsBindGroup, Clone)]
+struct MarioMaterial {
+    #[texture(0)]
+    #[sampler(1)]
+    atlas: Handle<Image>,
+}
+
+impl Material for MarioMaterial {
+    fn vertex_shader() -> ShaderRef {
+        MARIO_SHADER.into()
+    }
+    fn fragment_shader() -> ShaderRef {
+        MARIO_SHADER.into()
+    }
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Mask(0.5)
+    }
+
+    fn specialize(
+        _pipeline: &MaterialPipeline<Self>,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // The native wing display list disables backface culling.
+        descriptor.primitive.cull_mode = None;
+        Ok(())
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct Playground {
     pub active: bool,
     toggle: bool,
+    snapshot_wing_cap: bool,
     error: Option<String>,
     health: i16,
     wing_cap: bool,
@@ -40,8 +79,9 @@ pub struct Playground {
 }
 
 impl Playground {
-    pub(crate) fn request_start_for_snapshot(&mut self) {
+    pub(crate) fn request_start_for_snapshot(&mut self, wing_cap: bool) {
         self.toggle = true;
+        self.snapshot_wing_cap = wing_cap;
     }
 }
 
@@ -70,7 +110,7 @@ struct Solid {
 struct Runtime {
     engine: Option<Engine>,
     mesh: Option<Handle<Mesh>>,
-    material: Option<Handle<StandardMaterial>>,
+    material: Option<Handle<MarioMaterial>>,
     avatar: Option<Entity>,
     saved: Option<SavedCamera>,
     solids: Vec<Solid>,
@@ -93,6 +133,12 @@ struct Runtime {
 pub struct MarioPlugin;
 impl Plugin for MarioPlugin {
     fn build(&self, app: &mut App) {
+        load_internal_asset!(app, MARIO_SHADER, "shaders/mario.wgsl", Shader::from_wgsl);
+        app.add_plugins(MaterialPlugin::<MarioMaterial> {
+            prepass_enabled: false,
+            shadows_enabled: false,
+            ..default()
+        });
         app.init_resource::<Playground>()
             .insert_non_send_resource(Runtime::default())
             .add_systems(
@@ -289,7 +335,7 @@ type Actors<'w, 's> = Query<
 #[derive(SystemParam)]
 struct RenderAssets<'w> {
     meshes: ResMut<'w, Assets<Mesh>>,
-    materials: ResMut<'w, Assets<StandardMaterial>>,
+    materials: ResMut<'w, Assets<MarioMaterial>>,
     images: ResMut<'w, Assets<Image>>,
 }
 
@@ -466,6 +512,11 @@ fn drive(
             runtime.saved = None;
             return;
         }
+        runtime
+            .engine
+            .as_mut()
+            .unwrap()
+            .set_wing_cap(std::mem::take(&mut mode.snapshot_wing_cap));
         let handle = runtime
             .mesh
             .get_or_insert_with(|| {
@@ -478,7 +529,7 @@ fn drive(
         runtime.avatar = Some(
             commands
                 .spawn((
-                    PbrBundle {
+                    MaterialMeshBundle::<MarioMaterial> {
                         mesh: handle,
                         material: runtime.material.clone().unwrap(),
                         ..default()
@@ -714,24 +765,23 @@ fn drive(
 
 fn load_engine(
     images: &mut Assets<Image>,
-    materials: &mut Assets<StandardMaterial>,
-) -> Result<(Engine, Handle<StandardMaterial>), String> {
+    materials: &mut Assets<MarioMaterial>,
+) -> Result<(Engine, Handle<MarioMaterial>), String> {
     let path = std::env::var_os("MARIO64_ROM")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("data/mario64/Super Mario 64 (USA).z64"));
     let rom = std::fs::read(&path).map_err(|e| format!("ROM {}: {e}", path.display()))?;
-    let (engine, mut atlas) = Engine::new(&rom).map_err(str::to_owned)?;
-    // libsm64 uses transparent atlas pixels to mean "use vertex colour",
-    // including UV (1,1) on untextured body parts. Bevy multiplies the atlas
-    // by vertex colour: turn transparency into white, keeping Mario opaque.
-    for pixel in atlas.chunks_exact_mut(4) {
-        let alpha = pixel[3] as u16;
-        for channel in &mut pixel[..3] {
-            *channel = ((*channel as u16 * alpha + 255 * (255 - alpha)) / 255) as u8;
-        }
-        pixel[3] = 255;
-    }
-    let image = Image::new(
+    load_engine_from_rom(&rom, images, materials)
+}
+
+fn load_engine_from_rom(
+    rom: &[u8],
+    images: &mut Assets<Image>,
+    materials: &mut Assets<MarioMaterial>,
+) -> Result<(Engine, Handle<MarioMaterial>), String> {
+    let (engine, atlas) = Engine::new(rom).map_err(str::to_owned)?;
+    // Preserve ROM alpha: facial decals blend with shade, wings cut out.
+    let mut image = Image::new(
         Extent3d {
             width: libsm64_native::TEXTURE_WIDTH,
             height: libsm64_native::TEXTURE_HEIGHT,
@@ -739,14 +789,13 @@ fn load_engine(
         },
         TextureDimension::D2,
         atlas,
-        TextureFormat::Rgba8UnormSrgb,
+        // N64 combines and interpolates the original encoded colour values.
+        TextureFormat::Rgba8Unorm,
         RenderAssetUsages::default(),
     );
-    let material = materials.add(StandardMaterial {
-        base_color_texture: Some(images.add(image)),
-        perceptual_roughness: 0.8,
-        cull_mode: None,
-        ..default()
+    image.sampler = ImageSampler::linear();
+    let material = materials.add(MarioMaterial {
+        atlas: images.add(image),
     });
     Ok((engine, material))
 }
@@ -1012,6 +1061,41 @@ fn interact(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rom_atlas_retains_wing_cutouts_and_white_feathers() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../data/mario64/Super Mario 64 (USA).z64");
+        let Ok(rom) = std::fs::read(path) else {
+            eprintln!("Skipping ROM-dependent rendering check: local ROM unavailable.");
+            return;
+        };
+        let mut images = Assets::<Image>::default();
+        let mut materials = Assets::<MarioMaterial>::default();
+        let (mut engine, handle) = load_engine_from_rom(&rom, &mut images, &mut materials).unwrap();
+        let material = materials.get(&handle).unwrap();
+        assert_eq!(material.alpha_mode(), AlphaMode::Mask(0.5));
+        let image = images.get(&material.atlas).unwrap();
+        let wing_pixels: Vec<_> = image.data.chunks_exact(4).enumerate()
+            .filter(|(i, _)| {
+                let x = i % libsm64_native::TEXTURE_WIDTH as usize;
+                x >= 9 * 64 && x % 64 < 32 // exclude empty atlas padding
+            })
+            .map(|(_, pixel)| pixel).collect();
+        assert!(wing_pixels.iter().any(|p| p[3] == 0), "feather gaps retain ROM alpha");
+        assert!(wing_pixels.iter().any(|p| p[0] > 240 && p[1] > 240 && p[2] > 240 && p[3] == 255),
+            "white feathers remain opaque");
+        engine.load_surfaces(&[Surface {
+            vertices: [[-8000, 0, -8000], [-8000, 0, 8000], [8000, 0, -8000]],
+            ..default()
+        }]);
+        assert!(engine.spawn([0., 100., 0.]));
+        engine.set_wing_cap(true);
+        engine.tick(&Input::default());
+        assert!(engine.uvs[..engine.vertex_count].iter().any(|uv| *uv == [1., 1.]),
+            "body uses the opaque untextured sentinel");
+        assert!(engine.uvs[..engine.vertex_count].iter().any(|uv| uv[0] >= 9. / 11. && uv[0] < 1.),
+            "native Wing Cap uses the cutout tiles");
+    }
     #[test]
     fn coordinates_and_deadzone() {
         let origin = Vec3::new(7000., 800., -6000.);

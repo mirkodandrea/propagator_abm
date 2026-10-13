@@ -17,6 +17,7 @@
 //! | `dist`   | camera distance in metres (default: 1200, or the fire's span for `fire`) |
 //! | `yaw`, `pitch` | camera angles in degrees (default: as it is, pitch -46)        |
 //! | `select` | district whose badge is open                                         |
+//! | `mario`, `wing` | `1` to show Mario and optionally his Wing Cap (native only)    |
 //!
 //! The view asked for is held *after* the kiosk camera has run
 //! ([`hold`]), with none of its play limits: the kiosk camera keeps the focus
@@ -77,6 +78,8 @@ struct State {
     select: Option<String>,
     #[cfg(not(target_arch = "wasm32"))]
     mario: bool,
+    #[cfg(not(target_arch = "wasm32"))]
+    wing: bool,
 }
 
 fn names(v: &str) -> Vec<String> {
@@ -108,6 +111,8 @@ fn parse(spec: &str) -> Vec<State> {
                     "select" => st.select = Some(v.into()),
                     #[cfg(not(target_arch = "wasm32"))]
                     "mario" => st.mario = v == "1",
+                    #[cfg(not(target_arch = "wasm32"))]
+                    "wing" => st.wing = v == "1",
                     other => eprintln!("snap: unknown key `{other}`"),
                 }
             }
@@ -266,7 +271,7 @@ pub fn drive(
     #[cfg(not(target_arch = "wasm32"))]
     let mario_view = {
         if st.mario && p.waited > 0.25 && !mario.active {
-            mario.request_start_for_snapshot();
+            mario.request_start_for_snapshot(st.wing);
         }
         mario.active
     };
