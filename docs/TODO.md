@@ -221,6 +221,8 @@ UX (verificare nei playtest):
 
 Le voci `[>]` sono riportate in «Aperti dopo la fase 5».
 
+- **2026-10-13, evacuazione a piedi solo se il rifugio è vicinissimo; riparo per chi è a piedi** (richiesta dell'utente). `crates/abm/src/lib.rs`: `drives_to_refuge` — a piedi solo entro `WALK_MAX_S` (190 s, ~250 m), altrimenti in auto anche senza veicolo proprio (passaggio dai vicini); usata da partenza, osservazione e stima del viaggio. `crates/behavior/src/defaults.rs`: `person_last_resort` attivo di default (zona libera da vegetazione entro 500 m). Aperto: rifugio dentro una casa non esiste (serve osservazione + azione); rifare il confronto A/B layout 5 (variants A/B/C, seed 1–3) perché cambiano le vittime. Test già rotti prima: 5 in `abm::incident_gaps`, 1 in `rocca::messaggeri`.
+
 - **2026-10-12, fuoco più brillante e vivo** (l'utente: «il fuoco è ancora poco brillante e vivo»). `shaders/flame.wgsl`: fiamme con rampa di calore (rosso→arancio→giallo→bianco), rumore che sale e erode la sagoma, spostamento laterale verso la punta; i tizzoni (`mode=0` in `FireMaterial`) restano come prima. `shaders/fire_ground.wgsl`: rampa più calda e luminosa, respiro lento lungo il fronte. `fire_view.rs`: più lingue per cella (`fli/450`, max 6) e più alte (×3,4). Solo resa grafica, nessun cambio di fisica. Prova: `KIOSK_SNAP_SPEC='name=n,t=40,phase=esegui,at=unit:1,dist=450,pitch=-28,yaw=270'`. Da valutare a occhio sul chiosco reale (luminosità con il bloom).
 
 - **2026-10-12, variante A e layout 5 nel gioco** (l'utente: «le modifiche per testare l'evacuazione totale non sono state portate nel gioco?»; scelta: **variante A**). Resoconto `docs/fase5/livelli_l5/README.md`.

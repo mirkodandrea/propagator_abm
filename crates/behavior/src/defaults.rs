@@ -396,7 +396,7 @@ pub fn default_person_graph() -> BehaviorGraph {
     // nobody has asked for, and either way every separated-person figure the
     // model has printed was taken without them.
     let last = b.add("block.person_last_resort", 0.0, 780.0);
-    b.boolean(last, "enabled", false);
+    b.boolean(last, "enabled", true);
     b.boolean(last, "also_when_cut_off", true);
     b.num(last, "max_walk_m", 500.0);
     b.boolean(last, "only_with_lift", true);

@@ -95,6 +95,12 @@ const SHELTER_SURVIVAL_S: f32 = 900.0;
 /// town with hairpins, not a motorway).
 const CAR_SPEED: f32 = 11.0;
 
+/// A household whose refuge is nearer than this on foot (route seconds at
+/// walking pace, ~250 m) walks; any farther and everyone goes by car, lifts
+/// and neighbours included, so a household without its own vehicle is not
+/// left to cross the town on foot.
+const WALK_MAX_S: f32 = 190.0;
+
 /// Speed while crossing open ground between the house and the network.
 const APPROACH_SPEED: f32 = 1.6;
 
@@ -1032,15 +1038,27 @@ impl Abm {
         self.boat_lift = Some(lift);
     }
 
+    /// Whether household `i` evacuates to a refuge by car: the refuge is not
+    /// close enough to walk, and a drivable route out exists from near home.
+    fn drives_to_refuge(&self, i: usize) -> bool {
+        let car = self.entry_car[i];
+        let foot = self.entry_foot[i];
+        let near = foot != NO_NODE
+            && self.routes_foot.cost.get(foot as usize).is_some_and(|&c| c <= WALK_MAX_S)
+            && dist(self.network.pos(foot), self.households[i].home) < 60.0;
+        !near
+            && car != NO_NODE
+            && dist(self.network.pos(car), self.households[i].home) < 400.0
+            && self.routes_car.reachable(car)
+    }
+
     /// Free-flow journey from a home's current refuge route. This excludes
     /// warning, preparation, queues, slope and future fire; it is a lower
     /// bound on travel, never an evacuation completion prediction.
     pub fn evacuation_journey_s(&self, i: usize) -> Option<f32> {
         let h = self.households.get(i)?;
         let car = self.entry_car[i];
-        let drive = h.vehicles > 0 && car != NO_NODE
-            && dist(self.network.pos(car), h.home) < 400.0
-            && self.routes_car.reachable(car);
+        let drive = self.drives_to_refuge(i);
         let (mut at, field) = if drive { (car, &self.routes_car) }
             else { (self.entry_foot[i], &self.routes_foot) };
         if at == NO_NODE || !field.reachable(at) { return None; }
@@ -1233,7 +1251,7 @@ impl Abm {
         let h = &self.households[i];
         // The route the household would actually take: their car if they have
         // one and it is reachable, otherwise on foot.
-        let (field, entry) = if h.vehicles > 0 && self.entry_car[i] != NO_NODE {
+        let (field, entry) = if self.drives_to_refuge(i) {
             (&self.routes_car, self.entry_car[i])
         } else {
             (&self.routes_foot, self.entry_foot[i])
@@ -1815,9 +1833,9 @@ impl Abm {
 
     /// Put a household on the road toward `goal`.
     fn launch(&mut self, i: usize, goal: Goal) {
-        let (home, vehicles, members) = {
+        let (home, members) = {
             let h = &self.households[i];
-            (h.home, h.vehicles, h.members.clone())
+            (h.home, h.members.clone())
         };
         // Only members who are actually at home leave with the household.
         // `away` is the explicit half of that: someone out in the street has no
@@ -1845,11 +1863,7 @@ impl Abm {
         // streets away that the road does not go to, chosen for exactly that,
         // and a household that has decided the road is not the answer does not
         // then take it.
-        let car_ok = goal == Goal::Refuge
-            && vehicles > 0
-            && car_node != NO_NODE
-            && dist(self.network.pos(car_node), home) < 400.0
-            && self.routes_car.reachable(car_node);
+        let car_ok = goal == Goal::Refuge && self.drives_to_refuge(i);
         let (mode, entry) = if car_ok {
             (Mode::Car, car_node)
         } else {
