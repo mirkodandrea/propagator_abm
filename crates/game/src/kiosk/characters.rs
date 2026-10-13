@@ -218,7 +218,7 @@ pub fn to(player: &str, text: &str) -> String {
 /// Who brings a crisis to the player.
 pub fn for_crisis(kind: Kind) -> (Who, Mood) {
     match kind {
-        Kind::Scoperto { .. } | Kind::Autorizzazione { .. } => (Who::Sindaca, Mood::Preoccupato),
+        Kind::Scoperto { .. } | Kind::Autorizzazione { .. } | Kind::Vicino { .. } => (Who::Sindaca, Mood::Preoccupato),
         Kind::Previsione { .. } | Kind::Vento { .. } => (Who::Meteo, Mood::Preoccupato),
         Kind::MezzoPerso { .. } => (Who::Dos, Mood::Preoccupato),
     }

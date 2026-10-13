@@ -1098,6 +1098,31 @@ impl Abm {
         None
     }
 
+    /// The way household `i` would take to safety if it left now: its home,
+    /// then the road nodes to the refuge, by car or on foot as
+    /// [`Abm::evacuation_journey_s`] decides; and whether the end is a
+    /// map-edge exit. `None` with no route.
+    pub fn evacuation_path(&self, i: usize) -> Option<(Vec<Pos>, bool)> {
+        let h = self.households.get(i)?;
+        let (mut at, field) = if self.drives_to_refuge(i) { (self.entry_car[i], &self.routes_car) } else { (self.entry_foot[i], &self.routes_foot) };
+        if at == NO_NODE || !field.reachable(at) {
+            return None;
+        }
+        let mut path = vec![h.home, self.network.pos(at)];
+        for _ in 0..self.network.len() {
+            if field.cost[at as usize] == 0.0 {
+                let exit = self.refuges.iter().any(|r| r.node == at && r.is_exit);
+                return Some((path, exit));
+            }
+            at = field.next[at as usize];
+            if at == NO_NODE {
+                return None;
+            }
+            path.push(self.network.pos(at));
+        }
+        None
+    }
+
     /// Spot fires seen so far: fires that started away from the mapped front.
     pub fn spot_fires(&self) -> &SpotFires {
         &self.spots
@@ -1384,6 +1409,11 @@ impl Abm {
     /// all districts together, or lift the limit with `None`.
     pub fn set_exit_capacity(&mut self, per_min: Option<f32>) {
         self.exit_capacity = per_min.filter(|r| *r > 0.0);
+    }
+
+    /// The organised exit's households per minute, if limited.
+    pub fn exit_capacity(&self) -> Option<f32> {
+        self.exit_capacity
     }
 
     /// Households ready to leave on the order and still waiting their turn.

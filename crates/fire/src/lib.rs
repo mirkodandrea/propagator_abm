@@ -17,6 +17,7 @@ use propagator_core::{
 };
 use scenario::{Cell, Scenario, World};
 
+pub mod ensemble;
 pub mod exposure;
 pub mod fuels;
 pub mod hazard;

@@ -26,7 +26,7 @@ use crate::plan::{Civil, Plan};
 pub const STEP_S: i64 = 6;
 /// Fattore sulla capacità di spegnimento: linea tagliata dalle squadre e acqua
 /// di autobotti e aerei (2026-10-13, richiesta dell'utente).
-pub const SUPPRESSION_X: f32 = 3.0;
+pub const SUPPRESSION_X: f32 = 30.0;
 /// A unit on the move that has not moved for this long is stuck: its road is
 /// cut and no other is open.
 pub const STUCK_S: i64 = 5 * 60;
@@ -125,6 +125,22 @@ enum Reach {
 pub struct Review {
     pub verdict: Verdict,
     pub text: String,
+}
+
+/// How many separate ways out [`Game::evacuation_routes`] draws.
+pub const ROUTES_SHOWN: usize = 12;
+
+/// District's ways out ([`Game::evacuation_routes`]).
+#[derive(Debug, Clone, Default)]
+pub struct EvacRoutes {
+    /// Home, then road nodes to the refuge, metres.
+    pub paths: Vec<Vec<Pos>>,
+    /// Where they end, in Italian («l'area di raccolta di X», «il porto»).
+    pub to: Vec<String>,
+    /// Typical and longest journey of the families at home, minutes.
+    pub minutes: Option<(u32, u32)>,
+    /// Families at home with no way out.
+    pub no_way: usize,
 }
 
 pub struct Game {
@@ -525,6 +541,53 @@ impl Game {
         if m.reversed { usize::MAX - r } else { r }
     }
 
+    /// Where district `d`'s families would go if ordered out now: the ways
+    /// out of up to [`ROUTES_SHOWN`] households spread over the district
+    /// (distinct first road nodes), where they end (the gathering area's
+    /// district, or «il porto» for the map-edge exit), and the typical and
+    /// longest journey in minutes. What «Evacua» shows before it is
+    /// confirmed (user, 2026-10-13); the same routes the agents drive.
+    pub fn evacuation_routes(&self, d: usize) -> EvacRoutes {
+        let mut out = EvacRoutes::default();
+        let mut seen = std::collections::HashSet::new();
+        let hh = &self.districts[d].households;
+        let mut minutes: Vec<u32> = vec![];
+        let mut ends: Vec<(Pos, bool)> = vec![];
+        for &i in hh {
+            if !Self::at_home(self.agents.households[i].status) {
+                continue;
+            }
+            match self.agents.evacuation_journey_s(i) {
+                Some(s) => minutes.push((s / 60.0).ceil().max(1.0) as u32),
+                None => out.no_way += 1,
+            }
+            let Some((path, exit)) = self.agents.evacuation_path(i) else { continue };
+            let Some(&end) = path.last() else { continue };
+            if !ends.iter().any(|(p, _)| *p == end) {
+                ends.push((end, exit));
+            }
+            // one line per first road node: the rest share it
+            if out.paths.len() < ROUTES_SHOWN && seen.insert((path[1].x as i64, path[1].y as i64)) {
+                out.paths.push(path);
+            }
+        }
+        minutes.sort_unstable();
+        out.minutes = minutes.last().map(|&b| (minutes[minutes.len() / 2], b));
+        out.to = ends
+            .iter()
+            .map(|&(p, exit)| {
+                if exit {
+                    "il porto".to_string()
+                } else {
+                    let near = (0..self.districts.len()).min_by(|&a, &b| dist(self.districts[a].centre, p).total_cmp(&dist(self.districts[b].centre, p)));
+                    near.map_or_else(|| "l'area di raccolta".to_string(), |n| format!("l'area di raccolta di {}", self.districts[n].name))
+                }
+            })
+            .collect();
+        out.to.dedup();
+        out
+    }
+
     /// Whether the player may order district `d` to evacuate now.
     pub fn may_evacuate(&self, d: usize) -> bool {
         self.mayor.is_none() || self.authorised_at[d].is_some()
@@ -580,7 +643,8 @@ impl Game {
                 if home == 1 { "c'è 1 famiglia".to_string() } else { format!("ci sono {home} famiglie") }
             );
             if self.crisis.is_none() {
-                self.crisis = Some(Crisis { at_s: now, kind: crate::crisis::Kind::Autorizzazione { district: d }, text });
+                let title = format!("La sindaca autorizza l'evacuazione di {name}");
+                self.crisis = Some(Crisis { at_s: now, kind: crate::crisis::Kind::Autorizzazione { district: d }, text, title });
             }
         }
     }
@@ -670,11 +734,15 @@ impl Game {
             return p;
         }
         let forecast = self.territory.shifted(&self.case).map(|(at, w)| (at, w.wind_dir_deg));
-        if let Some(c) = self.detector.check(&v, &self.posts, now, forecast) {
-            // with the mayor's rule, her authorisations are the crises
-            // ([`Game::authorise`]); the detector's findings are news
-            if self.mayor.is_some() {
+        let unwarned: Vec<bool> = self.active.civil.iter().map(|c| *c == Civil::Nessuno).collect();
+        if let Some(c) = self.detector.check(&v, &self.posts, now, forecast, &unwarned) {
+            // with the mayor's rule, her authorisations, the wind and the
+            // fire near homes nobody warned slow the game; the rest is news
+            if self.mayor.is_some() && (!c.kind.stops_with_mayor() || self.crisis.is_some()) {
                 self.log.push(LogEntry { at_s: now, text: c.text });
+            } else if self.mayor.is_some() {
+                self.log.push(LogEntry { at_s: now, text: c.text.clone() });
+                self.crisis = Some(c);
             } else {
                 self.log.push(LogEntry { at_s: now, text: format!("CRISI: {}", c.text) });
                 self.crisis = Some(c);

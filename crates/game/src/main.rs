@@ -20,6 +20,7 @@ mod camera;
 mod field;
 mod fire_shader;
 mod fire_view;
+mod forecast_view;
 mod frame;
 mod kiosk;
 mod landmarks;
@@ -136,6 +137,7 @@ fn main() -> anyhow::Result<()> {
         ));
     }
     kiosk_systems(&mut app);
+    app.add_plugins(forecast_view::ForecastPlugin);
     app.add_systems(Update, quality_live::apply_live.run_if(resource_changed::<quality::Graphics>.and_then(not(resource_added::<quality::Graphics>))));
     app.run();
     Ok(())

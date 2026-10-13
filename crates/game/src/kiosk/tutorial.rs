@@ -69,7 +69,7 @@ fn text(step: Step, k: &Kiosk, sim: &Sim) -> String {
         Step::Scheda => "Cliccando su un paese si apre la sua scheda. «Difendi» ci manda autobotti e squadre. «Preallerta» fa preparare le famiglie in casa, «Evacua» le fa preparare e partire, ma solo dopo che la sindaca l'ha autorizzata. Un ordine alle famiglie non si ritira.".into(),
         Step::Piano => "Nella barra a destra c'è il tuo piano: i paesi da difendere, in ordine. Le squadre vanno dove indichi, se ci arrivano in tempo: essere primi non garantisce di essere salvati.".into(),
         Step::Avvia => format!(
-            "Quando sei pronto premi «Avvia»: il tempo scorre veloce. Per cambiare gli ordini premi «Decidi»: il tempo rallenta, ma il fuoco non si ferma. Quando un paese è in pericolo la sindaca ti autorizza a evacuarlo: avrai {:.0} secondi per decidere.",
+            "Quando sei pronto premi «Avvia»: il tempo scorre veloce e non si ferma. Gli ordini li cambi mentre scorre, trascinando i paesi nel piano. Il tempo rallenta da solo quando il vento gira, quando il fuoco si avvicina a chi non è avvisato o quando la sindaca autorizza un'evacuazione: avrai {:.0} secondi per decidere.",
             k.crisis_s
         ),
     }

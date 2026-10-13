@@ -1,6 +1,5 @@
-//! The score, the stars and the list of the last players. Since 2026-10-13
-//! the kiosk shows stars ([`Stars`]) and the last games ([`Recent`]), no
-//! leaderboard; the 0-1000 score stays for the headless comparisons.
+//! The score, the stars and the day's board. Since 2026-10-13 the kiosk
+//! shows stars ([`Stars`]) and the day's best per level ([`Board`]); the 0-1000 score stays for the headless comparisons.
 //!
 //! The score is made of the debrief's own numbers, so the screen and the
 //! points never disagree: of the families the same fire with no orders
@@ -20,8 +19,6 @@ use crate::Outcome;
 pub const MAX: i64 = 1000;
 /// Weight of the families' share; the homes take the rest. People first.
 pub const FAMILY_WEIGHT: f64 = 0.7;
-/// Games in the list of the last players.
-pub const RECENT: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Score {
@@ -88,15 +85,21 @@ pub fn stars(s: &Score, timing: Option<f64>, measure: f64) -> Stars {
     }
 }
 
-/// One game in the list of the last players (01-SPEC-GIOCO §5, 2026-10-13:
-/// no leaderboard): the name, the level, well in sight because stars are
-/// not comparable between levels, and the stars.
+/// One finished game on the day's board (01-SPEC-GIOCO §5, 2026-10-13): the
+/// name, the level (stars are not comparable between levels), the stars and
+/// when it was played.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Played {
     pub name: String,
     pub level: String,
     /// Persone, Case, Tempismo, Misura; `None` where nothing was at stake.
     pub stars: [Option<u8>; 4],
+    /// The local date, `YYYY-MM-DD`: the board shows only today's games.
+    #[serde(default)]
+    pub day: String,
+    /// Seconds since the Unix epoch: the earlier game wins a tie.
+    #[serde(default)]
+    pub at: u64,
 }
 
 impl Stars {
@@ -106,21 +109,69 @@ impl Stars {
     }
 }
 
-/// The last [`RECENT`] games, newest first.
+impl Played {
+    /// The sum of the four categories' stars (a category with nothing at
+    /// stake counts nothing: every player of a level faces the same fire).
+    pub fn total(&self) -> u32 {
+        self.stars.iter().flatten().map(|&s| s as u32).sum()
+    }
+
+    /// Persone stars, the first tie-break.
+    pub fn persone(&self) -> u32 {
+        self.stars[0].map_or(0, |s| s as u32)
+    }
+}
+
+/// Games kept per level and day (a kiosk day never gets near it).
+pub const BOARD_KEEP: usize = 50;
+/// Rows the screens show per level.
+pub const BOARD_SHOWN: usize = 8;
+
+/// The best of the day, per level. Ranking: total stars, then Persone
+/// stars, then the earlier game.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Recent {
+pub struct Board {
     pub entries: Vec<Played>,
 }
 
-impl Recent {
+impl Board {
+    /// Add a game. Games of other days are dropped, the board being «del
+    /// giorno»; each level keeps its best [`BOARD_KEEP`].
     pub fn push(&mut self, p: Played) {
-        self.entries.insert(0, p);
-        self.entries.truncate(RECENT);
+        let day = p.day.clone();
+        self.entries.retain(|e| e.day == day);
+        self.entries.push(p);
+        let mut levels: Vec<String> = self.entries.iter().map(|e| e.level.clone()).collect();
+        levels.sort();
+        levels.dedup();
+        let mut kept = Vec::new();
+        for l in levels {
+            kept.extend(self.ranking(&l, &day).into_iter().take(BOARD_KEEP).cloned());
+        }
+        self.entries = kept;
     }
 
-    /// Read a saved list; anything unreadable is an empty list, so a
+    /// Today's games at `level`, best first.
+    pub fn ranking(&self, level: &str, day: &str) -> Vec<&Played> {
+        let mut v: Vec<&Played> = self.entries.iter().filter(|e| e.level == level && e.day == day).collect();
+        v.sort_by(|a, b| b.total().cmp(&a.total()).then(b.persone().cmp(&a.persone())).then(a.at.cmp(&b.at)));
+        v
+    }
+
+    /// Today's games at `level`.
+    pub fn count(&self, level: &str, day: &str) -> usize {
+        self.entries.iter().filter(|e| e.level == level && e.day == day).count()
+    }
+
+    /// The 0-based place of the game played at `at` by `name` in today's
+    /// ranking of its level, if it is there.
+    pub fn place(&self, level: &str, day: &str, name: &str, at: u64) -> Option<usize> {
+        self.ranking(level, day).iter().position(|e| e.at == at && e.name == name)
+    }
+
+    /// Read a saved board; anything unreadable is an empty board, so a
     /// damaged file never stops the kiosk.
-    pub fn from_json(s: &str) -> Recent {
+    pub fn from_json(s: &str) -> Board {
         serde_json::from_str(s).unwrap_or_default()
     }
 
@@ -183,16 +234,31 @@ mod tests {
         assert_eq!((st.persone, st.case, st.tempismo, st.misura), (None, Some(1), None, 5));
     }
 
+    fn game(name: &str, level: &str, stars: [u8; 4], day: &str, at: u64) -> Played {
+        Played { name: name.into(), level: level.into(), stars: stars.map(Some), day: day.into(), at }
+    }
+
     #[test]
-    fn the_list_keeps_the_last_eight() {
-        let mut r = Recent::default();
-        for k in 1..=10u8 {
-            r.push(Played { name: format!("P{k}"), level: "Facile".into(), stars: [Some(k % 5 + 1), None, Some(3), Some(5)] });
-        }
-        assert_eq!(r.entries.len(), RECENT);
-        assert_eq!(r.entries[0].name, "P10", "newest first");
-        assert_eq!(Recent::from_json(&r.to_json()), r);
-        assert_eq!(Recent::from_json("not json"), Recent::default());
+    fn the_board_ranks_per_level_and_only_today() {
+        let mut b = Board::default();
+        b.push(game("Ieri", "Facile", [5, 5, 5, 5], "2026-10-12", 1));
+        b.push(game("Anna", "Facile", [3, 3, 3, 3], "2026-10-13", 100));
+        b.push(game("Bruno", "Facile", [4, 2, 3, 3], "2026-10-13", 200)); // 12, persone 4
+        b.push(game("Carla", "Facile", [2, 4, 3, 3], "2026-10-13", 300)); // 12, persone 2
+        b.push(game("Dario", "Facile", [3, 3, 3, 3], "2026-10-13", 50)); // 12, persone 3, earlier than Anna
+        b.push(game("Elsa", "Esperto", [1, 1, 1, 1], "2026-10-13", 400));
+        let names = |l: &str| b.ranking(l, "2026-10-13").iter().map(|e| e.name.clone()).collect::<Vec<_>>();
+        // total first, then Persone, then the earlier game
+        assert_eq!(names("Facile"), ["Bruno", "Dario", "Anna", "Carla"]);
+        assert_eq!(names("Esperto"), ["Elsa"]);
+        assert!(names("Medio").is_empty());
+        // yesterday's game was dropped when today's came in
+        assert!(b.entries.iter().all(|e| e.day == "2026-10-13"));
+        assert_eq!(b.place("Facile", "2026-10-13", "Anna", 100), Some(2));
+        // tomorrow shows nothing
+        assert!(b.ranking("Facile", "2026-10-14").is_empty());
+        assert_eq!(Board::from_json(&b.to_json()), b);
+        assert_eq!(Board::from_json("not json"), Board::default());
     }
 
     #[test]

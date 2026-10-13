@@ -23,6 +23,8 @@ Una priorità alta **non garantisce protezione**. Il coordinatore non può ordin
 
 ## 2. Loop di una partita
 
+**Decisione 2026-10-13 (pomeriggio), supera le righe sotto su «Decidi»: niente pause.** Dopo «Avvia» il piano si cambia **mentre il tempo scorre** (tre colonne trascinabili: Difesa ordinata, Preallerta, Evacuazione) e vale subito; solo «Evacua» mostra prima il percorso verso l'area sicura e chiede conferma, a ×1 per al massimo 20 s reali (allo scadere l'ordine non parte). Il gioco scende a ×1 **da solo** soltanto per: autorizzazione della sindaca, cambio di vento annunciato o avvenuto, fuoco a meno di ~30 min dalle case di un quartiere che non ha né preallerta né evacuazione (`crisis::Kind::Vicino`). Il titolo del momento ×1 e il testo del personaggio sono generati dal motivo (`Crisis::title`, `Crisis::text`). Le altre crisi restano notizie. Uscita organizzata: al massimo 6 famiglie al minuto da tutta l'isola (`exit_per_min`, `docs/fase6/uscita/README.md`).
+
 **Decisione 2026-10-13: due sole velocità, il mondo non si ferma mai.** Il gioco sceglie da solo la velocità alta; le scelte si fanno in un unico **momento delle scelte a ×1**, che sostituisce sia la pianificazione a ×0 sia le pause a mondo fermo. Si entra nel momento delle scelte in due modi: lo chiede il giocatore (pulsante «Decidi», ex «Pausa») o lo apre la sindaca autorizzando un'evacuazione (§3).
 
 1. **Primo momento delle scelte (×1):** presentazione di fuoco, vento e paese; il fuoco è ancora piccolo, quindi è di fatto la pianificazione, ma il mondo è già vivo. Il giocatore ordina le priorità e può dare la preallerta. Sulla mappa appare il **piano proposto**. Finisce con «Conferma».
@@ -77,7 +79,7 @@ Il piano proposto si ricalcola usando lo stato più recente quando necessario; i
 - stato delle squadre **sulla mappa**, rotte attive e rotte proposte distinguibili;
 - indicazione del vento, del rischio e del tempo (×N / ×1, con countdown quando il momento delle scelte l'ha aperto la sindaca);
 - due azioni chiare per i cittadini: **Preallerta / Evacua**; «Evacua» visibilmente bloccato, con il motivo («serve l'autorizzazione della sindaca»), finché il quartiere non è autorizzato;
-- un pulsante **Decidi** durante ×N (con l'attesa residua, se c'è) e un solo pulsante centrale **Conferma** nel momento delle scelte;
+- ~~un pulsante **Decidi** durante ×N~~ (tolto 2026-10-13: il piano si cambia mentre il tempo scorre, §2) e un solo pulsante centrale **Conferma** nei momenti ×1 aperti dal gioco;
 - finale molto breve: persone rimaste in pericolo, case **colpite** (non chiamarle «distrutte» se è un proxy), effetto di almeno una scelta e possibilità di riprovare;
 - **riassunto a stelle** (decisione 2026-10-13, sostituisce punteggio 0–1000 e classifica): quattro categorie da 1 a 5 stelle, ciascuna con una riga di «perché» dalla storia della partita. Tutte calcolate da fatti simulati in `rocca::score`, non nella UI:
   - **Persone:** famiglie risparmiate rispetto allo stesso incendio senza ordini;

@@ -50,6 +50,10 @@ MESSENGERS = {"teams": 4, "per_min": 1.0, "broadcast": True, "by_priority": Fals
 # 2026-10-13, docs/fase6/sindaca/README.md): she gives it when the front could
 # reach a district within 20 minutes.
 MAYOR = {"lead_s": 1200}
+# Households the organised evacuation puts on the road per minute, all
+# districts together (`abm::Abm::set_exit_capacity`, user 2026-10-13,
+# docs/fase6/uscita/README.md, variant B: who sees the fire leaves anyway).
+EXIT_PER_MIN = 6.0
 # The game's cases are named after their level (user, 2026-10-13); the old
 # name stays as `alias`, so the earlier reports still replay.
 LEVEL_IDS = {"Rocco3": "easy", "Terra1_gira": "medium", "Borgo2_gira": "expert"}
@@ -106,6 +110,7 @@ def build(cid: str) -> dict:
         "levels": [lv for lv in LEVELS if any(c["name"] == lv["case"] for c in cases)],
         "messengers": MESSENGERS,
         "mayor": MAYOR,
+        "exit_per_min": EXIT_PER_MIN,
         "cases": cases,
     }
 

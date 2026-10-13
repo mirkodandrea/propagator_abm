@@ -62,6 +62,7 @@
   "mayor": {
     "lead_s": 1200
   },
+  "exit_per_min": 6.0,
   "cases": [
     {
       "name": "expert",

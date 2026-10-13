@@ -47,13 +47,9 @@ pub const RUN_SPEED: f32 = 80.0;
 /// Real seconds the player has when the mayor authorises an evacuation
 /// (spec §2: ~45 s at ×1).
 pub const CRISIS_S: f32 = 45.0;
-/// Simulated seconds after a decision moment before «Decidi» opens the next
-/// (user, 2026-10-09: none straight after another; 2026-10-13: no cap on
-/// how many). Orders change only in a decision moment.
-pub const PAUSE_GAP_S: i64 = 15 * 60;
-/// Real seconds a decision moment asked with «Decidi» waits, with nothing
-/// changed, before the time runs fast again (spec §2: ~60 s).
-pub const DECIDE_IDLE_S: f32 = 60.0;
+/// Real seconds the player has to confirm an evacuation, its way out on the
+/// map, at ×1 (user, 2026-10-13); then it is dropped.
+pub const CONFIRM_EVAC_S: f32 = 20.0;
 /// How many times faster the game runs while nothing is happening
 /// (`rocca::Game::is_quiet`): the waits after the orders were the dull part.
 /// ×40·3 = ×120.
@@ -71,10 +67,11 @@ pub fn window_mode() -> WindowMode {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Phase {
-    /// The decision moment, ×1 (×0 only before the game has started): the
-    /// player ranks places and chooses civil orders.
+    /// The opening plan, before «Avvia» (×0 until a level is picked, then
+    /// ×1): the player ranks places and chooses civil orders.
     Pianifica,
-    /// ×N: the plan in force is being carried out.
+    /// ×N: the plan in force is being carried out, and the player changes
+    /// it as the world runs (user, 2026-10-13: no pauses, no «Decidi»).
     Esegui,
     /// ×1: a crisis, the mayor's authorisation. The active plan goes on; the
     /// proposed one is applied on confirmation or when the countdown runs out.
@@ -154,9 +151,13 @@ pub struct Kiosk {
     /// The visitor picked a difficulty on the opening screen. Before that the map, the fire
     /// and the chips show, but no order can be given (user, 2026-10-09).
     pub started: bool,
-    /// The first plan was confirmed («Avvia»): later decision moments are
-    /// asked with «Decidi» and can be left with «Annulla».
+    /// The first plan was confirmed («Avvia»): from then on orders apply as
+    /// they are given.
     pub begun: bool,
+    /// «Evacua» was pressed for this district while the time runs: its way
+    /// out is on the map, the world at ×1, until «Conferma» or «Annulla» or
+    /// [`CONFIRM_EVAC_S`] real seconds (the second value) pass.
+    pub confirm_evac: Option<(usize, f32)>,
     /// The operator stopped the world (F2): the one way it stands still.
     pub frozen: bool,
     /// The world held for a screenshot (`KIOSK_SNAP`), without saying so.
@@ -167,18 +168,19 @@ pub struct Kiosk {
     pub picked_level: Option<usize>,
     /// The district whose badge is opened on the map (a click), if any.
     pub selected: Option<usize>,
-    /// Simulated time the clock last started running («Avvia», «Riprendi»).
-    pub resumed_at_s: i64,
-    /// The last players with their stars (no leaderboard since 2026-10-13).
-    pub board: rocca::score::Recent,
+    /// The day's best per level (`rocca::score::Board`, 2026-10-13).
+    pub board: rocca::score::Board,
     /// The player's first name, typed on the opening screen before the
     /// first game (user, 2026-10-12): the characters speak to them by it and
     /// the board shows it. Kept for «Riprova», cleared by the operator's
     /// «Nuova partita» (a new visitor).
     pub player: String,
-    /// This game is in the list of the last players.
+    /// This game is on the day's board.
     pub saved: bool,
-    /// Real time «Azzera elenco» was first pressed (operator bar).
+    /// Where this game stands on the board once saved: the date and the time
+    /// it was stamped with.
+    pub saved_at: (String, u64),
+    /// Real time «Azzera classifica» was first pressed (operator bar).
     pub board_reset_armed: Option<f64>,
     /// Real seconds the player has at a crisis; the operator can lengthen it
     /// for slow readers.
@@ -246,15 +248,16 @@ impl Kiosk {
             intro: false,
             started: false,
             begun: false,
+            confirm_evac: None,
             frozen: false,
             still: false,
             level: None,
             picked_level: None,
             selected: None,
-            resumed_at_s: 0,
             board: board::load(),
             player: String::new(),
             saved: false,
+            saved_at: Default::default(),
             board_reset_armed: None,
             pick: String::new(),
             reset_armed: None,
@@ -338,16 +341,12 @@ impl Kiosk {
         self.started
     }
 
-    /// Minutes until «Decidi» is allowed again; 0 when it is.
-    pub fn pause_wait_min(&self, now_s: i64) -> i64 {
-        ((self.resumed_at_s + PAUSE_GAP_S - now_s).max(0) + 59) / 60
-    }
-
     pub fn enter(&mut self, phase: Phase) {
         self.phase = phase;
         self.phase_t = 0.0;
-        // an opened chip would cover the pause's or the crisis's own panel
+        // an opened chip would cover the crisis's own panel
         self.selected = None;
+        self.confirm_evac = None;
     }
 }
 
@@ -455,7 +454,6 @@ fn demo(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestart
         Phase::Pianifica if kiosk.phase_t > 2.0 => {
             kiosk.proposed = scripted_plan(sim);
             commit(kiosk, sim);
-            kiosk.resumed_at_s = sim.time_s();
             kiosk.begun = true;
             kiosk.enter(Phase::Esegui);
         }
@@ -492,7 +490,6 @@ fn restart(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRest
             kiosk.begun = false;
             kiosk.frozen = false;
             kiosk.selected = None;
-            kiosk.resumed_at_s = 0;
             kiosk.saved = false;
             if baseline {
                 kiosk.start_baseline();
@@ -511,12 +508,7 @@ pub fn close_crisis(kiosk: &mut Kiosk, sim: &mut Sim) {
         commit(kiosk, sim);
     }
     kiosk.crisis = None;
-    // the mayor's moments do not count for the gap between «Decidi»; the
-    // opening one, if she cut it short, does
-    if !kiosk.begun {
-        kiosk.begun = true;
-        kiosk.resumed_at_s = sim.time_s();
-    }
+    kiosk.begun = true;
     kiosk.enter(Phase::Esegui);
 }
 
@@ -570,15 +562,27 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         let want = kiosk.demo_pick.1.pace();
         kiosk.demo_speed += (want - kiosk.demo_speed) * (1.0 - (-0.4 * dt).exp());
     }
-    // The decision moment runs at ×1 once the game has started (spec §2,
-    // 2026-10-13); before, and during the tour, the world waits.
+    // The opening plan runs at ×1 once a level is picked; before, and during
+    // the tour, the world waits.
     let deciding = kiosk.phase == Phase::Pianifica && kiosk.started && !kiosk.title && kiosk.tour.is_none();
+    // Orders given while the time runs apply at once (user, 2026-10-13);
+    // only an evacuation waits for its confirmation, below.
+    if kiosk.phase == Phase::Esegui && kiosk.begun && !kiosk.title && kiosk.proposed != sim.active {
+        commit(&mut kiosk, &mut sim);
+        // refused (revalidated against the state now): back to the plan in force
+        kiosk.proposed = sim.active.clone();
+    }
+    if let Some((d, t)) = kiosk.confirm_evac {
+        let t = t + if kiosk.frozen { 0.0 } else { dt };
+        kiosk.confirm_evac = (kiosk.phase == Phase::Esegui && t < CONFIRM_EVAC_S && sim.active.civil[d] != rocca::Civil::Evacua).then_some((d, t));
+    }
     sim.speed = match kiosk.phase {
         _ if kiosk.frozen || kiosk.still => 0.0,
         Phase::Pianifica if mario_clock => mario.simulation_speed,
         Phase::Pianifica if deciding => 1.0,
         // faster while nothing is happening and nothing is being composed
         Phase::Esegui if kiosk.title => kiosk.speed * kiosk.demo_speed,
+        Phase::Esegui if kiosk.confirm_evac.is_some() => 1.0,
         Phase::Esegui if kiosk.proposed == sim.active && sim.is_quiet(QUIET_S) => kiosk.speed * QUIET_BOOST,
         Phase::Esegui => kiosk.speed,
         Phase::Crisi => 1.0,
@@ -599,11 +603,6 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
             kiosk.crisis = Some(c);
             kiosk.dirty = true;
             kiosk.enter(Phase::Crisi);
-        }
-        // a «Decidi» left with nothing changed: the time runs fast again
-        if deciding && !mario_clock && kiosk.begun && kiosk.proposed == sim.active && kiosk.phase_t >= DECIDE_IDLE_S {
-            kiosk.resumed_at_s = sim.time_s();
-            kiosk.enter(Phase::Esegui);
         }
         if kiosk.phase == Phase::Crisi && kiosk.phase_t >= kiosk.crisis_s {
             let now = sim.time_s();
@@ -744,7 +743,6 @@ pub fn shots(
             snap("2_anteprima");
             commit(&mut kiosk, &mut sim);
             kiosk.begun = true;
-            kiosk.resumed_at_s = sim.time_s();
             kiosk.enter(Phase::Esegui);
             *stage = (2, 0.0);
         }
@@ -885,7 +883,7 @@ mod mario_clock_tests {
             let mut k = app.world_mut().resource_mut::<Kiosk>();
             k.started = true;
             k.begun = true;
-            k.phase_t = DECIDE_IDLE_S;
+            k.phase_t = 60.0;
             k.proposed = active.clone();
         }
         app.world_mut().resource_mut::<crate::mario::Playground>().simulation_speed = 20.;

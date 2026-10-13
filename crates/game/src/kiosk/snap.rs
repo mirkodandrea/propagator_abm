@@ -12,7 +12,7 @@
 //! | `prio`   | district names in priority order, `+` between (overrides the plan)   |
 //! | `pre`    | districts with a pre-alert, `+` between                              |
 //! | `evac`   | districts evacuated at `t` if the mayor authorised them, `+` between |
-//! | `phase`  | `esegui` (default, time frozen), `pianifica`, `fine`, `title`        |
+//! | `phase`  | `esegui` (default, time frozen), `pianifica`, `fine`, `title`, `intro`|
 //! | `at`     | camera focus: `home`, `fire`, `district:<name>`, `post:<n>`, `unit:<n>`, `<x>:<y>` (metres) |
 //! | `dist`   | camera distance in metres (default: 1200, or the fire's span for `fire`) |
 //! | `yaw`, `pitch` | camera angles in degrees (default: as it is, pitch -46)        |
@@ -76,6 +76,8 @@ struct State {
     yaw: Option<f32>,
     pitch: Option<f32>,
     select: Option<String>,
+    /// `conferma=<quartiere>`: «Evacua» pressed, waiting for its confirmation.
+    confirm: Option<String>,
     #[cfg(not(target_arch = "wasm32"))]
     mario: bool,
     #[cfg(not(target_arch = "wasm32"))]
@@ -109,6 +111,7 @@ fn parse(spec: &str) -> Vec<State> {
                     "yaw" => st.yaw = v.parse().ok(),
                     "pitch" => st.pitch = v.parse().ok(),
                     "select" => st.select = Some(v.into()),
+                    "conferma" => st.confirm = Some(v.into()),
                     #[cfg(not(target_arch = "wasm32"))]
                     "mario" => st.mario = v == "1",
                     #[cfg(not(target_arch = "wasm32"))]
@@ -160,6 +163,8 @@ fn apply(st: &State, kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWrit
         restart(kiosk, sim, restarted, st.phase == "fine");
     }
     kiosk.started = true;
+    // the level of this case, for the end screen's ranking
+    kiosk.level = kiosk.territory.levels.iter().position(|l| l.case == kiosk.case);
     let n = sim.districts.len();
     let idx = |sim: &Sim, l: &[String]| -> Vec<usize> { l.iter().filter_map(|s| sim.district_index(s)).collect() };
     if st.plan != "keep" {
@@ -209,9 +214,12 @@ fn apply(st: &State, kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWrit
         _ => Phase::Esegui,
     });
     kiosk.title = st.phase == "title";
-    kiosk.started = !kiosk.title;
+    // `intro`: the opening screen (name and levels), as after «Gioca»
+    kiosk.intro = st.phase == "intro";
+    kiosk.started = !kiosk.title && !kiosk.intro;
     // after the phase: entering one closes the opened chip
     kiosk.selected = st.select.as_deref().and_then(|s| sim.district_index(s));
+    kiosk.confirm_evac = st.confirm.as_deref().and_then(|s| sim.district_index(s)).map(|d| (d, 0.0));
     // Ahead of the clock the quiet-time boost would not run the world: speed is 0.
 
     let on = |p: Pos| crate::frame::to_bevy(p, sim.scn.terrain.height_at(p));

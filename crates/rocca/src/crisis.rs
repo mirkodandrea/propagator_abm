@@ -10,11 +10,16 @@
 //!   present front at a district (**previsione**): a forecast is known
 //!   information, the fire's future is not;
 //! - the wind has turned and now drives the fire at a district (**vento**);
-//! - a unit has been lost (**mezzo perso**).
+//! - a unit has been lost (**mezzo perso**);
+//! - the fire could reach the homes of a district nobody has warned yet,
+//!   neither pre-alert nor evacuation, within [`NEAR_S`] (**vicino**).
 //!
-//! With the mayor's rule on (`game.json`, 2026-10-13) these are news in the
-//! log, and the one crisis is hers (**autorizzazione**, [`crate::mayor`]):
-//! a district may now be evacuated.
+//! With the mayor's rule on (`game.json`, 2026-10-13) the world never stops
+//! and the player gives orders while it runs (user, 2026-10-13): the game
+//! slows to ×1 on its own only for her authorisation
+//! (**autorizzazione**, [`crate::mayor`]), a change of wind (**previsione**,
+//! **vento**) and the fire near homes nobody warned (**vicino**); the rest is
+//! news in the log ([`Kind::stops_with_mayor`]).
 //!
 //! Each crisis fires once, at most [`MAX_CRISES`] per game and at least
 //! [`MIN_GAP_S`] apart. The message states risk, estimated time and the
@@ -27,7 +32,7 @@ use crate::coordinator::{self, Post, View};
 use crate::district;
 use crate::words;
 
-pub const MAX_CRISES: usize = 2;
+pub const MAX_CRISES: usize = 3;
 pub const MIN_GAP_S: i64 = 15 * 60;
 /// How far ahead the forecast announces a wind change.
 pub const FORECAST_LEAD_S: i64 = 20 * 60;
@@ -36,6 +41,9 @@ pub const CRISIS_M: f32 = 2000.0;
 /// An uncovered district is a crisis only if the fire could be on it within
 /// this long: beyond it, it is not yet a decision under time pressure.
 pub const URGENT_S: f32 = 45.0 * 60.0;
+/// A district nobody warned is a crisis when the fire could be at its homes
+/// within this long: the time a pre-alert still makes a difference.
+pub const NEAR_S: f32 = 30.0 * 60.0;
 /// No crisis this close to the end of a game: nothing could still change.
 pub const LAST_CALL_S: i64 = 10 * 60;
 /// Approach speed assumed until two observations exist, m/s (~1 km/h).
@@ -51,15 +59,27 @@ pub enum Kind {
     MezzoPerso { unit: usize },
     /// The mayor authorises the district's evacuation.
     Autorizzazione { district: usize },
+    /// The fire could reach the homes of a district nobody has warned.
+    Vicino { district: usize },
 }
 
 impl Kind {
     /// The district the crisis is about, if it is about one.
     pub fn district(self) -> Option<usize> {
         match self {
-            Kind::Scoperto { district } | Kind::Previsione { district } | Kind::Vento { district } | Kind::Autorizzazione { district } => Some(district),
+            Kind::Scoperto { district }
+            | Kind::Previsione { district }
+            | Kind::Vento { district }
+            | Kind::Autorizzazione { district }
+            | Kind::Vicino { district } => Some(district),
             Kind::MezzoPerso { .. } => None,
         }
+    }
+
+    /// With the mayor's rule on, whether this slows the game to ×1 for a
+    /// decision; otherwise it is news.
+    pub fn stops_with_mayor(self) -> bool {
+        matches!(self, Kind::Autorizzazione { .. } | Kind::Previsione { .. } | Kind::Vento { .. } | Kind::Vicino { .. })
     }
 }
 
@@ -69,6 +89,8 @@ pub struct Crisis {
     pub kind: Kind,
     /// Risk, estimated time and trade-off, in Italian.
     pub text: String,
+    /// Why the game slowed down, in a few words: the crisis panel's heading.
+    pub title: String,
 }
 
 /// How fast the front has been closing on each district: what the crisis
@@ -118,7 +140,9 @@ impl Detector {
     /// coordinator review, after the active plan's posts are known.
     /// `forecast`: a wind change the weather service has announced, as
     /// (when, wind from, degrees).
-    pub fn check(&mut self, v: &View, posts: &[Option<Post>], now: i64, forecast: Option<(i64, f64)>) -> Option<Crisis> {
+    /// `unwarned`: per district, nobody there has had a pre-alert or an
+    /// evacuation order.
+    pub fn check(&mut self, v: &View, posts: &[Option<Post>], now: i64, forecast: Option<(i64, f64)>, unwarned: &[bool]) -> Option<Crisis> {
         let n = v.districts.len();
         let wind = v.fire.weather().wind_dir_deg;
         let turned = self.wind_from.is_some_and(|w| (w - wind).abs() > 1.0);
@@ -147,6 +171,7 @@ impl Detector {
                 candidates.push(Crisis {
                     at_s: now,
                     kind: Kind::MezzoPerso { unit: k },
+                    title: format!("{} è fuori servizio", u.callsign),
                     text: {
                         let left = v.crews.units.iter().filter(|x| x.state != UnitState::Lost && !x.kind.is_air()).count();
                         let left = if left == 1 { "Resta 1 mezzo".to_string() } else { format!("Restano {left} mezzi") };
@@ -177,6 +202,7 @@ impl Detector {
                     candidates.push(Crisis {
                         at_s: now,
                         kind: Kind::Previsione { district: d },
+                        title: format!("Il vento sta per girare verso {name}"),
                         text: format!(
                             "Previsione meteo: tra circa {} min il vento girerà e soffierà da {}. Spingerebbe il fuoco verso {name}, ora a {}. Ora {name} non ha mezzi.",
                             (at - now) / 60,
@@ -197,10 +223,23 @@ impl Detector {
             let arrive_s = e.distance_m / speed.max(0.05);
             let urgent = arrive_s <= URGENT_S;
             let covered = posts.iter().flatten().any(|p| p.district == d);
+            if unwarned.get(d).copied().unwrap_or(false) && arrive_s <= NEAR_S {
+                let home = v.districts[d].households.len();
+                candidates.push(Crisis {
+                    at_s: now,
+                    kind: Kind::Vicino { district: d },
+                    title: format!("Il fuoco si avvicina a {name}"),
+                    text: format!(
+                        "Il fuoco può arrivare alle case di {name} in circa {} min. Le {home} famiglie di {name} non hanno avuto né la preallerta né l'ordine di evacuare.",
+                        minutes(arrive_s)
+                    ),
+                });
+            }
             if turned && e.downwind > coordinator::DOWNWIND_COS && !covered {
                 candidates.push(Crisis {
                     at_s: now,
                     kind: Kind::Vento { district: d },
+                    title: format!("Il vento è girato verso {name}"),
                     text: format!(
                         "Il vento è girato: ora spinge il fuoco verso {name}, a {}. Nel piano attuale {name} non ha mezzi.",
                         words::km(e.distance_m),
@@ -230,6 +269,7 @@ impl Detector {
             candidates.push(Crisis {
                 at_s: now,
                 kind: Kind::Scoperto { district: d },
+                title: format!("{name} è senza mezzi"),
                 text: format!(
                     // short: it is read against the countdown (playtest 4)
                     "Il fuoco può arrivare a {name} in circa {} min. {} ci arriva in {} min{cost}.",

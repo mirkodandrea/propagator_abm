@@ -261,3 +261,34 @@ fn the_exit_capacity_limits_the_departures_on_the_order() {
     assert!(capped < free, "capped {capped} free {free}");
     assert!(waiting > 0, "nobody waiting with 2 a minute");
 }
+
+/// With the mayor's rule on, the fire nearing homes nobody warned slows the
+/// game for a decision (user, 2026-10-13), with a heading that says why; a
+/// warned district does not.
+#[test]
+fn the_fire_near_unwarned_homes_is_a_crisis() {
+    let first_near = |warn: bool| {
+        let mut g = Game::new(&data(), "medium", 1).unwrap();
+        let n = g.districts.len();
+        let mut plan = Plan::new(n);
+        if warn {
+            for d in 0..n {
+                plan = plan.with_civil(d, Civil::Preallerta);
+            }
+        }
+        g.commit(plan).unwrap();
+        while g.time_s() < g.case.duration_s() {
+            g.step().unwrap();
+            if let Some(c) = g.take_crisis() {
+                if let rocca::crisis::Kind::Vicino { district } = c.kind {
+                    return Some((district, c.title));
+                }
+            }
+        }
+        None
+    };
+    let (d, title) = first_near(false).expect("no «vicino» crisis with nobody warned");
+    assert!(title.contains("si avvicina"), "{title}");
+    let _ = d;
+    assert!(first_near(true).is_none(), "a «vicino» crisis with everyone pre-alerted");
+}

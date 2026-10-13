@@ -2004,6 +2004,7 @@ dependencies = [
  "fire",
  "getrandom 0.3.4",
  "js-sys",
+ "libc",
  "libsm64-native",
  "rocca",
  "scenario",
