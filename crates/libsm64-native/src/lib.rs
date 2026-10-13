@@ -82,6 +82,7 @@ extern "C" {
     fn sm64_set_mario_position(id: i32, x: f32, y: f32, z: f32);
     fn sm64_set_mario_water_level(id: i32, level: i32);
     fn sm64_set_mario_action(id: i32, action: u32);
+    fn sm64_set_mario_forward_velocity(id: i32, velocity: f32);
     fn sm64_set_mario_velocity(id: i32, x: f32, y: f32, z: f32);
     fn sm64_set_mario_invincibility(id: i32, timer: i16);
     fn sm64_set_mario_state(id: i32, flags: u32);
@@ -260,6 +261,18 @@ impl Engine {
         }
     }
 
+    /// A bounded impulse along the native flight direction; inert on the ground.
+    pub fn boost_flight(&mut self) -> bool {
+        let Some(id) = self.id else { return false };
+        if self.state.action != 0x10880899 || !self.has_wing_cap() {
+            return false;
+        }
+        let speed = self.state.forward_velocity.max((self.state.forward_velocity + 40.0).min(120.0));
+        unsafe { sm64_set_mario_forward_velocity(id, speed); }
+        self.state.forward_velocity = speed;
+        true
+    }
+
     pub fn has_wing_cap(&self) -> bool {
         self.state.flags & MARIO_WING_CAP != 0
     }
@@ -341,6 +354,7 @@ mod tests {
         }
         assert!(engine.state.position[1].abs() < 1.);
         assert!(engine.vertex_count > 0 && engine.vertex_count <= VERTICES);
+        assert!(!engine.boost_flight(), "boost is inert outside flight");
         engine.set_wing_cap(true);
         for _ in 0..2100 {
             engine.tick(&neutral);
@@ -410,6 +424,19 @@ mod tests {
         }
         engine.tick(&neutral);
         assert_eq!(engine.state.action, 0x10880899);
+        let flight_start = engine.state.position;
+        engine.tick(&neutral);
+        let distance = |a: [f32; 3], b: [f32; 3]| {
+            a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f32>().sqrt()
+        };
+        let normal_step = distance(flight_start, engine.state.position);
+        let boost_start = engine.state.position;
+        assert!(engine.boost_flight());
+        engine.tick(&neutral);
+        assert!(distance(boost_start, engine.state.position) > normal_step + 20.,
+            "boost increases actual native movement, not just reported speed");
+        for _ in 0..10 { assert!(engine.boost_flight()); }
+        assert!(engine.state.forward_velocity <= 120., "repeated boosts are bounded");
         let mut pcm = [0; AUDIO_BUFFER_SAMPLES];
         let mut audible = false;
         for _ in 0..30 {

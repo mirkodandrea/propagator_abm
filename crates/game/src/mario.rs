@@ -141,7 +141,10 @@ pub struct Playground {
     nearby: &'static str,
     toggle: bool,
     snapshot_wing_cap: bool,
-    respawn_nearby: bool,
+    choose_position: bool,
+    relocating: bool,
+    confirm_position: bool,
+    cancel_position: bool,
     error: Option<String>,
     health: i16,
     wing_cap: bool,
@@ -153,7 +156,8 @@ pub struct Playground {
 impl Default for Playground {
     fn default() -> Self {
         Self { active: false, simulation_speed: 1., nearby: "", toggle: false,
-            snapshot_wing_cap: false, respawn_nearby: false, error: None,
+            snapshot_wing_cap: false, choose_position: false, relocating: false,
+            confirm_position: false, cancel_position: false, error: None,
             health: 0, wing_cap: false, message: "", awaiting_rom: false }
     }
 }
@@ -287,8 +291,18 @@ impl Reaction {
     fn new(duration: f32, push: Vec3) -> Self { Self { remaining: duration, duration, push } }
 }
 
+struct Placement {
+    target: Vec3,
+    focus: Vec3,
+    distance: f32,
+    yaw: f32,
+    pitch: f32,
+    cursor: Option<Vec2>,
+}
+
 #[derive(Default)]
 struct Runtime {
+    placement: Option<Placement>,
     engine: Option<Engine>,
     mesh: Option<Handle<Mesh>>,
     material: Option<Handle<MarioMaterial>>,
@@ -422,8 +436,16 @@ fn hud(
                     mode.toggle = true;
                 }
                 if mode.active {
-                    if ui.button("Riposiziona sul terreno qui vicino · R / Y (△)").clicked() {
-                        mode.respawn_nearby = true;
+                    if ui.button("Scegli posizione sulla mappa · R / △").clicked() {
+                        mode.choose_position = true;
+                    }
+                    if mode.relocating {
+                        ui.label("Vista dall’alto · mouse o WASD / stick sinistro: scegli il punto");
+                        ui.label("Rotella / Q/E / L1/R1: zoom · stick destro / frecce: sposta vista");
+                        ui.horizontal(|ui| {
+                            if ui.button("Posiziona · clic / Spazio / ×").clicked() { mode.confirm_position = true; }
+                            if ui.button("Annulla · Esc / ○ / △").clicked() { mode.cancel_position = true; }
+                        });
                     }
                     if k.title {
                         ui.label("Esplorazione libera · partita non iniziata");
@@ -440,7 +462,7 @@ fn hud(
                     if !mode.nearby.is_empty() { ui.label(mode.nearby); }
                     ui.label(controls.pad().and_then(|pad| controls.pads.name(pad))
                         .map_or("Gamepad non connesso".to_string(), |name| format!("Gamepad: {name}")));
-                    ui.label("WASD / stick sinistro · Spazio / A (×): salto · J / X (□): pugno");
+                    ui.label("WASD / stick sinistro · Spazio / ×: salto, boost in volo · J / □: pugno");
                     ui.label("Shift / LT: accovacciati · Frecce / stick destro: camera");
                     ui.label("Zoom camera: rotella · Q/E · L1/R1");
                     ui.label(if mode.wing_cap {
@@ -483,14 +505,17 @@ fn clear(mut commands: Commands, mut runtime: NonSendMut<Runtime>, mut mode: Res
     runtime.previous.clear();
     runtime.reactions.clear();
     mode.active = false;
+    mode.relocating = false;
+    runtime.placement = None;
     mode.wing_cap = false;
     mode.toggle = false;
-    mode.respawn_nearby = false;
+    mode.choose_position = false;
 }
 
 #[derive(SystemParam)]
 struct Controls<'w> {
     keys: Res<'w, ButtonInput<KeyCode>>,
+    mouse: Res<'w, ButtonInput<MouseButton>>,
     pads: Res<'w, Gamepads>,
     buttons: Res<'w, ButtonInput<GamepadButton>>,
     axes: Res<'w, Axis<GamepadAxis>>,
@@ -625,7 +650,7 @@ fn drive(
     mut assets: RenderAssets,
     mut restarted: EventReader<SimRestarted>,
     buildings: Res<crate::buildings::Buildings>,
-    mut wheel: EventReader<MouseWheel>,
+    (mut wheel, mut gizmos): (EventReader<MouseWheel>, Gizmos),
 ) {
     // Drain even outside Mario so opening it never replays old map scrolling.
     let scroll: f32 = wheel.read().map(|event| match event.unit {
@@ -656,7 +681,7 @@ fn drive(
         && (!can_play
             || reset
             || toggle
-            || focused && keyboard_free && controls.keys.just_pressed(KeyCode::Escape));
+            || focused && keyboard_free && controls.keys.just_pressed(KeyCode::Escape) && !mode.relocating);
     let Ok((camera_entity, mut camera, mut camera_tf, mut dof, mut render_camera, depth_prepass, projection)) = cameras.get_single_mut()
     else {
         return;
@@ -697,6 +722,8 @@ fn drive(
         runtime.impact_cooldown = 0.;
         mode.nearby = "";
         mode.active = false;
+        mode.relocating = false;
+        runtime.placement = None;
         return;
     }
     if !mode.active {
@@ -902,6 +929,101 @@ fn drive(
             0.
         }
     };
+    let mut position_finished = false;
+    let request_position = std::mem::take(&mut mode.choose_position)
+        || pressed(GamepadButtonType::North)
+        || keyboard_free && controls.keys.just_pressed(KeyCode::KeyR);
+    let opened_position = request_position && runtime.placement.is_none();
+    if opened_position {
+        let target = from_sm64(runtime.engine.as_ref().unwrap().state.position, runtime.origin);
+        runtime.placement = Some(Placement {
+            target, focus: camera.focus, distance: camera.distance,
+            yaw: camera.yaw, pitch: camera.pitch,
+            cursor: windows.get_single().ok().and_then(Window::cursor_position),
+        });
+        mode.relocating = true;
+        mode.error = None;
+        camera.focus = Vec3::new(sim.scn.world.width_m * 0.5, 0., -sim.scn.world.height_m * 0.5);
+        camera.yaw = 0.;
+        camera.pitch = -std::f32::consts::FRAC_PI_2;
+        let aspect = windows.get_single().map_or(16. / 9., |w| w.width() / w.height().max(1.));
+        let fov = match projection { Projection::Perspective(p) => p.fov, _ => 0.7853982 };
+        camera.distance = overview_distance(sim.scn.world.width_m, sim.scn.world.height_m, aspect, fov)
+            + sim.scn.terrain.elev_max.max(0.);
+    }
+    if let Some(mut placement) = runtime.placement.take() {
+        let cancel = std::mem::take(&mut mode.cancel_position)
+            || !opened_position && request_position
+            || pressed(GamepadButtonType::East)
+            || keyboard_free && controls.keys.just_pressed(KeyCode::Escape);
+        let zoom = keyboard(KeyCode::KeyE, KeyCode::KeyQ)
+            + f32::from(held(GamepadButtonType::RightTrigger))
+            - f32::from(held(GamepadButtonType::LeftTrigger));
+        let pointer_free = !contexts.ctx_mut().wants_pointer_input();
+        camera.distance = (camera.distance * (zoom * dt * 1.5 - if pointer_free { scroll * 0.12 } else { 0. }).exp())
+            .clamp(120., 25000.);
+        let speed = camera.distance * 0.7 * dt;
+        let movement = Vec2::new(
+            axis(GamepadAxisType::LeftStickX) + keyboard(KeyCode::KeyD, KeyCode::KeyA),
+            -axis(GamepadAxisType::LeftStickY) + keyboard(KeyCode::KeyS, KeyCode::KeyW),
+        ).clamp_length_max(1.);
+        placement.target += Vec3::new(movement.x, 0., movement.y) * speed;
+        camera.focus += Vec3::new(
+            axis(GamepadAxisType::RightStickX) + keyboard(KeyCode::ArrowRight, KeyCode::ArrowLeft),
+            0., -axis(GamepadAxisType::RightStickY) + keyboard(KeyCode::ArrowDown, KeyCode::ArrowUp),
+        ) * speed;
+        if movement != Vec2::ZERO { camera.focus = placement.target.with_y(0.); }
+        camera.focus = clamp_map_position(camera.focus, sim.scn.world.width_m, sim.scn.world.height_m);
+        camera_tf.translation = camera.focus + Vec3::Y * camera.distance;
+        camera_tf.look_at(camera.focus, Vec3::NEG_Z);
+        let mut clicked_map = false;
+        if let Ok(window) = windows.get_single() {
+            let cursor = window.cursor_position();
+            if pointer_free && (cursor != placement.cursor || controls.mouse.just_pressed(MouseButton::Left)) {
+                if let Some(p) = crate::pick::cursor_ground(&sim.scn, &render_camera,
+                    &GlobalTransform::from(*camera_tf), window) {
+                    placement.target = crate::frame::to_bevy(p, sim.scn.terrain.height_at(p));
+                    clicked_map = controls.mouse.just_pressed(MouseButton::Left);
+                }
+            }
+            placement.cursor = cursor;
+        }
+        placement.target = clamp_map_position(placement.target, sim.scn.world.width_m, sim.scn.world.height_m);
+        placement.target.y = sim.scn.terrain.height_at(crate::frame::to_world(placement.target));
+        let marker = placement.target.with_y(placement.target.y.max(1.) + 30.);
+        let radius = (camera.distance * 0.012).max(4.);
+        gizmos.line(marker - Vec3::X * radius, marker + Vec3::X * radius, Color::srgb(1., 0.85, 0.1));
+        gizmos.line(marker - Vec3::Z * radius, marker + Vec3::Z * radius, Color::srgb(1., 0.85, 0.1));
+        let confirm = std::mem::take(&mut mode.confirm_position)
+            || !opened_position && (pressed(GamepadButtonType::South)
+                || keyboard_free && controls.keys.just_pressed(KeyCode::Space)
+                || clicked_map);
+        let placed = !cancel && confirm && respawn_nearby(&mut runtime, &meshes, &sim, placement.target, &mut actors);
+        runtime.accumulator = 0.;
+        runtime.jump_latched = false;
+        runtime.attack_latched = false;
+        runtime.audio.clear();
+        if cancel || placed {
+            camera.focus = placement.focus;
+            camera.distance = placement.distance;
+            camera.yaw = placement.yaw;
+            camera.pitch = placement.pitch;
+            mode.relocating = false;
+            position_finished = true;
+            mode.error = None;
+            if placed {
+                mode.wing_cap = false;
+                mode.message = "Mario posizionato nel punto scelto.";
+            }
+        } else {
+            if confirm { mode.error = Some("Punto occupato: scegli un punto libero vicino.".into()); }
+            if let Some(mask_camera) = runtime.mask_camera {
+                commands.entity(mask_camera).insert((*camera_tf, projection.clone()));
+            }
+            runtime.placement = Some(placement);
+            return;
+        }
+    }
     camera.yaw -= (axis(GamepadAxisType::RightStickX)
         + keyboard(KeyCode::ArrowRight, KeyCode::ArrowLeft))
         * dt
@@ -921,29 +1043,16 @@ fn drive(
         -axis(GamepadAxisType::LeftStickY) + keyboard(KeyCode::KeyS, KeyCode::KeyW),
     )
     .clamp_length_max(1.);
-    let mut jump =
-        held(GamepadButtonType::South) || keyboard_free && controls.keys.pressed(KeyCode::Space);
+    let mut jump = !position_finished && (
+        held(GamepadButtonType::South) || keyboard_free && controls.keys.pressed(KeyCode::Space));
     let mut attack =
         held(GamepadButtonType::West) || keyboard_free && controls.keys.pressed(KeyCode::KeyJ);
-    runtime.jump_latched |= pressed(GamepadButtonType::South)
-        || keyboard_free && controls.keys.just_pressed(KeyCode::Space);
+    runtime.jump_latched |= !position_finished && (pressed(GamepadButtonType::South)
+        || keyboard_free && controls.keys.just_pressed(KeyCode::Space));
     runtime.attack_latched |= pressed(GamepadButtonType::West)
         || keyboard_free && controls.keys.just_pressed(KeyCode::KeyJ);
-    let respawn = std::mem::take(&mut mode.respawn_nearby)
-        || pressed(GamepadButtonType::North)
-        || keyboard_free && controls.keys.just_pressed(KeyCode::KeyR);
-    if respawn {
-        let pos = from_sm64(runtime.engine.as_ref().unwrap().state.position, runtime.origin);
-        if respawn_nearby(&mut runtime, &meshes, &sim, pos, &mut actors) {
-            mode.wing_cap = false;
-            mode.error = None;
-            mode.message = "Riposizionato sul terreno qui vicino.";
-        } else {
-            mode.error = Some("Non trovo un punto libero qui vicino. Prova a spostarti.".into());
-        }
-    }
-    if pressed(GamepadButtonType::East)
-        || keyboard_free && controls.keys.just_pressed(KeyCode::KeyV)
+    if !position_finished && (pressed(GamepadButtonType::East)
+        || keyboard_free && controls.keys.just_pressed(KeyCode::KeyV))
     {
         let engine = runtime.engine.as_mut().unwrap();
         let enabled = !engine.has_wing_cap();
@@ -1029,9 +1138,11 @@ fn drive(
             attack: u8::from(attack || runtime.attack_latched),
             crouch: u8::from(crouch),
         };
+        let boost = runtime.jump_latched;
         runtime.jump_latched = false;
         runtime.attack_latched = false;
         let engine = runtime.engine.as_mut().unwrap();
+        if boost && engine.boost_flight() { mode.message = "Boost!"; }
         engine.water_level(water_level);
         engine.tick(&input);
         if let Some(start) = profile_start {
@@ -1498,6 +1609,14 @@ fn refresh_patch(
     runtime.engine.as_mut().unwrap().load_surfaces(&runtime.surfaces);
 }
 
+fn overview_distance(width: f32, height: f32, aspect: f32, fov: f32) -> f32 {
+    0.55 * height.max(width / aspect.max(0.1)) / (fov * 0.5).tan()
+}
+
+fn clamp_map_position(p: Vec3, width: f32, height: f32) -> Vec3 {
+    Vec3::new(p.x.clamp(0., width - 0.01), p.y, p.z.clamp(-height + 0.01, 0.))
+}
+
 fn recovery_needed(pos: Vec3, ground: f32, empty_ticks: u32) -> bool {
     !pos.is_finite() || pos.y < ground - 12.0 || empty_ticks >= 30
 }
@@ -1716,7 +1835,7 @@ mod tests {
     fn interaction_picks_a_nearby_visible_target_and_has_no_remote_effect() {
         use bevy::ecs::system::SystemState;
         let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
-        let sim = Sim::new(&data, "Coste2_gira", 1).unwrap();
+        let sim = Sim::new(&data, "medium", 1).unwrap();
         let mut world = World::new();
         let mut meshes = Assets::<Mesh>::default();
         let mesh = meshes.add(Cuboid::new(4., 3., 2.));
@@ -1809,7 +1928,7 @@ mod tests {
         assert!(engine.vertex_count > 0);
 
         let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
-        let sim = Sim::new(&data, "Rocco3", 17).unwrap();
+        let sim = Sim::new(&data, "easy", 17).unwrap();
         let base = rocca_start(&sim).unwrap().0;
         let mut runtime = Runtime {
             engine: Some(engine), origin: base, last_valid: base,

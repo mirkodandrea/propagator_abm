@@ -11,17 +11,29 @@ di `island.json`; negli scenari senza rocca usa la strada più vicina alla vista
 | Camera | Frecce | Stick destro |
 | Zoom camera | Rotella, Q avvicina / E allontana | L1 avvicina / R1 allontana |
 | Wing Cap (attiva / disattiva) | V | ○ |
-| Salto / nuoto | Spazio | × |
+| Salto / nuoto / boost durante il volo | Spazio | × |
 | Pugno / calcio | J | □ |
 | Accovacciarsi / schianto a terra | Shift | L2 o R2 |
-| Ricominciare dalla rocca | R | △ |
+| Scegliere posizione sulla mappa | R | △ |
 
 Il pannello mostra il controller rilevato, energia e ora della simulazione.
 La camera può orbitare fino alla vista quasi verticale e variare distanza da
 12 a 240 m.
 Il Wing Cap resta attivo finché lo disattivi con V / ○; alla morte o al
 riavvio Mario riparte senza. Un triplo salto in corsa avvia il volo, guidato
-con WASD / stick sinistro. Ali e fisica del volo sono gestite da libsm64.
+con WASD / stick sinistro. Ogni pressione di Spazio / × durante il volo dà un
+impulso di velocità (+40 unità
+SM64, massimo 120); a terra resta il salto. Ali e fisica del volo sono gestite da libsm64.
+
+Con R / △ o «Scegli posizione sulla mappa» si apre una vista verticale dell’intera
+mappa e Mario resta fermo durante la scelta. Muovi il mouse o WASD / stick sinistro
+per spostare il mirino; frecce / stick destro spostano la vista. Rotella, Q/E e L1/R1
+regolano lo zoom. Un clic sulla mappa, Spazio / × o «Posiziona» conferma;
+Esc, ○, R / △ o «Annulla» torna a Mario senza spostarlo. Puoi scegliere qualsiasi
+punto, anche in mare; nei punti occupati si cerca terreno libero entro circa 21 m,
+altrimenti la selezione resta aperta. Dopo la conferma si torna alla camera di Mario.
+Decisione dell’utente: 2026-10-13.
+
 Il tempo del gioco avanza a **×1**, attraverso `kiosk::step` e `Sim::tick`.
 Una crisi o il fine partita chiude Mario e restituisce il controllo al gioco.
 L'uscita aggiorna l'anteprima degli ordini, senza applicare il piano proposto
@@ -34,7 +46,7 @@ a 30 Hz. Gli alberi sono solo visivi e non bloccano Mario né la camera.
 Il mare usa la stessa quota/onda della scena, con fondale sommerso
 per consentire il nuoto. Il fuoco attivo e gli edifici ancora in fiamme
 provocano danni e la reazione di bruciatura di libsm64. Il modello si ricrea
-alla morte o con R/△.
+alla morte o alla conferma del riposizionamento.
 
 Avvio: `cargo run -p game --release`.
 La ROM originale USA `.z64` viene letta solo all'apertura di Mario da
