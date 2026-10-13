@@ -5,8 +5,16 @@
 //! Per case and seed: the districts the same fire with no orders reaches at
 //! all («minacciati», hindsight, as in `strategie_civili`) are the priorities
 //! of every plan. Two plans under the old rules (any evacuation at any time),
-//! then, for each lead time of the mayor (SINDACA_MIN, minutes, default
-//! 10,20,30), five plans under the new rule. Messenger teams from `game.json`.
+//! then, for each lead time of the mayor (SINDACA_MIN, minutes, default 20),
+//! the plans under the new rule. Messenger teams from `game.json`.
+//!
+//! «preallerta i vicini» needs no hindsight: at the opening and then every
+//! 15 simulated minutes (the gap between two «Decidi»), it pre-alerts the
+//! districts whose homes are within R of the burning front, the distance
+//! shortened downwind as the coordinator ranks homes (`district::reach_m`).
+//! «priorità sbagliate» ranks the districts the fire misses first.
+//!
+//! GREZZI=<file.csv> also writes each game's raw shares behind the stars.
 //!
 //! «anticipo reale» is, over the authorised districts the fire reached at
 //! the doors, the minutes from the authorisation to the fire at the doors
@@ -29,13 +37,29 @@ const PACE: (f64, f64) = (80.0, 240.0);
 const QUIET_S: i64 = 10 * 60;
 
 const OLD: [&str; 2] = ["nessun ordine", "evacua tutti subito"];
-const NEW: [&str; 5] = [
+const NEW: [&str; 8] = [
     "evacua appena autorizzato",
     "evacua in ritardo",
     "solo preallerta",
     "preallerta tutti, evacua appena autorizzato",
     "preallerta ed evacua solo i minacciati",
+    "preallerta i vicini (1,5 km), evacua appena autorizzato",
+    "preallerta i vicini (3 km), evacua appena autorizzato",
+    "preallerta tutti, evacua appena autorizzato, priorità sbagliate",
 ];
+/// How often «preallerta i vicini» looks again: the gap between two «Decidi».
+const DECIDE_S: i64 = 15 * 60;
+/// A «Decidi» that changes something, at ×1.
+const DECIDE_REAL_S: f64 = 30.0;
+
+/// The radius of a «preallerta i vicini» plan, metres.
+fn near_m(plan: &str) -> Option<f32> {
+    match plan {
+        "preallerta i vicini (1,5 km), evacua appena autorizzato" => Some(1500.0),
+        "preallerta i vicini (3 km), evacua appena autorizzato" => Some(3000.0),
+        _ => None,
+    }
+}
 
 struct Run {
     points: i64,
@@ -46,12 +70,15 @@ struct Run {
     lead_min: Vec<i64>,
     never: usize,
     minutes: f64,
+    /// Shares behind the stars: families and homes spared, timing, measure.
+    raw: (Option<f64>, Option<f64>, Option<f64>, f64),
+    needless: usize,
 }
 
 fn main() -> anyhow::Result<()> {
     let data = std::path::Path::new("data");
     let leads: Vec<i64> = std::env::var("SINDACA_MIN")
-        .unwrap_or_else(|_| "10,20,30".into())
+        .unwrap_or_else(|_| "20".into())
         .split(',')
         .map(|s| s.trim().parse().unwrap())
         .collect();
@@ -97,9 +124,12 @@ fn main() -> anyhow::Result<()> {
         g.mayor = lead.map(|l| Mayor { lead_s: l * 60 });
         let n = g.districts.len();
         let all: Vec<usize> = (0..n).collect();
-        let mut p = Plan::new(n).with_priorities(hit);
+        let wrong: Vec<usize> = (0..n).filter(|d| !hit.contains(d)).chain(hit.iter().rev().copied()).collect();
+        let order = if plan.contains("priorità sbagliate") { &wrong } else { hit };
+        let mut p = Plan::new(n).with_priorities(order);
+        let near = near_m(plan);
         let pre: &[usize] = match *plan {
-            "solo preallerta" | "preallerta tutti, evacua appena autorizzato" => &all,
+            "solo preallerta" | "preallerta tutti, evacua appena autorizzato" | "preallerta tutti, evacua appena autorizzato, priorità sbagliate" => &all,
             "preallerta ed evacua solo i minacciati" => hit,
             _ => &[],
         };
@@ -114,7 +144,22 @@ fn main() -> anyhow::Result<()> {
         g.commit(p)?;
         let mut real = OPENING_S;
         let (mut auths, mut due) = (0usize, vec![]);
+        let mut next_look = 0;
         while g.time_s() < g.case.duration_s() {
+            if let Some(r) = near.filter(|_| g.time_s() >= next_look) {
+                next_look = g.time_s() + DECIDE_S;
+                let mut plan = g.active.clone();
+                for d in 0..n {
+                    let e = rocca::district::exposure(&g.districts[d], &g.agents, &g.fire, &g.scn);
+                    if plan.civil[d] == Civil::Nessuno && e.is_some_and(|e| rocca::district::reach_m(e.distance_m, e.downwind) <= r) {
+                        plan = plan.with_civil(d, Civil::Preallerta);
+                    }
+                }
+                if plan != g.active {
+                    real += if g.time_s() > STEP_S { DECIDE_REAL_S } else { 0.0 };
+                    g.commit(plan)?;
+                }
+            }
             g.step()?;
             real += STEP_S as f64 / if g.is_quiet(QUIET_S) { PACE.1 } else { PACE.0 };
             let now = g.time_s();
@@ -122,7 +167,7 @@ fn main() -> anyhow::Result<()> {
                 auths += 1;
                 real += AUTH_S;
                 let wants = match *plan {
-                    "evacua appena autorizzato" | "preallerta tutti, evacua appena autorizzato" => true,
+                    p if p.contains("evacua appena autorizzato") => true,
                     "evacua in ritardo" => {
                         due.push((now + late_s, d));
                         false
@@ -169,6 +214,13 @@ fn main() -> anyhow::Result<()> {
             lead_min,
             never,
             minutes: real / 60.0,
+            raw: (
+                (sc.families_at_risk > 0).then(|| sc.families as f64 / sc.families_at_risk as f64),
+                (sc.homes_at_risk > 0).then(|| sc.homes as f64 / sc.homes_at_risk as f64),
+                g.timing(),
+                g.measure(),
+            ),
+            needless: g.needless_evacuations(),
         })
     });
     let star = |s: Option<u8>| s.map_or("—".to_string(), |s| s.to_string());
@@ -197,6 +249,15 @@ fn main() -> anyhow::Result<()> {
             r.minutes
         );
         done.push((job.0, job.1, job.2, r));
+    }
+    if let Ok(path) = std::env::var("GREZZI") {
+        let opt = |x: Option<f64>| x.map_or(String::new(), |x| format!("{x:.4}"));
+        let mut csv = String::from("caso,seme,regole,piano,punti,famiglie,case,tempismo,misura,evacuate_inutili\n");
+        for (k, lead, plan, r) in &done {
+            let (case, seed) = &pairs[*k];
+            csv += &format!("{case},{seed},{},\"{plan}\",{},{},{},{},{:.4},{}\n", rules(lead), r.points, opt(r.raw.0), opt(r.raw.1), opt(r.raw.2), r.raw.3, r.needless);
+        }
+        std::fs::write(path, csv)?;
     }
 
     // Averages per rules and plan.

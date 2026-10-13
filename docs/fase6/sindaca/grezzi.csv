@@ -1,0 +1,821 @@
+caso,seme,regole,piano,punti,famiglie,case,tempismo,misura,evacuate_inutili
+Borgo1,1,vecchie,"nessun ordine",300,0.0000,1.0000,0.0000,1.0000,0
+Borgo1,1,vecchie,"evacua tutti subito",767,0.6667,1.0000,0.9821,0.2752,67
+Borgo1,1,sindaca 20 min,"evacua appena autorizzato",393,0.1333,1.0000,0.2969,1.0000,0
+Borgo1,1,sindaca 20 min,"evacua in ritardo",300,0.0000,1.0000,0.0030,1.0000,0
+Borgo1,1,sindaca 20 min,"solo preallerta",767,0.6667,1.0000,0.9821,1.0000,0
+Borgo1,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",907,0.8667,1.0000,0.9929,1.0000,0
+Borgo1,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",1000,1.0000,1.0000,1.0000,1.0000,0
+Borgo1,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",907,0.8667,1.0000,0.9929,1.0000,0
+Borgo1,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",907,0.8667,1.0000,0.9929,1.0000,0
+Borgo1,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",560,0.8000,0.0000,0.9893,1.0000,0
+Borgo1,2,vecchie,"nessun ordine",300,0.0000,1.0000,0.0000,1.0000,0
+Borgo1,2,vecchie,"evacua tutti subito",825,0.7500,1.0000,0.9893,0.2752,67
+Borgo1,2,sindaca 20 min,"evacua appena autorizzato",358,0.0833,1.0000,0.4075,1.0000,0
+Borgo1,2,sindaca 20 min,"evacua in ritardo",300,0.0000,1.0000,0.0858,1.0000,0
+Borgo1,2,sindaca 20 min,"solo preallerta",533,0.3333,1.0000,0.9714,1.0000,0
+Borgo1,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",883,0.8333,1.0000,0.9929,1.0000,0
+Borgo1,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",1000,1.0000,1.0000,1.0000,1.0000,0
+Borgo1,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",883,0.8333,1.0000,0.9929,1.0000,0
+Borgo1,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",883,0.8333,1.0000,0.9929,1.0000,0
+Borgo1,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",525,0.7500,0.0000,0.9893,1.0000,0
+Borgo1,3,vecchie,"nessun ordine",300,0.0000,1.0000,0.0000,1.0000,0
+Borgo1,3,vecchie,"evacua tutti subito",883,0.8333,1.0000,0.9929,0.2752,67
+Borgo1,3,sindaca 20 min,"evacua appena autorizzato",650,0.5000,1.0000,0.8006,1.0000,0
+Borgo1,3,sindaca 20 min,"evacua in ritardo",417,0.1667,1.0000,0.6611,1.0000,0
+Borgo1,3,sindaca 20 min,"solo preallerta",767,0.6667,1.0000,0.9857,1.0000,0
+Borgo1,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",942,0.9167,1.0000,0.9964,1.0000,0
+Borgo1,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",942,0.9167,1.0000,0.9964,1.0000,0
+Borgo1,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",942,0.9167,1.0000,0.9964,1.0000,0
+Borgo1,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",942,0.9167,1.0000,0.9964,1.0000,0
+Borgo1,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",583,0.8333,0.0000,0.9929,1.0000,0
+Borgo2,1,vecchie,"nessun ordine",33,0.0000,0.1094,0.0000,1.0000,0
+Borgo2,1,vecchie,"evacua tutti subito",365,0.4750,0.1094,0.9323,0.2719,67
+Borgo2,1,sindaca 20 min,"evacua appena autorizzato",190,0.2250,0.1094,0.4734,0.5658,0
+Borgo2,1,sindaca 20 min,"evacua in ritardo",33,0.0000,0.1094,0.3226,0.5833,0
+Borgo2,1,sindaca 20 min,"solo preallerta",295,0.3750,0.1094,0.9194,1.0000,0
+Borgo2,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",435,0.5750,0.1094,0.9452,0.5614,0
+Borgo2,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",505,0.6750,0.1094,0.9581,1.0000,0
+Borgo2,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",435,0.5750,0.1094,0.9452,0.5614,0
+Borgo2,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",435,0.5750,0.1094,0.9452,0.5614,0
+Borgo2,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",175,0.2500,0.0000,0.9032,0.5614,0
+Borgo2,2,vecchie,"nessun ordine",33,0.0000,0.1087,0.0000,1.0000,0
+Borgo2,2,vecchie,"evacua tutti subito",374,0.4878,0.1087,0.9323,0.2763,67
+Borgo2,2,sindaca 20 min,"evacua appena autorizzato",203,0.2439,0.1087,0.7896,0.5702,0
+Borgo2,2,sindaca 20 min,"evacua in ritardo",50,0.0244,0.1087,0.5769,0.5921,0
+Borgo2,2,sindaca 20 min,"solo preallerta",306,0.3902,0.1087,0.9194,1.0000,0
+Borgo2,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",391,0.5122,0.1087,0.9355,0.5702,0
+Borgo2,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",425,0.5610,0.1087,0.9419,1.0000,0
+Borgo2,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",391,0.5122,0.1087,0.9355,0.5702,0
+Borgo2,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",391,0.5122,0.1087,0.9355,0.5702,0
+Borgo2,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",154,0.2195,0.0000,0.8968,0.5746,0
+Borgo2,3,vecchie,"nessun ordine",213,0.2400,0.1497,0.0000,1.0000,0
+Borgo2,3,vecchie,"evacua tutti subito",493,0.6400,0.1497,0.9419,0.2632,67
+Borgo2,3,sindaca 20 min,"evacua appena autorizzato",479,0.6200,0.1497,0.6642,0.5570,0
+Borgo2,3,sindaca 20 min,"evacua in ritardo",437,0.5600,0.1497,0.3704,0.5746,0
+Borgo2,3,sindaca 20 min,"solo preallerta",437,0.5600,0.1497,0.9290,1.0000,0
+Borgo2,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",507,0.6600,0.1497,0.9452,0.5614,0
+Borgo2,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",521,0.6800,0.1497,0.9484,1.0000,0
+Borgo2,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",521,0.6800,0.1497,0.9484,0.5614,0
+Borgo2,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",507,0.6600,0.1497,0.9452,0.5614,0
+Borgo2,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",350,0.5000,0.0000,0.9194,0.5526,0
+Forna1,1,vecchie,"nessun ordine",257,0.0000,0.8571,0.0000,1.0000,0
+Forna1,1,vecchie,"evacua tutti subito",688,0.6154,0.8571,0.9583,0.2153,0
+Forna1,1,sindaca 20 min,"evacua appena autorizzato",257,0.0000,0.8571,0.4085,0.6770,0
+Forna1,1,sindaca 20 min,"evacua in ritardo",257,0.0000,0.8571,0.1119,0.7010,0
+Forna1,1,sindaca 20 min,"solo preallerta",849,0.8462,0.8571,0.9833,1.0000,0
+Forna1,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",903,0.9231,0.8571,0.9917,0.7201,0
+Forna1,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",688,0.6154,0.8571,0.7500,0.7297,0
+Forna1,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",903,0.9231,0.8571,0.9917,0.7201,0
+Forna1,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",903,0.9231,0.8571,0.9917,0.7201,0
+Forna1,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",617,0.8462,0.0816,0.9935,1.0000,0
+Forna1,2,vecchie,"nessun ordine",418,0.3448,0.5893,0.0000,1.0000,0
+Forna1,2,vecchie,"evacua tutti subito",780,0.8621,0.5893,0.9871,0.2807,67
+Forna1,2,sindaca 20 min,"evacua appena autorizzato",539,0.5172,0.5893,0.4941,1.0000,0
+Forna1,2,sindaca 20 min,"evacua in ritardo",539,0.5172,0.5893,0.1758,1.0000,0
+Forna1,2,sindaca 20 min,"solo preallerta",804,0.8966,0.5893,0.9903,1.0000,0
+Forna1,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",829,0.9310,0.5893,0.9935,1.0000,0
+Forna1,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",804,0.8966,0.5893,0.3806,1.0000,0
+Forna1,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",829,0.9310,0.5893,0.9935,1.0000,0
+Forna1,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",829,0.9310,0.5893,0.9935,1.0000,0
+Forna1,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",552,0.7586,0.0714,0.9453,0.7146,0
+Forna1,3,vecchie,"nessun ordine",428,0.2857,0.7593,0.0000,1.0000,0
+Forna1,3,vecchie,"evacua tutti subito",878,0.9286,0.7593,0.9964,0.2752,67
+Forna1,3,sindaca 20 min,"evacua appena autorizzato",628,0.5714,0.7593,0.9007,1.0000,0
+Forna1,3,sindaca 20 min,"evacua in ritardo",528,0.4286,0.7593,0.7853,1.0000,0
+Forna1,3,sindaca 20 min,"solo preallerta",928,1.0000,0.7593,1.0000,1.0000,0
+Forna1,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",878,0.9286,0.7593,0.9964,1.0000,0
+Forna1,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",878,0.9286,0.7593,0.3214,1.0000,0
+Forna1,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",878,0.9286,0.7593,0.9964,1.0000,0
+Forna1,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",878,0.9286,0.7593,0.9964,1.0000,0
+Forna1,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",339,0.4286,0.1296,0.9714,1.0000,0
+Coste1,1,vecchie,"nessun ordine",300,0.0000,1.0000,0.0000,1.0000,0
+Coste1,1,vecchie,"evacua tutti subito",922,0.8889,1.0000,0.9737,0.2400,0
+Coste1,1,sindaca 20 min,"evacua appena autorizzato",844,0.7778,1.0000,0.9474,1.0000,0
+Coste1,1,sindaca 20 min,"evacua in ritardo",767,0.6667,1.0000,0.7399,1.0000,0
+Coste1,1,sindaca 20 min,"solo preallerta",1000,1.0000,1.0000,1.0000,1.0000,0
+Coste1,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",1000,1.0000,1.0000,1.0000,1.0000,0
+Coste1,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",1000,1.0000,1.0000,1.0000,1.0000,0
+Coste1,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",1000,1.0000,1.0000,1.0000,1.0000,0
+Coste1,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",1000,1.0000,1.0000,1.0000,1.0000,0
+Coste1,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",700,1.0000,0.0000,1.0000,1.0000,0
+Coste1,2,vecchie,"nessun ordine",0,0.0000,,0.0000,1.0000,0
+Coste1,2,vecchie,"evacua tutti subito",1000,1.0000,,1.0000,0.2400,67
+Coste1,2,sindaca 20 min,"evacua appena autorizzato",0,0.0000,,0.6069,0.9260,0
+Coste1,2,sindaca 20 min,"evacua in ritardo",0,0.0000,,0.2824,0.9500,0
+Coste1,2,sindaca 20 min,"solo preallerta",0,0.0000,,0.9737,1.0000,0
+Coste1,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",1000,1.0000,,1.0000,0.8660,0
+Coste1,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",1000,1.0000,,1.0000,1.0000,0
+Coste1,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",1000,1.0000,,1.0000,0.8660,0
+Coste1,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",1000,1.0000,,1.0000,0.8660,0
+Coste1,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",1000,1.0000,,1.0000,0.8660,0
+Coste2,1,vecchie,"nessun ordine",0,0.0000,0.0000,0.0000,1.0000,0
+Coste2,1,vecchie,"evacua tutti subito",0,0.0000,0.0000,0.9027,0.2258,0
+Coste2,1,sindaca 20 min,"evacua appena autorizzato",0,0.0000,0.0000,0.3343,0.8742,0
+Coste2,1,sindaca 20 min,"evacua in ritardo",0,0.0000,0.0000,0.0348,0.9290,0
+Coste2,1,sindaca 20 min,"solo preallerta",0,0.0000,0.0000,0.8838,1.0000,0
+Coste2,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",175,0.2500,0.0000,0.9189,0.8032,0
+Coste2,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",0,0.0000,0.0000,0.0899,0.9290,0
+Coste2,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",175,0.2500,0.0000,0.9189,0.8032,0
+Coste2,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",175,0.2500,0.0000,0.9189,0.8032,0
+Coste2,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",175,0.2500,0.0000,0.5215,0.9500,0
+Coste2,2,vecchie,"nessun ordine",75,0.0000,0.2500,0.0000,1.0000,0
+Coste2,2,vecchie,"evacua tutti subito",192,0.1667,0.2500,0.7632,0.2320,0
+Coste2,2,sindaca 20 min,"evacua appena autorizzato",133,0.0833,0.2500,0.7368,0.8460,0
+Coste2,2,sindaca 20 min,"evacua in ritardo",75,0.0000,0.2500,0.7105,0.8620,0
+Coste2,2,sindaca 20 min,"solo preallerta",75,0.0000,0.2500,0.7105,1.0000,0
+Coste2,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",192,0.1667,0.2500,0.7632,0.8720,0
+Coste2,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",250,0.2500,0.2500,0.7895,0.9600,0
+Coste2,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",192,0.1667,0.2500,0.7632,0.8720,0
+Coste2,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",192,0.1667,0.2500,0.7632,0.8720,0
+Coste2,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",175,0.2500,0.0000,0.7895,0.8680,0
+Coste2,3,vecchie,"nessun ordine",206,0.2941,0.0000,0.0000,1.0000,0
+Coste2,3,vecchie,"evacua tutti subito",288,0.4118,0.0000,0.3070,0.2280,0
+Coste2,3,sindaca 20 min,"evacua appena autorizzato",288,0.4118,0.0000,0.2579,0.5140,0
+Coste2,3,sindaca 20 min,"evacua in ritardo",247,0.3529,0.0000,0.0118,0.5760,0
+Coste2,3,sindaca 20 min,"solo preallerta",288,0.4118,0.0000,0.3070,1.0000,0
+Coste2,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",288,0.4118,0.0000,0.3070,0.5700,0
+Coste2,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",288,0.4118,0.0000,0.3070,0.9640,0
+Coste2,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",288,0.4118,0.0000,0.3070,0.5700,0
+Coste2,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",288,0.4118,0.0000,0.3070,0.5700,0
+Coste2,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",206,0.2941,0.0000,0.2961,0.5480,0
+Coste3,1,vecchie,"nessun ordine",233,0.3333,0.0000,0.0000,1.0000,0
+Coste3,1,vecchie,"evacua tutti subito",233,0.3333,0.0000,0.9474,0.2400,0
+Coste3,1,sindaca 20 min,"evacua appena autorizzato",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,1,sindaca 20 min,"evacua in ritardo",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,1,sindaca 20 min,"solo preallerta",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,2,vecchie,"nessun ordine",0,0.0000,0.0000,0.0000,1.0000,0
+Coste3,2,vecchie,"evacua tutti subito",233,0.3333,0.0000,0.9474,0.2400,67
+Coste3,2,sindaca 20 min,"evacua appena autorizzato",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,2,sindaca 20 min,"evacua in ritardo",0,0.0000,0.0000,0.7982,1.0000,0
+Coste3,2,sindaca 20 min,"solo preallerta",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,3,vecchie,"nessun ordine",233,0.3333,0.0000,0.0000,1.0000,0
+Coste3,3,vecchie,"evacua tutti subito",233,0.3333,0.0000,0.9474,0.2400,67
+Coste3,3,sindaca 20 min,"evacua appena autorizzato",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,3,sindaca 20 min,"evacua in ritardo",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,3,sindaca 20 min,"solo preallerta",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",233,0.3333,0.0000,0.9474,1.0000,0
+Coste3,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",233,0.3333,0.0000,0.9474,1.0000,0
+Terra1,1,vecchie,"nessun ordine",202,0.1951,0.2192,0.0000,1.0000,0
+Terra1,1,vecchie,"evacua tutti subito",595,0.7561,0.2192,0.9677,0.2807,67
+Terra1,1,sindaca 20 min,"evacua appena autorizzato",493,0.6098,0.2192,0.6077,0.5921,0
+Terra1,1,sindaca 20 min,"evacua in ritardo",356,0.4146,0.2192,0.3523,0.6316,0
+Terra1,1,sindaca 20 min,"solo preallerta",663,0.8537,0.2192,0.9806,1.0000,0
+Terra1,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",715,0.9268,0.2192,0.9903,0.5833,0
+Terra1,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",715,0.9268,0.2192,0.9903,1.0000,0
+Terra1,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",715,0.9268,0.2192,0.9903,0.5833,0
+Terra1,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",715,0.9268,0.2192,0.9903,0.5833,0
+Terra1,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",359,0.5122,0.0000,0.9355,0.5965,0
+Terra1,2,vecchie,"nessun ordine",72,0.0000,0.2393,0.0000,1.0000,0
+Terra1,2,vecchie,"evacua tutti subito",422,0.5000,0.2393,0.9516,0.2807,67
+Terra1,2,sindaca 20 min,"evacua appena autorizzato",328,0.3667,0.2393,0.7955,0.5746,0
+Terra1,2,sindaca 20 min,"evacua in ritardo",258,0.2667,0.2393,0.5371,0.6140,0
+Terra1,2,sindaca 20 min,"solo preallerta",468,0.5667,0.2393,0.9581,1.0000,0
+Terra1,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",492,0.6000,0.2393,0.9613,0.5746,0
+Terra1,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",538,0.6667,0.2393,0.9677,1.0000,0
+Terra1,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",463,0.5667,0.2222,0.9581,0.5789,0
+Terra1,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",492,0.6000,0.2393,0.9613,0.5746,0
+Terra1,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",233,0.3333,0.0000,0.9355,0.5789,0
+Terra1,3,vecchie,"nessun ordine",480,0.4500,0.5487,0.0000,1.0000,0
+Terra1,3,vecchie,"evacua tutti subito",742,0.8250,0.5487,0.9774,0.2807,67
+Terra1,3,sindaca 20 min,"evacua appena autorizzato",707,0.7750,0.5487,0.8869,0.5746,0
+Terra1,3,sindaca 20 min,"evacua in ritardo",637,0.6750,0.5487,0.7591,0.6228,0
+Terra1,3,sindaca 20 min,"solo preallerta",760,0.8500,0.5487,0.9806,1.0000,0
+Terra1,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",760,0.8500,0.5487,0.9806,0.5789,0
+Terra1,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",777,0.8750,0.5487,0.9839,1.0000,0
+Terra1,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",777,0.8750,0.5487,0.9839,0.5789,0
+Terra1,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",760,0.8500,0.5487,0.9806,0.5789,0
+Terra1,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",402,0.5750,0.0000,0.9452,0.5833,0
+Terra3,1,vecchie,"nessun ordine",286,0.2857,,0.0000,1.0000,0
+Terra3,1,vecchie,"evacua tutti subito",786,0.7857,,0.9893,0.2752,67
+Terra3,1,sindaca 20 min,"evacua appena autorizzato",786,0.7857,,0.6916,1.0000,0
+Terra3,1,sindaca 20 min,"evacua in ritardo",571,0.5714,,0.4333,1.0000,0
+Terra3,1,sindaca 20 min,"solo preallerta",571,0.5714,,0.9786,1.0000,0
+Terra3,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",786,0.7857,,0.9893,1.0000,0
+Terra3,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",786,0.7857,,0.9893,1.0000,0
+Terra3,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",786,0.7857,,0.9893,1.0000,0
+Terra3,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",786,0.7857,,0.9893,1.0000,0
+Terra3,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",500,0.5000,,0.9750,1.0000,0
+Terra3,2,vecchie,"nessun ordine",77,0.0769,,0.0000,1.0000,0
+Terra3,2,vecchie,"evacua tutti subito",615,0.6154,,0.9821,0.2752,67
+Terra3,2,sindaca 20 min,"evacua appena autorizzato",538,0.5385,,0.6835,1.0000,0
+Terra3,2,sindaca 20 min,"evacua in ritardo",308,0.3077,,0.3921,1.0000,0
+Terra3,2,sindaca 20 min,"solo preallerta",385,0.3846,,0.9714,1.0000,0
+Terra3,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",615,0.6154,,0.9821,1.0000,0
+Terra3,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",769,0.7692,,0.9893,1.0000,0
+Terra3,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",615,0.6154,,0.9821,1.0000,0
+Terra3,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",615,0.6154,,0.9821,1.0000,0
+Terra3,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",692,0.6923,,0.9857,1.0000,0
+Terra3,3,vecchie,"nessun ordine",227,0.2273,,0.0000,1.0000,0
+Terra3,3,vecchie,"evacua tutti subito",727,0.7273,,0.9786,0.2752,67
+Terra3,3,sindaca 20 min,"evacua appena autorizzato",591,0.5909,,0.4908,1.0000,0
+Terra3,3,sindaca 20 min,"evacua in ritardo",545,0.5455,,0.3071,1.0000,0
+Terra3,3,sindaca 20 min,"solo preallerta",727,0.7273,,0.9786,1.0000,0
+Terra3,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",818,0.8182,,0.9857,1.0000,0
+Terra3,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",864,0.8636,,0.9893,1.0000,0
+Terra3,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",818,0.8182,,0.9857,1.0000,0
+Terra3,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",818,0.8182,,0.9857,1.0000,0
+Terra3,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",636,0.6364,,0.9714,1.0000,0
+Piano1,1,vecchie,"nessun ordine",72,0.0000,0.2400,0.0000,1.0000,0
+Piano1,1,vecchie,"evacua tutti subito",466,0.5625,0.2400,0.9453,0.2366,313
+Piano1,1,sindaca 20 min,"evacua appena autorizzato",72,0.0000,0.2400,0.4331,1.0000,0
+Piano1,1,sindaca 20 min,"evacua in ritardo",72,0.0000,0.2400,0.2144,1.0000,0
+Piano1,1,sindaca 20 min,"solo preallerta",160,0.1250,0.2400,0.8906,1.0000,0
+Piano1,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",378,0.4375,0.2400,0.9297,1.0000,0
+Piano1,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",510,0.6250,0.2400,0.9531,1.0000,0
+Piano1,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",510,0.6250,0.2400,0.9531,1.0000,0
+Piano1,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",378,0.4375,0.2400,0.9297,1.0000,0
+Piano1,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",744,0.8750,0.4400,0.9844,1.0000,0
+Piano1,2,vecchie,"nessun ordine",12,0.0000,0.0400,0.0000,1.0000,0
+Piano1,2,vecchie,"evacua tutti subito",521,0.7273,0.0400,0.9766,0.2366,313
+Piano1,2,sindaca 20 min,"evacua appena autorizzato",76,0.0909,0.0400,0.3210,1.0000,0
+Piano1,2,sindaca 20 min,"evacua in ritardo",12,0.0000,0.0400,0.0654,1.0000,0
+Piano1,2,sindaca 20 min,"solo preallerta",330,0.4545,0.0400,0.9531,1.0000,0
+Piano1,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",521,0.7273,0.0400,0.9766,1.0000,0
+Piano1,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",648,0.9091,0.0400,0.9922,1.0000,0
+Piano1,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",648,0.9091,0.0400,0.9922,1.0000,0
+Piano1,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",521,0.7273,0.0400,0.9766,1.0000,0
+Piano1,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",641,0.7273,0.4400,0.9766,1.0000,0
+Piano1,3,vecchie,"nessun ordine",55,0.0000,0.1837,0.0000,1.0000,0
+Piano1,3,vecchie,"evacua tutti subito",555,0.7143,0.1837,0.9688,0.2366,313
+Piano1,3,sindaca 20 min,"evacua appena autorizzato",105,0.0714,0.1837,0.2519,1.0000,0
+Piano1,3,sindaca 20 min,"evacua in ritardo",55,0.0000,0.1837,0.0000,1.0000,0
+Piano1,3,sindaca 20 min,"solo preallerta",305,0.3571,0.1837,0.9297,1.0000,0
+Piano1,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",605,0.7857,0.1837,0.9766,1.0000,0
+Piano1,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",705,0.9286,0.1837,0.9922,1.0000,0
+Piano1,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",705,0.9286,0.1837,0.9922,1.0000,0
+Piano1,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",605,0.7857,0.1837,0.9766,1.0000,0
+Piano1,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",753,0.8571,0.5102,0.9844,1.0000,0
+Piano2,1,vecchie,"nessun ordine",27,0.0000,0.0909,0.0000,1.0000,0
+Piano2,1,vecchie,"evacua tutti subito",404,0.5385,0.0909,0.9531,0.2366,313
+Piano2,1,sindaca 20 min,"evacua appena autorizzato",81,0.0769,0.0909,0.5483,1.0000,0
+Piano2,1,sindaca 20 min,"evacua in ritardo",81,0.0769,0.0909,0.2462,1.0000,0
+Piano2,1,sindaca 20 min,"solo preallerta",566,0.7692,0.0909,0.9766,1.0000,0
+Piano2,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",620,0.8462,0.0909,0.9844,1.0000,0
+Piano2,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",673,0.9231,0.0909,0.9922,1.0000,0
+Piano2,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",673,0.9231,0.0909,0.9922,1.0000,0
+Piano2,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",620,0.8462,0.0909,0.9844,1.0000,0
+Piano2,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",703,0.6154,0.9091,0.9609,1.0000,0
+Piano2,2,vecchie,"nessun ordine",64,0.0909,0.0000,0.0000,1.0000,0
+Piano2,2,vecchie,"evacua tutti subito",509,0.7273,0.0000,0.9766,0.2366,313
+Piano2,2,sindaca 20 min,"evacua appena autorizzato",64,0.0909,0.0000,0.1445,1.0000,0
+Piano2,2,sindaca 20 min,"evacua in ritardo",64,0.0909,0.0000,0.0000,1.0000,0
+Piano2,2,sindaca 20 min,"solo preallerta",573,0.8182,0.0000,0.9844,1.0000,0
+Piano2,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",636,0.9091,0.0000,0.9922,1.0000,0
+Piano2,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",636,0.9091,0.0000,0.9922,1.0000,0
+Piano2,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",636,0.9091,0.0000,0.9922,1.0000,0
+Piano2,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",636,0.9091,0.0000,0.9922,1.0000,0
+Piano2,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",786,0.9091,0.5000,0.9922,1.0000,0
+Piano2,3,vecchie,"nessun ordine",500,,0.5000,0.0000,1.0000,0
+Piano2,3,vecchie,"evacua tutti subito",500,,0.5000,1.0000,0.2344,313
+Piano2,3,sindaca 20 min,"evacua appena autorizzato",500,,0.5000,0.1867,1.0000,0
+Piano2,3,sindaca 20 min,"evacua in ritardo",500,,0.5000,0.0000,1.0000,0
+Piano2,3,sindaca 20 min,"solo preallerta",500,,0.5000,1.0000,1.0000,0
+Piano2,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",500,,0.5000,1.0000,1.0000,0
+Piano2,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",500,,0.5000,1.0000,1.0000,0
+Piano2,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",500,,0.5000,1.0000,1.0000,0
+Piano2,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",500,,0.5000,1.0000,1.0000,0
+Piano2,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",0,,0.0000,1.0000,1.0000,0
+Piano3,1,vecchie,"nessun ordine",130,0.0000,0.4333,0.0000,1.0000,0
+Piano3,1,vecchie,"evacua tutti subito",480,0.5000,0.4333,0.9375,0.2366,313
+Piano3,1,sindaca 20 min,"evacua appena autorizzato",130,0.0000,0.4333,0.3086,1.0000,0
+Piano3,1,sindaca 20 min,"evacua in ritardo",130,0.0000,0.4333,0.2891,1.0000,0
+Piano3,1,sindaca 20 min,"solo preallerta",436,0.4375,0.4333,0.9297,1.0000,0
+Piano3,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",436,0.4375,0.4333,0.9297,1.0000,0
+Piano3,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",480,0.5000,0.4333,0.9375,1.0000,0
+Piano3,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",480,0.5000,0.4333,0.9375,1.0000,0
+Piano3,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",436,0.4375,0.4333,0.9297,1.0000,0
+Piano3,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",306,0.4375,0.0000,0.9297,1.0000,0
+Piano3,2,vecchie,"nessun ordine",149,0.1176,0.2222,0.0000,1.0000,0
+Piano3,2,vecchie,"evacua tutti subito",190,0.1765,0.2222,0.7812,0.2366,313
+Piano3,2,sindaca 20 min,"evacua appena autorizzato",108,0.0588,0.2222,0.4667,1.0000,0
+Piano3,2,sindaca 20 min,"evacua in ritardo",67,0.0000,0.2222,0.2844,1.0000,0
+Piano3,2,sindaca 20 min,"solo preallerta",231,0.2353,0.2222,0.7969,1.0000,0
+Piano3,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",211,0.2059,0.2222,0.7891,1.0000,0
+Piano3,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",231,0.2353,0.2222,0.7969,1.0000,0
+Piano3,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",231,0.2353,0.2222,0.7969,1.0000,0
+Piano3,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",211,0.2059,0.2222,0.7891,1.0000,0
+Piano3,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",185,0.2647,0.0000,0.8047,1.0000,0
+Piano3,3,vecchie,"nessun ordine",237,0.1951,0.3333,0.0000,1.0000,0
+Piano3,3,vecchie,"evacua tutti subito",373,0.3902,0.3333,0.8047,0.2366,313
+Piano3,3,sindaca 20 min,"evacua appena autorizzato",356,0.3659,0.3333,0.5892,1.0000,0
+Piano3,3,sindaca 20 min,"evacua in ritardo",305,0.2927,0.3333,0.3970,1.0000,0
+Piano3,3,sindaca 20 min,"solo preallerta",459,0.5122,0.3333,0.8438,1.0000,0
+Piano3,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",441,0.4878,0.3333,0.8359,1.0000,0
+Piano3,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",493,0.5610,0.3333,0.8594,1.0000,0
+Piano3,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",493,0.5610,0.3333,0.8594,1.0000,0
+Piano3,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",441,0.4878,0.3333,0.8359,1.0000,0
+Piano3,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",273,0.3902,0.0000,0.8047,1.0000,0
+Rocco1,1,vecchie,"nessun ordine",250,0.0000,0.8333,0.0000,1.0000,0
+Rocco1,1,vecchie,"evacua tutti subito",314,0.0909,0.8333,0.3660,0.2169,97
+Rocco1,1,sindaca 20 min,"evacua appena autorizzato",314,0.0909,0.8333,0.0660,1.0000,0
+Rocco1,1,sindaca 20 min,"evacua in ritardo",250,0.0000,0.8333,0.0000,1.0000,0
+Rocco1,1,sindaca 20 min,"solo preallerta",250,0.0000,0.8333,0.3619,1.0000,0
+Rocco1,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",314,0.0909,0.8333,0.3660,1.0000,0
+Rocco1,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",377,0.1818,0.8333,0.3701,1.0000,0
+Rocco1,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",314,0.0909,0.8333,0.3660,1.0000,0
+Rocco1,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",314,0.0909,0.8333,0.3660,1.0000,0
+Rocco1,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",64,0.0909,0.0000,0.3660,1.0000,0
+Rocco1,2,vecchie,"nessun ordine",778,,0.7778,0.0000,1.0000,0
+Rocco1,2,vecchie,"evacua tutti subito",778,,0.7778,1.0000,0.2169,175
+Rocco1,2,sindaca 20 min,"evacua appena autorizzato",778,,0.7778,1.0000,1.0000,0
+Rocco1,2,sindaca 20 min,"evacua in ritardo",778,,0.7778,1.0000,1.0000,0
+Rocco1,2,sindaca 20 min,"solo preallerta",778,,0.7778,1.0000,1.0000,0
+Rocco1,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",778,,0.7778,1.0000,1.0000,0
+Rocco1,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",778,,0.7778,1.0000,1.0000,0
+Rocco1,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",778,,0.7778,1.0000,1.0000,0
+Rocco1,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",778,,0.7778,1.0000,1.0000,0
+Rocco1,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",0,,0.0000,1.0000,1.0000,0
+Rocco1,3,vecchie,"nessun ordine",225,0.0000,0.7500,0.0000,1.0000,0
+Rocco1,3,vecchie,"evacua tutti subito",925,1.0000,0.7500,0.7867,0.2169,175
+Rocco1,3,sindaca 20 min,"evacua appena autorizzato",225,0.0000,0.7500,0.5808,1.0000,0
+Rocco1,3,sindaca 20 min,"evacua in ritardo",225,0.0000,0.7500,0.2508,1.0000,0
+Rocco1,3,sindaca 20 min,"solo preallerta",925,1.0000,0.7500,0.7867,1.0000,0
+Rocco1,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",925,1.0000,0.7500,0.7867,1.0000,0
+Rocco1,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",925,1.0000,0.7500,0.7867,1.0000,0
+Rocco1,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",925,1.0000,0.7500,0.7867,1.0000,0
+Rocco1,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",925,1.0000,0.7500,0.7867,1.0000,0
+Rocco1,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",700,1.0000,0.0000,0.7867,1.0000,0
+Rocco2,1,vecchie,"nessun ordine",171,0.0303,0.5000,0.0000,1.0000,0
+Rocco2,1,vecchie,"evacua tutti subito",489,0.4848,0.5000,0.8300,0.2169,67
+Rocco2,1,sindaca 20 min,"evacua appena autorizzato",362,0.3030,0.5000,0.5929,0.6689,0
+Rocco2,1,sindaca 20 min,"evacua in ritardo",256,0.1515,0.5000,0.3144,0.6781,0
+Rocco2,1,sindaca 20 min,"solo preallerta",511,0.5152,0.5000,0.8400,1.0000,0
+Rocco2,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",511,0.5152,0.5000,0.8400,0.6689,0
+Rocco2,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",617,0.6667,0.5000,0.8900,1.0000,0
+Rocco2,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",511,0.5152,0.5000,0.8400,0.6689,0
+Rocco2,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",511,0.5152,0.5000,0.8400,0.6689,0
+Rocco2,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",233,0.3333,0.0000,0.7800,0.6689,0
+Rocco2,2,vecchie,"nessun ordine",142,0.0526,0.3500,0.0000,1.0000,0
+Rocco2,2,vecchie,"evacua tutti subito",492,0.5526,0.3500,0.8300,0.2169,67
+Rocco2,2,sindaca 20 min,"evacua appena autorizzato",271,0.2368,0.3500,0.3313,0.6689,0
+Rocco2,2,sindaca 20 min,"evacua in ritardo",179,0.1053,0.3500,0.0880,0.6781,0
+Rocco2,2,sindaca 20 min,"solo preallerta",547,0.6316,0.3500,0.8600,1.0000,0
+Rocco2,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",547,0.6316,0.3500,0.8600,0.6689,0
+Rocco2,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",713,0.8684,0.3500,0.9500,1.0000,0
+Rocco2,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",547,0.6316,0.3500,0.8600,0.6689,0
+Rocco2,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",547,0.6316,0.3500,0.8600,0.6689,0
+Rocco2,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",221,0.3158,0.0000,0.7400,0.6689,0
+Rocco2,3,vecchie,"nessun ordine",147,0.0000,0.4900,0.0000,1.0000,0
+Rocco2,3,vecchie,"evacua tutti subito",412,0.3784,0.4900,0.7700,0.2169,67
+Rocco2,3,sindaca 20 min,"evacua appena autorizzato",147,0.0000,0.4900,0.1026,0.6689,0
+Rocco2,3,sindaca 20 min,"evacua in ritardo",147,0.0000,0.4900,0.0000,0.6781,0
+Rocco2,3,sindaca 20 min,"solo preallerta",525,0.5405,0.4900,0.8300,1.0000,0
+Rocco2,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",525,0.5405,0.4900,0.8300,0.6689,0
+Rocco2,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",752,0.8649,0.4900,0.9500,1.0000,0
+Rocco2,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",525,0.5405,0.4900,0.8300,0.6689,0
+Rocco2,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",525,0.5405,0.4900,0.8300,0.6689,0
+Rocco2,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",170,0.2432,0.0000,0.7200,0.6689,0
+Rocco3,1,vecchie,"nessun ordine",188,0.0000,0.6250,0.0000,1.0000,0
+Rocco3,1,vecchie,"evacua tutti subito",744,0.8333,0.5357,0.9900,0.2123,67
+Rocco3,1,sindaca 20 min,"evacua appena autorizzato",654,0.6667,0.6250,0.9800,0.6712,0
+Rocco3,1,sindaca 20 min,"evacua in ritardo",654,0.6667,0.6250,0.9800,0.7534,0
+Rocco3,1,sindaca 20 min,"solo preallerta",654,0.6667,0.6250,0.9800,1.0000,0
+Rocco3,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",861,1.0000,0.5357,1.0000,0.9429,0
+Rocco3,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",771,0.8333,0.6250,0.9900,1.0000,0
+Rocco3,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",861,1.0000,0.5357,1.0000,0.9429,0
+Rocco3,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",861,1.0000,0.5357,1.0000,0.9429,0
+Rocco3,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",350,0.5000,0.0000,0.9700,0.9772,0
+Rocco3,2,vecchie,"nessun ordine",162,0.0000,0.5410,0.0000,1.0000,0
+Rocco3,2,vecchie,"evacua tutti subito",442,0.4000,0.5410,0.9700,0.2146,67
+Rocco3,2,sindaca 20 min,"evacua appena autorizzato",442,0.4000,0.5410,0.6370,0.9498,0
+Rocco3,2,sindaca 20 min,"evacua in ritardo",302,0.2000,0.5410,0.3104,0.9817,0
+Rocco3,2,sindaca 20 min,"solo preallerta",442,0.4000,0.5410,0.9700,1.0000,0
+Rocco3,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",722,0.8000,0.5410,0.9900,0.6530,0
+Rocco3,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",722,0.8000,0.5410,0.9900,1.0000,0
+Rocco3,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",722,0.8000,0.5410,0.9900,0.6530,0
+Rocco3,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",722,0.8000,0.5410,0.9900,0.6530,0
+Rocco3,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",420,0.6000,0.0000,0.9800,0.9521,0
+Rocco3,3,vecchie,"nessun ordine",178,0.0000,0.5926,0.0000,1.0000,0
+Rocco3,3,vecchie,"evacua tutti subito",528,0.5000,0.5926,0.9700,0.2146,67
+Rocco3,3,sindaca 20 min,"evacua appena autorizzato",411,0.3333,0.5926,0.7136,0.9384,0
+Rocco3,3,sindaca 20 min,"evacua in ritardo",178,0.0000,0.5926,0.3854,0.9932,0
+Rocco3,3,sindaca 20 min,"solo preallerta",644,0.6667,0.5926,0.9800,1.0000,0
+Rocco3,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",644,0.6667,0.5926,0.9800,0.6575,0
+Rocco3,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",644,0.6667,0.5926,0.9800,1.0000,0
+Rocco3,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",644,0.6667,0.5926,0.9800,0.6575,0
+Rocco3,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",644,0.6667,0.5926,0.9800,0.6575,0
+Rocco3,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",117,0.1667,0.0000,0.9500,0.9475,0
+Borgo1_gira,1,vecchie,"nessun ordine",421,0.2500,0.8214,0.0000,1.0000,0
+Borgo1_gira,1,vecchie,"evacua tutti subito",841,0.8500,0.8214,0.9893,0.2752,67
+Borgo1_gira,1,sindaca 20 min,"evacua appena autorizzato",456,0.3000,0.8214,0.3817,1.0000,0
+Borgo1_gira,1,sindaca 20 min,"evacua in ritardo",421,0.2500,0.8214,0.0649,1.0000,0
+Borgo1_gira,1,sindaca 20 min,"solo preallerta",841,0.8500,0.8214,0.9893,1.0000,0
+Borgo1_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",876,0.9000,0.8214,0.9929,1.0000,0
+Borgo1_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",946,1.0000,0.8214,1.0000,1.0000,0
+Borgo1_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",876,0.9000,0.8214,0.9929,1.0000,0
+Borgo1_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",876,0.9000,0.8214,0.9929,1.0000,0
+Borgo1_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",455,0.6500,0.0000,0.9750,1.0000,0
+Borgo1_gira,2,vecchie,"nessun ordine",222,0.0000,0.7407,0.0000,1.0000,0
+Borgo1_gira,2,vecchie,"evacua tutti subito",738,0.7368,0.7407,0.9839,0.2807,67
+Borgo1_gira,2,sindaca 20 min,"evacua appena autorizzato",333,0.1579,0.7407,0.5185,1.0000,0
+Borgo1_gira,2,sindaca 20 min,"evacua in ritardo",222,0.0000,0.7407,0.2071,1.0000,0
+Borgo1_gira,2,sindaca 20 min,"solo preallerta",775,0.7895,0.7407,0.9871,1.0000,0
+Borgo1_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",849,0.8947,0.7407,0.9935,1.0000,0
+Borgo1_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",591,0.5263,0.7407,0.9032,1.0000,0
+Borgo1_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",849,0.8947,0.7407,0.9935,1.0000,0
+Borgo1_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",849,0.8947,0.7407,0.9935,1.0000,0
+Borgo1_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",405,0.5789,0.0000,0.9714,1.0000,0
+Borgo1_gira,3,vecchie,"nessun ordine",247,0.0000,0.8235,0.0000,1.0000,0
+Borgo1_gira,3,vecchie,"evacua tutti subito",732,0.6923,0.8235,0.9871,0.2807,67
+Borgo1_gira,3,sindaca 20 min,"evacua appena autorizzato",247,0.0000,0.8235,0.7238,1.0000,0
+Borgo1_gira,3,sindaca 20 min,"evacua in ritardo",247,0.0000,0.8235,0.6182,1.0000,0
+Borgo1_gira,3,sindaca 20 min,"solo preallerta",678,0.6154,0.8235,0.9839,1.0000,0
+Borgo1_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",839,0.8462,0.8235,0.9935,1.0000,0
+Borgo1_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",462,0.3077,0.8235,0.9032,1.0000,0
+Borgo1_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",839,0.8462,0.8235,0.9935,1.0000,0
+Borgo1_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",839,0.8462,0.8235,0.9935,1.0000,0
+Borgo1_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",485,0.6923,0.0000,0.9857,1.0000,0
+Borgo2_gira,1,vecchie,"nessun ordine",66,0.0000,0.2200,0.0000,1.0000,0
+Borgo2_gira,1,vecchie,"evacua tutti subito",416,0.5000,0.2200,0.9483,0.1976,67
+Borgo2_gira,1,sindaca 20 min,"evacua appena autorizzato",533,0.6667,0.2200,0.4775,0.9274,0
+Borgo2_gira,1,sindaca 20 min,"evacua in ritardo",533,0.6667,0.2200,0.3345,0.9355,0
+Borgo2_gira,1,sindaca 20 min,"solo preallerta",393,0.4667,0.2200,0.9448,1.0000,0
+Borgo2_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",416,0.5000,0.2200,0.9483,0.9274,0
+Borgo2_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",556,0.7000,0.2200,0.9690,1.0000,0
+Borgo2_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",439,0.5333,0.2200,0.9517,0.9355,0
+Borgo2_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",416,0.5000,0.2200,0.9483,0.9274,0
+Borgo2_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",210,0.3000,0.0000,0.9276,0.9355,0
+Borgo2_gira,2,vecchie,"nessun ordine",385,0.4255,0.2900,0.0000,1.0000,0
+Borgo2_gira,2,vecchie,"evacua tutti subito",638,0.7872,0.2900,0.9655,0.1976,67
+Borgo2_gira,2,sindaca 20 min,"evacua appena autorizzato",668,0.8298,0.2900,0.8504,0.6169,0
+Borgo2_gira,2,sindaca 20 min,"evacua in ritardo",623,0.7660,0.2900,0.6352,0.6492,0
+Borgo2_gira,2,sindaca 20 min,"solo preallerta",668,0.8298,0.2900,0.9724,1.0000,0
+Borgo2_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",668,0.8298,0.2900,0.9724,0.6492,0
+Borgo2_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",698,0.8723,0.2900,0.9793,1.0000,0
+Borgo2_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",668,0.8298,0.2900,0.9724,0.6492,0
+Borgo2_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",668,0.8298,0.2900,0.9724,0.6492,0
+Borgo2_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",209,0.2979,0.0000,0.8862,0.6210,0
+Borgo2_gira,3,vecchie,"nessun ordine",54,0.0000,0.1800,0.0000,1.0000,0
+Borgo2_gira,3,vecchie,"evacua tutti subito",404,0.5000,0.1800,0.9379,0.1976,67
+Borgo2_gira,3,sindaca 20 min,"evacua appena autorizzato",443,0.5556,0.1800,0.7873,0.9032,0
+Borgo2_gira,3,sindaca 20 min,"evacua in ritardo",423,0.5278,0.1800,0.5813,0.9073,0
+Borgo2_gira,3,sindaca 20 min,"solo preallerta",462,0.5833,0.1800,0.9483,1.0000,0
+Borgo2_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",443,0.5556,0.1800,0.9448,0.9032,0
+Borgo2_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",501,0.6389,0.1800,0.9552,1.0000,0
+Borgo2_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",443,0.5556,0.1800,0.9448,0.9032,0
+Borgo2_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",443,0.5556,0.1800,0.9448,0.9032,0
+Borgo2_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",136,0.1944,0.0000,0.9000,0.9073,0
+Forna1_gira,1,vecchie,"nessun ordine",229,0.0000,0.7619,0.0000,1.0000,0
+Forna1_gira,1,vecchie,"evacua tutti subito",404,0.2500,0.7619,0.9806,0.2807,67
+Forna1_gira,1,sindaca 20 min,"evacua appena autorizzato",229,0.0000,0.7619,0.7366,1.0000,0
+Forna1_gira,1,sindaca 20 min,"evacua in ritardo",229,0.0000,0.7619,0.6434,1.0000,0
+Forna1_gira,1,sindaca 20 min,"solo preallerta",229,0.0000,0.7619,0.9645,1.0000,0
+Forna1_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",666,0.6250,0.7619,0.9903,1.0000,0
+Forna1_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",229,0.0000,0.7619,0.9032,1.0000,0
+Forna1_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",666,0.6250,0.7619,0.9903,1.0000,0
+Forna1_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",666,0.6250,0.7619,0.9903,1.0000,0
+Forna1_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",438,0.6250,0.0000,0.9893,1.0000,0
+Forna1_gira,2,vecchie,"nessun ordine",537,0.4000,0.8571,0.0000,1.0000,0
+Forna1_gira,2,vecchie,"evacua tutti subito",910,0.9333,0.8571,0.9964,0.2752,67
+Forna1_gira,2,sindaca 20 min,"evacua appena autorizzato",630,0.5333,0.8571,0.4407,1.0000,0
+Forna1_gira,2,sindaca 20 min,"evacua in ritardo",584,0.4667,0.8571,0.1154,1.0000,0
+Forna1_gira,2,sindaca 20 min,"solo preallerta",864,0.8667,0.8571,0.9929,1.0000,0
+Forna1_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",910,0.9333,0.8571,0.9964,1.0000,0
+Forna1_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",957,1.0000,0.8571,1.0000,1.0000,0
+Forna1_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",910,0.9333,0.8571,0.9964,1.0000,0
+Forna1_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",910,0.9333,0.8571,0.9964,1.0000,0
+Forna1_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",607,0.8667,0.0000,0.9929,1.0000,0
+Forna1_gira,3,vecchie,"nessun ordine",374,0.1429,0.9130,0.0000,1.0000,0
+Forna1_gira,3,vecchie,"evacua tutti subito",907,0.9048,0.9130,0.9935,0.2807,67
+Forna1_gira,3,sindaca 20 min,"evacua appena autorizzato",741,0.6667,0.9130,0.9035,1.0000,0
+Forna1_gira,3,sindaca 20 min,"evacua in ritardo",607,0.4762,0.9130,0.7759,1.0000,0
+Forna1_gira,3,sindaca 20 min,"solo preallerta",774,0.7143,0.9130,0.9806,1.0000,0
+Forna1_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",907,0.9048,0.9130,0.9935,1.0000,0
+Forna1_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",907,0.9048,0.9130,0.9935,1.0000,0
+Forna1_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",907,0.9048,0.9130,0.9935,1.0000,0
+Forna1_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",907,0.9048,0.9130,0.9935,1.0000,0
+Forna1_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",467,0.6667,0.0000,0.9774,1.0000,0
+Coste2_gira,1,vecchie,"nessun ordine",0,0.0000,0.0000,0.0000,1.0000,0
+Coste2_gira,1,vecchie,"evacua tutti subito",500,0.7143,0.0000,0.8238,0.2366,67
+Coste2_gira,1,sindaca 20 min,"evacua appena autorizzato",386,0.5510,0.0000,0.7473,0.9439,0
+Coste2_gira,1,sindaca 20 min,"evacua in ritardo",286,0.4082,0.0000,0.6279,0.9439,0
+Coste2_gira,1,sindaca 20 min,"solo preallerta",543,0.7755,0.0000,0.8423,1.0000,0
+Coste2_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",529,0.7551,0.0000,0.8370,0.9439,0
+Coste2_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",529,0.7551,0.0000,0.8370,1.0000,0
+Coste2_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",529,0.7551,0.0000,0.8370,0.9439,0
+Coste2_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",529,0.7551,0.0000,0.8370,0.9439,0
+Coste2_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",471,0.6735,0.0000,0.8132,0.9463,0
+Coste2_gira,2,vecchie,"nessun ordine",442,0.5000,0.3051,0.0000,1.0000,0
+Coste2_gira,2,vecchie,"evacua tutti subito",654,0.8036,0.3051,0.9141,0.2366,67
+Coste2_gira,2,sindaca 20 min,"evacua appena autorizzato",579,0.6964,0.3051,0.8672,1.0000,0
+Coste2_gira,2,sindaca 20 min,"evacua in ritardo",554,0.6607,0.3051,0.8516,1.0000,0
+Coste2_gira,2,sindaca 20 min,"solo preallerta",642,0.7857,0.3051,0.9062,1.0000,0
+Coste2_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",667,0.8214,0.3051,0.9219,1.0000,0
+Coste2_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",667,0.8214,0.3051,0.9219,1.0000,0
+Coste2_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",667,0.8214,0.3051,0.9219,1.0000,0
+Coste2_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",667,0.8214,0.3051,0.9219,1.0000,0
+Coste2_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",462,0.6607,0.0000,0.8516,1.0000,0
+Coste2_gira,3,vecchie,"nessun ordine",0,0.0000,0.0000,0.0000,1.0000,0
+Coste2_gira,3,vecchie,"evacua tutti subito",362,0.5172,0.0000,0.7721,0.2366,67
+Coste2_gira,3,sindaca 20 min,"evacua appena autorizzato",193,0.2759,0.0000,0.7039,1.0000,0
+Coste2_gira,3,sindaca 20 min,"evacua in ritardo",48,0.0690,0.0000,0.6111,1.0000,0
+Coste2_gira,3,sindaca 20 min,"solo preallerta",314,0.4483,0.0000,0.7656,1.0000,0
+Coste2_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",362,0.5172,0.0000,0.7721,1.0000,0
+Coste2_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",362,0.5172,0.0000,0.7721,1.0000,0
+Coste2_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",362,0.5172,0.0000,0.7721,1.0000,0
+Coste2_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",362,0.5172,0.0000,0.7721,1.0000,0
+Coste2_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",290,0.4138,0.0000,0.7533,1.0000,0
+Coste3_gira,1,vecchie,"nessun ordine",51,0.0000,0.1695,0.0000,1.0000,0
+Coste3_gira,1,vecchie,"evacua tutti subito",500,0.6410,0.1695,0.8906,0.2366,212
+Coste3_gira,1,sindaca 20 min,"evacua appena autorizzato",69,0.0256,0.1695,0.4434,1.0000,0
+Coste3_gira,1,sindaca 20 min,"evacua in ritardo",51,0.0000,0.1695,0.2936,1.0000,0
+Coste3_gira,1,sindaca 20 min,"solo preallerta",589,0.7692,0.1695,0.9297,1.0000,0
+Coste3_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",597,0.7692,0.1949,0.9297,1.0000,0
+Coste3_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",594,0.7692,0.1864,0.9297,1.0000,0
+Coste3_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",597,0.7692,0.1949,0.9297,1.0000,0
+Coste3_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",597,0.7692,0.1949,0.9297,1.0000,0
+Coste3_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",449,0.6410,0.0000,0.8906,1.0000,0
+Coste3_gira,2,vecchie,"nessun ordine",61,0.0769,0.0254,0.0000,1.0000,0
+Coste3_gira,2,vecchie,"evacua tutti subito",546,0.7692,0.0254,0.9297,0.2366,67
+Coste3_gira,2,sindaca 20 min,"evacua appena autorizzato",474,0.6667,0.0254,0.4799,1.0000,0
+Coste3_gira,2,sindaca 20 min,"evacua in ritardo",402,0.5641,0.0254,0.2659,1.0000,0
+Coste3_gira,2,sindaca 20 min,"solo preallerta",600,0.8462,0.0254,0.9531,1.0000,0
+Coste3_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",564,0.7949,0.0254,0.9375,1.0000,0
+Coste3_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",564,0.7949,0.0254,0.9375,1.0000,0
+Coste3_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",564,0.7949,0.0254,0.9375,1.0000,0
+Coste3_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",564,0.7949,0.0254,0.9375,1.0000,0
+Coste3_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",467,0.6667,0.0000,0.8984,1.0000,0
+Coste3_gira,3,vecchie,"nessun ordine",86,0.0000,0.2881,0.0000,1.0000,0
+Coste3_gira,3,vecchie,"evacua tutti subito",493,0.5806,0.2881,0.8984,0.2366,212
+Coste3_gira,3,sindaca 20 min,"evacua appena autorizzato",222,0.1935,0.2881,0.5320,1.0000,0
+Coste3_gira,3,sindaca 20 min,"evacua in ritardo",132,0.0645,0.2881,0.3501,1.0000,0
+Coste3_gira,3,sindaca 20 min,"solo preallerta",583,0.7097,0.2881,0.9297,1.0000,0
+Coste3_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",606,0.7419,0.2881,0.9375,1.0000,0
+Coste3_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",606,0.7419,0.2881,0.9375,1.0000,0
+Coste3_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",606,0.7419,0.2881,0.9375,1.0000,0
+Coste3_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",606,0.7419,0.2881,0.9375,1.0000,0
+Coste3_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",519,0.7419,0.0000,0.9375,1.0000,0
+Terra1_gira,1,vecchie,"nessun ordine",191,0.0667,0.4800,0.0000,1.0000,0
+Terra1_gira,1,vecchie,"evacua tutti subito",494,0.5000,0.4800,0.9531,0.1972,67
+Terra1_gira,1,sindaca 20 min,"evacua appena autorizzato",587,0.6333,0.4800,0.6991,0.6560,0
+Terra1_gira,1,sindaca 20 min,"evacua in ritardo",587,0.6333,0.4800,0.4710,0.6606,0
+Terra1_gira,1,sindaca 20 min,"solo preallerta",494,0.5000,0.4800,0.9531,1.0000,0
+Terra1_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",541,0.5667,0.4800,0.9594,0.6835,0
+Terra1_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",634,0.7000,0.4800,0.8781,1.0000,0
+Terra1_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",564,0.6000,0.4800,0.9625,0.6835,0
+Terra1_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",541,0.5667,0.4800,0.9594,0.6835,0
+Terra1_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",210,0.3000,0.0000,0.9344,0.6743,0
+Terra1_gira,2,vecchie,"nessun ordine",226,0.1176,0.4795,0.0000,1.0000,0
+Terra1_gira,2,vecchie,"evacua tutti subito",576,0.6176,0.4795,0.9683,0.2422,67
+Terra1_gira,2,sindaca 20 min,"evacua appena autorizzato",617,0.6765,0.4795,0.8631,0.7891,0
+Terra1_gira,2,sindaca 20 min,"evacua in ritardo",556,0.5882,0.4795,0.6330,0.7656,0
+Terra1_gira,2,sindaca 20 min,"solo preallerta",679,0.7647,0.4795,0.9805,1.0000,0
+Terra1_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",679,0.7647,0.4795,0.9805,0.7656,0
+Terra1_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",720,0.8235,0.4795,0.9854,1.0000,0
+Terra1_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",679,0.7647,0.4795,0.9805,0.7734,0
+Terra1_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",679,0.7647,0.4795,0.9805,0.7656,0
+Terra1_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",329,0.4706,0.0000,0.9561,0.7734,0
+Terra1_gira,3,vecchie,"nessun ordine",195,0.0000,0.6500,0.0000,1.0000,0
+Terra1_gira,3,vecchie,"evacua tutti subito",615,0.6000,0.6500,0.9077,0.2010,67
+Terra1_gira,3,sindaca 20 min,"evacua appena autorizzato",732,0.7667,0.6500,0.8703,0.6299,0
+Terra1_gira,3,sindaca 20 min,"evacua in ritardo",685,0.7000,0.6500,0.7806,0.6422,0
+Terra1_gira,3,sindaca 20 min,"solo preallerta",732,0.7667,0.6500,0.9462,1.0000,0
+Terra1_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",638,0.6333,0.6500,0.9154,0.6299,0
+Terra1_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",755,0.8000,0.6500,0.9538,1.0000,0
+Terra1_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",638,0.6333,0.6500,0.9154,0.6299,0
+Terra1_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",638,0.6333,0.6500,0.9154,0.6299,0
+Terra1_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",280,0.4000,0.0000,0.8615,0.6299,0
+Terra2_gira,1,vecchie,"nessun ordine",183,0.1522,0.2542,0.0000,1.0000,0
+Terra2_gira,1,vecchie,"evacua tutti subito",563,0.6957,0.2542,0.8906,0.2366,67
+Terra2_gira,1,sindaca 20 min,"evacua appena autorizzato",396,0.4565,0.2542,0.7541,0.9439,0
+Terra2_gira,1,sindaca 20 min,"evacua in ritardo",353,0.3913,0.2627,0.5663,0.9439,0
+Terra2_gira,1,sindaca 20 min,"solo preallerta",520,0.6304,0.2627,0.8672,1.0000,0
+Terra2_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",639,0.8043,0.2542,0.9297,0.9439,0
+Terra2_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",639,0.8043,0.2542,0.9297,1.0000,0
+Terra2_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",411,0.4783,0.2542,0.8125,0.9439,0
+Terra2_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",639,0.8043,0.2542,0.9297,0.9439,0
+Terra2_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",335,0.4783,0.0000,0.8125,0.9439,0
+Terra2_gira,2,vecchie,"nessun ordine",56,0.0000,0.1869,0.0000,1.0000,0
+Terra2_gira,2,vecchie,"evacua tutti subito",483,0.6098,0.1869,0.8750,0.2366,67
+Terra2_gira,2,sindaca 20 min,"evacua appena autorizzato",56,0.0000,0.1869,0.6797,1.0000,0
+Terra2_gira,2,sindaca 20 min,"evacua in ritardo",56,0.0000,0.1869,0.5811,1.0000,0
+Terra2_gira,2,sindaca 20 min,"solo preallerta",500,0.6341,0.1869,0.8828,1.0000,0
+Terra2_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",637,0.8293,0.1869,0.9453,1.0000,0
+Terra2_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",637,0.8293,0.1869,0.9453,1.0000,0
+Terra2_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",534,0.6829,0.1869,0.8984,1.0000,0
+Terra2_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",637,0.8293,0.1869,0.9453,1.0000,0
+Terra2_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",495,0.7073,0.0000,0.9000,0.9754,0
+Terra2_gira,3,vecchie,"nessun ordine",53,0.0000,0.1770,0.0000,1.0000,0
+Terra2_gira,3,vecchie,"evacua tutti subito",624,0.8158,0.1770,0.9453,0.2366,67
+Terra2_gira,3,sindaca 20 min,"evacua appena autorizzato",606,0.7895,0.1770,0.9375,1.0000,0
+Terra2_gira,3,sindaca 20 min,"evacua in ritardo",569,0.7368,0.1770,0.9219,1.0000,0
+Terra2_gira,3,sindaca 20 min,"solo preallerta",606,0.7895,0.1770,0.9375,1.0000,0
+Terra2_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",661,0.8684,0.1770,0.9609,1.0000,0
+Terra2_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",661,0.8684,0.1770,0.9609,1.0000,0
+Terra2_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",643,0.8421,0.1770,0.9531,1.0000,0
+Terra2_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",661,0.8684,0.1770,0.9609,1.0000,0
+Terra2_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",534,0.7632,0.0000,0.9297,1.0000,0
+Terra3_gira,1,vecchie,"nessun ordine",552,0.3600,1.0000,0.0000,1.0000,0
+Terra3_gira,1,vecchie,"evacua tutti subito",832,0.7600,1.0000,0.9806,0.2807,67
+Terra3_gira,1,sindaca 20 min,"evacua appena autorizzato",832,0.7600,1.0000,0.8834,1.0000,0
+Terra3_gira,1,sindaca 20 min,"evacua in ritardo",776,0.6800,1.0000,0.6224,1.0000,0
+Terra3_gira,1,sindaca 20 min,"solo preallerta",832,0.7600,1.0000,0.9806,1.0000,0
+Terra3_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",860,0.8000,1.0000,0.9839,1.0000,0
+Terra3_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",804,0.7200,1.0000,0.8903,1.0000,0
+Terra3_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",860,0.8000,1.0000,0.9839,1.0000,0
+Terra3_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",860,0.8000,1.0000,0.9839,1.0000,0
+Terra3_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",420,0.6000,0.0000,0.9643,1.0000,0
+Terra3_gira,2,vecchie,"nessun ordine",0,0.0000,,0.0000,1.0000,0
+Terra3_gira,2,vecchie,"evacua tutti subito",533,0.5333,,0.9774,0.2807,67
+Terra3_gira,2,sindaca 20 min,"evacua appena autorizzato",600,0.6000,,0.7381,1.0000,0
+Terra3_gira,2,sindaca 20 min,"evacua in ritardo",533,0.5333,,0.4535,1.0000,0
+Terra3_gira,2,sindaca 20 min,"solo preallerta",533,0.5333,,0.9774,1.0000,0
+Terra3_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",667,0.6667,,0.9839,1.0000,0
+Terra3_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",467,0.4667,,0.2839,1.0000,0
+Terra3_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",667,0.6667,,0.9839,1.0000,0
+Terra3_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",667,0.6667,,0.9839,1.0000,0
+Terra3_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",667,0.6667,,0.9821,1.0000,0
+Terra3_gira,3,vecchie,"nessun ordine",322,0.1739,0.6667,0.0000,1.0000,0
+Terra3_gira,3,vecchie,"evacua tutti subito",717,0.7391,0.6667,0.9786,0.2752,67
+Terra3_gira,3,sindaca 20 min,"evacua appena autorizzato",626,0.6087,0.6667,0.5054,1.0000,0
+Terra3_gira,3,sindaca 20 min,"evacua in ritardo",626,0.6087,0.6667,0.3071,1.0000,0
+Terra3_gira,3,sindaca 20 min,"solo preallerta",748,0.7826,0.6667,0.9821,1.0000,0
+Terra3_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",778,0.8261,0.6667,0.9857,0.9380,0
+Terra3_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",809,0.8696,0.6667,0.9893,1.0000,0
+Terra3_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",778,0.8261,0.6667,0.9857,0.9380,0
+Terra3_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",778,0.8261,0.6667,0.9857,0.9380,0
+Terra3_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",426,0.6087,0.0000,0.9717,1.0000,0
+Piano1_gira,1,vecchie,"nessun ordine",135,0.0500,0.3333,0.0000,1.0000,0
+Piano1_gira,1,vecchie,"evacua tutti subito",695,0.8500,0.3333,0.9766,0.2268,67
+Piano1_gira,1,sindaca 20 min,"evacua appena autorizzato",275,0.2500,0.3333,0.3120,0.9976,0
+Piano1_gira,1,sindaca 20 min,"evacua in ritardo",135,0.0500,0.3333,0.0765,1.0000,0
+Piano1_gira,1,sindaca 20 min,"solo preallerta",520,0.6000,0.3333,0.9375,1.0000,0
+Piano1_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",625,0.7500,0.3333,0.9609,0.9073,0
+Piano1_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",625,0.7500,0.3333,0.9609,1.0000,0
+Piano1_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",555,0.6500,0.3333,0.9453,0.9073,0
+Piano1_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",625,0.7500,0.3333,0.9609,0.9073,0
+Piano1_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",519,0.7000,0.0952,0.9531,0.4634,0
+Piano1_gira,2,vecchie,"nessun ordine",212,0.1667,0.3171,0.0000,1.0000,0
+Piano1_gira,2,vecchie,"evacua tutti subito",640,0.7778,0.3171,0.9688,0.2366,67
+Piano1_gira,2,sindaca 20 min,"evacua appena autorizzato",251,0.2222,0.3171,0.2830,1.0000,0
+Piano1_gira,2,sindaca 20 min,"evacua in ritardo",251,0.2222,0.3171,0.0206,1.0000,0
+Piano1_gira,2,sindaca 20 min,"solo preallerta",678,0.8333,0.3171,0.9766,1.0000,0
+Piano1_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",717,0.8889,0.3171,0.9844,1.0000,0
+Piano1_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",756,0.9444,0.3171,0.9922,1.0000,0
+Piano1_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",756,0.9444,0.3171,0.9922,1.0000,0
+Piano1_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",717,0.8889,0.3171,0.9844,1.0000,0
+Piano1_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",528,0.7222,0.0732,0.9609,0.5585,0
+Piano1_gira,3,vecchie,"nessun ordine",42,0.0000,0.1389,0.0000,1.0000,0
+Piano1_gira,3,vecchie,"evacua tutti subito",625,0.8333,0.1389,0.9766,0.2268,67
+Piano1_gira,3,sindaca 20 min,"evacua appena autorizzato",158,0.1667,0.1389,0.2804,0.8098,0
+Piano1_gira,3,sindaca 20 min,"evacua in ritardo",42,0.0000,0.1389,0.0430,0.8366,0
+Piano1_gira,3,sindaca 20 min,"solo preallerta",625,0.8333,0.1389,0.9766,1.0000,0
+Piano1_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",664,0.8889,0.1389,0.9844,0.8098,0
+Piano1_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",703,0.9444,0.1389,0.9922,1.0000,0
+Piano1_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",622,0.8889,0.0000,0.9844,1.0000,0
+Piano1_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",664,0.8889,0.1389,0.9844,0.8098,0
+Piano1_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",544,0.7778,0.0000,0.9688,0.8122,0
+Piano2_gira,1,vecchie,"nessun ordine",0,0.0000,0.0000,0.0000,1.0000,0
+Piano2_gira,1,vecchie,"evacua tutti subito",700,1.0000,0.0000,1.0000,0.2277,0
+Piano2_gira,1,sindaca 20 min,"evacua appena autorizzato",175,0.2500,0.0000,0.6922,0.8549,0
+Piano2_gira,1,sindaca 20 min,"evacua in ritardo",0,0.0000,0.0000,0.3626,0.9487,0
+Piano2_gira,1,sindaca 20 min,"solo preallerta",700,1.0000,0.0000,1.0000,1.0000,0
+Piano2_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",700,1.0000,0.0000,1.0000,0.4152,0
+Piano2_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",700,1.0000,0.0000,1.0000,0.9241,0
+Piano2_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",700,1.0000,0.0000,1.0000,0.4263,0
+Piano2_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",700,1.0000,0.0000,1.0000,0.4152,0
+Piano2_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",525,0.7500,0.0000,0.9922,0.9463,0
+Piano2_gira,2,vecchie,"nessun ordine",0,0.0000,0.0000,0.0000,1.0000,0
+Piano2_gira,2,vecchie,"evacua tutti subito",700,1.0000,0.0000,1.0000,0.2341,67
+Piano2_gira,2,sindaca 20 min,"evacua appena autorizzato",0,0.0000,0.0000,0.9103,0.6537,23
+Piano2_gira,2,sindaca 20 min,"evacua in ritardo",0,0.0000,0.0000,0.6785,0.6902,21
+Piano2_gira,2,sindaca 20 min,"solo preallerta",700,1.0000,0.0000,1.0000,1.0000,0
+Piano2_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",700,1.0000,0.0000,1.0000,0.2366,67
+Piano2_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",700,1.0000,0.0000,1.0000,1.0000,0
+Piano2_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",700,1.0000,0.0000,1.0000,0.2366,67
+Piano2_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",700,1.0000,0.0000,1.0000,0.2366,67
+Piano2_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",700,1.0000,0.0000,1.0000,0.2366,67
+Piano2_gira,3,vecchie,"nessun ordine",0,0.0000,0.0000,,1.0000,0
+Piano2_gira,3,vecchie,"evacua tutti subito",700,1.0000,0.0000,,0.2212,0
+Piano2_gira,3,sindaca 20 min,"evacua appena autorizzato",0,0.0000,0.0000,,0.6487,0
+Piano2_gira,3,sindaca 20 min,"evacua in ritardo",0,0.0000,0.0000,,0.8048,0
+Piano2_gira,3,sindaca 20 min,"solo preallerta",700,1.0000,0.0000,,1.0000,0
+Piano2_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",700,1.0000,0.0000,,0.4033,0
+Piano2_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",700,1.0000,0.0000,,0.9405,0
+Piano2_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",700,1.0000,0.0000,,0.4033,0
+Piano2_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",700,1.0000,0.0000,,0.4033,0
+Piano2_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",700,1.0000,0.0000,,0.4108,0
+Piano3_gira,1,vecchie,"nessun ordine",33,0.0000,0.1111,0.0000,1.0000,0
+Piano3_gira,1,vecchie,"evacua tutti subito",322,0.4118,0.1111,0.9721,0.1500,0
+Piano3_gira,1,sindaca 20 min,"evacua appena autorizzato",116,0.1176,0.1111,0.7149,0.2222,0
+Piano3_gira,1,sindaca 20 min,"evacua in ritardo",33,0.0000,0.1111,0.6899,0.5000,0
+Piano3_gira,1,sindaca 20 min,"solo preallerta",33,0.0000,0.1111,0.9413,1.0000,0
+Piano3_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",445,0.5882,0.1111,0.9804,0.3222,0
+Piano3_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",33,0.0000,0.1111,0.1872,1.0000,0
+Piano3_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",445,0.5882,0.1111,0.9804,0.3611,0
+Piano3_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",445,0.5882,0.1111,0.9804,0.3444,0
+Piano3_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",288,0.4118,0.0000,0.7368,0.3780,0
+Piano3_gira,2,vecchie,"nessun ordine",0,0.0000,0.0000,0.0000,1.0000,0
+Piano3_gira,2,vecchie,"evacua tutti subito",210,0.3000,0.0000,0.7891,0.2268,0
+Piano3_gira,2,sindaca 20 min,"evacua appena autorizzato",140,0.2000,0.0000,0.4656,0.4878,0
+Piano3_gira,2,sindaca 20 min,"evacua in ritardo",105,0.1500,0.0000,0.2781,0.5707,0
+Piano3_gira,2,sindaca 20 min,"solo preallerta",122,0.1750,0.0000,0.7578,1.0000,0
+Piano3_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",227,0.3250,0.0000,0.7969,0.5098,0
+Piano3_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",227,0.3250,0.0000,0.7969,0.9585,0
+Piano3_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",262,0.3750,0.0000,0.8125,0.5098,0
+Piano3_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",227,0.3250,0.0000,0.7969,0.5146,0
+Piano3_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",175,0.2500,0.0000,0.7656,0.3829,0
+Piano3_gira,3,vecchie,"nessun ordine",143,0.2045,0.0000,0.0000,1.0000,0
+Piano3_gira,3,vecchie,"evacua tutti subito",350,0.5000,0.0000,0.8281,0.2195,0
+Piano3_gira,3,sindaca 20 min,"evacua appena autorizzato",350,0.5000,0.0000,0.6081,0.4317,0
+Piano3_gira,3,sindaca 20 min,"evacua in ritardo",286,0.4091,0.0000,0.3977,0.5390,0
+Piano3_gira,3,sindaca 20 min,"solo preallerta",398,0.5682,0.0000,0.8516,1.0000,0
+Piano3_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",414,0.5909,0.0000,0.8594,0.4195,0
+Piano3_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",414,0.5909,0.0000,0.8594,1.0000,0
+Piano3_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",477,0.6818,0.0000,0.8906,0.4073,0
+Piano3_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",414,0.5909,0.0000,0.8594,0.4146,0
+Piano3_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",350,0.5000,0.0000,0.8359,0.9561,0
+Rocco1_gira,1,vecchie,"nessun ordine",153,0.0370,0.4242,0.0000,1.0000,0
+Rocco1_gira,1,vecchie,"evacua tutti subito",438,0.4444,0.4242,0.7641,0.2016,67
+Rocco1_gira,1,sindaca 20 min,"evacua appena autorizzato",309,0.2593,0.4242,0.5897,1.0000,0
+Rocco1_gira,1,sindaca 20 min,"evacua in ritardo",231,0.1481,0.4242,0.3540,1.0000,0
+Rocco1_gira,1,sindaca 20 min,"solo preallerta",490,0.5185,0.4242,0.7710,1.0000,0
+Rocco1_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",490,0.5185,0.4242,0.7710,1.0000,0
+Rocco1_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",490,0.5185,0.4242,0.7710,1.0000,0
+Rocco1_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",490,0.5185,0.4242,0.7710,1.0000,0
+Rocco1_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",490,0.5185,0.4242,0.7710,1.0000,0
+Rocco1_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",363,0.5185,0.0000,0.7710,1.0000,0
+Rocco1_gira,3,vecchie,"nessun ordine",0,0.0000,,0.0000,1.0000,0
+Rocco1_gira,3,vecchie,"evacua tutti subito",1000,1.0000,,0.7867,0.2169,97
+Rocco1_gira,3,sindaca 20 min,"evacua appena autorizzato",0,0.0000,,0.5808,1.0000,0
+Rocco1_gira,3,sindaca 20 min,"evacua in ritardo",0,0.0000,,0.2508,1.0000,0
+Rocco1_gira,3,sindaca 20 min,"solo preallerta",1000,1.0000,,0.7867,1.0000,0
+Rocco1_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",1000,1.0000,,0.7867,1.0000,0
+Rocco1_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",1000,1.0000,,0.7867,1.0000,0
+Rocco1_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",1000,1.0000,,0.7867,1.0000,0
+Rocco1_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",1000,1.0000,,0.7867,1.0000,0
+Rocco1_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",1000,1.0000,,0.7867,1.0000,0
+Rocco2_gira,1,vecchie,"nessun ordine",135,0.0435,0.3490,0.0000,1.0000,0
+Rocco2_gira,1,vecchie,"evacua tutti subito",424,0.4565,0.3490,0.9390,0.2344,67
+Rocco2_gira,1,sindaca 20 min,"evacua appena autorizzato",333,0.3261,0.3490,0.7720,0.7734,0
+Rocco2_gira,1,sindaca 20 min,"evacua in ritardo",272,0.2391,0.3490,0.6178,0.7734,0
+Rocco2_gira,1,sindaca 20 min,"solo preallerta",470,0.5217,0.3490,0.9463,1.0000,0
+Rocco2_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",470,0.5217,0.3490,0.9463,0.7969,0
+Rocco2_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",500,0.5652,0.3490,0.9512,1.0000,0
+Rocco2_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",500,0.5652,0.3490,0.9512,0.7969,0
+Rocco2_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",470,0.5217,0.3490,0.9463,0.7969,0
+Rocco2_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",337,0.4783,0.0067,0.9250,0.6330,0
+Rocco2_gira,2,vecchie,"nessun ordine",49,0.0000,0.1634,0.0000,1.0000,0
+Rocco2_gira,2,vecchie,"evacua tutti subito",399,0.5000,0.1634,0.9488,0.2344,67
+Rocco2_gira,2,sindaca 20 min,"evacua appena autorizzato",299,0.3571,0.1634,0.8197,0.7500,0
+Rocco2_gira,2,sindaca 20 min,"evacua in ritardo",249,0.2857,0.1634,0.6883,0.7500,0
+Rocco2_gira,2,sindaca 20 min,"solo preallerta",432,0.5476,0.1634,0.9537,1.0000,0
+Rocco2_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",432,0.5476,0.1634,0.9537,0.7578,0
+Rocco2_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",466,0.5952,0.1634,0.9585,1.0000,0
+Rocco2_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",432,0.5476,0.1634,0.9537,0.7578,0
+Rocco2_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",432,0.5476,0.1634,0.9537,0.7578,0
+Rocco2_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",333,0.4762,0.0000,0.9463,0.7656,0
+Rocco2_gira,3,vecchie,"nessun ordine",0,0.0000,0.0000,0.0000,1.0000,0
+Rocco2_gira,3,vecchie,"evacua tutti subito",302,0.4310,0.0000,0.9195,0.2266,67
+Rocco2_gira,3,sindaca 20 min,"evacua appena autorizzato",84,0.1207,0.0000,0.7209,0.7500,0
+Rocco2_gira,3,sindaca 20 min,"evacua in ritardo",72,0.1034,0.0000,0.6795,0.7500,0
+Rocco2_gira,3,sindaca 20 min,"solo preallerta",386,0.5517,0.0000,0.9366,1.0000,0
+Rocco2_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",386,0.5517,0.0000,0.9366,0.7578,0
+Rocco2_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",386,0.5517,0.0000,0.9366,0.7578,0
+Rocco2_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",398,0.5690,0.0000,0.9390,0.7578,0
+Rocco2_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",386,0.5517,0.0000,0.9366,0.7578,0
+Rocco2_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",330,0.4655,0.0127,0.9244,0.7656,0
+Rocco3_gira,1,vecchie,"nessun ordine",190,0.1190,0.3571,0.0000,1.0000,0
+Rocco3_gira,1,vecchie,"evacua tutti subito",640,0.7619,0.3571,0.9688,0.1972,67
+Rocco3_gira,1,sindaca 20 min,"evacua appena autorizzato",424,0.4524,0.3571,0.9035,1.0000,0
+Rocco3_gira,1,sindaca 20 min,"evacua in ritardo",390,0.4048,0.3571,0.6942,1.0000,0
+Rocco3_gira,1,sindaca 20 min,"solo preallerta",724,0.8810,0.3571,0.9844,1.0000,0
+Rocco3_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",707,0.8571,0.3571,0.9812,0.8211,0
+Rocco3_gira,1,sindaca 20 min,"preallerta ed evacua solo i minacciati",740,0.9048,0.3571,0.9875,1.0000,0
+Rocco3_gira,1,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",707,0.8571,0.3571,0.9812,0.8211,0
+Rocco3_gira,1,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",707,0.8571,0.3571,0.9812,0.8211,0
+Rocco3_gira,1,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",583,0.8333,0.0000,0.9781,0.6789,0
+Rocco3_gira,2,vecchie,"nessun ordine",106,0.0000,0.3533,0.0000,1.0000,0
+Rocco3_gira,2,vecchie,"evacua tutti subito",643,0.7667,0.3533,0.9781,0.1835,67
+Rocco3_gira,2,sindaca 20 min,"evacua appena autorizzato",339,0.3333,0.3533,0.6685,0.6606,0
+Rocco3_gira,2,sindaca 20 min,"evacua in ritardo",129,0.0333,0.3533,0.3486,0.7018,0
+Rocco3_gira,2,sindaca 20 min,"solo preallerta",689,0.8333,0.3533,0.9844,1.0000,0
+Rocco3_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",666,0.8000,0.3533,0.9812,0.6330,0
+Rocco3_gira,2,sindaca 20 min,"preallerta ed evacua solo i minacciati",713,0.8667,0.3533,0.9875,1.0000,0
+Rocco3_gira,2,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",666,0.8000,0.3533,0.9812,0.6330,0
+Rocco3_gira,2,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",666,0.8000,0.3533,0.9812,0.6330,0
+Rocco3_gira,2,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",513,0.7333,0.0000,0.9750,0.6651,0
+Rocco3_gira,3,vecchie,"nessun ordine",227,0.0000,0.7576,0.0000,1.0000,0
+Rocco3_gira,3,vecchie,"evacua tutti subito",669,0.6316,0.7576,0.9781,0.1972,67
+Rocco3_gira,3,sindaca 20 min,"evacua appena autorizzato",375,0.2105,0.7576,0.4620,0.8440,0
+Rocco3_gira,3,sindaca 20 min,"evacua in ritardo",375,0.2105,0.7576,0.1785,0.9358,0
+Rocco3_gira,3,sindaca 20 min,"solo preallerta",743,0.7368,0.7576,0.9844,1.0000,0
+Rocco3_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato",669,0.6316,0.7576,0.9781,0.6927,0
+Rocco3_gira,3,sindaca 20 min,"preallerta ed evacua solo i minacciati",780,0.7895,0.7576,0.9875,1.0000,0
+Rocco3_gira,3,sindaca 20 min,"preallerta i vicini (1,5 km), evacua appena autorizzato",669,0.6316,0.7576,0.9781,0.6927,0
+Rocco3_gira,3,sindaca 20 min,"preallerta i vicini (3 km), evacua appena autorizzato",669,0.6316,0.7576,0.9781,0.6927,0
+Rocco3_gira,3,sindaca 20 min,"preallerta tutti, evacua appena autorizzato, priorità sbagliate",442,0.6316,0.0000,0.9781,1.0000,0

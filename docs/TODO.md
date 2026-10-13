@@ -9,9 +9,11 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - [x] 2026-10-13 spec approvata dall'utente («procedi al playtest headless»);
   - [x] 2026-10-13 prototipo headless: `rocca::mayor`, `Game::{mayor, may_evacuate, take_authorisations, timing, measure}`, `commit` rifiuta «Evacua» non autorizzata, `score::Stars`; **spento nel chiosco** (`Game::mayor = None`);
   - [x] 2026-10-13 prova `examples/sindaca.rs`, 82 incendi × semi 1–3, resoconto `docs/fase6/sindaca/README.md`: «evacua appena autorizzato» senza preallerta non domina (355 contro 615); il piano forte diventa «preallerta, poi evacua all'autorizzazione», e la scelta vera è *chi* preallertare (preallerta a tutti perde > 20 punti in 34 incendi su 82). Soglia proposta: 20 min (con 10 arriva tardi). Durata stimata 5,1 min reali senza le «Decidi»;
-  - [ ] **checkpoint utente** sul resoconto: soglia 20 min, prossimo passo;
-  - [ ] strategia di preallerta senza senno di poi (per vicinanza/sottovento) in `sindaca.rs`;
-  - [ ] stelle: scala provvisoria lineare; Case ferma a 2,5; Tempismo conta la preallerta come ordine; Misura (non raggiunti alle case) e debrief («prudente» se il fuoco è vicino) usano criteri diversi: sceglierne uno;
+  - [x] 2026-10-13 l'utente approva il risultato («ottimo risultato») e la soglia di 20 min;
+  - [x] 2026-10-13 strategia senza senno di poi «preallerta i vicini (1,5 km, sottovento), evacua all'autorizzazione»: 618 punti contro 620 di chi conosce l'esito; nessun piano semplice domina. Piano con priorità sbagliate: 418, Case 1,2 stelle;
+  - [x] 2026-10-13 soglie delle stelle tarate sui quantili (`score::{PERSONE, CASE, TEMPISMO, MISURA}`): nessun ordine 1,2 in Persone, piano buono ~3,8; «evacua tutti» 1 in Misura. Resoconto aggiornato `docs/fase6/sindaca/README.md`;
+  - [ ] **decisione dell'utente: criterio di Misura** (mai raggiunti alle case, come ora, contro il «lontano > 1,5 km» del debrief, che con la nuova regola non scatta quasi mai); proposta: tenere Misura e riscrivere in modo neutro la riga «prudente» del debrief;
+  - [ ] stelle assolute: in incendi dove nessuna casa si salva anche il piano giusto prende 1 in Case; Tempismo quasi pieno per chi preallerta presto;
   - [ ] test preesistente rotto: `tests/messaggeri.rs::the_teams_leave_a_district_the_fire_reaches` (fallisce anche a `14357e6`);
   - [x] 2026-10-13 **riassunto a stelle** al posto di punteggio e classifica (decisione dell'utente): Persone, Case, Tempismo, Misura, 1–5 stelle, da fatti simulati in `rocca::score`; **ultimi 8 giocatori** al posto della classifica. Scritto in `docs/01-SPEC-GIOCO.md` §5;
   - [ ] calcolo di Tempismo e Misura in `rocca::score` e taratura delle soglie con `strategie_civili` (stesso giro di prove della sindaca); controllare che «evacua appena autorizzato» non prenda 5 stelle ovunque;

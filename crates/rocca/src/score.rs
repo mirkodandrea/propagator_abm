@@ -60,21 +60,29 @@ pub struct Stars {
     pub misura: u8,
 }
 
-/// 1 to 5 stars for a share of 0-1. A first, linear scale: the thresholds
-/// are to be set from the headless strategies (`examples/sindaca.rs`).
-pub fn stars_of(share: f64) -> u8 {
-    1 + (share.clamp(0.0, 1.0) * 4.0).round() as u8
+/// The share each further star needs, per category: from the headless
+/// strategies over 82 fires, seeds 1-3 (`examples/sindaca.rs`,
+/// `docs/fase6/sindaca`). No orders earns 1 star in Persone, a good plan
+/// about 4; evacuating everyone at once, 1 in Misura.
+pub const PERSONE: [f64; 4] = [0.2, 0.45, 0.65, 0.85];
+pub const CASE: [f64; 4] = [0.1, 0.25, 0.45, 0.7];
+pub const TEMPISMO: [f64; 4] = [0.25, 0.5, 0.75, 0.9];
+pub const MISURA: [f64; 4] = [0.4, 0.6, 0.8, 0.95];
+
+/// 1 to 5 stars for a share of 0-1: one more for each threshold it reaches.
+pub fn stars_of(share: f64, thresholds: [f64; 4]) -> u8 {
+    1 + thresholds.iter().filter(|&&t| share >= t).count() as u8
 }
 
 /// The stars from the score against the same fire with no orders and the
 /// game's own [`crate::Game::timing`] and [`crate::Game::measure`].
 pub fn stars(s: &Score, timing: Option<f64>, measure: f64) -> Stars {
-    let share = |kept: usize, risk: usize| (risk > 0).then(|| stars_of(kept as f64 / risk as f64));
+    let share = |kept: usize, risk: usize, t| (risk > 0).then(|| stars_of(kept as f64 / risk as f64, t));
     Stars {
-        persone: share(s.families, s.families_at_risk),
-        case: share(s.homes, s.homes_at_risk),
-        tempismo: timing.map(stars_of),
-        misura: stars_of(measure),
+        persone: share(s.families, s.families_at_risk, PERSONE),
+        case: share(s.homes, s.homes_at_risk, CASE),
+        tempismo: timing.map(|x| stars_of(x, TEMPISMO)),
+        misura: stars_of(measure, MISURA),
     }
 }
 
@@ -172,7 +180,7 @@ mod tests {
 
     #[test]
     fn stars_run_from_one_to_five() {
-        assert_eq!((stars_of(0.0), stars_of(0.5), stars_of(1.0), stars_of(1.7)), (1, 3, 5, 5));
+        assert_eq!((stars_of(0.0, PERSONE), stars_of(0.5, PERSONE), stars_of(0.85, PERSONE), stars_of(1.7, PERSONE)), (1, 3, 5, 5));
         let s = score(&outcome(0, 10), &outcome(0, 10));
         let st = stars(&s, None, 1.0);
         assert_eq!((st.persone, st.case, st.tempismo, st.misura), (None, Some(1), None, 5));
