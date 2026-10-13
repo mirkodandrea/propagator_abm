@@ -142,6 +142,7 @@ pub fn draw(
     logo: Option<Res<Logo>>,
     portraits: Option<Res<Portraits>>,
     mut speech: ResMut<Speech>,
+    mut gfx: ResMut<crate::quality::Graphics>,
     #[cfg(not(target_arch = "wasm32"))] mario: Res<crate::mario::Playground>,
 ) {
     let faces = portraits.as_deref();
@@ -156,6 +157,13 @@ pub fn draw(
     if ctx.input(|i| i.key_pressed(egui::Key::F2)) {
         k.operator = !k.operator;
     }
+    // the same menu for a mouse or a touch (and the web page, which has no F2)
+    egui::Area::new(egui::Id::new("menu_btn")).anchor(Align2::LEFT_TOP, [10.0, 10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+        let label = if k.operator { "Chiudi menu" } else { "Menu" };
+        if ui.add(secondary(label)).clicked() {
+            k.operator = !k.operator;
+        }
+    });
     // A hand over every button, and the hover shown at once with a white
     // edge (playtest colleghi: a late, faint hover over the level buttons
     // did not say they were buttons). Drawn buttons: `icons::pointing`.
@@ -184,7 +192,7 @@ pub fn draw(
             k.intro = true;
         }
         if k.operator {
-            operator(ctx, k, &mut sim, &mut restarted);
+            operator(ctx, k, &mut sim, &mut restarted, &mut gfx);
         }
         focus.pointer = true;
         return;
@@ -209,7 +217,7 @@ pub fn draw(
             tutorial::go(k, &sim, 0);
         }
         if k.operator {
-            operator(ctx, k, &mut sim, &mut restarted);
+            operator(ctx, k, &mut sim, &mut restarted, &mut gfx);
         }
         focus.pointer = true;
         return;
@@ -241,7 +249,7 @@ pub fn draw(
         tutorial::draw(ctx, k, &sim, cam, faces);
     }
     if k.operator {
-        operator(ctx, k, &mut sim, &mut restarted);
+        operator(ctx, k, &mut sim, &mut restarted, &mut gfx);
     }
     focus.pointer = ctx.wants_pointer_input() || ctx.is_pointer_over_area();
 }
@@ -2352,7 +2360,7 @@ fn leaderboard(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim) {
 }
 
 /// The operator bar (F2): any case, seed and speed, a new game, a pause.
-fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, gfx: &mut crate::quality::Graphics) {
     let now = ctx.input(|i| i.time);
     if k.reset_armed.is_some_and(|t| now - t > 5.0) {
         k.reset_armed = None;
@@ -2360,9 +2368,9 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
     if k.board_reset_armed.is_some_and(|t| now - t > 5.0) {
         k.board_reset_armed = None;
     }
-    egui::Area::new(egui::Id::new("operatore")).anchor(Align2::LEFT_TOP, [10.0, 10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("operatore")).anchor(Align2::LEFT_TOP, [10.0, 56.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         panel().show(ui, |ui| {
-            ui.label(RichText::new("Operatore (F2 per chiudere)").strong().color(Color32::WHITE));
+            ui.label(RichText::new("Menu (F2 per chiudere)").strong().color(Color32::WHITE));
             ui.label(RichText::new(format!("Partita in corso: {} · {}", sim.case.name, clock(sim.time_s()))).color(GREY));
             ui.horizontal(|ui| {
                 ui.label("Prossima partita:");
@@ -2419,6 +2427,24 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
                     }
                 }
                 ui.label(RichText::new(format!("{} in classifica", k.board.entries.len())).color(GREY));
+            });
+            ui.horizontal(|ui| {
+                use crate::quality::Graphics;
+                ui.label("Grafica:");
+                let now_level = gfx.level();
+                for (name, label, preset) in [("alta", "Alta", Graphics::ALTA), ("media", "Media", Graphics::MEDIA), ("bassa", "Bassa", Graphics::BASSA)] {
+                    if ui.selectable_label(now_level == Some(name), label).clicked() && now_level != Some(name) {
+                        // the plant density waits for the next launch
+                        *gfx = Graphics { vegetation: gfx.vegetation, ..preset };
+                        if let Err(e) = crate::quality::save(name) {
+                            k.error = Some(e);
+                        }
+                    }
+                }
+                if now_level.is_none() {
+                    ui.label(RichText::new("personalizzata").color(GREY));
+                }
+                ui.label(RichText::new("(la densità del bosco cambia al riavvio)").color(GREY));
             });
             if let Some(e) = &k.error {
                 ui.colored_label(RED, e);

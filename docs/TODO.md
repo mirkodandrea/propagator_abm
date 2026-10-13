@@ -4,6 +4,11 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
+- **2026-10-13, menu operatore: livello grafico** (richiesta dell'utente). Nella barra operatore (F2), accanto a «Azzera classifica», «Nuova partita», caso/seme/velocità, c'è ora **Grafica: Alta / Media / Bassa**.
+  - [x] Cambio dal vivo di MSAA, ombre/cascate, bloom, DoF e distanza LOD (`quality_live.rs`); la scelta è salvata in `~/.rocca_ventosa/grafica.txt` e riletta all'avvio (`KIOSK_QUALITY` e `KIOSK_GFX` hanno la precedenza). La densità del bosco cambia solo al riavvio (si pianta alla costruzione della scena).
+  - [x] 2026-10-13 pulsante **Menu** sempre visibile in alto a sinistra (apre/chiude la stessa barra, utile sul web che non ha F2); sul web il livello è salvato in localStorage. Compila anche per wasm.
+  - [ ] non provato a schermo (solo `cargo check --all-targets`): aprire F2, cambiare livello e controllare che DoF/bloom/ombre cambino senza artefatti.
+
 
 - **2026-10-12, prestazioni per PC meno potenti** (richiesta dell'utente). Diagnosi: il gioco è limitato dalla **GPU** (CPU quasi ferma, il render thread aspetta il frame); il carico è geometria (11,2 M triangoli di piante, ~5 M di terreno) ridisegnata in prepass, passata principale e 4 cascate d'ombra, più DoF/bloom/MSAA.
   - [x] **LOD della vegetazione** (`vegetation.rs`): ogni blocco ha anche una mesh di proxy (chioma a 6 lati + tronco a 3 lati, 18–30 triangoli contro 100–156; erba senza fili d'erba): 2,9 M triangoli contro 11,2 M, oltre `lod_m` dalla camera (sistema `vegetation::lod`, isteresi 10 %). Bruciano insieme alle piante vere. Indistinguibili dalla vista iniziale (luminosità ±1–3 %). Test `vegetation::tests::proxies_are_cheap_and_face_out`.

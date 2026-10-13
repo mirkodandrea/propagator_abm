@@ -31,6 +31,7 @@ mod life;
 mod people;
 mod pick;
 mod quality;
+mod quality_live;
 mod retro;
 mod rings;
 mod roads;
@@ -137,6 +138,7 @@ fn main() -> anyhow::Result<()> {
         ));
     }
     kiosk_systems(&mut app);
+    app.add_systems(Update, quality_live::apply_live.run_if(resource_changed::<quality::Graphics>.and_then(not(resource_added::<quality::Graphics>))));
     app.run();
     Ok(())
 }

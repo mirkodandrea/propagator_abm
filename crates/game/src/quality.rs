@@ -11,6 +11,11 @@
 //! `KIOSK_QUALITY=alta|media|bassa` picks a preset (default `alta`, the look
 //! as authored). `KIOSK_GFX` then overrides single knobs, for tuning on the
 //! kiosk machine: `KIOSK_GFX=-dof,-bloom,msaa=1,cascades=2,shadow=1500,veg=0.3,lod=800`.
+//!
+//! The operator bar (F2) also picks the preset, live and saved in
+//! `~/.rocca_ventosa/grafica.txt` (`KIOSK_QUALITY` still wins). Everything
+//! changes at once except the share of plants planted, which is drawn when
+//! the scene is built: it applies from the next launch.
 
 use bevy::prelude::*;
 
@@ -72,9 +77,10 @@ impl Graphics {
     /// The preset from `KIOSK_QUALITY`, then the `KIOSK_GFX` overrides, then
     /// the old `KIOSK_VEG_DENSITY` (which still wins for the vegetation).
     pub fn from_env() -> Graphics {
-        let mut g = match std::env::var("KIOSK_QUALITY").as_deref() {
-            Ok("bassa" | "low") => Graphics::BASSA,
-            Ok("media" | "medium") => Graphics::MEDIA,
+        let name = std::env::var("KIOSK_QUALITY").ok().or_else(saved);
+        let mut g = match name.as_deref() {
+            Some("bassa" | "low") => Graphics::BASSA,
+            Some("media" | "medium") => Graphics::MEDIA,
             _ => Graphics::ALTA,
         };
         if let Ok(spec) = std::env::var("KIOSK_GFX") {
@@ -110,8 +116,50 @@ impl Graphics {
         }
     }
 
+    /// The preset this is, if it is one (the operator bar's selection).
+    pub fn level(&self) -> Option<&'static str> {
+        // the plant density applies only at launch, so it is not compared
+        let same = |p: &Graphics| Graphics { vegetation: self.vegetation, ..*p } == *self;
+        [("alta", &Graphics::ALTA), ("media", &Graphics::MEDIA), ("bassa", &Graphics::BASSA)]
+            .into_iter()
+            .find(|(_, p)| same(p))
+            .map(|(n, _)| n)
+    }
+
     pub fn msaa(&self) -> Msaa {
         // WebGL2 has no multisampled HDR targets.
         if cfg!(target_arch = "wasm32") || self.msaa < 4 { Msaa::Off } else { Msaa::Sample4 }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn saved_path() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    std::path::Path::new(&home).join(".rocca_ventosa").join("grafica.txt")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn saved() -> Option<String> {
+    std::fs::read_to_string(saved_path()).ok().map(|s| s.trim().to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn saved() -> Option<String> {
+    web_sys::window()?.local_storage().ok()??.get_item("rocca_ventosa_grafica").ok()?
+}
+
+/// Remember the level for the next launch. A failure is reported, never fatal.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn save(level: &str) -> Result<(), String> {
+    let p = saved_path();
+    if let Some(dir) = p.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("grafica: {e}"))?;
+    }
+    std::fs::write(&p, level).map_err(|e| format!("grafica: {e}"))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn save(level: &str) -> Result<(), String> {
+    let s = web_sys::window().and_then(|w| w.local_storage().ok().flatten()).ok_or("grafica: il browser non salva dati")?;
+    s.set_item("rocca_ventosa_grafica", level).map_err(|_| "grafica: salvataggio non riuscito".to_string())
 }

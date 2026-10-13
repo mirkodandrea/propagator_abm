@@ -843,6 +843,16 @@ fn paint(colors: &mut [[f32; 4]], state: u8, k: f32) {
 /// Show each chunk's full models near the camera and its proxies beyond
 /// [`Vegetation::lod_m`], with a 10 % band so a chunk on the edge does not
 /// flicker while the camera drifts.
+impl Vegetation {
+    pub fn set_lod_m(&mut self, m: f32) {
+        if self.lod_m != m {
+            self.lod_m = m;
+            // the next `lod` pass looks at every chunk again
+            self.drawn_at = None;
+        }
+    }
+}
+
 pub fn lod(
     mut veg: ResMut<Vegetation>,
     camera: Query<&Transform, With<Camera3d>>,
