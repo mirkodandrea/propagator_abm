@@ -214,7 +214,6 @@ pub fn spawn(
             material: material.clone(),
             ..default()
         },
-            #[cfg(not(target_arch = "wasm32"))]
             crate::terrain_mesh::PauseSolid,
         ));
         chunks.push(Chunk {

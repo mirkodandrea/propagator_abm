@@ -144,6 +144,8 @@ pub struct Playground {
     health: i16,
     wing_cap: bool,
     message: &'static str,
+    /// Web: «M» was pressed before the ROM was loaded; start once it arrives.
+    awaiting_rom: bool,
 }
 
 impl Playground {
@@ -354,6 +356,17 @@ impl Plugin for MarioPlugin {
             )
             .add_systems(OnExit(AppState::Playing), clear);
     }
+}
+
+/// Web: the ROM the visitor was asked for has been loaded.
+fn awaiting_rom_arrived(mode: &mut Playground) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    if mode.awaiting_rom && web_rom().is_some() {
+        mode.awaiting_rom = false;
+        return true;
+    }
+    let _ = mode;
+    false
 }
 
 fn available(k: &Kiosk, sim: &Sim) -> bool {
@@ -608,7 +621,8 @@ fn drive(
     let reset = restarted.read().count() > 0;
     let toggle = std::mem::take(&mut mode.toggle)
         || focused && keyboard_free && controls.keys.just_pressed(KeyCode::KeyM)
-        || focused && pressed(GamepadButtonType::Start);
+        || focused && pressed(GamepadButtonType::Start)
+        || awaiting_rom_arrived(&mut mode);
     let stop = mode.active
         && (!can_play
             || reset
@@ -671,6 +685,7 @@ fn drive(
                     runtime.material = Some(material);
                 }
                 Err(e) => {
+                    mode.awaiting_rom = cfg!(target_arch = "wasm32");
                     mode.error = Some(e);
                     return;
                 }
@@ -750,32 +765,36 @@ fn drive(
             mask: mask.clone(), bounds: Vec4::new(-1.0, -1.0, 1.0, 1.0),
         });
         runtime.outline_material = Some(outline_material.clone());
-        runtime.mask_camera = Some(commands.spawn((
-            Camera3dBundle {
-                camera: Camera {
-                    order: -1,
-                    // Keep depth values in a linear float target throughout;
-                    // an LDR intermediate quantizes them like colour data.
-                    hdr: true,
-                    target: bevy::render::camera::RenderTarget::Image(mask),
-                    clear_color: ClearColorConfig::Custom(Color::NONE),
+        // The silhouette outline reads the scene's depth prepass, which WebGL2
+        // cannot sample; on the web Mario is drawn without it.
+        if !cfg!(target_arch = "wasm32") {
+            runtime.mask_camera = Some(commands.spawn((
+                Camera3dBundle {
+                    camera: Camera {
+                        order: -1,
+                        // Keep depth values in a linear float target throughout;
+                        // an LDR intermediate quantizes them like colour data.
+                        hdr: true,
+                        target: bevy::render::camera::RenderTarget::Image(mask),
+                        clear_color: ClearColorConfig::Custom(Color::NONE),
+                        ..default()
+                    },
+                    tonemapping: bevy::core_pipeline::tonemapping::Tonemapping::None,
+                    deband_dither: bevy::core_pipeline::tonemapping::DebandDither::Disabled,
                     ..default()
                 },
-                tonemapping: bevy::core_pipeline::tonemapping::Tonemapping::None,
-                deband_dither: bevy::core_pipeline::tonemapping::DebandDither::Disabled,
-                ..default()
-            },
-            RenderLayers::layer(MASK_LAYER),
-            crate::camera::AuxiliaryCamera,
-        )).id());
-        runtime.outline = Some(commands.spawn((
-            MaterialMeshBundle::<MarioOutlineMaterial> {
-                mesh: meshes.add(Rectangle::new(2.0, 2.0)),
-                material: outline_material,
-                ..default()
-            },
-            NoFrustumCulling,
-        )).id());
+                RenderLayers::layer(MASK_LAYER),
+                crate::camera::AuxiliaryCamera,
+            )).id());
+            runtime.outline = Some(commands.spawn((
+                MaterialMeshBundle::<MarioOutlineMaterial> {
+                    mesh: meshes.add(Rectangle::new(2.0, 2.0)),
+                    material: outline_material,
+                    ..default()
+                },
+                NoFrustumCulling,
+            )).id());
+        }
         let handle = runtime
             .mesh
             .get_or_insert_with(|| {
@@ -840,7 +859,7 @@ fn drive(
         capture_pose(&mut runtime);
         return;
     }
-    if !depth_prepass {
+    if !depth_prepass && !cfg!(target_arch = "wasm32") {
         commands.entity(camera_entity).insert(bevy::core_pipeline::prepass::DepthPrepass);
     }
     let dt = time.delta_seconds().min(0.1);
@@ -1142,11 +1161,57 @@ fn load_engine(
     images: &mut Assets<Image>,
     materials: &mut Assets<MarioMaterial>,
 ) -> Result<(Engine, Handle<MarioMaterial>), String> {
+    let rom = read_rom()?;
+    load_engine_from_rom(&rom, images, materials).inspect_err(|_| forget_rom())
+}
+
+/// Web: a ROM the engine rejected is not kept for the next visit.
+#[cfg(target_arch = "wasm32")]
+fn forget_rom() {
+    use wasm_bindgen::JsCast;
+    let Some(window) = web_sys::window() else { return };
+    if let Ok(forget) = js_sys::Reflect::get(&window, &"marioForgetRom".into()) {
+        if let Some(forget) = forget.dyn_ref::<js_sys::Function>() {
+            let _ = forget.call0(&window);
+        }
+    }
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn forget_rom() {}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_rom() -> Result<Vec<u8>, String> {
     let path = std::env::var_os("MARIO64_ROM")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("data/mario64/Super Mario 64 (USA).z64"));
-    let rom = std::fs::read(&path).map_err(|e| format!("ROM {}: {e}", path.display()))?;
-    load_engine_from_rom(&rom, images, materials)
+    std::fs::read(&path).map_err(|e| format!("ROM {}: {e}", path.display()))
+}
+
+/// In the browser the ROM comes from the page (`web/index.html`): the visitor
+/// drops or picks the file once, the page keeps it in IndexedDB and exposes it
+/// as `window.marioRom`. Without it the page opens its picker.
+#[cfg(target_arch = "wasm32")]
+fn read_rom() -> Result<Vec<u8>, String> {
+    use wasm_bindgen::JsCast;
+    if let Some(rom) = web_rom() {
+        return Ok(rom);
+    }
+    if let Some(window) = web_sys::window() {
+        if let Ok(pick) = js_sys::Reflect::get(&window, &"marioPickRom".into()) {
+            if let Some(pick) = pick.dyn_ref::<js_sys::Function>() {
+                let _ = pick.call0(&window);
+            }
+        }
+    }
+    Err("Scegli la ROM di Super Mario 64 (USA) dal selettore, o trascinala qui.".into())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn web_rom() -> Option<Vec<u8>> {
+    use wasm_bindgen::JsCast;
+    let window = web_sys::window()?;
+    let rom = js_sys::Reflect::get(&window, &"marioRom".into()).ok()?;
+    rom.dyn_into::<js_sys::Uint8Array>().ok().map(|a| a.to_vec())
 }
 
 fn load_engine_from_rom(
@@ -1214,7 +1279,7 @@ fn rocca_start(sim: &Sim) -> Option<(Vec3, f32)> {
         .join("scenarios")
         .join(&sim.scn.id)
         .join("island.json");
-    let island: serde_json::Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    let island: serde_json::Value = serde_json::from_slice(&datafs::read(path).ok()?).ok()?;
     let rocca = &island["landmarks"]["rocca"];
     let centre = Vec3::new(
         rocca["pos"][0].as_f64()? as f32,

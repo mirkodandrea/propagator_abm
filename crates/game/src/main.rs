@@ -24,7 +24,6 @@ mod frame;
 mod kiosk;
 mod landmarks;
 mod models;
-#[cfg(not(target_arch = "wasm32"))]
 mod mario;
 mod overlays;
 mod life;
@@ -130,7 +129,6 @@ fn main() -> anyhow::Result<()> {
         app.add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
             .add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::filtered(vec![bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS]));
     }
-    #[cfg(not(target_arch = "wasm32"))]
     app.add_plugins(mario::MarioPlugin);
     if std::env::var_os("MARIO_DEMO").is_some() {
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
@@ -267,11 +265,6 @@ fn kiosk_systems(app: &mut App) {
     );
 }
 
-fn map_camera_allowed(
-    #[cfg(not(target_arch = "wasm32"))] mario: Res<mario::Playground>,
-) -> bool {
-    #[cfg(not(target_arch = "wasm32"))]
-    { !mario.active }
-    #[cfg(target_arch = "wasm32")]
-    { true }
+fn map_camera_allowed(mario: Res<mario::Playground>) -> bool {
+    !mario.active
 }

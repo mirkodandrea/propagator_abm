@@ -11,6 +11,8 @@ command -v wasm-bindgen >/dev/null || {
   exit 1
 }
 
+# libsm64 (Mario) is C: it needs an LLVM clang that targets wasm (brew install llvm);
+# crates/libsm64-native/build.rs finds it, or set CC_wasm32_unknown_unknown.
 cargo build --package game --target wasm32-unknown-unknown --profile wasm-release
 rm -rf target/web
 mkdir -p target/web

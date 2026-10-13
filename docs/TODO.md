@@ -4,6 +4,11 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
+- **2026-10-13, Mario: easter egg, anche sul web** (richiesta dell'utente). Il pulsante «Esplora con Mario» è tolto dal titolo: restano solo **M** / Start del gamepad. Sul web `libsm64` è compilato in wasm (`crates/libsm64-native/build.rs` con clang LLVM, `wasm/shim` = header minimi, `wasm/libc.c` e `src/wasm.rs` = le poche funzioni libc); la ROM non è inclusa: `web/index.html` la chiede (selettore o trascinamento, .z64/.v64/.n64 convertiti in .z64), la tiene in IndexedDB e la dà al gioco come `window.marioRom`; la ROM rifiutata dal motore viene dimenticata. Senza ROM, M apre il selettore e Mario parte da solo appena arriva. Il contorno (silhouette) di Mario sul web è disattivato: legge la profondità, che WebGL2 non può campionare (era l'errore `textureLoad from depth textures`).
+  - [x] compila e collega per `wasm32` (`scripts/build_web.sh`, serve LLVM clang: `brew install llvm`), nessun import `env` irrisolto; nativo invariato;
+  - [ ] **non verificato a vista**: nel browser di prova (scheda in secondo piano, rAF limitato) M avvia Mario senza errori GPU ma non ho visto Mario sullo schermo: provarlo in un browser vero (carica la ROM, premi M dal titolo); controllare prestazioni e audio (autoplay del browser);
+  - [ ] test preesistente rotto: `models::tests::the_island_models_stand_on_the_ground` (`models.rs:198`), non toccato da questo lavoro.
+
 - **2026-10-13, nuvole nel cielo** (richiesta dell'utente): strato volumetrico (ray-march 3D tra 2300 e 3800 m, 28 passi + 3 verso il sole) nello shader del cielo (`shaders/sky.wgsl`, uniform in `sky.rs`), portato dal vento di `sea::wind_drift` (integrato, quindi un cambio di vento gira la deriva senza salti; tempo reale, non simulato). Copertura sparsa, ombreggiatura verso il sole, colori legati a ora del giorno. Verificato con `KIOSK_SNAP`.
   - [ ] costo GPU del ray-march non misurato (livello Basso potrebbe volerne meno passi); non provato di notte/all'alba né con vento diverso; copertura (`CLOUD_COVERAGE`) e velocità (`CLOUD_SPEED_FACTOR`) da tarare a occhio.
 

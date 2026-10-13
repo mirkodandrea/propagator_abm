@@ -143,11 +143,10 @@ pub fn draw(
     portraits: Option<Res<Portraits>>,
     mut speech: ResMut<Speech>,
     mut gfx: ResMut<crate::quality::Graphics>,
-    #[cfg(not(target_arch = "wasm32"))] mut mario: ResMut<crate::mario::Playground>,
+    mut mario: ResMut<crate::mario::Playground>,
 ) {
     let faces = portraits.as_deref();
     let ctx = contexts.ctx_mut();
-    #[cfg(not(target_arch = "wasm32"))]
     if mario.active {
         focus.pointer = ctx.is_pointer_over_area();
         return;
@@ -184,9 +183,7 @@ pub fn draw(
     if k.title {
         k.side_w = 0.0;
         let (play, _mario_requested) = title(ctx, k, logo.as_deref().map(|l| l.0));
-        #[cfg(not(target_arch = "wasm32"))]
         if _mario_requested { mario.request_start(); }
-        #[cfg(not(target_arch = "wasm32"))]
         if let Some(error) = mario.error_message() {
             egui::Area::new(egui::Id::new("mario_title_error"))
                 .anchor(Align2::CENTER_BOTTOM, [0.0, -52.0])
@@ -307,7 +304,8 @@ pub fn load_logo(mut commands: Commands, mut images: ResMut<Assets<Image>>, mut 
 fn title(ctx: &egui::Context, k: &Kiosk, logo: Option<egui::TextureId>) -> (bool, bool) {
     let screen = ctx.screen_rect();
     let mut play = false;
-    let mut mario_requested = false;
+    // Mario is an easter egg: no button, only the M key / gamepad Start (`mario::drive`)
+    let mario_requested = false;
     egui::Area::new(egui::Id::new("titolo_fondo")).fixed_pos(screen.min).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
         let p = ui.painter();
         p.rect_filled(screen, 0.0, Color32::from_black_alpha(70));
@@ -342,11 +340,6 @@ fn title(ctx: &egui::Context, k: &Kiosk, logo: Option<egui::TextureId>) -> (bool
             ui.add_space(34.0);
             let b = egui::Button::new(RichText::new("Gioca").size(44.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(16.0).min_size(egui::vec2(360.0, 96.0));
             play = icons::pointing(ui.add(b)).clicked();
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                ui.add_space(14.0);
-                mario_requested = icons::pointing(ui.add(secondary("Esplora con Mario · M / Start"))).clicked();
-            }
         });
     });
     egui::Area::new(egui::Id::new("titolo_nota")).anchor(Align2::LEFT_BOTTOM, [18.0, -14.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {

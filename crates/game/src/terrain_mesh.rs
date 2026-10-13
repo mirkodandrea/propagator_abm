@@ -36,7 +36,6 @@ const STRIDE: usize = if cfg!(target_arch = "wasm32") { 4 } else { 1 };
 pub struct TerrainChunk;
 
 /// Static rendered geometry used by the optional native pause playground.
-#[cfg(not(target_arch = "wasm32"))]
 #[derive(Component)]
 pub struct PauseSolid;
 
@@ -435,7 +434,6 @@ pub fn build(
                     ..default()
                 },
                 TerrainChunk,
-                #[cfg(not(target_arch = "wasm32"))]
                 PauseSolid,
             ));
             count += 1;

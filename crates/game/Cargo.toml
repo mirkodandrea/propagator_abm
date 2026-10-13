@@ -12,15 +12,16 @@ fire.workspace = true
 abm.workspace = true
 behavior.workspace = true
 anyhow.workspace = true
+datafs.workspace = true
+libsm64-native = { path = "../libsm64-native" }
 serde_json.workspace = true
 bevy = { version = "0.14", default-features = true }
 bevy_egui = { version = "0.28", default-features = false, features = ["open_url", "default_fonts", "render"] }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-libsm64-native = { path = "../libsm64-native" }
-
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["Window", "Storage"] }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
 uuid.workspace = true
 getrandom.workspace = true
 

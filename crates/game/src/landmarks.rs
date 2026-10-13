@@ -57,7 +57,6 @@ fn spawn_landmarks(
             transform: Transform { translation: at, rotation: Quat::from_rotation_y(yaw), scale: Vec3::splat(scale) },
             ..default()
         },
-            #[cfg(not(target_arch = "wasm32"))]
             crate::terrain_mesh::PauseSolid,
         ));
     }

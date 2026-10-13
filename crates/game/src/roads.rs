@@ -150,7 +150,6 @@ pub fn build(
                     ..default()
                 },
                 RoadChunk,
-                #[cfg(not(target_arch = "wasm32"))]
                 crate::terrain_mesh::PauseSolid,
             ));
         }

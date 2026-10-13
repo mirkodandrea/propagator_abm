@@ -538,26 +538,22 @@ pub fn commit(kiosk: &mut Kiosk, sim: &mut Sim) {
 
 /// Run the clock and keep the preview current.
 pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: EventWriter<SimRestarted>,
-    #[cfg(not(target_arch = "wasm32"))] mario: Res<crate::mario::Playground>,
-    #[cfg(not(target_arch = "wasm32"))] mut was_mario: Local<bool>,
+    mario: Res<crate::mario::Playground>,
+    mut was_mario: Local<bool>,
 ) {
     let dt = time.delta_seconds();
     // Exploring from the title neither starts the visitor's game nor lets the
     // demo director restart the world beneath Mario. Resume it on return.
-    #[cfg(not(target_arch = "wasm32"))]
     if mario.active && kiosk.title {
         sim.speed = 0.0;
         return;
     }
-    #[cfg(not(target_arch = "wasm32"))]
     let mario_clock = {
         let active = mario.active && kiosk.phase == Phase::Pianifica;
         if *was_mario && !active { kiosk.dirty = true; }
         *was_mario = active;
         active
     };
-    #[cfg(target_arch = "wasm32")]
-    let mario_clock = false;
     #[cfg(target_arch = "wasm32")]
     kiosk.advance_baseline();
     // the operator's stop holds the countdowns too

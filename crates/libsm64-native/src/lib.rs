@@ -1,5 +1,4 @@
 //! Small, main-thread-only owner of libsm64's global state. No ROM is embedded.
-#![cfg(not(target_arch = "wasm32"))]
 
 use std::{
     marker::PhantomData,
@@ -14,6 +13,9 @@ pub const AUDIO_RATE: u32 = 32_000;
 pub const AUDIO_BUFFER_SAMPLES: usize = 544 * 2 * 2;
 const VERTICES: usize = 1024 * 3;
 const MARIO_WING_CAP: u32 = 0x00000008;
+#[cfg(target_arch = "wasm32")]
+mod wasm;
+
 static IN_USE: AtomicBool = AtomicBool::new(false);
 
 #[repr(C)]
