@@ -15,6 +15,46 @@ pub struct Model {
     pub wood: Vec<bool>,
 }
 
+/// The archetypes scattered as vegetation, by the thousand.
+const PLANTS: [&str; 6] = ["pine", "oak", "chestnut", "bush", "olive", "cypress"];
+
+impl Model {
+    /// Drops the faces that look steeply downward, and the vertices only they
+    /// used. On a crown that is the lower half of each icosphere: from the
+    /// shallowest pitch the kiosk camera allows (-0.55 rad) a face is visible
+    /// only if its normal is above -sin 0.55 ≈ -0.52, so none of them can be
+    /// seen, yet each
+    /// still costs vertex work in every pass, shadow cascades included. Halves
+    /// the triangles of a crown without changing a pixel of the picture.
+    fn drop_undersides(&mut self) {
+        const MIN_NY: f32 = -0.6;
+        let keep: Vec<[u32; 3]> = self
+            .indices
+            .chunks_exact(3)
+            .filter(|t| t.iter().map(|&i| self.normals[i as usize][1]).sum::<f32>() / 3.0 >= MIN_NY)
+            .map(|t| [t[0], t[1], t[2]])
+            .collect();
+        let mut remap = vec![u32::MAX; self.positions.len()];
+        let (mut positions, mut normals, mut colors, mut wood) = (vec![], vec![], vec![], vec![]);
+        let mut indices = Vec::with_capacity(keep.len() * 3);
+        for tri in keep {
+            for i in tri {
+                let i = i as usize;
+                if remap[i] == u32::MAX {
+                    remap[i] = positions.len() as u32;
+                    positions.push(self.positions[i]);
+                    normals.push(self.normals[i]);
+                    colors.push(self.colors[i]);
+                    wood.push(self.wood[i]);
+                }
+                indices.push(remap[i]);
+            }
+        }
+        (self.positions, self.normals, self.colors, self.wood, self.indices) =
+            (positions, normals, colors, wood, indices);
+    }
+}
+
 pub fn model(name: &str) -> &'static Model {
     static MODELS: OnceLock<HashMap<String, Model>> = OnceLock::new();
     &MODELS.get_or_init(|| {
@@ -26,16 +66,17 @@ pub fn model(name: &str) -> &'static Model {
             .unwrap()
             .iter()
             .map(|(name, v)| {
-                (
-                    name.clone(),
-                    Model {
-                        positions: serde_json::from_value(v["positions"].clone()).unwrap(),
-                        normals: serde_json::from_value(v["normals"].clone()).unwrap(),
-                        colors: serde_json::from_value(v["colors"].clone()).unwrap(),
-                        indices: serde_json::from_value(v["indices"].clone()).unwrap(),
-                        wood: serde_json::from_value(v["wood"].clone()).unwrap(),
-                    },
-                )
+                let mut model = Model {
+                    positions: serde_json::from_value(v["positions"].clone()).unwrap(),
+                    normals: serde_json::from_value(v["normals"].clone()).unwrap(),
+                    colors: serde_json::from_value(v["colors"].clone()).unwrap(),
+                    indices: serde_json::from_value(v["indices"].clone()).unwrap(),
+                    wood: serde_json::from_value(v["wood"].clone()).unwrap(),
+                };
+                if PLANTS.contains(&name.as_str()) {
+                    model.drop_undersides();
+                }
+                (name.clone(), model)
             })
             .collect()
     })[name]
