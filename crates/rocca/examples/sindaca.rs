@@ -14,6 +14,9 @@
 //! shortened downwind as the coordinator ranks homes (`district::reach_m`).
 //! «priorità sbagliate» ranks the districts the fire misses first.
 //!
+//! USCITA=<famiglie/min> sets the organised exit's capacity
+//! ([`abm::Abm::set_exit_capacity`]) over `game.json`'s.
+//!
 //! GREZZI=<file.csv> also writes each game's raw shares behind the stars.
 //!
 //! «anticipo reale» is, over the authorised districts the fire reached at
@@ -82,6 +85,8 @@ fn main() -> anyhow::Result<()> {
         .split(',')
         .map(|s| s.trim().parse().unwrap())
         .collect();
+    // USCITA=<families/min>: the organised exit's capacity, over game.json's
+    let exit_per_min: Option<f32> = std::env::var("USCITA").ok().map(|v| v.parse().unwrap());
     // how long «evacua in ritardo» waits after an authorisation
     let late_s: i64 = std::env::var("RITARDO_MIN").map_or(10, |v| v.parse().unwrap()) * 60;
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -122,6 +127,9 @@ fn main() -> anyhow::Result<()> {
         let ((case, seed), without) = (&pairs[*k], withouts[*k].as_ref().unwrap());
         let mut g = Game::new(data, case, *seed)?;
         g.mayor = lead.map(|l| Mayor { lead_s: l * 60 });
+        if let Some(c) = exit_per_min {
+            g.agents.set_exit_capacity(Some(c));
+        }
         let n = g.districts.len();
         let all: Vec<usize> = (0..n).collect();
         let wrong: Vec<usize> = (0..n).filter(|d| !hit.contains(d)).chain(hit.iter().rev().copied()).collect();

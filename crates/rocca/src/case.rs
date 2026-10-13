@@ -97,6 +97,11 @@ pub struct Territory {
     /// over the households' own channels.
     #[serde(default)]
     pub messengers: Option<crate::Messengers>,
+    /// Households an organised evacuation can put on the road per minute,
+    /// all districts together ([`abm::Abm::set_exit_capacity`]); absent, no
+    /// limit.
+    #[serde(default)]
+    pub exit_per_min: Option<f32>,
     /// Evacuation needs the mayor's authorisation ([`crate::mayor`]);
     /// absent, any district may be evacuated at any time.
     #[serde(default)]

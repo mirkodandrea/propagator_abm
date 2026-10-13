@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use abm::suppression::{Task, UnitKind, UnitState};
+use abm::suppression::{Task, UnitEffect, UnitKind, UnitState};
 use abm::{Abm, Suppression};
 use anyhow::{Context, Result};
 use fire::FireSim;
@@ -24,6 +24,9 @@ use crate::plan::{Civil, Plan};
 
 /// Simulated seconds per step (the units' and civilians' decision interval).
 pub const STEP_S: i64 = 6;
+/// Fattore sulla capacità di spegnimento: linea tagliata dalle squadre e acqua
+/// di autobotti e aerei (2026-10-13, richiesta dell'utente).
+pub const SUPPRESSION_X: f32 = 3.0;
 /// A unit on the move that has not moved for this long is stuck: its road is
 /// cut and no other is open.
 pub const STUCK_S: i64 = 5 * 60;
@@ -201,10 +204,12 @@ impl Game {
         let policy = abm::UnitRuntime::build(&lib)
             .map_err(|e| anyhow::anyhow!("unit behaviour: {e}"))?
             .context("unit behaviour: no profile is enabled")?;
-        let agents = Abm::with_behaviours(&scn, seed, households, persons)?;
+        let mut agents = Abm::with_behaviours(&scn, seed, households, persons)?;
+        agents.set_exit_capacity(territory.exit_per_min);
         let roster: Vec<(UnitKind, Pos)> =
             territory.roster.iter().map(|s| (s.kind.unit_kind(), Pos::from(territory.stations[s.station].pos))).collect();
-        let crews = Suppression::with_roster(&scn, &roster, policy)?;
+        let mut crews = Suppression::with_roster(&scn, &roster, policy)?;
+        crews.effect = UnitEffect::all(SUPPRESSION_X);
         let districts = district::of(&scn, &agents);
         let n = agents.households.len();
         let units = crews.units.len();

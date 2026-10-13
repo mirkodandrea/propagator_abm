@@ -11,11 +11,14 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - **Classifica dei migliori del giorno**, per livello, azzerabile dal menu operatore; a lato della schermata iniziale e nel finale. Finale semplificato: stelle, classifica, breve debriefing.
   - **«Evacua»**: mostra il percorso quartiere→area sicura e chiede conferma; intanto il mondo va a ×1 con un limite di tempo.
   - **Previsione stocastica** del fuoco a **+1 h e +3 h**, isocrone al 50 %, mostrata quando cambiano le condizioni al contorno (vento).
-  - [ ] capacità di evacuazione (motore + taratura headless);
+  - [x] 2026-10-13 capacità di evacuazione nel motore (`abm::Abm::set_exit_capacity`, `game.json` `exit_per_min`, assente = nessun limite: **chiosco invariato**), prova `examples/sindaca.rs` con `USCITA`, partenze `examples/partenze.rs`, resoconto `docs/fase6/uscita/README.md`. Esito: se chi vede il fuoco parte da solo (versione realistica, B) la capacità quasi non conta nemmeno a 2/min; se aspetta il turno (A) sotto 4/min evacuare diventa peggio di preallertare. Non crea la scelta «chi evacuare prima». Proposta: B a 6/min come realismo visibile (code), non come leva di bilanciamento;
+  - [ ] **decisione dell'utente**: versione A/B, valore, e se attivarla nel chiosco;
+  - [ ] test preesistenti rotti da quando il territorio è un'isola: `abm/tests/incident_gaps.rs` (5 test: «a water haven on an inland territory», …), non toccati da questo lavoro;
   - [ ] nuovo modello del tempo (via pause/«Decidi», ×1 automatico con motivo generato);
   - [ ] piano a tre colonne; percorso di evacuazione con conferma;
   - [ ] classifica del giorno + finale semplificato + schermata iniziale;
   - [ ] previsione stocastica +1 h/+3 h;
+  - [x] 2026-10-13 capacità di spegnimento ×3 (`rocca::game::SUPPRESSION_X`, `UnitEffect::all(3.0)`: linea delle squadre e acqua di mezzi/aerei; portata e nervi invariati). Prova `strategie_civili --semi 1,2,3` (82 casi×seme, punti medi ×1→×3): minacciati 636→639, evacua tutti 630→624, preallerta tutti 539→532, nessun ordine 177→193; «evacua tutti» perde >20 punti su «minacciati» in 35→34 casi su 82: equilibrio invariato. Non rifatta con le varianti A/B/C né con `semi` oltre 1–3.
   - [x] 2026-10-13 sidebar senza «Vista» (Home e «Vista iniziale (Home)» nel menu operatore); scroll a due dita = zoom come la rotella (`kiosk/view.rs`). **Da provare a mano sul trackpad**; «Segui il fuoco» non è più attivabile a mano (resta automatico);
   - [x] 2026-10-13 Esc = «Salta» nel tutorial (`tutorial.rs`); nome: il campo riprende il fuoco se un altro widget l'aveva preso (`ui.rs`), F2 ignorato mentre si scrive (sul titolo usare «Menu»); «Legenda» in alto a destra della mappa (`legend_corner`); tolto «Il coordinatore propone» e l'anteprima del pannello mezzi. Esc e scrittura del nome **non provati a mano**.
 

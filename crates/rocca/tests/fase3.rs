@@ -235,3 +235,29 @@ fn evacuation_waits_for_the_mayor() {
     g.commit(plan).unwrap();
     assert_eq!(g.active.civil[d], Civil::Evacua);
 }
+
+/// The organised exit (`Abm::set_exit_capacity`): with everyone ordered out at
+/// once, no more than the capacity's households leave on the order each
+/// minute, and the rest wait at home their turn rather than vanishing.
+#[test]
+fn the_exit_capacity_limits_the_departures_on_the_order() {
+    let left = |cap: Option<f32>| {
+        let mut g = game("easy");
+        g.agents.set_exit_capacity(cap);
+        let n = g.districts.len();
+        let mut plan = Plan::new(n);
+        for d in 0..n {
+            plan = plan.with_civil(d, Civil::Evacua);
+        }
+        g.commit(plan).unwrap();
+        g.run_until(40 * 60).unwrap();
+        let gone = g.agents.households.iter().filter(|h| matches!(h.status, Status::Evacuating | Status::Evacuated)).count();
+        (gone, g.agents.waiting_to_leave().len())
+    };
+    let (free, _) = left(None);
+    let (capped, waiting) = left(Some(2.0));
+    // two a minute over 40 minutes, plus the households that left on their
+    // own or ran from the fire, which the capacity does not hold
+    assert!(capped < free, "capped {capped} free {free}");
+    assert!(waiting > 0, "nobody waiting with 2 a minute");
+}

@@ -428,6 +428,18 @@ pub struct Abm {
     /// the one that actually elapsed rather than the one that was intended.
     last_decision_s: f32,
     next_route_s: f32,
+    /// Households an organised evacuation can put on the road per minute,
+    /// every district together: the municipal police at the junctions, the
+    /// buses for those without a car, the volunteers knocking twice. `None`
+    /// is no limit. Only a departure *on the order* waits for it; a household
+    /// leaving on its own, or running because the fire is at the door, does
+    /// not ask anyone ([`Abm::set_exit_capacity`]).
+    exit_capacity: Option<f32>,
+    /// Departures the capacity has in hand, at most one minute's worth.
+    exit_tokens: f32,
+    /// Households ready to leave on the order and waiting their turn, first
+    /// ready first out.
+    exit_queue: std::collections::VecDeque<usize>,
     /// Bumped whenever anything an observer would draw has changed.
     pub generation: u64,
 }
@@ -678,6 +690,9 @@ impl Abm {
             next_decision_s: 0.0,
             last_decision_s: 0.0,
             next_route_s: 0.0,
+            exit_capacity: None,
+            exit_tokens: 0.0,
+            exit_queue: Default::default(),
             generation: 0,
         };
         abm.closed_edges = vec![false; abm.network.edge_count];
@@ -1365,6 +1380,17 @@ impl Abm {
         &self.behavior
     }
 
+    /// Limit the departures on the order to `per_min` households a minute,
+    /// all districts together, or lift the limit with `None`.
+    pub fn set_exit_capacity(&mut self, per_min: Option<f32>) {
+        self.exit_capacity = per_min.filter(|r| *r > 0.0);
+    }
+
+    /// Households ready to leave on the order and still waiting their turn.
+    pub fn waiting_to_leave(&self) -> &std::collections::VecDeque<usize> {
+        &self.exit_queue
+    }
+
     /// Perception and decision, run every [`DECISION_S`].
     fn decide(&mut self, dt: f32, fire: &FireSim, _scn: &Scenario) {
         let threat = fire.threat();
@@ -1431,7 +1457,11 @@ impl Abm {
             }
 
             let jitter = hash01(h.id as u64, 0x51);
-            let awake = h.warning_received || h.prealert_received || h.cue > 0.10 + 0.20 * (1.0 - h.risk_perception) + 0.05 * jitter;
+            // What the household would make of the fire without anyone telling
+            // it: enough to wake it, and enough to leave without waiting for
+            // the organised exit.
+            let sees_it = h.cue > 0.10 + 0.20 * (1.0 - h.risk_perception) + 0.05 * jitter;
+            let awake = h.warning_received || h.prealert_received || sees_it;
 
             if awake && h.status == Status::Normal {
                 h.status = Status::Warned;
@@ -1499,7 +1529,16 @@ impl Abm {
             if h.status == Status::Preparing {
                 h.prep_remaining_s -= dt;
                 if h.prep_remaining_s <= 0.0 {
-                    self.launch(i, Goal::Refuge);
+                    // Leaving on the order goes through the organised exit;
+                    // a household that would have gone on its own, having
+                    // seen the fire, or running from it, does not wait.
+                    if self.exit_capacity.is_some() && h.warning_received && !run_now && !sees_it {
+                        if !self.exit_queue.contains(&i) {
+                            self.exit_queue.push_back(i);
+                        }
+                    } else {
+                        self.launch(i, Goal::Refuge);
+                    }
                 }
             }
 
@@ -1531,6 +1570,31 @@ impl Abm {
                     }
                 } else {
                     h.shelter_s = (h.shelter_s - dt * HEAT_RECOVERY).max(0.0);
+                }
+            }
+        }
+
+        // --- the organised exit ---------------------------------------------
+        if let Some(rate) = self.exit_capacity {
+            self.exit_tokens = (self.exit_tokens + rate * dt / 60.0).min(rate.max(1.0));
+            while self.exit_tokens >= 1.0 {
+                let Some(i) = self.exit_queue.pop_front() else { break };
+                // Gone meanwhile: ran, sheltered, or caught.
+                let h = &self.households[i];
+                if h.status != Status::Preparing || h.traveller.is_some() {
+                    continue;
+                }
+                self.launch(i, Goal::Refuge);
+                self.exit_tokens -= 1.0;
+            }
+            if self.exit_queue.is_empty() {
+                // Capacity nobody is waiting for is not saved up.
+                self.exit_tokens = self.exit_tokens.min(1.0);
+            }
+        } else {
+            for i in std::mem::take(&mut self.exit_queue) {
+                if self.households[i].status == Status::Preparing && self.households[i].traveller.is_none() {
+                    self.launch(i, Goal::Refuge);
                 }
             }
         }
