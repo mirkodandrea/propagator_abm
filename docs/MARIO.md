@@ -9,21 +9,29 @@ di `island.json`; negli scenari senza rocca usa la strada più vicina alla vista
 |---|---|---|
 | Movimento | WASD | Stick sinistro |
 | Camera | Frecce | Stick destro |
+| Zoom camera | Rotella, Q avvicina / E allontana | L1 avvicina / R1 allontana |
+| Wing Cap (attiva / disattiva) | V | ○ |
 | Salto / nuoto | Spazio | × |
 | Pugno / calcio | J | □ |
 | Accovacciarsi / schianto a terra | Shift | L2 o R2 |
 | Ricominciare dalla rocca | R | △ |
 
 Il pannello mostra il controller rilevato, energia e ora della simulazione.
+La camera può orbitare fino alla vista quasi verticale e variare distanza da
+12 a 240 m.
+Il Wing Cap resta attivo finché lo disattivi con V / ○; alla morte o al
+riavvio Mario riparte senza. Un triplo salto in corsa avvia il volo, guidato
+con WASD / stick sinistro. Ali e fisica del volo sono gestite da libsm64.
 Il tempo del gioco avanza a **×1**, attraverso `kiosk::step` e `Sim::tick`.
 Una crisi o il fine partita chiude Mario e restituisce il controllo al gioco.
 L'uscita aggiorna l'anteprima degli ordini, senza applicare il piano proposto
 né consumare un'altra pausa. Le interazioni con persone e veicoli sono reazioni
 visive temporanee: non modificano agenti, ordini o punteggi.
 
-La collisione usa le mesh effettivamente disegnate: terreno, alberi, edifici,
+La collisione usa le mesh effettivamente disegnate: terreno, edifici,
 strade, rocca e torre; persone, auto e mezzi operativi aggiornano i collisori
-a 30 Hz. Il mare usa la stessa quota/onda della scena, con fondale sommerso
+a 30 Hz. Gli alberi sono solo visivi e non bloccano Mario né la camera.
+Il mare usa la stessa quota/onda della scena, con fondale sommerso
 per consentire il nuoto. Il fuoco attivo e gli edifici ancora in fiamme
 provocano danni e la reazione di bruciatura di libsm64. Il modello si ricrea
 alla morte o con R/△.

@@ -44,6 +44,13 @@ pub struct PauseSolid;
 /// `abm::haven::is_water` uses, so the picture and the model agree.
 const SEA_FIRE_DEM_M: f64 = 2.0;
 
+/// A chunk whose ground is all below this is under the (opaque) sea even in
+/// the deepest wave trough (`sea::WATER_BASE_Y` 0.8 m less a swell of at most
+/// 0.75 m on the 15 m lattice, `shaders/water.wgsl`): it is never seen, so it
+/// is not drawn. The island's sea floor is flat at 0 m, and over half the
+/// window.
+const SUBMERGED_M: f32 = 0.03;
+
 /// Distance, metres, from each fire cell to the nearest water cell: what the
 /// coast's materials key off, since a vertex does not know where the sea is.
 struct ShoreField {
@@ -350,7 +357,7 @@ pub fn build(
     let (cols, rows, posting) = ((t.cols - 1) / STRIDE + 1, (t.rows - 1) / STRIDE + 1, t.posting * STRIDE as f32);
     let chunks_x = (cols - 1).div_ceil(CHUNK);
     let chunks_y = (rows - 1).div_ceil(CHUNK);
-    let mut count = 0;
+    let (mut count, mut submerged) = (0, 0);
     let shore = ShoreField::new(scn);
 
     for cy in 0..chunks_y {
@@ -395,6 +402,9 @@ pub fn build(
                 }
             }
 
+            let under = positions.iter().all(|p| p[1] < SUBMERGED_M);
+            submerged += usize::from(under);
+
             let mut indices = Vec::with_capacity((cn - 1) * (rn - 1) * 6);
             for r in 0..rn - 1 {
                 for c in 0..cn - 1 {
@@ -420,6 +430,8 @@ pub fn build(
                 MaterialMeshBundle::<RetroMaterial> {
                     mesh: meshes.add(mesh),
                     material: material.clone(),
+                    // still spawned: Mario swims over it, and needs a floor
+                    visibility: if under { Visibility::Hidden } else { Visibility::Inherited },
                     ..default()
                 },
                 TerrainChunk,
@@ -431,7 +443,7 @@ pub fn build(
     }
 
     info!(
-        "terrain: {count} chunks, {:.2} M vertices @ {} m posting",
+        "terrain: {count} chunks ({submerged} under the sea, not drawn), {:.2} M vertices @ {} m posting",
         (t.rows * t.cols) as f32 / 1e6,
         t.posting
     );

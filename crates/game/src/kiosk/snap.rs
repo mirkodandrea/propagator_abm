@@ -125,6 +125,7 @@ pub struct Progress {
     /// Camera goal of the state on show, kept up every frame.
     goal: Option<(Vec3, Option<f32>, Option<f32>, Option<f32>)>,
     done_s: f32,
+    demo_frame: u32,
 }
 
 /// Is a snapshot run on? (Then the title's script and the tour stay out.)
@@ -300,6 +301,20 @@ pub fn drive(
         }
     }
     let ready = st.phase != "fine" || kiosk.baseline().is_some();
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::var_os("MARIO_DEMO").is_some() && st.mario {
+        if mario.active && p.waited > SETTLE_S {
+            if p.demo_frame < 720 {
+                mgr.save_screenshot_to_disk(window, format!("{dir}/frame_{:05}.png", p.demo_frame))
+                    .expect("demo frame capture failed");
+                p.demo_frame += 1;
+            } else {
+                p.done_s += dt;
+                if p.done_s > 2.0 { exit.send(AppExit::Success); }
+            }
+        }
+        return;
+    }
     if p.waited > SETTLE_S && ready {
         let _ = mgr.save_screenshot_to_disk(window, format!("{dir}/{}.png", st.name));
         eprintln!("snap: {} (t={} min, phase {})", st.name, st.t_min, st.phase);
@@ -313,7 +328,7 @@ pub fn drive(
 pub fn hold(
     view: Res<SnapView>,
     sim: Res<Sim>,
-    mut cam: Query<(&mut OrbitCamera, &mut Transform, &mut bevy::core_pipeline::dof::DepthOfFieldSettings)>,
+    mut cam: Query<(&mut OrbitCamera, &mut Transform, Option<&mut bevy::core_pipeline::dof::DepthOfFieldSettings>)>,
     #[cfg(not(target_arch = "wasm32"))] mario: Res<crate::mario::Playground>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
@@ -341,5 +356,7 @@ pub fn hold(
     let ground = sim.scn.terrain.height_at(crate::frame::to_world(tf.translation));
     tf.translation.y = tf.translation.y.max(ground + 4.0);
     tf.look_at(orbit.focus, Vec3::Y);
-    dof.focal_distance = tf.translation.distance(orbit.focus);
+    if let Some(dof) = dof.as_mut() {
+        dof.focal_distance = tf.translation.distance(orbit.focus);
+    }
 }

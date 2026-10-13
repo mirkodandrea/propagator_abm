@@ -10,6 +10,7 @@ use std::{
 pub const TEXTURE_WIDTH: u32 = 704;
 pub const TEXTURE_HEIGHT: u32 = 64;
 const VERTICES: usize = 1024 * 3;
+const MARIO_WING_CAP: u32 = 0x00000008;
 static IN_USE: AtomicBool = AtomicBool::new(false);
 
 #[repr(C)]
@@ -70,6 +71,7 @@ extern "C" {
     fn sm64_set_mario_action(id: i32, action: u32);
     fn sm64_set_mario_velocity(id: i32, x: f32, y: f32, z: f32);
     fn sm64_set_mario_invincibility(id: i32, timer: i16);
+    fn sm64_set_mario_state(id: i32, flags: u32);
     fn sm64_mario_take_damage(id: i32, damage: u32, subtype: u32, x: f32, y: f32, z: f32);
     fn sm64_mario_attack(id: i32, x: f32, y: f32, z: f32, height: f32) -> bool;
     fn sm64_surface_find_floor_height(x: f32, y: f32, z: f32) -> f32;
@@ -186,6 +188,25 @@ impl Engine {
         }
     }
 
+    /// Toggle the native cap flag without starting a countdown. A fresh Mario
+    /// has capTimer = 0, so libsm64 keeps the cap until this flag is cleared.
+    /// Wing geometry and flight physics remain entirely native.
+    pub fn set_wing_cap(&mut self, enabled: bool) {
+        if let Some(id) = self.id {
+            let flags = if enabled {
+                self.state.flags | MARIO_WING_CAP | 0x11 // normal cap, on head
+            } else {
+                self.state.flags & !MARIO_WING_CAP
+            };
+            unsafe { sm64_set_mario_state(id, flags) };
+            self.state.flags = flags;
+        }
+    }
+
+    pub fn has_wing_cap(&self) -> bool {
+        self.state.flags & MARIO_WING_CAP != 0
+    }
+
     pub fn hurt(&mut self, source: [f32; 3], fire: bool) {
         let Some(id) = self.id else { return };
         if self.state.invincibility > 0 {
@@ -263,6 +284,22 @@ mod tests {
         }
         assert!(engine.state.position[1].abs() < 1.);
         assert!(engine.vertex_count > 0 && engine.vertex_count <= VERTICES);
+        engine.set_wing_cap(true);
+        for _ in 0..2100 {
+            engine.tick(&neutral);
+        }
+        assert!(engine.has_wing_cap(), "Wing Cap lasts beyond 60 seconds");
+        assert!(engine.vertex_count > 0 && engine.vertex_count <= VERTICES);
+        engine.set_wing_cap(false);
+        engine.tick(&neutral);
+        assert!(!engine.has_wing_cap(), "user can disable Wing Cap");
+        engine.set_wing_cap(true);
+        assert!(engine.spawn([0., 200., 0.]));
+        engine.tick(&neutral);
+        assert!(!engine.has_wing_cap(), "respawn starts without Wing Cap");
+        for _ in 0..90 {
+            engine.tick(&neutral);
+        }
         assert!(engine.positions[..engine.vertex_count]
             .iter()
             .flatten()

@@ -30,6 +30,7 @@ mod overlays;
 mod life;
 mod people;
 mod pick;
+mod quality;
 mod retro;
 mod rings;
 mod roads;
@@ -58,6 +59,8 @@ pub struct DataPath(pub std::path::PathBuf);
 
 fn main() -> anyhow::Result<()> {
     let data = std::env::var("ROCCA_DATA").unwrap_or_else(|_| "data".to_string());
+    let gfx = quality::Graphics::from_env();
+    info!("grafica: {gfx:?}");
 
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -87,8 +90,9 @@ fn main() -> anyhow::Result<()> {
         }),
         ..default()
     }))
-    // WebGL2 has no multisampled HDR targets.
-    .insert_resource(if cfg!(target_arch = "wasm32") { Msaa::Off } else { Msaa::default() })
+    .insert_resource(gfx.msaa())
+    .insert_resource(gfx)
+    .insert_resource(bevy::pbr::DirectionalLightShadowMap { size: gfx.shadow_map })
     .add_plugins(EguiPlugin)
     .add_plugins(fire_shader::FireShaderPlugin)
     .add_plugins(retro::RetroShaderPlugin)
@@ -127,6 +131,11 @@ fn main() -> anyhow::Result<()> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     app.add_plugins(mario::MarioPlugin);
+    if std::env::var_os("MARIO_DEMO").is_some() {
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            std::time::Duration::from_secs_f64(1.0 / 30.0),
+        ));
+    }
     kiosk_systems(&mut app);
     app.run();
     Ok(())
@@ -135,6 +144,7 @@ fn main() -> anyhow::Result<()> {
 fn setup_scene(
     mut commands: Commands,
     sim: Res<Sim>,
+    gfx: Res<quality::Graphics>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<retro::RetroMaterial>>,
 ) {
@@ -144,11 +154,11 @@ fn setup_scene(
     // The sun: `sky::update_sky` places and colours it from the game's clock
     // (14:00 to 17:00), so the shadows lengthen and the light warms as it runs.
     commands.spawn((DirectionalLightBundle {
-        directional_light: DirectionalLight { shadows_enabled: true, ..default() },
+        directional_light: DirectionalLight { shadows_enabled: gfx.shadows, ..default() },
         cascade_shadow_config: CascadeShadowConfigBuilder {
-            num_cascades: 4,
+            num_cascades: gfx.cascades,
             minimum_distance: 2.0,
-            maximum_distance: 4000.0,
+            maximum_distance: gfx.shadow_distance,
             first_cascade_far_bound: 80.0,
             overlap_proportion: 0.3,
         }
@@ -159,7 +169,7 @@ fn setup_scene(
     let (p, h) = terrain_mesh::cell_ground(&sim.scn, sim.scn.world.cell_of(sim.case.ignition()));
     let distance = 2600.0;
     let focus = frame::to_bevy(p, h);
-    commands.spawn((
+    let mut camera = commands.spawn((
         Camera3dBundle {
             camera: Camera { hdr: true, ..default() },
             tonemapping: Tonemapping::TonyMcMapface,
@@ -167,20 +177,27 @@ fn setup_scene(
             projection: PerspectiveProjection { far: 40_000.0, ..default() }.into(),
             ..default()
         },
-        BloomSettings { intensity: 0.20, ..BloomSettings::NATURAL },
         OrbitCamera { focus, distance, ..default() },
         // colour and reach are set every frame by `sky::update_sky`
         bevy::pbr::FogSettings::default(),
-        bevy::core_pipeline::prepass::DepthPrepass,
-        bevy::core_pipeline::dof::DepthOfFieldSettings {
-            mode: bevy::core_pipeline::dof::DepthOfFieldMode::Gaussian,
-            focal_distance: distance,
-            sensor_height: 0.01866,
-            aperture_f_stops: 0.012,
-            max_circle_of_confusion_diameter: 48.0,
-            max_depth: 12_000.0,
-        },
     ));
+    if gfx.bloom {
+        camera.insert(BloomSettings { intensity: 0.20, ..BloomSettings::NATURAL });
+    }
+    // The depth prepass is there for the depth of field only.
+    if gfx.dof {
+        camera.insert((
+            bevy::core_pipeline::prepass::DepthPrepass,
+            bevy::core_pipeline::dof::DepthOfFieldSettings {
+                mode: bevy::core_pipeline::dof::DepthOfFieldMode::Gaussian,
+                focal_distance: distance,
+                sensor_height: 0.01866,
+                aperture_f_stops: 0.012,
+                max_circle_of_confusion_diameter: 48.0,
+                max_depth: 12_000.0,
+            },
+        ));
+    }
 }
 
 /// Empty the world on the way back to the loading state.
@@ -220,7 +237,7 @@ fn kiosk_systems(app: &mut App) {
             (
                 fire_view::update_overlay,
                 fire_view::update_flames,
-                vegetation::burn,
+                (vegetation::burn, vegetation::lod),
                 buildings::damage,
                 people::spawn_vehicles,
                 people::update_people,

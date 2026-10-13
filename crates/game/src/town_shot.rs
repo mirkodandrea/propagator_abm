@@ -22,6 +22,7 @@ mod frame;
 mod life;
 mod models;
 mod people;
+mod quality;
 mod retro;
 mod roads;
 mod sim;
@@ -96,6 +97,7 @@ fn main() -> anyhow::Result<()> {
         .add_plugins(retro::RetroShaderPlugin)
         .insert_resource(sim)
         .insert_resource(plan)
+        .insert_resource(quality::Graphics::from_env())
         .insert_resource(ClearColor(Color::srgb(0.55, 0.62, 0.68)))
         .insert_resource(AmbientLight { color: Color::WHITE, brightness: 700.0 })
         .add_systems(Startup, (setup, buildings::spawn))

@@ -5,6 +5,16 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 ## Stato
 
 
+- **2026-10-12, prestazioni per PC meno potenti** (richiesta dell'utente). Diagnosi: il gioco è limitato dalla **GPU** (CPU quasi ferma, il render thread aspetta il frame); il carico è geometria (11,2 M triangoli di piante, ~5 M di terreno) ridisegnata in prepass, passata principale e 4 cascate d'ombra, più DoF/bloom/MSAA.
+  - [x] **LOD della vegetazione** (`vegetation.rs`): ogni blocco ha anche una mesh di proxy (chioma a 6 lati + tronco a 3 lati, 18–30 triangoli contro 100–156; erba senza fili d'erba): 2,9 M triangoli contro 11,2 M, oltre `lod_m` dalla camera (sistema `vegetation::lod`, isteresi 10 %). Bruciano insieme alle piante vere. Indistinguibili dalla vista iniziale (luminosità ±1–3 %). Test `vegetation::tests::proxies_are_cheap_and_face_out`.
+  - [x] **Terreno sotto il mare non disegnato** (`terrain_mesh.rs`, `SUBMERGED_M`): 69 blocchi su 169 (fondale piatto a 0 m sotto acqua opaca); restano come solidi per Mario.
+  - [x] `vegetation::burn`: niente ricalcolo se il tempo simulato non cambia (prima: 217 mila piante a ogni frame anche a ×0), blocchi non raggiunti dal fuoco saltati, ricolorazione al massimo ogni 0,15 s reali (ogni blocco va alla GPU intero).
+  - [x] **Livelli grafici** (`quality.rs`): `KIOSK_QUALITY=alta|media|bassa` (default `alta` = aspetto attuale). `media`: niente DoF, 3 cascate a 2,5 km, vegetazione 0,35, LOD 1 km. `bassa`: anche niente bloom e MSAA, 2 cascate a 1,8 km con mappa 1024, vegetazione 0,2 (bosco visibilmente più rado), LOD 600 m. Override per singola voce: `KIOSK_GFX=-dof,-bloom,msaa=1,cascades=2,shadow=1500,shadow_map=1024,veg=0.3,lod=800`; `KIOSK_VEG_DENSITY` vale ancora. DoF opzionale in `view.rs`, `snap.rs`, `mario.rs`.
+  - Misure (M4 Pro, 1080p, mediana FPS su 4 viste via `KIOSK_SNAP`; **rumorose**: un'altra istanza del gioco girava in parallelo, e il vsync limita a 60 anche con `KIOSK_FPS`): prima 37/36/42/42 → `alta` 49/49/57/57 → `media` 53–60 → `bassa` 60 (al tetto).
+  - [ ] misurare sulla macchina del chiosco (`KIOSK_FPS=1`) e scegliere il livello; decidere se `bassa` deve tenere più vegetazione (0,2 si nota).
+  - [ ] eventuale LOD del terreno a distanza (attenzione a strade e overlay del fuoco drappeggiati a 5 m).
+
+
 - **2026-10-12, Mario nativo con libsm64** (richiesta dell'utente; escluso dal web). `M` / Options del DS5 dalla pausa apre la modalità separata; Mario parte davanti alla rocca. La simulazione avanza a **×1** (ultima richiesta), usando il normale `kiosk::step`; uscita/crisi/fine ripristinano il gioco. Interazioni solo visive con persone, auto e mezzi; nessuna modifica di ordini o agenti da Mario. Controlli, ROM e comandi in `docs/MARIO.md`.
   - [x] Libreria C vendorizzata, build offline solo nativa e wrapper con ownership sul thread principale; ROM locale validata, mai incorporata (`crates/libsm64-native`).
   - [x] Mesh animata con correzione della trasparenza libsm64; collisione del terreno, alberi, case, strade e monumenti; nuoto sul mare e risposta al fuoco; collisori mobili e reazioni temporanee, camera con ostacoli e ripristino (`crates/game/src/mario.rs`).

@@ -10,6 +10,7 @@ use crate::{
 use bevy::{
     ecs::system::SystemParam,
     input::gamepad::*,
+    input::mouse::{MouseScrollUnit, MouseWheel},
     prelude::*,
     render::{
         mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
@@ -34,6 +35,7 @@ pub struct Playground {
     toggle: bool,
     error: Option<String>,
     health: i16,
+    wing_cap: bool,
     message: &'static str,
 }
 
@@ -84,6 +86,8 @@ struct Runtime {
     fire_cooldown: f32,
     jump_latched: bool,
     attack_latched: bool,
+    demo_time: f32,
+    demo_fire: Vec3,
 }
 
 pub struct MarioPlugin;
@@ -134,6 +138,9 @@ fn hud(
     mut mode: ResMut<Playground>,
     controls: Controls,
 ) {
+    if std::env::var_os("MARIO_DEMO").is_some() {
+        return;
+    }
     if !available(&k, &sim) && !mode.active {
         return;
     }
@@ -152,6 +159,12 @@ fn hud(
                         .map_or("Gamepad non connesso".to_string(), |name| format!("Gamepad: {name}")));
                     ui.label("WASD / stick sinistro · Spazio / A (×): salto · J / X (□): pugno");
                     ui.label("Shift / LT: accovacciati · Frecce / stick destro: camera · R / Y (△): ricomincia");
+                    ui.label("Zoom camera: rotella · Q/E · L1/R1");
+                    ui.label(if mode.wing_cap {
+                        "Wing Cap attivo · triplo salto in corsa: volo · V / ○: disattiva"
+                    } else {
+                        "V / ○: attiva Wing Cap · triplo salto in corsa: volo"
+                    });
                     ui.label(format!("Energia: {} / 8   {}", (mode.health.max(0) / 0x100).min(8), mode.message));
                 }
                 if let Some(error) = &mode.error { ui.colored_label(egui::Color32::LIGHT_RED, error); }
@@ -180,6 +193,7 @@ fn clear(mut runtime: NonSendMut<Runtime>, mut mode: ResMut<Playground>) {
     runtime.previous.clear();
     runtime.reactions.clear();
     mode.active = false;
+    mode.wing_cap = false;
     mode.toggle = false;
 }
 
@@ -294,7 +308,7 @@ fn drive(
         (
             &mut OrbitCamera,
             &mut Transform,
-            &mut bevy::core_pipeline::dof::DepthOfFieldSettings,
+            Option<&mut bevy::core_pipeline::dof::DepthOfFieldSettings>,
             &mut Camera,
         ),
         Without<PauseSolid>,
@@ -311,7 +325,13 @@ fn drive(
     mut assets: RenderAssets,
     mut restarted: EventReader<SimRestarted>,
     buildings: Res<crate::buildings::Buildings>,
+    mut wheel: EventReader<MouseWheel>,
 ) {
+    // Drain even outside Mario so opening it never replays old map scrolling.
+    let scroll: f32 = wheel.read().map(|event| match event.unit {
+        MouseScrollUnit::Line => event.y,
+        MouseScrollUnit::Pixel => event.y / 50.0,
+    }).sum();
     let RenderAssets {
         ref mut meshes,
         ref mut materials,
@@ -344,8 +364,10 @@ fn drive(
             camera.yaw = saved.yaw;
             camera.pitch = saved.pitch;
             *camera_tf = saved.transform;
-            dof.max_circle_of_confusion_diameter = saved.blur;
-            dof.focal_distance = camera.distance;
+            if let Some(dof) = dof.as_mut() {
+                dof.max_circle_of_confusion_diameter = saved.blur;
+                dof.focal_distance = camera.distance;
+            }
             render_camera.viewport = saved.viewport;
         }
         if let Some(avatar) = runtime.avatar.take() {
@@ -397,11 +419,24 @@ fn drive(
             yaw: camera.yaw,
             pitch: camera.pitch,
             transform: *camera_tf,
-            blur: dof.max_circle_of_confusion_diameter,
+            blur: dof.as_ref().map_or(0., |d| d.max_circle_of_confusion_diameter),
             viewport: render_camera.viewport.clone(),
         });
-        let rocca = rocca_start(&sim);
-        let base = rocca.map_or_else(|| road_spawn(&sim, camera.focus), |(p, _)| p);
+        let demo = std::env::var_os("MARIO_DEMO").is_some();
+        let rocca = if demo { None } else { rocca_start(&sim) };
+        let base = if demo {
+            // Stand just outside the eastern edge of the actual burning front.
+            let fire = sim.fire.active_cells().iter()
+                .map(|&c| sim.scn.world.centre_of(c))
+                .max_by(|a, b| a.x.total_cmp(&b.x))
+                .unwrap_or_else(|| sim.case.ignition());
+            runtime.demo_fire = crate::frame::to_bevy(fire, sim.scn.terrain.height_at(fire));
+            let p = runtime.demo_fire + Vec3::X * 28.;
+            p.with_y(sim.scn.terrain.height_at(crate::frame::to_world(p)))
+        } else {
+            rocca.map_or_else(|| road_spawn(&sim, camera.focus), |(p, _)| p)
+        };
+        runtime.demo_time = 0.;
         runtime.origin = base;
         runtime.spawn = base + Vec3::Y * 2.;
         runtime.patch = Vec3::splat(f32::INFINITY);
@@ -455,10 +490,18 @@ fn drive(
         );
         camera.distance = 36.;
         camera.pitch = -0.45;
+        if demo {
+            camera.distance = 52.;
+            camera.pitch = -0.65;
+            camera.yaw = 1.2;
+            eprintln!("mario demo: spawn {:?}, fire {:?}", runtime.spawn, runtime.demo_fire);
+        }
         if let Some((_, yaw)) = rocca {
             camera.yaw = yaw;
         }
-        dof.max_circle_of_confusion_diameter = 0.;
+        if let Some(dof) = dof.as_mut() {
+            dof.max_circle_of_confusion_diameter = 0.;
+        }
         render_camera.viewport = None;
         mode.active = true;
         mode.message = "";
@@ -482,15 +525,21 @@ fn drive(
     camera.pitch = (camera.pitch
         + (axis(GamepadAxisType::RightStickY) + keyboard(KeyCode::ArrowUp, KeyCode::ArrowDown))
             * dt)
-        .clamp(-1.1, 0.1);
-    let stick = Vec2::new(
+        .clamp(-1.5, 0.65);
+    let zoom = keyboard(KeyCode::KeyE, KeyCode::KeyQ)
+        + f32::from(held(GamepadButtonType::RightTrigger))
+        - f32::from(held(GamepadButtonType::LeftTrigger));
+    let scroll = if keyboard_free && !contexts.ctx_mut().wants_pointer_input() { scroll } else { 0.0 };
+    camera.distance = (camera.distance * (zoom * dt * 1.5 - scroll * 0.12).exp())
+        .clamp(12.0, 240.0);
+    let mut stick = Vec2::new(
         axis(GamepadAxisType::LeftStickX) + keyboard(KeyCode::KeyD, KeyCode::KeyA),
         -axis(GamepadAxisType::LeftStickY) + keyboard(KeyCode::KeyS, KeyCode::KeyW),
     )
     .clamp_length_max(1.);
-    let jump =
+    let mut jump =
         held(GamepadButtonType::South) || keyboard_free && controls.keys.pressed(KeyCode::Space);
-    let attack =
+    let mut attack =
         held(GamepadButtonType::West) || keyboard_free && controls.keys.pressed(KeyCode::KeyJ);
     runtime.jump_latched |= pressed(GamepadButtonType::South)
         || keyboard_free && controls.keys.just_pressed(KeyCode::Space);
@@ -501,6 +550,51 @@ fn drive(
     if respawn {
         let p = to_sm64(runtime.spawn, runtime.origin);
         runtime.engine.as_mut().unwrap().spawn(p);
+        mode.wing_cap = false;
+    }
+    if pressed(GamepadButtonType::East)
+        || keyboard_free && controls.keys.just_pressed(KeyCode::KeyV)
+    {
+        let engine = runtime.engine.as_mut().unwrap();
+        let enabled = !engine.has_wing_cap();
+        engine.set_wing_cap(enabled);
+        mode.message = if enabled { "Wing Cap! Triplo salto in corsa per volare." } else { "Wing Cap disattivato." };
+    }
+    let mut crouch = reading && controls.crouch();
+    if std::env::var_os("MARIO_DEMO").is_some() {
+        runtime.demo_time += dt;
+        let t = runtime.demo_time;
+        // Follow a loop beside the flames, dart into the front, then retreat.
+        let route = [
+            (1.5, Vec2::new(28., 0.)),
+            (5.0, Vec2::new(28., -32.)),
+            (8.0, Vec2::new(8., -18.)),
+            (11.0, Vec2::new(-8., 0.)),
+            (14.0, Vec2::new(30., 22.)),
+            (18.0, Vec2::new(50., -12.)),
+            (22.0, Vec2::new(28., 0.)),
+            (26.0, Vec2::new(28., 0.)),
+        ];
+        let segment = route.iter().position(|(end, _)| t < *end).unwrap_or(route.len() - 1);
+        let (end, offset) = route[segment];
+        let (start, from) = if segment == 0 { (0., offset) } else { route[segment - 1] };
+        let offset = from.lerp(offset, ((t - start) / (end - start)).clamp(0., 1.));
+        let target = runtime.demo_fire + Vec3::new(offset.x, 0., offset.y);
+        let pos = from_sm64(runtime.engine.as_ref().unwrap().state.position, runtime.origin);
+        let delta = Vec2::new(target.x - pos.x, target.z - pos.z);
+        let direction = delta.normalize_or_zero() * (delta.length() / 5.).min(1.);
+        camera.yaw = 1.2 + (t * 0.21).sin() * 0.6;
+        camera.pitch = -0.65 + (t * 0.3).sin() * 0.08;
+        stick = if t < 1.5 || t > 22. { Vec2::ZERO } else {
+            Vec2::new(direction.dot(Vec2::new(camera.yaw.cos(), -camera.yaw.sin())),
+                direction.dot(Vec2::new(camera.yaw.sin(), camera.yaw.cos())))
+        };
+        jump = (t > 2. && t < 8. || t > 13. && t < 21.) && t % 1.8 < 0.18;
+        attack = t > 22. && t % 0.9 < 0.15;
+        crouch = t > 15. && t < 15.2;
+        if (t * 30.).round() as u32 % 90 == 0 {
+            eprintln!("mario demo: t={t:.1}, pos={pos:?}, health={}", mode.health);
+        }
     }
     runtime.accumulator += dt;
     while runtime.accumulator >= STEP {
@@ -526,7 +620,7 @@ fn drive(
             stick_y: stick.y,
             jump: u8::from(jump || runtime.jump_latched),
             attack: u8::from(attack || runtime.attack_latched),
-            crouch: u8::from(reading && controls.crouch()),
+            crouch: u8::from(crouch),
         };
         runtime.jump_latched = false;
         runtime.attack_latched = false;
@@ -543,9 +637,11 @@ fn drive(
         interact(&mut runtime, &mut mode, &mut actors, &meshes, pos);
         let engine = runtime.engine.as_ref().unwrap();
         mode.health = engine.state.health;
+        mode.wing_cap = engine.has_wing_cap();
         if engine.state.health < 0x100 || !pos.is_finite() || pos.y < runtime.origin.y - 150. {
             let p = to_sm64(runtime.spawn, runtime.origin);
             runtime.engine.as_mut().unwrap().spawn(p);
+            mode.wing_cap = false;
             mode.message = "Ricomincia!";
         }
     }

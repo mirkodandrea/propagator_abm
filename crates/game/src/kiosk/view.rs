@@ -129,7 +129,7 @@ pub fn camera(
     focus: Res<crate::ui::UiFocus>,
     mut input: ViewInput,
     windows: Query<&Window, With<PrimaryWindow>>,
-    mut query: Query<(&mut OrbitCamera, &mut Transform, &mut Camera, &mut bevy::core_pipeline::dof::DepthOfFieldSettings)>,
+    mut query: Query<(&mut OrbitCamera, &mut Transform, &mut Camera, Option<&mut bevy::core_pipeline::dof::DepthOfFieldSettings>)>,
     time: Res<Time>,
     mut drag: Local<Drag>,
     mut released: Local<Option<(Phase, f32)>>,
@@ -396,7 +396,9 @@ pub fn camera(
     let ground = sim.scn.terrain.height_at(crate::frame::to_world(tf.translation));
     tf.translation.y = tf.translation.y.max(ground + 25.0);
     tf.look_at(orbit.focus, Vec3::Y);
-    dof.focal_distance = tf.translation.distance(orbit.focus);
+    if let Some(dof) = dof.as_mut() {
+        dof.focal_distance = tf.translation.distance(orbit.focus);
+    }
 }
 
 /// What the follow camera frames: the burning front and the districts it

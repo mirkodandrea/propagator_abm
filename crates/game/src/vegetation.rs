@@ -25,6 +25,13 @@
 //! stands in, and when that cell's state changes the chunk's colour attribute
 //! is rewritten — foliage flares, then goes to charcoal. Only chunks whose
 //! cells actually changed are touched, so the cost tracks the front.
+//!
+//! Every chunk is built twice: with the authored models, and with a proxy of
+//! a couple of dozen faces per plant (a faceted crown on a three-sided
+//! trunk) that stands in for it beyond [`crate::quality::Graphics::lod_m`].
+//! A plant there covers a few pixels, and the GPU — which is what limits the
+//! frame rate — draws every vegetation triangle once per pass, shadow
+//! cascades included. Both meshes burn together.
 
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
@@ -42,8 +49,8 @@ use crate::sim::Sim;
 const CHUNK_CELLS: usize = 32;
 
 /// Expected plants per 20 m fire cell (400 m²), per archetype, before the
-/// patchiness modulation below. Scaled by [`VEG_DENSITY`] (or
-/// `KIOSK_VEG_DENSITY`).
+/// patchiness modulation below. Scaled by the graphics quality
+/// ([`crate::quality::Graphics::vegetation`], or `KIOSK_VEG_DENSITY`).
 ///
 /// These are stand densities, not decoration: 8 tussocks per cell is 200/ha of
 /// grassland, 6 macchia clumps is 150/ha of shrubland, and 3.6 stems is 90/ha
@@ -71,10 +78,6 @@ fn class_density(fuel: i32) -> f32 {
         _ => 1.0,
     }
 }
-
-/// The share of [`DENSITY`] actually planted: in the browser much less, for
-/// WebGL.
-const VEG_DENSITY: f32 = if cfg!(target_arch = "wasm32") { 0.12 } else { 0.5 };
 
 /// Vegetation does not honour cell boundaries, and it is not uniform inside
 /// one either: real stands are patchy at tens of metres. Two octaves of value
@@ -167,21 +170,43 @@ struct Plant {
     lag_s: f32,
     vert_start: u32,
     vert_end: u32,
+    /// The same plant in the distant proxy mesh.
+    low_start: u32,
+    low_end: u32,
 }
 
 struct Chunk {
+    /// Authored models and distant proxies (see the module doc).
     mesh: Handle<Mesh>,
+    low_mesh: Handle<Mesh>,
+    full: Entity,
+    low: Entity,
+    /// Which of the two is on show.
+    near: bool,
+    /// World-space bounds (Bevy frame) of the plants, for the LOD distance.
+    bounds: (Vec3, Vec3),
+    /// Fire cells the chunk covers, `(row0, row1, col0, col1)`, end exclusive.
+    cells: (usize, usize, usize, usize),
     plants: Vec<Plant>,
     /// Colours as generated, before any fire damage.
     base: Vec<[f32; 4]>,
+    low_base: Vec<[f32; 4]>,
     /// Fire state each plant was last drawn with, so a chunk is rebuilt only
     /// when something in it actually changed.
     drawn: Vec<u8>,
+    /// Whether any plant is drawn other than unburnt.
+    touched: bool,
 }
 
 #[derive(Resource)]
 pub struct Vegetation {
     chunks: Vec<Chunk>,
+    /// Beyond this distance from the camera a chunk shows its proxies.
+    lod_m: f32,
+    /// Simulated time the plants were last drawn at: the plants are a
+    /// function of the fire and the clock, so an unchanged clock (a paused
+    /// world, the planning phase) costs nothing.
+    drawn_at: Option<f32>,
 }
 
 pub fn spawn(
@@ -189,11 +214,12 @@ pub fn spawn(
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
+    gfx: Res<crate::quality::Graphics>,
 ) {
     let scn = &sim.scn;
-    // Half the stand densities below (user decision 2026-10-08: fewer trees
-    // for now). `KIOSK_VEG_DENSITY` overrides the factor.
-    let density: f32 = std::env::var("KIOSK_VEG_DENSITY").ok().and_then(|v| v.parse().ok()).unwrap_or(VEG_DENSITY);
+    // Half the stand densities below at the top quality (user decision
+    // 2026-10-08: fewer trees for now), less on weaker machines.
+    let density = gfx.vegetation;
 
     // VR-training dev scenarios tint every plant toward the palette's grid
     // colour instead of leaving it white — vertex colour still carries the
@@ -220,11 +246,11 @@ pub fn spawn(
     let chunks_y = rows.div_ceil(CHUNK_CELLS);
     let chunks_x = cols.div_ceil(CHUNK_CELLS);
     let mut chunks = Vec::with_capacity(chunks_x * chunks_y);
-    let (mut plant_count, mut tri_count) = (0usize, 0usize);
+    let (mut plant_count, mut tri_count, mut low_tri_count) = (0usize, 0usize, 0usize);
 
     for cy in 0..chunks_y {
         for cx in 0..chunks_x {
-            let mut builder = Builder::default();
+            let mut builder = Lods::default();
             let mut plants = Vec::new();
 
             for r in cy * CHUNK_CELLS..((cy + 1) * CHUNK_CELLS).min(rows) {
@@ -240,7 +266,8 @@ pub fn spawn(
                     let n = expected.floor() as u32 + u32::from(rng.unit() < expected.fract());
 
                     for _ in 0..n {
-                        let start = builder.positions.len() as u32;
+                        let start = builder.full.positions.len() as u32;
+                        let low_start = builder.low.positions.len() as u32;
                         let Some(pos) = scatter_plant(scn, cell, species, &mut rng, &mut builder)
                         else {
                             continue;
@@ -249,45 +276,75 @@ pub fn spawn(
                             pos,
                             lag_s: rng.unit() * 45.0,
                             vert_start: start,
-                            vert_end: builder.positions.len() as u32,
+                            vert_end: builder.full.positions.len() as u32,
+                            low_start,
+                            low_end: builder.low.positions.len() as u32,
                         });
                     }
                 }
             }
 
-            if builder.positions.is_empty() {
+            if builder.full.positions.is_empty() {
                 continue;
             }
             plant_count += plants.len();
-            tri_count += builder.indices.len() / 3;
+            tri_count += builder.full.indices.len() / 3;
+            low_tri_count += builder.low.indices.len() / 3;
 
-            let base = builder.colors.clone();
+            let bounds = builder.full.positions.iter().fold(
+                (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)),
+                |(lo, hi), p| (lo.min(Vec3::from(*p)), hi.max(Vec3::from(*p))),
+            );
+            let base = builder.full.colors.clone();
+            let low_base = builder.low.colors.clone();
             let drawn = vec![CellFire::Unburnt as u8; plants.len()];
-            let mesh = meshes.add(builder.finish());
+            let mesh = meshes.add(builder.full.finish());
+            let low_mesh = meshes.add(builder.low.finish());
 
-            commands.spawn((MaterialMeshBundle::<RetroMaterial> {
+            // Vegetation is visual only: Mario can run through trunks and
+            // canopies, and the follow camera is not clipped by the forest.
+            // The full models start on show, so a view without the LOD
+            // system (`town_shot`) draws them.
+            let full = commands.spawn(MaterialMeshBundle::<RetroMaterial> {
                 mesh: mesh.clone(),
                 material: material.clone(),
                 ..default()
-            },
-                #[cfg(not(target_arch = "wasm32"))]
-                crate::terrain_mesh::PauseSolid,
-            ));
+            }).id();
+            let low = commands.spawn(MaterialMeshBundle::<RetroMaterial> {
+                mesh: low_mesh.clone(),
+                material: material.clone(),
+                visibility: Visibility::Hidden,
+                ..default()
+            }).id();
             chunks.push(Chunk {
                 mesh,
+                low_mesh,
+                full,
+                low,
+                near: true,
+                bounds,
+                cells: (
+                    cy * CHUNK_CELLS,
+                    ((cy + 1) * CHUNK_CELLS).min(rows),
+                    cx * CHUNK_CELLS,
+                    ((cx + 1) * CHUNK_CELLS).min(cols),
+                ),
                 plants,
                 base,
+                low_base,
                 drawn,
+                touched: false,
             });
         }
     }
 
     info!(
-        "vegetation: {plant_count} plants in {} chunks, {:.2} M triangles",
+        "vegetation: {plant_count} plants in {} chunks, {:.2} M triangles ({:.2} M as distant proxies)",
         chunks.len(),
-        tri_count as f32 / 1e6
+        tri_count as f32 / 1e6,
+        low_tri_count as f32 / 1e6
     );
-    commands.insert_resource(Vegetation { chunks });
+    commands.insert_resource(Vegetation { chunks, lod_m: gfx.lod_m, drawn_at: None });
 }
 
 /// Whether the 5 m land cover leaves room for this plant at `p`: nothing grows
@@ -314,7 +371,7 @@ fn scatter_plant(
     cell: Cell,
     species: Species,
     rng: &mut Rng,
-    out: &mut Builder,
+    out: &mut Lods,
 ) -> Option<Pos> {
     let centre = scn.world.centre_of(cell);
     let half = scn.world.cellsize * 0.5;
@@ -377,7 +434,7 @@ fn mul(c: [f32; 3], k: f32) -> [f32; 3] {
 //
 // Blender archetypes retain chunk batching, species palettes and burn ranges.
 // Normalized trees scale to the existing ecological height distributions.
-fn conifer(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
+fn conifer(out: &mut Lods, base: Vec3, scale: f32, yaw: f32,
     foliage: [f32; 3], wood: [f32; 3], rng: &mut Rng) {
     // maritime pine: tall, the umbrella a little wider than the model
     let height = (13.0 + rng.unit() * 8.0) * scale;
@@ -385,21 +442,21 @@ fn conifer(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
     out.model("pine", base, Vec3::new(width, height, width), yaw, foliage, wood);
 }
 
-fn broadleaf(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
+fn broadleaf(out: &mut Lods, base: Vec3, scale: f32, yaw: f32,
     foliage: [f32; 3], wood: [f32; 3], rng: &mut Rng) {
     // chestnut: lower than the pines, the crown about as wide as tall
     let height = (8.0 + rng.unit() * 5.0) * scale;
     out.model("chestnut", base, Vec3::new(height * 1.1, height, height * 1.1), yaw, foliage, wood);
 }
 
-fn shrub(out: &mut Builder, base: Vec3, scale: f32, yaw: f32,
+fn shrub(out: &mut Lods, base: Vec3, scale: f32, yaw: f32,
     foliage: [f32; 3], rng: &mut Rng) {
     // low, wide and stemless: macchia must not read as young trees
     let r = (2.6 + rng.unit() * 2.2) * scale;
     out.model("bush", base, Vec3::new(r, r * 0.8, r), yaw, foliage, foliage);
 }
 
-fn grass(out: &mut Builder, base: Vec3, scale: f32, yaw: f32, foliage: [f32; 3], rng: &mut Rng) {
+fn grass(out: &mut Lods, base: Vec3, scale: f32, yaw: f32, foliage: [f32; 3], rng: &mut Rng) {
     // A tussock, not a blade: the unit of grassland at this scale is a clump
     // half a metre high and a couple of metres across. Drawn as a low fan plus
     // a few upright blades, so it holds a silhouette from a low camera angle
@@ -407,12 +464,14 @@ fn grass(out: &mut Builder, base: Vec3, scale: f32, yaw: f32, foliage: [f32; 3],
     let spread = (1.5 + rng.unit() * 1.4) * scale;
     let h = (0.5 + rng.unit() * 0.6) * scale;
 
-    // Ground fan: what actually closes the cover from altitude.
-    out.dome(base, spread, h * 0.55, yaw, mul(foliage, 0.9));
+    // Ground fan: what actually closes the cover from altitude. It is also
+    // the whole distant proxy: the blades are under a pixel there.
+    out.full.dome(base, spread, h * 0.55, yaw, mul(foliage, 0.9));
+    out.low.dome(base, spread, h * 0.55, yaw, mul(foliage, 0.9));
 
     for i in 0..2 {
         let a = yaw + i as f32 * (std::f32::consts::TAU / 3.0) + rng.unit() * 0.5;
-        out.blade(
+        out.full.blade(
             base + Vec3::new(a.cos() * spread * 0.3, 0.0, a.sin() * spread * 0.3),
             spread * 0.45,
             h * (1.2 + rng.unit() * 1.0),
@@ -423,6 +482,67 @@ fn grass(out: &mut Builder, base: Vec3, scale: f32, yaw: f32, foliage: [f32; 3],
 }
 
 // --- mesh building ---------------------------------------------------------
+
+/// The two meshes of a chunk, built side by side.
+#[derive(Default)]
+struct Lods {
+    full: Builder,
+    low: Builder,
+}
+
+impl Lods {
+    fn model(&mut self, name: &str, base: Vec3, scale: Vec3, yaw: f32,
+        foliage: [f32; 3], wood: [f32; 3]) {
+        self.full.model(name, base, scale, yaw, foliage, wood);
+        self.low.proxy(name, base, scale, yaw, foliage, wood);
+    }
+}
+
+/// What a distant plant keeps of its model: the crown's bounding box, its
+/// tone low and high, and the trunk below it.
+struct Proxy {
+    crown: (Vec3, Vec3),
+    shade_low: f32,
+    shade_high: f32,
+    /// Trunk radius, when the model has bare wood under the crown.
+    trunk: Option<f32>,
+}
+
+fn proxy(name: &str) -> &'static Proxy {
+    static PROXIES: std::sync::OnceLock<std::collections::HashMap<&'static str, Proxy>> =
+        std::sync::OnceLock::new();
+    &PROXIES.get_or_init(|| {
+        ["pine", "chestnut", "bush", "olive"]
+            .into_iter()
+            .map(|name| {
+                let m = crate::models::model(name);
+                let leaves = || (0..m.positions.len()).filter(|&i| !m.wood[i]);
+                let (lo, hi) = leaves().fold(
+                    (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)),
+                    |(lo, hi), i| (lo.min(Vec3::from(m.positions[i])), hi.max(Vec3::from(m.positions[i]))),
+                );
+                let mid = (lo.y + hi.y) * 0.5;
+                // the same tone `Builder::model` gives each leaf vertex
+                let mean = |upper: bool| {
+                    let (sum, n) = leaves()
+                        .filter(|&i| (m.positions[i][1] > mid) == upper)
+                        .fold((0.0, 0), |(s, n), i| (s + m.colors[i][1] / 0.38, n + 1));
+                    if n == 0 { 1.0 } else { sum / n as f32 }
+                };
+                let bare: Vec<usize> = (0..m.positions.len())
+                    .filter(|&i| m.wood[i] && m.positions[i][1] < lo.y)
+                    .collect();
+                let trunk = (!bare.is_empty()).then(|| {
+                    let r = bare.iter()
+                        .map(|&i| Vec2::new(m.positions[i][0], m.positions[i][2]).length())
+                        .fold(0.0, f32::max);
+                    r.max(0.01)
+                });
+                (name, Proxy { crown: (lo, hi), shade_low: mean(false), shade_high: mean(true), trunk })
+            })
+            .collect()
+    })[name]
+}
 
 /// No UV attribute: the vegetation material carries no texture, and at these
 /// vertex counts eight bytes each is tens of megabytes of nothing.
@@ -447,6 +567,55 @@ impl Builder {
             self.vertex(base + rotation * (Vec3::from(*p) * scale), mul(color, shade));
         }
         self.indices.extend(model.indices.iter().map(|i| start + i));
+    }
+
+    /// The distant stand-in for [`Builder::model`]: a six-sided crown (a
+    /// bottom point, two rings, a top point) over the model's leaves, and a
+    /// three-sided trunk where the model shows bare wood. 18–30 triangles
+    /// instead of 100–156.
+    fn proxy(&mut self, name: &str, base: Vec3, scale: Vec3, yaw: f32,
+        foliage: [f32; 3], wood: [f32; 3]) {
+        const SIDES: u32 = 6;
+        let p = proxy(name);
+        // a few percent darker: the authored crown shades itself in its lobes
+        let foliage = mul(foliage, 0.95);
+        let rotation = Quat::from_rotation_y(yaw);
+        let at = |v: Vec3| base + rotation * (v * scale);
+        let (lo, hi) = p.crown;
+        let (centre, radius) = ((lo + hi) * 0.5, (hi - lo) * 0.5);
+
+        if let Some(r) = p.trunk {
+            let start = self.positions.len() as u32;
+            for i in 0..3 {
+                let a = i as f32 * std::f32::consts::TAU / 3.0;
+                let d = Vec3::new(a.cos() * r, 0.0, a.sin() * r);
+                self.vertex(at(Vec3::new(centre.x, 0.0, centre.z) + d), wood);
+                self.vertex(at(Vec3::new(centre.x, lo.y + radius.y * 0.4, centre.z) + d), wood);
+            }
+            for i in 0..3 {
+                let (b0, b1) = (start + 2 * i, start + 2 * ((i + 1) % 3));
+                self.indices.extend_from_slice(&[b0, b0 + 1, b1, b1, b0 + 1, b1 + 1]);
+            }
+        }
+
+        let y = |t: f32| lo.y + (hi.y - lo.y) * t;
+        let bottom = self.vertex(at(Vec3::new(centre.x, y(0.04), centre.z)), mul(foliage, p.shade_low * 0.8));
+        let ring = self.positions.len() as u32;
+        for (t, k, shade) in [(0.3, 0.85, p.shade_low), (0.62, 1.0, p.shade_high)] {
+            for i in 0..SIDES {
+                let a = (i as f32 + 0.5 * t) * std::f32::consts::TAU / SIDES as f32;
+                let v = Vec3::new(centre.x + a.cos() * radius.x * k, y(t), centre.z + a.sin() * radius.z * k);
+                self.vertex(at(v), mul(foliage, shade));
+            }
+        }
+        let top = self.vertex(at(Vec3::new(centre.x, hi.y, centre.z)), mul(foliage, p.shade_high * 1.05));
+        for i in 0..SIDES {
+            let (a, b) = (ring + i, ring + (i + 1) % SIDES);
+            let (c, d) = (a + SIDES, b + SIDES);
+            // counter-clockwise from outside, so the face normals `finish`
+            // averages point out of the crown
+            self.indices.extend_from_slice(&[bottom, a, b, a, c, b, c, d, b, c, top, d]);
+        }
     }
 
     fn vertex(&mut self, p: Vec3, c: [f32; 3]) -> u32 {
@@ -565,20 +734,52 @@ impl Builder {
 ///
 /// Only chunks with at least one changed plant get their colour attribute
 /// rewritten, so a front crossing two chunks costs two buffer uploads rather
-/// than 250.
-pub fn burn(sim: Res<Sim>, mut veg: ResMut<Vegetation>, mut meshes: ResMut<Assets<Mesh>>) {
-    if !sim.is_changed() {
+/// than 250; and a chunk the fire has not reached (no arrival time in its
+/// cells or their neighbours, whose times its plants interpolate) is not even
+/// looked at.
+///
+/// A rewritten chunk goes to the GPU whole (megabytes for a forest chunk), so
+/// the plants are redrawn at most every [`BURN_REDRAW_S`] of real time: at
+/// ×40 that is still a step of a few simulated seconds against a flaming
+/// phase of four minutes.
+pub fn burn(
+    sim: Res<Sim>,
+    time: Res<Time>,
+    mut veg: ResMut<Vegetation>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut restarted: EventReader<crate::sim::SimRestarted>,
+    mut since: Local<f32>,
+) {
+    let restarted = restarted.read().count() > 0;
+    *since += time.delta_seconds();
+    if !restarted && *since < BURN_REDRAW_S {
         return;
     }
+    let now = sim.time_s() as f32;
+    if veg.drawn_at == Some(now) && !restarted {
+        return;
+    }
+    *since = 0.0;
+    veg.drawn_at = Some(now);
     let field = FireField {
         state: sim.fire.state(),
         arrival: sim.fire.arrival_times(),
         intensity: sim.fire.intensity(),
         world: sim.scn.world,
     };
-    let now = sim.time_s() as f32;
+    let (rows, cols) = (sim.scn.world.fire_rows, sim.scn.world.fire_cols);
+    let reached = |(r0, r1, c0, c1): (usize, usize, usize, usize)| {
+        (r0.saturating_sub(1)..(r1 + 1).min(rows)).any(|r| {
+            field.arrival[r * cols + c0.saturating_sub(1)..r * cols + (c1 + 1).min(cols)]
+                .iter()
+                .any(|&t| t != i32::MIN)
+        })
+    };
 
     for chunk in &mut veg.chunks {
+        if !chunk.touched && !reached(chunk.cells) {
+            continue;
+        }
         let mut wanted = Vec::with_capacity(chunk.plants.len());
         let mut dirty = false;
         for (plant, &drawn) in chunk.plants.iter().zip(&chunk.drawn) {
@@ -591,36 +792,76 @@ pub fn burn(sim: Res<Sim>, mut veg: ResMut<Vegetation>, mut meshes: ResMut<Asset
         }
 
         let mut colors = chunk.base.clone();
+        let mut low_colors = chunk.low_base.clone();
+        chunk.touched = false;
         for ((plant, drawn), s) in chunk.plants.iter().zip(&mut chunk.drawn).zip(wanted) {
             *drawn = s;
             if s == CellFire::Unburnt as u8 {
                 continue;
             }
-            let range = plant.vert_start as usize..plant.vert_end as usize;
-            if s == CellFire::Burning as u8 {
-                // Alight: pushed above 1.0 so the bloom pass catches it, and
-                // scaled by local intensity so a grass flare and a crowning
-                // conifer do not glow identically.
-                let k = (field.intensity(plant.pos) / 4000.0).clamp(0.2, 1.0);
-                for c in &mut colors[range] {
-                    *c = [1.0 + 2.2 * k, 0.42 + 0.25 * k, 0.06, 1.0];
-                }
-            } else {
-                // Charcoal, keeping a trace of the original tint so a burnt
-                // conifer stand still reads differently from burnt grass.
-                for c in &mut colors[range] {
-                    *c = [
-                        0.07 + c[0] * 0.10,
-                        0.06 + c[1] * 0.08,
-                        0.06 + c[2] * 0.08,
-                        1.0,
-                    ];
-                }
-            }
+            chunk.touched = true;
+            // scaled by local intensity, so a grass flare and a crowning
+            // conifer do not glow identically
+            let k = (field.intensity(plant.pos) / 4000.0).clamp(0.2, 1.0);
+            paint(&mut colors[plant.vert_start as usize..plant.vert_end as usize], s, k);
+            paint(&mut low_colors[plant.low_start as usize..plant.low_end as usize], s, k);
         }
 
         if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+        }
+        if let Some(mesh) = meshes.get_mut(&chunk.low_mesh) {
+            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, low_colors);
+        }
+    }
+}
+
+/// Real seconds between two redraws of the burning plants (see [`burn`]).
+const BURN_REDRAW_S: f32 = 0.15;
+
+/// Recolour one plant's vertices for its fire state.
+fn paint(colors: &mut [[f32; 4]], state: u8, k: f32) {
+    if state == CellFire::Burning as u8 {
+        // Alight: pushed above 1.0 so the bloom pass catches it.
+        for c in colors {
+            *c = [1.0 + 2.2 * k, 0.42 + 0.25 * k, 0.06, 1.0];
+        }
+    } else {
+        // Charcoal, keeping a trace of the original tint so a burnt
+        // conifer stand still reads differently from burnt grass.
+        for c in colors {
+            *c = [
+                0.07 + c[0] * 0.10,
+                0.06 + c[1] * 0.08,
+                0.06 + c[2] * 0.08,
+                1.0,
+            ];
+        }
+    }
+}
+
+/// Show each chunk's full models near the camera and its proxies beyond
+/// [`Vegetation::lod_m`], with a 10 % band so a chunk on the edge does not
+/// flicker while the camera drifts.
+pub fn lod(
+    mut veg: ResMut<Vegetation>,
+    camera: Query<&Transform, With<Camera3d>>,
+    mut visibility: Query<&mut Visibility>,
+) {
+    let Ok(eye) = camera.get_single().map(|t: &Transform| t.translation) else { return };
+    let lod_m = veg.lod_m;
+    for chunk in &mut veg.chunks {
+        let (lo, hi) = chunk.bounds;
+        let d = eye.distance(eye.clamp(lo, hi));
+        let near = if chunk.near { d < lod_m * 1.1 } else { d < lod_m };
+        if near == chunk.near {
+            continue;
+        }
+        chunk.near = near;
+        for (e, on) in [(chunk.full, near), (chunk.low, !near)] {
+            if let Ok(mut v) = visibility.get_mut(e) {
+                *v = if on { Visibility::Inherited } else { Visibility::Hidden };
+            }
         }
     }
 }
@@ -660,5 +901,36 @@ impl Rng {
     /// Uniform in `[0, 1)`.
     fn unit(&mut self) -> f32 {
         (self.next_u64() >> 40) as f32 / (1u32 << 24) as f32
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The distant proxies must stay a fraction of the models they stand in
+    /// for, and face outward: `Builder::finish` averages face normals, and an
+    /// inward crown would be lit from the wrong side.
+    #[test]
+    fn proxies_are_cheap_and_face_out() {
+        for name in ["pine", "chestnut", "bush", "olive"] {
+            let mut b = Builder::default();
+            b.proxy(name, Vec3::ZERO, Vec3::splat(10.0), 0.7, [0.3, 0.4, 0.2], [0.4, 0.2, 0.1]);
+            let model = crate::models::model(name).indices.len() / 3;
+            let tris = b.indices.len() / 3;
+            assert!(tris * 3 <= model, "{name}: {tris} proxy triangles for {model}");
+
+            let mesh = b.finish();
+            let Some(bevy::render::mesh::VertexAttributeValues::Float32x3(pos)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) else { panic!() };
+            let Some(bevy::render::mesh::VertexAttributeValues::Float32x3(nor)) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL) else { panic!() };
+            let (lo, hi) = pos.iter().fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(lo, hi), p| (lo.min(Vec3::from(*p)), hi.max(Vec3::from(*p))));
+            let (crown_lo, crown_hi) = proxy(name).crown;
+            let centre = Vec3::new((lo.x + hi.x) * 0.5, (crown_lo.y + crown_hi.y) * 5.0, (lo.z + hi.z) * 0.5);
+            let crown_start = if proxy(name).trunk.is_some() { 6 } else { 0 };
+            for (p, n) in pos.iter().zip(nor).skip(crown_start) {
+                let out = Vec3::from(*p) - centre;
+                assert!(out.dot(Vec3::from(*n)) > 0.0, "{name}: normal {n:?} at {p:?} points in");
+            }
+        }
     }
 }
