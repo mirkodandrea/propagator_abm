@@ -59,7 +59,7 @@ fn main() -> anyhow::Result<()> {
     let t = Territory::load("data".as_ref())?;
     println!("| caso | crisi sollevate | case colpite: ignora / subito / 20' dopo / subito + evacua | colti in casa: idem |");
     println!("|---|---|---|---|");
-    for c in &t.cases {
+    for c in t.all_cases() {
         let (a, seen) = run(&c.name, Strategy::Fermo)?;
         let (b, _) = run(&c.name, Strategy::Pronto)?;
         let (l, _) = run(&c.name, Strategy::Tardi)?;

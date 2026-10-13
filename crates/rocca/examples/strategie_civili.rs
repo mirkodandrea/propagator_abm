@@ -51,7 +51,7 @@ fn main() -> anyhow::Result<()> {
     }
     if cases.is_empty() {
         let g = Game::new(data, "Rocco3", 1)?;
-        cases = g.territory.cases.iter().map(|c| c.name.clone()).collect();
+        cases = g.territory.all_cases().map(|c| c.name.clone()).collect();
     }
     println!("| caso | seme | minacciati | piano | punti | colte in casa | colte fuori | calore max su un'auto (s) | auto·min in allarme | in coda (max) | squadre: avvisate / km / tagli / dirottate / lasciati / perse |");
     println!("|---|---|---|---|---|---|---|---|---|---|---|");

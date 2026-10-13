@@ -79,6 +79,8 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - [ ] provarlo con una persona e nel browser (profondità di campo in WebGL; carico della partita di sfondo);
   - [ ] altre idee: fumo e brace più vivi, lettere del titolo che appaiono, una frase che cambia con l'inquadratura.
 
+- **2026-10-13, casi rinominati per livello** (richiesta dell'utente): `game.json` contiene solo i tre casi giocati, `easy` (ex Rocco3, Facile), `medium` (ex Terra1_gira, Medio), `expert` (ex Borgo2_gira, Esperto); il vecchio nome resta come `alias` e `Territory::case` lo risolve ancora (resoconti, test, `scripts/record_mario_demo.sh`). Gli altri 33 incendi sono in `data/scenarios/rocca_ventosa/prove.json` (scelta dell'utente: solo per prove headless e test, mai nel chiosco né nel menu operatore): `Territory::trials`, `Territory::all_cases()` per gli esempi che li scorrono tutti. Factory: `cases.split` scrive i due file (riproduce esattamente quelli pubblicati). `tools/factory/island.py`, già obsoleto, legge solo `game.json`.
+
 - **Fase corrente: fase 6, playtest finale** (`docs/03-PIANO-DI-AZIONE.md`). **Fase 5 chiusa il 2026-10-12** (l'utente: «dichiariamo chiusa questa fase 5»). L'utente sta curando dettagli grafici in un'altra sessione.
 - **Prossimo checkpoint umano: 6**, sui risultati dei playtest con persone: durata misurata, prima azione intuitiva, almeno un compromesso spiegato dal giocatore, nessun blocco o crash, riavvio manuale verificato.
 - Gioco attuale: layout 5, pattuglie di avviso (variante A), livelli Facile Rocco3, Medio Terra1_gira, Esperto Borgo2_gira (`docs/fase5/livelli_l5/README.md`).

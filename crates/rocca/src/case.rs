@@ -53,6 +53,10 @@ pub struct Shift {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Case {
     pub name: String,
+    /// The name the case had before it became a level (user, 2026-10-13:
+    /// «easy», «medium», «expert»), so the older reports still replay.
+    #[serde(default)]
+    pub alias: Option<String>,
     /// The locality this start was picked for (the atlas' grouping).
     pub near: String,
     pub ignition: [f32; 2],
@@ -97,7 +101,18 @@ pub struct Territory {
     /// absent, any district may be evacuated at any time.
     #[serde(default)]
     pub mayor: Option<crate::Mayor>,
+    /// The fires the game plays: one per level.
     pub cases: Vec<Case>,
+    /// More fires on the same territory, for the headless trials and the
+    /// tests only (`prove.json`, user 2026-10-13); never in the kiosk.
+    #[serde(skip)]
+    pub trials: Vec<Case>,
+}
+
+/// `prove.json`: the fires for the headless trials.
+#[derive(Deserialize)]
+struct Trials {
+    cases: Vec<Case>,
 }
 
 /// A difficulty the visitor can pick: a name, the case it plays and one
@@ -112,16 +127,29 @@ pub struct Level {
 impl Territory {
     pub fn load(data_dir: &Path) -> Result<Territory> {
         let p = data_dir.join("scenarios").join(scenario::ID).join("game.json");
-        let t: Territory = serde_json::from_slice(&datafs::read(&p).with_context(|| format!("reading {}", p.display()))?)
+        let mut t: Territory = serde_json::from_slice(&datafs::read(&p).with_context(|| format!("reading {}", p.display()))?)
             .with_context(|| format!("parsing {}", p.display()))?;
+        // absent (the web build ships without it): no trials
+        let p = p.with_file_name("prove.json");
+        if let Ok(bytes) = datafs::read(&p) {
+            t.trials = serde_json::from_slice::<Trials>(&bytes).with_context(|| format!("parsing {}", p.display()))?.cases;
+        }
         anyhow::ensure!(t.roster.iter().all(|s| s.station < t.stations.len()), "roster names a missing station");
-        anyhow::ensure!(t.featured.iter().all(|n| t.case(n).is_some()), "featured names a missing case");
-        anyhow::ensure!(t.levels.iter().all(|l| t.case(&l.case).is_some()), "a level names a missing case");
+        // the kiosk plays only the game's own cases, never a trial
+        let playable = |n: &str| t.cases.iter().any(|c| c.name == n);
+        anyhow::ensure!(t.featured.iter().all(|n| playable(n)), "featured names a missing case");
+        anyhow::ensure!(t.levels.iter().all(|l| playable(&l.case)), "a level names a missing case");
         Ok(t)
     }
 
+    /// A case by name or by its old name, among the levels' and the trials'.
     pub fn case(&self, name: &str) -> Option<&Case> {
-        self.cases.iter().find(|c| c.name == name)
+        self.all_cases().find(|c| c.name == name || c.alias.as_deref() == Some(name))
+    }
+
+    /// The levels' cases, then the trials': what a headless sweep plays.
+    pub fn all_cases(&self) -> impl Iterator<Item = &Case> {
+        self.cases.iter().chain(&self.trials)
     }
 
     /// The kiosk's cases in order: the featured ones, or all of them.

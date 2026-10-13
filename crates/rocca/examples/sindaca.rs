@@ -98,7 +98,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
     if cases.is_empty() {
-        cases = rocca::Territory::load(data)?.cases.iter().map(|c| c.name.clone()).collect();
+        cases = rocca::Territory::load(data)?.all_cases().map(|c| c.name.clone()).collect();
     }
     let pairs: Vec<(String, u64)> = cases.iter().flat_map(|c| seeds.iter().map(move |&s| (c.clone(), s))).collect();
     let withouts = par_map(&pairs, |(case, seed)| Game::without_orders(data, case, *seed));

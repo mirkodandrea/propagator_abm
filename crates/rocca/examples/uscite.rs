@@ -40,7 +40,7 @@ fn main() -> anyhow::Result<()> {
     }
     if cases.is_empty() {
         let probe = Game::new(data, "Rocco3", 1)?;
-        cases = probe.territory.cases.iter().map(|c| c.name.clone()).collect();
+        cases = probe.territory.all_cases().map(|c| c.name.clone()).collect();
     }
     if let Some(d) = &csv {
         std::fs::create_dir_all(d)?;

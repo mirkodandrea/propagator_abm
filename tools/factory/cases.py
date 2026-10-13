@@ -28,8 +28,9 @@ CASE_MINUTES = 180
 # overturns the exposure is one of the crises the game is about).
 SHIFT_AT_MIN = 45
 # The cases the kiosk plays, in its order: the main dilemma, the non-obvious
-# one, the introductory one. The others stay in game.json for the headless
-# runner and the operator. Re-picked on layout 5 with the messengers
+# one, the introductory one. Since 2026-10-13 they are the only ones in
+# game.json, renamed after their level (LEVEL_IDS); the others go to
+# prove.json, for the headless trials and the tests only. Re-picked on layout 5 with the messengers
 # (2026-10-12, docs/fase5/livelli_l5/README.md): Forna3_gira takes hold in one
 # seed out of three there, and Coste2_gira scores the same with every plan.
 FEATURED = ["Borgo2_gira", "Terra1_gira", "Rocco3"]
@@ -49,6 +50,22 @@ MESSENGERS = {"teams": 4, "per_min": 1.0, "broadcast": True, "by_priority": Fals
 # 2026-10-13, docs/fase6/sindaca/README.md): she gives it when the front could
 # reach a district within 20 minutes.
 MAYOR = {"lead_s": 1200}
+# The game's cases are named after their level (user, 2026-10-13); the old
+# name stays as `alias`, so the earlier reports still replay.
+LEVEL_IDS = {"Rocco3": "easy", "Terra1_gira": "medium", "Borgo2_gira": "expert"}
+
+
+def split(g: dict) -> tuple[dict, dict]:
+    """`game.json` with only the levels' cases, renamed, in the kiosk's
+    order; and `prove.json` with the rest."""
+    game = [{**c, "name": LEVEL_IDS[c["name"]], "alias": c["name"]}
+            for n in FEATURED for c in g["cases"] if c["name"] == n and n in LEVEL_IDS]
+    trials = [c for c in g["cases"] if c["name"] not in LEVEL_IDS]
+    g = {**g, "cases": game,
+         "featured": [LEVEL_IDS[n] for n in g["featured"] if n in LEVEL_IDS],
+         "levels": [{**lv, "case": LEVEL_IDS[lv["case"]]} for lv in g["levels"] if lv["case"] in LEVEL_IDS]}
+    return g, {"about": "Fires for the headless trials and tests only (user, 2026-10-13): "
+                        "the game plays the three levels in game.json.", "cases": trials}
 
 
 def build(cid: str) -> dict:
@@ -110,7 +127,9 @@ def shifted(case: dict, centres: dict) -> dict:
 
 def write(cid: str) -> dict:
     g = build(cid)
-    (DATA / "scenarios" / cid / "game.json").write_text(json.dumps(g, indent=1) + "\n")
+    game, trials = split(g)
+    (DATA / "scenarios" / cid / "game.json").write_text(json.dumps(game, indent=1) + "\n")
+    (DATA / "scenarios" / cid / "prove.json").write_text(json.dumps(trials, indent=1) + "\n")
     return g
 
 
@@ -140,4 +159,6 @@ def publish(cid: str):
 def write_game(dst, cid: str) -> None:
     g = build(cid)
     g["scenario"] = GAME_ID
-    (dst / "game.json").write_text(json.dumps(g, indent=1) + "\n")
+    game, trials = split(g)
+    (dst / "game.json").write_text(json.dumps(game, indent=1) + "\n")
+    (dst / "prove.json").write_text(json.dumps(trials, indent=1) + "\n")

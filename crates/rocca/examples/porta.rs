@@ -11,7 +11,7 @@ fn main() -> anyhow::Result<()> {
     let t = Territory::load("data".as_ref())?;
     println!("| caso | case con minaccia > 0 | ≥ 0,12 (allarme) | ≥ 0,35 | ≥ 0,55 (fuoco alla porta) | massimo |");
     println!("|---|---|---|---|---|---|");
-    for c in &t.cases {
+    for c in t.all_cases() {
         let mut g = Game::new("data".as_ref(), &c.name, 1)?;
         let mut peak = vec![0.0f32; g.agents.households.len()];
         while g.time_s() < g.case.duration_s() {

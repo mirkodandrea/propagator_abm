@@ -24,7 +24,7 @@ fn main() -> anyhow::Result<()> {
     let short = |k: usize| names[k].split(' ').next_back().unwrap().to_string();
     println!("| caso | piano | case colpite ({}) | colti in casa | mezzi a fine caso |", (0..names.len()).map(short).collect::<Vec<_>>().join(" / "));
     println!("|---|---|---|---|---|");
-    for c in &t.cases {
+    for c in t.all_cases() {
         let near = g.district_index(&c.near).unwrap();
         let fmt = |o: &Outcome| o.districts.iter().map(|d| d.homes_hit.to_string()).collect::<Vec<_>>().join(" / ");
         let fmtc = |o: &Outcome| o.districts.iter().map(|d| d.caught.to_string()).collect::<Vec<_>>().join(" / ");
