@@ -42,7 +42,7 @@ fn main() -> anyhow::Result<()> {
     }
     let cases: Vec<String> = match std::env::var("CASI") {
         Ok(v) if !v.is_empty() => v.split(',').map(String::from).collect(),
-        _ => rocca::case::Territory::load(data)?.all_cases().map(|c| c.name.clone()).collect(),
+        _ => rocca::case::Territory::load(data)?.cases.iter().map(|c| c.name.clone()).collect(),
     };
     println!("| caso | seme | linea:acqua:portata | ha a 60' | ha a 120' | ha a 180' | acqua (kL) | linea (m) |");
     println!("|---|---|---|---|---|---|---|---|");

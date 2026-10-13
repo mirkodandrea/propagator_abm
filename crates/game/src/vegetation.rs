@@ -326,8 +326,7 @@ pub fn spawn(
 
             // Vegetation is visual only: Mario can run through trunks and
             // canopies, and the follow camera is not clipped by the forest.
-            // The full models start on show, so a view without the LOD
-            // system (`town_shot`) draws them.
+            // The full models start on show, until the LOD system picks.
             let full = commands.spawn(MaterialMeshBundle::<RetroMaterial> {
                 mesh: mesh.clone(),
                 material: material.clone(),

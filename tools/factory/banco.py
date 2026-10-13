@@ -46,7 +46,7 @@ def main():
     a = ap.parse_args()
     dst = ROOT / "data/scenarios" / a.id
     dst.mkdir(exist_ok=True)
-    own = ("fuel.i32", "dem.f64", "game.json", "prove.json")
+    own = ("fuel.i32", "dem.f64", "game.json")
     for f in SRC.iterdir():
         link = dst / f.name
         if f.name not in own and not link.exists():
@@ -77,7 +77,6 @@ def main():
     game["featured"] = [c["name"] for c in cases[:3]]
     game["levels"] = [{"name": "Banco", "case": cases[0]["name"], "about": "Banco di prova, non si gioca."}]
     (dst / "game.json").write_text(json.dumps(game, indent=1, ensure_ascii=False))
-    (dst / "prove.json").write_text(json.dumps({"cases": []}, indent=1))
     print(f"{a.id}: {len(cases)} casi, combustibile {a.fuel} su {int(veg.sum())} celle, orografia piatta")
 
 

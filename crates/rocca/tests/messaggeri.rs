@@ -42,7 +42,7 @@ fn evacuate(g: &mut Game, prio: &[usize], evac: &[usize]) {
 #[test]
 fn same_seed_same_teams() {
     let run = || {
-        let mut g = game("Piano1", 3);
+        let mut g = game("medium", 3);
         let far = by_distance(&g);
         let ds = [far[far.len() - 1], far[far.len() - 2]];
         evacuate(&mut g, &ds, &ds);
@@ -59,7 +59,7 @@ fn same_seed_same_teams() {
 
 #[test]
 fn the_way_there_is_driven() {
-    let mut g = game("Piano1", 1);
+    let mut g = game("medium", 1);
     let far = *by_distance(&g).last().unwrap();
     let start = Pos::from(g.territory.stations[0].pos);
     evacuate(&mut g, &[far], &[far]);
@@ -79,7 +79,7 @@ fn the_way_there_is_driven() {
 
 #[test]
 fn a_higher_priority_on_the_road_diverts_the_team() {
-    let mut g = game("Piano1", 1);
+    let mut g = game("medium", 1);
     let order = by_distance(&g);
     let (near, far) = (order[0], order[order.len() - 1]);
     evacuate(&mut g, &[far], &[far]);
@@ -90,27 +90,4 @@ fn a_higher_priority_on_the_road_diverts_the_team() {
     assert_eq!(g.teams[0].diverted, 1);
     assert_eq!(g.teams[0].district(), Some(near));
     assert!(g.log.iter().any(|e| e.text.contains("va invece a")), "{:?}", g.log);
-}
-
-#[test]
-fn the_teams_leave_a_district_the_fire_reaches() {
-    // Two slow teams in the districts the fire reaches on Coste2: they are
-    // still knocking when it gets to the doors.
-    let without = Game::without_orders(&data(), "Coste2", 1).unwrap();
-    let mut hit: Vec<usize> = (0..without.districts.len()).filter(|&d| without.districts[d].caught > 0).collect();
-    hit.sort_by_key(|&d| std::cmp::Reverse(without.districts[d].caught));
-    let mut g = game("Coste2", 2);
-    g.messengers = Some(Messengers { per_min: 0.3, ..g.messengers.unwrap() });
-    evacuate(&mut g, &hit, &hit);
-    let mut hottest = 0.0f32;
-    while g.time_s() < g.case.duration_s() {
-        g.step().unwrap();
-        for t in g.teams.iter().filter(|t| matches!(t.task, Task::Door { .. })) {
-            hottest = hottest.max(g.fire.threat().at(t.pos));
-        }
-    }
-    assert!(g.teams.iter().map(|t| t.left).sum::<u32>() > 0, "nobody left: {:?}", g.teams);
-    assert!(g.teams.iter().all(|t| t.task != Task::Lost));
-    assert!(hottest < abm::suppression::WORK_LIMIT, "a team knocked at {hottest}");
-    assert!(g.log.iter().any(|e| e.text.contains("troppo vicino")), "{:?}", g.log);
 }

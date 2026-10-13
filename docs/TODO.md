@@ -10,9 +10,7 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
 
 - [ ] mappe del fuoco dei tre livelli, semi 1–3, senza ordini e con il piano ovvio; tabella con borghi colpiti, orari ed ettari (`docs/factory/valico/`);
 - [ ] riscrivere i testi `about` dei livelli in `game.json` per il valico;
-- [ ] decidere con l'utente se `prove.json` resta o se si tengono solo i tre livelli (lo usano molti test ed esempi);
 - [ ] con lo spegnimento attuale ogni innesco entro 800 m dalla caserma si spegne se le autobotti ci vanno per prime, quindi l'ovest non entra in gioco: decidere insieme a B, oppure spostare gli inneschi;
-- [ ] `tools/factory/cases.py` non riproduce più `game.json`/`prove.json`: aggiornarlo o dichiararlo superato; `tools/factory/island.py` è obsoleto (da rimuovere?).
 
 ### B. Taratura dello spegnimento (sessione dello spegnimento)
 
@@ -71,7 +69,7 @@ Le regole complete sono in `docs/01-GIOCO.md`. Qui le decisioni recenti, per ori
 - 2026-10-13: piano a tre colonne trascinabili; classifica dei migliori del giorno per livello; finale semplificato a stelle.
 - 2026-10-13: previsione stocastica a +1 h e +3 h, isocrone al 50 %, senza interventi.
 - 2026-10-13: capacità di uscita a 6 famiglie al minuto (versione B: chi vede il fuoco parte comunque). Attiva, da confermare.
-- 2026-10-13: il territorio è l'isola con il valico; nuovi livelli Facile, Medio ed Esperto.
+- 2026-10-13: il territorio è l'isola con il valico; nuovi livelli Facile, Medio ed Esperto. **Solo i tre livelli**: tolti `prove.json`, gli esempi delle fasi passate, la vecchia pipeline Python e `town_shot`; i test usano i livelli.
 - 2026-10-13: costa est rifatta (baia, promontorio, niente tratti dritti) e valico dal bordo naturale (`costa_est.py`, `valico.py`; immagini `docs/factory/valico/costa_est.png`, `valico_naturale.png`).
 - 2026-10-13: «evacua appena autorizzato» può vincere ai punti; il suo costo resta nella stella Misura.
 - 2026-10-13: riscritte da zero le istruzioni (`CLAUDE.md`, `docs/01–03`) e cancellato lo storico; nuove fasi A–E.

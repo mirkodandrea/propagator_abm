@@ -6,7 +6,7 @@ Un solo territorio sintetico e plausibile, riusato con diversi inneschi e venti:
 
 - **Isola di 8×8 km.** La griglia del fuoco è di 20 m (400×400). La riga 0 è il nord, y cresce verso nord, le coordinate sono in metri.
 - Il rendering usa un terreno più fine e smussato: i 20 m valgono solo per il fuoco.
-- **Dati:** `data/scenarios/rocca_ventosa/`, l'unico scenario del gioco. Contiene `dem.f64`, `fuel.i32`, `cover.u8`, `population.json`, `osm.json`, `game.json` (i livelli), `prove.json` (incendi di prova) e il terreno di rendering.
+- **Dati:** `data/scenarios/rocca_ventosa/`, l'unico scenario del gioco. Contiene `dem.f64`, `fuel.i32`, `cover.u8`, `population.json`, `osm.json`, `game.json` (i tre livelli) e il terreno di rendering.
 - **Sei borghi:**
   - a est del massiccio: **Castelvento** (190 famiglie, caserma dei vigili), **Fornaci** (90), **Le Terrazze** (30), **San Rocco** (100);
   - a ovest: **Pian dei Grilli** (90) e **Le Ghiande** (38, nuclei sparsi).
@@ -29,12 +29,12 @@ Tutti durano 180 minuti con vento a 40 km/h. Gli inneschi sono in metri; il vent
 
 Numeri dei semi 1–3, senza ordini, con lo spegnimento del 13/10 sera; con la priorità «Le Terrazze, Castelvento» i tre incendi restano sotto i 25 ha in quasi tutti i semi (vedi «Aperto»).
 
-I testi `about` dei livelli vanno riscritti per il valico. I livelli precedenti (`Rocco3`, `Terra1_gira`, `Borgo2_gira`) e altri 33 incendi sono in `prove.json`: servono solo a prove e test, mai al chiosco.
+I testi `about` dei livelli vanno riscritti per il valico. **Gli incendi sono solo questi tre** (decisione 2026-10-13): prove headless e test usano i livelli, non esistono incendi di prova.
 
 ## Come si modifica
 
-- **Non rilanciare la pipeline di generazione** (`tools/scenario_factory.py`). L'isola è stata ricavata a mano dal territorio originale e `tools/factory/island.py` è obsoleto. Anche `tools/factory/cases.py` non riproduce più `game.json` e `prove.json` così come sono pubblicati.
-- Si modificano **direttamente i file pubblicati** (`fuel.i32`, `game.json`, `prove.json`, `population.json`, `osm.json`), con uno script ripetibile quando serve. Per esempio `tools/factory/valico.py` ridisegna il valico in `fuel.i32` partendo dal combustibile precedente (dalla storia git) e dà sempre lo stesso file; `tools/factory/costa_est.py` ha tagliato la costa est (`render_terrain.f32`, `dem.f64`, `fuel.i32`, `cover.u8`) e, rieseguito, non trova più nulla da tagliare. Entrambi sono autonomi (numpy, scipy).
+- La vecchia pipeline di generazione è stata **cancellata** (2026-10-13, resta nella storia git): il territorio non si rigenera da zero.
+- Si modificano **direttamente i file pubblicati** (`fuel.i32`, `game.json`, `population.json`, `osm.json`), con uno script ripetibile quando serve. Per esempio `tools/factory/valico.py` ridisegna il valico in `fuel.i32` partendo dal combustibile precedente (dalla storia git) e dà sempre lo stesso file; `tools/factory/costa_est.py` ha tagliato la costa est (`render_terrain.f32`, `dem.f64`, `fuel.i32`, `cover.u8`) e, rieseguito, non trova più nulla da tagliare. Entrambi sono autonomi (numpy, scipy).
 - **Per provare una variante:** creare `data/scenarios/<id>/` con link simbolici a `rocca_ventosa` più i soli file cambiati, poi selezionarla con `ROCCA_SCENARIO=<id>` (`scenario::id()`). Vale per la CLI, i test e il chiosco. Niente copie dei dati (richiesta dell'utente). Esempio: `rocca_banco`, il banco di prova dello spegnimento.
 - La vegetazione disegnata nel chiosco si legge da `fuel.i32` (`vegetation.rs`), non da `cover.u8`.
 - Dopo ogni modifica del territorio si **rifanno le prove** di `03-VERIFICHE.md`.
@@ -49,4 +49,3 @@ I testi `about` dei livelli vanno riscritti per il valico. I livelli precedenti 
 ## Aperto
 
 - Con lo spegnimento in taratura, ogni innesco entro 800 m dalla caserma si spegne subito se le autobotti ci vanno per prime: con la priorità giusta l'ovest non entra mai in gioco. Si decide insieme alla taratura dello spegnimento; un'alternativa è spostare gli inneschi.
-- Da decidere se `prove.json` resta (lo usano molti test ed esempi) o se si tengono solo i tre livelli.

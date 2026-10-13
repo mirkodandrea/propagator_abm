@@ -30,13 +30,13 @@ Gioco strategico offline per un chiosco presidiato alla *Settimana della Protezi
 | `game` | Il chiosco Bevy: `sim.rs` (orologio attorno a `Game`), `kiosk/` (flusso, UI egui, tutorial, snap), rendering del diorama, `forecast_view`, Mario. |
 | `datafs`, `libsm64-native` | Accesso ai dati (anche dal web); Mario. |
 
-Dati: `data/scenarios/rocca_ventosa/` (territorio, `game.json` con i livelli, `prove.json` con gli incendi di prova). Python per il territorio: `tools/factory/`.
+Dati: `data/scenarios/rocca_ventosa/` (territorio e `game.json` con i **tre livelli, gli unici incendi**: niente incendi di prova, decisione 2026-10-13). Python per il territorio: script autonomi in `tools/factory/` (`valico.py`, `banco.py`, …) che modificano i dati pubblicati.
 
 ## Come si lavora
 
 - **Fasi, una alla volta** (`docs/03-VERIFICHE.md`). Ogni fase si chiude con un checkpoint umano: la fase successiva non parte senza conferma. Le richieste puntuali dell'utente si fanno subito, ma non fanno avanzare la fase da sole.
 - Prima di cambiare **regole, bilanciamento o territorio**: prova headless e tabella, poi decide l'utente. Una meccanica nuova va accesa nel chiosco solo dopo la sua conferma, e va detto esplicitamente quando resta spenta.
-- Il bilanciamento si giudica con un criterio: **nessuna strategia semplice deve dominare** («evacua tutti», «evacua appena autorizzato»). Le prove usano gli stessi semi (1–3) e tutti e tre i livelli.
+- Il bilanciamento si giudica con un criterio: **nessuna strategia semplice deve dominare** («evacua tutti», «evacua appena autorizzato»). Le prove usano gli stessi semi (1–3) e i tre livelli.
 - **Resoconti all'utente in italiano**, al massimo una pagina: realizzato, evidenza (comando e tabella o immagine), non risolto, una proposta.
 - **`docs/TODO.md`** va aggiornata nello **stesso commit** del lavoro: fase corrente e prossimo checkpoint in cima, aperti, decisioni con data. Le voci chiuse si cancellano: la storia è in git.
 - **Conservare ciò che serve, adattare ciò che può servire, scartare il resto.** Nessuna riscrittura totale senza una ragione verificata. Le API si cambiano dopo averne controllato gli utilizzatori.
@@ -56,7 +56,7 @@ Spesso più sessioni Claude lavorano in parallelo sullo stesso checkout (branch 
 cargo build --release -p rocca --examples          # prove headless (docs/03-VERIFICHE.md)
 cargo test --release -p rocca -p abm -p fire
 target/release/rocca medium --priorita "Le Terrazze,Castelvento" --b-priorita "Castelvento,Le Terrazze"
-cargo run -p game --bin game --release             # il chiosco (serve --bin: c'è anche town_shot)
+cargo run -p game --release                        # il chiosco
 scripts/build_web.sh                               # versione browser (docs/web.md)
 ```
 
@@ -77,7 +77,7 @@ Variabili utili del chiosco:
 Per controllare grafica e UX **non giocare una partita**: `kiosk/snap.rs` porta il gioco a uno stato descritto in una riga e salva il PNG. Serve la build `--release` e una finestra vera, quindi uno schermo. `KIOSK_SHOT` gioca invece una partita scriptata intera; `KIOSK_SHOT_END` mostra solo il finale.
 
 ```
-KIOSK_SNAP=<cartella> KIOSK_SNAP_SPEC='name=a,t=40,at=district:Castelvento,dist=700,pitch=-35;name=b,t=120,phase=fine' cargo run -p game --bin game --release
+KIOSK_SNAP=<cartella> KIOSK_SNAP_SPEC='name=a,t=40,at=district:Castelvento,dist=700,pitch=-35;name=b,t=120,phase=fine' cargo run -p game --release
 ```
 
 - Gli stati sono separati da `;`, i campi da `,`. Chiavi:

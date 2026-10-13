@@ -36,7 +36,7 @@ per consentire il nuoto. Il fuoco attivo e gli edifici ancora in fiamme
 provocano danni e la reazione di bruciatura di libsm64. Il modello si ricrea
 alla morte o con R/△.
 
-Avvio: `cargo run -p game --bin game --release`.
+Avvio: `cargo run -p game --release`.
 La ROM originale USA `.z64` viene letta solo all'apertura di Mario da
 `data/mario64/Super Mario 64 (USA).z64`. `MARIO64_ROM` permette un altro percorso.
 La ROM viene verificata prima di passarla alla libreria C; non è incorporata
@@ -48,10 +48,10 @@ La build wasm esclude modulo, libreria nativa, controlli e ROM. Nessun download
 solo per la dipendenza nativa.
 
 Verifiche: `cargo test -p libsm64-native -- --nocapture` (fisica, nuoto, danni,
-ownership e cleanup con ROM locale); `cargo test -p game --bin game --release mario`
-(coordinate, camera e clock ×1/ritorno alla pausa); `cargo check -p game --bin game
+ownership e cleanup con ROM locale); `cargo test -p game --release mario`
+(coordinate, camera e clock ×1/ritorno alla pausa); `cargo check -p game
 --target wasm32-unknown-unknown` (nessuna dipendenza libsm64).
 
 Screenshot riproducibile della modalità: `KIOSK_SNAP=out/mario
-KIOSK_SNAP_SPEC='name=rocca,phase=pianifica,mario=1' cargo run -p game --bin game
+KIOSK_SNAP_SPEC='name=rocca,phase=pianifica,mario=1' cargo run -p game
 --release`. Il campo `mario=1` è solo nativo; il programma salva il PNG e termina.

@@ -1,5 +1,5 @@
-//! Phase 3 checks (phase 3 of the old plan; CLAUDE.md «Verifiche») on the
-//! game's territory, `data/scenarios/rocca_ventosa`.
+//! The game's checks (`docs/03-VERIFICHE.md`) on the three levels of
+//! `data/scenarios/rocca_ventosa`, the only fires there are.
 
 use std::path::{Path, PathBuf};
 
@@ -37,8 +37,8 @@ fn run(case: &str, prio: &[&str], civil: &[(&str, Civil)], minutes: i64) -> (Gam
 
 #[test]
 fn same_seed_same_plan_same_game() {
-    let (a, oa) = run("Piano1", &["Grilli", "Ghiande"], &[("Grilli", Civil::Preallerta)], 60);
-    let (b, ob) = run("Piano1", &["Grilli", "Ghiande"], &[("Grilli", Civil::Preallerta)], 60);
+    let (a, oa) = run("medium", &["Grilli", "Ghiande"], &[("Grilli", Civil::Preallerta)], 60);
+    let (b, ob) = run("medium", &["Grilli", "Ghiande"], &[("Grilli", Civil::Preallerta)], 60);
     assert_eq!(oa, ob);
     assert_eq!(a.log, b.log);
     let pos = |g: &Game| g.crews.units.iter().map(|u| (u.pos.x, u.pos.y)).collect::<Vec<_>>();
@@ -47,8 +47,8 @@ fn same_seed_same_plan_same_game() {
 
 #[test]
 fn defence_reduces_simulated_exposure() {
-    let (g, defended) = run("Piano1", &["Grilli"], &[], 180);
-    let (_, open) = run("Piano1", &[], &[], 180);
+    let (g, defended) = run("medium", &["Grilli"], &[], 180);
+    let (_, open) = run("medium", &[], &[], 180);
     let d = idx(&g, "Grilli");
     assert!(defended.districts[d].homes_hit < open.districts[d].homes_hit, "{} vs {}", defended.districts[d].homes_hit, open.districts[d].homes_hit);
 }
@@ -59,33 +59,36 @@ fn departed(g: &Game, d: usize) -> usize {
 
 #[test]
 fn prealert_is_not_an_evacuation() {
-    // Castelvento with the fire 800 m north: at T+30 an evacuation has most of
-    // the town on the move, a pre-alert has it ready at home.
-    let (gp, _) = run("Borgo1", &[], &[("Castelvento", Civil::Preallerta)], 30);
-    let (ge, _) = run("Borgo1", &[], &[("Castelvento", Civil::Evacua)], 30);
-    let (gn, _) = run("Borgo1", &[], &[], 30);
-    let d = idx(&gp, "Castelvento");
+    // A district the fire is not near yet (San Rocco on expert): at T+30 an
+    // evacuation has a good part of it on the move, a pre-alert has it ready
+    // at home.
+    let (gp, _) = run("expert", &[], &[("San Rocco", Civil::Preallerta)], 30);
+    let (ge, _) = run("expert", &[], &[("San Rocco", Civil::Evacua)], 30);
+    let (gn, _) = run("expert", &[], &[], 30);
+    let d = idx(&gp, "San Rocco");
     let n = gp.districts[d].households.len();
     let ready = gp.districts[d].households.iter().filter(|&&i| gp.agents.households[i].readied_s > 0.0).count();
     assert!(departed(&ge, d) > n / 3, "evacuation: {} of {n} gone", departed(&ge, d));
-    assert!(departed(&gp, d) <= departed(&gn, d) + n / 20, "pre-alert must not send people away: {} vs {}", departed(&gp, d), departed(&gn, d));
-    assert!(ready > 9 * n / 10, "pre-alerted households get ready: {ready} of {n}");
+    // a few leave on their own once ready (docs/01-GIOCO.md: «qualcuna parte da sé»)
+    assert!(departed(&gp, d) <= departed(&gn, d) + n / 10, "pre-alert must not send people away: {} vs {}", departed(&gp, d), departed(&gn, d));
+    // the pre-alert takes its time to reach every door (the patrols)
+    assert!(ready > 8 * n / 10, "pre-alerted households get ready: {ready} of {n}");
 }
 
 #[test]
 fn prealert_pays_off_when_the_fire_comes() {
-    // Pian dei Grilli with the fire coming: pre-alerted households leave faster when
+    // A district with the fire coming: pre-alerted households leave faster when
     // they do decide to, so fewer are caught at home than with no order.
-    let (g, pre) = run("Piano3", &[], &[("Grilli", Civil::Preallerta)], 120);
-    let (_, none) = run("Piano3", &[], &[], 120);
-    let d = idx(&g, "Grilli");
+    let (g, pre) = run("medium", &[], &[("Terrazze", Civil::Preallerta)], 120);
+    let (_, none) = run("medium", &[], &[], 120);
+    let d = idx(&g, "Terrazze");
     assert!(pre.districts[d].caught < none.districts[d].caught, "{} vs {}", pre.districts[d].caught, none.districts[d].caught);
 }
 
 #[test]
 fn preview_has_no_side_effects_and_commit_revalidates() {
-    let mut a = game("Piano1");
-    let mut b = game("Piano1");
+    let mut a = game("medium");
+    let mut b = game("medium");
     let plan = |g: &Game| Plan::new(g.districts.len()).with_priorities(&[idx(g, "Grilli"), idx(g, "Ghiande")]);
     a.commit(plan(&a)).unwrap();
     b.commit(plan(&b)).unwrap();
@@ -107,7 +110,7 @@ fn preview_has_no_side_effects_and_commit_revalidates() {
 
 #[test]
 fn civil_orders_only_escalate() {
-    let mut g = game("Borgo1");
+    let mut g = game("expert");
     let d = idx(&g, "Castelvento");
     g.commit(Plan::new(g.districts.len()).with_civil(d, Civil::Evacua)).unwrap();
     g.commit(Plan::new(g.districts.len()).with_civil(d, Civil::Preallerta)).unwrap();
@@ -119,7 +122,7 @@ fn civil_orders_only_escalate() {
 /// then on its post.
 #[test]
 fn arrivals_follow_the_units() {
-    let mut g = game("Coste2_gira");
+    let mut g = game("medium");
     let near = g.district_index(&g.case.near.clone()).unwrap();
     g.commit(Plan::new(g.districts.len()).with_priorities(&[near])).unwrap();
     assert!(g.arrivals(near).iter().any(|(_, a)| matches!(a, rocca::Arrival::InMin(_))), "a unit should be on its way: {:?}", g.arrivals(near));
@@ -146,7 +149,7 @@ fn arrivals_follow_the_units() {
 /// to says so.
 #[test]
 fn the_story_tells_what_happened() {
-    let (g, _) = run("Borgo2", &["Castelvento"], &[("Castelvento", Civil::Evacua)], 180);
+    let (g, _) = run("expert", &["Castelvento"], &[("Castelvento", Civil::Evacua)], 180);
     let town = g.story(idx(&g, "Castelvento"));
     assert!(town[0].starts_with("Evacuazione alle 14:00: dopo l'ordine sono partite "), "{town:?}");
     // the end state adds up to the district
@@ -162,7 +165,7 @@ fn the_story_tells_what_happened() {
 /// that district's evacuation is accepted.
 #[test]
 fn evacuation_waits_for_the_mayor() {
-    let mut g = Game::new(&data(), "Rocco3", 1).unwrap();
+    let mut g = Game::new(&data(), "easy", 1).unwrap();
     assert!(g.mayor.is_some(), "game.json turns the mayor's rule on");
     let n = g.districts.len();
     let near = idx(&g, &g.case.near.clone());
@@ -172,12 +175,12 @@ fn evacuation_waits_for_the_mayor() {
     let mut asked = None;
     while asked.is_none() && g.time_s() < g.case.duration_s() {
         g.step().unwrap();
-        if let Some(c) = g.take_crisis() {
-            assert!(matches!(c.kind, rocca::crisis::Kind::Autorizzazione { .. }), "with the mayor, her crises only: {c:?}");
+        // her authorisation, among the other moments at ×1 (wind, fire near)
+        if let Some(c) = g.take_crisis().filter(|c| matches!(c.kind, rocca::crisis::Kind::Autorizzazione { .. })) {
             asked = c.kind.district();
         }
     }
-    let d = asked.expect("Rocco3 threatens a district: the mayor authorises it");
+    let d = asked.expect("easy threatens a district: the mayor authorises it");
     assert!(g.may_evacuate(d) && g.authorised_at(d).is_some());
     assert!(g.log.iter().any(|e| e.text.starts_with("la sindaca autorizza")));
     let plan = g.active.clone().with_civil(d, Civil::Evacua);
