@@ -16,8 +16,9 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
 
 ### B. Taratura dello spegnimento (sessione dello spegnimento)
 
-- [x] 2026-10-13 banco di prova `rocca_banco` (`tools/factory/banco.py`: terreno piatto, un solo combustibile, paesi veri; `examples/spegnimento.rs --cfg linea:acqua:portata`, `ROCCA_SCENARIO=rocca_banco`). Ettari bruciati a 180 min, media di 30 partite: senza spegnimento 187; 1:1:1 186; 3:30:3 165; 3:30:5 147; 3:30:10 108 (−42 %); 3:30:20 84; 3:30:30 51. La linea ×1, ×3 o ×10 non cambia nulla; l'acqua per cella satura oltre ×10; conta la portata dei getti. Nel gioco `game::SUPPRESSION` = linea 3, acqua 30, portata 10;
-- [ ] scegliere la portata con l'utente e misurarla anche sui tre livelli; rifare `strategie_civili` («evacua tutti» non deve dominare).
+- [x] 2026-10-13 banco di prova `rocca_banco` (`tools/factory/banco.py`: terreno piatto, un solo combustibile, paesi veri; `examples/spegnimento.rs --cfg linea:acqua:portata`, `ROCCA_SCENARIO=rocca_banco`). Ettari bruciati a 180 min, media di 30 partite: senza spegnimento 187; 1:1:1 186; 3:30:3 165; 3:30:5 147; 3:30:10 108 (−42 %); 3:30:20 84; 3:30:30 51. La linea ×1, ×3 o ×10 non cambia nulla; l'acqua per cella satura oltre ×10; conta la portata dei getti. Raggio dei getti = 60 m × portata (×10 = 600 m, ×20 = 1200 m). **Scelta dell'utente 2026-10-13: portata ×20**; nel gioco `game::SUPPRESSION` = linea 3, acqua 30, portata 20;
+- [ ] **le squadre devono poter attaccare il fronte, non solo stazionare davanti alle case** (richiesta dell'utente 2026-10-13): oggi il coordinatore le manda alle postazioni dei quartieri; servono compiti d'attacco al fronte (autobotti e squadre a mano sul perimetro del fuoco), da misurare sul banco `rocca_banco` come ettari bruciati; il banco attuale misura solo il comportamento nel gioco, non il massimo possibile;
+- [ ] misurare la portata ×20 anche sui tre livelli; rifare `strategie_civili` («evacua tutti» non deve dominare).
 
 ### C. Ritaratura headless (dopo A e B)
 

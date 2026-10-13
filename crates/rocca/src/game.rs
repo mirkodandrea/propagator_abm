@@ -25,10 +25,10 @@ use crate::plan::{Civil, Plan};
 /// Simulated seconds per step (the units' and civilians' decision interval).
 pub const STEP_S: i64 = 6;
 /// Capacità di spegnimento rispetto al modello calibrato (2026-10-13, richiesta
-/// dell'utente): la stessa acqua bagna 30 volte più celle, i getti arrivano 10
+/// dell'utente): la stessa acqua bagna 30 volte più celle, i getti arrivano 20
 /// volte più lontano, la linea tagliata dalle squadre è 3 volte (30 era
 /// eccessiva: 3900 m a partita contro 205).
-pub const SUPPRESSION: UnitEffect = UnitEffect { line_x: 3.0, water_x: 30.0, reach_x: 10.0, nerve_x: 1.0 };
+pub const SUPPRESSION: UnitEffect = UnitEffect { line_x: 3.0, water_x: 30.0, reach_x: 20.0, nerve_x: 1.0 };
 /// A unit on the move that has not moved for this long is stuck: its road is
 /// cut and no other is open.
 pub const STUCK_S: i64 = 5 * 60;
