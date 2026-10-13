@@ -424,7 +424,8 @@ fn hud(
     if !available(&k, &sim) && !mode.active {
         return;
     }
-    if k.title && !mode.active { return; }
+    // an easter egg: no button until M / Start opens it (it covered «Menu»)
+    if !mode.active { return; }
     egui::Area::new(egui::Id::new("pause_mario"))
         .anchor(egui::Align2::LEFT_TOP, [16., 16.])
         .order(egui::Order::Foreground)

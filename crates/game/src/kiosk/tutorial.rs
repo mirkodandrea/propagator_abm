@@ -65,7 +65,7 @@ fn text(step: Step, k: &Kiosk, sim: &Sim) -> String {
             let hello = if k.player.is_empty() { "Ciao, grazie dell'aiuto!".to_string() } else { format!("Ciao {}, grazie dell'aiuto!", k.player) };
             format!("{hello} {} Il cerchio arancione segna il punto in cui è partito.", the_fire(k, sim))
         }
-        Step::Paesi => "Questi sono i paesi da proteggere. Su ogni etichetta vedi quanto è lontano il fuoco, i mezzi che ci lavorano e gli ordini dati alle famiglie.".into(),
+        Step::Paesi => "Questi sono i paesi da proteggere. Su ogni etichetta vedi quanto è lontano il fuoco (la fiammella con i km), quanti mezzi lo difendono e quante famiglie hanno ricevuto l'avviso. «Legenda», in alto a destra, spiega tutti i segni.".into(),
         Step::Scheda => "Cliccando su un paese si apre la sua scheda. «Difendi» ci manda autobotti e squadre. «Preallerta» fa preparare le famiglie in casa, «Evacua» le fa preparare e partire, ma solo dopo che la sindaca l'ha autorizzata. Un ordine alle famiglie non si ritira.".into(),
         Step::Piano => "Nella barra a destra c'è il tuo piano: i paesi da difendere, in ordine. Le squadre vanno dove indichi, se ci arrivano in tempo: essere primi non garantisce di essere salvati.".into(),
         Step::Avvia => format!(

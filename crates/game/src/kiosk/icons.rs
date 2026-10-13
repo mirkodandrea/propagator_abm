@@ -163,7 +163,11 @@ pub fn tall_button(ui: &mut egui::Ui, icon: Icon, text: &str, on: bool, colour: 
     let (r, resp) = ui.allocate_exact_size(vec2(width, H), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let hot = resp.hovered() && enabled;
     let fill = if on { colour } else if hot { Color32::from_gray(70) } else { Color32::from_gray(46) };
-    let fg = if on { Color32::BLACK } else { Color32::WHITE };
+    // switched off and not given: grey all over, not the colour of a live
+    // button (playtest: «Evacua» looked pressable before the mayor's word)
+    let dead = !enabled && !on;
+    let (colour, fill) = if dead { (Color32::from_gray(85), Color32::from_gray(34)) } else { (colour, fill) };
+    let fg = if on { Color32::BLACK } else if dead { Color32::from_gray(120) } else { Color32::WHITE };
     let p = ui.painter();
     p.rect_filled(r, 9.0, fill);
     p.rect_stroke(r, 9.0, Stroke::new(2.0, colour));
@@ -173,7 +177,7 @@ pub fn tall_button(ui: &mut egui::Ui, icon: Icon, text: &str, on: bool, colour: 
     draw(p, Rect::from_center_size(pos2(r.center().x, r.top() + 22.0), vec2(28.0, 28.0)), icon, if on { Color32::BLACK } else { colour });
     let g = p.layout_no_wrap(text.to_string(), egui::FontId::proportional(17.0), fg);
     p.galley(pos2(r.center().x - g.size().x / 2.0, r.bottom() - 10.0 - g.size().y), g, fg);
-    if !enabled {
+    if !enabled && on {
         p.rect_filled(r, 9.0, Color32::from_black_alpha(120));
     }
     pointing(resp)

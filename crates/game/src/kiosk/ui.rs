@@ -820,6 +820,18 @@ fn legend(ui: &mut egui::Ui) {
             line(ui, "Strade, case, orti: non bruciano.");
         });
     });
+    section(ui, "Etichette dei paesi e mezzi", true, |ui| {
+        for text in [
+            "Fiammella e «0,6 km»: quanto è lontano il fuoco dalla casa più vicina.",
+            "Numero nel cerchio: posto del paese nella difesa.",
+            "Camion e numero: mezzi che difendono il paese.",
+            "17/190: famiglie avvisate su tutte (in verde: già in salvo).",
+            "A1, A2: autobotti. SQ: squadra a piedi.",
+            "Cornice arancione intorno alla mappa: tempo rallentato, è il momento di decidere.",
+        ] {
+            line(ui, text);
+        }
+    });
     section(ui, "Segni sulla mappa", true, |ui| {
         let items = [
             (Mark::Fill(Color32::from_rgb(255, 120, 40)), "fuoco attivo"),
@@ -1441,7 +1453,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                     });
                     if let Some(r) = rank.filter(|&r| r > 0) {
                         ui.add_space(4.0);
-                        if icons::button(ui, Icon::Up, &format!("Priorità {}: metti per primo", r + 1), false, AMBER, true).clicked() {
+                        if icons::button(ui, Icon::Up, &format!("È {}° nella difesa: portalo al 1° posto", r + 1), false, AMBER, true).clicked() {
                             order.retain(|&x| x != d);
                             order.insert(0, d);
                             changed = true;
@@ -1610,7 +1622,7 @@ fn plan(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim) {
                                 }
                                 if which == Column::Evacua && sim.mayor.is_some() {
                                     let ok: Vec<&str> = (0..n).filter(|&d| sim.may_evacuate(d) && plan.civil[d] != Civil::Evacua).map(|d| sim.districts[d].name.as_str()).collect();
-                                    let text = if ok.is_empty() { "Serve l'autorizzazione della sindaca".to_string() } else { format!("Autorizzati: {}", ok.join(", ")) };
+                                    let text = if ok.is_empty() { "Serve l'autorizzazione della sindaca".to_string() } else { format!("La sindaca permette di evacuare: {} (trascina qui per dare l'ordine)", ok.join(", ")) };
                                     ui.add(egui::Label::new(RichText::new(text).size(12.0).color(GREY)).wrap());
                                 }
                             }
@@ -1639,11 +1651,16 @@ fn plan(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim) {
         let (_, payload) = ui.dnd_drop_zone::<Dragged, _>(frame, |ui| {
             ui.set_width(ui.available_width());
             ui.label(RichText::new(if free.is_empty() { "Senza ordini: nessuno (trascina qui per togliere la difesa)" } else { "Senza ordini (trascina qui per togliere la difesa)" }).size(12.0).color(GREY));
-            ui.horizontal_wrapped(|ui| {
-                for &d in &free {
-                    item(ui, d, None, Color32::from_gray(150), widths[1], &mut open);
-                }
-            });
+            // whole chips only, in as many rows as they need (playtest: «San Roc…» cut at the edge)
+            let per_row = ((ui.available_width() + gap) / (widths[1] + gap)).floor().max(1.0) as usize;
+            for row in free.chunks(per_row) {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    for &d in row {
+                        item(ui, d, None, Color32::from_gray(150), widths[1], &mut open);
+                    }
+                });
+            }
         });
         if let Some(Dragged(d)) = payload.map(|p| *p) {
             drop = Some((d, Column::Nessuno));
@@ -2059,7 +2076,7 @@ fn events(ui: &mut egui::Ui, sim: &Sim) {
                 icons::show(ui, icon, 20.0, colour);
                 ui.vertical(|ui| {
                     ui.label(RichText::new(clock(e.at_s)).size(12.0).color(colour));
-                    ui.label(RichText::new(&e.text).size(14.0).color(Color32::WHITE));
+                    ui.add(egui::Label::new(RichText::new(&e.text).size(14.0).color(Color32::WHITE)).wrap());
                 });
             });
         };
@@ -2104,7 +2121,7 @@ fn pace(ui: &mut egui::Ui, k: &Kiosk, sim: &Sim) {
         Phase::Pianifica => (Icon::Pause, AMBER, "Tempo rallentato ×1: prepara gli ordini, poi premi «Avvia».".to_string()),
         Phase::Esegui if k.confirm_evac.is_some() => (Icon::Exit, BLUE, "Tempo rallentato ×1: conferma l'evacuazione".to_string()),
         Phase::Esegui if sim.speed > k.speed => (Icon::Fast, GREEN, format!("Il tempo scorre · non succede nulla, ×{:.0}", sim.speed)),
-        Phase::Esegui => (Icon::Play, GREEN, format!("Il tempo scorre · ×{:.0}", sim.speed)),
+        Phase::Esegui => (Icon::Play, GREEN, format!("Il tempo scorre · ×{:.0}", if sim.speed > 0.0 { sim.speed } else { k.speed })),
         Phase::Crisi => (Icon::Alert, ORANGE, format!("LA SINDACA ASPETTA · {left:.0} s · tempo rallentato")),
         Phase::Fine => (Icon::Check, GREY, "Concluso".to_string()),
     };
@@ -2131,6 +2148,9 @@ fn status(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim, cam: (&Camera, &GlobalTra
         wind_arrow(ui, sim, cam);
         ui.label(RichText::new(format!("vento da {} {:.0} km/h", rocca::words::compass(w.wind_dir_deg), w.wind_speed_kmh)).size(19.0).strong().color(Color32::WHITE));
     });
+    // the arrow points where the fire is pushed, not where the wind comes
+    // from (playtest: «da sud-est» and an arrow to the north-west)
+    ui.label(RichText::new(format!("la freccia: spinge il fuoco verso {}", rocca::words::compass((sim.fire.weather().wind_dir_deg + 180.0) % 360.0))).size(13.0).color(GREY));
     ui.horizontal(|ui| {
         ui.label(RichText::new(format!("ore {}", clock(sim.time_s()))).size(26.0).strong().color(Color32::WHITE).monospace());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -2304,7 +2324,13 @@ fn place_words(place: usize, of: usize) -> String {
 
 /// The four star rows, big: the category and its stars, nothing else.
 fn big_stars(ui: &mut egui::Ui, st: &rocca::score::Stars, size: f32) {
-    for (name, n) in [("Persone", st.persone), ("Case", st.case), ("Tempismo", st.tempismo), ("Misura", Some(st.misura))] {
+    // what each row counts, beside it (playtest: «Tempismo» and «Misura» said nothing)
+    for (name, n, what) in [
+        ("Persone", st.persone, "famiglie che il fuoco non ha colto in casa"),
+        ("Case", st.case, "case che il fuoco non ha colpito"),
+        ("Tempismo", st.tempismo, "quanto prima del fuoco hai avvisato"),
+        ("Misura", Some(st.misura), "nessuno in strada senza bisogno"),
+    ] {
         ui.horizontal(|ui| {
             ui.allocate_ui_with_layout(egui::vec2(130.0, size), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.set_min_width(130.0);
@@ -2317,8 +2343,12 @@ fn big_stars(ui: &mut egui::Ui, st: &rocca::score::Stars, size: f32) {
                     }
                 }
                 None => {
-                    ui.label(RichText::new("niente in gioco").size(15.0).color(GREY));
+                    ui.label(RichText::new("non conta: il fuoco non è arrivato alle case").size(15.0).color(GREY));
                 }
+            }
+            if n.is_some() {
+                ui.add_space(8.0);
+                ui.label(RichText::new(what).size(14.0).color(GREY));
             }
         });
         ui.add_space(4.0);

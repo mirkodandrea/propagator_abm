@@ -19,6 +19,13 @@
 //!    nearest the fire first, posts at least two defence radii apart, threat
 //!    there below the units' working limit, and a road to it now.
 //! 5. Every post carries a reason; every district left uncovered too.
+//!
+//! With [`FrontAttack`] on, a unit can also be posted *on the front*: on the
+//! burning edge nearest a district, between it and the homes, at the nearest
+//! safe stand-off. An engine wets the fuel ahead of the edge from there, a crew
+//! cuts line across it (`abm::suppression`, `Task::Attack`). When the edge is
+//! already closer to the homes than the shortest stand-off, the unit defends
+//! the homes instead.
 
 use abm::network::{self, NodeId};
 use abm::suppression::{UnitKind, UnitState, CREW_SPEED, ENGINE_SPEED, WORK_LIMIT};
@@ -53,12 +60,57 @@ pub const SAFE_M: f32 = 150.0;
 pub const KEEP_RATIO: f32 = 2.5;
 /// Candidate homes tried per district before giving up on it.
 const CANDIDATES: usize = 12;
+/// Distances from the burning edge, nearest first, at which a unit attacking
+/// the front tries to stand: the first safe one with a way there.
+pub const STANDOFF_M: [f32; 4] = [200.0, 300.0, 450.0, 650.0];
+/// How far from the chosen stand-off point the unit's road may end.
+const FRONT_SLACK_M: f32 = 200.0;
+/// A post on the front is kept while the burning edge is no farther from it
+/// than this; beyond it the fire has moved on.
+pub const FRONT_KEEP_M: f32 = 900.0;
+
+/// Whether the units also attack the front (TODO B, richiesta dell'utente
+/// 2026-10-13), not only defend the homes. Off in the kiosk until the user
+/// confirms it on the measurements (`examples/spegnimento.rs --attacco`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FrontAttack {
+    /// Units only defend the homes of the districts that need cover.
+    #[default]
+    Off,
+    /// As `Off`, and the units left without a post attack the front heading
+    /// for the first district that needs cover (or the nearest to the fire).
+    Spare,
+    /// Every unit attacks the front heading for its district; it defends the
+    /// homes only once the edge is too close to them to stand in between.
+    All,
+}
+
+impl FrontAttack {
+    pub fn parse(s: &str) -> Option<FrontAttack> {
+        match s {
+            "off" | "no" => Some(FrontAttack::Off),
+            "liberi" | "spare" => Some(FrontAttack::Spare),
+            "tutti" | "all" => Some(FrontAttack::All),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            FrontAttack::Off => "off",
+            FrontAttack::Spare => "liberi",
+            FrontAttack::All => "tutti",
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Post {
     pub unit: usize,
     pub district: usize,
     pub at: Pos,
+    /// On the front heading for `district`, not in front of its homes.
+    pub front: bool,
     /// Drive (or walk) time from where the unit is now, by the route open now.
     pub eta_s: f32,
     /// The way there, from the unit, by the roads open now: for the map.
@@ -92,6 +144,7 @@ pub struct View<'a> {
     pub fire: &'a FireSim,
     pub crews: &'a Suppression,
     pub districts: &'a [District],
+    pub attack: FrontAttack,
 }
 
 /// Travel time along a route: crews ride their vehicle on carriageways and go
@@ -112,13 +165,18 @@ fn route_time(v: &View, kind: UnitKind, nodes: &[NodeId]) -> f32 {
 /// Where this unit would stand to cover `home`, and how long it takes to get
 /// there by the roads open now, and the way. `None` if there is no way.
 fn reach(v: &View, unit: usize, home: Pos) -> Option<(Pos, f32, Vec<Pos>)> {
+    reach_near(v, unit, home, DEFEND_REACH_M)
+}
+
+/// The same for any point: the road end nearest `target`, within `slack` of it.
+fn reach_near(v: &View, unit: usize, target: Pos, slack: f32) -> Option<(Pos, f32, Vec<Pos>)> {
     let u = &v.crews.units[unit];
     let drivable = u.kind.drivable_only();
     let net = &v.agents.network;
     let from = net.nearest(u.pos, drivable)?;
-    let to = net.nearest_reachable(home, drivable, from)?;
+    let to = net.nearest_reachable(target, drivable, from)?;
     let post = net.pos(to);
-    if dist(post, home) > DEFEND_REACH_M {
+    if dist(post, target) > slack {
         return None;
     }
     let path = network::route(net, from, to, v.fire.threat(), drivable)?;
@@ -145,6 +203,58 @@ pub fn eta_to_district(v: &View, unit: usize, d: usize) -> Option<f32> {
         .take(CANDIDATES)
         .filter_map(|(h, _)| reach(v, unit, h).map(|(_, eta, _)| eta))
         .min_by(|a, b| a.total_cmp(b))
+}
+
+/// Where `unit` would stand to attack the front heading for district `d`: on
+/// the line from the burning cell nearest its homes to the nearest home, at the
+/// first [`STANDOFF_M`] that is safe and has a way there. `None` when the edge
+/// is already within the shortest stand-off of the homes (that is defence) or
+/// nothing is reachable.
+fn front_post(v: &View, unit: usize, d: usize) -> Option<(Pos, f32, Vec<Pos>)> {
+    let e = district::exposure(&v.districts[d], v.agents, v.fire, v.scn)?;
+    let home = v.districts[d]
+        .households
+        .iter()
+        .map(|&i| v.agents.households[i].home)
+        .min_by(|a, b| dist(*a, e.fire_at).total_cmp(&dist(*b, e.fire_at)))?;
+    let len = dist(home, e.fire_at);
+    let (ux, uy) = ((home.x - e.fire_at.x) / len.max(1.0), (home.y - e.fire_at.y) / len.max(1.0));
+    for s in STANDOFF_M {
+        if s >= len {
+            break;
+        }
+        let p = Pos { x: e.fire_at.x + ux * s, y: e.fire_at.y + uy * s };
+        if let Some(r) = reach_near(v, unit, p, FRONT_SLACK_M).filter(|r| safe(v, r.0)) {
+            return Some(r);
+        }
+    }
+    None
+}
+
+/// A held post on the front still makes sense: safe, the edge still near,
+/// and not a crew that has finished its line (it is re-posted where the edge is now).
+fn front_kept(v: &View, unit: usize, p: &Post) -> bool {
+    let u = &v.crews.units[unit];
+    let near = v.fire.active_cells().iter().any(|c| dist(v.scn.world.centre_of(*c), p.at) <= FRONT_KEEP_M);
+    let done = u.kind == UnitKind::HandCrew && u.state == UnitState::Staged;
+    (workable(v, p.at) || u.state == UnitState::Withdrawing) && near && !done
+}
+
+fn front_reason(v: &View, plan: &Plan, unit: usize, d: usize, eta: f32) -> String {
+    let fire = district::exposure(&v.districts[d], v.agents, v.fire, v.scn).map_or(String::new(), |e| format!("; fuoco a {}", crate::words::km(e.distance_m)));
+    let rank = plan.rank(d).map_or(String::new(), |r| format!(" (priorità {})", r + 1));
+    format!("{} attacca il fuoco che avanza verso {}{rank}{fire}, arrivo in {:.0} min", v.crews.units[unit].callsign, v.districts[d].name, (eta / 60.0).ceil())
+}
+
+/// A held post, with the drive time and route from where the unit is now.
+fn refreshed(v: &View, unit: usize, p: &Post) -> Post {
+    let mut kept = p.clone();
+    let slack = if p.front { FRONT_SLACK_M } else { DEFEND_REACH_M };
+    if let Some((_, eta, way)) = reach_near(v, unit, p.at, slack) {
+        kept.eta_s = eta;
+        kept.route = way;
+    }
+    kept
 }
 
 /// The coordinator's proposal for `plan`, given the posts held now.
@@ -194,6 +304,15 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
     // 3. inertia
     for &k in &usable {
         if let Some(Some(p)) = current.get(k) {
+            if p.front {
+                // with `All` a post on the front holds its district's share;
+                // a spare one is reconsidered once the homes are served (7.)
+                if v.attack == FrontAttack::All && engaged.iter().any(|(x, _)| *x == p.district) && taken[p.district] < quota_of(p.district) && front_kept(v, k, p) {
+                    taken[p.district] += 1;
+                    posts[k] = Some(refreshed(v, k, p));
+                }
+                continue;
+            }
             // still among the homes the front reaches soonest?
             let still_threatened = engaged.iter().position(|(x, _)| *x == p.district).is_some_and(|r| {
                 let best = ranked[r].first().map_or(f32::INFINITY, |x| x.1);
@@ -204,12 +323,7 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
                 && (workable(v, p.at) || v.crews.units[k].state == UnitState::Withdrawing)
             {
                 taken[p.district] += 1;
-                let mut kept = p.clone();
-                if let Some((_, eta, way)) = reach(v, k, p.at) {
-                    kept.eta_s = eta;
-                    kept.route = way;
-                }
-                posts[k] = Some(kept);
+                posts[k] = Some(refreshed(v, k, p));
             }
         }
     }
@@ -227,6 +341,14 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
         'districts: for (rank, (d, e)) in engaged.iter().enumerate() {
             if taken[*d] >= quota[rank] {
                 continue;
+            }
+            if v.attack == FrontAttack::All {
+                if let Some((at, eta, route)) = front_post(v, k, *d) {
+                    let reason = front_reason(v, plan, k, *d, eta);
+                    posts[k] = Some(Post { unit: k, district: *d, at, front: true, eta_s: eta, route, reason });
+                    taken[*d] += 1;
+                    break 'districts;
+                }
             }
             let held: Vec<Pos> = posts.iter().flatten().filter(|p| p.district == *d).map(|p| p.at).collect();
             let homes: Vec<Pos> = ranked[rank].iter().map(|x| x.0).collect();
@@ -258,13 +380,42 @@ pub fn propose(v: &View, plan: &Plan, current: &[Option<Post>]) -> Proposal {
                         crate::words::km(e.distance_m),
                         (eta / 60.0).ceil()
                     );
-                    posts[k] = Some(Post { unit: k, district: *d, at, eta_s: eta, route, reason });
+                    posts[k] = Some(Post { unit: k, district: *d, at, front: false, eta_s: eta, route, reason });
                     taken[*d] += 1;
                     break 'districts;
                 }
             }
             if !no_access.contains(d) {
                 no_access.push(*d);
+            }
+        }
+    }
+
+    // 4b. with the attack on, the units the homes do not need go to the front:
+    // heading for the first district that needs cover, else for the ranked
+    // (then any) district the fire is nearest
+    if v.attack != FrontAttack::Off {
+        let nearest_of = |ds: &mut dyn Iterator<Item = usize>| {
+            ds.filter_map(|d| district::exposure(&v.districts[d], v.agents, v.fire, v.scn).map(|e| (d, e.distance_m)))
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|x| x.0)
+        };
+        let mut target = None;
+        for &k in &usable {
+            if posts[k].is_some() || v.crews.units[k].state == UnitState::Withdrawing {
+                continue;
+            }
+            if let Some(Some(p)) = current.get(k).filter(|p| p.as_ref().is_some_and(|p| p.front && front_kept(v, k, p))) {
+                posts[k] = Some(refreshed(v, k, p));
+                continue;
+            }
+            let d = *target.get_or_insert_with(|| {
+                engaged.first().map(|(d, _)| *d).or_else(|| nearest_of(&mut plan.priorities.iter().copied())).or_else(|| nearest_of(&mut (0..v.districts.len())))
+            });
+            let Some(d) = d else { break };
+            if let Some((at, eta, route)) = front_post(v, k, d) {
+                let reason = front_reason(v, plan, k, d, eta);
+                posts[k] = Some(Post { unit: k, district: d, at, front: true, eta_s: eta, route, reason });
             }
         }
     }

@@ -3,13 +3,19 @@
 //! misura su case o civili. `0:0:0` è il controllo senza spegnimento.
 //!
 //!   ROCCA_SCENARIO=rocca_banco cargo run --release -p rocca --example spegnimento -- \
-//!       [--semi 1,2,3] [--cfg linea:acqua:portata,...]
+//!       [--semi 1,2,3] [--cfg linea:acqua:portata,...] [--attacco off,liberi,tutti]
+//!
+//! `--attacco` è `coordinator::FrontAttack`: `off` solo difesa delle case,
+//! `liberi` i mezzi senza postazione attaccano il fronte, `tutti` ogni mezzo
+//! attacca il fronte che avanza verso il suo quartiere. Oltre agli ettari si
+//! contano case colpite e famiglie colte in casa (nessun ordine ai civili).
 //!
 //! `game` è `rocca::game::SUPPRESSION`; `CASI=a,b` limita i casi. Le squadre
 //! hanno come priorità i quartieri che il fuoco senza ordini raggiunge. Il banco
 //! (`tools/factory/banco.py`) ha terreno piatto e combustibile uniforme.
 use abm::suppression::UnitEffect;
 use fire::CellFire;
+use rocca::coordinator::FrontAttack;
 use rocca::{Game, Plan};
 
 const MARKS_MIN: [i64; 3] = [60, 120, 180];
@@ -31,11 +37,13 @@ fn main() -> anyhow::Result<()> {
     let data = std::path::Path::new("data");
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (mut seeds, mut cfgs) = (vec![1u64, 2, 3], vec!["0:0:0".to_string(), "1:1:1".to_string(), "game".to_string()]);
+    let mut attacks = vec![FrontAttack::Off];
     let mut i = 0;
     while i + 1 < args.len() {
         match args[i].as_str() {
             "--semi" => seeds = args[i + 1].split(',').map(|s| s.parse().unwrap()).collect(),
             "--cfg" => cfgs = args[i + 1].split(',').map(String::from).collect(),
+            "--attacco" => attacks = args[i + 1].split(',').map(|a| FrontAttack::parse(a).expect("off, liberi o tutti")).collect(),
             _ => {}
         }
         i += 2;
@@ -44,16 +52,18 @@ fn main() -> anyhow::Result<()> {
         Ok(v) if !v.is_empty() => v.split(',').map(String::from).collect(),
         _ => rocca::case::Territory::load(data)?.cases.iter().map(|c| c.name.clone()).collect(),
     };
-    println!("| caso | seme | linea:acqua:portata | ha a 60' | ha a 120' | ha a 180' | acqua (kL) | linea (m) |");
-    println!("|---|---|---|---|---|---|---|---|");
-    let mut tot = vec![([0.0f64; 3], 0.0f64, 0.0f64, 0usize); cfgs.len()];
+    let runs: Vec<(String, FrontAttack)> = cfgs.iter().flat_map(|c| attacks.iter().map(move |a| (c.clone(), *a))).collect();
+    println!("| caso | seme | linea:acqua:portata | attacco | ha a 60' | ha a 120' | ha a 180' | case colpite | famiglie colte | acqua (kL) | linea (m) |");
+    println!("|---|---|---|---|---|---|---|---|---|---|---|");
+    let mut tot = vec![([0.0f64; 3], 0.0f64, 0.0f64, 0usize, 0usize, 0usize); runs.len()];
     for case in &cases {
         for &seed in &seeds {
             let without = Game::without_orders(data, case, seed)?;
             let hit: Vec<usize> = (0..without.districts.len()).filter(|&d| without.districts[d].homes_hit > 0 || without.districts[d].caught > 0).collect();
-            for (k, cfg) in cfgs.iter().enumerate() {
+            for (k, (cfg, attack)) in runs.iter().enumerate() {
                 let mut g = Game::new(data, case, seed)?;
                 g.mayor = None;
+                g.attack = *attack;
                 g.crews.effect = parse(cfg);
                 g.commit(Plan::new(g.districts.len()).with_priorities(&hit))?;
                 let mut at = [0.0f64; 3];
@@ -65,21 +75,22 @@ fn main() -> anyhow::Result<()> {
                     at[m] = burnt_ha(&g);
                 }
                 let s = g.crews.stats();
-                println!("| {case} | {seed} | {cfg} | {:.0} | {:.0} | {:.0} | {:.1} | {:.0} |", at[0], at[1], at[2], s.water_l / 1000.0, s.line_m);
+                let o = g.outcome();
+                println!("| {case} | {seed} | {cfg} | {} | {:.0} | {:.0} | {:.0} | {} | {} | {:.1} | {:.0} |", attack.label(), at[0], at[1], at[2], o.homes_hit(), o.caught(), s.water_l / 1000.0, s.line_m);
                 let t = &mut tot[k];
                 for m in 0..3 {
                     t.0[m] += at[m];
                 }
-                *t = (t.0, t.1 + s.water_l / 1000.0, t.2 + s.line_m as f64, t.3 + 1);
+                *t = (t.0, t.1 + s.water_l / 1000.0, t.2 + s.line_m as f64, t.3 + 1, t.4 + o.homes_hit(), t.5 + o.caught());
             }
         }
     }
     println!();
     let base = tot[0].0[2] / tot[0].3 as f64;
-    for (k, cfg) in cfgs.iter().enumerate() {
+    for (k, (cfg, attack)) in runs.iter().enumerate() {
         let t = &tot[k];
         let n = t.3 as f64;
-        println!("MEDIA {cfg}: ha {:.0} / {:.0} / {:.0} (60'/120'/180'), {:+.0} % a 180' rispetto alla prima; acqua {:.1} kL, linea {:.0} m", t.0[0] / n, t.0[1] / n, t.0[2] / n, (t.0[2] / n / base - 1.0) * 100.0, t.1 / n, t.2 / n);
+        println!("MEDIA {cfg} attacco {}: ha {:.0} / {:.0} / {:.0} (60'/120'/180'), {:+.0} % a 180' rispetto alla prima; case colpite {:.1}, famiglie colte {:.1}; acqua {:.1} kL, linea {:.0} m", attack.label(), t.0[0] / n, t.0[1] / n, t.0[2] / n, (t.0[2] / n / base - 1.0) * 100.0, t.4 as f64 / n, t.5 as f64 / n, t.1 / n, t.2 / n);
     }
     Ok(())
 }

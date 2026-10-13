@@ -17,7 +17,7 @@ use scenario::population::Status;
 use scenario::{Pos, Scenario};
 
 use crate::case::{Case, Territory};
-use crate::coordinator::{self, Post, Proposal, View, DEFEND_REACH_M, ON_POST_M, REVIEW_S};
+use crate::coordinator::{self, FrontAttack, Post, Proposal, View, DEFEND_REACH_M, ON_POST_M, REVIEW_S};
 use crate::crisis::{Closing, Crisis, Detector};
 use crate::district::{self, dist, District};
 use crate::plan::{Civil, Plan};
@@ -199,6 +199,10 @@ pub struct Game {
     /// Authorisations not yet taken by the caller ([`Game::take_authorisations`]).
     fresh: Vec<usize>,
     closing: Closing,
+    /// Whether the units also attack the front ([`FrontAttack`]): `Off`
+    /// unless a caller sets it; the kiosk leaves it off until the user
+    /// confirms it (TODO B).
+    pub attack: FrontAttack,
 }
 
 impl Game {
@@ -255,6 +259,7 @@ impl Game {
             authorised_at: vec![None; districts.len()],
             fresh: vec![],
             closing: Closing::default(),
+            attack: FrontAttack::Off,
             scn,
             fire,
             agents,
@@ -296,7 +301,7 @@ impl Game {
     }
 
     fn view(&self) -> View<'_> {
-        View { scn: &self.scn, agents: &self.agents, fire: &self.fire, crews: &self.crews, districts: &self.districts }
+        View { scn: &self.scn, agents: &self.agents, fire: &self.fire, crews: &self.crews, districts: &self.districts, attack: self.attack }
     }
 
     /// The proposed plan: what the coordinator would do with `plan` from the
@@ -728,7 +733,7 @@ impl Game {
         self.next_review_s = now + REVIEW_S;
         // No crisis before the player's first plan (that is the planning
         // phase), nor out of a commit: only the world moving raises one.
-        let v = View { scn: &self.scn, agents: &self.agents, fire: &self.fire, crews: &self.crews, districts: &self.districts };
+        let v = View { scn: &self.scn, agents: &self.agents, fire: &self.fire, crews: &self.crews, districts: &self.districts, attack: self.attack };
         if !look_for_crisis {
             self.detector.acknowledge(&v, &self.posts);
         }
@@ -829,6 +834,7 @@ impl Game {
             UnitState::Refilling => "va a rifornirsi d'acqua".into(),
             UnitState::Working => {
                 let what = match post {
+                    Some(p) if p.front => format!("attacca il fuoco verso {}", place(p)),
                     Some(p) => format!("difende {}", place(p)),
                     None => "finisce il lavoro in corso, poi rientra".into(),
                 };
