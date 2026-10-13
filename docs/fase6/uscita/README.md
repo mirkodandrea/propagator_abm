@@ -24,7 +24,7 @@ Dati: `attesa/` (A) e `scappa/` (B).
 - **A**: la capacità pesa molto su «evacua tutti subito», che perde 35 punti a 6/min e 170 a 4/min; con la sindaca però quel piano non è più giocabile. Sui piani con la sindaca pesa poco fino a 6/min. Sotto i 4/min evacuare diventa *peggio* che preallertare soltanto (448 contro 532 a 2/min), perché chi ha ricevuto l'ordine resta a casa ad aspettare mentre chi è solo preallertato scappa da solo. È una lezione sbagliata da dare agli studenti.
 - In nessuna delle due versioni cresce il distacco tra «preallerta tutti, evacua quando autorizzato» e «solo i minacciati» (34–36 incendi su 82 con più di 20 punti di scarto, contro 34 senza limite). La capacità non crea la scelta «chi evacuare per primo», perché la sindaca autorizza già un quartiere alla volta.
 
-**Proposta**: versione B a **6 famiglie/min**, come realismo visibile (code e famiglie «in attesa di uscire» sulla mappa e nel debrief), non come leva di bilanciamento. Il bilanciamento resta affidato all'autorizzazione della sindaca e al criterio di Misura. Da decidere con l'utente.
+**Proposta, attivata il 2026-10-13** (`game.json` `exit_per_min: 6`; da confermare dall'utente): versione B a **6 famiglie/min**, come realismo visibile (le famiglie in coda si leggono nella scheda del quartiere e nella conferma dell'evacuazione), non come leva di bilanciamento. Il bilanciamento resta affidato all'autorizzazione della sindaca e al criterio di Misura. **Da rifare sul nuovo territorio** (valico, vedi `docs/TODO.md`).
 
     cargo build --release -p rocca --examples
     USCITA=6 GREZZI=g6.csv ./target/release/examples/sindaca --semi 1,2,3 > u6.md

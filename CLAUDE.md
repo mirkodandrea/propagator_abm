@@ -87,10 +87,11 @@ Python gestisce generazione e analisi; il motore Rust esistente esegue incendi e
 Per controllare grafica e UX **non giocare una partita**: `kiosk/snap.rs` porta il gioco a uno stato descritto in una riga e salva il PNG (build `--release`, finestra vera: serve uno schermo). Non sostituisce `KIOSK_SHOT` (partita scriptata intera) né `KIOSK_SHOT_END` (solo il finale).
 
 ```
-KIOSK_SNAP=<cartella> KIOSK_SNAP_SPEC='name=a,t=40,at=district:Castelvento,dist=700,pitch=-35;name=b,t=120,phase=fine' cargo run -p game --release
+KIOSK_SNAP=<cartella> KIOSK_SNAP_SPEC='name=a,t=40,at=district:Castelvento,dist=700,pitch=-35;name=b,t=120,phase=fine' cargo run -p game --bin game --release
 ```
 
-- Stati separati da `;`, campi da `,`. Chiavi: `name`, `case`, `t` (minuti simulati, headless), `plan` (`scripted`|`none`|`keep`), `prio`/`pre`/`evac` (quartieri per nome, separati da `+`), `phase` (`esegui` a mondo fermo|`pianifica`|`fine`), `at` (`home`|`fire`|`district:<nome>`|`post:<n>`|`unit:<n>`|`x:y` in metri), `dist`, `yaw`, `pitch` (gradi), `select` (scheda aperta).
+- Stati separati da `;`, campi da `,`. Chiavi: `name`, `case`, `t` (minuti simulati, headless), `plan` (`scripted`|`none`|`keep`), `prio`/`pre`/`evac` (quartieri per nome, separati da `+`), `phase` (`esegui` a mondo fermo|`pianifica`|`fine`|`title`|`intro`), `conferma` (quartiere: «Evacua» premuto, conferma e vie di fuga visibili), `at` (`home`|`fire`|`district:<nome>`|`post:<n>`|`unit:<n>`|`x:y` in metri), `dist`, `yaw`, `pitch` (gradi), `select` (scheda aperta).
+- Serve `--bin game`: il crate ha anche il binario `town_shot`. La previsione del fuoco compare da sola con un `t` dopo l'annuncio del cambio di vento (casi `medium`/`expert`, ~t=30).
 - Casi e quartieri disponibili sono stampati all'avvio (stderr). Il tempo va solo avanti: un `t` minore del precedente, o un altro `case`, rifà la partita da capo.
 - Il mondo è fermo (×0): si muovono solo le animazioni della UI. Le crisi sorte durante il salto sono scartate; il piano è quello scriptato (o quello dato con `prio`/`pre`/`evac`).
 - Ogni stato resta in posa 2 s prima dello scatto (overlay e camera devono assestarsi). Per le prove di grafica basta un solo avvio con più stati: più veloce di più `cargo run`.
