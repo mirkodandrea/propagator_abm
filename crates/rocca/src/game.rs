@@ -18,7 +18,7 @@ use scenario::{Pos, Scenario};
 
 use crate::case::{Case, Territory};
 use crate::coordinator::{self, Post, Proposal, View, DEFEND_REACH_M, ON_POST_M, REVIEW_S};
-use crate::crisis::{Crisis, Detector};
+use crate::crisis::{Closing, Crisis, Detector};
 use crate::district::{self, dist, District};
 use crate::plan::{Civil, Plan};
 
@@ -93,6 +93,10 @@ impl Outcome {
 /// count the game as quiet ([`Game::is_quiet`]).
 pub const QUIET_FIRE_M: f32 = 1500.0;
 
+/// An order this long before the fire reached the doors earns full
+/// Tempismo ([`Game::timing`]).
+pub const TIMELY_S: i64 = 30 * 60;
+
 /// How often the debrief's "nearest the fire came" is sampled.
 const NEAREST_EVERY_S: i64 = 60;
 
@@ -165,6 +169,15 @@ pub struct Game {
     rounds: Vec<crate::messengers::Round>,
     /// The teams, built on the first round.
     pub teams: Vec<crate::messengers::Team>,
+    /// Evacuation needs the mayor's authorisation ([`crate::mayor`]); `None`
+    /// lets the player evacuate any district at any time (the rules before
+    /// 2026-10-13).
+    pub mayor: Option<crate::Mayor>,
+    /// Per district: when the mayor authorised its evacuation.
+    authorised_at: Vec<Option<i64>>,
+    /// Authorisations not yet taken by the caller ([`Game::take_authorisations`]).
+    fresh: Vec<usize>,
+    closing: Closing,
 }
 
 impl Game {
@@ -215,6 +228,10 @@ impl Game {
             messengers: territory.messengers,
             rounds: vec![],
             teams: vec![],
+            mayor: None,
+            authorised_at: vec![None; districts.len()],
+            fresh: vec![],
+            closing: Closing::default(),
             scn,
             fire,
             agents,
@@ -272,6 +289,13 @@ impl Game {
     pub fn commit(&mut self, plan: Plan) -> Result<Proposal> {
         plan.validate(self.districts.len())?;
         let plan = plan.escalated_from(&self.active);
+        for (d, (&new, &old)) in plan.civil.iter().zip(&self.active.civil).enumerate() {
+            anyhow::ensure!(
+                new != Civil::Evacua || old == Civil::Evacua || self.may_evacuate(d),
+                "evacuazione di {}: serve l'autorizzazione della sindaca",
+                self.districts[d].name
+            );
+        }
         let now = self.time_s();
         let before = self.active.civil.clone();
         for (d, (&new, &old)) in plan.civil.iter().zip(&before).enumerate() {
@@ -496,6 +520,99 @@ impl Game {
         if m.reversed { usize::MAX - r } else { r }
     }
 
+    /// Whether the player may order district `d` to evacuate now.
+    pub fn may_evacuate(&self, d: usize) -> bool {
+        self.mayor.is_none() || self.authorised_at[d].is_some()
+    }
+
+    /// When the mayor authorised district `d`'s evacuation.
+    pub fn authorised_at(&self, d: usize) -> Option<i64> {
+        self.authorised_at[d]
+    }
+
+    /// When the fire first reached district `d`'s doors (the level that
+    /// counts a family caught), at home or not.
+    pub fn at_doors_at(&self, d: usize) -> Option<i64> {
+        self.threatened_at[d]
+    }
+
+    /// Districts the mayor has authorised since the last call, in the order
+    /// she did. The kiosk opens a decision moment at ×1 on them; a headless
+    /// strategy decides on them.
+    pub fn take_authorisations(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.fresh)
+    }
+
+    /// The mayor looks at every district not yet authorised: the front's
+    /// distance and how fast it has been closing, or the fire at the doors.
+    fn authorise(&mut self) {
+        let Some(mayor) = self.mayor else { return };
+        let now = self.time_s();
+        let n = self.districts.len();
+        for d in 0..n {
+            let Some(e) = district::exposure(&self.districts[d], &self.agents, &self.fire, &self.scn) else { continue };
+            let speed = self.closing.observe(n, d, now, e.distance_m);
+            if self.authorised_at[d].is_some() {
+                continue;
+            }
+            let eta_s = e.distance_m / speed.max(0.05);
+            if self.threatened_at[d].is_none() && eta_s > mayor.lead_s as f32 {
+                continue;
+            }
+            self.authorised_at[d] = Some(now);
+            self.fresh.push(d);
+            let when = if self.threatened_at[d].is_some() {
+                "il fuoco è alle case".to_string()
+            } else {
+                format!("il fuoco può arrivare in circa {} min", ((eta_s / 60.0).ceil() as i64).max(1))
+            };
+            let text = format!("la sindaca autorizza l'evacuazione di {}: {when}", self.districts[d].name);
+            self.log.push(LogEntry { at_s: now, text });
+        }
+    }
+
+    /// Tempismo, 0-1 (01-SPEC-GIOCO §5): over the families of the districts
+    /// the fire reached at the doors, how early the first order (pre-alert
+    /// or evacuation) came before it, full marks from [`TIMELY_S`]; nothing
+    /// for a family caught, at home or on the road. `None` when the fire
+    /// reached no district's doors.
+    pub fn timing(&self) -> Option<f64> {
+        let (mut sum, mut n) = (0.0f64, 0usize);
+        for (d, district) in self.districts.iter().enumerate() {
+            let Some(t) = self.threatened_at[d] else { continue };
+            let (pre, evac) = self.ordered_at[d];
+            let first = match (pre, evac) {
+                (Some(p), Some(e)) => Some(p.min(e)),
+                (p, e) => p.or(e),
+            };
+            for &i in &district.households {
+                n += 1;
+                let caught = self.caught_at[i].is_some() || matches!(self.agents.households[i].status, Status::Trapped | Status::Casualty);
+                if let (false, Some(o)) = (caught, first) {
+                    sum += ((t - o) as f64 / TIMELY_S as f64).clamp(0.0, 1.0);
+                }
+            }
+        }
+        (n > 0).then(|| sum / n as f64)
+    }
+
+    /// Misura, 0-1 (01-SPEC-GIOCO §5): 1 less the share of the families of
+    /// districts the fire never reached at the doors that left on an
+    /// evacuation order. 1 when the fire reached every district.
+    pub fn measure(&self) -> f64 {
+        let (mut sent, mut n) = (0usize, 0usize);
+        for (d, district) in self.districts.iter().enumerate() {
+            if self.threatened_at[d].is_some() {
+                continue;
+            }
+            n += district.households.len();
+            if let Some(e) = self.ordered_at[d].1 {
+                sent += district.households.iter().filter(|&&i| self.left_at[i].is_some_and(|t| t >= e)).count();
+            }
+        }
+        if n == 0 { 1.0 } else { 1.0 - sent as f64 / n as f64 }
+    }
+
     /// Re-plan the active plan and hand the units their tasks; a periodic
     /// review also looks for a crisis.
     fn review(&mut self) -> Proposal {
@@ -590,6 +707,7 @@ impl Game {
         self.knock();
         if self.time_s() >= self.next_review_s {
             self.review();
+            self.authorise();
         }
         for a in self.crews.step(STEP_S as f32, &self.agents.network, &self.agents.traffic, &self.fire, &self.scn) {
             self.fire.queue(a);

@@ -55,12 +55,37 @@ pub struct Crisis {
     pub text: String,
 }
 
+/// How fast the front has been closing on each district: what the crisis
+/// detector and the mayor ([`crate::mayor`]) both know, from the past only.
+#[derive(Debug, Clone, Default)]
+pub struct Closing {
+    /// Per district: (time, distance of the front from the nearest home).
+    seen: Vec<Vec<(i64, f32)>>,
+}
+
+impl Closing {
+    /// Record district `d`'s front at `distance` now; return how fast it has
+    /// been closing, m/s, over the last [`APPROACH_WINDOW_S`].
+    pub fn observe(&mut self, districts: usize, d: usize, now: i64, distance: f32) -> f32 {
+        if self.seen.len() != districts {
+            self.seen = vec![vec![]; districts];
+        }
+        let past = self.seen[d].iter().find(|(t, _)| now - *t <= APPROACH_WINDOW_S);
+        let speed = match past {
+            Some(&(t, dd)) if now > t => ((dd - distance) / (now - t) as f32).max(0.0),
+            _ => DEFAULT_APPROACH,
+        };
+        self.seen[d].push((now, distance));
+        self.seen[d].retain(|(t, _)| now - *t <= APPROACH_WINDOW_S);
+        speed
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Detector {
     raised: Vec<Kind>,
     last_s: Option<i64>,
-    /// Per district: (time, distance of the front from the nearest home).
-    seen: Vec<Vec<(i64, f32)>>,
+    closing: Closing,
     wind_from: Option<f64>,
     lost_seen: Vec<bool>,
     /// Districts the player left uncovered knowingly: already threatened and
@@ -73,25 +98,12 @@ fn minutes(s: f32) -> String {
 }
 
 impl Detector {
-    /// How fast the front has been closing on district `d`, m/s, over the
-    /// last [`APPROACH_WINDOW_S`].
-    fn approach(&self, d: usize, now: i64, distance: f32) -> f32 {
-        let past = self.seen.get(d).and_then(|h| h.iter().find(|(t, _)| now - *t <= APPROACH_WINDOW_S));
-        match past {
-            Some(&(t, dd)) if now > t => ((dd - distance) / (now - t) as f32).max(0.0),
-            _ => DEFAULT_APPROACH,
-        }
-    }
-
     /// Look at the state now; return a crisis if one is due. Call at each
     /// coordinator review, after the active plan's posts are known.
     /// `forecast`: a wind change the weather service has announced, as
     /// (when, wind from, degrees).
     pub fn check(&mut self, v: &View, posts: &[Option<Post>], now: i64, forecast: Option<(i64, f64)>) -> Option<Crisis> {
         let n = v.districts.len();
-        if self.seen.len() != n {
-            self.seen = vec![vec![]; n];
-        }
         let wind = v.fire.weather().wind_dir_deg;
         let turned = self.wind_from.is_some_and(|w| (w - wind).abs() > 1.0);
         self.wind_from = Some(wind);
@@ -102,9 +114,7 @@ impl Detector {
         for d in 0..n {
             let e = district::exposure(&v.districts[d], v.agents, v.fire, v.scn);
             if let Some(e) = e {
-                let speed = self.approach(d, now, e.distance_m);
-                self.seen[d].push((now, e.distance_m));
-                self.seen[d].retain(|(t, _)| now - *t <= APPROACH_WINDOW_S);
+                let speed = self.closing.observe(n, d, now, e.distance_m);
                 known.push(Some((e, speed)));
             } else {
                 known.push(None);

@@ -49,6 +49,35 @@ pub fn score(mine: &Outcome, without: &Outcome) -> Score {
     Score { families_at_risk: fr, families: f, homes_at_risk: hr, homes: h, total: (share * MAX as f64).round() as i64 }
 }
 
+/// The game's summary in stars (01-SPEC-GIOCO §5, 2026-10-13): Persone,
+/// Case, Tempismo, Misura, 1 to 5 each; `None` where the fire put nothing at
+/// stake (no family or home at risk, no district reached).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Stars {
+    pub persone: Option<u8>,
+    pub case: Option<u8>,
+    pub tempismo: Option<u8>,
+    pub misura: u8,
+}
+
+/// 1 to 5 stars for a share of 0-1. A first, linear scale: the thresholds
+/// are to be set from the headless strategies (`examples/sindaca.rs`).
+pub fn stars_of(share: f64) -> u8 {
+    1 + (share.clamp(0.0, 1.0) * 4.0).round() as u8
+}
+
+/// The stars from the score against the same fire with no orders and the
+/// game's own [`crate::Game::timing`] and [`crate::Game::measure`].
+pub fn stars(s: &Score, timing: Option<f64>, measure: f64) -> Stars {
+    let share = |kept: usize, risk: usize| (risk > 0).then(|| stars_of(kept as f64 / risk as f64));
+    Stars {
+        persone: share(s.families, s.families_at_risk),
+        case: share(s.homes, s.homes_at_risk),
+        tempismo: timing.map(stars_of),
+        misura: stars_of(measure),
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
     /// The first name the player gave at the start (user, 2026-10-12: the
@@ -139,6 +168,14 @@ mod tests {
         assert_eq!(score(&outcome(0, 0), &outcome(16, 73)).total, MAX);
         // no family at risk: the homes alone
         assert_eq!(score(&outcome(0, 5), &outcome(0, 10)).total, 500);
+    }
+
+    #[test]
+    fn stars_run_from_one_to_five() {
+        assert_eq!((stars_of(0.0), stars_of(0.5), stars_of(1.0), stars_of(1.7)), (1, 3, 5, 5));
+        let s = score(&outcome(0, 10), &outcome(0, 10));
+        let st = stars(&s, None, 1.0);
+        assert_eq!((st.persone, st.case, st.tempismo, st.misura), (None, Some(1), None, 5));
     }
 
     #[test]
