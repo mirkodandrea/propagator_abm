@@ -12,9 +12,9 @@ Un gioco strategico da stand (durata flessibile, anche oltre 5 minuti) in cui il
 - **Obiettivo educativo:** sperimentare incertezza, tempi, risorse limitate e necessità di adattarsi; non insegnare procedure operative.
 - **Un solo territorio sintetico**, plausibile, riutilizzato con diversi inneschi e venti. Non generiamo città nuove a ogni partita.
 - **Rendering:** conservare il più possibile quello esistente (obiettivo indicativo ~90%); **UX da rifare**.
-- **Comandi del giocatore:** ordinare la priorità di difesa di abitati e, se validato, strade. **Preallerta ed evacuazione** sono due decisioni esplicite, separate dalla difesa.
+- **Comandi del giocatore:** ordinare la priorità di difesa di abitati e, se validato, strade. **Preallerta ed evacuazione** sono due decisioni esplicite, separate dalla difesa. **(2026-10-13)** La preallerta è sempre disponibile; l'**evacuazione** solo per i quartieri che **la sindaca ha autorizzato**, uno alla volta, quando la simulazione li dice seriamente minacciati.
 - **Coordinatore:** sceglie settori vulnerabili, postazioni, unità e percorsi; si adatta tatticamente ma non cambia le priorità del giocatore.
-- **Tempo:** pianificazione iniziale a mondo fermo; simulazione accelerata; finestre automatiche per crisi significative, durante le quali il mondo continua a **×1** con un breve timer reale. **Nessun limite rigido di 5 minuti alla partita**: durata e ritmo vengono valutati nei playtest.
+- **Tempo (rivisto il 2026-10-13):** il mondo non si ferma mai. Velocità alta scelta dal gioco; le scelte si fanno in un **momento delle scelte a ×1**, chiesto dal giocatore («Decidi», poche volte a partita) o aperto dalla sindaca con un'autorizzazione (con timer reale). La partita inizia con un momento delle scelte a ×1 al posto della pianificazione a ×0. **Nessun limite rigido di 5 minuti alla partita**: durata e ritmo vengono valutati nei playtest.
 - **Anteprima:** mostra **cosa il coordinatore intende fare** (percorsi, tempi, coperture possibili), mai l'esito futuro garantito.
 
 ## Scenario Factory: sequenza di lavoro
@@ -36,9 +36,10 @@ Un gioco strategico da stand (durata flessibile, anche oltre 5 minuti) in cui il
 | Struttura del paese | Borgo compatto + case sparse sul versante; possibile terza zona di fondovalle |
 | Obiettivi | Priorità **ordinate** (1°, 2°, 3°), non tutti «alta» |
 | Risorse iniziali | 2 autobotti + 1 squadra AIB |
-| Pianificazione iniziale | ~40 secondi, simulazione ×0 |
-| Simulazione ordinaria | ×40, ×120 nei tratti quieti (iterazione 5b, `docs/fase5/durata.md`) |
-| Finestra critica | ~25 secondi reali, simulazione ×1; 0–2 finestre tipiche |
+| Pianificazione iniziale | Primo momento delle scelte a ×1, chiuso da «Conferma» (2026-10-13; prima ~40 s a ×0) |
+| Simulazione ordinaria | ×40, ×120 nei tratti quieti (iterazione 5b, `docs/fase5/durata.md`), scelta dal gioco |
+| Momento delle scelte del giocatore | ×1, esce con «Conferma»/«Annulla» o da solo dopo ~60 s; max 3, a ≥15 min simulati l'uno dall'altro |
+| Autorizzazione della sindaca | ×1, ~45 s reali; soglia iniziale: fronte entro ~20 min simulati dal quartiere; da tarare headless |
 | Strada da difendere | Inclusa **solo quando un test dimostra effetti reali** sulla percorribilità |
 | Durata della partita | Non fissata a priori: può superare 5 minuti; verificare ritmo e attenzione durante i playtest |
 | Gestione del chiosco | Presidiato, riavvio manuale; **nessun reset per inattività** |

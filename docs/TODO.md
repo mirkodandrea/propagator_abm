@@ -4,6 +4,13 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
+- **2026-10-13, nuove meccaniche: tempo sempre in movimento ed evacuazione autorizzata dalla sindaca** (decisione dell'utente, motivata dal bilanciamento: «evacua tutti» non deve dominare). Regole scritte in `docs/01-SPEC-GIOCO.md` (§1, §2, §3 «Autorizzazione della sindaca», §5) e `docs/00-LEGGIMI-PRIMA.md`: niente ×0 per il giocatore; velocità alta scelta dal gioco; un unico **momento delle scelte a ×1**, chiesto dal giocatore («Decidi», max 3, ≥15 min simulati) o aperto dalla sindaca; «Evacua» solo per i quartieri autorizzati, uno alla volta, autorizzazione valida fino alla fine; preallerta sempre libera. Supera, solo per l'evacuazione, la decisione 2026-10-12 «la sindaca firma senza passaggi in più».
+  - [x] 2026-10-13 spec aggiornata (questo commit).
+  - [ ] **approvazione dell'utente della spec** prima di toccare il codice;
+  - [ ] prototipo headless in `rocca::Game`: autorizzazione per quartiere (soglia sul tempo d'arrivo del fronte attivo, ~20 min simulati, stesso criterio di grafica e debrief), evacuazione rifiutata se non autorizzata, registro dei momenti delle scelte;
+  - [ ] `strategie_civili`, layout 7, semi 1–3: «evacua appena autorizzato» / «solo preallerta» / «preallerta mirata + evacuazione selettiva»; la prima non deve dominare; tabella con la sequenza dei momenti ×1 e la durata reale stimata per caso;
+  - [ ] solo dopo: kiosk (`Kiosk` pause ×0 → ×1, pulsante «Decidi», «Evacua» bloccato con motivo, battute della sindaca), `KIOSK_SNAP` con le fasi nuove, partita scriptata del titolo.
+
 - **2026-10-13, menu operatore: livello grafico** (richiesta dell'utente). Nella barra operatore (F2), accanto a «Azzera classifica», «Nuova partita», caso/seme/velocità, c'è ora **Grafica: Alta / Media / Bassa**.
   - [x] Cambio dal vivo di MSAA, ombre/cascate, bloom, DoF e distanza LOD (`quality_live.rs`); la scelta è salvata in `~/.rocca_ventosa/grafica.txt` e riletta all'avvio (`KIOSK_QUALITY` e `KIOSK_GFX` hanno la precedenza). La densità del bosco cambia solo al riavvio (si pianta alla costruzione della scena).
   - [x] 2026-10-13 pulsante **Menu** sempre visibile in alto a sinistra (apre/chiude la stessa barra, utile sul web che non ha F2); sul web il livello è salvato in localStorage. Compila anche per wasm.
