@@ -9,6 +9,8 @@ const BLOCK_SAMPLES: usize = 512;
 struct Queue {
     samples: VecDeque<i16>,
     active: bool,
+    horn_frame: usize,
+    horn: bool,
 }
 
 #[derive(Asset, TypePath, Clone, Default)]
@@ -20,19 +22,34 @@ impl NativeAudio {
     pub fn start(&self) {
         let mut q = self.queue.lock().unwrap();
         q.samples.clear();
+        q.horn = false;
         q.active = true;
     }
     pub fn stop(&self) {
         let mut q = self.queue.lock().unwrap();
         q.active = false;
         q.samples.clear();
+        q.horn = false;
     }
-    pub fn clear(&self) { self.queue.lock().unwrap().samples.clear(); }
+    pub fn clear(&self) { let mut q = self.queue.lock().unwrap(); q.samples.clear(); q.horn = false; }
+    pub fn honk(&self) { let mut q = self.queue.lock().unwrap(); q.horn = true; q.horn_frame = 0; }
     pub fn queued_frames(&self) -> usize { self.queue.lock().unwrap().samples.len() / 2 }
     pub fn push(&self, samples: &[i16]) {
         let mut q = self.queue.lock().unwrap();
         if !q.active { return; }
-        q.samples.extend(samples);
+        for frame in samples.chunks_exact(2) {
+            let horn = if q.horn {
+                let t = q.horn_frame as f32 / libsm64_native::AUDIO_RATE as f32;
+                let envelope = (t / 0.015).min(1.) * ((0.3 - t) / 0.06).clamp(0., 1.);
+                let value = ((t * 440. * std::f32::consts::TAU).sin()
+                    + (t * 554. * std::f32::consts::TAU).sin()) * envelope * 4000.;
+                q.horn_frame += 1;
+                if t >= 0.3 { q.horn = false; }
+                value as i16
+            } else { 0 };
+            q.samples.push_back(frame[0].saturating_add(horn));
+            q.samples.push_back(frame[1].saturating_add(horn));
+        }
         let excess = q.samples.len().saturating_sub(MAX_SAMPLES);
         q.samples.drain(..excess);
     }
@@ -94,6 +111,23 @@ mod tests {
         assert_eq!(decoder.next(), None);
         source.start();
         assert_eq!(source.queued_frames(), 0);
+    }
+    #[test]
+    fn horn_mixes_in_stereo_without_clipping_or_extending_the_pcm_queue() {
+        let source = NativeAudio::default();
+        source.start();
+        source.honk();
+        source.push(&vec![32000; 3200]);
+        let samples: Vec<_> = source.decoder().take(3200).collect();
+        assert!(samples.iter().any(|&s| s == i16::MAX));
+        assert!(samples.iter().any(|&s| s < 32000));
+        assert!(samples.chunks_exact(2).all(|f| f[0] == f[1]));
+        assert_eq!(source.queued_frames(), 0);
+        source.push(&vec![0; 32000]);
+        assert!(!source.queue.lock().unwrap().horn, "the horn finishes without another interaction");
+        source.clear();
+        source.push(&[42, -42]);
+        assert_eq!(source.decoder().take(2).collect::<Vec<_>>(), [42, -42]);
     }
     #[test]
     fn a_missing_audio_device_cannot_accumulate_unbounded_latency() {

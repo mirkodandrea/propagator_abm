@@ -1,5 +1,5 @@
 //! Optional native pause playground. It reads the serious game but never writes
-//! Sim/Kiosk, orders, agents, or scores. Kiosk owns the requested ×1 clock.
+//! orders, agents, or scores. Kiosk owns the selected simulation clock.
 use crate::{
     camera::OrbitCamera,
     kiosk::{Kiosk, Phase},
@@ -134,9 +134,11 @@ impl Material for MarioMaterial {
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct Playground {
     pub active: bool,
+    pub(crate) simulation_speed: f32,
+    nearby: &'static str,
     toggle: bool,
     snapshot_wing_cap: bool,
     respawn_nearby: bool,
@@ -146,6 +148,14 @@ pub struct Playground {
     message: &'static str,
     /// Web: «M» was pressed before the ROM was loaded; start once it arrives.
     awaiting_rom: bool,
+}
+
+impl Default for Playground {
+    fn default() -> Self {
+        Self { active: false, simulation_speed: 1., nearby: "", toggle: false,
+            snapshot_wing_cap: false, respawn_nearby: false, error: None,
+            health: 0, wing_cap: false, message: "", awaiting_rom: false }
+    }
 }
 
 impl Playground {
@@ -268,6 +278,15 @@ fn capture_pose(runtime: &mut Runtime) {
     runtime.previous_pose.position = from_sm64(engine.state.position, runtime.origin);
 }
 
+struct Reaction {
+    remaining: f32,
+    duration: f32,
+    push: Vec3,
+}
+impl Reaction {
+    fn new(duration: f32, push: Vec3) -> Self { Self { remaining: duration, duration, push } }
+}
+
 #[derive(Default)]
 struct Runtime {
     engine: Option<Engine>,
@@ -287,7 +306,8 @@ struct Runtime {
     // Restore every temporary reaction before normal view updates run again.
     restore: HashMap<Entity, Transform>,
     previous: HashMap<Entity, Vec3>,
-    reactions: HashMap<Entity, f32>,
+    reactions: HashMap<Entity, Reaction>,
+    impact_cooldown: f32,
     origin: Vec3,
     patch: Vec3,
     spawn: Vec3,
@@ -369,13 +389,12 @@ fn awaiting_rom_arrived(mode: &mut Playground) -> bool {
     false
 }
 
-fn available(k: &Kiosk, sim: &Sim) -> bool {
+fn available(k: &Kiosk, _sim: &Sim) -> bool {
     k.title || (!k.title
         && !k.intro
         && k.tour.is_none()
         && k.started
-        && k.phase == Phase::Pianifica
-        && sim.speed <= 1.0)
+        && k.phase == Phase::Pianifica)
 }
 
 fn hud(
@@ -408,9 +427,17 @@ fn hud(
                     }
                     if k.title {
                         ui.label("Esplorazione libera · partita non iniziata");
-                    } else {
-                        ui.label(format!("Simulazione ×1 · {}", rocca::words::clock(sim.time_s())));
                     }
+                    ui.label(format!("Simulazione ×{:.0} · {}", sim.speed, rocca::words::clock(sim.time_s())));
+                    ui.horizontal(|ui| {
+                        ui.label("Velocità simulazione:");
+                        for speed in [0., 1., 5., 20., 80., 160., 300.] {
+                            let label = if speed == 0. { "Pausa".into() } else { format!("×{speed:.0}") };
+                            ui.selectable_value(&mut mode.simulation_speed, speed, label);
+                        }
+                    });
+                    ui.small("La velocità di Mario resta normale.");
+                    if !mode.nearby.is_empty() { ui.label(mode.nearby); }
                     ui.label(controls.pad().and_then(|pad| controls.pads.name(pad))
                         .map_or("Gamepad non connesso".to_string(), |name| format!("Gamepad: {name}")));
                     ui.label("WASD / stick sinistro · Spazio / A (×): salto · J / X (□): pugno");
@@ -536,6 +563,8 @@ type Actors<'w, 's> = Query<
         &'static mut Transform,
         &'static Visibility,
         Option<&'static crate::people::PersonView>,
+        Has<crate::people::VehicleView>,
+        Has<crate::life::Ambient>,
     ),
     (
         Without<OrbitCamera>,
@@ -665,6 +694,8 @@ fn drive(
         runtime.terrain_triangles.clear();
         runtime.reactions.clear();
         runtime.previous.clear();
+        runtime.impact_cooldown = 0.;
+        mode.nearby = "";
         mode.active = false;
         return;
     }
@@ -843,6 +874,7 @@ fn drive(
             dof.max_circle_of_confusion_diameter = 0.;
         }
         render_camera.viewport = None;
+        mode.simulation_speed = if k.title { 0. } else { 1. };
         mode.active = true;
         runtime.engine.as_mut().unwrap().set_audio_active(true);
         runtime.audio.start();
@@ -954,6 +986,11 @@ fn drive(
             eprintln!("mario demo: t={t:.1}, pos={pos:?}, health={}", mode.health);
         }
     }
+    let pos = from_sm64(runtime.engine.as_ref().unwrap().state.position, runtime.origin);
+    let engage = pressed(GamepadButtonType::LeftThumb)
+        || keyboard_free && controls.keys.just_pressed(KeyCode::KeyF);
+    engage_nearby(&mut runtime, &mut mode, &mut actors, &meshes, &sim, pos, engage);
+    runtime.impact_cooldown = (runtime.impact_cooldown - dt).max(0.);
     runtime.accumulator += dt;
     while runtime.accumulator >= STEP {
         runtime.accumulator -= STEP;
@@ -1039,15 +1076,19 @@ fn drive(
     let pos = if pos.is_finite() { pos } else { runtime.last_valid };
     let alpha = (runtime.accumulator / STEP).clamp(0.0, 1.0);
     let camera_pos = runtime.previous_pose.position.lerp(pos, alpha);
-    for (entity, _, mut tf, vis, person) in &mut actors {
+    for (entity, _, mut tf, vis, person, _, _) in &mut actors {
         if *vis == Visibility::Hidden {
             continue;
         }
-        if let Some(remaining) = runtime.reactions.get_mut(&entity) {
-            *remaining -= dt;
-            let phase = (1. - remaining.max(0.) / 0.7).clamp(0., 1.);
+        if let Some(reaction) = runtime.reactions.get_mut(&entity) {
+            reaction.remaining -= dt;
+            let phase = (1. - reaction.remaining.max(0.) / reaction.duration).clamp(0., 1.);
+            let push = reaction.push;
             runtime.restore.insert(entity, *tf);
+            tf.translation += push * (phase * std::f32::consts::PI).sin();
             if person.is_some() {
+                let direction = pos - tf.translation;
+                tf.rotation = Quat::from_rotation_y(direction.x.atan2(direction.z));
                 tf.translation.y += (phase * std::f32::consts::PI).sin() * 2.;
             }
             tf.rotation *= Quat::from_rotation_z((phase * std::f32::consts::TAU).sin() * 0.18);
@@ -1058,7 +1099,7 @@ fn drive(
             tf.rotation *= Quat::from_rotation_z((time.elapsed_seconds() * 6.).sin() * 0.05);
         }
     }
-    runtime.reactions.retain(|_, t| *t > 0.);
+    runtime.reactions.retain(|_, r| r.remaining > 0.);
     let engine = runtime.engine.as_ref().unwrap();
     // Count changes denote cap/visibility topology changes. Eye textures can
     // switch instantly without interrupting the body's interpolated motion.
@@ -1442,7 +1483,7 @@ fn refresh_patch(
             runtime.surfaces.push(t.surface(runtime.origin));
         }
     }
-    for (_, handle, tf, visibility, _) in actors.iter_mut() {
+    for (_, handle, tf, visibility, _, _, _) in actors.iter_mut() {
         if *visibility == Visibility::Hidden { continue; }
         // Expanded broad phase accounts for large vehicles/team symbols.
         if !near(tf.translation, tf.translation, pos, COLLISION_RADIUS + 16.0) { continue; }
@@ -1492,7 +1533,7 @@ fn respawn_nearby(
                 || ray_triangle(feet, Vec3::Y, t.vertices).is_some_and(|d| d < 100.0)
         });
         if blocked { continue; }
-        if actors.iter_mut().any(|(_, handle, tf, visibility, _)| {
+        if actors.iter_mut().any(|(_, handle, tf, visibility, _, _, _)| {
             if *visibility == Visibility::Hidden || tf.translation.distance(feet) > 30.0 { return false; }
             meshes.get(handle).and_then(|mesh| mesh_bounds(mesh, &tf))
                 .is_some_and(|(lo, hi)| near(lo, hi, feet, 3.0)
@@ -1557,14 +1598,15 @@ fn interact(
     meshes: &Assets<Mesh>,
     mario: Vec3,
 ) {
-    for (entity, handle, tf, visibility, person) in actors.iter_mut() {
+    for (entity, handle, tf, visibility, person, vehicle, ambient) in actors.iter_mut() {
         if *visibility == Visibility::Hidden {
             continue;
         }
         let old = runtime.previous.insert(entity, tf.translation);
-        if tf.translation.distance(mario) > 40. {
-            continue;
-        }
+        let start = old.unwrap_or(tf.translation);
+        let delta = tf.translation - start;
+        let t = ((mario - start).dot(delta) / delta.length_squared().max(1e-6)).clamp(0., 1.);
+        if mario.distance(start + delta * t) > 40. { continue; }
         let Some(mesh) = meshes.get(handle) else {
             continue;
         };
@@ -1583,17 +1625,86 @@ fn interact(
                 .unwrap()
                 .attacking(source, (hi.y - lo.y) * SCALE);
         if attacked && !runtime.reactions.contains_key(&entity) {
-            runtime.reactions.insert(entity, 0.7);
+            runtime.reactions.insert(entity, Reaction::new(0.7, (tf.translation - mario).with_y(0.).normalize_or_zero() * if person.is_some() { 2. } else { 0.4 }));
             mode.message = if person.is_some() { "Ehi!" } else { "Bong!" };
         }
-        if person.is_none()
-            && old.is_some_and(|p| p.distance(tf.translation) > 0.05)
-            && near(lo, hi, mario, 2.)
-            && mario.y < hi.y - 0.5
-            && mario.y + 7. > lo.y
+        if (vehicle || ambient) && runtime.impact_cooldown == 0.
+            && old.is_some_and(|p| vehicle_sweeps_mario(p, tf.translation, lo, hi, mario))
         {
             runtime.engine.as_mut().unwrap().hurt(source, false);
+            runtime.impact_cooldown = 1.;
+            runtime.audio.honk();
             mode.message = "Attento alle auto!";
+        }
+    }
+}
+
+/// Moving cars must test the travelled segment, not only their final pose.
+fn vehicle_sweeps_mario(old: Vec3, current: Vec3, lo: Vec3, hi: Vec3, mario: Vec3) -> bool {
+    let movement = current - old;
+    if movement.length() <= 0.05 || movement.length() > 2500. { return false; }
+    let center = (lo + hi) * 0.5;
+    let half = (hi - lo) * 0.5 + Vec3::new(2., 0., 2.);
+    // Minkowski expansion by Mario's height, with the roof excluded.
+    let min = center - movement - half - Vec3::Y * 7.;
+    let max = center - movement + half - Vec3::Y * 0.5;
+    let mut enter: f32 = 0.;
+    let mut exit: f32 = 1.;
+    for axis in 0..3 {
+        if movement[axis].abs() < 1e-5 {
+            if mario[axis] < min[axis] || mario[axis] > max[axis] { return false; }
+        } else {
+            let a = (mario[axis] - max[axis]) / movement[axis];
+            let b = (mario[axis] - min[axis]) / movement[axis];
+            enter = enter.max(a.min(b));
+            exit = exit.min(a.max(b));
+            if enter > exit { return false; }
+        }
+    }
+    true
+}
+
+fn person_reply(status: scenario::population::Status) -> &'static str {
+    use scenario::population::Status::*;
+    match status {
+        Normal => "Ciao Mario! Sto facendo un giro.",
+        Warned => "Ho ricevuto l'allerta. Tengo d'occhio il fuoco.",
+        Preparing => "Sto preparando le cose per partire.",
+        Evacuating => "Sto andando al sicuro. Lascia libera la strada!",
+        Evacuated => "Sono arrivato al sicuro. Grazie del saluto!",
+        Defending => "Resto qui a difendere la casa.",
+        Trapped => "La strada è bloccata! Mi serve aiuto.",
+        Casualty => "Questa persona non può rispondere.",
+    }
+}
+
+fn engage_nearby(runtime: &mut Runtime, mode: &mut Playground, actors: &mut Actors,
+    meshes: &Assets<Mesh>, sim: &Sim, mario: Vec3, engage: bool) {
+    let mut closest = 8.;
+    let mut target = None;
+    for (entity, handle, tf, visibility, person, vehicle, ambient) in actors.iter_mut() {
+        if *visibility == Visibility::Hidden || tf.translation.distance(mario) > 40. { continue; }
+        let Some((lo, hi)) = meshes.get(handle).and_then(|m| mesh_bounds(m, &tf)) else { continue; };
+        let distance = mario.distance(mario.clamp(lo, hi));
+        if distance >= closest { continue; }
+        closest = distance;
+        let car = vehicle || ambient;
+        let reply = if let Some(person) = person {
+            sim.agents.people.get(person.id).map_or("Ciao Mario!", |p| person_reply(p.status))
+        } else if car { "Beep beep! Lascia libera la strada!" }
+        else { "Squadra al lavoro: stiamo seguendo gli ordini del piano." };
+        target = Some((entity, car, reply));
+    }
+    mode.nearby = match target {
+        Some((_, true, _)) => "F / L3: suona il clacson",
+        Some((_, false, _)) => "F / L3: saluta e parla",
+        None => "Avvicinati a persone o auto · F / L3: interagisci",
+    };
+    if engage {
+        if let Some((entity, car, reply)) = target {
+            mode.message = reply;
+            runtime.reactions.insert(entity, Reaction::new(if car { 0.4 } else { 0.9 }, Vec3::ZERO));
+            if car { runtime.audio.honk(); }
         }
     }
 }
@@ -1601,6 +1712,55 @@ fn interact(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn interaction_picks_a_nearby_visible_target_and_has_no_remote_effect() {
+        use bevy::ecs::system::SystemState;
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let sim = Sim::new(&data, "Coste2_gira", 1).unwrap();
+        let mut world = World::new();
+        let mut meshes = Assets::<Mesh>::default();
+        let mesh = meshes.add(Cuboid::new(4., 3., 2.));
+        let hidden = world.spawn((crate::people::VehicleView { traveller: 0 }, mesh.clone(),
+            Transform::from_xyz(0., 1.5, 0.), Visibility::Hidden)).id();
+        let far = world.spawn((crate::people::VehicleView { traveller: 1 }, mesh.clone(),
+            Transform::from_xyz(100., 1.5, 0.), Visibility::Visible)).id();
+        let car = world.spawn((crate::people::VehicleView { traveller: 2 }, mesh.clone(),
+            Transform::from_xyz(6., 1.5, 0.), Visibility::Visible)).id();
+        let team = world.spawn((crate::units::TeamView { id: 0 }, mesh,
+            Transform::from_xyz(2., 1.5, 0.), Visibility::Visible)).id();
+        let mut state = SystemState::<Actors>::new(&mut world);
+        let mut runtime = Runtime::default();
+        let mut mode = Playground::default();
+        engage_nearby(&mut runtime, &mut mode, &mut state.get_mut(&mut world), &meshes, &sim, Vec3::ZERO, true);
+        assert!(mode.message.starts_with("Squadra al lavoro"));
+        assert!(runtime.reactions.contains_key(&team));
+        assert!(!runtime.reactions.contains_key(&hidden));
+        assert!(!runtime.reactions.contains_key(&far));
+        assert!(!runtime.reactions.contains_key(&car));
+        world.get_mut::<Transform>(team).unwrap().translation.x = 100.;
+        engage_nearby(&mut runtime, &mut mode, &mut state.get_mut(&mut world), &meshes, &sim, Vec3::ZERO, true);
+        assert!(mode.message.starts_with("Beep beep"));
+        assert!(runtime.reactions.contains_key(&car));
+        runtime.reactions.clear();
+        engage_nearby(&mut runtime, &mut mode, &mut state.get_mut(&mut world), &meshes, &sim, Vec3::Z * 100., true);
+        assert!(runtime.reactions.is_empty());
+        assert!(mode.nearby.starts_with("Avvicinati"));
+    }
+
+    #[test]
+    fn fast_car_contacts_include_the_path_but_exclude_roofs_and_near_misses() {
+        let old = Vec3::new(-20., 0., 0.);
+        let now = Vec3::new(20., 0., 0.);
+        let lo = now + Vec3::new(-2., 0., -1.);
+        let hi = now + Vec3::new(2., 3., 1.);
+        assert!(vehicle_sweeps_mario(old, now, lo, hi, Vec3::ZERO));
+        assert!(vehicle_sweeps_mario(now, old, lo - Vec3::X * 40., hi - Vec3::X * 40., Vec3::ZERO));
+        assert!(!vehicle_sweeps_mario(old, now, lo, hi, Vec3::Z * 5.));
+        assert!(!vehicle_sweeps_mario(old, now, lo, hi, Vec3::Y * 3.));
+        assert!(!vehicle_sweeps_mario(now, now, lo, hi, now));
+        assert!(!vehicle_sweeps_mario(old - Vec3::X * 3000., now, lo, hi, Vec3::ZERO));
+    }
+
     #[test]
     fn rom_atlas_retains_wing_cutouts_and_white_feathers() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
