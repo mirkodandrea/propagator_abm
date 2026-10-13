@@ -1,0 +1,23 @@
+caso easy, seme 1, 180 min simulati (1.3 s)
+  T+ 22 min  la sindaca autorizza l'evacuazione di San Rocco: il fuoco può arrivare in circa 19 min
+  T+124 min  Il fuoco può arrivare a Le Terrazze in circa 31 min. Autobotte 1 ci arriva in 2 min.
+  T+158 min  Il fuoco può arrivare a Le Ghiande in circa 29 min. Autobotte 1 ci arriva in 3 min.
+  T+176 min  la sindaca autorizza l'evacuazione di Le Terrazze: il fuoco può arrivare in circa 7 min
+quartiere     fam. |  case colpite colti in casa      evacuati     in strada    a casa
+Castelvento    190 |             0             0            12             0       178
+Pian dei Grilli    90 |             0             0             0             0        90
+Fornaci         90 |             0             0             0             0        90
+San Rocco      100 |            56             6            95             0         2
+Le Terrazze     30 |             0             0             8             1        21
+Le Ghiande      38 |             0             0             0             0        38
+ettari bruciati: 133   mezzi persi: 0
+ordini di A (evacuazioni dove il fuoco non è arrivato alle case: 0 famiglie):
+  forse Castelvento: nessun ordine. Il fuoco è arrivato a 0,2 km dalle case: una preallerta sarebbe stata prudente.
+  bene  Pian dei Grilli: nessun ordine, e non serviva: il fuoco è rimasto a 2,8 km dalle case.
+  forse Fornaci: nessun ordine. Il fuoco è arrivato a 0,6 km dalle case: una preallerta sarebbe stata prudente.
+  male  San Rocco: nessun ordine. Il fuoco è arrivato alle case alle 15:03: colte in casa 6 famiglie.
+  forse Le Terrazze: nessun ordine. Il fuoco è arrivato a 0,1 km dalle case: una preallerta sarebbe stata prudente.
+  forse Le Ghiande: nessun ordine. Il fuoco è arrivato a 0,9 km dalle case: una preallerta sarebbe stata prudente.
+punteggio A: 0 su 1000 (famiglie salvate 0 di 6, case risparmiate 0 di 56)
+autorizzazioni della sindaca A: San Rocco T+22, Le Terrazze T+176
+stelle A: persone 1 · case 1 · tempismo 1 · misura 5

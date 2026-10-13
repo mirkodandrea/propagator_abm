@@ -79,6 +79,10 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - [ ] provarlo con una persona e nel browser (profondità di campo in WebGL; carico della partita di sfondo);
   - [ ] altre idee: fumo e brace più vivi, lettere del titolo che appaiono, una frase che cambia con l'inquadratura.
 
+- **2026-10-13, playtest headless Haiku con le regole della sindaca** (`docs/fase6/playtest_haiku_headless/report.md`, 126 esecuzioni, numeri verificati): nessuna strategia vince sempre; le priorità contano (Case 3,3 → 1,0 se invertite); «priorità vicine + preallerta a tutti» arriva al 93–98 % del migliore.
+  - [ ] **evacuare dopo la preallerta può peggiorare** (Medio seme 3: 732 → 615): capire il meccanismo (pattuglie, attesa delle famiglie con l'ordine, code al porto) prima di toccare qualcosa;
+  - [ ] proposta: stella Misura «—» se non è stata data nessuna evacuazione (oggi 5 stelle senza fare nulla).
+
 - **2026-10-13, casi rinominati per livello** (richiesta dell'utente): `game.json` contiene solo i tre casi giocati, `easy` (ex Rocco3, Facile), `medium` (ex Terra1_gira, Medio), `expert` (ex Borgo2_gira, Esperto); il vecchio nome resta come `alias` e `Territory::case` lo risolve ancora (resoconti, test, `scripts/record_mario_demo.sh`). Gli altri 33 incendi sono in `data/scenarios/rocca_ventosa/prove.json` (scelta dell'utente: solo per prove headless e test, mai nel chiosco né nel menu operatore): `Territory::trials`, `Territory::all_cases()` per gli esempi che li scorrono tutti. Factory: `cases.split` scrive i due file (riproduce esattamente quelli pubblicati). `tools/factory/island.py`, già obsoleto, legge solo `game.json`.
 
 - **Fase corrente: fase 6, playtest finale** (`docs/03-PIANO-DI-AZIONE.md`). **Fase 5 chiusa il 2026-10-12** (l'utente: «dichiariamo chiusa questa fase 5»). L'utente sta curando dettagli grafici in un'altra sessione.

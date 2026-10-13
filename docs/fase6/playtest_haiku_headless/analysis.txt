@@ -1,0 +1,24 @@
+n esecuzioni: 126
+easy    seme 1: max  920 ['s12_pri_vicini_pre_tutti_T0_nessuna_evac']
+easy    seme 2: max  553 ['s01_pre_tutti_T0_evac_tutti_T0', 's06_pri_vicini_pre_evac_tutti']
+easy    seme 3: max  637 ['s01_pre_tutti_T0_evac_tutti_T0', 's06_pri_vicini_pre_evac_tutti', 's12_pri_vicini_pre_tutti_T0_nessuna_evac']
+expert  seme 1: max  533 ['s11_pri_vicini_evac_tutti_T0']
+expert  seme 2: max  668 ['s11_pri_vicini_evac_tutti_T0', 's12_pri_vicini_pre_tutti_T0_nessuna_evac']
+expert  seme 3: max  467 ['s04_pre_evac_Castelvento_SanRocco']
+medium  seme 1: max  587 ['s11_pri_vicini_evac_tutti_T0']
+medium  seme 2: max  679 ['s12_pri_vicini_pre_tutti_T0_nessuna_evac']
+medium  seme 3: max  732 ['s11_pri_vicini_evac_tutti_T0', 's12_pri_vicini_pre_tutti_T0_nessuna_evac']
+r(punteggio, persone) = 0.91
+r(punteggio, case) = 0.46
+r(punteggio, tempismo) = 0.72
+r(punteggio, misura) = -0.39
+punteggi con stelle diverse a parità di punteggio: 10 su 60
+autorizzazioni easy 1 : San Rocco T+22, Le Terrazze T+176
+autorizzazioni easy 2 : San Rocco T+48, Le Terrazze T+162
+autorizzazioni easy 3 : Castelvento T+178, San Rocco T+46, Le Terrazze T+156
+autorizzazioni medium 1 : Castelvento T+40, Fornaci T+48, San Rocco T+0, Le Terrazze T+20
+autorizzazioni medium 2 : Castelvento T+36, Fornaci T+60, San Rocco T+0, Le Terrazze T+12, Le Ghiande T+60
+autorizzazioni medium 3 : Castelvento T+16, San Rocco T+0, Le Terrazze T+16
+autorizzazioni expert 1 : Castelvento T+26, San Rocco T+0, Le Terrazze T+38
+autorizzazioni expert 2 : Castelvento T+12, Fornaci T+30, San Rocco T+0, Le Terrazze T+38
+autorizzazioni expert 3 : Castelvento T+14, San Rocco T+0, Le Terrazze T+18

@@ -1,0 +1,45 @@
+caso easy, seme 1, 180 min simulati (5.0 s)
+  T+  0 min  preallerta: Castelvento (190 famiglie)
+  T+  0 min  preallerta: Pian dei Grilli (90 famiglie)
+  T+  0 min  preallerta: Fornaci (90 famiglie)
+  T+  0 min  preallerta: San Rocco (100 famiglie)
+  T+  0 min  preallerta: Le Terrazze (30 famiglie)
+  T+  0 min  preallerta: Le Ghiande (38 famiglie)
+  T+  0 min  priorità: San Rocco > Castelvento > Le Terrazze > Fornaci > Le Ghiande > Pian dei Grilli
+  T+  0 min  Autobotte 1 va a San Rocco (priorità 1) a difendere le case verso cui il vento spinge il fuoco; fuoco a 0,7 km, arrivo in 3 min
+  T+  0 min  Autobotte 2 va a San Rocco (priorità 1) a difendere le case verso cui il vento spinge il fuoco; fuoco a 0,7 km, arrivo in 3 min
+  T+  0 min  Squadra A va a Castelvento (priorità 2) a difendere le case verso cui il vento spinge il fuoco; fuoco a 1,9 km, arrivo in 5 min
+  T+  0 min  Le Terrazze: nessun mezzo libero, sono già tutti dove la priorità è più alta
+  T+  0 min  Fornaci: nessun mezzo libero, sono già tutti dove la priorità è più alta
+  T+  1 min  una pattuglia arriva a Le Terrazze per avvisare le famiglie
+  T+  2 min  una pattuglia arriva a San Rocco per avvisare le famiglie
+  T+  4 min  Le Ghiande: nessun mezzo libero, sono già tutti dove la priorità è più alta
+  T+  4 min  una pattuglia arriva a Castelvento per avvisare le famiglie
+  T+  5 min  una pattuglia arriva a Fornaci per avvisare le famiglie
+  T+ 22 min  la sindaca autorizza l'evacuazione di San Rocco: il fuoco può arrivare in circa 19 min
+  T+ 22 min  evacuazione: San Rocco (100 famiglie)
+  T+ 29 min  una pattuglia arriva a Le Ghiande per avvisare le famiglie
+  T+ 57 min  una pattuglia arriva a Pian dei Grilli per avvisare le famiglie
+  T+ 76 min  Autobotte 1 va a San Rocco (priorità 1) a difendere le case verso cui il vento spinge il fuoco; fuoco a 0,0 km, arrivo in 1 min
+  T+128 min  Il fuoco può arrivare a Fornaci in circa 45 min. Squadra A ci arriva in 1 min, ma lascia Castelvento con un mezzo in meno.
+  T+128 min  la sindaca autorizza l'evacuazione di Le Terrazze: il fuoco può arrivare in circa 20 min
+  T+128 min  evacuazione: Le Terrazze (30 famiglie)
+  T+172 min  Pian dei Grilli: nessun mezzo libero, sono già tutti dove la priorità è più alta
+quartiere     fam. |  case colpite colti in casa      evacuati     in strada    a casa
+Castelvento    190 |             0             0            25             0       165
+Pian dei Grilli    90 |             0             0             0             0        90
+Fornaci         90 |             0             0             0             0        90
+San Rocco      100 |            20             0            99             0         1
+Le Terrazze     30 |             0             0            26             0         4
+Le Ghiande      38 |             0             0             0             0        38
+ettari bruciati: 132   mezzi persi: 0
+ordini di A (evacuazioni dove il fuoco non è arrivato alle case: 25 famiglie):
+  bene  Castelvento: solo preallerta, ed è bastata: il fuoco è rimasto a 0,2 km dalle case.
+  bene  Pian dei Grilli: solo preallerta, ed è bastata: il fuoco è rimasto a 2,7 km dalle case.
+  bene  Fornaci: solo preallerta, ed è bastata: il fuoco è rimasto a 0,8 km dalle case.
+  bene  San Rocco: evacuazione alle 14:22, 41 min prima che il fuoco arrivasse alle case. Nessuna famiglia colta in casa.
+  forse Le Terrazze: evacuazione alle 16:08, 25 famiglie in strada. Il fuoco è arrivato a 0,2 km dalle case, non alle case.
+  bene  Le Ghiande: solo preallerta, ed è bastata: il fuoco è rimasto a 0,8 km dalle case.
+punteggio A: 893 su 1000 (famiglie salvate 6 di 6, case risparmiate 36 di 56)
+autorizzazioni della sindaca A: San Rocco T+22, Le Terrazze T+128
+stelle A: persone 5 · case 4 · tempismo 5 · misura 4
