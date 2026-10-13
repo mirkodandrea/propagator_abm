@@ -153,7 +153,7 @@ pub fn draw(
     }
     let k = &mut *kiosk;
     let Ok(cam) = cameras.get_single() else { return };
-    if ctx.input(|i| i.key_pressed(egui::Key::F2)) {
+    if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F2)) {
         k.operator = !k.operator;
     }
     // the same menu for a mouse or a touch (and the web page, which has no F2)
@@ -240,6 +240,7 @@ pub fn draw(
         sidebar(ctx, k, &mut sim, cam);
         let map = ctx.available_rect();
         k.side_w = ctx.screen_rect().width() - map.width();
+        legend_corner(ctx, map);
         if k.phase == Phase::Crisi {
             crisis_bubble(ctx, k, faces);
         } else if k.tour.is_none() {
@@ -445,7 +446,10 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                         .desired_width(320.0)
                         .margin(egui::vec2(12.0, 8.0));
                     let r = ui.add(edit);
-                    if ui.ctx().memory(|m| m.focused().is_none()) {
+                    // always the field's: a click elsewhere (a button, the map)
+                    // may have moved the focus, and nothing else on this
+                    // screen takes typing
+                    if !r.has_focus() {
                         r.request_focus();
                     }
                 });
@@ -749,26 +753,6 @@ fn crisis_choice(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
     }
 }
 
-/// Back to the home view, zoom in and out: the foot of the side bar.
-fn view_controls(ui: &mut egui::Ui, k: &mut Kiosk) {
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("Vista").size(16.0).color(GREY));
-        if icons::button(ui, Icon::Plus, "", false, GREY, true).clicked() {
-            k.zoom *= 0.8;
-        }
-        if icons::button(ui, Icon::Minus, "", false, GREY, true).clicked() {
-            k.zoom *= 1.25;
-        }
-        if icons::button(ui, Icon::Home, "", false, GREY, true).clicked() {
-            k.reset_view = true;
-            k.follow = false;
-        }
-        if icons::button(ui, Icon::Fire, "Segui il fuoco", k.follow, ORANGE, true).clicked() {
-            k.follow = !k.follow;
-        }
-    });
-}
-
 /// What the marks on the map mean, in the side bar, closed at first
 /// (`KIOSK_LEGEND=1` opens it, for screenshots).
 fn legend(ui: &mut egui::Ui) {
@@ -945,6 +929,22 @@ fn defence_line(k: &Kiosk, sim: &Sim, d: usize) -> String {
         }
     }
     format!("Difesa: {}", parts.join(" · "))
+}
+
+/// The legend, folded, in the map's top right corner (just left of the side
+/// bar, clear of the «Menu» button top left and the speaker bottom left).
+/// `KIOSK_LEGEND=1` opens it, for screenshots.
+fn legend_corner(ctx: &egui::Context, map: egui::Rect) {
+    let right = ctx.screen_rect().right() - map.right() + 10.0;
+    egui::Area::new(egui::Id::new("legenda")).anchor(Align2::RIGHT_TOP, [-right, 10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+        egui::Frame::none().fill(Color32::from_rgba_unmultiplied(14, 16, 18, 235)).stroke(egui::Stroke::new(1.5, Color32::from_gray(90))).rounding(8.0).inner_margin(8.0).show(ui, |ui| {
+            ui.set_max_width(340.0);
+            let title = RichText::new("Legenda").size(16.0).strong().color(Color32::WHITE);
+            egui::CollapsingHeader::new(title).id_source("legenda_h").default_open(std::env::var("KIOSK_LEGEND").is_ok()).show(ui, |ui| {
+                legend(ui);
+            });
+        });
+    });
 }
 
 /// A sub-section of the legend that can be folded.
@@ -1696,43 +1696,19 @@ fn patrol_labels(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform
     }
 }
 
-/// What the coordinator would do with the plan being composed, and why.
+/// «I mezzi»: what the units are doing now (not the reasons given when they
+/// were sent: those are in the log), and the districts left without units.
 fn proposal(ui: &mut egui::Ui, k: &Kiosk, sim: &Sim) {
     let Some(p) = &k.preview else { return };
-    let pending = k.proposed != sim.active || k.phase == Phase::Pianifica;
-        {
-            let title = if pending { "Il coordinatore propone" } else { "I mezzi" };
-            egui::CollapsingHeader::new(RichText::new(title).size(16.0).strong().color(Color32::WHITE)).id_source("proposta_h").default_open(false).show(ui, |ui| {
-            if !pending {
-                // Nothing to confirm: what the units are doing now, not the
-                // reasons given when they were sent (those are in the log).
-                ui.label(RichText::new(format!("I mezzi adesso ({})", clock(sim.time_s()))).size(16.0).strong().color(Color32::WHITE));
-                for (i, u) in sim.crews.units.iter().enumerate().filter(|(_, u)| !u.kind.is_air()) {
-                    ui.label(RichText::new(format!("{}: {}", u.callsign, sim.unit_status(i))).size(15.0).color(GREY));
-                }
-                for (_, why) in &p.uncovered {
-                    ui.label(RichText::new(format!("Senza mezzi: {why}")).size(15.0).color(ORANGE));
-                }
-                return;
-            }
-            ui.label(RichText::new("anteprima, non è garantito").size(14.0).color(GREY));
-            for post in p.posts.iter().flatten() {
-                ui.label(RichText::new(&post.reason).size(15.0).color(GREY));
-            }
-            for (_, why) in &p.idle {
-                ui.label(RichText::new(why).size(15.0).color(GREY));
-            }
-            for (_, why) in &p.uncovered {
-                ui.label(RichText::new(format!("Senza mezzi: {why}")).size(15.0).color(ORANGE));
-            }
-            for &d in &p.quiet {
-                ui.label(RichText::new(format!("{}: il fuoco ora non lo minaccia, nessun mezzo", sim.districts[d].name)).size(15.0).color(GREY));
-            }
-            if p.posts.iter().all(|x| x.is_none()) && p.uncovered.is_empty() && p.quiet.is_empty() && p.idle.is_empty() {
-                ui.label(RichText::new("Nessun luogo da difendere: i mezzi restano alla base.").size(15.0).color(ORANGE));
-            }
-            });
+    egui::CollapsingHeader::new(RichText::new("I mezzi").size(16.0).strong().color(Color32::WHITE)).id_source("proposta_h").default_open(false).show(ui, |ui| {
+        ui.label(RichText::new(format!("I mezzi adesso ({})", clock(sim.time_s()))).size(16.0).strong().color(Color32::WHITE));
+        for (i, u) in sim.crews.units.iter().enumerate().filter(|(_, u)| !u.kind.is_air()) {
+            ui.label(RichText::new(format!("{}: {}", u.callsign, sim.unit_status(i))).size(15.0).color(GREY));
         }
+        for (_, why) in &p.uncovered {
+            ui.label(RichText::new(format!("Senza mezzi: {why}")).size(15.0).color(ORANGE));
+        }
+    });
 }
 
 /// The time's buttons (spec §2, 2026-10-13: the world never stops for the
@@ -1969,8 +1945,6 @@ fn sidebar(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &Gl
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
             ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 40.0), egui::Layout::left_to_right(egui::Align::Center), |ui| abort_button(ui, k));
             ui.separator();
-            ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 52.0), egui::Layout::left_to_right(egui::Align::Center), |ui| view_controls(ui, k));
-            ui.separator();
             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     let r = ui.scope(|ui| plan(ui, k, sim)).response.rect;
@@ -1981,8 +1955,6 @@ fn sidebar(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &Gl
                     ui.separator();
                     events(ui, sim);
                     ui.separator();
-                    let title = RichText::new("Legenda").size(16.0).strong().color(Color32::WHITE);
-                    egui::CollapsingHeader::new(title).id_source("legenda_h").default_open(std::env::var("KIOSK_LEGEND").is_ok()).show_unindented(ui, legend);
                 });
             });
         });
@@ -2458,6 +2430,10 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
                         // case picked here is the one «Gioca» starts
                         to_title(k, sim, restarted);
                     }
+                }
+                if ui.add(secondary("Vista iniziale (Home)")).clicked() {
+                    k.reset_view = true;
+                    k.follow = false;
                 }
                 // the one way the world stands still (spec §2)
                 if k.phase != Phase::Fine && ui.add(secondary(if k.frozen { "Riprendi il mondo" } else { "Ferma il mondo" })).clicked() {

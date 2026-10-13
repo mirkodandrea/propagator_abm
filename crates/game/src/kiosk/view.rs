@@ -149,15 +149,13 @@ pub fn camera(
     };
     *last_cursor = cursor;
     let shift = input.keys.pressed(KeyCode::ShiftLeft) || input.keys.pressed(KeyCode::ShiftRight);
-    let zoom_modifier = input.keys.pressed(KeyCode::ControlLeft) || input.keys.pressed(KeyCode::ControlRight)
-        || input.keys.pressed(KeyCode::SuperLeft) || input.keys.pressed(KeyCode::SuperRight);
+    // Mouse wheel (lines) and two-finger trackpad scroll (pixels) both zoom;
+    // ~50 px of trackpad scroll feel like one wheel notch.
     let mut scroll = 0.0;
-    let mut trackpad = Vec2::ZERO;
     for event in input.wheel.read() {
         match event.unit {
             MouseScrollUnit::Line => scroll += event.y,
-            MouseScrollUnit::Pixel if zoom_modifier => scroll += event.y / 50.0,
-            MouseScrollUnit::Pixel => trackpad += Vec2::new(event.x, event.y),
+            MouseScrollUnit::Pixel => scroll += event.y / 50.0,
         }
     }
     let pinch: f32 = input.pinch.read().map(|e| e.0).sum();
@@ -206,7 +204,7 @@ pub fn camera(
     }
     let touched = input.touches.iter().any(|t| t.delta() != Vec2::ZERO)
         || delta.length_squared() > 0.0 && (drag.left || drag.right || drag.middle)
-        || over_map && (scroll != 0.0 || trackpad != Vec2::ZERO || pinch != 0.0 || rotation != 0.0);
+        || over_map && (scroll != 0.0 || pinch != 0.0 || rotation != 0.0);
     // the scripted game behind the title screen is nobody's to steer
     if touched && !kiosk.title {
         kiosk.shot = None;
@@ -243,14 +241,8 @@ pub fn camera(
                 }
             }
             if over_map {
-                // macOS delivers two-finger scrolling in pixels, including x.
-                // Keep mouse wheel zoom; trackpad pinch provides native zoom.
-                if shift {
-                    orbit.yaw -= trackpad.x * 0.005;
-                    orbit.pitch -= trackpad.y * 0.004;
-                } else {
-                    pan(&mut orbit, trackpad, height);
-                }
+                // Wheel, two-finger scroll and pinch all zoom; click-drag pans
+                // (trackpad click is a left click, two-finger click a right one).
                 orbit.yaw += rotation.to_radians();
                 orbit.distance *= (-scroll.clamp(-6.0, 6.0) * 0.1 - pinch.clamp(-1.0, 1.0)).exp();
             }
@@ -283,11 +275,6 @@ pub fn camera(
                         }
                     }
                 }
-            }
-            // the on-screen zoom buttons
-            if kiosk.zoom != 1.0 {
-                orbit.distance *= kiosk.zoom;
-                kiosk.zoom = 1.0;
             }
             // a move asked by the interface (the tour): eased, not a jump
             if let (Some(shot), Some((yaw, d))) = (kiosk.shot, *home_view) {
@@ -364,6 +351,10 @@ pub fn camera(
                 }
             }
             // «Vista iniziale»: back to the home view of this game.
+            if input.keys.just_pressed(KeyCode::Home) {
+                kiosk.reset_view = true;
+                kiosk.follow = false;
+            }
             if kiosk.reset_view {
                 kiosk.reset_view = false;
                 if let Some((yaw, d)) = *home_view {

@@ -16,9 +16,6 @@ pub enum Icon {
     Exit,
     Cross,
     Up,
-    Home,
-    Plus,
-    Minus,
     Pause,
     Play,
     Fast,
@@ -90,18 +87,6 @@ pub fn draw(p: &Painter, r: Rect, icon: Icon, col: Color32) {
             p.line_segment([at(r, 0.2, 0.62), at(r, 0.5, 0.28)], st);
             p.line_segment([at(r, 0.5, 0.28), at(r, 0.8, 0.62)], st);
             p.line_segment([at(r, 0.2, 0.86), at(r, 0.8, 0.86)], st);
-        }
-        Icon::Home => {
-            p.line_segment([at(r, 0.1, 0.5), at(r, 0.5, 0.12)], st);
-            p.line_segment([at(r, 0.5, 0.12), at(r, 0.9, 0.5)], st);
-            p.rect_stroke(Rect::from_min_max(at(r, 0.22, 0.48), at(r, 0.78, 0.9)), 1.0, st);
-        }
-        Icon::Plus => {
-            p.line_segment([at(r, 0.2, 0.5), at(r, 0.8, 0.5)], st);
-            p.line_segment([at(r, 0.5, 0.2), at(r, 0.5, 0.8)], st);
-        }
-        Icon::Minus => {
-            p.line_segment([at(r, 0.2, 0.5), at(r, 0.8, 0.5)], st);
         }
         Icon::Pause => {
             p.rect_filled(Rect::from_min_max(at(r, 0.22, 0.18), at(r, 0.42, 0.82)), 1.0, col);

@@ -188,9 +188,6 @@ pub struct Kiosk {
     /// Real time «Nuova partita» was first pressed, waiting for the second
     /// press that confirms throwing away a game in progress.
     pub reset_armed: Option<f64>,
-    /// Zoom asked from the on-screen buttons, as a distance factor; the
-    /// camera takes it and puts it back to 1.
-    pub zoom: f32,
     /// Logical pixels the side bar takes on the right; the camera draws the
     /// map in the rest (`view::camera`).
     pub side_w: f32,
@@ -234,7 +231,6 @@ impl Kiosk {
             operator: false,
             reset_view: false,
             follow: true,
-            zoom: 1.0,
             side_w: 0.0,
             shot: None,
             tour: None,

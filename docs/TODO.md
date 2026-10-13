@@ -4,6 +4,21 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
 
 ## Stato
 
+- **2026-10-13, nuova lista dell'utente** (UX e meccaniche). Decisioni prese dall'utente lo stesso giorno:
+  - **Tempo**: niente pause né «Decidi»; il piano è **sempre modificabile** mentre il mondo corre; si scende a ×1 **solo in automatico** per: autorizzazione della sindaca, cambio di vento annunciato, fuoco vicino a case di un quartiere. Il testo del momento ×1 è **generato** dal motivo (niente testo statico).
+  - **Capacità di evacuazione globale** in famiglie/minuto, ripartita tra i quartieri in evacuazione; valore da tarare con le prove headless (layout 5, varianti A/B/C, semi 1–3), proposta con tabella, poi decide l'utente.
+  - **Piano editabile a tre colonne**: Difesa (ordinata, trascinabile) | Preallerta | Evacuazione; quartieri trascinabili tra colonne.
+  - **Classifica dei migliori del giorno**, per livello, azzerabile dal menu operatore; a lato della schermata iniziale e nel finale. Finale semplificato: stelle, classifica, breve debriefing.
+  - **«Evacua»**: mostra il percorso quartiere→area sicura e chiede conferma; intanto il mondo va a ×1 con un limite di tempo.
+  - **Previsione stocastica** del fuoco a **+1 h e +3 h**, isocrone al 50 %, mostrata quando cambiano le condizioni al contorno (vento).
+  - [ ] capacità di evacuazione (motore + taratura headless);
+  - [ ] nuovo modello del tempo (via pause/«Decidi», ×1 automatico con motivo generato);
+  - [ ] piano a tre colonne; percorso di evacuazione con conferma;
+  - [ ] classifica del giorno + finale semplificato + schermata iniziale;
+  - [ ] previsione stocastica +1 h/+3 h;
+  - [x] 2026-10-13 sidebar senza «Vista» (Home e «Vista iniziale (Home)» nel menu operatore); scroll a due dita = zoom come la rotella (`kiosk/view.rs`). **Da provare a mano sul trackpad**; «Segui il fuoco» non è più attivabile a mano (resta automatico);
+  - [x] 2026-10-13 Esc = «Salta» nel tutorial (`tutorial.rs`); nome: il campo riprende il fuoco se un altro widget l'aveva preso (`ui.rs`), F2 ignorato mentre si scrive (sul titolo usare «Menu»); «Legenda» in alto a destra della mappa (`legend_corner`); tolto «Il coordinatore propone» e l'anteprima del pannello mezzi. Esc e scrittura del nome **non provati a mano**.
+
 - **2026-10-13, Mario: easter egg, anche sul web** (richiesta dell'utente). Il pulsante «Esplora con Mario» è tolto dal titolo: restano solo **M** / Start del gamepad. Sul web `libsm64` è compilato in wasm (`crates/libsm64-native/build.rs` con clang LLVM, `wasm/shim` = header minimi, `wasm/libc.c` e `src/wasm.rs` = le poche funzioni libc); la ROM non è inclusa: `web/index.html` la chiede (selettore o trascinamento, .z64/.v64/.n64 convertiti in .z64), la tiene in IndexedDB e la dà al gioco come `window.marioRom`; la ROM rifiutata dal motore viene dimenticata. Senza ROM, M apre il selettore e Mario parte da solo appena arriva. Il contorno (silhouette) di Mario sul web è disattivato: legge la profondità, che WebGL2 non può campionare (era l'errore `textureLoad from depth textures`).
   - [x] compila e collega per `wasm32` (`scripts/build_web.sh`, serve LLVM clang: `brew install llvm`), nessun import `env` irrisolto; nativo invariato;
   - [ ] **non verificato a vista**: nel browser di prova (scheda in secondo piano, rAF limitato) M avvia Mario senza errori GPU ma non ho visto Mario sullo schermo: provarlo in un browser vero (carica la ROM, premi M dal titolo); controllare prestazioni e audio (autoplay del browser);

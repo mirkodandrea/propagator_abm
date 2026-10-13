@@ -145,6 +145,11 @@ pub fn draw(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, &Globa
     let at = place(ctx.available_rect(), &holes, size);
     let t = ctx.input(|i| i.time) as f32;
     let mut next = None;
+    // Esc is «Salta». Nothing else listens to Esc here: the tour's veil is
+    // over the whole screen, and Mario (M) is off while the tour is up.
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        next = Some(STEPS.len());
+    }
     egui::Area::new(egui::Id::new("tutorial")).fixed_pos(whole.min).order(egui::Order::Tooltip).show(ctx, |ui| {
         ui.allocate_rect(whole, egui::Sense::click_and_drag());
         let p = ui.painter().clone();
