@@ -2,6 +2,10 @@
 
 use bevy::prelude::*;
 
+/// Offscreen helper views do not drive scenery LOD or camera-facing effects.
+#[derive(Component)]
+pub struct AuxiliaryCamera;
+
 #[derive(Component)]
 pub struct OrbitCamera {
     /// Point on the ground the camera looks at, in Bevy space.

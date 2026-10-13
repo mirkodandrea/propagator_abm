@@ -855,7 +855,7 @@ impl Vegetation {
 
 pub fn lod(
     mut veg: ResMut<Vegetation>,
-    camera: Query<&Transform, With<Camera3d>>,
+    camera: Query<&Transform, (With<Camera3d>, Without<crate::camera::AuxiliaryCamera>)>,
     mut visibility: Query<&mut Visibility>,
 ) {
     let Ok(eye) = camera.get_single().map(|t: &Transform| t.translation) else { return };

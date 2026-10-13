@@ -191,6 +191,10 @@ pub struct WaterMaterial {
 }
 
 impl Material for WaterMaterial {
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Blend
+    }
+
     fn vertex_shader() -> ShaderRef {
         WATER_SHADER_HANDLE.into()
     }

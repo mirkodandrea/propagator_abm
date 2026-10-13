@@ -155,8 +155,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let n2 = value_noise(uv * 7.0 + vec2<f32>(11.0, 5.0)) - 0.5;
     normal = normalize(normal + vec3<f32>(n1 * 0.35 * chop, 0.0, n2 * 0.35 * chop));
 
-    let view_dir = normalize(view.world_position - in.world_position.xyz);
-    let fresnel = pow(1.0 - clamp(dot(normal, view_dir), 0.0, 1.0), 4.0);
+    let to_camera = view.world_position - in.world_position.xyz;
+    let view_distance = length(to_camera);
+    let view_dir = to_camera / max(view_distance, 0.001);
+    // Two-sided water: use the same angle response when swimming below it.
+    let facing = clamp(abs(dot(normal, view_dir)), 0.0, 1.0);
+    let fresnel = 0.02 + 0.98 * pow(1.0 - facing, 5.0);
 
     // `in.color.r` carries the distance to the shore in metres from `crate::sea` (0 at the
     // shoreline), `.g` the lattice spacing, sampled from the same terrain heightfield the ground
@@ -193,5 +197,16 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let foam = foam_edge * step(0.35, foam_noise + foam_edge * 0.4);
     col = mix(col, vec3<f32>(0.9, 0.93, 0.95) * light, foam * 0.85);
 
-    return apply_scene_fog(vec4<f32>(col, 1.0), in.world_position.xyz);
+    // Reveal the shoreline floor and submerged objects up close, especially
+    // looking down through calm water. Long views and grazing angles retain
+    // an opaque horizon; shore distance is a clarity proxy, not measured depth.
+    let near_view = 1.0 - smoothstep(35.0, 260.0, view_distance);
+    let clear_angle = smoothstep(0.15, 0.75, facing);
+    let clarity = 1.0 - smoothstep(10.0, 90.0, in.color.r);
+    let transmission = near_view * clear_angle * (1.0 - fresnel)
+        * mix(0.16, 0.70, clarity);
+    // Foam and sun glitter cover the transmitted view rather than fading out.
+    let coverage = clamp(max(foam * 0.85, spec * 1.5), 0.0, 1.0);
+    let opacity = mix(1.0 - transmission, 1.0, coverage);
+    return apply_scene_fog(vec4<f32>(col, opacity), in.world_position.xyz);
 }

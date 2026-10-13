@@ -17,6 +17,7 @@ use bevy::window::PrimaryWindow;
 
 mod agents;
 mod buildings;
+mod camera;
 mod field;
 mod frame;
 mod life;

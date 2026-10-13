@@ -617,7 +617,7 @@ impl QuadBuilder {
 pub fn update_flames(
     sim: Res<Sim>,
     time: Res<Time>,
-    camera: Query<&Transform, With<Camera3d>>,
+    camera: Query<&Transform, (With<Camera3d>, Without<crate::camera::AuxiliaryCamera>)>,
     buildings: Res<crate::buildings::Buildings>,
     mut view: ResMut<FireView>,
     mut meshes: ResMut<Assets<Mesh>>,
