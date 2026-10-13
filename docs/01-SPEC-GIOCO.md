@@ -79,6 +79,13 @@ Il piano proposto si ricalcola usando lo stato più recente quando necessario; i
 - due azioni chiare per i cittadini: **Preallerta / Evacua**; «Evacua» visibilmente bloccato, con il motivo («serve l'autorizzazione della sindaca»), finché il quartiere non è autorizzato;
 - un pulsante **Decidi** durante ×N (con l'attesa residua, se c'è) e un solo pulsante centrale **Conferma** nel momento delle scelte;
 - finale molto breve: persone rimaste in pericolo, case **colpite** (non chiamarle «distrutte» se è un proxy), effetto di almeno una scelta e possibilità di riprovare;
+- **riassunto a stelle** (decisione 2026-10-13, sostituisce punteggio 0–1000 e classifica): quattro categorie da 1 a 5 stelle, ciascuna con una riga di «perché» dalla storia della partita. Tutte calcolate da fatti simulati in `rocca::score`, non nella UI:
+  - **Persone:** famiglie risparmiate rispetto allo stesso incendio senza ordini;
+  - **Case:** case non colpite rispetto allo stesso incendio senza ordini;
+  - **Tempismo:** anticipo tra preallerta/evacuazione e arrivo del fuoco nel quartiere; meno stelle per le famiglie sorprese in strada;
+  - **Misura:** famiglie mandate in strada da quartieri che il fuoco non ha mai raggiunto (meno sono, più stelle).
+  Le soglie sono relative al caso (1 stella ≈ stesso incendio senza ordini, 5 ≈ migliore strategia di riferimento) e si tarano con `strategie_civili`. Le stelle giudicano esiti e tempi, non la «bontà» di una scelta con il senno di poi: un buon piano può non riuscire;
+- **niente classifica:** al suo posto gli **ultimi 8 giocatori** (nome dell'intro, livello, le quattro stelle), salvati in locale; l'operatore li azzera dalla barra F2;
 - **tempi e motivi dallo stato reale:** arrivi dei mezzi da ciò che stanno facendo, non dall'anteprima; quando un luogo prioritario resta senza mezzi, il motivo si legge nella sua scheda, già prima della conferma;
 - **vegetazione riconoscibile a colpo d'occhio** (decisione 2026-10-09): pini marittimi (pineta), castagni (latifoglie), cespugli (macchia) e prateria distinti per forma e colore anche nella vista generale; una legenda breve dice perché contano (l'erba corre, la macchia brucia forte, il bosco è più lento). Solo grafica: il combustibile simulato non cambia.
 

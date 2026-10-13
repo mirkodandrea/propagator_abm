@@ -9,7 +9,9 @@ Aggiornare a ogni iterazione (vedi `CLAUDE.md`). Fase corrente in cima.
   - [ ] **approvazione dell'utente della spec** prima di toccare il codice;
   - [ ] prototipo headless in `rocca::Game`: autorizzazione per quartiere (soglia sul tempo d'arrivo del fronte attivo, ~20 min simulati, stesso criterio di grafica e debrief), evacuazione rifiutata se non autorizzata, registro dei momenti delle scelte;
   - [ ] `strategie_civili`, layout 7, semi 1–3: «evacua appena autorizzato» / «solo preallerta» / «preallerta mirata + evacuazione selettiva»; la prima non deve dominare; tabella con la sequenza dei momenti ×1 e la durata reale stimata per caso;
-  - [ ] solo dopo: kiosk (`Kiosk` pause ×0 → ×1, pulsante «Decidi», «Evacua» bloccato con motivo, battute della sindaca), `KIOSK_SNAP` con le fasi nuove, partita scriptata del titolo.
+  - [x] 2026-10-13 **riassunto a stelle** al posto di punteggio e classifica (decisione dell'utente): Persone, Case, Tempismo, Misura, 1–5 stelle, da fatti simulati in `rocca::score`; **ultimi 8 giocatori** al posto della classifica. Scritto in `docs/01-SPEC-GIOCO.md` §5;
+  - [ ] calcolo di Tempismo e Misura in `rocca::score` e taratura delle soglie con `strategie_civili` (stesso giro di prove della sindaca); controllare che «evacua appena autorizzato» non prenda 5 stelle ovunque;
+  - [ ] solo dopo: kiosk (finale a stelle con il «perché», elenco degli ultimi giocatori al posto della classifica, «Azzera classifica» → «Azzera elenco»; `Kiosk` pause ×0 → ×1, pulsante «Decidi», «Evacua» bloccato con motivo, battute della sindaca), `KIOSK_SNAP` con le fasi nuove, partita scriptata del titolo.
 
 - **2026-10-13, menu operatore: livello grafico** (richiesta dell'utente). Nella barra operatore (F2), accanto a «Azzera classifica», «Nuova partita», caso/seme/velocità, c'è ora **Grafica: Alta / Media / Bassa**.
   - [x] Cambio dal vivo di MSAA, ombre/cascate, bloom, DoF e distanza LOD (`quality_live.rs`); la scelta è salvata in `~/.rocca_ventosa/grafica.txt` e riletta all'avvio (`KIOSK_QUALITY` e `KIOSK_GFX` hanno la precedenza). La densità del bosco cambia solo al riavvio (si pianta alla costruzione della scena).
