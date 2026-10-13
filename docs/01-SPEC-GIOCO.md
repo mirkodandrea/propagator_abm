@@ -85,7 +85,7 @@ Il piano proposto si ricalcola usando lo stato più recente quando necessario; i
   - **Tempismo:** anticipo tra preallerta/evacuazione e arrivo del fuoco nel quartiere; meno stelle per le famiglie sorprese in strada;
   - **Misura:** famiglie mandate in strada da quartieri che il fuoco non ha mai raggiunto (meno sono, più stelle).
   Le soglie sono relative al caso (1 stella ≈ stesso incendio senza ordini, 5 ≈ migliore strategia di riferimento) e si tarano con `strategie_civili`. Le stelle giudicano esiti e tempi, non la «bontà» di una scelta con il senno di poi: un buon piano può non riuscire;
-- **niente classifica:** al suo posto gli **ultimi 8 giocatori** (nome dell'intro, livello, le quattro stelle), salvati in locale; l'operatore li azzera dalla barra F2;
+- **niente classifica:** al suo posto gli **ultimi 8 giocatori** (nome dell'intro, **livello ben in evidenza** — Facile / Medio / Esperto, con un colore per livello —, le quattro stelle). Il livello si vede perché le stelle sono assolute e non confrontabili tra livelli: 3 stelle a Esperto possono valere più di 4 a Facile (decisione 2026-10-13), salvati in locale; l'operatore li azzera dalla barra F2;
 - **tempi e motivi dallo stato reale:** arrivi dei mezzi da ciò che stanno facendo, non dall'anteprima; quando un luogo prioritario resta senza mezzi, il motivo si legge nella sua scheda, già prima della conferma;
 - **vegetazione riconoscibile a colpo d'occhio** (decisione 2026-10-09): pini marittimi (pineta), castagni (latifoglie), cespugli (macchia) e prateria distinti per forma e colore anche nella vista generale; una legenda breve dice perché contano (l'erba corre, la macchia brucia forte, il bosco è più lento). Solo grafica: il combustibile simulato non cambia.
 
