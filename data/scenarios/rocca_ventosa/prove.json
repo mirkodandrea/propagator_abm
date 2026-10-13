@@ -2,6 +2,54 @@
   "about": "Fires for the headless trials and tests only (user, 2026-10-13): the game plays the three levels in game.json.",
   "cases": [
     {
+      "name": "Borgo2_gira",
+      "near": "Castelvento",
+      "ignition": [
+        5870.0,
+        4750.0
+      ],
+      "radius_m": 60.0,
+      "wind_from_deg": 119.0,
+      "wind_kmh": 40.0,
+      "minutes": 180,
+      "shift": {
+        "at_min": 45,
+        "wind_from_deg": 327.1,
+        "wind_kmh": 40.0,
+        "toward": "San Rocco"
+      }
+    },
+    {
+      "name": "Terra1_gira",
+      "near": "Le Terrazze",
+      "ignition": [
+        5590.0,
+        4370.0
+      ],
+      "radius_m": 60.0,
+      "wind_from_deg": 119.0,
+      "wind_kmh": 40.0,
+      "minutes": 180,
+      "shift": {
+        "at_min": 45,
+        "wind_from_deg": 280.4,
+        "wind_kmh": 40.0,
+        "toward": "San Rocco"
+      }
+    },
+    {
+      "name": "Rocco3",
+      "near": "San Rocco",
+      "ignition": [
+        7170.0,
+        4430.0
+      ],
+      "radius_m": 60.0,
+      "wind_from_deg": 80.0,
+      "wind_kmh": 40.0,
+      "minutes": 180
+    },
+    {
       "name": "Borgo1",
       "near": "Castelvento",
       "ignition": [

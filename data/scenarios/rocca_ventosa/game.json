@@ -77,11 +77,10 @@
       "minutes": 180,
       "shift": {
         "at_min": 45,
-        "wind_from_deg": 327.1,
+        "wind_from_deg": 70.0,
         "wind_kmh": 40.0,
-        "toward": "San Rocco"
-      },
-      "alias": "Borgo2_gira"
+        "toward": "Pian dei Grilli"
+      }
     },
     {
       "name": "medium",
@@ -96,24 +95,22 @@
       "minutes": 180,
       "shift": {
         "at_min": 45,
-        "wind_from_deg": 280.4,
+        "wind_from_deg": 50.0,
         "wind_kmh": 40.0,
-        "toward": "San Rocco"
-      },
-      "alias": "Terra1_gira"
+        "toward": "Pian dei Grilli"
+      }
     },
     {
       "name": "easy",
-      "near": "San Rocco",
+      "near": "Le Terrazze",
       "ignition": [
-        7170.0,
-        4430.0
+        5600.0,
+        4600.0
       ],
       "radius_m": 60.0,
-      "wind_from_deg": 80.0,
+      "wind_from_deg": 70.0,
       "wind_kmh": 40.0,
-      "minutes": 180,
-      "alias": "Rocco3"
+      "minutes": 180
     }
   ]
 }

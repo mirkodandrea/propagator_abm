@@ -108,10 +108,16 @@ pub struct Scenario {
 /// published by `tools/scenario_factory.py publish`).
 pub const ID: &str = "rocca_ventosa";
 
+/// The territory to play: `ROCCA_SCENARIO` if set (a territory under trial,
+/// e.g. `rocca_banco`), else [`ID`].
+pub fn id() -> String {
+    std::env::var("ROCCA_SCENARIO").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| ID.to_string())
+}
+
 impl Scenario {
     /// Load the game's territory from a data directory (`data`).
     pub fn load(data_dir: impl AsRef<Path>) -> Result<Scenario> {
-        Self::load_by_id(data_dir, ID)
+        Self::load_by_id(data_dir, id())
     }
 
     /// Load a scenario directory `data_dir/scenarios/<id>/`. The game has one
