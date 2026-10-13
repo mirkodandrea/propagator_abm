@@ -74,7 +74,7 @@ Variabili utili del chiosco:
 
 ### Screenshot di stati arbitrari (`KIOSK_SNAP`)
 
-Per controllare grafica e UX **non giocare una partita**: `kiosk/snap.rs` porta il gioco a uno stato descritto in una riga e salva il PNG. Serve la build `--release` e una finestra vera, quindi uno schermo. `KIOSK_SHOT` gioca invece una partita scriptata intera; `KIOSK_SHOT_END` mostra solo il finale.
+Per controllare grafica e UX **non giocare una partita**: `kiosk/snap.rs` porta il gioco a uno stato descritto in una riga e salva il PNG. Per gli snap nativi serve la build `--release` e una finestra vera. Per giocare e acquisire PNG **senza schermo né focus**, usare `scripts/playtest.py` (`docs/web.md`): browser headless, input reale, avanzamento rapido fino alla prossima decisione. `KIOSK_SHOT` gioca invece una partita scriptata intera; `KIOSK_SHOT_END` mostra solo il finale.
 
 ```
 KIOSK_SNAP=<cartella> KIOSK_SNAP_SPEC='name=a,t=40,at=district:Castelvento,dist=700,pitch=-35;name=b,t=120,phase=fine' cargo run -p game --release

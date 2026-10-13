@@ -29,6 +29,10 @@
     <input id="rom-input" type="file" accept=".z64,.v64,.n64,.rom" hidden>
     <script type="module">
       import init from './game.js';
+      // Explicitly opt in; normal visitors retain the real-time kiosk clock.
+      if (new URLSearchParams(location.search).get('playtest') === '1') {
+        window.roccaPlaytest = { frame: 0, advance_s: 0, elapse_s: 0, state: null };
+      }
       const loading = document.querySelector('#loading');
       const bar = document.querySelector('#bar');
       const fill = document.querySelector('#fill');

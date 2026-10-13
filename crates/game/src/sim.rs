@@ -57,6 +57,18 @@ impl Sim {
         Ok(())
     }
 
+    /// Fast automation clock: fixed model steps, stopping exactly at a decision
+    /// or the end. Does not accumulate wall time or skip simulation work.
+    pub fn advance_steps(&mut self, max_steps: usize) -> anyhow::Result<usize> {
+        let mut count = 0;
+        while count < max_steps && self.game.crisis.is_none() && self.game.time_s() < self.game.case.duration_s() {
+            self.game.step()?;
+            count += 1;
+        }
+        if count > 0 { self.generation += 1; }
+        Ok(count)
+    }
+
     /// Advance by `real_s` of wall time at the current speed. Effects depend on
     /// simulated time only: steps are always [`STEP_S`] long, and a frame stops
     /// on the step that raised a crisis, so the player meets it at the same
@@ -92,16 +104,17 @@ mod tests {
     /// A scripted kiosk game: the near locality first with a pre-alert, and at
     /// each crisis the place it names moves first. Returns when each crisis
     /// was met (simulated s) and the outcome.
-    fn play(speed: f32, frame_s: f32) -> (Vec<i64>, rocca::Outcome) {
+    fn play(speed: f32, frame_s: f32, batch: Option<usize>) -> (Vec<i64>, rocca::Outcome) {
         let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
-        let mut sim = Sim::new(&data, "Coste2_gira", 1).unwrap();
+        let mut sim = Sim::new(&data, "medium", 1).unwrap();
         let n = sim.districts.len();
         let near = sim.district_index(&sim.case.near.clone()).unwrap();
         sim.commit(Plan::new(n).with_priorities(&[near]).with_civil(near, Civil::Preallerta)).unwrap();
         sim.speed = speed;
         let mut met = vec![];
         while sim.time_s() < sim.case.duration_s() {
-            sim.tick(frame_s).unwrap();
+            if let Some(batch) = batch { sim.advance_steps(batch).unwrap(); }
+            else { sim.tick(frame_s).unwrap(); }
             if let Some(c) = sim.take_crisis() {
                 met.push(sim.time_s());
                 let Some(d) = c.kind.district() else { continue };
@@ -118,10 +131,12 @@ mod tests {
     /// ×20 at 40 FPS, ×120 at 40 FPS, at 4 FPS and with 84 s frames give the same game.
     #[test]
     fn the_speed_does_not_change_the_game() {
-        let slow = play(20.0, 1.0 / 40.0);
-        assert!(!slow.0.is_empty(), "Coste2_gira should raise a crisis");
-        assert_eq!(play(120.0, 1.0 / 40.0), slow);
-        assert_eq!(play(120.0, 0.25), slow);
-        assert_eq!(play(120.0, 0.7), slow);
+        let slow = play(20.0, 1.0 / 40.0, None);
+        assert!(!slow.0.is_empty(), "medium should raise a crisis");
+        assert_eq!(play(120.0, 1.0 / 40.0, None), slow);
+        assert_eq!(play(120.0, 0.25, None), slow);
+        assert_eq!(play(120.0, 0.7, None), slow);
+        assert_eq!(play(0.0, 0.0, Some(40)), slow);
+        assert_eq!(play(0.0, 0.0, Some(10_000)), slow);
     }
 }

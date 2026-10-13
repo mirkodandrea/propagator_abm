@@ -142,6 +142,7 @@ pub fn button(ui: &mut egui::Ui, icon: Icon, text: &str, on: bool, colour: Color
     if !enabled {
         p.rect_filled(r, 9.0, Color32::from_black_alpha(120));
     }
+    crate::playtest::control(text, &resp, enabled);
     pointing(resp)
 }
 
@@ -180,6 +181,7 @@ pub fn tall_button(ui: &mut egui::Ui, icon: Icon, text: &str, on: bool, colour: 
     if !enabled && on {
         p.rect_filled(r, 9.0, Color32::from_black_alpha(120));
     }
+    crate::playtest::control(text, &resp, enabled);
     pointing(resp)
 }
 

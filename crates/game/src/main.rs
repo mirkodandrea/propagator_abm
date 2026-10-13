@@ -30,6 +30,7 @@ mod overlays;
 mod life;
 mod people;
 mod pick;
+mod playtest;
 mod quality;
 mod quality_live;
 mod retro;
@@ -222,7 +223,7 @@ fn kiosk_systems(app: &mut App) {
         Update,
         (
             kiosk::launch.run_if(in_state(AppState::SelectingScenario)),
-            (kiosk::ui::draw, kiosk::step, kiosk::snap::drive, kiosk::view::camera.run_if(map_camera_allowed), kiosk::snap::hold, kiosk::shots)
+            (kiosk::ui::draw, kiosk::step, kiosk::snap::drive, kiosk::view::camera.run_if(map_camera_allowed), kiosk::snap::hold, kiosk::shots, playtest::observe)
                 .chain()
                 .run_if(in_state(AppState::Playing)),
             kiosk::view::hide_game_overlays

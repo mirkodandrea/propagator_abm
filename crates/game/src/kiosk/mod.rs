@@ -311,10 +311,10 @@ impl Kiosk {
     /// in steps).
     #[cfg(target_arch = "wasm32")]
     fn advance_baseline(&mut self) {
-        const STEPS_PER_FRAME: usize = 4;
+        let steps_per_frame = if crate::playtest::active() { 100 } else { 4 };
         let Some(g) = self.run.as_mut() else { return };
         let end = g.case.duration_s();
-        for _ in 0..STEPS_PER_FRAME {
+        for _ in 0..steps_per_frame {
             if g.time_s() >= end {
                 break;
             }
@@ -529,7 +529,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
     mario: Res<crate::mario::Playground>,
     mut was_mario: Local<bool>,
 ) {
-    let dt = time.delta_seconds();
+    let dt = crate::playtest::delta(time.delta_seconds());
     // Title exploration has its own clock; the demo director stays suspended
     // so it cannot restart the world beneath Mario or start the player's game.
     if mario.active && kiosk.title {
@@ -537,7 +537,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
             0.
         } else { mario.simulation_speed };
         if sim.speed > 0. {
-            if let Err(e) = sim.tick(dt) { kiosk.error = Some(format!("{e:#}")); }
+            if let Err(e) = crate::playtest::tick(&mut sim, dt) { kiosk.error = Some(format!("{e:#}")); }
             // This is still the title demo: no player decision or new orders.
             let _ = sim.take_crisis();
         }
@@ -589,7 +589,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         _ => 0.0,
     };
     if sim.speed > 0.0 {
-        if let Err(e) = sim.tick(dt) {
+        if let Err(e) = crate::playtest::tick(&mut sim, dt) {
             kiosk.error = Some(format!("{e:#}"));
             kiosk.enter(Phase::Fine);
         }

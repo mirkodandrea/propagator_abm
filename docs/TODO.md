@@ -65,6 +65,7 @@ Tutti i numeri raccolti finora valgono per il territorio precedente al valico e 
 
 Le regole complete sono in `docs/01-GIOCO.md`. Qui le decisioni recenti, per orientarsi.
 
+- 2026-10-13: playtest per agenti in browser headless senza focus (`scripts/playtest.py`, `docs/web.md`), con screenshot e avanzamento CPU dei passi originali fino a ogni decisione; il gioco normale conserva i suoi tempi.
 - 2026-10-13: Mario riceve un boost con Spazio / × durante il volo; R / △ apre la scelta del punto sulla mappa dall’alto, con mouse o pad, zoom, conferma e annullamento (`docs/MARIO.md`).
 - 2026-10-13: niente pause né «Decidi». Gli ordini valgono subito; ×1 automatico solo per autorizzazione della sindaca, cambio di vento e fuoco vicino a un borgo non avvisato. Il testo del ×1 è generato.
 - 2026-10-13: «Evacua» solo con l'autorizzazione della sindaca (fronte entro 20 min); prima mostra le vie di fuga e chiede conferma (×1, 20 s).

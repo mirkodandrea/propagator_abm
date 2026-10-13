@@ -145,6 +145,7 @@ pub fn draw(
     mut gfx: ResMut<crate::quality::Graphics>,
     mut mario: ResMut<crate::mario::Playground>,
 ) {
+    crate::playtest::begin();
     let faces = portraits.as_deref();
     let ctx = contexts.ctx_mut();
     if mario.active {
@@ -342,7 +343,9 @@ fn title(ctx: &egui::Context, k: &Kiosk, logo: Option<egui::TextureId>) -> (bool
             ui.label(RichText::new("Aiutaci a gestire un incendio.").size(26.0).color(AMBER));
             ui.add_space(34.0);
             let b = egui::Button::new(RichText::new("Gioca").size(44.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(16.0).min_size(egui::vec2(360.0, 96.0));
-            play = icons::pointing(ui.add(b)).clicked();
+            let r = ui.add(b);
+            crate::playtest::control("Gioca", &r, true);
+            play = icons::pointing(r).clicked();
         });
     });
     egui::Area::new(egui::Id::new("titolo_nota")).anchor(Align2::LEFT_BOTTOM, [18.0, -14.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
@@ -479,6 +482,7 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                         .desired_width(320.0)
                         .margin(egui::vec2(12.0, 8.0));
                     let r = ui.add(edit);
+                    crate::playtest::control("Nome", &r, true);
                     // always the field's: a click elsewhere (a button, the map)
                     // may have moved the focus, and nothing else on this
                     // screen takes typing
@@ -517,6 +521,7 @@ fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, logo: Option<egui::Textu
                                 });
                             });
                         let r = ui.interact(card.response.rect, id.with("clic"), egui::Sense::click());
+                        crate::playtest::control(&l.name, &r, named);
                         ui.ctx().memory_mut(|m| m.data.insert_temp(id, r.hovered()));
                         if named {
                             let r = icons::pointing(r);
@@ -1266,6 +1271,7 @@ fn district_chips(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, 
                 });
             });
             let hit = icons::pointing(ui.interact(framed.response.rect, egui::Id::new(("badge_hit", d)), egui::Sense::click()));
+            crate::playtest::control(&format!("Mappa:{}", dist.name), &hit, k.can_order());
             if hit.clicked() {
                 clicked = Some(d);
             }
@@ -1580,6 +1586,7 @@ fn plan(ui: &mut egui::Ui, k: &mut Kiosk, sim: &Sim) {
             });
         });
         let resp = r.response;
+        crate::playtest::control(&format!("Borgo:{}", sim.districts[d].name), &resp, enabled);
         if resp.clicked() {
             *open = Some(d);
         }
@@ -2017,6 +2024,7 @@ fn big_button(ui: &mut egui::Ui, icon: Option<Icon>, label: &str, fill: Color32)
     if resp.hovered() {
         p.rect_stroke(r.expand(2.0), 11.0, egui::Stroke::new(3.0, Color32::WHITE));
     }
+    crate::playtest::control(label, &resp, true);
     icons::pointing(resp)
 }
 
@@ -2479,7 +2487,9 @@ fn debrief(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                         let big = |t: &str| egui::Button::new(RichText::new(t).size(26.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(side, 64.0));
                         // one way on (playtest colleghi): «Riprova» goes back to
                         // the levels, the name kept; without levels, the same fire
-                        if icons::pointing(ui.add_sized([side, 64.0], big("Riprova"))).clicked() {
+                        let retry = ui.add_sized([side, 64.0], big("Riprova"));
+                        crate::playtest::control("Riprova", &retry, true);
+                        if icons::pointing(retry).clicked() {
                             if k.territory.levels.is_empty() {
                                 again = Some(k.case.clone());
                             } else {
