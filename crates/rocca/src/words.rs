@@ -2,11 +2,11 @@
 //! the coordinator's reasons, the crises, the log and the kiosk.
 
 /// The hour of day the fire is reported: the game's clock starts here, so
-/// the player reads "ore 14:26", a time that runs, rather than "T+0:26"
+/// the player reads "ore 11:26", a time that runs, rather than "T+0:26"
 /// (user, 2026-10-09: it was not clear the game runs in real time).
-pub const START_H: i64 = 14;
+pub const START_H: i64 = 11;
 
-/// Seconds since the start as a time of day: `1560` as "14:26".
+/// Seconds since the start as a time of day: `1560` as "11:26".
 pub fn clock(s: i64) -> String {
     let m = START_H * 60 + s.max(0) / 60;
     format!("{}:{:02}", (m / 60) % 24, m % 60)

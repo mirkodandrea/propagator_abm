@@ -10,8 +10,8 @@ use anyhow::Result;
 use crate::hex::Axial;
 use crate::Game;
 
-/// Simulated minutes the tutorial runs before it pauses by itself: at ×60
-/// that is 30 real seconds (user, 2026-10-14).
+/// Simulated minutes the tutorial runs before it pauses by itself: at ×120
+/// that is 15 real seconds (user, 2026-10-14).
 pub const RUN_MIN: i64 = 30;
 
 /// What a step waits for.

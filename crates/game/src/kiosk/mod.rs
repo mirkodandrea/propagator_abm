@@ -7,7 +7,7 @@
 //! Flow: **Intro** (name, «Inizia») → **Tutorial** (day 1: a scripted small
 //! fire, one prompted step at a time; the world stands still while a step
 //! waits for the player) → **Giorno2** (one screen: a new day, a new fire) →
-//! **Gioco** (×60, opens in pause; the pause stops the world, orders only
+//! **Gioco** (×120, opens in pause; the pause stops the world, orders only
 //! in pause) → **Fine** (stars
 //! against the same fire with no orders, the day's board). A new visit starts
 //! from the end screen or the operator menu (F2), never by itself.
@@ -126,10 +126,14 @@ pub struct Kiosk {
     /// Real seconds the opening screen's fire has been on show: the camera
     /// director's clock ([`demo_shot`]).
     pub demo_t: f32,
+    /// The title screen («Gioca») is showing over the opening's fire.
+    pub title: bool,
     /// The speed the director asks for, eased.
     demo_speed: f32,
     /// The shot being held (its index) and what it looks at.
     pub demo_pick: (usize, Subject),
+    /// When ([`Kiosk::demo_t`]) the scripted orders under the opening are next given.
+    demo_order_at: f32,
     /// The operator menu (F2).
     pub operator: bool,
     /// «Ferma il mondo» (operator).
@@ -141,10 +145,12 @@ impl Kiosk {
     fn new(territory: Territory, data: PathBuf) -> Kiosk {
         Kiosk {
             phase: Phase::Intro,
+            title: true,
             phase_t: 0.0,
             demo_t: 0.0,
             demo_speed: 0.0,
             demo_pick: (usize::MAX, Subject::Wide),
+            demo_order_at: 2.0,
             territory,
             data,
             seed: 1,
@@ -315,18 +321,73 @@ fn demo_restart(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRes
     }
     restarted.send(SimRestarted);
     k.demo_pick = (usize::MAX, Subject::Wide);
+    k.demo_order_at = k.demo_t + 2.0;
+}
+
+/// Seconds between the scripted orders under the opening.
+const DEMO_ORDERS_S: f32 = 30.0;
+
+/// The game under the opening plays itself: the teams go to the fire, the
+/// town nearest to it is evacuated. The camera follows what was ordered (a
+/// cut to the team on its way, to the town that is being emptied). The game
+/// is still in its opening pause, so orders are allowed; the kiosk's clock
+/// runs it anyway.
+fn demo_orders(k: &mut Kiosk, sim: &mut Sim) {
+    if k.demo_t < k.demo_order_at {
+        return;
+    }
+    k.demo_order_at = k.demo_t + DEMO_ORDERS_S;
+    // orders are given in a pause: a free one, over at once
+    sim.opening_pause();
+    demo_give_orders(k, sim);
+    sim.resume();
+}
+
+fn demo_give_orders(k: &mut Kiosk, sim: &mut Sim) {
+    let cells = sim.fire.active_cells();
+    if cells.is_empty() {
+        k.demo_order_at = k.demo_t + 3.0;
+        return;
+    }
+    let fire: Vec<scenario::Pos> = cells.iter().step_by((cells.len() / 200).max(1)).map(|&c| sim.scn.world.centre_of(c)).collect();
+    let n = sim.teams.len();
+    let mut first = None;
+    for t in 0..n {
+        let p = fire[(t + 1) * fire.len() / (n + 1)];
+        if let Some(h) = sim.hexes.nearest(p).map(|h| h.at) {
+            match sim.move_team(t, h) {
+                Ok(_) if first.is_none() => first = Some(sim.teams[t].crew_unit),
+                Err(e) => eprintln!("DEMOTMP move {t}: {e}"),
+                _ => {}
+            }
+        }
+    }
+    let gap = |p: scenario::Pos| fire.iter().map(|f| (f.x - p.x).hypot(f.y - p.y)).fold(f32::MAX, f32::min);
+    let near = (0..sim.districts.len()).map(|d| (d, gap(sim.districts[d].centre))).filter(|t| t.1 < 2500.0).min_by(|a, b| a.1.total_cmp(&b.1));
+    let mut cut = first.map(Subject::Crew);
+    if let Some((d, _)) = near {
+        if sim.evacuate(d).is_ok() {
+            cut = Some(Subject::District(d));
+        }
+    }
+    eprintln!("DEMOTMP t={} teams={} cut={:?} log={:?}", k.demo_t, n, cut, sim.log.last().map(|l| l.text.clone()));
+    if let Some(s) = cut {
+        k.demo_pick = (demo_shot(k.demo_t), s);
+    }
 }
 
 /// A new visit: the played fire runs by itself under the name screen.
 pub fn new_visit(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
     demo_restart(k, sim, restarted);
     k.demo_t = 0.0;
+    k.demo_order_at = 2.0;
     k.demo_speed = 0.0;
     k.player.clear();
     k.saved = None;
     k.log_seen = 0;
     k.script = None;
     k.step = 0;
+    k.title = true;
     k.enter(Phase::Intro);
 }
 
@@ -390,6 +451,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         k.demo_t += dt;
         let want = rocca::RUN_X * k.demo_pick.1.pace();
         k.demo_speed += (want - k.demo_speed) * (1.0 - (-1.5 * dt.min(0.1)).exp());
+        demo_orders(k, &mut sim);
         if sim.is_over() && k.demo_t > 3.0 {
             demo_restart(k, &mut sim, &mut restarted);
         }

@@ -312,8 +312,8 @@ pub fn camera(
             orbit.distance += (*gd - orbit.distance) * a;
             // a slow drift of the heading around the shot's own, so the
             // picture is never still
-            let yaw = yaw0 + sway * 0.18 * (kiosk.demo_t * 0.05).sin();
-            orbit.yaw += (yaw - orbit.yaw) * a;
+            let yaw = yaw0 + sway * 0.5 + 0.2 * (kiosk.demo_t * 0.08).sin();
+            orbit.yaw += (yaw - orbit.yaw) * (1.0 - (-0.35 * dt).exp());
             orbit.pitch += (pitch - orbit.pitch) * a;
         }
     }

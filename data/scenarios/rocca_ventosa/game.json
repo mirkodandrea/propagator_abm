@@ -1,6 +1,6 @@
 {
   "scenario": "rocca_ventosa",
-  "moisture_pct": 3.0,
+  "moisture_pct": 5.0,
   "stations": [
     {
       "name": "Caserma dei Vigili del fuoco - Castelvento",

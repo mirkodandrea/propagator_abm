@@ -28,13 +28,13 @@ use crate::hex::{Axial, Hex, HexGrid};
 /// Simulated seconds per step.
 pub const STEP_S: i64 = 6;
 /// Simulated seconds per real second while the game runs: the game goes at
-/// ×60 or it is stopped, nothing else (user, 2026-10-14).
-pub const RUN_X: f32 = 60.0;
+/// ×120 or it is stopped, nothing else (user, 2026-10-14).
+pub const RUN_X: f32 = 120.0;
 /// Real seconds after a pause before the next can be asked (user,
 /// 2026-10-14). The game only runs at [`RUN_X`] between pauses, so it is
 /// kept as simulated time: [`PAUSE_COOLDOWN_S`].
-pub const PAUSE_COOLDOWN_REAL_S: f32 = 30.0;
-/// Simulated time after a pause before the next can be asked: 30 min.
+pub const PAUSE_COOLDOWN_REAL_S: f32 = 10.0;
+/// Simulated time after a pause before the next can be asked: 20 min.
 pub const PAUSE_COOLDOWN_S: i64 = (PAUSE_COOLDOWN_REAL_S * RUN_X) as i64;
 /// Spegnimento rispetto al modello calibrato (scelta dell'utente 2026-10-13:
 /// linea ×3, acqua ×30, portata ×20).

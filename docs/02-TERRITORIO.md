@@ -24,7 +24,7 @@ Un solo territorio sintetico e plausibile, riusato con diversi inneschi e venti:
 - Le **aree sicure** dell'evacuazione si ricavano dai dati (`abm::refuge`: nodi stradali con poco combustibile intorno, raggiungibili in auto). Per ogni borgo si sceglie la più vicina su strada, a più di 400 m dalle sue case.
 - **Valico** (2026-10-13): una fascia di macchia alta (classe 9, con faville), circa 117 ha, lungo la Strada del Passo. Va da Le Terrazze, passa la sella e arriva alla macchia sopra Pian dei Grilli. Serve perché il fuoco possa arrivare anche ai borghi a ovest: prima nessun incendio colpiva case sia a est sia a ovest. Il fuoco passa a ovest quando il vento gira da nord-est dentro il passo. Larghezza variabile (in media 320 m), bordo frastagliato di macchia media (classe 8) e qualche isola del bosco vecchio, perché nel chiosco non sembri una striscia dipinta; il nucleo lungo la strada è sempre continuo.
 - **Costa est** (2026-10-13): a nord del porto una baia sabbiosa, un piccolo promontorio e l'angolo nord-est in diagonale, al posto della costa dritta a 300 m dal bordo della finestra; anche il breve tratto dritto a sud del porto è rifatto. Solo terra diventata mare: porto, strade, case e inneschi non cambiano.
-- **Umidità del combustibile:** 3 %, fissa e uniforme. La leva vera è il vento.
+- **Umidità del combustibile:** 5 %, fissa e uniforme. La leva vera è il vento.
 - **Squadre** (2026-10-14): 3 squadre dei vigili del fuoco alla caserma di Castelvento, 2 squadre di volontari AIB al presidio di Pian dei Grilli (dal 2026-10-14, dall'altra parte dell'isola rispetto a Castelvento). Ogni squadra è un'autobotte con 3 persone.
 - **Esagoni** di 500 m: valgono solo quelli attraversati da una strada carrabile della rete della caserma (`rocca::hex`).
 

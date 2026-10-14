@@ -103,7 +103,13 @@ pub fn draw(
     match k.phase {
         Phase::Intro => {
             k.side_w = 0.0;
-            screens::intro(ctx, k, &mut sim, &mut restarted, logo.as_deref(), faces.as_deref());
+            if k.title {
+                if screens::title(ctx, k, logo.as_deref()) {
+                    k.title = false;
+                }
+            } else {
+                screens::intro(ctx, k, &mut sim, &mut restarted, logo.as_deref(), faces.as_deref());
+            }
         }
         Phase::Giorno2 => {
             k.side_w = 0.0;

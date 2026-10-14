@@ -8,6 +8,7 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
 
 ### Decisioni recenti
 
+- 2026-10-15: la simulazione parte alle **11:00** (prima 14:00), richiesta dell'utente: `rocca::words::START_H`; l'orologio e il sole del chiosco ne derivano (11:00–14:00). Il meteo dello scenario non dipende dall'ora.
 - 2026-10-14: le strade si riaprono 8 min dopo l'accensione delle celle vicine (`FLAME_S` in `fire`): le celle che covano non chiudono più la strada (restano a 0,25 come le bruciate). Traccia dell'acqua e della linea tagliata più visibile (`units.rs`). **Da riverificare nella tabella di bilanciamento.**
 
 ### Da fare, in ordine
@@ -19,10 +20,10 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
    - «piano ragionato».
 
    Nessuna deve dominare. Oggi il piano ragionato prende Persone 5, Case 2, Ettari 2–3 (semi 1 e 2). Per ripetere le prove conviene un esempio `examples/strategie.rs` che le giochi tutte e stampi la tabella.
-2. [ ] **Soglia delle persone colpite:** chi è a casa senza ordine viene contato «colpito» quando il pericolo alla porta arriva a `ALARMING`. È severa: 65 persone a Le Terrazze già alle 14:55. Proporre `IMPASSABLE` o la casa colpita, poi decide l'utente.
+2. [ ] **Soglia delle persone colpite:** chi è a casa senza ordine viene contato «colpito» quando il pericolo alla porta arriva a `ALARMING`. È severa: 65 persone a Le Terrazze già alle 11:55. Proporre `IMPASSABLE` o la casa colpita, poi decide l'utente.
 3. [ ] **Soglie delle stelle** (`score::{PERSONE, CASE, ETTARI}`), da ricavare dalla tabella del punto 1.
 4. [ ] **Persone a piedi delle squadre:** vederle a schermo con `KIOSK_SNAP`, e misurare quanto conta il taglio rispetto all'acqua (partite con e senza `crews_follow_the_fire`).
-5. [ ] **Tutorial** (ridisegnato il 2026-10-14: parte in pausa, 2 ordini, 30 min a ×60 con pausa automatica, evacuazione, fine): provare a mano il flusso nel chiosco; il tutorial finisce a evacuazione terminata (`Game::evacuation_finished`), caso di 60 min. **Velocità:** unica ×60 o ferma (`rocca::RUN_X`, 2026-10-14); tolto il selettore dal menu operatore. Le prove di bilanciamento non dipendono dalla velocità, ma la ricarica dell'esperto ora è 30 min simulati, non 2 h 30: il bilanciamento del giorno 2 va ripreso con questo ritmo.
+5. [ ] **Tutorial** (ridisegnato il 2026-10-14: parte in pausa, 2 ordini, 30 min a ×120 con pausa automatica, evacuazione, fine): provare a mano il flusso nel chiosco; il tutorial finisce a evacuazione terminata (`Game::evacuation_finished`), caso di 60 min. **Velocità:** unica ×120 o ferma (`rocca::RUN_X`, 2026-10-14); tolto il selettore dal menu operatore. Le prove di bilanciamento non dipendono dalla velocità, ma la ricarica dell'esperto ora è 10 s reali = 20 min simulati (2026-10-15, richiesta dell'utente: ×120 e 10 s): il bilanciamento del giorno 2 va ripreso con questo ritmo.
 6. [ ] **Grafica e UX:**
    - famiglie in strada invisibili;
    - coni 3D trascinabili (senza conferma), pulsante di pausa rotondo, piano modificabile in pausa, percorso e tempo dell'evacuazione al passaggio del mouse, pausa che ferma il mondo: fatti il 2026-10-14 ma provati solo con `KIOSK_SNAP`. Il trascinamento vero e la pausa d'apertura vanno provati a mano;

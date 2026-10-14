@@ -6,7 +6,7 @@
 //! | key      | meaning                                                              |
 //! |----------|----------------------------------------------------------------------|
 //! | `name`   | file name without `.png` (default `snap<N>`)                         |
-//! | `phase`  | `intro`, `tutorial`, `giorno2`, `gioco` (default), `fine`             |
+//! | `phase`  | `title`, `intro`, `tutorial`, `giorno2`, `gioco` (default), `fine`             |
 //! | `step`   | the tutorial's step on show (with `phase=tutorial`)                   |
 //! | `t`      | simulated minutes since the start, run headless (default 0)          |
 //! | `pause`  | `1`: in pause (the expert's forecast on the map)                     |
@@ -125,7 +125,7 @@ pub struct Progress {
 /// Bring the game to the state.
 fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) -> Option<(Vec3, Option<f32>, Option<f32>, Option<f32>)> {
     let phase = match st.phase.as_str() {
-        "intro" => Phase::Intro,
+        "intro" | "title" => Phase::Intro,
         "tutorial" => Phase::Tutorial,
         "giorno2" => Phase::Giorno2,
         "fine" => Phase::Fine,
@@ -171,6 +171,7 @@ fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<S
     }
     sim.generation += 1;
     k.enter(phase);
+    k.title = st.phase == "title";
     if phase == Phase::Tutorial {
         k.script = rocca::tutorial::Script::of(sim);
         k.step = st.step;

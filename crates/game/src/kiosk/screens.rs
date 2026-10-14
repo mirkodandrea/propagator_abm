@@ -50,6 +50,58 @@ fn volunteer(ui: &mut egui::Ui, faces: Option<&Portraits>, mood: Mood, size: f32
     });
 }
 
+// --- the title ----------------------------------------------------------------
+
+/// The title screen: the fire plays behind it with the roaming camera, here
+/// only the name and «Gioca». True when «Gioca» was pressed.
+pub fn title(ctx: &egui::Context, k: &Kiosk, logo: Option<&Logo>) -> bool {
+    let screen = ctx.screen_rect();
+    let mut play = false;
+    egui::Area::new(egui::Id::new("titolo_fondo")).fixed_pos(screen.min).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
+        let p = ui.painter();
+        p.rect_filled(screen, 0.0, Color32::from_black_alpha(70));
+        // darker toward the middle, where the words are: one mesh whose
+        // vertex opacity follows a bell, so the band has no edge and no seams
+        let (h, n) = (640.0, 32);
+        let mut mesh = egui::Mesh::default();
+        for i in 0..=n {
+            let t = i as f32 / n as f32;
+            let bell = (std::f32::consts::PI * t).sin().powi(2);
+            let y = screen.center().y - h / 2.0 + h * t;
+            let c = Color32::from_black_alpha((170.0 * bell) as u8);
+            mesh.colored_vertex(egui::pos2(screen.left(), y), c);
+            mesh.colored_vertex(egui::pos2(screen.right(), y), c);
+            if i > 0 {
+                let j = 2 * i as u32;
+                mesh.add_triangle(j - 2, j - 1, j);
+                mesh.add_triangle(j - 1, j + 1, j);
+            }
+        }
+        p.add(egui::Shape::mesh(mesh));
+    });
+    egui::Area::new(egui::Id::new("titolo")).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+        ui.set_width(screen.width().min(900.0));
+        ui.vertical_centered(|ui| {
+            if let Some(l) = logo {
+                ui.add(egui::Image::new(egui::load::SizedTexture::new(l.0, egui::vec2(64.0, 80.0))));
+                ui.add_space(6.0);
+            }
+            ui.label(RichText::new(super::TITLE).size(84.0).strong().color(Color32::WHITE));
+            ui.label(RichText::new("Aiutaci a gestire un incendio.").size(26.0).color(AMBER));
+            ui.add_space(34.0);
+            let b = egui::Button::new(RichText::new("Gioca").size(44.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(16.0).min_size(egui::vec2(360.0, 96.0));
+            let r = ui.add(b);
+            crate::playtest::control("Gioca", &r, true);
+            play = super::icons::pointing(r).clicked();
+        });
+    });
+    egui::Area::new(egui::Id::new("titolo_nota")).anchor(Align2::RIGHT_BOTTOM, [-18.0, -14.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
+        ui.label(RichText::new(format!("Simulazione dimostrativa · {}", k.territory.game)).size(14.0).color(GREY.gamma_multiply(0.75)));
+    });
+    ctx.request_repaint();
+    play
+}
+
 // --- the opening --------------------------------------------------------------
 
 pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, logo: Option<&Logo>, faces: Option<&Portraits>) {

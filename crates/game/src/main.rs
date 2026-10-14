@@ -144,7 +144,7 @@ fn setup_scene(
     roads::build(&sim.scn, &mut commands, &mut meshes, &mut materials);
 
     // The sun: `sky::update_sky` places and colours it from the game's clock
-    // (14:00 to 17:00), so the shadows lengthen and the light warms as it runs.
+    // (11:00 to 14:00), so the shadows lengthen and the light warms as it runs.
     commands.spawn((DirectionalLightBundle {
         directional_light: DirectionalLight { shadows_enabled: gfx.shadows, ..default() },
         cascade_shadow_config: CascadeShadowConfigBuilder {
