@@ -211,9 +211,21 @@ pub(crate) fn path_mesh_at(scn: &Scenario, pts: &[Pos], width_m: f32, dash_m: Op
         // the mitre: longer at a corner so the sides stay parallel to the segments
         let cos = (nx * n_out.0 + ny * n_out.1).max(1.0 / MITRE_MAX);
         let (ox, oy) = (nx * half / cos, ny * half / cos);
-        let h = scn.terrain.height_at(c) + lift_m;
+        // each side at its own ground height: across a slope the ribbon lies
+        // on it instead of cutting into the hill
         for side in [-1.0f32, 1.0] {
-            positions.push([c.x + ox * side, h, -(c.y + oy * side)]);
+            let q = Pos { x: c.x + ox * side, y: c.y + oy * side };
+            positions.push([q.x, scn.terrain.height_at(q) + lift_m, -q.y]);
+        }
+    }
+    // the ground's own bumps and steps would make the line zigzag in a low
+    // view: average each side's heights over a few samples
+    const SMOOTH: usize = 6;
+    for side in 0..2 {
+        let raw: Vec<f32> = (0..n).map(|i| positions[i * 2 + side][1]).collect();
+        for i in 0..n {
+            let (a, b) = (i.saturating_sub(SMOOTH), (i + SMOOTH).min(n - 1));
+            positions[i * 2 + side][1] = raw[a..=b].iter().sum::<f32>() / (b - a + 1) as f32;
         }
     }
     let mut indices: Vec<u32> = vec![];

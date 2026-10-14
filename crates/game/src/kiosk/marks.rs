@@ -23,6 +23,9 @@ const HEX_LINE_M: f32 = 12.0;
 /// The dark under-stroke of the hex lines, wider, a little lower.
 const HEX_UNDER_M: f32 = 24.0;
 const HEX_PICK_M: f32 = 16.0;
+/// Extra pull toward the camera for the hex lines: enough that the hills'
+/// own bumps do not cut them into dashes (the hexes are 500 m wide).
+const HEX_PULL_M: f32 = 60.0;
 const ROUTE_M: f32 = 12.0;
 const CLOSED_M: f32 = 18.0;
 const DASH_M: f32 = 40.0;
@@ -64,10 +67,10 @@ const WANT: [f32; 3] = [1.0, 0.72, 0.0];
 
 pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>) {
     commands.insert_resource(MarkAssets {
-        hex: materials.add(FlatMaterial::new([1.0, 1.0, 1.0])),
-        under: materials.add(FlatMaterial::new([0.02, 0.03, 0.05]).pulled(-12.0)),
-        pick: materials.add(FlatMaterial::new([1.0, 1.0, 1.0]).pulled(4.0)),
-        want: materials.add(FlatMaterial::new(WANT).pulled(4.0)),
+        hex: materials.add(FlatMaterial::new([1.0, 1.0, 1.0]).pulled(HEX_PULL_M)),
+        under: materials.add(FlatMaterial::new([0.02, 0.03, 0.05]).pulled(HEX_PULL_M - 3.0)),
+        pick: materials.add(FlatMaterial::new([1.0, 1.0, 1.0]).pulled(HEX_PULL_M + 4.0)),
+        want: materials.add(FlatMaterial::new(WANT).pulled(HEX_PULL_M + 4.0)),
         route: materials.add(FlatMaterial::new(ROUTE)),
         evac: materials.add(FlatMaterial::new(EVAC).pulled(2.0)),
         closed: materials.add(FlatMaterial::new(CLOSED).pulled(1.0)),

@@ -180,7 +180,7 @@ pub fn tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
     if k.shot_for != Some(k.step) {
         fly_to(k, sim, step.expect);
     }
-    highlight(ctx, k, sim, step.expect, cam);
+    highlight(ctx, k, step.expect);
     let total = k.script.as_ref().map_or(0, |s| s.steps.len());
     let mut skip = false;
     let t = ctx.input(|i| i.time) as f32;
@@ -261,15 +261,15 @@ const GLOW_S: f32 = 7.0;
 
 /// A glowing frame on what the step asks the player to touch, for a few
 /// seconds: the pause button, the team's flag and the hex, the district.
-fn highlight(ctx: &egui::Context, k: &Kiosk, sim: &Sim, expect: Expect, cam: (&Camera, &GlobalTransform)) {
+fn highlight(ctx: &egui::Context, k: &Kiosk, expect: Expect) {
     if k.step_t > GLOW_S || k.step == 0 {
         return;
     }
     let area = |id: egui::Id| ctx.memory(|m| m.area_rect(id));
-    let spot = |p: Pos| super::ui::screen(cam, sim, p, 0.0).map(|c| egui::Rect::from_center_size(c, egui::vec2(120.0, 90.0)));
     let targets: Vec<Option<egui::Rect>> = match expect {
         Expect::Pause | Expect::Resume => vec![area(egui::Id::new("pausa"))],
-        Expect::Move(t, hex) => vec![area(egui::Id::new(("bandiera", t))), spot(hex.centre())],
+        // no box on a drag: the cone and the hex on the map are signs enough
+        Expect::Move(..) => vec![],
         Expect::Evacuate(d) => vec![area(egui::Id::new(("borgo", d)))],
         _ => vec![],
     };
