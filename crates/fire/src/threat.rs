@@ -206,7 +206,7 @@ impl ThreatField {
             self.danger[i] = 1.0;
         }
         for (i, s) in state.iter().enumerate() {
-            if *s == CellFire::Burnt && self.danger[i] < 0.25 {
+            if *s != CellFire::Unburnt && self.danger[i] < 0.25 {
                 if self.danger[i] == 0.0 {
                     self.dirty.push(i as u32);
                 }

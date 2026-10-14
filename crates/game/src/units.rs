@@ -178,8 +178,8 @@ pub fn setup(
         // is deliberately faint: a busy pair of aircraft saturates a hundred
         // cells inside an hour, and at any higher alpha that is a lake painted
         // over the hillside rather than an indication of where the water went.
-        cleared: unlit(0.42, 0.34, 0.26, 0.85),
-        wetted: unlit(0.25, 0.60, 1.00, 0.20),
+        cleared: unlit(0.62, 0.40, 0.18, 0.95),
+        wetted: unlit(0.15, 0.55, 1.00, 0.60),
         orders_gen: u64::MAX,
         work_gen: u64::MAX,
         cleared_count: usize::MAX,
@@ -486,7 +486,7 @@ pub fn update_work_overlay(
 /// A tenth of the core's moisture of extinction: enough to see where a drop
 /// landed, high enough that the 1%/minute decay makes it fade rather than
 /// linger as a stain for the rest of the incident.
-const WET_SHOW_PTS: f32 = 3.0;
+const WET_SHOW_PTS: f32 = 1.5;
 /// Rebuild the wet overlay every N sim generations. At 2 s steps this is a
 /// refresh every ~20 simulated seconds, which is smooth for something that
 /// decays with a 69-minute half life.

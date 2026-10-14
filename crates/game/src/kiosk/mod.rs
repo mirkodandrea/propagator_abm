@@ -423,7 +423,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         k.log_seen = sim.log.len();
     }
     match k.phase {
-        Phase::Tutorial if k.expect() == Some(Expect::Over) && sim.is_over() => k.enter(Phase::Giorno2),
+        Phase::Tutorial if k.expect() == Some(Expect::Over) && (sim.is_over() || sim.game.evacuation_finished()) => k.enter(Phase::Giorno2),
         Phase::Gioco if sim.is_over() => {
             #[cfg(target_arch = "wasm32")]
             if k.baseline().is_none() {

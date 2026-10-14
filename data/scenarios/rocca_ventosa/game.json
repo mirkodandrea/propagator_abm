@@ -51,7 +51,7 @@
       "radius_m": 40.0,
       "wind_from_deg": 135.0,
       "wind_kmh": 20.0,
-      "minutes": 150
+      "minutes": 60
     },
     {
       "name": "expert",

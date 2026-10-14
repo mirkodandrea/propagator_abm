@@ -264,7 +264,7 @@ impl Game {
             return Err("sei già in pausa".into());
         }
         if self.pause_ready_in_s() > 0 {
-            return Err(format!("l'esperto sarà di nuovo disponibile tra {} minuti", (self.pause_ready_in_s() + 59) / 60));
+            return Err(format!("la pausa sarà di nuovo disponibile tra {} minuti", (self.pause_ready_in_s() + 59) / 60));
         }
         self.pause_from = Some(self.time_s());
         self.pause_costs = true;
@@ -541,6 +541,12 @@ impl Game {
         }
         let moving = self.evac.active().is_some() || self.evac.families.iter().any(|f| f.state == State::Road);
         self.fire.active_cells().is_empty() && !moving
+    }
+
+    /// An evacuation was ordered and it is finished: every family has left
+    /// and reached the refuge (or was cut off). The tutorial ends here.
+    pub fn evacuation_finished(&self) -> bool {
+        !self.evac.runs.is_empty() && self.evac.active().is_none() && !self.evac.families.iter().any(|f| f.state == State::Road)
     }
 
     pub fn run_until(&mut self, t_s: i64) -> Result<()> {

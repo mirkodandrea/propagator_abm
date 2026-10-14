@@ -117,7 +117,7 @@ fn main() -> Result<()> {
         let s = Script::of(&g).context("tutorial incompleto")?;
         for st in &s.steps {
             if st.expect == rocca::tutorial::Expect::Over {
-                while !g.is_over() {
+                while !g.is_over() && !g.evacuation_finished() {
                     g.step()?;
                     trace(&g);
                 }

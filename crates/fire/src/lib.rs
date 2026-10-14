@@ -106,6 +106,8 @@ const MOISTURE_DECAY_PER_MIN: f32 = 0.01;
 /// itself has no notion of burn-out -- once a cell is lit it stays lit -- so
 /// the game layer ages cells out to drive fire rendering and exposure.
 const BURNOUT_S: i32 = 20 * 60;
+/// How long a cell keeps flaming for the danger to people on the road.
+const FLAME_S: i32 = 8 * 60;
 
 impl FireSim {
     pub fn new(scn: &Scenario, weather: Weather, seed: u64) -> Result<FireSim> {
@@ -297,8 +299,18 @@ impl FireSim {
             seconds as f32,
         );
         self.hazard.update(&self.active, &self.state, self.weather);
+        // Danger to people comes from the flaming front only: a cell that has
+        // burnt for FLAME_S is smouldering ground, no longer a reason to keep
+        // a road shut (it keeps the burnt floor, see `ThreatField::update`).
+        let now = self.time_s as i32;
+        let flaming: Vec<Cell> = self
+            .active
+            .iter()
+            .copied()
+            .filter(|c| now - self.ignited_at[c.row * self.world.fire_cols + c.col] < FLAME_S)
+            .collect();
         self.threat
-            .update(&self.state, &self.active, &self.intensity, self.weather);
+            .update(&self.state, &flaming, &self.intensity, self.weather);
         Ok(self.active.len().saturating_sub(before))
     }
 

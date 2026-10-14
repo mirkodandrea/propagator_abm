@@ -34,7 +34,8 @@ pub enum Expect {
     /// The world runs by itself until the game clock reaches this many
     /// simulated seconds, then the game pauses on its own.
     Run(i64),
-    /// The fire is out and nobody is on the road: the game goes on by itself.
+    /// The evacuation is finished (or the fire is out and nobody is on the
+    /// road): the tutorial ends and the game goes on.
     Over,
 }
 
@@ -84,11 +85,11 @@ impl Script {
             expect: Expect::Run(t0 + RUN_MIN * 60),
         });
         steps.push(Step {
-            text: format!("Il gioco si è fermato da solo, solo per questa prova. Nella partita vera dovrai fermarlo tu, premendo «Pausa» (l'esperto torna disponibile dopo 30 secondi). Ora le persone: passa sopra {name}, vedi il percorso verso l'area sicura e quanto ci vorrà. Poi clicca {name} e premi «Evacua»."),
+            text: format!("Il gioco si è fermato da solo, solo per questa prova. Nella partita vera dovrai fermarlo tu, premendo «Pausa»: vedrai anche le previsioni di dove andrà il fuoco nelle prossime ore, e potrai rimetterla dopo 30 secondi. Ora le persone: passa sopra {name}, vedi il percorso verso l'area sicura e quanto ci vorrà. Poi clicca {name} e premi «Evacua»."),
             expect: Expect::Evacuate(d),
         });
-        steps.push(Step { text: "Premi «Riprendi»: il tempo torna a scorrere fino alla fine dell'incendio.".into(), expect: Expect::Resume });
-        steps.push(Step { text: "Guarda le squadre spegnere il fuoco e le persone mettersi al sicuro.".into(), expect: Expect::Over });
+        steps.push(Step { text: "Premi «Riprendi»: il tempo torna a scorrere finché l'evacuazione non è finita.".into(), expect: Expect::Resume });
+        steps.push(Step { text: "Guarda le persone lasciare le case e mettersi al sicuro: il tutorial finisce quando l'evacuazione è terminata.".into(), expect: Expect::Over });
         Some(Script { steps })
     }
 
@@ -112,7 +113,7 @@ impl Script {
                     game.opening_pause();
                 }
                 Expect::Over => {
-                    while !game.is_over() {
+                    while !game.is_over() && !game.evacuation_finished() {
                         game.step()?;
                     }
                 }
