@@ -402,10 +402,6 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         Phase::Gioco => sim.game.speed(),
         _ => 0.0,
     };
-    // the pause stops the world; its time is real time
-    if k.phase == Phase::Gioco && !k.frozen && sim.paused() {
-        sim.pause_tick(dt);
-    }
     if sim.speed > 0.0 {
         if let Err(e) = crate::playtest::tick(&mut sim, dt) {
             k.error = Some(format!("{e:#}"));

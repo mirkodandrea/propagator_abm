@@ -133,25 +133,28 @@ pub fn draw(
 fn top_bar(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform)) {
     egui::Area::new(egui::Id::new("barra")).anchor(Align2::LEFT_TOP, [10.0, 10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         panel().show(ui, |ui| {
-            ui.set_min_width(260.0);
             ui.horizontal(|ui| {
-                let day = if k.phase == Phase::Tutorial { "Giorno 1" } else { "Giorno 2" };
-                ui.label(RichText::new(format!("{day} · {}", clock(sim.time_s()))).size(22.0).strong().color(Color32::WHITE));
-            });
-            // the scenario's progress: elapsed time as a bar, with the end hour
-            let frac = (sim.time_s() as f32 / sim.case.duration_s().max(1) as f32).clamp(0.0, 1.0);
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(clock(0)).size(13.0).color(GREY));
-                let w = (ui.available_width() - 60.0).max(40.0);
-                let (r, _) = ui.allocate_exact_size(egui::vec2(w, 10.0), egui::Sense::hover());
-                ui.painter().rect_filled(r, 4.0, Color32::from_gray(60));
-                ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(r.width() * frac, r.height())), 4.0, AMBER);
-                ui.label(RichText::new(clock(sim.case.duration_s())).size(13.0).color(GREY));
+                pause_dial(ui, k, sim);
+                ui.add_space(10.0);
+                ui.vertical(|ui| {
+                    ui.set_min_width(300.0);
+                    let day = if k.phase == Phase::Tutorial { "Giorno 1" } else { "Giorno 2" };
+                    ui.label(RichText::new(format!("{day} · {}", clock(sim.time_s()))).size(34.0).strong().color(Color32::WHITE));
+                    // the scenario's progress: elapsed time as a bar, with the end hour
+                    let frac = (sim.time_s() as f32 / sim.case.duration_s().max(1) as f32).clamp(0.0, 1.0);
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(clock(0)).size(16.0).color(GREY));
+                        let w = (ui.available_width() - 70.0).max(40.0);
+                        let (r, _) = ui.allocate_exact_size(egui::vec2(w, 18.0), egui::Sense::hover());
+                        ui.painter().rect_filled(r, 7.0, Color32::from_gray(60));
+                        ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(r.width() * frac, r.height())), 7.0, AMBER);
+                        ui.label(RichText::new(clock(sim.case.duration_s())).size(16.0).color(GREY));
+                    });
+                });
             });
         });
     });
-    pause_dial(ctx, k, sim);
     conditions(ctx, sim, cam);
 }
 
@@ -245,59 +248,54 @@ fn arc(p: &egui::Painter, c: egui::Pos2, radius: f32, from: f32, frac: f32, stro
     p.add(egui::Shape::line(pts, stroke));
 }
 
-const DIAL: f32 = 104.0;
+const DIAL: f32 = 112.0;
 
-/// The pause, a round button in the corner: ready (amber), in pause (the
-/// ring empties over its 30 s; the opening pause has no limit) or
-/// recharging (the ring fills over 30 s).
-fn pause_dial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
+/// The pause, a big round button: ready (amber ring, pause symbol), in pause
+/// (no time limit: play symbol, green ring) or recharging (the ring fills
+/// and the number counts down the seconds to the next pause).
+fn pause_dial(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
     use super::icons::{self, Icon};
-    egui::Area::new(egui::Id::new("pausa")).anchor(Align2::RIGHT_TOP, [-16.0, 12.0]).order(egui::Order::Foreground).show(ctx, |ui| {
-        let paused = sim.paused();
-        let enabled = if paused { k.allows(Expect::Resume) } else { sim.can_pause() && k.allows(Expect::Pause) };
-        let (r, resp) = ui.allocate_exact_size(egui::vec2(DIAL, DIAL), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-        let p = ui.painter();
-        let c = r.center();
-        let radius = DIAL * 0.5 - 7.0;
-        let hot = resp.hovered() && enabled;
-        p.circle_filled(c, DIAL * 0.5, if hot { Color32::from_gray(60) } else { PANEL });
-        p.circle_stroke(c, radius, egui::Stroke::new(9.0, Color32::from_gray(55)));
-        let (frac, ring, icon, icon_col, secs) = if paused {
-            match sim.pause_left_real_s() {
-                Some(left) => (left / rocca::PAUSE_REAL_S, AMBER, Icon::Play, Color32::WHITE, Some(left)),
-                None => (1.0, GREEN, Icon::Play, GREEN, None),
-            }
-        } else if sim.pause_ready_in_s() > 0 {
-            let left = sim.pause_ready_in_s() as f32 / rocca::RUN_X;
-            (1.0 - left / rocca::PAUSE_COOLDOWN_REAL_S, Color32::from_gray(150), Icon::Pause, Color32::from_gray(120), Some(left))
+    let paused = sim.paused();
+    let enabled = if paused { k.allows(Expect::Resume) } else { sim.can_pause() && k.allows(Expect::Pause) };
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(DIAL, DIAL), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let p = ui.painter();
+    let c = r.center();
+    let radius = DIAL * 0.5 - 7.0;
+    let hot = resp.hovered() && enabled;
+    p.circle_filled(c, DIAL * 0.5, if hot { Color32::from_gray(60) } else { Color32::from_black_alpha(90) });
+    p.circle_stroke(c, radius, egui::Stroke::new(10.0, Color32::from_gray(55)));
+    let (frac, ring, icon, icon_col, secs) = if paused {
+        (1.0, GREEN, Icon::Play, GREEN, None)
+    } else if sim.pause_ready_in_s() > 0 {
+        let left = sim.pause_ready_in_s() as f32 / rocca::RUN_X;
+        (1.0 - left / rocca::PAUSE_COOLDOWN_REAL_S, Color32::from_gray(150), Icon::Pause, Color32::from_gray(120), Some(left))
+    } else {
+        (1.0, AMBER, Icon::Pause, AMBER, None)
+    };
+    arc(p, c, radius, 0.0, frac, egui::Stroke::new(10.0, ring));
+    let icon_c = if secs.is_some() { c - egui::vec2(0.0, 11.0) } else { c };
+    icons::draw(p, egui::Rect::from_center_size(icon_c, egui::vec2(DIAL * 0.36, DIAL * 0.36)), icon, icon_col);
+    if let Some(sec) = secs {
+        let g = p.layout_no_wrap(format!("{}", sec.ceil() as i64), egui::FontId::proportional(24.0), Color32::WHITE);
+        p.galley(c + egui::vec2(-g.size().x / 2.0, 12.0), g, Color32::WHITE);
+    }
+    if hot {
+        p.circle_stroke(c, DIAL * 0.5, egui::Stroke::new(2.5, Color32::WHITE));
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    crate::playtest::control(if paused { "Riprendi" } else { "Pausa" }, &resp, enabled);
+    if resp.clicked() {
+        if paused {
+            sim.resume();
+            k.clear_selection();
+            k.done(Expect::Resume);
         } else {
-            (1.0, AMBER, Icon::Pause, AMBER, None)
-        };
-        arc(p, c, radius, 0.0, frac, egui::Stroke::new(9.0, ring));
-        let icon_c = if secs.is_some() { c - egui::vec2(0.0, 10.0) } else { c };
-        icons::draw(p, egui::Rect::from_center_size(icon_c, egui::vec2(DIAL * 0.36, DIAL * 0.36)), icon, icon_col);
-        if let Some(sec) = secs {
-            let g = p.layout_no_wrap(format!("{}", sec.ceil() as i64), egui::FontId::proportional(18.0), icon_col);
-            p.galley(c + egui::vec2(-g.size().x / 2.0, 14.0), g, icon_col);
-        }
-        if hot {
-            p.circle_stroke(c, DIAL * 0.5, egui::Stroke::new(2.5, Color32::WHITE));
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        crate::playtest::control(if paused { "Riprendi" } else { "Pausa" }, &resp, enabled);
-        if resp.clicked() {
-            if paused {
-                sim.resume();
-                k.clear_selection();
-                k.done(Expect::Resume);
-            } else {
-                match sim.pause() {
-                    Ok(()) => k.done(Expect::Pause),
-                    Err(e) => k.notify(e),
-                }
+            match sim.pause() {
+                Ok(()) => k.done(Expect::Pause),
+                Err(e) => k.notify(e),
             }
         }
-    });
+    }
 }
 
 /// A small icon and a short text, side by side.

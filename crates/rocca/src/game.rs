@@ -5,8 +5,7 @@
 //! protection of the homes near the teams, evacuation, bookkeeping. The
 //! player acts only during a **pause** ([`Game::pause`]), when the world
 //! stands still: moving a team to a hex ([`Game::move_team`]) and evacuating
-//! a district ([`Game::evacuate`]). The pause lasts [`PAUSE_REAL_S`] of real
-//! time, counted by whoever holds the clock ([`Game::pause_tick`]).
+//! a district ([`Game::evacuate`]). The pause has no time limit.
 //! Each order has a preview that reads the state and changes nothing
 //! ([`Game::plan_move`], [`Game::plan_evacuation`]).
 
@@ -31,9 +30,6 @@ pub const STEP_S: i64 = 6;
 /// Simulated seconds per real second while the game runs: the game goes at
 /// ×60 or it is stopped, nothing else (user, 2026-10-14).
 pub const RUN_X: f32 = 60.0;
-/// How long a pause lasts, real seconds. The world stands still meanwhile
-/// (user, 2026-10-14: «pausa è stop, non tempo rallentato»).
-pub const PAUSE_REAL_S: f32 = 30.0;
 /// Real seconds after a pause before the next can be asked (user,
 /// 2026-10-14). The game only runs at [`RUN_X`] between pauses, so it is
 /// kept as simulated time: [`PAUSE_COOLDOWN_S`].
@@ -146,9 +142,8 @@ pub struct Game {
     pub evac: Evacuations,
     pub log: Vec<LogEntry>,
     pause_from: Option<i64>,
-    /// Real seconds left in the pause; `None` in a pause with no limit (the
-    /// opening one).
-    pause_left_real: Option<f32>,
+    /// The pause in course uses up the expert (false: the opening one).
+    pause_costs: bool,
     pause_ready_s: i64,
     pub pauses: u32,
     logged: Vec<UnitState>,
@@ -221,7 +216,7 @@ impl Game {
             evac,
             log: vec![],
             pause_from: None,
-            pause_left_real: None,
+            pause_costs: false,
             pause_ready_s: 0,
             pauses: 0,
             logged,
@@ -254,23 +249,6 @@ impl Game {
         self.pause_from
     }
 
-    /// Real seconds left in the pause; `None` out of pause or in a pause
-    /// with no limit.
-    pub fn pause_left_real_s(&self) -> Option<f32> {
-        self.pause_from.and(self.pause_left_real)
-    }
-
-    /// Count `real_s` of wall time against the pause; it ends when its time
-    /// is up. The world does not move: only the clock's holder calls this.
-    pub fn pause_tick(&mut self, real_s: f32) {
-        if let (Some(_), Some(left)) = (self.pause_from, self.pause_left_real.as_mut()) {
-            *left -= real_s;
-            if *left <= 0.0 {
-                self.resume();
-            }
-        }
-    }
-
     /// Simulated seconds before a pause can be asked (0: now).
     pub fn pause_ready_in_s(&self) -> i64 {
         (self.pause_ready_s - self.time_s()).max(0)
@@ -289,7 +267,7 @@ impl Game {
             return Err(format!("l'esperto sarà di nuovo disponibile tra {} minuti", (self.pause_ready_in_s() + 59) / 60));
         }
         self.pause_from = Some(self.time_s());
-        self.pause_left_real = Some(PAUSE_REAL_S);
+        self.pause_costs = true;
         self.pauses += 1;
         Ok(())
     }
@@ -300,7 +278,7 @@ impl Game {
     pub fn opening_pause(&mut self) {
         if !self.paused() {
             self.pause_from = Some(self.time_s());
-            self.pause_left_real = None;
+            self.pause_costs = false;
         }
     }
 
@@ -308,7 +286,7 @@ impl Game {
     /// pause the expert is ready at once.
     pub fn resume(&mut self) {
         if self.pause_from.take().is_some() {
-            if self.pause_left_real.take().is_some() {
+            if std::mem::take(&mut self.pause_costs) {
                 self.pause_ready_s = self.time_s() + PAUSE_COOLDOWN_S;
             }
         }

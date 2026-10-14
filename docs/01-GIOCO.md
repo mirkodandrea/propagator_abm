@@ -18,7 +18,7 @@ Uno strategico in tempo reale, sul modello di StarCraft, per il chiosco della *S
 ## 2. Il tempo e la pausa
 
 - Nessun turno. Il tempo scorre a **×60** o è **fermo**, nient'altro (2026-10-14): 1 s reale vale 1 min simulato (`rocca::RUN_X`).
-- **Pausa = chiedere all'esperto scientifico.** In pausa il **mondo si ferma** (2026-10-14: «pausa è stop, non tempo rallentato»). La pausa dura **30 s reali** (`PAUSE_REAL_S`, contati dal chiosco con `Game::pause_tick`) oppure finisce prima. Dopo, l'esperto torna disponibile tra **30 s reali** di gioco, cioè 30 min simulati (`PAUSE_COOLDOWN_REAL_S`, `PAUSE_COOLDOWN_S`, 2026-10-14).
+- **Pausa = chiedere all'esperto scientifico.** In pausa il **mondo si ferma** (2026-10-14: «pausa è stop, non tempo rallentato»). La pausa **non ha limite di tempo** (2026-10-14, richiesta dell'utente): finisce quando il giocatore preme «Riprendi». Dopo, l'esperto torna disponibile tra **30 s reali** di gioco, cioè 30 min simulati (`PAUSE_COOLDOWN_REAL_S`, `PAUSE_COOLDOWN_S`, 2026-10-14).
 - **In pausa il piano si può cambiare:** una squadra si sposta di nuovo trascinando il suo cono; un'evacuazione ordinata nella stessa pausa si annulla, oppure si sostituisce scegliendo un altro borgo (`Game::cancel_evacuation`). Dopo la ripresa no (2026-10-14).
 - **Tutti gli ordini si danno solo in pausa:** spostare le squadre ed evacuare.
 - In pausa compaiono:
@@ -71,7 +71,7 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
 ## 6. Interfaccia
 
 - La mappa occupa quasi tutto lo schermo; il rendering 3D del diorama è conservato.
-- **Pausa:** un pulsante rotondo nell'angolo in alto a destra. Pronto: anello ambra e simbolo di pausa. In pausa: simbolo di avvio e anello che si svuota nei 30 s, con i secondi. In ricarica: anello grigio che si riempie, con i secondi. Nella pausa d'apertura l'anello è verde e pieno (2026-10-14). In generale si usano icone, anelli e numeri al posto delle frasi.
+- **Pausa:** un pulsante rotondo e grande, in alto a sinistra, **dentro il pannello del tempo** (giorno e ora, barra di avanzamento grande). Pronto: anello ambra e simbolo di pausa. In pausa: simbolo di avvio, anello verde pieno, nessun conto alla rovescia. In ricarica: anello grigio che si riempie, con i **secondi alla prossima pausa** (2026-10-14). In generale si usano icone, anelli e numeri al posto delle frasi.
 - **Barra in alto:**
   - giorno e ora;
   - vento e umidità;
