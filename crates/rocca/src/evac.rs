@@ -45,17 +45,30 @@ const REFUGE_CLEAR_M: f32 = 400.0;
 const MAX_REFUGES: usize = 10;
 
 /// From `game.json` (`evacuation`).
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct EvacRules {
     /// Hard limit: people leaving a district per minute.
     pub per_min: f32,
     /// Minutes between the order and the first departure.
     pub prep_min: f32,
+    /// Gathering areas chosen by hand, one per district at most; a district
+    /// without one (or whose one is cut) uses the automatic refuges.
+    #[serde(default)]
+    pub refuges: Vec<AuthoredRefuge>,
+}
+
+/// An authored gathering area (`evacuation.refuges` in `game.json`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthoredRefuge {
+    pub district: String,
+    /// As shown to the player after «verso», article included.
+    pub name: String,
+    pub pos: [f32; 2],
 }
 
 impl Default for EvacRules {
     fn default() -> Self {
-        EvacRules { per_min: 20.0, prep_min: 5.0 }
+        EvacRules { per_min: 20.0, prep_min: 5.0, refuges: vec![] }
     }
 }
 
@@ -168,16 +181,42 @@ pub struct EvacPlan {
     pub path: Arc<Path>,
     pub people: u32,
     pub families: usize,
-    /// Preparation, departures at the limited rate, and the drive.
+    /// Preparation, departures at the limited rate, and the mean drive.
     pub prep_min: f32,
     pub leaving_min: f32,
     pub drive_min: f32,
+    /// Until the last family reaches the refuge: what the player is told,
+    /// and where the timer starts ([`Evacuations::remaining_min`]).
+    pub finish_min: f32,
 }
 
 impl EvacPlan {
     pub fn total_min(&self) -> f32 {
-        self.prep_min + self.leaving_min + self.drive_min
+        self.finish_min
     }
+}
+
+/// Minutes until the last of `families` reaches the end of `path`: the ones
+/// on the road drive the rest of their way; the queued ones, in turn, leave
+/// after `prep_left_min` when the departures (`per_min`, with `credit`
+/// people already allowed) reach them, then drive from home along `path`.
+/// The rule of [`Evacuations::step`], in closed form.
+fn finish_min<'a>(families: impl Iterator<Item = &'a Family>, path: &Path, prep_left_min: f32, per_min: f32, credit: f32) -> f32 {
+    let (mut out, mut people) = (0.0f32, 0.0f32);
+    let start = path.points.first().copied();
+    for f in families {
+        let t = match (f.state, &f.path) {
+            (State::Road, Some(p)) => (p.length_m() - f.along_m).max(0.0) / CONVOY_MPS / 60.0,
+            (State::Home | State::SelfDefence | State::Queued, _) => {
+                people += f.people as f32;
+                let leg = start.map_or(0.0, |s| dist(f.home, s)) + path.length_m();
+                prep_left_min + (people - credit).max(0.0) / per_min.max(0.1) + leg / CONVOY_MPS / 60.0
+            }
+            _ => continue,
+        };
+        out = out.max(t);
+    }
+    out
 }
 
 /// An evacuation in progress or over.
@@ -194,6 +233,8 @@ pub struct Evacuation {
     pub interrupted: bool,
     /// Times the route was changed because the fire cut it.
     pub rerouted: u32,
+    /// The families it queued and their state before: what [`Evacuations::cancel`] restores.
+    before: Vec<(usize, State)>,
 }
 
 impl Evacuation {
@@ -216,6 +257,8 @@ pub struct Evacuations {
     /// The current evacuation and the past ones, in order.
     pub runs: Vec<Evacuation>,
     refuges: Vec<(NodeId, Pos, String)>,
+    /// Authored gathering areas: district, node, position, name.
+    authored: Vec<(usize, NodeId, Pos, String)>,
     next_check_s: i64,
 }
 
@@ -239,7 +282,18 @@ impl Evacuations {
                 (r.node, r.pos, name)
             })
             .collect();
-        Evacuations { rules, families, runs: vec![], refuges, next_check_s: 0 }
+        // authored areas, snapped to the network the district's road is on
+        let authored = rules
+            .refuges
+            .iter()
+            .filter_map(|r| {
+                let d = districts.iter().position(|d| d.name == r.district)?;
+                let from = net.nearest(districts[d].departure, true)?;
+                let node = net.nearest_reachable(Pos::from(r.pos), true, from)?;
+                Some((d, node, net.pos(node), r.name.clone()))
+            })
+            .collect();
+        Evacuations { rules, families, runs: vec![], refuges, authored, next_check_s: 0 }
     }
 
     /// The evacuation being carried out (families still leaving).
@@ -251,16 +305,26 @@ impl Evacuations {
         self.runs.iter().rev().find(|e| e.district == d)
     }
 
-    /// The shortest open route from district `d` to a refuge out of it.
+    /// The shortest open route from district `d` to a refuge out of it: its
+    /// authored gathering area if there is one and the way is open, else the
+    /// nearest automatic refuge.
     fn route(&self, d: usize, from: Pos, districts: &[District], net: &RoadNetwork, fire: &FireSim) -> Option<Arc<Path>> {
-        let a = net.nearest(from, true)?;
         let homes: Vec<Pos> = districts.get(d).map(|dd| dd.households.iter().map(|&i| self.families[i].home).collect()).unwrap_or_default();
-        let mut best: Option<Path> = None;
-        for (node, pos, name) in &self.refuges {
-            if homes.iter().any(|&h| dist(h, *pos) < REFUGE_CLEAR_M) {
-                continue;
+        let own: Vec<(NodeId, Pos, String)> = self.authored.iter().filter(|a| a.0 == d).map(|a| (a.1, a.2, a.3.clone())).collect();
+        if !own.is_empty() {
+            if let Some(p) = self.route_in(&own, from, &homes, net, fire) {
+                return Some(p);
             }
-            if net.component(*node, true) != net.component(a, true) {
+        }
+        self.route_in(&self.refuges, from, &homes, net, fire)
+    }
+
+    /// The shortest open route to one of `refuges`.
+    fn route_in(&self, refuges: &[(NodeId, Pos, String)], from: Pos, homes: &[Pos], net: &RoadNetwork, fire: &FireSim) -> Option<Arc<Path>> {
+        let a = net.nearest(from, true)?;
+        let mut best: Option<Path> = None;
+        for (node, pos, name) in refuges {
+            if homes.iter().any(|&h| dist(h, *pos) < REFUGE_CLEAR_M) || net.component(*node, true) != net.component(a, true) {
                 continue;
             }
             let Some(nodes) = network::route(net, a, *node, fire.threat(), true) else { continue };
@@ -283,6 +347,9 @@ impl Evacuations {
         let path = self.route(d, dd.departure, districts, net, fire)?;
         let left: Vec<usize> = dd.households.iter().copied().filter(|&i| matches!(self.families[i].state, State::Home | State::SelfDefence)).collect();
         let people: u32 = left.iter().map(|&i| self.families[i].people).sum();
+        let mut order = left.clone();
+        order.sort_by(|&a, &b| dist(self.families[a].home, dd.departure).total_cmp(&dist(self.families[b].home, dd.departure)).then(a.cmp(&b)));
+        let finish = finish_min(order.iter().map(|&i| &self.families[i]), &path, self.rules.prep_min, self.rules.per_min, 0.0);
         let mean_home_leg = if left.is_empty() { 0.0 } else { left.iter().map(|&i| dist(self.families[i].home, dd.departure)).sum::<f32>() / left.len() as f32 };
         Some(EvacPlan {
             district: d,
@@ -291,6 +358,7 @@ impl Evacuations {
             prep_min: self.rules.prep_min,
             leaving_min: people as f32 / self.rules.per_min.max(0.1),
             drive_min: (path.length_m() + mean_home_leg) / CONVOY_MPS / 60.0,
+            finish_min: finish,
             path,
         })
     }
@@ -306,6 +374,7 @@ impl Evacuations {
             return Err(format!("a {} non c'è più nessuno da evacuare", dd.name));
         }
         queue.sort_by(|&a, &b| dist(self.families[a].home, dd.departure).total_cmp(&dist(self.families[b].home, dd.departure)).then(a.cmp(&b)));
+        let before = queue.iter().map(|&i| (i, self.families[i].state)).collect();
         for &i in &queue {
             self.families[i].state = State::Queued;
         }
@@ -318,8 +387,36 @@ impl Evacuations {
             ended_s: None,
             interrupted: false,
             rerouted: 0,
+            before,
         });
         Ok(())
+    }
+
+    /// Take back the evacuation in course if it was ordered at `since` or
+    /// later and nothing has happened yet: nobody has left. Returns its
+    /// district.
+    pub fn cancel(&mut self, since: i64) -> Option<usize> {
+        let e = self.runs.last().filter(|e| e.ended_s.is_none() && e.started_s >= since && e.queue.len() == e.before.len())?;
+        let d = e.district;
+        let e = self.runs.pop()?;
+        for (i, s) in e.before {
+            self.families[i].state = s;
+        }
+        Some(d)
+    }
+
+    /// Minutes until the last family of district `d`'s evacuation reaches
+    /// the refuge, `None` once nobody is left waiting or driving. With the
+    /// same rule as the plan, so the timer starts at what was announced.
+    pub fn remaining_min(&self, d: usize, now: i64) -> Option<f32> {
+        let e = self.of(d)?;
+        let waiting = e.queue.iter().map(|&i| &self.families[i]).filter(|f| f.state == State::Queued);
+        let road = e.before.iter().map(|&(i, _)| &self.families[i]).filter(|f| f.state == State::Road);
+        if waiting.clone().next().is_none() && road.clone().next().is_none() {
+            return None;
+        }
+        let prep_left = (self.rules.prep_min - (now - e.started_s) as f32 / 60.0).max(0.0);
+        Some(finish_min(road.chain(waiting), &e.path, prep_left, self.rules.per_min, e.credit))
     }
 
     /// One step of `dt` simulated seconds ending at `now`.

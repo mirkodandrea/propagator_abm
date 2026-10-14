@@ -10,12 +10,22 @@ Un solo territorio sintetico e plausibile, riusato con diversi inneschi e venti:
 - **Sei borghi:**
   - a est del massiccio: **Castelvento** (190 famiglie, caserma dei vigili), **Fornaci** (90), **Le Terrazze** (30), **San Rocco** (100);
   - a ovest: **Pian dei Grilli** (90) e **Le Ghiande** (38, nuclei sparsi).
+- **Aree di raccolta scelte a mano** (2026-10-14, `evacuation.refuges`; agganciate alla rete con `nearest_reachable`; esempio `examples/rifugi.rs`). Prima molti borghi finivano in un'area lontana o oltre il fuoco (Pian dei Grilli a 9 km sopra il valico, Castelvento e San Rocco lungo la SP 12 attraverso l'innesco):
+
+  | Borgo | Area di raccolta | Posizione (m) |
+  |---|---|---|
+  | Castelvento, Fornaci | il pianoro a nord-ovest (capo della SP 12, terreno aperto) | 3265, 6249 |
+  | San Rocco | il porto, a est, lontano dal fuoco | 7900, 3413 |
+  | Le Terrazze | l'area di attesa di Castelvento | 5259, 5481 |
+  | Pian dei Grilli | l'incrocio della SP 9 con la Costiera, nella piana ovest | 1778, 3582 |
+  | Le Ghiande | automatica: l'area di attesa di Pian dei Grilli | 2174, 2536 |
+
 - La **rocca** è in cima, con un anello non combustibile di 130 m.
 - Le **aree sicure** dell'evacuazione si ricavano dai dati (`abm::refuge`: nodi stradali con poco combustibile intorno, raggiungibili in auto). Per ogni borgo si sceglie la più vicina su strada, a più di 400 m dalle sue case.
 - **Valico** (2026-10-13): una fascia di macchia alta (classe 9, con faville), circa 117 ha, lungo la Strada del Passo. Va da Le Terrazze, passa la sella e arriva alla macchia sopra Pian dei Grilli. Serve perché il fuoco possa arrivare anche ai borghi a ovest: prima nessun incendio colpiva case sia a est sia a ovest. Il fuoco passa a ovest quando il vento gira da nord-est dentro il passo. Larghezza variabile (in media 320 m), bordo frastagliato di macchia media (classe 8) e qualche isola del bosco vecchio, perché nel chiosco non sembri una striscia dipinta; il nucleo lungo la strada è sempre continuo.
 - **Costa est** (2026-10-13): a nord del porto una baia sabbiosa, un piccolo promontorio e l'angolo nord-est in diagonale, al posto della costa dritta a 300 m dal bordo della finestra; anche il breve tratto dritto a sud del porto è rifatto. Solo terra diventata mare: porto, strade, case e inneschi non cambiano.
 - **Umidità del combustibile:** 3 %, fissa e uniforme. La leva vera è il vento.
-- **Squadre** (2026-10-14): 3 squadre dei vigili del fuoco alla caserma di Castelvento, 2 squadre di volontari AIB al presidio di San Rocco. Ogni squadra è un'autobotte con 3 persone.
+- **Squadre** (2026-10-14): 3 squadre dei vigili del fuoco alla caserma di Castelvento, 2 squadre di volontari AIB al presidio di Pian dei Grilli (dal 2026-10-14, dall'altra parte dell'isola rispetto a Castelvento). Ogni squadra è un'autobotte con 3 persone.
 - **Esagoni** di 500 m: valgono solo quelli attraversati da una strada carrabile della rete della caserma (`rocca::hex`).
 
 ## Incendi (`game.json`)

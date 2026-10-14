@@ -16,21 +16,28 @@ use bevy_egui::{egui, EguiContexts};
 use rocca::forecast::{Epoch, Forecast, Job};
 use scenario::{Pos, World};
 
-use crate::retro::{self, RetroMaterial};
+use crate::flat::FlatMaterial;
 use crate::sim::{Sim, SimRestarted};
 
 /// Ribbon width of an isochrone, metres.
-const LINE_M: f32 = 16.0;
-/// Dash length of the +3 h isochrone, metres.
-const DASH_M: f32 = 60.0;
+const LINE_M: f32 = 24.0;
+/// The dark under-stroke, wider.
+const UNDER_M: f32 = 40.0;
 /// Contours shorter than this (a lone spot fire's cell) are not drawn.
 const MIN_LOOP_M: f32 = 160.0;
+/// Gaussian smoothing of the isochrones along their length, and the spacing
+/// of the resampled points, metres.
+const SMOOTH_SIGMA_M: f32 = 90.0;
+const SMOOTH_STEP_M: f32 = 12.0;
 /// Label lift above the ground, metres.
 const LABEL_LIFT_M: f32 = 30.0;
 /// Colours: the UI's warm red for +1 h, magenta for +3 h (no other sign on
 /// the map is magenta: it reads on the woods and on the dry grass alike).
 const NEAR: [f32; 3] = [1.0, 0.36, 0.24];
-const FAR: [f32; 3] = [0.95, 0.30, 0.85];
+const FAR: [f32; 3] = [0.80, 0.45, 1.0];
+/// The same, for the legend in the interface.
+pub const NEAR_COLOUR: bevy_egui::egui::Color32 = bevy_egui::egui::Color32::from_rgb(255, 92, 61);
+pub const FAR_COLOUR: bevy_egui::egui::Color32 = bevy_egui::egui::Color32::from_rgb(204, 115, 255);
 pub const LABELS: [&str; 2] = ["tra 1 ora", "tra 3 ore"];
 
 #[derive(Component)]
@@ -51,7 +58,7 @@ pub struct ForecastView {
     /// The forecast on the map, and per horizon the points a label may
     /// stand on, leading edge (down the wind) first.
     shown: Option<(Forecast, [Vec<Pos>; 2])>,
-    materials: Option<[Handle<RetroMaterial>; 2]>,
+    materials: Option<[Handle<FlatMaterial>; 3]>,
 }
 
 pub struct ForecastPlugin;
@@ -63,19 +70,6 @@ impl Plugin for ForecastPlugin {
             (update.after(crate::kiosk::step), labels.after(crate::kiosk::ui::draw))
                 .run_if(in_state(crate::AppState::Playing)),
         );
-    }
-}
-
-fn glow(c: [f32; 3], gain: f32) -> StandardMaterial {
-    let l = Color::srgb(c[0], c[1], c[2]).to_linear();
-    StandardMaterial {
-        base_color: Color::LinearRgba(LinearRgba::new(l.red * gain, l.green * gain, l.blue * gain, 0.95)),
-        emissive: LinearRgba::rgb(c[0] * gain, c[1] * gain, c[2] * gain),
-        unlit: true,
-        alpha_mode: AlphaMode::Blend,
-        double_sided: true,
-        cull_mode: None,
-        ..default()
     }
 }
 
@@ -130,7 +124,7 @@ pub fn update(
     kiosk: Res<crate::kiosk::Kiosk>,
     mut restarted: EventReader<SimRestarted>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<RetroMaterial>>,
+    mut materials: ResMut<Assets<FlatMaterial>>,
     mut marks: Query<(Entity, &mut Visibility), With<ForecastMark>>,
 ) {
     let clear = |view: &mut ForecastView, commands: &mut Commands, marks: &Query<(Entity, &mut Visibility), With<ForecastMark>>| {
@@ -170,7 +164,10 @@ pub fn update(
                 clear(&mut view, &mut commands, &marks);
                 let mats = view
                     .materials
-                    .get_or_insert_with(|| [NEAR, FAR].map(|c| materials.add(retro::material(glow(c, 2.2), false))))
+                    .get_or_insert_with(|| {
+                        let [near, far] = [NEAR, FAR].map(|c| materials.add(FlatMaterial::new(c)));
+                        [near, far, materials.add(FlatMaterial::new([0.03, 0.02, 0.06]).pulled(-12.0))]
+                    })
                     .clone();
                 let world = sim.scn.world;
                 // the labels go on the leading edge: the furthest point down
@@ -183,14 +180,18 @@ pub fn update(
                     let ahead = |p: &Pos| p.x * to.sin() + p.y * to.cos();
                     at[h] = lines.iter().flatten().step_by(4).copied().collect();
                     at[h].sort_by(|a, b| ahead(b).total_cmp(&ahead(a)));
+                    // the +3 h line sits a little lower than the +1 h one
+                    let lift = crate::rings::RING_LIFT_M + if h == 1 { -2.0 } else { 2.0 };
                     for pts in &lines {
-                        let mesh = crate::rings::path_mesh(&sim.scn, pts, LINE_M, (h == 1).then_some(DASH_M));
-                        commands.spawn((
-                            MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(mesh), material: mats[h].clone(), ..default() },
-                            NotShadowCaster,
-                            NotShadowReceiver,
-                            ForecastMark,
-                        ));
+                        for (w, dl, m) in [(UNDER_M, -2.0, &mats[2]), (LINE_M, 0.0, &mats[h])] {
+                            let mesh = crate::rings::path_mesh_at(&sim.scn, pts, w, None, lift + dl);
+                            commands.spawn((
+                                MaterialMeshBundle::<FlatMaterial> { mesh: meshes.add(mesh), material: m.clone(), ..default() },
+                                NotShadowCaster,
+                                NotShadowReceiver,
+                                ForecastMark,
+                            ));
+                        }
                     }
                 }
                 view.shown = Some((f, at));
@@ -331,10 +332,8 @@ pub fn isochrone(f: &Forecast, h: usize, world: &World) -> Vec<Vec<Pos>> {
         if length < MIN_LOOP_M {
             continue;
         }
-        for _ in 0..2 {
-            pts = chaikin(&pts, closed);
-        }
-        out.push(pts);
+        pts = chaikin(&pts, closed);
+        out.push(smooth_line(&pts, closed, SMOOTH_SIGMA_M, SMOOTH_STEP_M));
     }
     out
 }
@@ -357,6 +356,61 @@ fn chaikin(pts: &[Pos], closed: bool) -> Vec<Pos> {
         out.push(first);
     } else {
         out.push(pts[n - 1]);
+    }
+    out
+}
+
+/// Gaussian filter of a polyline's coordinates along its arc length: resampled
+/// every `step` metres, each point replaced by the weighted mean of its
+/// neighbours within 3 `sigma`. A closed line wraps; an open one keeps its
+/// ends where they are.
+fn smooth_line(pts: &[Pos], closed: bool, sigma: f32, step: f32) -> Vec<Pos> {
+    let dist = |a: Pos, b: Pos| ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+    let mut cum = vec![0.0f32];
+    for w in pts.windows(2) {
+        cum.push(cum.last().unwrap() + dist(w[0], w[1]));
+    }
+    let total = *cum.last().unwrap();
+    let n = (total / step).round() as usize;
+    if n < 4 {
+        return pts.to_vec();
+    }
+    // uniform resampling (closed: the last point repeats the first, drop it)
+    let mut seg = 0;
+    let mut res: Vec<Pos> = (0..=n)
+        .map(|i| {
+            let d = total * i as f32 / n as f32;
+            while seg + 2 < cum.len() && cum[seg + 1] < d {
+                seg += 1;
+            }
+            let t = ((d - cum[seg]) / (cum[seg + 1] - cum[seg]).max(1e-6)).clamp(0.0, 1.0);
+            Pos { x: pts[seg].x + (pts[seg + 1].x - pts[seg].x) * t, y: pts[seg].y + (pts[seg + 1].y - pts[seg].y) * t }
+        })
+        .collect();
+    if closed {
+        res.pop();
+    }
+    let m = res.len() as isize;
+    let h = ((3.0 * sigma / (total / n as f32)).ceil() as isize).max(1);
+    let k: Vec<f32> = (-h..=h).map(|j| (-((j as f32 * total / n as f32) / sigma).powi(2) / 2.0).exp()).collect();
+    let mut out: Vec<Pos> = (0..m)
+        .map(|i| {
+            let (mut x, mut y, mut w) = (0.0, 0.0, 0.0);
+            for (j, &kj) in k.iter().enumerate() {
+                let q = i + j as isize - h;
+                let q = if closed { q.rem_euclid(m) } else { q.clamp(0, m - 1) };
+                x += kj * res[q as usize].x;
+                y += kj * res[q as usize].y;
+                w += kj;
+            }
+            Pos { x: x / w, y: y / w }
+        })
+        .collect();
+    if closed {
+        out.push(out[0]);
+    } else {
+        out[0] = res[0];
+        *out.last_mut().unwrap() = *res.last().unwrap();
     }
     out
 }

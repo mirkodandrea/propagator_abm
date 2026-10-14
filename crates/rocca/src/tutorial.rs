@@ -10,21 +10,30 @@ use anyhow::Result;
 use crate::hex::Axial;
 use crate::Game;
 
+/// Simulated minutes the tutorial runs before it pauses by itself: at ×60
+/// that is 30 real seconds (user, 2026-10-14).
+pub const RUN_MIN: i64 = 30;
+
 /// What a step waits for.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Expect {
     /// «Avanti».
     Next,
-    /// The pause button.
+    /// The pause button. No script step asks for it: the tutorial opens
+    /// and stops by itself, and the text says the player will have to do it.
     Pause,
-    /// Selecting team `t` (a click on its icon).
+    /// Selecting team `t` (a click on its flag). No script step asks for it
+    /// any more: a `Move` step accepts it for its team.
     Select(usize),
-    /// Choosing hex `at` for team `t`, then confirming.
+    /// Dropping team `t`'s flag on hex `at`: the order is given.
     Move(usize, Axial),
     /// Choosing district `d` for evacuation, then confirming.
     Evacuate(usize),
     /// Ending the pause.
     Resume,
+    /// The world runs by itself until the game clock reaches this many
+    /// simulated seconds, then the game pauses on its own.
+    Run(i64),
     /// The fire is out and nobody is on the road: the game goes on by itself.
     Over,
 }
@@ -49,11 +58,7 @@ impl Script {
         let d = game.district_index(&tu.evacuate)?;
         let name = game.districts[d].name.clone();
         let mut steps = vec![
-            Step { text: format!("Giorno 1. Un piccolo incendio è partito vicino a {name}. Il tempo scorre: il fuoco non aspetta."), expect: Expect::Next },
-            Step {
-                text: "Premi «Pausa»: chiedi all'esperto dove andrà il fuoco. In pausa il tempo rallenta e puoi dare ordini.".into(),
-                expect: Expect::Pause,
-            },
+            Step { text: format!("Giorno 1. Un piccolo incendio è partito vicino a {name}. Il gioco comincia in pausa: il tempo è fermo e puoi dare gli ordini."), expect: Expect::Next },
             Step {
                 text: "Le aree colorate sono dove il fuoco può arrivare tra 1 ora e tra 3 ore, senza interventi. In alto il vento previsto.".into(),
                 expect: Expect::Next,
@@ -61,18 +66,28 @@ impl Script {
         ];
         for &(t, p) in &tu.moves {
             let hex = game.hexes.nearest(scenario::Pos::from(p))?;
-            let team = game.teams.get(t)?.name.clone();
-            steps.push(Step { text: format!("Clicca la squadra {team}: un'autobotte e {} vigili.", game.teams[t].crew), expect: Expect::Select(t) });
+            let team = &game.teams[t];
+            let who = if team.volunteers { "volontari" } else { "vigili" };
+            let from = game.territory.stations[team.station].name.rsplit(" - ").next().unwrap_or_default().to_string();
             steps.push(Step {
-                text: "Clicca l'esagono indicato vicino al fuoco: vedi il percorso e il tempo di viaggio. Poi premi «Conferma».".into(),
+                text: format!(
+                    "Manda {} da {from}: trascina la sua bandiera (un'autobotte e {} {who}) sull'esagono indicato. Mentre la trascini vedi il percorso e il tempo di viaggio. Lasciala lì: la squadra parte.",
+                    team.name, team.crew
+                ),
                 expect: Expect::Move(t, hex.at),
             });
         }
+        let t0 = game.time_s();
+        steps.push(Step { text: "Gli ordini sono dati. Premi «Riprendi» (in alto a destra): il tempo torna a scorrere.".into(), expect: Expect::Resume });
         steps.push(Step {
-            text: format!("Ora le persone. Clicca {name} e premi «Evacua»: vedi il percorso verso l'area sicura e quanto ci vorrà. Poi «Conferma»."),
+            text: "Guarda le squadre arrivare e il fuoco avanzare: passerà mezz'ora di gioco, circa 30 secondi.".into(),
+            expect: Expect::Run(t0 + RUN_MIN * 60),
+        });
+        steps.push(Step {
+            text: format!("Il gioco si è fermato da solo, solo per questa prova. Nella partita vera dovrai fermarlo tu, premendo «Pausa» (l'esperto torna disponibile dopo 30 secondi). Ora le persone: passa sopra {name}, vedi il percorso verso l'area sicura e quanto ci vorrà. Poi clicca {name} e premi «Evacua»."),
             expect: Expect::Evacuate(d),
         });
-        steps.push(Step { text: "Premi «Riprendi»: il tempo torna veloce e le squadre si mettono al lavoro.".into(), expect: Expect::Resume });
+        steps.push(Step { text: "Premi «Riprendi»: il tempo torna a scorrere fino alla fine dell'incendio.".into(), expect: Expect::Resume });
         steps.push(Step { text: "Guarda le squadre spegnere il fuoco e le persone mettersi al sicuro.".into(), expect: Expect::Over });
         Some(Script { steps })
     }
@@ -80,6 +95,7 @@ impl Script {
     /// Play the script headless, as a player who does exactly what each step
     /// asks; returns the finished game.
     pub fn play(&self, game: &mut Game) -> Result<()> {
+        game.opening_pause();
         for s in &self.steps {
             match s.expect {
                 Expect::Next | Expect::Select(_) => {}
@@ -91,6 +107,10 @@ impl Script {
                     game.evacuate(d).map_err(anyhow::Error::msg)?;
                 }
                 Expect::Resume => game.resume(),
+                Expect::Run(t) => {
+                    game.run_until(t)?;
+                    game.opening_pause();
+                }
                 Expect::Over => {
                     while !game.is_over() {
                         game.step()?;

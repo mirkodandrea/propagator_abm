@@ -10,10 +10,10 @@
       ]
     },
     {
-      "name": "Presidio dei volontari AIB - San Rocco",
+      "name": "Presidio dei volontari AIB - Pian dei Grilli",
       "pos": [
-        6187.0,
-        4261.0
+        2450.0,
+        2598.0
       ],
       "volunteers": true
     }
@@ -105,7 +105,14 @@
   ],
   "evacuation": {
     "per_min": 20.0,
-    "prep_min": 5.0
+    "prep_min": 5.0,
+    "refuges": [
+      {"district": "Castelvento", "name": "il pianoro a nord-ovest", "pos": [3265, 6249]},
+      {"district": "Fornaci", "name": "il pianoro a nord-ovest", "pos": [3265, 6249]},
+      {"district": "San Rocco", "name": "il porto", "pos": [7900, 3413]},
+      {"district": "Le Terrazze", "name": "l'area di attesa di Castelvento", "pos": [5259, 5481]},
+      {"district": "Pian dei Grilli", "name": "l'incrocio con la Costiera", "pos": [1778, 3582]}
+    ]
   },
   "game": "medium",
   "tutorial": {
@@ -119,7 +126,7 @@
         ]
       ],
       [
-        1,
+        3,
         [
           3615.0,
           3472.0

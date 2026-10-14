@@ -3,8 +3,10 @@
 //!
 //! Order of a step, every [`STEP_S`] simulated seconds: wind, fire, teams,
 //! protection of the homes near the teams, evacuation, bookkeeping. The
-//! player acts only during a **pause** ([`Game::pause`]): moving a team to a
-//! hex ([`Game::move_team`]) and evacuating a district ([`Game::evacuate`]).
+//! player acts only during a **pause** ([`Game::pause`]), when the world
+//! stands still: moving a team to a hex ([`Game::move_team`]) and evacuating
+//! a district ([`Game::evacuate`]). The pause lasts [`PAUSE_REAL_S`] of real
+//! time, counted by whoever holds the clock ([`Game::pause_tick`]).
 //! Each order has a preview that reads the state and changes nothing
 //! ([`Game::plan_move`], [`Game::plan_evacuation`]).
 
@@ -26,18 +28,24 @@ use crate::hex::{Axial, Hex, HexGrid};
 
 /// Simulated seconds per step.
 pub const STEP_S: i64 = 6;
-/// Simulated seconds per real second while the game runs (user, 2026-10-14).
-pub const RUN_X: f32 = 300.0;
-/// Simulated seconds per real second during a pause: the fire goes on,
-/// slower, while the player decides.
-pub const PAUSE_X: f32 = 60.0;
-/// How long a pause lasts, simulated: 30 s real at [`PAUSE_X`].
-pub const PAUSE_S: i64 = 30 * 60;
-/// Simulated time after a pause before the next can be asked.
-pub const PAUSE_COOLDOWN_S: i64 = 20 * 60;
+/// Simulated seconds per real second while the game runs: the game goes at
+/// ×60 or it is stopped, nothing else (user, 2026-10-14).
+pub const RUN_X: f32 = 60.0;
+/// How long a pause lasts, real seconds. The world stands still meanwhile
+/// (user, 2026-10-14: «pausa è stop, non tempo rallentato»).
+pub const PAUSE_REAL_S: f32 = 30.0;
+/// Real seconds after a pause before the next can be asked (user,
+/// 2026-10-14). The game only runs at [`RUN_X`] between pauses, so it is
+/// kept as simulated time: [`PAUSE_COOLDOWN_S`].
+pub const PAUSE_COOLDOWN_REAL_S: f32 = 30.0;
+/// Simulated time after a pause before the next can be asked: 30 min.
+pub const PAUSE_COOLDOWN_S: i64 = (PAUSE_COOLDOWN_REAL_S * RUN_X) as i64;
 /// Spegnimento rispetto al modello calibrato (scelta dell'utente 2026-10-13:
 /// linea ×3, acqua ×30, portata ×20).
 pub const SUPPRESSION: UnitEffect = UnitEffect { line_x: 3.0, water_x: 30.0, reach_x: 20.0, nerve_x: 1.0 };
+/// An engine that emptied its tank stays where it is and is full again after
+/// this long, simulated: the water is brought to it (user, 2026-10-14).
+pub const REFILL_S: f32 = 10.0 * 60.0;
 /// How far from its hex's road point a team's people on foot go to work.
 pub const CREW_RANGE_M: f32 = 400.0;
 /// How much closer to the fire each new line is cut.
@@ -138,6 +146,9 @@ pub struct Game {
     pub evac: Evacuations,
     pub log: Vec<LogEntry>,
     pause_from: Option<i64>,
+    /// Real seconds left in the pause; `None` in a pause with no limit (the
+    /// opening one).
+    pause_left_real: Option<f32>,
     pause_ready_s: i64,
     pub pauses: u32,
     logged: Vec<UnitState>,
@@ -175,6 +186,7 @@ impl Game {
             territory.roster.iter().flat_map(|s| [(s.kind.unit_kind(), stations[s.station]), (UnitKind::HandCrew, stations[s.station])]).collect();
         let mut crews = Suppression::with_roster(&scn, &roster, policy)?;
         crews.effect = SUPPRESSION;
+        crews.refill_in_place_s = Some(REFILL_S);
         let mut per_station = vec![0; territory.stations.len()];
         let teams: Vec<Team> = territory
             .roster
@@ -191,7 +203,7 @@ impl Game {
             .collect();
         let hexes = HexGrid::build(&scn, &net, main);
         let districts = district::of(&scn, &net, main);
-        let evac = Evacuations::new(&scn, &net, &districts, territory.evacuation);
+        let evac = Evacuations::new(&scn, &net, &districts, territory.evacuation.clone());
         let traffic = Traffic::new(&net);
         let logged = crews.units.iter().map(|u| u.state).collect();
         let mut game = Game {
@@ -209,6 +221,7 @@ impl Game {
             evac,
             log: vec![],
             pause_from: None,
+            pause_left_real: None,
             pause_ready_s: 0,
             pauses: 0,
             logged,
@@ -241,9 +254,21 @@ impl Game {
         self.pause_from
     }
 
-    /// Simulated seconds left in the pause.
-    pub fn pause_left_s(&self) -> Option<i64> {
-        self.pause_from.map(|t| (t + PAUSE_S - self.time_s()).max(0))
+    /// Real seconds left in the pause; `None` out of pause or in a pause
+    /// with no limit.
+    pub fn pause_left_real_s(&self) -> Option<f32> {
+        self.pause_from.and(self.pause_left_real)
+    }
+
+    /// Count `real_s` of wall time against the pause; it ends when its time
+    /// is up. The world does not move: only the clock's holder calls this.
+    pub fn pause_tick(&mut self, real_s: f32) {
+        if let (Some(_), Some(left)) = (self.pause_from, self.pause_left_real.as_mut()) {
+            *left -= real_s;
+            if *left <= 0.0 {
+                self.resume();
+            }
+        }
     }
 
     /// Simulated seconds before a pause can be asked (0: now).
@@ -264,20 +289,34 @@ impl Game {
             return Err(format!("l'esperto sarà di nuovo disponibile tra {} minuti", (self.pause_ready_in_s() + 59) / 60));
         }
         self.pause_from = Some(self.time_s());
+        self.pause_left_real = Some(PAUSE_REAL_S);
         self.pauses += 1;
         Ok(())
     }
 
-    /// End the pause now (also when its time is up).
-    pub fn resume(&mut self) {
-        if self.pause_from.take().is_some() {
-            self.pause_ready_s = self.time_s() + PAUSE_COOLDOWN_S;
+    /// The opening pause: the game starts still, with no time limit, to look
+    /// at the scene and give the first orders. It does not use up the expert
+    /// (user, 2026-10-14: «parte in pausa»).
+    pub fn opening_pause(&mut self) {
+        if !self.paused() {
+            self.pause_from = Some(self.time_s());
+            self.pause_left_real = None;
         }
     }
 
-    /// Simulated seconds per real second now.
+    /// End the pause now (also when its time is up). After the opening
+    /// pause the expert is ready at once.
+    pub fn resume(&mut self) {
+        if self.pause_from.take().is_some() {
+            if self.pause_left_real.take().is_some() {
+                self.pause_ready_s = self.time_s() + PAUSE_COOLDOWN_S;
+            }
+        }
+    }
+
+    /// Simulated seconds per real second now: the pause stops the world.
     pub fn speed(&self) -> f32 {
-        if self.paused() { PAUSE_X } else { RUN_X }
+        if self.paused() { 0.0 } else { RUN_X }
     }
 
     // --- the teams --------------------------------------------------------------
@@ -338,7 +377,7 @@ impl Game {
             },
             UnitState::Working if u.note.starts_with("waiting") => "in attesa del fuoco".into(),
             UnitState::Working => "al lavoro".into(),
-            UnitState::Refilling => "a fare rifornimento".into(),
+            UnitState::Refilling => format!("ricarica l'acqua, {} min", ((1.0 - u.water_frac()) * REFILL_S / 60.0).ceil()),
             UnitState::Withdrawing => "si ritira: troppo pericoloso".into(),
             UnitState::Lost => "fuori servizio".into(),
             UnitState::Staged if self.teams[t].hex.is_none() => "in caserma".into(),
@@ -359,16 +398,40 @@ impl Game {
         Ok(plan)
     }
 
-    /// Order district `d` out. Only during a pause, one district at a time.
+    /// Order district `d` out. Only during a pause, one district at a time;
+    /// an evacuation ordered in this same pause is replaced (the player
+    /// changed their mind: nothing has happened yet).
     pub fn evacuate(&mut self, d: usize) -> Result<EvacPlan, String> {
         if !self.paused() {
             return Err("gli ordini si danno solo in pausa".into());
         }
         let plan = self.plan_evacuation(d)?;
+        let since = self.pause_from.unwrap_or(i64::MAX);
+        if self.evac.active().is_some_and(|e| e.started_s >= since && e.district != d) {
+            self.cancel_evacuation()?;
+        }
         self.evac.start(&plan, &self.districts, self.time_s())?;
         let text = format!("evacuazione di {}: {} persone verso {} ({} min)", self.districts[d].name, plan.people, plan.path.to, plan.total_min().ceil());
         self.log.push(LogEntry { at_s: self.time_s(), text });
         Ok(plan)
+    }
+
+    /// Whether the evacuation in course was ordered in this pause, so it can
+    /// still be taken back.
+    pub fn can_cancel_evacuation(&self) -> bool {
+        let since = self.pause_from.unwrap_or(i64::MAX);
+        self.paused() && self.evac.active().is_some_and(|e| e.started_s >= since)
+    }
+
+    /// Take back the evacuation ordered in this pause.
+    pub fn cancel_evacuation(&mut self) -> Result<usize, String> {
+        if !self.can_cancel_evacuation() {
+            return Err("si può annullare solo l'evacuazione decisa in questa pausa".into());
+        }
+        let since = self.pause_from.unwrap_or(i64::MAX);
+        let d = self.evac.cancel(since).ok_or("l'evacuazione è già cominciata")?;
+        self.log.push(LogEntry { at_s: self.time_s(), text: format!("evacuazione di {} annullata", self.districts[d].name) });
+        Ok(d)
     }
 
     /// Roads the fire has closed, as segments: for the map.
@@ -441,9 +504,6 @@ impl Game {
             };
             self.log.push(LogEntry { at_s: now, text });
         }
-        if self.pause_left_s() == Some(0) {
-            self.resume();
-        }
         Ok(())
     }
 
@@ -476,7 +536,8 @@ impl Game {
         let homes = &self.scn.population.households;
         let mut p = vec![0.0f32; homes.len()];
         for u in &self.crews.units {
-            if !matches!(u.state, UnitState::Working | UnitState::Staged) {
+            // refilling stands where it worked: it still guards the homes
+            if !matches!(u.state, UnitState::Working | UnitState::Staged | UnitState::Refilling) {
                 continue;
             }
             let v = protection_of(u.kind, u.water_l);

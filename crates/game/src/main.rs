@@ -29,6 +29,7 @@ mod pick;
 mod playtest;
 mod quality;
 mod quality_live;
+mod flat;
 mod retro;
 mod rings;
 mod roads;
@@ -94,6 +95,7 @@ fn main() -> anyhow::Result<()> {
     .add_plugins(EguiPlugin)
     .add_plugins(fire_shader::FireShaderPlugin)
     .add_plugins(retro::RetroShaderPlugin)
+    .add_plugins(flat::FlatPlugin)
     // sun, sky and ambient light from the game's clock; the sea and its wind; the boats
     .add_plugins((sky::SkyPlugin, sea::SeaPlugin, boats::BoatsPlugin, landmarks::LandmarksPlugin))
     .init_state::<AppState>()
@@ -114,6 +116,8 @@ fn main() -> anyhow::Result<()> {
             overlays::setup,
             units::setup,
             kiosk::marks::setup,
+            kiosk::pins::setup,
+            kiosk::characters::load_portraits,
         ),
     )
     .add_systems(OnExit(AppState::Playing), teardown_scene);
@@ -220,8 +224,6 @@ fn kiosk_systems(app: &mut App) {
                 (vegetation::burn, vegetation::lod),
                 buildings::damage,
                 units::update_units,
-                overlays::update_wind,
-                overlays::animate_wind,
                 overlays::pulse_rings,
                 rings::spin,
                 overlays::no_ui_shadows,
@@ -230,6 +232,7 @@ fn kiosk_systems(app: &mut App) {
                 kiosk::marks::update_hexes,
                 kiosk::marks::update_orders,
                 kiosk::marks::update_closed,
+                kiosk::pins::update,
             )
                 .after(fire_view::reset)
                 .after(buildings::reset)

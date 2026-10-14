@@ -14,7 +14,7 @@ use bevy::window::PrimaryWindow;
 
 use scenario::Pos;
 
-use super::{Kiosk, Phase};
+use super::{Kiosk, Phase, Subject};
 use rocca::Game;
 use crate::camera::OrbitCamera;
 use crate::sim::Sim;
@@ -206,6 +206,7 @@ pub fn camera(
         || over_map && (scroll != 0.0 || pinch != 0.0 || rotation != 0.0);
     if touched {
         kiosk.follow = false;
+        kiosk.shot = None;
     }
 
     let height = camera.logical_viewport_size().map_or(1000.0, |s| s.y);
@@ -261,8 +262,63 @@ pub fn camera(
             }
         }
     }
+    // the tutorial's flight to what the step is about
+    if let (Some(shot), Some((_, d))) = (kiosk.shot, *home_view) {
+        let dt = time.delta_seconds().min(0.1);
+        let goal = shot.at.map_or(home, |p| crate::frame::to_bevy(p, sim.scn.terrain.height_at(p)));
+        let goal_d = (d * shot_zoom() * shot.zoom).clamp(MIN_DIST, MAX_DIST);
+        let a = 1.0 - (-2.5 * dt).exp();
+        orbit.focus = orbit.focus.lerp(goal, a);
+        orbit.distance += (goal_d - orbit.distance) * a;
+        if orbit.focus.distance(goal) < 8.0 && (orbit.distance / goal_d - 1.0).abs() < 0.02 {
+            kiosk.shot = None;
+        }
+    }
+    // Behind the name screen: a director, not a follower. A shot lasts
+    // `SHOT_S`; its subject is picked when it begins, from what the fire is
+    // doing then, and the camera glides to it slowly.
+    if kiosk.phase == Phase::Intro && !kiosk.frozen {
+        if let Some((yaw0, d)) = *home_view {
+            let n = super::demo_shot(kiosk.demo_t);
+            if kiosk.demo_pick.0 != n {
+                kiosk.demo_pick = (n, pick_shot(&sim, n, kiosk.demo_pick.1));
+            }
+            let on = |p: Pos| crate::frame::to_bevy(p, sim.scn.terrain.height_at(p));
+            let front = fire_extent(&sim);
+            let wide = |front: Option<(Vec2, f32)>| match front {
+                Some((mid, span)) => (Vec3::new(mid.x, orbit.focus.y, mid.y), (span * 2.8).clamp(d * 0.5, d), scene_pitch, 0.0),
+                None => (home, d, scene_pitch, 0.0),
+            };
+            let (goal, dist, pitch, sway) = match kiosk.demo_pick.1 {
+                Subject::Front => match front {
+                    Some((mid, _)) => (Vec3::new(mid.x, orbit.focus.y, mid.y), d * 0.32, -0.62, 0.6),
+                    None => wide(front),
+                },
+                Subject::District(i) if i < sim.districts.len() => (on(sim.districts[i].centre), d * 0.26, -0.55, -0.5),
+                Subject::Crew(i) if i < sim.crews.units.len() => (on(sim.crews.units[i].pos), d * 0.17, -0.5, 0.7),
+                _ => wide(front),
+            };
+            let off = Vec2::new(goal.x - home.x, goal.z - home.z).clamp_length_max(PAN_RADIUS_M);
+            let goal = Vec3::new(home.x + off.x, goal.y, home.z + off.y);
+            // the goal itself is smoothed (a crew moves in jumps), then the
+            // camera eases to it: two slow stages, no sudden move
+            let dt = time.delta_seconds().min(0.1);
+            let (g, gd) = tracked.get_or_insert((Vec2::new(goal.x, goal.z), dist));
+            let s = 1.0 - (-0.9 * dt).exp();
+            *g += (Vec2::new(goal.x, goal.z) - *g) * s;
+            *gd += (dist - *gd) * s;
+            let a = 1.0 - (-0.5 * dt).exp();
+            orbit.focus = orbit.focus.lerp(Vec3::new(g.x, goal.y, g.y), a);
+            orbit.distance += (*gd - orbit.distance) * a;
+            // a slow drift of the heading around the shot's own, so the
+            // picture is never still
+            let yaw = yaw0 + sway * 0.18 * (kiosk.demo_t * 0.05).sin();
+            orbit.yaw += (yaw - orbit.yaw) * a;
+            orbit.pitch += (pitch - orbit.pitch) * a;
+        }
+    }
     // the fire runs: follow it, slowly
-    if kiosk.follow && matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco) {
+    if kiosk.follow && kiosk.shot.is_none() && matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco) {
         if let (Some((_, d)), Some((mid, span))) = (*home_view, fire_extent(&sim)) {
             let dt = time.delta_seconds().min(0.1);
             let (t_mid, t_span) = tracked.get_or_insert((mid, span));
@@ -332,6 +388,40 @@ pub(super) fn fire_extent(sim: &Sim) -> Option<(Vec2, f32)> {
     let v: Vec<Vec2> = pts.iter().map(|&p| { let b = crate::frame::to_bevy(p, 0.0); Vec2::new(b.x, b.z) }).collect();
     let (lo, hi) = v.iter().fold((Vec2::MAX, Vec2::MIN), |(l, h), p| (l.min(*p), h.max(*p)));
     Some(((lo + hi) * 0.5, (hi - lo).max_element().max(400.0)))
+}
+
+/// What the opening screen's shot `n` looks at: the whole front first, then,
+/// in turn, the town the fire is nearest to, a crew working close to it and
+/// the front close; a subject that is not there is skipped, and the one just
+/// shown is not shown again.
+fn pick_shot(sim: &Sim, n: usize, last: Subject) -> Subject {
+    let cells = sim.fire.active_cells();
+    if cells.is_empty() {
+        return Subject::Wide;
+    }
+    let step = (cells.len() / 300).max(1);
+    let fire: Vec<Pos> = cells.iter().step_by(step).map(|&c| sim.scn.world.centre_of(c)).collect();
+    let gap = |p: Pos| fire.iter().map(|f| (f.x - p.x).hypot(f.y - p.y)).fold(f32::MAX, f32::min);
+    // towns by how near the fire is, within what the eye can take in
+    let mut towns: Vec<(usize, f32)> = sim.districts.iter().enumerate().map(|(i, d)| (i, gap(d.centre))).filter(|t| t.1 < 3000.0).collect();
+    towns.sort_by(|a, b| a.1.total_cmp(&b.1));
+    // ground crews close to the fire, not parked at the base
+    let mut crews: Vec<(usize, f32)> = sim.crews.units.iter().enumerate().filter(|(_, u)| !u.kind.is_air()).map(|(i, u)| (i, gap(u.pos))).filter(|t| t.1 < 900.0).collect();
+    crews.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let order = [0usize, 1, 2, 3, 0, 1, 2];
+    for k in 0..order.len() {
+        let want = order[(n + k) % order.len()];
+        let subject = match want {
+            0 => Some(Subject::Wide),
+            1 => towns.iter().map(|t| Subject::District(t.0)).find(|s| *s != last),
+            2 => crews.iter().map(|t| Subject::Crew(t.0)).find(|s| *s != last),
+            _ => Some(Subject::Front),
+        };
+        if let Some(s) = subject.filter(|s| *s != last) {
+            return s;
+        }
+    }
+    Subject::Wide
 }
 
 fn shot_zoom() -> f32 {

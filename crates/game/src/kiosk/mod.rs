@@ -7,13 +7,17 @@
 //! Flow: **Intro** (name, «Inizia») → **Tutorial** (day 1: a scripted small
 //! fire, one prompted step at a time; the world stands still while a step
 //! waits for the player) → **Giorno2** (one screen: a new day, a new fire) →
-//! **Gioco** (×300, pauses at ×60, orders only in pause) → **Fine** (stars
+//! **Gioco** (×60, opens in pause; the pause stops the world, orders only
+//! in pause) → **Fine** (stars
 //! against the same fire with no orders, the day's board). A new visit starts
 //! from the end screen or the operator menu (F2), never by itself.
 
 pub mod board;
+pub mod characters;
 pub mod icons;
 pub mod marks;
+pub mod pins;
+pub mod screens;
 pub mod snap;
 pub mod ui;
 pub mod view;
@@ -65,6 +69,14 @@ pub enum Selection {
     District(usize),
 }
 
+/// Where the camera is flying to: a ground point (`None`: the home view) and
+/// the distance as a fraction of the home view's.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Shot {
+    pub at: Option<Pos>,
+    pub zoom: f32,
+}
+
 #[derive(Resource)]
 pub struct Kiosk {
     pub phase: Phase,
@@ -77,12 +89,22 @@ pub struct Kiosk {
     /// The tutorial's script and the step on show.
     pub script: Option<Script>,
     pub step: usize,
+    /// The camera's flight for the tutorial step on show, and the step it
+    /// was given for, and the real seconds since (the highlight is brief).
+    pub shot: Option<Shot>,
+    pub shot_for: Option<usize>,
+    pub step_t: f32,
     pub selection: Selection,
     /// The move being previewed: the team, the hex and the game's answer.
     pub move_plan: Option<Result<MovePlan, String>>,
     pub move_hex: Option<Axial>,
     /// The evacuation being previewed.
     pub evac_plan: Option<Result<EvacPlan, String>>,
+    /// The district under the pointer, its evacuation and `Sim::generation`
+    /// it was computed at: route and time are seen before choosing.
+    pub evac_hover: Option<(usize, u64, Result<EvacPlan, String>)>,
+    /// A team's flag being dragged, and the ground under the pointer.
+    pub dragging: Option<(usize, Pos)>,
     /// `Sim::generation` the previews were computed at.
     plans_at: u64,
     /// A short message (refused order, event) and its age in real seconds.
@@ -101,6 +123,13 @@ pub struct Kiosk {
     pub click: Option<Pos>,
     pub follow: bool,
     pub reset_view: bool,
+    /// Real seconds the opening screen's fire has been on show: the camera
+    /// director's clock ([`demo_shot`]).
+    pub demo_t: f32,
+    /// The speed the director asks for, eased.
+    demo_speed: f32,
+    /// The shot being held (its index) and what it looks at.
+    pub demo_pick: (usize, Subject),
     /// The operator menu (F2).
     pub operator: bool,
     /// «Ferma il mondo» (operator).
@@ -113,16 +142,24 @@ impl Kiosk {
         Kiosk {
             phase: Phase::Intro,
             phase_t: 0.0,
+            demo_t: 0.0,
+            demo_speed: 0.0,
+            demo_pick: (usize::MAX, Subject::Wide),
             territory,
             data,
             seed: 1,
             player: String::new(),
             script: None,
             step: 0,
+            shot: None,
+            shot_for: None,
+            step_t: 0.0,
             selection: Selection::None,
             move_plan: None,
             move_hex: None,
             evac_plan: None,
+            evac_hover: None,
+            dragging: None,
             plans_at: 0,
             notice: None,
             log_seen: 0,
@@ -150,6 +187,7 @@ impl Kiosk {
         self.move_plan = None;
         self.move_hex = None;
         self.evac_plan = None;
+        self.dragging = None;
     }
 
     pub fn notify(&mut self, text: impl Into<String>) {
@@ -217,7 +255,7 @@ impl Kiosk {
 pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<NextState<AppState>>, mut exit: EventWriter<AppExit>) {
     let built = Territory::load(&data.0).and_then(|t| {
         let k = Kiosk::new(t, data.0.clone());
-        let sim = Sim::new(&data.0, &k.tutorial_case(), k.seed)?;
+        let sim = Sim::new(&data.0, &k.territory.game, k.seed)?;
         Ok((k, sim))
     });
     match built {
@@ -233,13 +271,57 @@ pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<Next
     }
 }
 
-/// A new visit: the tutorial's fire, still, under the name screen.
-pub fn new_visit(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
-    let case = k.tutorial_case();
+/// Real seconds a shot of the opening screen's camera lasts: long enough to
+/// see something happen, not a montage.
+pub const SHOT_S: f32 = 26.0;
+
+/// What the opening screen's camera looks at; chosen once per shot, by what
+/// the fire is doing (`view::pick_shot`).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Subject {
+    /// The whole burning front and the towns near it.
+    Wide,
+    /// The front, close.
+    Front,
+    /// The town the fire is nearest to.
+    District(usize),
+    /// A ground crew working near the fire.
+    Crew(usize),
+}
+
+impl Subject {
+    /// How fast the fire runs while this is on show, against `RUN_X`: fast
+    /// over the whole front, slower on a close subject.
+    fn pace(self) -> f32 {
+        match self {
+            Subject::Wide => 1.5,
+            Subject::Front | Subject::District(_) => 0.8,
+            Subject::Crew(_) => 0.4,
+        }
+    }
+}
+
+/// The index of the shot at real time `t` of the opening screen.
+pub fn demo_shot(t: f32) -> usize {
+    (t / SHOT_S) as usize
+}
+
+/// The fire behind the name screen: the played case, no orders, from its
+/// start; when it has run its course it starts again.
+fn demo_restart(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+    let case = k.territory.game.clone();
     if let Err(e) = sim.restart(&case, k.seed) {
         k.error = Some(format!("{e:#}"));
     }
     restarted.send(SimRestarted);
+    k.demo_pick = (usize::MAX, Subject::Wide);
+}
+
+/// A new visit: the played fire runs by itself under the name screen.
+pub fn new_visit(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+    demo_restart(k, sim, restarted);
+    k.demo_t = 0.0;
+    k.demo_speed = 0.0;
     k.player.clear();
     k.saved = None;
     k.log_seen = 0;
@@ -262,7 +344,11 @@ pub fn start_tutorial(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<
         restarted.send(SimRestarted);
     }
     k.script = Script::of(sim);
+    // like the game: it opens still
+    sim.opening_pause();
     k.step = 0;
+    k.shot_for = None;
+    k.shot = None;
     k.log_seen = sim.log.len();
     k.enter(Phase::Tutorial);
 }
@@ -279,15 +365,19 @@ pub fn start_game(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimR
     k.log_seen = 0;
     k.script = None;
     k.follow = true;
+    // the game opens still: a look at the scene and the first orders
+    sim.opening_pause();
     k.enter(Phase::Gioco);
 }
 
+
 /// The clock and the previews. Runs before the view systems.
-pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
+pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: EventWriter<SimRestarted>) {
     let dt = crate::playtest::delta(time.delta_seconds());
     let k = &mut *kiosk;
     if !k.frozen {
         k.phase_t += dt;
+        k.step_t += dt;
     }
     if let Some((_, age)) = &mut k.notice {
         *age += dt;
@@ -295,16 +385,37 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
             k.notice = None;
         }
     }
+    // the opening screen: the fire plays, at the pace of the shot on show
+    if k.phase == Phase::Intro && !k.frozen {
+        k.demo_t += dt;
+        let want = rocca::RUN_X * k.demo_pick.1.pace();
+        k.demo_speed += (want - k.demo_speed) * (1.0 - (-1.5 * dt.min(0.1)).exp());
+        if sim.is_over() && k.demo_t > 3.0 {
+            demo_restart(k, &mut sim, &mut restarted);
+        }
+    }
     sim.speed = match k.phase {
         _ if k.frozen => 0.0,
+        Phase::Intro => k.demo_speed,
         // the tutorial waits for the player, then runs by itself
-        Phase::Tutorial if k.expect() == Some(Expect::Over) => sim.game.speed(),
+        Phase::Tutorial if matches!(k.expect(), Some(Expect::Over | Expect::Run(_))) => sim.game.speed(),
         Phase::Gioco => sim.game.speed(),
         _ => 0.0,
     };
+    // the pause stops the world; its time is real time
+    if k.phase == Phase::Gioco && !k.frozen && sim.paused() {
+        sim.pause_tick(dt);
+    }
     if sim.speed > 0.0 {
         if let Err(e) = crate::playtest::tick(&mut sim, dt) {
             k.error = Some(format!("{e:#}"));
+        }
+    }
+    // the tutorial's run is over: the game stops by itself
+    if let (Phase::Tutorial, Some(Expect::Run(until))) = (k.phase, k.expect()) {
+        if sim.time_s() >= until {
+            sim.opening_pause();
+            k.done(Expect::Run(until));
         }
     }
     // what happened, as notices (the latest only)

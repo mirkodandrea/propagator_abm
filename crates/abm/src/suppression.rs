@@ -377,6 +377,10 @@ pub struct Suppression {
     /// engine fills from a hydrant, an aircraft scoops from open water.
     hydrants: Vec<Pos>,
     open_water: Vec<Pos>,
+    /// `Some(s)`: an empty engine does not drive to a hydrant, it stays where
+    /// it is and is full again after `s` seconds (the water is brought to it).
+    /// `None` (the default): it drives to the nearest hydrant.
+    pub refill_in_place_s: Option<f32>,
     time_s: f32,
     /// The editable unit policy. There is no alternate hand-written policy.
     policy: UnitRuntime,
@@ -507,6 +511,7 @@ impl Suppression {
             effect: UnitEffect::ONE,
             hydrants,
             open_water,
+            refill_in_place_s: None,
             time_s: 0.0,
             policy,
             generation: 0,
@@ -1275,6 +1280,23 @@ impl Suppression {
         fire: &FireSim,
         scn: &Scenario,
     ) {
+        if let Some(wait_s) = self.refill_in_place_s {
+            let u = &mut self.units[i];
+            u.note = "refilling in place";
+            u.water_l = (u.water_l + u.tank_l / wait_s.max(1.0) * dt).min(u.tank_l);
+            if u.water_l >= u.tank_l {
+                u.note = "";
+                match u.resume.take() {
+                    Some(task) => {
+                        u.task = task;
+                        u.state = UnitState::Moving;
+                        u.drive.reset();
+                    }
+                    None => u.state = UnitState::Staged,
+                }
+            }
+            return;
+        }
         let pos = self.units[i].pos;
         let Some(source) = nearest(&self.hydrants, pos) else {
             let u = &mut self.units[i];

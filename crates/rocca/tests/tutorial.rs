@@ -33,10 +33,25 @@ fn orders_only_in_pause_and_one_evacuation_at_a_time() {
     g.move_team(0, hex).unwrap();
     let a = g.district_index("Le Terrazze").unwrap();
     let b = g.district_index("Castelvento").unwrap();
+    // in the same pause the player may change their mind
+    let people = |g: &Game, d: usize| g.districts[d].households.iter().filter(|&&i| g.evac.families[i].state == State::Home).count();
+    let homes_a = people(&g, a);
     g.evacuate(a).unwrap();
-    assert!(g.evacuate(b).is_err());
+    assert_eq!(people(&g, a), 0);
+    g.evacuate(b).unwrap();
+    assert_eq!(people(&g, a), homes_a, "the first choice is taken back whole");
+    assert_eq!(g.evac.active().unwrap().district, b);
+    g.cancel_evacuation().unwrap();
+    assert!(g.evac.active().is_none());
+    g.evacuate(a).unwrap();
     g.resume();
     assert!(!g.can_pause(), "the expert needs time before the next pause");
     g.run_until(g.time_s() + rocca::PAUSE_COOLDOWN_S).unwrap();
     assert!(g.can_pause());
+    // after the pause the evacuation under way stands: one at a time
+    g.pause().unwrap();
+    if g.evac.active().is_some() {
+        assert!(g.evacuate(b).is_err());
+        assert!(g.cancel_evacuation().is_err());
+    }
 }

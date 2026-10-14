@@ -3,8 +3,8 @@
 //! road to it, the roads the teams are driving, the evacuation's route
 //! (proposed, dashed; in course, solid), and the roads the fire has closed.
 //!
-//! Everything sits above the canopy (`rings::RING_LIFT_M`), unlit, and is
-//! rebuilt from the game's state behind a key, so a restart needs nothing
+//! Everything sits above the canopy (`rings::RING_LIFT_M`), in flat bright
+//! colours drawn over the trees (`flat::FlatMaterial`), and is rebuilt from the game's state behind a key, so a restart needs nothing
 //! but the key cleared.
 
 use bevy::prelude::*;
@@ -14,16 +14,20 @@ use rocca::tutorial::Expect;
 use scenario::Pos;
 
 use super::{Kiosk, Phase, Selection};
-use crate::retro::{self, RetroMaterial};
-use crate::rings::path_mesh;
+use crate::flat::FlatMaterial;
+use crate::rings::{path_mesh, path_mesh_at, RING_LIFT_M};
 use crate::sim::Sim;
 
 /// Widths on the map, metres.
-const HEX_LINE_M: f32 = 6.0;
+const HEX_LINE_M: f32 = 12.0;
+/// The dark under-stroke of the hex lines, wider, a little lower.
+const HEX_UNDER_M: f32 = 24.0;
 const HEX_PICK_M: f32 = 16.0;
 const ROUTE_M: f32 = 12.0;
 const CLOSED_M: f32 = 18.0;
 const DASH_M: f32 = 40.0;
+/// How much wider the dark under-stroke of a route is than the route.
+const UNDER: f32 = 1.8;
 /// Closed roads are recomputed this often, in game steps.
 const CLOSED_EVERY: u64 = 10;
 
@@ -36,42 +40,37 @@ pub struct ClosedMark;
 
 #[derive(Resource)]
 pub struct MarkAssets {
-    hex: Handle<RetroMaterial>,
-    pick: Handle<RetroMaterial>,
-    want: Handle<RetroMaterial>,
-    route: Handle<RetroMaterial>,
-    evac: Handle<RetroMaterial>,
-    closed: Handle<RetroMaterial>,
+    hex: Handle<FlatMaterial>,
+    /// Dark, under the hexes and the routes.
+    under: Handle<FlatMaterial>,
+    pick: Handle<FlatMaterial>,
+    want: Handle<FlatMaterial>,
+    route: Handle<FlatMaterial>,
+    evac: Handle<FlatMaterial>,
+    closed: Handle<FlatMaterial>,
     /// What the hex grid, the orders and the closed roads were built for.
     hex_key: Option<String>,
     order_key: u64,
     closed_key: u64,
 }
 
-fn glow(c: [f32; 3], a: f32, gain: f32) -> RetroMaterial {
-    let l = Color::srgb(c[0], c[1], c[2]).to_linear();
-    retro::material(
-        StandardMaterial {
-            base_color: Color::LinearRgba(LinearRgba::new(l.red * gain, l.green * gain, l.blue * gain, a)),
-            emissive: LinearRgba::rgb(c[0] * gain, c[1] * gain, c[2] * gain),
-            unlit: true,
-            alpha_mode: AlphaMode::Blend,
-            double_sided: true,
-            cull_mode: None,
-            ..default()
-        },
-        false,
-    )
-}
+/// The colours of the signs (sRGB). Each means one thing: the teams' roads
+/// are cyan, the evacuation's green (the escape-route sign), the closed
+/// roads red, the hex the tutorial wants amber.
+pub const ROUTE: [f32; 3] = [0.0, 0.85, 1.0];
+pub const EVAC: [f32; 3] = [0.25, 1.0, 0.2];
+const CLOSED: [f32; 3] = [1.0, 0.12, 0.08];
+const WANT: [f32; 3] = [1.0, 0.72, 0.0];
 
-pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<RetroMaterial>>) {
+pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>) {
     commands.insert_resource(MarkAssets {
-        hex: materials.add(glow([0.85, 0.92, 1.0], 0.45, 1.2)),
-        pick: materials.add(glow([1.0, 1.0, 1.0], 0.95, 2.4)),
-        want: materials.add(glow([1.0, 0.77, 0.27], 0.95, 2.6)),
-        route: materials.add(glow([0.0, 0.9, 1.0], 0.9, 1.8)),
-        evac: materials.add(glow([0.45, 0.65, 1.0], 0.95, 2.2)),
-        closed: materials.add(glow([1.0, 0.2, 0.15], 0.95, 2.6)),
+        hex: materials.add(FlatMaterial::new([1.0, 1.0, 1.0])),
+        under: materials.add(FlatMaterial::new([0.02, 0.03, 0.05]).pulled(-12.0)),
+        pick: materials.add(FlatMaterial::new([1.0, 1.0, 1.0]).pulled(4.0)),
+        want: materials.add(FlatMaterial::new(WANT).pulled(4.0)),
+        route: materials.add(FlatMaterial::new(ROUTE)),
+        evac: materials.add(FlatMaterial::new(EVAC).pulled(2.0)),
+        closed: materials.add(FlatMaterial::new(CLOSED).pulled(1.0)),
         hex_key: None,
         order_key: u64::MAX,
         closed_key: u64::MAX,
@@ -104,9 +103,9 @@ fn outline(at: rocca::Axial) -> Vec<Pos> {
     c.iter().chain(std::iter::once(&c[0])).copied().collect()
 }
 
-fn spawn<M: Component>(commands: &mut Commands, meshes: &mut Assets<Mesh>, mesh: Mesh, mat: &Handle<RetroMaterial>, tag: M) {
+fn spawn<M: Component>(commands: &mut Commands, meshes: &mut Assets<Mesh>, mesh: Mesh, mat: &Handle<FlatMaterial>, tag: M) {
     commands.spawn((
-        MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(mesh), material: mat.clone(), ..default() },
+        MaterialMeshBundle::<FlatMaterial> { mesh: meshes.add(mesh), material: mat.clone(), ..default() },
         tag,
         bevy::pbr::NotShadowCaster,
         bevy::pbr::NotShadowReceiver,
@@ -130,6 +129,8 @@ pub fn update_hexes(
             commands.entity(e).despawn();
         }
         let parts: Vec<Mesh> = sim.hexes.hexes.iter().map(|h| path_mesh(&sim.scn, &outline(h.at), HEX_LINE_M, None)).collect();
+        let under: Vec<Mesh> = sim.hexes.hexes.iter().map(|h| path_mesh_at(&sim.scn, &outline(h.at), HEX_UNDER_M, None, RING_LIFT_M - 4.0)).collect();
+        spawn(&mut commands, &mut meshes, merge(under), &assets.under, HexMark);
         spawn(&mut commands, &mut meshes, merge(parts), &assets.hex, HexMark);
         return;
     }
@@ -165,6 +166,9 @@ pub fn update_orders(
     if let Some(Ok(p)) = &kiosk.evac_plan {
         mix(p.district as u64 + 1000 + p.path.points.len() as u64);
     }
+    if let Some((_, _, Ok(p))) = &kiosk.evac_hover {
+        mix(p.district as u64 + 5000 + p.path.points.len() as u64);
+    }
     if let Some(Expect::Move(t, at)) = kiosk.expect() {
         mix(t as u64 * 7 + at.q as u64 * 13 + at.r as u64);
     }
@@ -192,20 +196,19 @@ pub fn update_orders(
         }
     }
     // the teams' roads
-    let routes: Vec<Mesh> = (0..sim.teams.len())
-        .map(|t| sim.team_route(t))
-        .filter(|r| r.len() >= 2)
-        .map(|r| path_mesh(&sim.scn, &r, ROUTE_M, None))
-        .collect();
+    let routes: Vec<Vec<Pos>> = (0..sim.teams.len()).map(|t| sim.team_route(t)).filter(|r| r.len() >= 2).collect();
     if !routes.is_empty() {
-        spawn(&mut commands, &mut meshes, merge(routes), &assets.route, OrderMark);
+        let under = routes.iter().map(|r| path_mesh_at(&sim.scn, r, ROUTE_M * UNDER, None, RING_LIFT_M - 2.0)).collect();
+        spawn(&mut commands, &mut meshes, merge(under), &assets.under, OrderMark);
+        let lines = routes.iter().map(|r| path_mesh(&sim.scn, r, ROUTE_M, None)).collect();
+        spawn(&mut commands, &mut meshes, merge(lines), &assets.route, OrderMark);
     }
-    // the evacuation: proposed, and in course
-    if let Some(Ok(p)) = &kiosk.evac_plan {
-        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &p.path.points, ROUTE_M * 1.4, Some(DASH_M)), &assets.evac, OrderMark);
-    }
-    if let Some(e) = sim.evac.active() {
-        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &e.path.points, ROUTE_M * 1.4, None), &assets.evac, OrderMark);
+    // the evacuation: under the pointer or chosen (dashed), and in course
+    let hover = kiosk.evac_hover.as_ref().and_then(|(_, _, p)| p.as_ref().ok());
+    let dashed = kiosk.evac_plan.as_ref().and_then(|p| p.as_ref().ok()).into_iter().chain(hover).map(|p| (&p.path.points, Some(DASH_M)));
+    for (pts, dash) in dashed.chain(sim.evac.active().map(|e| (&e.path.points, None))) {
+        spawn(&mut commands, &mut meshes, path_mesh_at(&sim.scn, pts, ROUTE_M * 1.4 * UNDER, None, RING_LIFT_M - 2.0), &assets.under, OrderMark);
+        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, pts, ROUTE_M * 1.4, dash), &assets.evac, OrderMark);
     }
 }
 

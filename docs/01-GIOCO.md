@@ -11,14 +11,15 @@ Uno strategico in tempo reale, sul modello di StarCraft, per il chiosco della *S
 ## 1. Struttura della partita
 
 1. **Apertura:** nome del giocatore, «Inizia» (oppure «Salta la prova guidata») e la classifica di oggi.
-2. **Tutorial, giorno 1** (`rocca::tutorial`): un incendio piccolo vicino a Le Ghiande, con dinamiche reali. Istruzioni passo passo: Pausa, scelta della squadra, scelta dell'esagono e conferma (due squadre), evacuazione di Le Ghiande, Riprendi. Il gioco accetta **solo** l'azione richiesta e il mondo resta fermo finché il giocatore non la compie, quindi l'esito è scriptato. Poi il fuoco corre da solo: le squadre lo contengono e il borgo è al sicuro. Senza ordini, lo stesso incendio colpisce 17 case e 45 persone.
-3. **Giorno 2:** nuovo giorno, nuovo incendio (`game.json` → `game`, oggi il caso `medium`, 5 ore). Il controllo passa al giocatore. L'incendio è **segnalato in ritardo**: quando la partita comincia brucia già da `start_min` minuti (2026-10-14).
+2. **Tutorial, giorno 1** (`rocca::tutorial`): un incendio piccolo vicino a Le Ghiande, con dinamiche reali. **Parte in pausa**, come il gioco vero (2026-10-14). Passi: la scena e la previsione («Avanti»); i due ordini, trascinando il cono dei vigili di Castelvento e quello dei volontari di Pian dei Grilli sull'esagono indicato; «Riprendi»; il mondo corre da solo per **30 min simulati** (30 s reali a ×60, `tutorial::RUN_MIN`) e **si ferma da solo**, e il testo dice che nella partita vera la pausa la deve premere il giocatore; evacuazione di Le Ghiande; «Riprendi» fino alla fine. Il gioco accetta **solo** l'azione richiesta e il mondo resta fermo finché il giocatore non la compie, quindi l'esito è scriptato. Senza ordini, lo stesso incendio colpisce 17 case e 45 persone.
+3. **Giorno 2:** nuovo giorno, nuovo incendio (`game.json` → `game`, oggi il caso `medium`, 5 ore). Il controllo passa al giocatore. La partita **parte in pausa**, senza limite di tempo, per esplorare la scena e dare i primi ordini; «Via!» fa partire il tempo e non consuma l'esperto (2026-10-14). L'incendio è **segnalato in ritardo**: quando la partita comincia brucia già da `start_min` minuti (2026-10-14).
 4. **Fine:** stelle e classifica del giorno.
 
 ## 2. Il tempo e la pausa
 
-- Nessun turno. Il tempo scorre a **×300**: 1 s reale vale 5 min simulati (`rocca::RUN_X`).
-- **Pausa = chiedere all'esperto scientifico.** Il fuoco non si ferma, rallenta a **×60** (`PAUSE_X`). La pausa dura **30 min simulati** (30 s reali, `PAUSE_S`) oppure finisce prima con «Riprendi». Dopo, l'esperto torna disponibile tra **20 min simulati** (`PAUSE_COOLDOWN_S`).
+- Nessun turno. Il tempo scorre a **×60** o è **fermo**, nient'altro (2026-10-14): 1 s reale vale 1 min simulato (`rocca::RUN_X`).
+- **Pausa = chiedere all'esperto scientifico.** In pausa il **mondo si ferma** (2026-10-14: «pausa è stop, non tempo rallentato»). La pausa dura **30 s reali** (`PAUSE_REAL_S`, contati dal chiosco con `Game::pause_tick`) oppure finisce prima. Dopo, l'esperto torna disponibile tra **30 s reali** di gioco, cioè 30 min simulati (`PAUSE_COOLDOWN_REAL_S`, `PAUSE_COOLDOWN_S`, 2026-10-14).
+- **In pausa il piano si può cambiare:** una squadra si sposta di nuovo trascinando il suo cono; un'evacuazione ordinata nella stessa pausa si annulla, oppure si sostituisce scegliendo un altro borgo (`Game::cancel_evacuation`). Dopo la ripresa no (2026-10-14).
 - **Tutti gli ordini si danno solo in pausa:** spostare le squadre ed evacuare.
 - In pausa compaiono:
   - la **previsione**: isocrone al 50 % di 16 simulazioni dal fuoco attuale, a +1 h e +3 h, senza interventi (`rocca::forecast`);
@@ -29,14 +30,15 @@ Uno strategico in tempo reale, sul modello di StarCraft, per il chiosco della *S
 
 ## 3. Le squadre
 
-- **Una squadra** è un'autobotte con 3 persone. Ci sono 3 squadre dei **vigili del fuoco** alla caserma di Castelvento, il borgo più grande, e 2 squadre di **volontari AIB** al presidio di San Rocco, un borgo minore (`game.json`: `stations`, `roster`).
+- **Una squadra** è un'autobotte con 3 persone. Ci sono 3 squadre dei **vigili del fuoco** alla caserma di Castelvento, il borgo più grande, e 2 squadre di **volontari AIB** al presidio di Pian dei Grilli, un borgo minore a ovest, dall'altra parte dell'isola rispetto a Castelvento (`game.json`: `stations`, `roster`).
 - Si spostano su una **griglia esagonale** di 500 m tra centri adiacenti (`rocca::hex`). Si può scegliere solo un esagono attraversato da una strada carrabile della rete principale: la squadra guida fino al punto stradale dell'esagono più vicino al centro.
-- Si **trascina l'icona** della squadra (in pausa) sull'esagono scelto; anche un clic sull'icona e poi sull'esagono funziona. Il gioco mostra **percorso e tempo di viaggio**, evitando le strade chiuse dal fuoco (`Game::plan_move`), in un riquadro sulla mappa accanto all'esagono. Poi si **conferma** lì (2026-10-14).
+- Ogni squadra ha un **cono 3D semitrasparente**, che fluttua e oscilla sopra il punto dove è assegnata: sull'esagono dell'ultimo ordine, oppure alla sua sede (`kiosk::pins`). Sul cono, un'etichetta con autobotte e numero. Il veicolo non ha icone sopra (2026-10-14).
+- In pausa si **trascina il cono** sull'esagono scelto: durante il trascinamento il gioco mostra **percorso e tempo di viaggio**, evitando le strade chiuse dal fuoco (`Game::plan_move`). **Lasciato il cono, l'ordine è dato**, senza conferma (2026-10-14). Anche un clic sul cono e poi sull'esagono funziona.
 - Arrivata, la squadra **attacca il fuoco come può** (2026-10-14), con il modello di spegnimento conservato (`abm::suppression`):
   - l'**autobotte** aumenta l'umidità del combustibile che riesce a raggiungere dalla strada (acqua, portata della manichetta);
   - le **persone a piedi** tagliano la vegetazione di traverso alla via del fuoco. Finita una linea, ne tagliano un'altra più vicina al fuoco, entro 400 m dal punto stradale dell'esagono (`CREW_RANGE_M`).
 
-  Viaggiano insieme all'autobotte e insieme ricevono gli ordini. La squadra **protegge anche le case** entro 300 m (`PROTECT_M`). Si rifornisce da sola, si ritira se il pericolo è troppo alto e può essere persa.
+  Viaggiano insieme all'autobotte e insieme ricevono gli ordini. La squadra **protegge anche le case** entro 300 m (`PROTECT_M`). Quando l'autobotte ha finito l'acqua **resta dov'è** e la ricarica è implicita: torna piena dopo **10 min simulati** (`REFILL_S`); intanto continua a proteggere le case vicine (2026-10-14, prima andava agli idranti). Si ritira se il pericolo è troppo alto e può essere persa.
 - Evacuazione e difesa sono **slegate**: le squadre non evacuano e l'evacuazione non muove squadre.
 
 ## 4. L'evacuazione (modello semplificato)
@@ -44,7 +46,8 @@ Uno strategico in tempo reale, sul modello di StarCraft, per il chiosco della *S
 Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famiglia con un numero di persone (`rocca::evac`).
 
 - **Un borgo alla volta.** Il successivo si può evacuare quando l'ultima famiglia del borgo precedente è partita.
-- Si **clicca il borgo** sulla mappa; prima della conferma (riquadro sul borgo) il gioco mostra il **percorso** verso l'area sicura più vicina fuori dal borgo e il **tempo**: preparazione (5 min) + partenze + viaggio.
+- **Passando sopra il borgo** il gioco mostra già il **percorso** (tratteggiato) verso l'area sicura più vicina fuori dal borgo e il **tempo**: fino all'arrivo dell'ultima famiglia all'area sicura, cioè preparazione (5 min), partenze e viaggio. Si mostrano solo persone e minuti, senza le parti né la destinazione (2026-10-14, semplificazione). Poi si clicca il borgo e si preme «Evacua» nel riquadro.
+- **Aree di raccolta scelte a mano** (2026-10-14): ogni borgo (tranne Le Ghiande) ha la sua, facile da raggiungere e fuori dal bosco del valico (`evacuation.refuges` in `game.json`, elenco in `02-TERRITORIO.md`). Se la strada è chiusa dal fuoco, o il borgo non ne ha una, vale l'area sicura automatica più vicina. Senza l'elenco il meccanismo è inerte.
 - **Limite rigido:** al massimo **20 persone al minuto** escono dal borgo (`evacuation.per_min`). Le famiglie più vicine al punto di partenza partono per prime. In auto si viaggia a 8 m/s.
 - **Strade chiuse dal fuoco:** sono segnate in rosso sulla mappa. Ogni minuto il percorso viene ricontrollato.
   - Se il fuoco taglia la strada, si cerca un altro percorso.
@@ -68,22 +71,29 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
 ## 6. Interfaccia
 
 - La mappa occupa quasi tutto lo schermo; il rendering 3D del diorama è conservato.
+- **Pausa:** un pulsante rotondo nell'angolo in alto a destra. Pronto: anello ambra e simbolo di pausa. In pausa: simbolo di avvio e anello che si svuota nei 30 s, con i secondi. In ricarica: anello grigio che si riempie, con i secondi. Nella pausa d'apertura l'anello è verde e pieno (2026-10-14). In generale si usano icone, anelli e numeri al posto delle frasi.
 - **Barra in alto:**
   - giorno e ora;
   - vento e umidità;
-  - «Pausa: chiedi all'esperto» con il tempo di ricarica, oppure «PAUSA · ancora N min» e «Riprendi»;
+  - vento (freccia vista dalla camera) e umidità (goccia); in pausa la legenda delle isocrone e il cambio di vento previsto (orologio, ora, freccia).
   - in pausa, la spiegazione della previsione e il meteo.
 - **Barra laterale:** solo informazioni, nessun ordine: l'elenco delle squadre con il loro stato; l'elenco dei borghi; i conteggi. Gli ordini si danno sulla mappa (2026-10-14).
 - **Sulla mappa:**
-  - icone delle squadre, da trascinare (in pausa), e etichette cliccabili dei borghi, con il riquadro «Conferma» / «Evacua» / «Annulla» accanto;
-  - sul borgo in evacuazione, un **timer circolare**: l'anello si svuota col tempo che resta (preparazione, poi partenze), con i minuti al centro; a fine evacuazione una spunta, se il fuoco l'ha interrotta un avviso;
+  - coni 3D delle squadre, dove sono assegnate, da trascinare (in pausa), e etichette dei borghi: passandoci sopra, percorso e persone e minuti dell'evacuazione; al clic il riquadro con persone, minuti e «Evacua» / «Annulla»;
+  - sul borgo in evacuazione, un **timer circolare**: l'anello si svuota col tempo che resta fino all'arrivo dell'ultima famiglia, con i minuti al centro. Parte dai minuti annunciati e scende di un minuto per minuto simulato: annuncio e timer vengono dalla stessa regola (`Evacuations::remaining_min`, 2026-10-14); a fine evacuazione una spunta, se il fuoco l'ha interrotta un avviso;
+  - i segni sulla mappa (esagoni, percorsi, strade chiuse, isocrone) hanno un **materiale loro** (`flat`): colore pieno e acceso, senza luce né nebbia, con un bordo scuro, disegnati sopra la vegetazione (2026-10-14);
   - esagoni, in pausa o con una squadra scelta;
   - esagono scelto e percorso, tratteggiati in bianco;
   - strade percorse dalle squadre, in ciano;
-  - evacuazione, in blu: tratteggiata se proposta, continua se in corso;
+  - evacuazione, in **verde** (il colore della via di fuga, diverso dal ciano delle squadre): tratteggiata se proposta, continua se in corso; lo stesso verde nel riquadro e nel timer (2026-10-14);
   - strade chiuse, in rosso;
   - isocrone della previsione e freccia del vento.
 - **Avvisi:** l'ultimo evento, in una riga.
+- **Schermate** (`kiosk::screens`, `kiosk::characters`; stile e idee del vecchio chiosco, 2026-10-14). A parlare sono **volti** in fumetto, con il ruolo sopra: la **volontaria** (guida: apertura, tutorial, giorno 2, finale), l'**esperto** e i **vigili del fuoco** (solo nella riga delle persone con cui si lavora):
+  - **apertura:** carta centrale con logo CIMA e titolo, la volontaria che dice che cosa è in gioco (squadre e borghi), «Le persone con cui lavori», «Come ti chiami?», «Inizia» e «Salta la prova guidata», avvertenza sul territorio immaginario; accanto, «Classifica di oggi»;
+  - **tutorial:** il fumetto della volontaria in basso, con il passo (n/N), «Avanti» nei passi di sola lettura e «tocca a te» negli altri; a ogni passo la **camera vola** a ciò di cui si parla (l'innesco, la squadra e l'esagono, il borgo) e per 7 s una **cornice ambra** lampeggiante evidenzia ciò che si deve toccare (pulsante della pausa, bandiera e esagono, borgo); un trascinamento della mappa interrompe il volo; la mappa resta usabile, ma il gioco accetta solo l'azione richiesta; «Salta il tutorial» o Esc;
+  - **giorno 2:** carta con il fumetto della volontaria e «Inizia»;
+  - **finale:** «Com'è andata, <nome>», le stelle grandi di Persone, Case, Ettari con che cosa contano, il verdetto della volontaria e il confronto con il fuoco senza ordini; a destra il posto in classifica, la riga di avvertenza sulla realtà («quando arriva l'ordine di evacuazione si parte subito») e «Nuova partita».
 - **Controlli:**
   - mouse o trackpad;
   - trascinare per spostare la mappa, un clic senza trascinare per scegliere;

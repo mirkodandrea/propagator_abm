@@ -21,6 +21,8 @@ pub enum Icon {
     Fast,
     Alert,
     Check,
+    Clock,
+    Drop,
 }
 
 fn poly(p: &Painter, r: Rect, pts: &[(f32, f32)], fill: Color32) {
@@ -103,6 +105,15 @@ pub fn draw(p: &Painter, r: Rect, icon: Icon, col: Color32) {
             poly(p, r, &[(0.5, 0.05), (0.97, 0.92), (0.03, 0.92)], col);
             p.line_segment([at(r, 0.5, 0.35), at(r, 0.5, 0.65)], Stroke::new(w, Color32::BLACK));
             p.circle_filled(at(r, 0.5, 0.78), w * 0.6, Color32::BLACK);
+        }
+        Icon::Clock => {
+            p.circle_stroke(r.center(), s * 0.42, st);
+            p.line_segment([r.center(), at(r, 0.5, 0.22)], st);
+            p.line_segment([r.center(), at(r, 0.7, 0.6)], st);
+        }
+        Icon::Drop => {
+            poly(p, r, &[(0.5, 0.05), (0.72, 0.45), (0.28, 0.45)], col);
+            p.circle_filled(at(r, 0.5, 0.62), s * 0.27, col);
         }
         Icon::Check => {
             p.line_segment([at(r, 0.15, 0.55), at(r, 0.4, 0.8)], st);

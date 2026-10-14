@@ -158,9 +158,20 @@ pub(crate) fn wall_mesh(scn: &Scenario, centre: Pos, radius_m: f32) -> Mesh {
 /// the rings. With `dash_m`, drawn and skipped in turns of that length, so a
 /// proposed route reads apart from one being driven.
 pub(crate) fn path_mesh(scn: &Scenario, pts: &[Pos], width_m: f32, dash_m: Option<f32>) -> Mesh {
-    const STEP_M: f32 = 8.0;
-    let mut positions: Vec<[f32; 3]> = vec![];
-    let mut indices: Vec<u32> = vec![];
+    path_mesh_at(scn, pts, width_m, dash_m, RING_LIFT_M)
+}
+
+/// [`path_mesh`] at another lift: an under-stroke sits a little below its line.
+///
+/// One continuous strip, resampled every few metres, its sides offset along
+/// the mitred normal of the two segments meeting at each sample: a wide line
+/// on a wiggly contour folds inside itself rather than throwing spikes out.
+pub(crate) fn path_mesh_at(scn: &Scenario, pts: &[Pos], width_m: f32, dash_m: Option<f32>, lift_m: f32) -> Mesh {
+    const STEP_M: f32 = 5.0;
+    /// A sharp corner's mitre is cut at this many half-widths.
+    const MITRE_MAX: f32 = 2.0;
+    // samples along the line and how far along each is
+    let mut at: Vec<(Pos, f32)> = vec![];
     let mut along = 0.0f32;
     for w in pts.windows(2) {
         let (a, b) = (w[0], w[1]);
@@ -169,25 +180,50 @@ pub(crate) fn path_mesh(scn: &Scenario, pts: &[Pos], width_m: f32, dash_m: Optio
         if len < 0.5 {
             continue;
         }
-        let (nx, ny) = (-dy / len * width_m * 0.5, dx / len * width_m * 0.5);
         let steps = (len / STEP_M).ceil() as usize;
         for i in 0..steps {
-            let (t0, t1) = (i as f32 / steps as f32, (i + 1) as f32 / steps as f32);
-            let on = dash_m.is_none_or(|d| ((along + len * t0) / d) as i64 % 2 == 0);
-            if !on {
-                continue;
-            }
-            let s = positions.len() as u32;
-            for t in [t0, t1] {
-                let c = Pos { x: a.x + dx * t, y: a.y + dy * t };
-                for side in [-1.0f32, 1.0] {
-                    let p = Pos { x: c.x + nx * side, y: c.y + ny * side };
-                    positions.push([p.x, scn.terrain.height_at(c) + RING_LIFT_M, -p.y]);
-                }
-            }
-            indices.extend_from_slice(&[s, s + 2, s + 1, s + 1, s + 2, s + 3]);
+            let t = i as f32 / steps as f32;
+            at.push((Pos { x: a.x + dx * t, y: a.y + dy * t }, along + len * t));
         }
         along += len;
+    }
+    if let Some(&b) = pts.last() {
+        if !at.is_empty() {
+            at.push((b, along));
+        }
+    }
+    let n = at.len();
+    let unit = |a: Pos, b: Pos| {
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let l = (dx * dx + dy * dy).sqrt().max(1e-3);
+        (dx / l, dy / l)
+    };
+    let half = width_m * 0.5;
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(n * 2);
+    for i in 0..n {
+        let (c, _) = at[i];
+        let t_in = if i > 0 { unit(at[i - 1].0, c) } else { unit(c, at[(i + 1).min(n - 1)].0) };
+        let t_out = if i + 1 < n { unit(c, at[i + 1].0) } else { t_in };
+        let (n_in, n_out) = ((-t_in.1, t_in.0), (-t_out.1, t_out.0));
+        let (mx, my) = (n_in.0 + n_out.0, n_in.1 + n_out.1);
+        let ml = (mx * mx + my * my).sqrt();
+        let (nx, ny) = if ml < 1e-3 { n_out } else { (mx / ml, my / ml) };
+        // the mitre: longer at a corner so the sides stay parallel to the segments
+        let cos = (nx * n_out.0 + ny * n_out.1).max(1.0 / MITRE_MAX);
+        let (ox, oy) = (nx * half / cos, ny * half / cos);
+        let h = scn.terrain.height_at(c) + lift_m;
+        for side in [-1.0f32, 1.0] {
+            positions.push([c.x + ox * side, h, -(c.y + oy * side)]);
+        }
+    }
+    let mut indices: Vec<u32> = vec![];
+    for i in 0..n.saturating_sub(1) {
+        let mid = (at[i].1 + at[i + 1].1) * 0.5;
+        if dash_m.is_some_and(|d| (mid / d) as i64 % 2 != 0) {
+            continue;
+        }
+        let s = i as u32 * 2;
+        indices.extend_from_slice(&[s, s + 2, s + 1, s + 1, s + 2, s + 3]);
     }
     let n = positions.len();
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());

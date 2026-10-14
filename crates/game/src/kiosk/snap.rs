@@ -14,6 +14,7 @@
 //! | `evac`   | a district evacuated in pause at `t`                                 |
 //! | `team`   | the team selected; with `hex=<x>:<y>` the move previewed             |
 //! | `select` | the district selected (its evacuation previewed)                     |
+//! | `hover`  | the district under the pointer (its route and time shown)            |
 //! | `at`     | camera focus: `home`, `fire`, `district:<name>`, `team:<n>`, `<x>:<y>` |
 //! | `dist`, `yaw`, `pitch` | the view, metres and degrees                           |
 //!
@@ -59,6 +60,7 @@ struct State {
     team: Option<usize>,
     hex: Option<Pos>,
     select: Option<String>,
+    hover: Option<String>,
     at: String,
     dist: Option<f32>,
     yaw: Option<f32>,
@@ -93,6 +95,7 @@ fn parse(spec: &str) -> Vec<State> {
                     "team" => st.team = v.parse().ok(),
                     "hex" => st.hex = xy(v),
                     "select" => st.select = Some(v.into()),
+                    "hover" => st.hover = Some(v.into()),
                     "at" => st.at = v.into(),
                     "dist" => st.dist = v.parse().ok(),
                     "yaw" => st.yaw = v.parse().ok(),
@@ -128,7 +131,7 @@ fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<S
         "fine" => Phase::Fine,
         _ => Phase::Gioco,
     };
-    let case = if matches!(phase, Phase::Intro | Phase::Tutorial) { k.tutorial_case() } else { k.territory.game.clone() };
+    let case = if matches!(phase, Phase::Tutorial) { k.tutorial_case() } else { k.territory.game.clone() };
     let t_s = (st.t_min * 60.0) as i64;
     if k.player.is_empty() {
         k.player = "Giulia".into();
@@ -180,10 +183,16 @@ fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<S
             let at = rocca::Axial::of(p);
             k.move_hex = Some(at);
             k.move_plan = Some(sim.plan_move(t, at));
+            // as if the team's flag were being dragged there
+            k.dragging = Some((t, p));
             if let Some(Err(e)) = &k.move_plan {
                 eprintln!("snap: {}: {e}", st.name);
             }
         }
+    }
+    k.evac_hover = None;
+    if let Some(d) = st.hover.as_deref().and_then(|n| sim.district_index(n)) {
+        k.evac_hover = Some((d, sim.generation, sim.plan_evacuation(d)));
     }
     if let Some(d) = st.select.as_deref().and_then(|n| sim.district_index(n)) {
         k.selection = Selection::District(d);

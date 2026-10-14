@@ -28,10 +28,10 @@ Il documento raccoglie le specifiche date dall'utente all'avvio del nuovo proget
 | Tema | Decisione |
 |---|---|
 | Dove | Si riscrive il crate `rocca` dentro questo repository, sul branch `nuovo-gioco`. |
-| Pausa | 30 s reali (30 min simulati a ×60); ricarica di 20 min simulati. |
+| Pausa | 30 s reali (30 min simulati a ×60); ricarica di 20 min simulati. Dal 2026-10-14 la pausa ferma il mondo e la partita parte in pausa (vedi 01-GIOCO.md). |
 | Tutorial | Il giocatore esegue i passi indicati e il gioco accetta solo l'azione richiesta. Piccolo incendio sulla stessa isola. |
 | Seconda parte | Per ora un solo incendio (il caso `medium`). I livelli verranno dopo. |
-| Squadre | Ogni squadra è un'autobotte con 3 pompieri o volontari. 3 squadre alla caserma dei vigili del fuoco, nel borgo più grande (Castelvento); 2 squadre di volontari in un borgo minore (San Rocco). |
+| Squadre | Ogni squadra è un'autobotte con 3 pompieri o volontari. 3 squadre alla caserma dei vigili del fuoco, nel borgo più grande (Castelvento); 2 squadre di volontari in un borgo minore (San Rocco; spostato a Pian dei Grilli il 2026-10-14, vedi 01-GIOCO.md). |
 | Esagoni | 500 m come dimensione di riferimento; si possono scegliere gli esagoni adiacenti alle strade. |
 | Attacco | Le squadre attaccano il fuoco come possono: pompieri e volontari tagliano la vegetazione verso il fuoco, l'autobotte aumenta l'umidità dove riesce a raggiungere. |
 | Apertura | L'incendio parte già sviluppato: segnalazione in ritardo di 30 min (la tabella è in `02-TERRITORIO.md`). |

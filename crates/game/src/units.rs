@@ -327,8 +327,9 @@ pub fn sync_orders(
             continue;
         }
         match u.task {
-            Task::Hold | Task::Return => {}
-            Task::Attack { at } | Task::Drop { at } => {
+            // where a team is sent is shown by its flag (`kiosk::pins`)
+            Task::Hold | Task::Return | Task::Attack { .. } => {}
+            Task::Drop { at } => {
                 commands.spawn((
                     MaterialMeshBundle::<RetroMaterial> {
                         mesh: meshes.add(ring_mesh(&sim.scn, at, ORDER_RING_M)),
