@@ -4,6 +4,7 @@
 
 Leggere all'inizio di ogni sessione:
 
+0. **`docs/00-SPECIFICHE.md`**: le specifiche del nuovo progetto, nel testo dell'utente, con le risposte del 2026-10-14.
 1. **`docs/01-GIOCO.md`**: le regole in vigore (che cosa deve fare il gioco).
 2. **`docs/02-TERRITORIO.md`**: l'isola, gli incendi, come si modifica il territorio.
 3. **`docs/03-VERIFICHE.md`**: le **fasi** con i loro checkpoint e la batteria di prove.

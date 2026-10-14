@@ -2,33 +2,36 @@
 
 Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md`). Le voci chiuse si cancellano: la storia è in git. Le fasi sono in `docs/03-VERIFICHE.md`.
 
-## Fase corrente: 1. Prima passata (nuovo progetto, 2026-10-14)
+## Fase corrente: 1. Prima passata (nuovo progetto, 2026-10-14) — fatta, commit `ab7d0bf`
 
-**Prossimo checkpoint:** l'utente rivede motore, chiosco e documenti, e dice le modifiche.
+**Prossimo checkpoint:** il bilanciamento (fase 2). Si parte dalla tabella qui sotto, poi decide l'utente. Le specifiche originali sono in `docs/00-SPECIFICHE.md`.
 
-### Fatto in questa passata (da rivedere)
+### Da fare, in ordine
 
-- `rocca` riscritto: `game` (pausa ×60 / ×300, ricarica, ordini solo in pausa), `hex` (500 m, solo esagoni con strada), `evac` (evacuazione semplificata, un borgo alla volta, 20 persone/min, rerouting, interruzione e autoprotezione), `tutorial` (copione), `score` (Persone, Case, Ettari), `forecast` (alla pausa, con il bollettino). Tolti `coordinator`, `crisis`, `mayor`, `messengers`, `plan`, gli esempi e i test vecchi.
-- `game.json`: 3 VVF a Castelvento e 2 AIB a San Rocco (3 persone per squadra), caso `tutorial`, `game: medium` a 300 min, regole dell'evacuazione.
-- Chiosco: flusso Apertura → Tutorial → Giorno 2 → Gioco → Fine; `kiosk/ui.rs`, `kiosk/marks.rs` (esagoni, percorsi, strade chiuse), `kiosk/view.rs` (clic sulla mappa), `kiosk/snap.rs` nuovi. Tolti `people`, `life`, `agents`, i personaggi e il vecchio tutorial.
+1. [ ] **Tabella di bilanciamento** (`target/release/rocca medium --seme N ...`), semi 1–3, con ritardo di 30 min. Strategie:
+   - «nessun ordine»;
+   - «tutte le squadre sull'innesco subito»;
+   - «evacua tutto, un borgo dopo l'altro, appena possibile»;
+   - «piano ragionato».
 
-### Aperto
-
-- [ ] Apertura: segnalazione dopo 30 min (`start_min`, tabella in `02-TERRITORIO.md`). Da completare: seme 3, la strategia «evacua tutto», piani migliori per le Case.
-- [ ] Molte persone «colpite» presto a Le Terrazze (18 alle 14:40): la soglia `ALARMING` per chi è a casa senza ordine è severa. Va decisa con il bilanciamento.
-- [ ] Il tutorial contiene l'incendio, ma non lo spegne del tutto: restano poche celle accese e la prova finisce alla durata del caso (150 min, circa 30 s reali). Valutare la fine a fuoco «contenuto».
-- [ ] Le squadre vanno spesso a rifornirsi (idranti lontani): verificare che non sembri un difetto.
-- [ ] Grafica:
-  - esagoni poco visibili sulla terra;
-  - percorso dell'evacuazione poco leggibile da lontano;
-  - le famiglie in strada non si vedono;
-  - le icone delle squadre sono etichette egui: valutare il trascinamento della squadra sull'esagono.
-- [ ] Soglie delle stelle provvisorie (`score::{PERSONE, CASE, ETTARI}`).
-- [ ] Persone a piedi delle squadre (linee di taglio verso il fuoco): da vedere a schermo (`units.rs` le disegna come squadra AIB a piedi) e da misurare quanto contano rispetto all'acqua.
-- [ ] Mario scollegato: va ricollegato, ma per ultimo (utente, 2026-10-14).
-- [ ] Il crate `abm` contiene ancora il modello IBM delle persone (`Abm`, traffico, comportamenti), non più usato dal gioco. Da togliere, tenendo `network`, `drive`, `suppression`, `refuge`.
-- [ ] `scripts/playtest.py` va aggiornato al nuovo flusso (lo stato pubblicato è cambiato).
-- [ ] Versione web non provata (`scripts/build_web.sh`): il confronto senza ordini si calcola alla fine, nel frame.
+   Nessuna deve dominare. Oggi il piano ragionato prende Persone 5, Case 2, Ettari 2–3 (semi 1 e 2). Per ripetere le prove conviene un esempio `examples/strategie.rs` che le giochi tutte e stampi la tabella.
+2. [ ] **Soglia delle persone colpite:** chi è a casa senza ordine viene contato «colpito» quando il pericolo alla porta arriva a `ALARMING`. È severa: 65 persone a Le Terrazze già alle 14:55. Proporre `IMPASSABLE` o la casa colpita, poi decide l'utente.
+3. [ ] **Soglie delle stelle** (`score::{PERSONE, CASE, ETTARI}`), da ricavare dalla tabella del punto 1.
+4. [ ] **Persone a piedi delle squadre:** vederle a schermo con `KIOSK_SNAP`, e misurare quanto conta il taglio rispetto all'acqua (partite con e senza `crews_follow_the_fire`).
+5. [ ] **Tutorial:** contiene l'incendio ma non lo spegne del tutto (restano poche celle accese) e finisce alla durata del caso (150 min, circa 30 s reali). Valutare la fine a fuoco «contenuto», per esempio senza celle che avanzano.
+6. [ ] **Grafica e UX:**
+   - esagoni poco visibili sulla terra;
+   - percorso dell'evacuazione poco leggibile da lontano;
+   - famiglie in strada invisibili;
+   - squadre come etichette egui: valutare icone da trascinare sull'esagono (dalla specifica);
+   - le squadre vanno spesso a rifornirsi (idranti lontani): verificare che non sembri un difetto.
+7. [ ] **Pulizia del codice:**
+   - togliere dal crate `abm` il modello IBM delle persone (`Abm`, traffico, comportamenti delle famiglie), tenendo `network`, `drive`, `suppression` e `refuge`;
+   - ripulire gli avvisi di compilazione nel chiosco (`icons.rs`, `overlays.rs`).
+8. [ ] **Playtest:** aggiornare `scripts/playtest.py` al nuovo flusso, poi partite con persone che non conoscono il progetto.
+9. [ ] **Versione web:** provare `scripts/build_web.sh`. Il confronto senza ordini si calcola alla fine, nel frame: potrebbe bloccare.
+10. [ ] **Comunicazione** (fase 4): testi, personaggi e debriefing da riscrivere a posteriori.
+11. [ ] **Mario:** ricollegarlo per ultimo (decisione dell'utente).
 
 ## Test rotti noti
 
