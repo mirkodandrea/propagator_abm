@@ -84,6 +84,12 @@ pub struct UnitAssets {
     /// wet, which is far rarer than the fire changing.
     work_gen: u64,
     cleared_count: usize,
+    /// Wet cells seen at the last scan (so a cell is announced once, when it
+    /// first gets wet) and the ones on show now, with the real time they appeared.
+    wet_seen: std::collections::HashSet<usize>,
+    wet_shown: Vec<(usize, f32)>,
+    /// What the overlay was last built from, to rebuild only on a change.
+    wet_built: usize,
 }
 
 /// The volunteers' (AIB) yellow-green kit; the fire brigade's engines are red.
@@ -183,6 +189,9 @@ pub fn setup(
         orders_gen: u64::MAX,
         work_gen: u64::MAX,
         cleared_count: usize::MAX,
+        wet_seen: Default::default(),
+        wet_shown: Vec::new(),
+        wet_built: 0,
     });
 }
 
@@ -211,6 +220,9 @@ pub fn reset(
     assets.orders_gen = u64::MAX;
     assets.work_gen = u64::MAX;
     assets.cleared_count = usize::MAX;
+    assets.wet_seen.clear();
+    assets.wet_shown.clear();
+    assets.wet_built = 0;
 }
 
 pub fn update_units(
@@ -428,41 +440,57 @@ fn orders_fingerprint(sim: &Sim) -> u64 {
 pub fn update_work_overlay(
     mut commands: Commands,
     sim: Res<Sim>,
+    time: Res<Time>,
     mut assets: ResMut<UnitAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     existing: Query<Entity, With<WorkOverlay>>,
 ) {
+    let now = time.elapsed_seconds();
+    let w = sim.scn.world;
     let cleared_now = sim.fire.cleared().iter().filter(|c| **c).count();
-    // The wetted set changes continuously as moisture decays, so it is sampled
-    // on the sim generation rather than on a count; the cleared set is what
-    // makes an overlay appear at all.
+    // Scan for newly wet cells on the sim generation (the moisture changes
+    // slowly); each one is shown for WET_SHOW_S of real time, then dropped.
     let gen = sim.generation / WET_REFRESH_GENERATIONS;
-    if assets.cleared_count == cleared_now && assets.work_gen == gen {
+    let scan = assets.work_gen != gen;
+    if scan {
+        let moist = sim.fire.added_moisture();
+        let mut seen = std::collections::HashSet::new();
+        for (i, flag) in sim.fire.cleared().iter().enumerate() {
+            if !*flag && moist[i] >= WET_SHOW_PTS {
+                seen.insert(i);
+                if !assets.wet_seen.contains(&i) {
+                    assets.wet_shown.push((i, now));
+                }
+            }
+        }
+        assets.wet_seen = seen;
+    }
+    let before = assets.wet_shown.len();
+    assets.wet_shown.retain(|(_, t0)| now - *t0 < WET_SHOW_S);
+    let wet_len = assets.wet_shown.len();
+    if !scan && assets.cleared_count == cleared_now && wet_len == before && assets.wet_built == wet_len {
         return;
     }
     assets.cleared_count = cleared_now;
     assets.work_gen = gen;
+    assets.wet_built = wet_len;
     for e in &existing {
         commands.entity(e).despawn();
     }
-    if cleared_now == 0 && !sim.fire.added_moisture().iter().any(|m| *m >= WET_SHOW_PTS) {
-        return;
-    }
 
-    let w = sim.scn.world;
-    let mut cleared: Vec<Cell> = Vec::new();
-    let mut wet: Vec<Cell> = Vec::new();
-    for (i, flag) in sim.fire.cleared().iter().enumerate() {
-        let c = Cell {
-            row: i / w.fire_cols,
-            col: i % w.fire_cols,
-        };
-        if *flag {
-            cleared.push(c);
-        } else if sim.fire.added_moisture()[i] >= WET_SHOW_PTS {
-            wet.push(c);
-        }
-    }
+    let cleared: Vec<Cell> = sim
+        .fire
+        .cleared()
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| **f)
+        .map(|(i, _)| Cell { row: i / w.fire_cols, col: i % w.fire_cols })
+        .collect();
+    let wet: Vec<Cell> = assets
+        .wet_shown
+        .iter()
+        .map(|(i, _)| Cell { row: i / w.fire_cols, col: i % w.fire_cols })
+        .collect();
 
     for (cells, material) in [
         (cleared, assets.cleared.clone()),
@@ -482,6 +510,8 @@ pub fn update_work_overlay(
     }
 }
 
+/// How long the water an engine laid stays drawn, in real seconds.
+const WET_SHOW_S: f32 = 3.0;
 /// Added moisture at which a cell is worth showing as wet, percentage points.
 /// A tenth of the core's moisture of extinction: enough to see where a drop
 /// landed, high enough that the 1%/minute decay makes it fade rather than

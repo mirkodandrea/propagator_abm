@@ -116,34 +116,11 @@ fn spawn<M: Component>(commands: &mut Commands, meshes: &mut Assets<Mesh>, mesh:
     ));
 }
 
-/// The hex grid: built once per game, shown in pause or with a team selected.
-pub fn update_hexes(
-    mut commands: Commands,
-    sim: Res<Sim>,
-    kiosk: Res<Kiosk>,
-    mut assets: ResMut<MarkAssets>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut q: Query<(Entity, &mut Visibility), With<HexMark>>,
-) {
-    let key = format!("{}:{}", sim.case.name, sim.hexes.hexes.len());
-    if assets.hex_key.as_deref() != Some(key.as_str()) {
-        assets.hex_key = Some(key);
-        for (e, _) in &q {
-            commands.entity(e).despawn();
-        }
-        let parts: Vec<Mesh> = sim.hexes.hexes.iter().map(|h| path_mesh(&sim.scn, &outline(h.at), HEX_LINE_M, None)).collect();
-        let under: Vec<Mesh> = sim.hexes.hexes.iter().map(|h| path_mesh_at(&sim.scn, &outline(h.at), HEX_UNDER_M, None, RING_LIFT_M - 4.0)).collect();
-        spawn(&mut commands, &mut meshes, merge(under), &assets.under, HexMark);
-        spawn(&mut commands, &mut meshes, merge(parts), &assets.hex, HexMark);
-        return;
-    }
-    let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
-    let show = playing && (sim.paused() || matches!(kiosk.selection, Selection::Team(_)));
-    let want = if show { Visibility::Inherited } else { Visibility::Hidden };
-    for (_, mut v) in &mut q {
-        if *v != want {
-            *v = want;
-        }
+/// The hex grid is not drawn (user, 2026-10-15): only the start and the
+/// destination hex of a drag show, see [`update_orders`]. This clears any left over.
+pub fn update_hexes(mut commands: Commands, q: Query<Entity, With<HexMark>>) {
+    for e in &q {
+        commands.entity(e).despawn();
     }
 }
 
@@ -162,6 +139,9 @@ pub fn update_orders(
     let mut mix = |v: u64| key = key.wrapping_mul(0x100_0000_01b3) ^ v;
     if let Some(at) = kiosk.move_hex {
         mix((at.q as i64 as u64) << 20 ^ at.r as i64 as u64);
+        if let Selection::Team(t) = kiosk.selection {
+            mix(t as u64 + 77);
+        }
     }
     if let Some(Ok(p)) = &kiosk.move_plan {
         mix(p.path.len() as u64);
@@ -189,7 +169,12 @@ pub fn update_orders(
     if let Some(Expect::Move(_, at)) = kiosk.expect() {
         spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(at), HEX_PICK_M, None), &assets.want, OrderMark);
     }
-    // the move being chosen
+    // the move being chosen: start hex and destination hex
+    if let (Some(_), Selection::Team(t)) = (kiosk.move_hex, kiosk.selection) {
+        let u = &sim.crews.units[sim.teams[t].unit];
+        let from = sim.teams[t].hex.unwrap_or_else(|| rocca::Axial::of(u.pos));
+        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(from), HEX_PICK_M, None), &assets.pick, OrderMark);
+    }
     if let Some(at) = kiosk.move_hex {
         spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(at), HEX_PICK_M, None), &assets.pick, OrderMark);
     }
