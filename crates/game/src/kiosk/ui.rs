@@ -268,16 +268,16 @@ fn pause_dial(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
         (1.0, GREEN, Icon::Play, GREEN, None)
     } else if sim.pause_ready_in_s() > 0 {
         let left = sim.pause_ready_in_s() as f32 / rocca::RUN_X;
-        (1.0 - left / rocca::PAUSE_COOLDOWN_REAL_S, Color32::from_gray(150), Icon::Pause, Color32::from_gray(120), Some(left))
+        (1.0 - left / rocca::PAUSE_COOLDOWN_REAL_S, AMBER, Icon::Pause, Color32::from_gray(150), Some(left))
     } else {
         (1.0, AMBER, Icon::Pause, AMBER, None)
     };
     arc(p, c, radius, 0.0, frac, egui::Stroke::new(10.0, ring));
-    let icon_c = if secs.is_some() { c - egui::vec2(0.0, 11.0) } else { c };
-    icons::draw(p, egui::Rect::from_center_size(icon_c, egui::vec2(DIAL * 0.36, DIAL * 0.36)), icon, icon_col);
+    let icon_c = if secs.is_some() { c - egui::vec2(0.0, 20.0) } else { c };
+    icons::draw(p, egui::Rect::from_center_size(icon_c, egui::vec2(DIAL * if secs.is_some() { 0.26 } else { 0.36 }, DIAL * if secs.is_some() { 0.26 } else { 0.36 })), icon, icon_col);
     if let Some(sec) = secs {
-        let g = p.layout_no_wrap(format!("{}", sec.ceil() as i64), egui::FontId::proportional(24.0), Color32::WHITE);
-        p.galley(c + egui::vec2(-g.size().x / 2.0, 12.0), g, Color32::WHITE);
+        let g = p.layout_no_wrap(format!("{} s", sec.ceil() as i64), egui::FontId::proportional(30.0), Color32::WHITE);
+        p.galley(c + egui::vec2(-g.size().x / 2.0, 4.0), g, Color32::WHITE);
     }
     if hot {
         p.circle_stroke(c, DIAL * 0.5, egui::Stroke::new(2.5, Color32::WHITE));

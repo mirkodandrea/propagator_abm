@@ -71,7 +71,7 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
 ## 6. Interfaccia
 
 - La mappa occupa quasi tutto lo schermo; il rendering 3D del diorama è conservato.
-- **Pausa:** un pulsante rotondo e grande, in alto a sinistra, **dentro il pannello del tempo** (giorno e ora, barra di avanzamento grande). Pronto: anello ambra e simbolo di pausa. In pausa: simbolo di avvio, anello verde pieno, nessun conto alla rovescia. In ricarica: anello grigio che si riempie, con i **secondi alla prossima pausa** (2026-10-14). In generale si usano icone, anelli e numeri al posto delle frasi.
+- **Pausa:** un pulsante rotondo e grande, in alto a sinistra, **dentro il pannello del tempo** (giorno e ora, barra di avanzamento grande). Pronto: anello ambra e simbolo di pausa. In pausa: simbolo di avvio, anello verde pieno, nessun conto alla rovescia. In gioco, dalla ripresa: anello ambra che si riempie in 30 s, simbolo di pausa grigio (non premibile) e i **secondi alla prossima pausa** («30 s», «29 s»…); a zero il pulsante torna pronto (2026-10-14, confermato dall'utente: i 30 s si contano dalla ripresa). In generale si usano icone, anelli e numeri al posto delle frasi.
 - **Barra in alto:**
   - giorno e ora;
   - vento e umidità;

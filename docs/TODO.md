@@ -42,6 +42,8 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
 
 ## Decisioni in vigore (con data)
 
+- 2026-10-14 (richiesta dell'utente): pannello del tempo. In pausa il mondo è fermo e ▶ lo fa ripartire; in gioco il pulsante conta i secondi alla prossima pausa, **30 s dalla ripresa** (`PAUSE_COOLDOWN_REAL_S`), con anello ambra e «N s». La regola era già così; cambiato solo l'aspetto della ricarica.
+
 - 2026-10-14: dietro la schermata iniziale gira l'incendio della partita, senza ordini, con la camera dinamica del vecchio chiosco (inquadrature da 26 s: fronte, borgo più vicino, fronte da vicino; velocità legata all'inquadratura; ricomincia a fine caso). `kiosk::{Subject, demo_shot}`, `view::pick_shot`. Provato solo con `KIOSK_SNAP` (t=0); il movimento a mano no. Niente squadre scriptate (il vecchio piano scriptato non esiste più): l'inquadratura «squadra» scatta solo se una squadra è vicina al fuoco.
 
 - 2026-10-14 (notte, richieste dell'utente): testo del tutorial sulla pausa («vedrai anche le previsioni di dove andrà il fuoco nelle prossime ore»); segni sulla mappa con un materiale piatto e acceso sopra la vegetazione (`game::flat`); evacuazione in verde, squadre in ciano; il riquadro dell'evacuazione mostra solo persone e minuti; il timer conta fino all'arrivo dell'ultima famiglia, con la stessa regola del tempo annunciato (prova: `cargo run --release -p rocca --example timer_evac`).
