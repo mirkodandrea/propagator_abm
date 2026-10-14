@@ -23,7 +23,7 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
    - esagoni poco visibili sulla terra;
    - percorso dell'evacuazione poco leggibile da lontano;
    - famiglie in strada invisibili;
-   - squadre come etichette egui: valutare icone da trascinare sull'esagono (dalla specifica);
+   - trascinamento delle squadre e timer dell'evacuazione fatti (2026-10-14) ma provati solo con `KIOSK_SNAP`: il drag vero va provato a mano; il timer non conta il viaggio dell'ultima famiglia;
    - le squadre vanno spesso a rifornirsi (idranti lontani): verificare che non sembri un difetto.
 7. [ ] **Pulizia del codice:**
    - togliere dal crate `abm` il modello IBM delle persone (`Abm`, traffico, comportamenti delle famiglie), tenendo `network`, `drive`, `suppression` e `refuge`;
@@ -40,6 +40,7 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
 
 ## Decisioni in vigore (con data)
 
+- 2026-10-14: gli ordini si danno sulla mappa: squadre trascinate sull'esagono, borghi cliccati, «Conferma» in un riquadro accanto; la barra laterale è solo informativa. Timer circolare sul borgo in evacuazione.
 - 2026-10-14: l'incendio della partita parte già sviluppato (segnalazione al minuto 30). Le squadre attaccano il fuoco come possono: le persone a piedi tagliano la vegetazione verso il fuoco, l'autobotte bagna il combustibile che raggiunge. Mario va ricollegato per ultimo.
 - 2026-10-14: **nuovo progetto.** Si riscrive `rocca` dentro questo repository. Partita in due parti, tutorial scriptato (giorno 1) e partita (giorno 2). Tempo reale ×300, pausa ×60 di 30 s reali con ricarica di 20 min simulati, ordini solo in pausa, previsione dell'esperto in pausa. Squadre = autobotte + 3 persone: 3 VVF nel borgo più grande, 2 volontari in un borgo minore. Esagoni di 500 m adiacenti alle strade. Evacuazione semplificata, un borgo alla volta, con limite di persone al minuto. Niente IBM delle persone. Stelle e classifica tenute: persone, poi case, poi ettari. Comunicazione da riscrivere dopo.
 - 2026-10-13: portata dello spegnimento ×20 (`game::SUPPRESSION` = linea 3, acqua 30, portata 20).

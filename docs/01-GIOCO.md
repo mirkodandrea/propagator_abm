@@ -31,7 +31,7 @@ Uno strategico in tempo reale, sul modello di StarCraft, per il chiosco della *S
 
 - **Una squadra** è un'autobotte con 3 persone. Ci sono 3 squadre dei **vigili del fuoco** alla caserma di Castelvento, il borgo più grande, e 2 squadre di **volontari AIB** al presidio di San Rocco, un borgo minore (`game.json`: `stations`, `roster`).
 - Si spostano su una **griglia esagonale** di 500 m tra centri adiacenti (`rocca::hex`). Si può scegliere solo un esagono attraversato da una strada carrabile della rete principale: la squadra guida fino al punto stradale dell'esagono più vicino al centro.
-- Si sceglie la squadra (icona sulla mappa o barra laterale), poi l'esagono. Il gioco mostra **percorso e tempo di viaggio**, evitando le strade chiuse dal fuoco (`Game::plan_move`). Poi si **conferma**.
+- Si **trascina l'icona** della squadra (in pausa) sull'esagono scelto; anche un clic sull'icona e poi sull'esagono funziona. Il gioco mostra **percorso e tempo di viaggio**, evitando le strade chiuse dal fuoco (`Game::plan_move`), in un riquadro sulla mappa accanto all'esagono. Poi si **conferma** lì (2026-10-14).
 - Arrivata, la squadra **attacca il fuoco come può** (2026-10-14), con il modello di spegnimento conservato (`abm::suppression`):
   - l'**autobotte** aumenta l'umidità del combustibile che riesce a raggiungere dalla strada (acqua, portata della manichetta);
   - le **persone a piedi** tagliano la vegetazione di traverso alla via del fuoco. Finita una linea, ne tagliano un'altra più vicina al fuoco, entro 400 m dal punto stradale dell'esagono (`CREW_RANGE_M`).
@@ -44,7 +44,7 @@ Uno strategico in tempo reale, sul modello di StarCraft, per il chiosco della *S
 Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famiglia con un numero di persone (`rocca::evac`).
 
 - **Un borgo alla volta.** Il successivo si può evacuare quando l'ultima famiglia del borgo precedente è partita.
-- Prima della conferma il gioco mostra il **percorso** verso l'area sicura più vicina fuori dal borgo e il **tempo**: preparazione (5 min) + partenze + viaggio.
+- Si **clicca il borgo** sulla mappa; prima della conferma (riquadro sul borgo) il gioco mostra il **percorso** verso l'area sicura più vicina fuori dal borgo e il **tempo**: preparazione (5 min) + partenze + viaggio.
 - **Limite rigido:** al massimo **20 persone al minuto** escono dal borgo (`evacuation.per_min`). Le famiglie più vicine al punto di partenza partono per prime. In auto si viaggia a 8 m/s.
 - **Strade chiuse dal fuoco:** sono segnate in rosso sulla mappa. Ogni minuto il percorso viene ricontrollato.
   - Se il fuoco taglia la strada, si cerca un altro percorso.
@@ -73,9 +73,10 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
   - vento e umidità;
   - «Pausa: chiedi all'esperto» con il tempo di ricarica, oppure «PAUSA · ancora N min» e «Riprendi»;
   - in pausa, la spiegazione della previsione e il meteo.
-- **Barra laterale:** la scelta in corso (squadra o borgo) con anteprima e «Conferma» / «Evacua»; l'elenco delle squadre con il loro stato; l'elenco dei borghi; i conteggi.
+- **Barra laterale:** solo informazioni, nessun ordine: l'elenco delle squadre con il loro stato; l'elenco dei borghi; i conteggi. Gli ordini si danno sulla mappa (2026-10-14).
 - **Sulla mappa:**
-  - etichette cliccabili di squadre e borghi;
+  - icone delle squadre, da trascinare (in pausa), e etichette cliccabili dei borghi, con il riquadro «Conferma» / «Evacua» / «Annulla» accanto;
+  - sul borgo in evacuazione, un **timer circolare**: l'anello si svuota col tempo che resta (preparazione, poi partenze), con i minuti al centro; a fine evacuazione una spunta, se il fuoco l'ha interrotta un avviso;
   - esagoni, in pausa o con una squadra scelta;
   - esagono scelto e percorso, tratteggiati in bianco;
   - strade percorse dalle squadre, in ciano;

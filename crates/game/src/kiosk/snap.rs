@@ -180,6 +180,9 @@ fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<S
             let at = rocca::Axial::of(p);
             k.move_hex = Some(at);
             k.move_plan = Some(sim.plan_move(t, at));
+            if let Some(Err(e)) = &k.move_plan {
+                eprintln!("snap: {}: {e}", st.name);
+            }
         }
     }
     if let Some(d) = st.select.as_deref().and_then(|n| sim.district_index(n)) {

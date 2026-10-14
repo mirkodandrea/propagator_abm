@@ -192,41 +192,30 @@ fn top_bar(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
     });
 }
 
-// --- the side bar: teams, districts, what is selected ---------------------------
+// --- the side bar: the state of teams and districts (orders are given on the map) ---
 
 fn side_bar(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim) {
     egui::SidePanel::right("lato").exact_width(SIDE_W).resizable(false).frame(egui::Frame::none().fill(PANEL).inner_margin(12.0)).show(ctx, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
-            selected(ui, k, sim);
-            ui.add_space(8.0);
+            let hint = if sim.paused() {
+                "Trascina una squadra su un esagono. Clicca un borgo per evacuarlo."
+            } else {
+                "Il tempo scorre. Per dare ordini: Pausa."
+            };
+            ui.label(RichText::new(hint).size(16.0).color(if sim.paused() { Color32::WHITE } else { GREY }));
+            if k.selection != Selection::None {
+                ui.add_space(6.0);
+                ui.label(RichText::new("Conferma o annulla sulla mappa.").size(15.0).color(AMBER));
+            }
+            ui.add_space(10.0);
             ui.label(RichText::new("Squadre").size(20.0).strong().color(Color32::WHITE));
             for t in 0..sim.teams.len() {
-                let on = k.selection == Selection::Team(t);
-                let text = format!("{}  ·  {}", sim.teams[t].name, sim.team_status(t));
-                let b = egui::Button::new(RichText::new(text).size(16.0).color(Color32::WHITE))
-                    .fill(if on { team_colour(sim, t).gamma_multiply(0.45) } else { Color32::from_gray(45) })
-                    .stroke(egui::Stroke::new(if on { 2.0 } else { 1.0 }, team_colour(sim, t)))
-                    .min_size(egui::vec2(SIDE_W - 30.0, 36.0));
-                let r = ui.add(b);
-                crate::playtest::control(&sim.teams[t].name.clone(), &r, true);
-                if r.clicked() {
-                    select_team(k, sim, t);
-                }
+                ui.label(RichText::new(format!("{}  ·  {}", sim.teams[t].name, sim.team_status(t))).size(16.0).color(team_colour(sim, t)));
             }
             ui.add_space(10.0);
             ui.label(RichText::new("Borghi").size(20.0).strong().color(Color32::WHITE));
             for d in 0..sim.districts.len() {
-                let on = k.selection == Selection::District(d);
-                let text = format!("{}  ·  {}", sim.districts[d].name, district_state(sim, d));
-                let b = egui::Button::new(RichText::new(text).size(16.0).color(Color32::WHITE))
-                    .fill(if on { BLUE.gamma_multiply(0.4) } else { Color32::from_gray(45) })
-                    .stroke(egui::Stroke::new(if on { 2.0 } else { 1.0 }, BLUE.gamma_multiply(0.7)))
-                    .min_size(egui::vec2(SIDE_W - 30.0, 36.0));
-                let r = ui.add(b);
-                crate::playtest::control(&sim.districts[d].name.clone(), &r, true);
-                if r.clicked() {
-                    select_district(k, sim, d);
-                }
+                ui.label(RichText::new(format!("{}  ·  {}", sim.districts[d].name, district_state(sim, d))).size(16.0).color(BLUE));
             }
             ui.add_space(10.0);
             let o = sim.outcome();
@@ -283,30 +272,167 @@ fn tutorial_hint(k: &Kiosk) -> String {
     }
 }
 
-/// The selected team or district, its preview and «Conferma».
-fn selected(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
-    match k.selection {
-        Selection::None => {
-            let hint = if sim.paused() {
-                "Clicca una squadra per spostarla, o un borgo per evacuarlo."
-            } else {
-                "Il tempo scorre. Per dare ordini: Pausa."
-            };
-            ui.label(RichText::new(hint).size(16.0).color(GREY));
+/// Preview the move of team `t` to the hex `at` (a drop, or a click): the
+/// tutorial refuses a hex its step does not ask.
+fn preview_move(k: &mut Kiosk, sim: &Sim, t: usize, at: rocca::Axial) {
+    if let Some(Expect::Move(_, want)) = k.expect() {
+        if at != want {
+            k.notify("Porta la squadra sull'esagono evidenziato.");
+            return;
         }
+    }
+    if k.move_hex == Some(at) {
+        return;
+    }
+    k.move_hex = Some(at);
+    k.move_plan = Some(sim.plan_move(t, at));
+}
+
+/// A click on the map with a team selected: the hex under it, previewed.
+fn map_click(k: &mut Kiosk, sim: &mut Sim) {
+    let Some(p) = k.click else { return };
+    if let Selection::Team(t) = k.selection {
+        preview_move(k, sim, t, rocca::Axial::of(p));
+    }
+}
+
+/// The ground under a screen point (egui logical px).
+fn ground_at(sim: &Sim, cam: (&Camera, &GlobalTransform), p: egui::Pos2) -> Option<Pos> {
+    let vp = crate::pick::window_to_viewport(cam.0, Vec2::new(p.x, p.y))?;
+    let ray = cam.0.viewport_to_world(cam.1, vp)?;
+    crate::pick::ray_ground(&sim.scn, ray.origin, *ray.direction)
+}
+
+const TOKEN_W: f32 = 112.0;
+const TOKEN_H: f32 = 36.0;
+
+/// A team's icon on the map: an engine, its name, a grip to say it can be
+/// dragged.
+fn paint_token(p: &egui::Painter, r: egui::Rect, name: &str, col: Color32, on: bool, grip: bool) {
+    p.rect_filled(r, 9.0, Color32::from_rgb(14, 16, 18));
+    p.rect_stroke(r, 9.0, egui::Stroke::new(if on { 3.5 } else { 2.0 }, if on { Color32::WHITE } else { col }));
+    super::icons::draw(p, egui::Rect::from_center_size(egui::pos2(r.left() + 20.0, r.center().y), egui::vec2(24.0, 24.0)), super::icons::Icon::Engine, col);
+    let g = p.layout_no_wrap(name.to_string(), egui::FontId::proportional(16.0), Color32::WHITE);
+    p.galley(egui::pos2(r.left() + 38.0, r.center().y - g.size().y / 2.0), g, Color32::WHITE);
+    if grip {
+        for dy in [-5.0, 0.0, 5.0] {
+            for dx in [-3.0, 3.0] {
+                p.circle_filled(egui::pos2(r.right() - 10.0 + dx, r.center().y + dy), 1.5, Color32::from_gray(150));
+            }
+        }
+    }
+}
+
+/// «Squadra 2» out of «Squadra 2 (VVF Castelvento)» and the like: the first
+/// two words.
+fn short_name(name: &str) -> String {
+    name.split_whitespace().take(2).collect::<Vec<_>>().join(" ")
+}
+
+/// Team icons (dragged onto a hex) and district badges (clicked) on the map,
+/// the order being composed with its «Conferma», and the evacuations' timers.
+fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform)) {
+    for d in 0..sim.districts.len() {
+        let c = sim.districts[d].centre;
+        let Some(s) = screen(cam, sim, c, 40.0) else { continue };
+        let name = sim.districts[d].name.clone();
+        let on = k.selection == Selection::District(d);
+        egui::Area::new(egui::Id::new(("borgo", d))).fixed_pos(s).pivot(Align2::CENTER_CENTER).order(egui::Order::Middle).show(ctx, |ui| {
+            let b = egui::Button::new(RichText::new(&name).size(16.0).strong().color(Color32::WHITE))
+                .fill(if on { BLUE.gamma_multiply(0.6) } else { Color32::from_black_alpha(170) })
+                .stroke(egui::Stroke::new(if on { 3.0 } else { 1.0 }, if on { Color32::WHITE } else { BLUE }))
+                .rounding(6.0);
+            let r = ui.add(b);
+            crate::playtest::control(&name, &r, true);
+            if r.clicked() {
+                select_district(k, sim, d);
+            }
+        });
+        evac_timer(ctx, sim, d, s - egui::vec2(88.0, 6.0));
+    }
+    let mut drop = None;
+    for t in 0..sim.teams.len() {
+        let u = &sim.crews.units[sim.teams[t].unit];
+        let Some(s) = screen(cam, sim, u.pos, 60.0) else { continue };
+        let on = k.selection == Selection::Team(t);
+        let col = team_colour(sim, t);
+        let name = short_name(&sim.teams[t].name);
+        // several teams in the station: side by side
+        let same = (0..t).filter(|&o| {
+            let q = sim.crews.units[sim.teams[o].unit].pos;
+            (q.x - u.pos.x).hypot(q.y - u.pos.y) < 30.0
+        });
+        let dx = same.count() as f32 * (TOKEN_W + 6.0);
+        let may_drag = sim.paused() && u.state != abm::suppression::UnitState::Lost;
+        let inner = egui::Area::new(egui::Id::new(("squadra", t))).fixed_pos(s + egui::vec2(dx, -40.0)).pivot(Align2::CENTER_CENTER).order(egui::Order::Middle).show(ctx, |ui| {
+            let (rect, resp) = ui.allocate_exact_size(egui::vec2(TOKEN_W, TOKEN_H), egui::Sense::click_and_drag());
+            paint_token(ui.painter(), rect, &name, col, on, may_drag);
+            if resp.hovered() {
+                ui.ctx().set_cursor_icon(if may_drag { egui::CursorIcon::Grab } else { egui::CursorIcon::PointingHand });
+            }
+            resp
+        });
+        let resp = inner.inner;
+        crate::playtest::control(&sim.teams[t].name.clone(), &resp, true);
+        if resp.drag_started() {
+            if sim.paused() {
+                select_team(k, sim, t);
+            } else {
+                k.notify("Per dare ordini metti in pausa: chiedi all'esperto.");
+            }
+        } else if resp.clicked() {
+            select_team(k, sim, t);
+        }
+        if resp.dragged() && sim.paused() && k.selection == Selection::Team(t) {
+            ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+            if let Some(p) = ctx.pointer_latest_pos() {
+                // the icon follows the pointer; the hex under it is previewed
+                egui::Area::new(egui::Id::new("fantasma")).fixed_pos(p).pivot(Align2::CENTER_CENTER).order(egui::Order::Tooltip).interactable(false).show(ctx, |ui| {
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(TOKEN_W, TOKEN_H), egui::Sense::hover());
+                    paint_token(ui.painter(), rect, &name, col, true, false);
+                });
+                if let Some(g) = ground_at(sim, cam, p) {
+                    preview_move(k, sim, t, rocca::Axial::of(g));
+                }
+            }
+        }
+        if resp.drag_stopped() && k.selection == Selection::Team(t) {
+            drop = Some(t);
+        }
+    }
+    // dropped: an order that cannot be given is told and forgotten
+    if let Some(t) = drop {
+        match &k.move_plan {
+            Some(Err(e)) => {
+                let e = e.clone();
+                k.clear_selection();
+                k.notify(e);
+            }
+            None => k.clear_selection(),
+            Some(Ok(_)) => {}
+        }
+        let _ = t;
+    }
+    confirm_bubble(ctx, k, sim, cam);
+}
+
+/// The order being composed, next to what it is about: «Conferma» / «Annulla».
+fn confirm_bubble(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform)) {
+    if ctx.dragged_id().is_some() {
+        return;
+    }
+    match k.selection {
+        Selection::None => {}
         Selection::Team(t) => {
-            let name = sim.teams[t].name.clone();
-            ui.label(RichText::new(format!("{name}: autobotte e {} {}", sim.teams[t].crew, if sim.teams[t].volunteers { "volontari" } else { "vigili del fuoco" })).size(18.0).strong().color(team_colour(sim, t)));
-            match k.move_plan.clone() {
-                None => {
-                    ui.label(RichText::new("Clicca un esagono sulla mappa: lì la squadra attacca il fuoco e protegge le case vicine.").size(16.0).color(Color32::WHITE));
-                }
-                Some(Err(e)) => {
-                    ui.colored_label(RED, RichText::new(e).size(16.0));
-                }
-                Some(Ok(p)) => {
-                    let near = sim.place_name(p.hex.target).to_string();
-                    ui.label(RichText::new(format!("Verso l'esagono vicino a {near}: {:.0} min di strada.", p.minutes.ceil())).size(17.0).color(Color32::WHITE));
+            let Some(Ok(p)) = k.move_plan.clone() else { return };
+            let c = p.hex.at.centre();
+            let Some(s) = screen(cam, sim, c, 40.0) else { return };
+            let near = sim.place_name(p.hex.target).to_string();
+            let mut cancel = false;
+            egui::Area::new(egui::Id::new("conferma")).fixed_pos(s - egui::vec2(0.0, 24.0)).pivot(Align2::CENTER_BOTTOM).order(egui::Order::Foreground).show(ctx, |ui| {
+                card(team_colour(sim, t)).show(ui, |ui| {
+                    ui.label(RichText::new(format!("{} · vicino a {near}", sim.teams[t].name)).size(17.0).strong().color(Color32::WHITE));
+                    ui.label(RichText::new(format!("{:.0} min di strada", p.minutes.ceil())).size(20.0).color(AMBER));
                     let ok = sim.paused() && k.allows(Expect::Move(t, p.hex.at));
                     ui.horizontal(|ui| {
                         let r = ui.add_enabled(ok, primary("Conferma"));
@@ -321,42 +447,45 @@ fn selected(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
                                 Err(e) => k.notify(e),
                             }
                         }
-                        if ui.add(secondary("Annulla")).clicked() {
-                            k.clear_selection();
-                        }
+                        let r = ui.add(secondary("Annulla"));
+                        crate::playtest::control("Annulla", &r, true);
+                        cancel = r.clicked();
                     });
                     if !sim.paused() {
                         ui.label(RichText::new("Gli ordini si danno solo in pausa.").color(AMBER));
                     }
-                }
+                });
+            });
+            if cancel {
+                k.clear_selection();
             }
         }
         Selection::District(d) => {
-            ui.label(RichText::new(sim.districts[d].name.clone()).size(18.0).strong().color(BLUE));
-            match k.evac_plan.clone() {
-                None => {}
-                Some(Err(e)) => {
-                    ui.colored_label(RED, RichText::new(e).size(16.0));
-                }
-                Some(Ok(p)) => {
-                    ui.label(
-                        RichText::new(format!(
-                            "Evacuare {} persone verso {}: circa {:.0} min (preparazione {:.0}, partenze {:.0}, viaggio {:.0}).",
-                            p.people,
-                            p.path.to,
-                            p.total_min().ceil(),
-                            p.prep_min,
-                            p.leaving_min.ceil(),
-                            p.drive_min.ceil()
-                        ))
-                        .size(16.0)
-                        .color(Color32::WHITE),
-                    );
-                    ui.label(RichText::new(format!("Al massimo {:.0} persone al minuto, un borgo alla volta.", sim.evac.rules.per_min)).size(14.0).color(GREY));
-                    if let Some(e) = sim.evac.active() {
-                        ui.label(RichText::new(format!("Si sta già evacuando {}.", sim.districts[e.district].name)).color(AMBER));
+            let Some(plan) = k.evac_plan.clone() else { return };
+            let Some(s) = screen(cam, sim, sim.districts[d].centre, 40.0) else { return };
+            let mut cancel = false;
+            egui::Area::new(egui::Id::new("conferma")).fixed_pos(s + egui::vec2(0.0, 24.0)).pivot(Align2::CENTER_TOP).order(egui::Order::Foreground).show(ctx, |ui| {
+                card(BLUE).show(ui, |ui| {
+                    ui.set_max_width(380.0);
+                    ui.label(RichText::new(format!("Evacuare {}", sim.districts[d].name)).size(19.0).strong().color(BLUE));
+                    match &plan {
+                        Err(e) => {
+                            ui.colored_label(RED, RichText::new(e).size(16.0));
+                        }
+                        Ok(p) => {
+                            ui.label(RichText::new(format!("{} persone verso {}", p.people, p.path.to)).size(16.0).color(Color32::WHITE));
+                            ui.label(RichText::new(format!("circa {:.0} min", p.total_min().ceil())).size(20.0).color(AMBER));
+                            ui.label(
+                                RichText::new(format!("preparazione {:.0} · partenze {:.0} · viaggio {:.0}", p.prep_min, p.leaving_min.ceil(), p.drive_min.ceil()))
+                                    .size(14.0)
+                                    .color(GREY),
+                            );
+                            if let Some(e) = sim.evac.active() {
+                                ui.label(RichText::new(format!("Si sta già evacuando {}.", sim.districts[e.district].name)).color(AMBER));
+                            }
+                        }
                     }
-                    let ok = sim.paused() && sim.evac.active().is_none() && k.allows(Expect::Evacuate(d));
+                    let ok = plan.is_ok() && sim.paused() && sim.evac.active().is_none() && k.allows(Expect::Evacuate(d));
                     ui.horizontal(|ui| {
                         let r = ui.add_enabled(ok, primary("Evacua"));
                         crate::playtest::control("Evacua", &r, ok);
@@ -369,68 +498,64 @@ fn selected(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
                                 Err(e) => k.notify(e),
                             }
                         }
-                        if ui.add(secondary("Annulla")).clicked() {
-                            k.clear_selection();
-                        }
+                        let r = ui.add(secondary("Annulla"));
+                        crate::playtest::control("Annulla", &r, true);
+                        cancel = r.clicked();
                     });
-                }
+                });
+            });
+            if cancel {
+                k.clear_selection();
             }
         }
     }
 }
 
-/// A click on the map with a team selected: the hex under it, previewed.
-fn map_click(k: &mut Kiosk, sim: &mut Sim) {
-    let Some(p) = k.click else { return };
-    if let Selection::Team(t) = k.selection {
-        let at = rocca::Axial::of(p);
-        if let Some(Expect::Move(_, want)) = k.expect() {
-            if at != want {
-                k.notify("Clicca l'esagono evidenziato.");
-                return;
-            }
+/// The timer on a district being evacuated: a ring that empties with the time
+/// left (preparation, then the departures at the limited rate); a check when
+/// it is done, an alert when the fire cut it short.
+fn evac_timer(ctx: &egui::Context, sim: &Sim, d: usize, at: egui::Pos2) {
+    use super::icons::{self, Icon};
+    let Some(e) = sim.evac.of(d) else { return };
+    let rules = &sim.evac.rules;
+    let (frac, minutes, col, icon) = if e.ended_s.is_none() {
+        let elapsed = (sim.time_s() - e.started_s).max(0) as f32 / 60.0;
+        let prep_left = (rules.prep_min - elapsed).max(0.0);
+        let queued: u32 = sim.districts[d].households.iter().map(|&i| &sim.evac.families[i]).filter(|f| f.state == State::Queued).map(|f| f.people).sum();
+        let left = prep_left + queued as f32 / rules.per_min.max(1.0);
+        (left / (elapsed + left).max(0.1), Some(left.ceil() as i64), if prep_left > 0.0 { AMBER } else { BLUE }, None)
+    } else if e.interrupted {
+        (1.0, None, RED, Some(Icon::Alert))
+    } else {
+        (1.0, None, GREEN, Some(Icon::Check))
+    };
+    let size = if minutes.is_some() { 60.0 } else { 40.0 };
+    egui::Area::new(egui::Id::new(("timer", d))).fixed_pos(at).pivot(Align2::CENTER_CENTER).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
+        let (r, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+        let p = ui.painter();
+        let c = r.center();
+        let radius = size * 0.5 - 4.0;
+        p.circle_filled(c, size * 0.5, Color32::from_black_alpha(215));
+        p.circle_stroke(c, radius, egui::Stroke::new(5.0, Color32::from_gray(60)));
+        // the time left: an arc from the top, clockwise, that shrinks
+        let n = ((frac * 64.0).ceil() as usize).max(1);
+        let pts: Vec<egui::Pos2> = (0..=n)
+            .map(|i| {
+                let a = -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * frac.clamp(0.0, 1.0) * i as f32 / n as f32;
+                c + egui::vec2(a.cos(), a.sin()) * radius
+            })
+            .collect();
+        p.add(egui::Shape::line(pts, egui::Stroke::new(5.0, col)));
+        if let Some(m) = minutes {
+            let g = p.layout_no_wrap(format!("{m}"), egui::FontId::proportional(20.0), Color32::WHITE);
+            p.galley(c - egui::vec2(g.size().x / 2.0, g.size().y / 2.0 + 4.0), g, Color32::WHITE);
+            let g = p.layout_no_wrap("min".into(), egui::FontId::proportional(11.0), GREY);
+            p.galley(c + egui::vec2(-g.size().x / 2.0, 7.0), g, GREY);
         }
-        k.move_hex = Some(at);
-        k.move_plan = Some(sim.plan_move(t, at));
-    }
-}
-
-/// Team and district badges on the map: clicking one selects it.
-fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform)) {
-    for d in 0..sim.districts.len() {
-        let c = sim.districts[d].centre;
-        let Some(s) = screen(cam, sim, c, 40.0) else { continue };
-        let name = sim.districts[d].name.clone();
-        let on = k.selection == Selection::District(d);
-        egui::Area::new(egui::Id::new(("borgo", d))).fixed_pos(s - egui::vec2(60.0, 14.0)).order(egui::Order::Middle).show(ctx, |ui| {
-            let b = egui::Button::new(RichText::new(&name).size(15.0).strong().color(Color32::WHITE))
-                .fill(if on { BLUE.gamma_multiply(0.6) } else { Color32::from_black_alpha(170) })
-                .stroke(egui::Stroke::new(1.0, BLUE))
-                .rounding(6.0);
-            if ui.add(b).clicked() {
-                select_district(k, sim, d);
-            }
-        });
-    }
-    for t in 0..sim.teams.len() {
-        let u = &sim.crews.units[sim.teams[t].unit];
-        let Some(s) = screen(cam, sim, u.pos, 60.0) else { continue };
-        let on = k.selection == Selection::Team(t);
-        let col = team_colour(sim, t);
-        let name = sim.teams[t].name.clone();
-        // several teams in the station: side by side
-        let same = (0..t).filter(|&o| {
-            let q = sim.crews.units[sim.teams[o].unit].pos;
-            (q.x - u.pos.x).hypot(q.y - u.pos.y) < 30.0
-        });
-        let dx = same.count() as f32 * 64.0;
-        egui::Area::new(egui::Id::new(("squadra", t))).fixed_pos(s + egui::vec2(dx - 30.0, -36.0)).order(egui::Order::Middle).show(ctx, |ui| {
-            let b = egui::Button::new(RichText::new(&name).size(14.0).strong().color(Color32::BLACK)).fill(if on { Color32::WHITE } else { col }).rounding(6.0);
-            if ui.add(b).clicked() {
-                select_team(k, sim, t);
-            }
-        });
-    }
+        if let Some(icon) = icon {
+            icons::draw(p, egui::Rect::from_center_size(c, egui::vec2(size * 0.5, size * 0.5)), icon, col);
+        }
+    });
 }
 
 fn notice(ctx: &egui::Context, k: &Kiosk) {
