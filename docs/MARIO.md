@@ -1,5 +1,7 @@
 # Mario (solo build nativa)
 
+**Scollegato dal 2026-10-14** (nuovo progetto): usava le persone del vecchio modello IBM e gli stati del vecchio chiosco. Il codice è in `crates/game/src/mario.rs`, fuori dalla build. Da decidere se ricollegarlo.
+
 Durante la pianificazione/pausa, `M` o **Options** sul DualSense apre Mario.
 Parte davanti all'ingresso della rocca, usando posizione, orientamento e scala
 di `island.json`; negli scenari senza rocca usa la strada più vicina alla vista.

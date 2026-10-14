@@ -1,22 +1,29 @@
-//! The places the player ranks: the localities the Scenario Factory gave
-//! each household, in the order the scenario lists them.
+//! The districts (borghi): the localities the scenario gives each household,
+//! in the order the scenario lists them. A household is a home.
 
-use abm::Abm;
+use abm::network::{NodeId, RoadNetwork};
 use fire::FireSim;
 use scenario::{Pos, Scenario};
 
 #[derive(Debug, Clone)]
 pub struct District {
     pub name: String,
-    /// Indices into `Abm::households`.
+    /// Indices into `Scenario::population.households` (homes).
     pub households: Vec<usize>,
     /// Anchors of disconnected hamlets, for map labels.
     pub nuclei: Vec<Pos>,
     /// Centroid of the homes.
     pub centre: Pos,
+    /// The road point evacuations leave from: the drivable node of the
+    /// stations' network nearest the centre.
+    pub departure: Pos,
 }
 
-pub fn of(scn: &Scenario, agents: &Abm) -> Vec<District> {
+fn home(scn: &Scenario, i: usize) -> Pos {
+    Pos::from(scn.population.households[i].pos)
+}
+
+pub fn of(scn: &Scenario, net: &RoadNetwork, main: NodeId) -> Vec<District> {
     let pop = &scn.population.households;
     let mut names: Vec<String> = scn.metadata.localities.clone();
     for h in pop {
@@ -36,12 +43,13 @@ pub fn of(scn: &Scenario, agents: &Abm) -> Vec<District> {
             }
             let n = households.len() as f32;
             let centre = Pos {
-                x: households.iter().map(|&i| agents.households[i].home.x).sum::<f32>() / n,
-                y: households.iter().map(|&i| agents.households[i].home.y).sum::<f32>() / n,
+                x: households.iter().map(|&i| home(scn, i).x).sum::<f32>() / n,
+                y: households.iter().map(|&i| home(scn, i).y).sum::<f32>() / n,
             };
-            let homes: Vec<Pos> = households.iter().map(|&i| agents.households[i].home).collect();
+            let homes: Vec<Pos> = households.iter().map(|&i| home(scn, i)).collect();
             let nuclei = clusters(&homes, 220.0);
-            Some(District { name, households, nuclei, centre })
+            let departure = net.nearest_reachable(centre, true, main).map_or(centre, |n| net.pos(n));
+            Some(District { name, households, nuclei, centre, departure })
         })
         .collect()
 }
@@ -74,13 +82,13 @@ fn wind_to(fire: &FireSim) -> (f32, f32) {
     (to.sin(), to.cos())
 }
 
-pub fn exposure(d: &District, agents: &Abm, fire: &FireSim, scn: &Scenario) -> Option<Exposure> {
+pub fn exposure(d: &District, fire: &FireSim, scn: &Scenario) -> Option<Exposure> {
     let w = &scn.world;
     let mut best: Option<(f32, Pos)> = None;
     for c in fire.active_cells() {
         let p = w.centre_of(*c);
         for &i in &d.households {
-            let dd = dist(p, agents.households[i].home);
+            let dd = dist(p, home(scn, i));
             if best.is_none_or(|b| dd < b.0) {
                 best = Some((dd, p));
             }
@@ -95,7 +103,7 @@ pub fn exposure(d: &District, agents: &Abm, fire: &FireSim, scn: &Scenario) -> O
 
 /// Each home of the district with its [`reach_m`] from the burning front,
 /// soonest first. Empty when nothing is burning.
-pub fn homes_by_threat(d: &District, agents: &Abm, fire: &FireSim, scn: &Scenario) -> Vec<(Pos, f32)> {
+pub fn homes_by_threat(d: &District, fire: &FireSim, scn: &Scenario) -> Vec<(Pos, f32)> {
     let w = &scn.world;
     let (ux, uy) = wind_to(fire);
     let cells: Vec<Pos> = fire.active_cells().iter().map(|c| w.centre_of(*c)).collect();
@@ -106,7 +114,7 @@ pub fn homes_by_threat(d: &District, agents: &Abm, fire: &FireSim, scn: &Scenari
         .households
         .iter()
         .map(|&i| {
-            let h = agents.households[i].home;
+            let h = home(scn, i);
             let r = cells
                 .iter()
                 .map(|p| {

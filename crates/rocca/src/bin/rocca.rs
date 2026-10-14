@@ -1,177 +1,160 @@
-//! Headless runner and A/B comparator.
+//! Headless runner.
 //!
-//!   rocca <caso> [--seme N] [--minuti M] [--priorita Borgo,Coste]
-//!                [--civili "0:Coste=preallerta,30:Coste=evacua"]
-//!                [--b-priorita ...] [--b-civili ...] [--dati data] [--registro] [--senza-sindaca]
+//!   rocca <caso> [--seme N] [--dati data]
+//!                [--squadra "min:squadra=x;y,..."] [--evacua "min:Borgo,..."]
+//!   rocca tutorial [--seme N]
+//!   --inizio M: the fire is reported M minutes after ignition (the case's
+//!   `start_min` otherwise); order minutes count from then.
 //!
-//! Plan A, and plan B if any `--b-*` is given (B = A plus what they change),
-//! on the same fire, seed and territory. Civil orders are given at their minute; priorities from T+0.
-//! An evacuation the mayor has not authorised yet (`rocca::mayor`) waits for
-//! her authorisation; `--senza-sindaca` plays the rules before 2026-10-13.
-//! Ends with the kiosk's score of each plan, against the same fire with no orders.
+//! Orders are given at their simulated minute: the runner pauses (if the
+//! pause is ready; otherwise as soon as it is), gives every order due and
+//! resumes. Teams are numbered from 0 in `game.json`'s roster order. Ends with
+//! the outcome per district and the stars against the same fire with no
+//! orders.
 
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
-use rocca::{Civil, Game, Outcome, Plan};
+use rocca::score;
+use rocca::tutorial::Script;
+use rocca::{Axial, Game, Outcome};
+use scenario::Pos;
 
-struct Script {
-    priorities: Vec<String>,
-    civil: Vec<(i64, String, Civil)>,
+#[derive(Debug, Clone)]
+enum Order {
+    Team(usize, Pos),
+    Evacuate(String),
 }
 
-fn parse_civil(s: &str) -> Result<Vec<(i64, String, Civil)>> {
+fn parse(teams: &str, evac: &str) -> Result<Vec<(i64, Order)>> {
     let mut out = vec![];
-    for item in s.split(',').map(str::trim).filter(|x| !x.is_empty()) {
-        let (t, rest) = item.split_once(':').context("ordine civile: atteso minuto:quartiere=ordine")?;
-        let (d, o) = rest.split_once('=').context("ordine civile: atteso quartiere=ordine")?;
-        let c = match o.trim() {
-            "preallerta" | "p" => Civil::Preallerta,
-            "evacua" | "e" => Civil::Evacua,
-            x => bail!("ordine civile sconosciuto: {x}"),
-        };
-        out.push((t.trim().parse::<i64>()? * 60, d.trim().to_string(), c));
+    for item in teams.split(',').map(str::trim).filter(|x| !x.is_empty()) {
+        let (t, rest) = item.split_once(':').context("--squadra: atteso min:squadra=x;y")?;
+        let (k, xy) = rest.split_once('=').context("--squadra: atteso squadra=x;y")?;
+        let (x, y) = xy.split_once(';').context("--squadra: atteso x;y")?;
+        out.push((t.parse::<i64>()? * 60, Order::Team(k.parse()?, Pos { x: x.parse()?, y: y.parse()? })));
     }
-    out.sort_by_key(|x| x.0);
+    for item in evac.split(',').map(str::trim).filter(|x| !x.is_empty()) {
+        let (t, d) = item.split_once(':').context("--evacua: atteso min:Borgo")?;
+        out.push((t.parse::<i64>()? * 60, Order::Evacuate(d.to_string())));
+    }
+    out.sort_by_key(|o| o.0);
     Ok(out)
 }
 
-fn play(data: &std::path::Path, case: &str, seed: u64, minutes: i64, s: &Script, mayor: bool) -> Result<(Game, Outcome)> {
-    let mut g = Game::new(data, case, seed)?;
-    if !mayor {
-        g.mayor = None;
-    }
-    let idx = |g: &Game, n: &str| g.district_index(n).with_context(|| format!("quartiere {n:?} sconosciuto"));
-    let prio: Vec<usize> = s.priorities.iter().map(|n| idx(&g, n)).collect::<Result<_>>()?;
-    let mut plan = Plan::new(g.districts.len()).with_priorities(&prio);
-    // the orders whose minute has come, given as soon as they are allowed
-    let mut due: Vec<(usize, Civil)> = vec![];
+fn play(g: &mut Game, orders: &[(i64, Order)]) -> Result<()> {
     let mut next = 0;
-    let end = minutes * 60;
-    loop {
-        while next < s.civil.len() && s.civil[next].0 <= g.time_s() {
-            due.push((idx(&g, &s.civil[next].1)?, s.civil[next].2));
-            next += 1;
-        }
-        let ready: Vec<(usize, Civil)> = due.iter().copied().filter(|&(d, c)| c != Civil::Evacua || g.may_evacuate(d)).collect();
-        if !ready.is_empty() || g.time_s() <= rocca::STEP_S {
-            due.retain(|x| !ready.contains(x));
-            for (d, c) in ready {
-                plan = plan.with_civil(d, c);
+    while !g.is_over() {
+        if next < orders.len() && g.time_s() >= orders[next].0 && !g.paused() && g.can_pause() {
+            g.pause().map_err(anyhow::Error::msg)?;
+            while next < orders.len() && orders[next].0 <= g.time_s() {
+                let r = match &orders[next].1 {
+                    Order::Team(t, p) => g.move_team(*t, g.hexes.nearest(*p).map_or(Axial::of(*p), |h| h.at)).map(|m| format!("{} → esagono {:?}, {:.0} min", g.teams[*t].name, m.hex.at, m.minutes)),
+                    Order::Evacuate(d) => {
+                        let d = g.district_index(d).with_context(|| format!("borgo {d:?} sconosciuto"))?;
+                        g.evacuate(d).map(|p| format!("evacua {}: {} persone verso {}, {:.0} min", g.districts[d].name, p.people, p.path.to, p.total_min()))
+                    }
+                };
+                match r {
+                    Ok(s) => eprintln!("{} {s}", rocca::words::clock(g.time_s())),
+                    Err(e) => eprintln!("{} ordine rifiutato: {e}", rocca::words::clock(g.time_s())),
+                }
+                next += 1;
             }
-            g.commit(plan.clone())?;
-        }
-        if g.time_s() >= end {
-            break;
+            g.resume();
         }
         g.step()?;
+        trace(g);
     }
-    let o = g.outcome();
-    Ok((g, o))
+    Ok(())
 }
 
-fn table(g: &Game, a: &Outcome, b: Option<&Outcome>) {
-    println!("{:<12} {:>5} | {:>13} {:>13} {:>13} {:>13} {:>9}", "quartiere", "fam.", "case colpite", "colti in casa", "evacuati", "in strada", "a casa");
-    let cell = |x: usize, y: Option<usize>| match y {
-        Some(y) if y != x => format!("{x} → {y}"),
-        _ => format!("{x}"),
-    };
-    for (k, d) in g.districts.iter().enumerate() {
-        let (x, y) = (&a.districts[k], b.map(|b| &b.districts[k]));
-        println!(
-            "{:<12} {:>5} | {:>13} {:>13} {:>13} {:>13} {:>9}",
-            d.name,
-            x.households,
-            cell(x.homes_hit, y.map(|y| y.homes_hit)),
-            cell(x.caught, y.map(|y| y.caught)),
-            cell(x.evacuated, y.map(|y| y.evacuated)),
-            cell(x.on_the_road, y.map(|y| y.on_the_road)),
-            cell(x.at_home, y.map(|y| y.at_home)),
-        );
+/// With `TRACCIA=1`, every 10 simulated minutes: burnt hectares, burning
+/// cells, nearest fire to each district, teams.
+fn trace(g: &Game) {
+    if std::env::var("TRACCIA").is_err() || g.time_s() % 600 != 0 {
+        return;
     }
-    println!("ettari bruciati: {:.0}{}   mezzi persi: {}", a.hectares, b.map_or(String::new(), |b| format!(" → {:.0}", b.hectares)), a.units_lost);
+    let burnt = g.fire.state().iter().filter(|c| **c != fire::CellFire::Unburnt).count() as f32 * 0.04;
+    let near: Vec<String> = g
+        .districts
+        .iter()
+        .filter_map(|d| rocca::district::exposure(d, &g.fire, &g.scn).map(|e| format!("{} {:.0}", d.name, e.distance_m)))
+        .collect();
+    let teams: Vec<String> = (0..g.teams.len()).map(|t| format!("{}: {}", g.teams[t].name, g.team_status(t))).collect();
+    eprintln!("{} {:.0} ha, {} celle accese | {} | {}", rocca::words::clock(g.time_s()), burnt, g.fire.active_cells().len(), near.join(", "), teams.join(", "));
+}
+
+fn table(g: &Game, o: &Outcome) {
+    println!("{:<16} {:>5} {:>6} {:>7} {:>6} {:>6} {:>6} {:>6}", "borgo", "case", "colp.", "persone", "salve", "strada", "autop.", "colte");
+    for (d, x) in g.districts.iter().zip(&o.districts) {
+        println!("{:<16} {:>5} {:>6} {:>7} {:>6} {:>6} {:>6} {:>6}", d.name, x.homes, x.homes_hit, x.people, x.safe, x.on_the_road, x.self_defence, x.caught);
+    }
+    println!("fine {}  ettari {:.0}  case colpite {}  persone colte {}  squadre perse {}  pause {}", rocca::words::clock(o.at_s), o.hectares, o.homes_hit(), o.caught(), o.units_lost, g.pauses);
 }
 
 fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut case = None;
-    let (mut seed, mut minutes) = (1u64, 180i64);
-    let mut data = PathBuf::from("data");
-    let mut a = Script { priorities: vec![], civil: vec![] };
-    let mut b = Script { priorities: vec![], civil: vec![] };
-    let (mut has_b, mut registro) = (false, false);
-    let mut mayor = true;
-    let (mut b_prio, mut b_civil) = (false, false);
-    let mut it = args.iter();
-    while let Some(x) = it.next() {
-        let mut val = || it.next().cloned().with_context(|| format!("{x}: valore mancante"));
-        match x.as_str() {
-            "--seme" => seed = val()?.parse()?,
-            "--minuti" => minutes = val()?.parse()?,
-            "--dati" => data = val()?.into(),
-            "--priorita" => a.priorities = val()?.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
-            "--civili" => a.civil = parse_civil(&val()?)?,
-            "--b-priorita" => {
-                has_b = true;
-                b_prio = true;
-                b.priorities = val()?.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
-            }
-            "--b-civili" => {
-                has_b = true;
-                b_civil = true;
-                b.civil = parse_civil(&val()?)?
-            }
-            "--registro" => registro = true,
-            "--senza-sindaca" => mayor = false,
-            c if !c.starts_with("--") => case = Some(c.to_string()),
-            c => bail!("opzione sconosciuta {c}"),
+    let mut args = std::env::args().skip(1);
+    let case = args.next().context("uso: rocca <caso> [--seme N] [--squadra ...] [--evacua ...]")?;
+    let (mut seed, mut data, mut teams, mut evac) = (1u64, PathBuf::from("data"), String::new(), String::new());
+    let mut start: Option<i64> = None;
+    while let Some(a) = args.next() {
+        let mut v = || args.next().with_context(|| format!("{a}: manca il valore"));
+        match a.as_str() {
+            "--seme" => seed = v()?.parse()?,
+            "--dati" => data = PathBuf::from(v()?),
+            "--squadra" => teams = v()?,
+            "--evacua" => evac = v()?,
+            "--inizio" => start = Some(v()?.parse::<i64>()?),
+            x => bail!("argomento sconosciuto: {x}"),
         }
     }
-    // B is A with only what the --b-* options change
-    if !b_prio {
-        b.priorities = a.priorities.clone();
-    }
-    if !b_civil {
-        b.civil = a.civil.clone();
-    }
-    let case = case.context("uso: rocca <caso> [opzioni]; vedi l'intestazione di src/bin/rocca.rs")?;
-    let t = std::time::Instant::now();
-    let (ga, oa) = play(&data, &case, seed, minutes, &a, mayor)?;
-    let gb = if has_b { Some(play(&data, &case, seed, minutes, &b, mayor)?) } else { None };
-    let ob = gb.as_ref().map(|(_, o)| o.clone());
-    println!("caso {case}, seme {seed}, {minutes} min simulati ({:.1} s)", t.elapsed().as_secs_f32());
-    if registro {
-        for e in &ga.log {
-            println!("  T+{:>3} min  {}", e.at_s / 60, e.text);
+    let t_start = std::time::Instant::now();
+    let (g, label) = if case == "tutorial" {
+        let t = rocca::Territory::load(&data)?;
+        let c = t.tutorial.context("game.json: nessun tutorial")?.case;
+        let mut g = Game::new(&data, &c, seed)?;
+        let s = Script::of(&g).context("tutorial incompleto")?;
+        for st in &s.steps {
+            if st.expect == rocca::tutorial::Expect::Over {
+                while !g.is_over() {
+                    g.step()?;
+                    trace(&g);
+                }
+            } else {
+                Script { steps: vec![st.clone()] }.play(&mut g)?;
+            }
         }
-    }
-    table(&ga, &oa, ob.as_ref());
-    // the debrief's «Come sono andati i tuoi ordini», for plan A
-    println!("ordini di A (evacuazioni dove il fuoco non è arrivato alle case: {} famiglie):", ga.needless_evacuations());
-    for d in 0..ga.districts.len() {
-        let r = ga.order_review(d);
-        println!("  {:<5} {}", format!("{:?}", r.verdict).to_lowercase(), r.text);
-    }
-    // the kiosk's score: against the same fire with no orders
-    let base = Game::without_orders(&data, &case, seed)?;
-    // and the kiosk's summary: the mayor's authorisations and the stars
-    let line = |name: &str, g: &Game, o: &Outcome| {
-        let s = rocca::score::score(o, &base);
-        println!(
-            "punteggio {name}: {} su {} (famiglie salvate {} di {}, case risparmiate {} di {})",
-            s.total, rocca::score::MAX, s.families, s.families_at_risk, s.homes, s.homes_at_risk
-        );
-        let auth: Vec<String> = (0..g.districts.len())
-            .filter_map(|d| g.authorised_at(d).map(|t| format!("{} T+{}", g.districts[d].name, t / 60)))
-            .collect();
-        println!("autorizzazioni della sindaca {name}: {}", if auth.is_empty() { "nessuna".to_string() } else { auth.join(", ") });
-        let st = rocca::score::stars(&s, g.timing(), g.measure());
-        let n = |x: Option<u8>| x.map_or("–".to_string(), |x| x.to_string());
-        println!("stelle {name}: persone {} · case {} · tempismo {} · misura {}", n(st.persone), n(st.case), n(st.tempismo), st.misura);
+        (g, c)
+    } else {
+        let t = rocca::Territory::load(&data)?;
+        let mut c = t.case(&case).with_context(|| format!("caso {case:?} sconosciuto"))?.clone();
+        if let Some(s) = start {
+            c.start_min = s;
+        }
+        let mut g = Game::with_case(&data, t, c.clone(), seed)?;
+        let t0 = g.time_s();
+        let orders: Vec<_> = parse(&teams, &evac)?.into_iter().map(|(at, o)| (at + t0, o)).collect();
+        play(&mut g, &orders)?;
+        let none = Game::with_case(&data, g.territory.clone(), c, seed).and_then(|mut n| {
+            while !n.is_over() {
+                n.step()?;
+            }
+            Ok(n.outcome())
+        })?;
+        report(&g, &none, t_start);
+        return Ok(());
     };
-    line("A", &ga, &oa);
-    if let Some((gb, ob)) = &gb {
-        line("B", gb, ob);
-    }
+    let none = Game::without_orders(&data, &label, seed)?;
+    report(&g, &none, t_start);
     Ok(())
+}
+
+fn report(g: &Game, none: &Outcome, t0: std::time::Instant) {
+    let mine = g.outcome();
+    table(g, &mine);
+    println!("senza ordini: ettari {:.0}  case colpite {}  persone colte {}", none.hectares, none.homes_hit(), none.caught());
+    let st = score::stars(&mine, none);
+    let s = |x: Option<u8>| x.map_or("—".to_string(), |v| v.to_string());
+    println!("stelle: persone {}  case {}  ettari {}   ({:.1} s)", s(st.persone), s(st.case), s(st.ettari), t0.elapsed().as_secs_f32());
 }

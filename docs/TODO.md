@@ -1,81 +1,44 @@
 # Isola di Roccavento — lista di lavoro
 
-Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md`). Le voci chiuse si cancellano: la storia è in git. Le fasi sono descritte in `docs/03-VERIFICHE.md`.
+Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md`). Le voci chiuse si cancellano: la storia è in git. Le fasi sono in `docs/03-VERIFICHE.md`.
 
-## Fase corrente: A (territorio con valico) e B (taratura dello spegnimento), in parallelo
+## Fase corrente: 1. Prima passata (nuovo progetto, 2026-10-14)
 
-**Prossimi checkpoint:** l'utente approva territorio e livelli (A) e sceglie i valori dello spegnimento (B). Poi si passa alla fase C.
+**Prossimo checkpoint:** l'utente rivede motore, chiosco e documenti, e dice le modifiche.
 
-### A. Territorio con valico (sessione del territorio)
+### Fatto in questa passata (da rivedere)
 
-- [ ] mappe del fuoco dei tre livelli, semi 1–3, senza ordini e con il piano ovvio; tabella con borghi colpiti, orari ed ettari (`docs/factory/valico/`);
-- [ ] riscrivere i testi `about` dei livelli in `game.json` per il valico;
-- [ ] con lo spegnimento attuale ogni innesco entro 800 m dalla caserma si spegne se le autobotti ci vanno per prime, quindi l'ovest non entra in gioco: decidere insieme a B, oppure spostare gli inneschi;
+- `rocca` riscritto: `game` (pausa ×60 / ×300, ricarica, ordini solo in pausa), `hex` (500 m, solo esagoni con strada), `evac` (evacuazione semplificata, un borgo alla volta, 20 persone/min, rerouting, interruzione e autoprotezione), `tutorial` (copione), `score` (Persone, Case, Ettari), `forecast` (alla pausa, con il bollettino). Tolti `coordinator`, `crisis`, `mayor`, `messengers`, `plan`, gli esempi e i test vecchi.
+- `game.json`: 3 VVF a Castelvento e 2 AIB a San Rocco (3 persone per squadra), caso `tutorial`, `game: medium` a 300 min, regole dell'evacuazione.
+- Chiosco: flusso Apertura → Tutorial → Giorno 2 → Gioco → Fine; `kiosk/ui.rs`, `kiosk/marks.rs` (esagoni, percorsi, strade chiuse), `kiosk/view.rs` (clic sulla mappa), `kiosk/snap.rs` nuovi. Tolti `people`, `life`, `agents`, i personaggi e il vecchio tutorial.
 
-### B. Taratura dello spegnimento (sessione dello spegnimento)
+### Aperto
 
-- [x] 2026-10-13 banco di prova `rocca_banco` (`tools/factory/banco.py`: terreno piatto, un solo combustibile, paesi veri; `examples/spegnimento.rs --cfg linea:acqua:portata`, `ROCCA_SCENARIO=rocca_banco`). Ettari bruciati a 180 min, media di 30 partite: senza spegnimento 187; 1:1:1 186; 3:30:3 165; 3:30:5 147; 3:30:10 108 (−42 %); 3:30:20 84; 3:30:30 51. La linea ×1, ×3 o ×10 non cambia nulla; l'acqua per cella satura oltre ×10; conta la portata dei getti. Raggio dei getti = 60 m × portata (×10 = 600 m, ×20 = 1200 m). **Scelta dell'utente 2026-10-13: portata ×20**; nel gioco `game::SUPPRESSION` = linea 3, acqua 30, portata 20;
-- [ ] 2026-10-13 **attacco al fronte** implementato, **spento nel chiosco** finché l'utente non sceglie: `coordinator::FrontAttack` (`off` solo case; `liberi` i mezzi senza postazione attaccano il fronte; `tutti` ogni mezzo si mette tra fronte e case a 200–650 m), `Game::attack`, `examples/spegnimento.rs --attacco off,liberi,tutti`. Medie con lo spegnimento del gioco, semi 1–3, ha a 180' / case colpite / famiglie colte: banco off 84 / 49,2 / 22,4, liberi identico, tutti 56 / 46,2 / 16,9; tre livelli off 134 / 19,2 / 11,6, liberi identico, tutti 129 / 23,4 / 12,1. Sul banco `tutti` aiuta, sui livelli no; `liberi` non cambia nulla (nessun mezzo resta libero). Decide l'utente;
-- [ ] UI dal playtest Haiku del 2026-10-13 corretta ma **non ancora vista a schermo** (`KIOSK_SNAP`): «Evacua» grigio senza autorizzazione, testi a capo nella barra, freccia del vento spiegata, legenda delle etichette, didascalie delle stelle, pulsante di Mario nascosto;
-- [ ] misurare la portata ×20 anche sui tre livelli; rifare `strategie_civili` («evacua tutti» non deve dominare).
-
-### C. Ritaratura headless (dopo A e B)
-
-Tutti i numeri raccolti finora valgono per il territorio precedente al valico e per lo spegnimento ×3.
-
-- [ ] `examples/sindaca.rs`: bilanciamento con la sindaca, soglia `lead_s` (oggi 20 min), soglie delle stelle `score::{PERSONE, CASE, TEMPISMO, MISURA}`;
-- [ ] `strategie_civili` (`PRIORITA=sbagliate`): «evacua tutti» non deve dominare;
-- [ ] capacità di uscita (`USCITA`, `examples/partenze.rs`); oggi è 6 famiglie al minuto, attiva ma **da confermare dall'utente**. Lo script di riassunto di prima è stato cancellato con lo storico: rifarlo in `tools/` se serve;
-- [ ] `examples/previsione.rs`: affidabilità a +1 h e +3 h, e tempi;
-- [ ] quanti momenti ×1 per partita (sindaca, vento, `Vicino`) e durata reale per livello: aggiungere il conteggio a `examples/sindaca.rs`;
-- [ ] riscrivere il test «invertire le priorità cambia postazioni ed esiti» (rimosso il 2026-10-13 su richiesta dell'utente, fallisce con lo spegnimento attuale) e un test del giudizio sugli ordini (`Game::order_review`);
-- [ ] stelle assolute: dove nessuna casa si salva anche il piano giusto prende 1 in Case; Tempismo è quasi pieno per chi preallerta presto; proposta: Misura «—» se non c'è stata nessuna evacuazione (oggi 5 stelle senza fare nulla);
-- [ ] il punteggio non conta le famiglie colte dopo la partenza (`rocca::score`): oggi zero;
-- [ ] difesa delle strade: misurare prima l'effetto sulla percorribilità (spec).
-
-### D. Playtest e rifinitura UX
-
-- [ ] da provare a mano: trascinamento nel piano a colonne, conferma dell'evacuazione con le vie di fuga, ritmo dei ×1 automatici, zoom con il trackpad, Esc nel tutorial, scrittura del nome dopo un click fuori;
-- [ ] previsione, domande per l'utente: etichetta «tra 1 ora» sotto il cartellino di un borgo; nessuna previsione a Facile (vento fisso); resta 30 min dopo il giro (`SHOWN_AFTER_SHIFT_S`); versione «con interventi»;
-- [ ] a 1280×720 la card di apertura è più alta dello schermo e copre «Menu»;
-- [ ] «Segui il fuoco» non si attiva più a mano (è solo automatico): va bene?
-- [ ] i personaggi si notano durante un ×1? La crisi si nota nella barra laterale?
-- [ ] Preallerta ed Evacua poco distinguibili sulla mappa; servono indicatori delle evacuazioni;
-- [ ] il «Perché» non spiega l'effetto dei mezzi né le famiglie che non partono nonostante l'ordine;
-- [ ] scheda di osservazione per chi assiste ai playtest (durata, prima azione, compromesso spiegato, blocchi, domande finali);
-- [ ] playtest con studenti e colleghi che non conoscono il progetto.
-
-### E. Pronto per il chiosco
-
-- [ ] FPS sulla macchina del chiosco (`KIOSK_FPS=1`) e scelta del livello grafico; il livello «Bassa» ha la vegetazione troppo rada? Il costo GPU delle nuvole non è misurato;
-- [ ] cambio del livello grafico dal menu operatore non provato a schermo;
-- [ ] prova di stabilità: molte partite di fila, «Riprova» e «Nuova partita», nessun effetto residuo dopo il riavvio, memoria stabile;
-- [ ] versione nativa o browser; build web con le nuove meccaniche non provata (`scripts/build_web.sh`); Mario sul web non visto a schermo;
-- [ ] touchscreen sì o no; il nome lo scrive il giocatore o l'operatore;
-- [ ] sul chiosco cancellare i vecchi `~/.rocca_ventosa/classifica2.json` e `ultimi.json`, non più letti;
-- [ ] `.mcp.json` avvia un server MCP «spotorno» del vecchio scenario: serve ancora?
+- [ ] Apertura: segnalazione dopo 30 min (`start_min`, tabella in `02-TERRITORIO.md`). Da completare: seme 3, la strategia «evacua tutto», piani migliori per le Case.
+- [ ] Molte persone «colpite» presto a Le Terrazze (18 alle 14:40): la soglia `ALARMING` per chi è a casa senza ordine è severa. Va decisa con il bilanciamento.
+- [ ] Il tutorial contiene l'incendio, ma non lo spegne del tutto: restano poche celle accese e la prova finisce alla durata del caso (150 min, circa 30 s reali). Valutare la fine a fuoco «contenuto».
+- [ ] Le squadre vanno spesso a rifornirsi (idranti lontani): verificare che non sembri un difetto.
+- [ ] Grafica:
+  - esagoni poco visibili sulla terra;
+  - percorso dell'evacuazione poco leggibile da lontano;
+  - le famiglie in strada non si vedono;
+  - le icone delle squadre sono etichette egui: valutare il trascinamento della squadra sull'esagono.
+- [ ] Soglie delle stelle provvisorie (`score::{PERSONE, CASE, ETTARI}`).
+- [ ] Persone a piedi delle squadre (linee di taglio verso il fuoco): da vedere a schermo (`units.rs` le disegna come squadra AIB a piedi) e da misurare quanto contano rispetto all'acqua.
+- [ ] Mario scollegato: va ricollegato, ma per ultimo (utente, 2026-10-14).
+- [ ] Il crate `abm` contiene ancora il modello IBM delle persone (`Abm`, traffico, comportamenti), non più usato dal gioco. Da togliere, tenendo `network`, `drive`, `suppression`, `refuge`.
+- [ ] `scripts/playtest.py` va aggiornato al nuovo flusso (lo stato pubblicato è cambiato).
+- [ ] Versione web non provata (`scripts/build_web.sh`): il confronto senza ordini si calcola alla fine, nel frame.
 
 ## Test rotti noti
 
-- `abm/tests/incident_gaps.rs`: 5 test pensati per un territorio senza mare;
-- `rocca/tests/messaggeri.rs::the_teams_leave_a_district_the_fire_reaches` (falliva già a `14357e6`);
+- `abm/tests/incident_gaps.rs`: 5 test pensati per un territorio senza mare.
 - `game models::tests::the_island_models_stand_on_the_ground` (punto più basso della rocca a −2,6 m).
 
 ## Decisioni in vigore (con data)
 
-Le regole complete sono in `docs/01-GIOCO.md`. Qui le decisioni recenti, per orientarsi.
-
-- 2026-10-13: playtest per agenti in browser headless senza focus (`scripts/playtest.py`, `docs/web.md`), con screenshot e avanzamento CPU dei passi originali fino a ogni decisione; il gioco normale conserva i suoi tempi.
-- 2026-10-13: Mario riceve un boost con Spazio / × durante il volo; R / △ apre la scelta del punto sulla mappa dall’alto, con mouse o pad, zoom, conferma e annullamento (`docs/MARIO.md`).
-- 2026-10-13: niente pause né «Decidi». Gli ordini valgono subito; ×1 automatico solo per autorizzazione della sindaca, cambio di vento e fuoco vicino a un borgo non avvisato. Il testo del ×1 è generato.
-- 2026-10-13: «Evacua» solo con l'autorizzazione della sindaca (fronte entro 20 min); prima mostra le vie di fuga e chiede conferma (×1, 20 s).
-- 2026-10-13: piano a tre colonne trascinabili; classifica dei migliori del giorno per livello; finale semplificato a stelle.
-- 2026-10-13: previsione stocastica a +1 h e +3 h, isocrone al 50 %, senza interventi.
-- 2026-10-13: capacità di uscita a 6 famiglie al minuto (versione B: chi vede il fuoco parte comunque). Attiva, da confermare.
-- 2026-10-13: il territorio è l'isola con il valico; nuovi livelli Facile, Medio ed Esperto. **Solo i tre livelli**: tolti `prove.json`, gli esempi delle fasi passate, la vecchia pipeline Python e `town_shot`; i test usano i livelli.
-- 2026-10-13: costa est rifatta (baia, promontorio, niente tratti dritti) e valico dal bordo naturale (`costa_est.py`, `valico.py`; immagini `docs/factory/valico/costa_est.png`, `valico_naturale.png`).
-- 2026-10-13: «evacua appena autorizzato» può vincere ai punti; il suo costo resta nella stella Misura.
-- 2026-10-13: riscritte da zero le istruzioni (`CLAUDE.md`, `docs/01–03`) e cancellato lo storico; nuove fasi A–E.
-- 2026-10-12: 4 pattuglie portano gli avvisi porta a porta (1 famiglia al minuto ciascuna, allerta sul telefono attiva).
-- 2026-10-12: schermo del chiosco di almeno 1080p; il tutorial ha solo «Avanti» e «Salta».
-- 2026-10-08: la difesa delle case riduce l'esposizione reale, non un punteggio.
+- 2026-10-14: l'incendio della partita parte già sviluppato (segnalazione al minuto 30). Le squadre attaccano il fuoco come possono: le persone a piedi tagliano la vegetazione verso il fuoco, l'autobotte bagna il combustibile che raggiunge. Mario va ricollegato per ultimo.
+- 2026-10-14: **nuovo progetto.** Si riscrive `rocca` dentro questo repository. Partita in due parti, tutorial scriptato (giorno 1) e partita (giorno 2). Tempo reale ×300, pausa ×60 di 30 s reali con ricarica di 20 min simulati, ordini solo in pausa, previsione dell'esperto in pausa. Squadre = autobotte + 3 persone: 3 VVF nel borgo più grande, 2 volontari in un borgo minore. Esagoni di 500 m adiacenti alle strade. Evacuazione semplificata, un borgo alla volta, con limite di persone al minuto. Niente IBM delle persone. Stelle e classifica tenute: persone, poi case, poi ettari. Comunicazione da riscrivere dopo.
+- 2026-10-13: portata dello spegnimento ×20 (`game::SUPPRESSION` = linea 3, acqua 30, portata 20).
+- 2026-10-13: territorio dell'isola con valico e costa est rifatta (`02-TERRITORIO.md`).
+- 2026-10-12: schermo del chiosco di almeno 1080p.

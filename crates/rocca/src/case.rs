@@ -1,6 +1,5 @@
 //! What a game is played on: one territory, several fires. Read from the
-//! scenario's `game.json`, written by the Scenario Factory (`game-cases`), so
-//! nothing about the town is hard-coded here.
+//! scenario's `game.json`, so nothing about the island is hard-coded here.
 
 use std::path::Path;
 
@@ -15,6 +14,9 @@ use abm::suppression::UnitKind;
 pub struct Station {
     pub name: String,
     pub pos: [f32; 2],
+    /// A volunteers' post (AIB) rather than the fire brigade (VVF).
+    #[serde(default)]
+    pub volunteers: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -35,9 +37,31 @@ impl Kind {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Slot {
+    #[serde(default = "engine")]
     pub kind: Kind,
-    /// Index into [`Game::stations`].
+    /// Index into [`Territory::stations`].
     pub station: usize,
+    /// People on board (user, 2026-10-14: an engine and three).
+    #[serde(default = "crew")]
+    pub crew: u8,
+}
+
+fn engine() -> Kind {
+    Kind::Engine
+}
+
+fn crew() -> u8 {
+    3
+}
+
+/// The tutorial (docs/01-GIOCO.md §1): its fire, where the player is asked
+/// to send the teams, and the district to evacuate.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TutorialSetup {
+    pub case: String,
+    /// Team index and the point (metres) whose hex it is sent to.
+    pub moves: Vec<(usize, [f32; 2])>,
+    pub evacuate: String,
 }
 
 /// A change of wind during a case, at a fixed simulated minute. Part of the
@@ -63,6 +87,10 @@ pub struct Case {
     pub minutes: i64,
     #[serde(default)]
     pub shift: Option<Shift>,
+    /// Minutes the fire burns, with no one on it, before the game begins:
+    /// the time it took to be reported (user, 2026-10-14).
+    #[serde(default)]
+    pub start_min: i64,
 }
 
 impl Case {
@@ -89,21 +117,16 @@ pub struct Territory {
     /// What the visitor chooses at the start, easiest first.
     #[serde(default)]
     pub levels: Vec<Level>,
-    /// Teams carrying the orders door to door; absent, every order travels
-    /// over the households' own channels.
+    /// The evacuation's limits ([`crate::evac`]).
     #[serde(default)]
-    pub messengers: Option<crate::Messengers>,
-    /// Households an organised evacuation can put on the road per minute,
-    /// all districts together ([`abm::Abm::set_exit_capacity`]); absent, no
-    /// limit.
+    pub evacuation: crate::evac::EvacRules,
+    /// The tutorial, played first.
     #[serde(default)]
-    pub exit_per_min: Option<f32>,
-    /// Evacuation needs the mayor's authorisation ([`crate::mayor`]);
-    /// absent, any district may be evacuated at any time.
-    #[serde(default)]
-    pub mayor: Option<crate::Mayor>,
-    /// The fires: one per level, the only ones there are (user, 2026-10-13:
-    /// the trial fires were dropped). Tests and trials play these too.
+    pub tutorial: Option<TutorialSetup>,
+    /// The fire played after the tutorial.
+    pub game: String,
+    /// The fires: the tutorial's and the played one (tests and trials play
+    /// these too).
     pub cases: Vec<Case>,
 }
 
@@ -125,6 +148,8 @@ impl Territory {
         let playable = |n: &str| t.cases.iter().any(|c| c.name == n);
         anyhow::ensure!(t.featured.iter().all(|n| playable(n)), "featured names a missing case");
         anyhow::ensure!(t.levels.iter().all(|l| playable(&l.case)), "a level names a missing case");
+        anyhow::ensure!(playable(&t.game), "game names a missing case");
+        anyhow::ensure!(t.tutorial.as_ref().is_none_or(|tu| playable(&tu.case)), "the tutorial names a missing case");
         Ok(t)
     }
 

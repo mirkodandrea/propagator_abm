@@ -33,17 +33,12 @@ mod browser {
     pub fn publish(k: &Kiosk, sim: &Sim) {
         let Some(b) = bridge() else { return };
         let state = serde_json::json!({
-            "phase": if k.title { "title".to_string() } else if k.intro { "intro".to_string() } else { format!("{:?}", k.phase) },
-            "case": k.case, "time_s": sim.time_s(), "end_s": sim.case.duration_s(),
+            "phase": format!("{:?}", k.phase), "case": sim.case.name, "time_s": sim.time_s(), "end_s": sim.case.duration_s(),
             "player": k.player, "error": k.error, "baseline_ready": k.baseline().is_some(),
-            "tour": k.tour, "selected": k.selected, "saved": k.saved,
-            "priorities": k.proposed.priorities,
-            "proposed_civil": k.proposed.civil.iter().map(|c| format!("{c:?}")).collect::<Vec<_>>(), "confirm_evac": k.confirm_evac.map(|(d, _)| d),
-            "crisis": k.crisis.as_ref().map(|c| format!("{:?}", c.kind)),
-            "districts": sim.districts.iter().enumerate().map(|(d, district)| serde_json::json!({
-                "name": district.name, "may_evacuate": sim.may_evacuate(d),
-                "civil": format!("{:?}", sim.active.civil[d]),
-            })).collect::<Vec<_>>(),
+            "step": k.step, "expect": k.expect().map(|e| format!("{e:?}")), "selection": format!("{:?}", k.selection),
+            "paused": sim.paused(), "pause_ready_in_s": sim.pause_ready_in_s(), "over": sim.is_over(),
+            "teams": sim.teams.iter().enumerate().map(|(t, team)| serde_json::json!({ "name": team.name, "status": sim.team_status(t) })).collect::<Vec<_>>(),
+            "districts": sim.districts.iter().map(|d| serde_json::json!({ "name": d.name })).collect::<Vec<_>>(),
             "controls": CONTROLS.with(|c| c.borrow().clone()),
         });
         let value = js_sys::JSON::parse(&state.to_string()).expect("playtest state JSON");
@@ -74,7 +69,7 @@ pub fn delta(normal: f32) -> f32 {
     normal
 }
 /// Spend CPU on fixed simulation steps, independent of wall time/FPS. Yield
-/// periodically to render/input, and stop on the exact step raising a crisis.
+/// periodically to render/input.
 pub fn tick(sim: &mut Sim, dt: f32) -> anyhow::Result<bool> {
     #[cfg(target_arch = "wasm32")]
     if active() {
@@ -82,13 +77,13 @@ pub fn tick(sim: &mut Sim, dt: f32) -> anyhow::Result<bool> {
         if remaining == 0.0 && dt > 0.0 { return sim.tick(dt); }
         let start = js_sys::Date::now();
         let mut stepped = false;
-        while remaining >= rocca::STEP_S as f64 && sim.crisis.is_none() && sim.time_s() < sim.case.duration_s() {
+        while remaining >= rocca::STEP_S as f64 && !sim.is_over() {
             let steps = sim.advance_steps(1)?;
             remaining -= steps as f64 * rocca::STEP_S as f64;
             stepped |= steps > 0;
             if js_sys::Date::now() - start >= 40.0 { break; }
         }
-        if sim.crisis.is_some() || sim.time_s() >= sim.case.duration_s() || remaining < rocca::STEP_S as f64 {
+        if sim.is_over() || remaining < rocca::STEP_S as f64 {
             remaining = 0.0;
         }
         browser::set("advance_s", remaining);

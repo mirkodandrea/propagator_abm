@@ -1,5 +1,6 @@
-//! Map overlays for the kiosk: the wind arrow on the terrain, household
-//! beacons, closed-road markers, the plan's rings and routes.
+//! Map overlays for the kiosk: the wind arrow on the terrain, and the rule
+//! that 3D interface marks cast and take no shadows. The orders' signs are in
+//! `kiosk::marks`.
 //!
 //! Everything sits well above the canopy (finding 13: a correct overlay
 //! under the plants is seen never), is unlit and glowing so the bloom pass
@@ -9,21 +10,15 @@
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
-use scenario::population::Status;
 use scenario::Pos;
 
 use crate::frame;
 use crate::retro;
 use crate::retro::RetroMaterial;
-use crate::rings::{path_mesh, ring_mesh, tube_transform, wall_mesh, TubeSpin, HALO};
 
-/// Width of a route on the map.
-const ROUTE_M: f32 = 9.0;
 use crate::sim::Sim;
 
-const BEACON_LIFT_M: f32 = 26.0;
 const WIND_LIFT_M: f32 = 40.0;
-const PIN_LIFT_M: f32 = 30.0;
 
 #[derive(Component)]
 pub struct WindArrow;
@@ -48,7 +43,6 @@ pub struct RouteMark;
 pub struct OverlayAssets {
     unlit_white: Handle<RetroMaterial>,
     ring_orange: Handle<RetroMaterial>,
-    beacons: Handle<Mesh>,
     key: (usize, usize, i64),
     /// What the order rings were built for: (warned districts, engine posts).
     order_key: (usize, usize),
@@ -147,16 +141,6 @@ pub fn setup(
     let chevron_mat = mat([0.70, 0.95, 1.0], 1.0, 4.0);
     let unlit_white = mat([1.0, 1.0, 1.0], 1.0, 1.4);
     let ring_orange = mat([1.0, 0.62, 0.1], 0.9, 1.6);
-    let beacons = meshes.add(Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default()));
-    commands.spawn((
-        MaterialMeshBundle::<RetroMaterial> {
-            mesh: beacons.clone(),
-            material: unlit_white.clone(),
-            ..default()
-        },
-        bevy::render::view::NoFrustumCulling,
-        BeaconLayer,
-    ));
     let arrow = meshes.add(arrow_mesh());
     let chevron = meshes.add(chevron_mesh());
     commands
@@ -180,7 +164,6 @@ pub fn setup(
         halo,
         unlit_white,
         ring_orange,
-        beacons,
         key: (usize::MAX, 0, 0),
         order_key: (usize::MAX, 0),
         ring_cover,
@@ -223,106 +206,6 @@ pub fn pulse_rings(time: Res<Time>, assets: Res<OverlayAssets>, mut materials: R
     }
 }
 
-/// The plan in force, on the ground: a ring round each district with a civil
-/// order (blue: evacuation, amber: pre-alert), and a green ring for the homes
-/// each unit's post covers (`rocca::coordinator::DEFEND_REACH_M`). Rebuilt
-/// only when the plan or the posts change. Rings sit +20 m (finding 13).
-pub fn update_orders(
-    mut commands: Commands,
-    sim: Res<Sim>,
-    mut assets: ResMut<OverlayAssets>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    old: Query<Entity, With<OrderRing>>,
-) {
-    let civil = sim.active.civil.iter().fold(0usize, |a, c| a * 3 + *c as usize);
-    let posts: usize = sim.posts.iter().flatten().fold(0usize, |a, p| a.wrapping_mul(31).wrapping_add(p.at.x as usize ^ p.at.y as usize));
-    if (civil, posts) == assets.order_key {
-        return;
-    }
-    assets.order_key = (civil, posts);
-    for e in &old {
-        commands.entity(e).despawn();
-    }
-    for p in sim.posts.iter().flatten() {
-        cover_zone(&mut commands, &mut meshes, &sim, p.at, &assets.ring_cover, OrderRing);
-    }
-}
-
-/// The area a post defends, exactly as the simulation sees it
-/// (`Abm::protection`: homes within `DEFEND_REACH_M` of the post): a filled
-/// faded tube with a sharp rim on the ground, and a mark on each home that is inside it.
-fn cover_zone<M: Component + Copy>(commands: &mut Commands, meshes: &mut Assets<Mesh>, sim: &Sim, at: Pos, rim: &Handle<RetroMaterial>, tag: M) {
-    let r = rocca::coordinator::DEFEND_REACH_M;
-    commands.spawn((MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(wall_mesh(&sim.scn, at, r)), material: rim.clone(), transform: tube_transform(at), ..default() }, tag, TubeSpin));
-    commands.spawn((MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(ring_mesh(&sim.scn, at, r)), material: rim.clone(), ..default() }, tag));
-    for h in &sim.agents.households {
-        if (h.home.x - at.x).hypot(h.home.y - at.y) <= r {
-            commands.spawn((MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(ring_mesh(&sim.scn, h.home, 14.0)), material: rim.clone(), ..default() }, tag));
-        }
-    }
-}
-
-/// A ring or route with its dark halo just under it. The halo sits lower, so
-/// the transparent pass draws it first.
-fn spawn_outlined<M: Component + Copy>(commands: &mut Commands, mesh: Handle<Mesh>, halo_mesh: Handle<Mesh>, mat: Handle<RetroMaterial>, halo: Handle<RetroMaterial>, tag: M) {
-    // no dark halo: it read as a drop shadow under the blue UI
-    let _ = (halo_mesh, halo);
-    commands.spawn((MaterialMeshBundle::<RetroMaterial> { mesh, material: mat, ..default() }, tag));
-}
-
-/// How far under its ring or route a halo lies.
-const HALO_DROP_M: f32 = 1.5;
-
-/// Routes: green and solid for the way each unit is driving now; white and
-/// dashed, with a white ring at the post, for a proposed move the player has
-/// not confirmed yet. Rebuilt every two game steps or when the preview changes.
-pub fn update_routes(
-    mut commands: Commands,
-    sim: Res<Sim>,
-    kiosk: Res<crate::kiosk::Kiosk>,
-    mut assets: ResMut<OverlayAssets>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    old: Query<Entity, With<RouteMark>>,
-) {
-    let proposed: Vec<&rocca::Post> = kiosk
-        .preview
-        .iter()
-        .flat_map(|p| p.posts.iter().flatten())
-        .filter(|p| sim.posts.get(p.unit).and_then(|x| x.as_ref()).is_none_or(|a| a.district != p.district || rocca::district::dist(a.at, p.at) > 1.0))
-        .collect();
-    let mut key = (sim.time_s() / (2 * rocca::STEP_S)) as u64;
-    for p in &proposed {
-        key = key.wrapping_mul(31).wrapping_add(p.unit as u64 * 7919 + p.at.x as u64 * 13 + p.at.y as u64);
-    }
-    if key == assets.route_key {
-        return;
-    }
-    assets.route_key = key;
-    for e in &old {
-        commands.entity(e).despawn();
-    }
-    for (k, u) in sim.crews.units.iter().enumerate() {
-        if u.kind.is_air() {
-            continue;
-        }
-        let pts = sim.crews.route_points(k, &sim.agents.network);
-        if pts.len() >= 2 {
-            let (route, halo) = (meshes.add(path_mesh(&sim.scn, &pts, ROUTE_M, None)), meshes.add(path_mesh(&sim.scn, &pts, ROUTE_M * HALO, None)));
-            spawn_outlined(&mut commands, route, halo, assets.ring_cover.clone(), assets.halo.clone(), RouteMark);
-        }
-    }
-    if kiosk.phase == crate::kiosk::Phase::Fine {
-        return;
-    }
-    for p in proposed {
-        if p.route.len() >= 2 {
-            let (route, halo) = (meshes.add(path_mesh(&sim.scn, &p.route, ROUTE_M, Some(30.0))), meshes.add(path_mesh(&sim.scn, &p.route, ROUTE_M * HALO, None)));
-            spawn_outlined(&mut commands, route, halo, assets.ring_white.clone(), assets.halo.clone(), RouteMark);
-        }
-        cover_zone(&mut commands, &mut meshes, &sim, p.at, &assets.ring_white, RouteMark);
-    }
-}
-
 pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut assets: ResMut<OverlayAssets>) {
     if !restarted.is_empty() {
         restarted.clear();
@@ -359,109 +242,3 @@ pub fn update_wind(sim: Res<Sim>, mut q: Query<&mut Transform, With<WindArrow>>)
     tf.scale = Vec3::new(len * 0.55, 1.0, len);
 }
 
-struct Buf {
-    pos: Vec<[f32; 3]>,
-    col: Vec<[f32; 4]>,
-    idx: Vec<u32>,
-    nrm: Vec<[f32; 3]>,
-}
-
-fn octa(b: &mut Buf, c: Vec3, r: f32, color: [f32; 3]) {
-    let s = b.pos.len() as u32;
-    let v = [
-        c + Vec3::new(0.0, r * 1.5, 0.0),
-        c + Vec3::new(r, 0.0, 0.0),
-        c + Vec3::new(0.0, 0.0, r),
-        c + Vec3::new(-r, 0.0, 0.0),
-        c + Vec3::new(0.0, 0.0, -r),
-        c + Vec3::new(0.0, -r * 1.5, 0.0),
-    ];
-    for p in v {
-        b.pos.push(p.into());
-        b.nrm.push((p - c).normalize().into());
-        b.col.push([color[0], color[1], color[2], 1.0]);
-    }
-    for (a, c2) in [(1, 2), (2, 3), (3, 4), (4, 1)] {
-        b.idx.extend_from_slice(&[s, s + c2, s + a, s + 5, s + a, s + c2]);
-    }
-}
-
-pub fn update_markers(
-    mut commands: Commands,
-    sim: Res<Sim>,
-    mut assets: ResMut<OverlayAssets>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    old: Query<Entity, With<DynamicMarker>>,
-) {
-    if !sim.is_changed() {
-        return;
-    }
-    let mut b = Buf { pos: vec![], col: vec![], idx: vec![], nrm: vec![] };
-    // Only the families the fire is on: a red beacon over a home means
-    // "someone is still in there". Warned, leaving and safe families are
-    // already told by the district chips and the moving figures and cars; a
-    // beacon over every roof (the first version) was noise.
-    let threat = sim.fire.threat();
-    for h in &sim.agents.households {
-        let at_home = matches!(h.status, Status::Normal | Status::Warned | Status::Preparing | Status::Defending);
-        let caught = matches!(h.status, Status::Trapped) || (at_home && threat.at(h.home) >= fire::threat::ALARMING);
-        if !caught {
-            continue;
-        }
-        let g = sim.scn.terrain.height_at(h.home);
-        octa(&mut b, frame::to_bevy(h.home, g + BEACON_LIFT_M), 8.0, [2.0, 0.36, 0.24]);
-    }
-    let n = b.pos.len();
-    if let Some(m) = meshes.get_mut(&assets.beacons) {
-        m.insert_attribute(Mesh::ATTRIBUTE_POSITION, b.pos);
-        m.insert_attribute(Mesh::ATTRIBUTE_NORMAL, b.nrm);
-        m.insert_attribute(Mesh::ATTRIBUTE_COLOR, b.col);
-        m.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32, 0.0]; n]);
-        m.insert_indices(Indices::U32(b.idx));
-    }
-
-    // Closed roads change rarely: rebuild on a changed key. (Spot fires are
-    // not marked: the player does not task units at them, and at the end of
-    // a big fire they were dozens of red pins over the map.)
-    let now = sim.time_s() as f32;
-    let closures: Vec<(Pos, f32)> = sim
-        .agents
-        .closures()
-        .iter()
-        .filter(|c| c.active_at(now))
-        .map(|c| (c.centre, c.radius_m))
-        .collect();
-    let sig = closures.first().map_or(0, |(c, _)| (c.x as i64) ^ ((c.y as i64) << 20));
-    let key = (closures.len(), 0, sig);
-    if key == assets.key {
-        return;
-    }
-    assets.key = key;
-    for e in &old {
-        commands.entity(e).despawn_recursive();
-    }
-    for &(centre, radius) in &closures {
-        commands.spawn((
-            MaterialMeshBundle::<RetroMaterial> {
-                mesh: meshes.add(ring_mesh(&sim.scn, centre, radius.max(60.0))),
-                material: assets.ring_orange.clone(),
-                ..default()
-            },
-            DynamicMarker,
-        ));
-        let g = sim.scn.terrain.height_at(centre) + PIN_LIFT_M;
-        let mut t = crate::toy::Toy::default();
-        t.cuboid(Vec3::new(0.0, 12.0, 0.0), Vec3::new(18.0, 4.0, 3.0), [1.0, 0.55, 0.1]);
-        t.cuboid(Vec3::new(-16.0, 5.0, 0.0), Vec3::new(2.5, 8.0, 2.5), [1.0, 1.0, 1.0]);
-        t.cuboid(Vec3::new(16.0, 5.0, 0.0), Vec3::new(2.5, 8.0, 2.5), [1.0, 1.0, 1.0]);
-        commands.spawn((
-            MaterialMeshBundle::<RetroMaterial> {
-                mesh: meshes.add(t.finish()),
-                material: assets.unlit_white.clone(),
-                transform: Transform::from_translation(frame::to_bevy(centre, g)).with_scale(Vec3::splat(1.8)),
-                ..default()
-            },
-            DynamicMarker,
-        ));
-    }
-}

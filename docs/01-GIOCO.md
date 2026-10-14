@@ -1,74 +1,101 @@
 # 01 — Il gioco: Isola di Roccavento
 
-Regole **in vigore**. Prevalgono sul codice: se non coincidono, segnalarlo. Ogni cambio di regola è una decisione dell'utente, da scrivere qui con la data (lo storico è nella storia git).
+Regole **in vigore** dal 2026-10-14 (nuovo progetto). Prevalgono sul codice: se non coincidono, segnalarlo. Ogni cambio di regola è una decisione dell'utente, da scrivere qui con la data (lo storico è nella storia git).
 
 ## In una frase
 
-Un gioco strategico da chiosco per la *Settimana della Protezione Civile*, per studenti delle superiori. Un incendio minaccia i borghi di un'isola. Il giocatore decide **chi difendere per primo** e **chi avvisare**: preallerta ed evacuazione, quest'ultima solo con l'autorizzazione della sindaca. Un coordinatore automatico muove i mezzi. La simulazione decide che cosa succede davvero: un buon piano aiuta, ma non garantisce nulla.
+Uno strategico in tempo reale, sul modello di StarCraft, per il chiosco della *Settimana della Protezione Civile* (studenti delle superiori). Un incendio simulato minaccia i borghi di un'isola. Il giocatore **mette in pausa** per chiedere la previsione all'esperto, poi **sposta le squadre** su una griglia esagonale e **evacua i borghi**, uno alla volta. La simulazione decide gli esiti. Poche parole: la comunicazione (personaggi, messaggi, debriefing) si riscrive in un secondo momento.
 
 **Obiettivo educativo:** incertezza, tempi, risorse limitate, adattarsi. Non è un addestramento e non insegna procedure operative.
 
-## 1. Chi decide cosa
+## 1. Struttura della partita
 
-| Attore | Ruolo |
-|---|---|
-| **Giocatore** | Ordina i borghi da **difendere** (priorità 1, 2, 3…). Dà **preallerta** ed **evacuazione** per borgo. Non comanda i singoli mezzi. |
-| **Sindaca** | Firma l'ordinanza: **autorizza l'evacuazione** di un borgo quando il fronte potrebbe arrivare alle sue case entro 20 min simulati (`Mayor::lead_s`), o quando il fuoco è già lì. Un borgo alla volta. L'autorizzazione vale fino alla fine. Non sceglie al posto del giocatore. |
-| **Coordinatore** (`rocca::coordinator`) | Traduce le priorità in postazioni raggiungibili per 2 autobotti (caserma di Castelvento) e 1 squadra AIB (dal traghetto, al porto). Si adatta alla situazione, ma non cambia mai le priorità. La sicurezza delle squadre viene prima di tutto. |
-| **Pattuglie** (`rocca::messengers`) | 4 pattuglie portano gli avvisi porta a porta, 1 famiglia al minuto ciascuna. Chi ha l'allerta sul telefono la riceve subito. |
-| **Simulazione** | Fuoco (PROPAGATOR), famiglie, traffico, squadre, danni. È l'unica fonte dei fatti. |
+1. **Apertura:** nome del giocatore, «Inizia» (oppure «Salta la prova guidata») e la classifica di oggi.
+2. **Tutorial, giorno 1** (`rocca::tutorial`): un incendio piccolo vicino a Le Ghiande, con dinamiche reali. Istruzioni passo passo: Pausa, scelta della squadra, scelta dell'esagono e conferma (due squadre), evacuazione di Le Ghiande, Riprendi. Il gioco accetta **solo** l'azione richiesta e il mondo resta fermo finché il giocatore non la compie, quindi l'esito è scriptato. Poi il fuoco corre da solo: le squadre lo contengono e il borgo è al sicuro. Senza ordini, lo stesso incendio colpisce 17 case e 45 persone.
+3. **Giorno 2:** nuovo giorno, nuovo incendio (`game.json` → `game`, oggi il caso `medium`, 5 ore). Il controllo passa al giocatore. L'incendio è **segnalato in ritardo**: quando la partita comincia brucia già da `start_min` minuti (2026-10-14).
+4. **Fine:** stelle e classifica del giorno.
 
-## 2. Gli ordini
+## 2. Il tempo e la pausa
 
-- **Difesa:** borghi ordinati per priorità. Una priorità alta non garantisce la protezione. La difesa riduce l'esposizione reale delle case, non è un punteggio.
-- **Preallerta:** sempre disponibile. Le famiglie si preparano a casa e qualcuna parte da sé. Un'evacuazione successiva le raggiunge prima. **Non** è un'evacuazione con un altro nome.
-- **Evacua:** solo nei borghi autorizzati. Prima mostra sulla mappa le **vie di fuga** verso l'area sicura (`Game::evacuation_routes`), poi chiede **conferma** a ×1 per al massimo 20 s reali. Allo scadere l'ordine non parte.
-- Gli ordini alle famiglie **non si ritirano**.
-- **Uscita organizzata:** al massimo **6 famiglie al minuto** da tutta l'isola (`exit_per_min`). Chi ha l'ordine ed è pronto aspetta il turno. Chi vede il fuoco o lo ha alla porta parte comunque.
-- Strade da difendere: **non** sono un obiettivo. Lo diventano solo se una prova headless mostra un effetto sulla percorribilità. Chiudere una strada non equivale a difenderla.
+- Nessun turno. Il tempo scorre a **×300**: 1 s reale vale 5 min simulati (`rocca::RUN_X`).
+- **Pausa = chiedere all'esperto scientifico.** Il fuoco non si ferma, rallenta a **×60** (`PAUSE_X`). La pausa dura **30 min simulati** (30 s reali, `PAUSE_S`) oppure finisce prima con «Riprendi». Dopo, l'esperto torna disponibile tra **20 min simulati** (`PAUSE_COOLDOWN_S`).
+- **Tutti gli ordini si danno solo in pausa:** spostare le squadre ed evacuare.
+- In pausa compaiono:
+  - la **previsione**: isocrone al 50 % di 16 simulazioni dal fuoco attuale, a +1 h e +3 h, senza interventi (`rocca::forecast`);
+  - il **bollettino meteo**: vento attuale e cambio annunciato;
+  - l'**umidità del combustibile**.
+- Durante il tutorial il tempo è fermo mentre un passo aspetta il giocatore.
+- La partita finisce quando il fuoco è spento e nessuno è in strada, oppure alla durata del caso.
 
-## 3. Il tempo
+## 3. Le squadre
 
-1. **Apertura:** il fuoco aspetta (×0) finché il giocatore sceglie il livello. Poi c'è la pianificazione a ×1, che si chiude con **«Avvia»**.
-2. **Esecuzione:** il tempo scorre veloce, a velocità scelta dal gioco: ×80, ×240 nei tratti senza eventi (`RUN_SPEED`, `QUIET_BOOST`). Il giocatore **cambia il piano mentre il tempo scorre** e il cambio vale subito. **Non ci sono pause né un pulsante «Decidi».**
-3. **Momenti ×1 automatici**, con conto alla rovescia di 45 s reali, il titolo che dice perché e il personaggio che spiega. Si aprono solo per:
-   - **autorizzazione della sindaca** (`Kind::Autorizzazione`);
-   - **cambio di vento**, annunciato 20 min prima dal meteo o appena avvenuto (`Previsione`, `Vento`);
-   - **fuoco vicino**: il fronte può arrivare entro ~30 min alle case di un borgo senza preallerta né evacuazione (`Vicino`).
+- **Una squadra** è un'autobotte con 3 persone. Ci sono 3 squadre dei **vigili del fuoco** alla caserma di Castelvento, il borgo più grande, e 2 squadre di **volontari AIB** al presidio di San Rocco, un borgo minore (`game.json`: `stations`, `roster`).
+- Si spostano su una **griglia esagonale** di 500 m tra centri adiacenti (`rocca::hex`). Si può scegliere solo un esagono attraversato da una strada carrabile della rete principale: la squadra guida fino al punto stradale dell'esagono più vicino al centro.
+- Si sceglie la squadra (icona sulla mappa o barra laterale), poi l'esagono. Il gioco mostra **percorso e tempo di viaggio**, evitando le strade chiuse dal fuoco (`Game::plan_move`). Poi si **conferma**.
+- Arrivata, la squadra **attacca il fuoco come può** (2026-10-14), con il modello di spegnimento conservato (`abm::suppression`):
+  - l'**autobotte** aumenta l'umidità del combustibile che riesce a raggiungere dalla strada (acqua, portata della manichetta);
+  - le **persone a piedi** tagliano la vegetazione di traverso alla via del fuoco. Finita una linea, ne tagliano un'altra più vicina al fuoco, entro 400 m dal punto stradale dell'esagono (`CREW_RANGE_M`).
 
-   Nel momento ×1 il piano attivo continua e quello proposto non muove nulla. Si applica con «Conferma»; allo scadere si applica il piano proposto, se è cambiato. Le altre situazioni (borgo senza mezzi, mezzo perso, strada tagliata) arrivano come **notizie**.
-4. **Fine:** a fine incendio (180 min simulati) compare il finale.
+  Viaggiano insieme all'autobotte e insieme ricevono gli ordini. La squadra **protegge anche le case** entro 300 m (`PROTECT_M`). Si rifornisce da sola, si ritira se il pericolo è troppo alto e può essere persa.
+- Evacuazione e difesa sono **slegate**: le squadre non evacuano e l'evacuazione non muove squadre.
 
-Tutto è misurato in **tempo simulato**: la velocità cambia solo la durata reale. La durata della partita non ha un limite fisso e si valuta nei playtest.
+## 4. L'evacuazione (modello semplificato)
 
-## 4. Previsione del fuoco
+Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famiglia con un numero di persone (`rocca::evac`).
 
-Dall'annuncio del cambio di vento fino a 30 min dopo il giro, la mappa mostra dove il fuoco può arrivare **tra 1 ora e tra 3 ore**. Sono isocrone al 50 % di 16 simulazioni dal fuoco attuale, con il vento attuale e quello annunciato perturbati, **senza interventi** delle squadre (scritto nella legenda). Usa solo lo stato presente e il bollettino, mai il futuro della partita. Codice: `fire::ensemble`, `rocca::forecast`, `game::forecast_view`.
+- **Un borgo alla volta.** Il successivo si può evacuare quando l'ultima famiglia del borgo precedente è partita.
+- Prima della conferma il gioco mostra il **percorso** verso l'area sicura più vicina fuori dal borgo e il **tempo**: preparazione (5 min) + partenze + viaggio.
+- **Limite rigido:** al massimo **20 persone al minuto** escono dal borgo (`evacuation.per_min`). Le famiglie più vicine al punto di partenza partono per prime. In auto si viaggia a 8 m/s.
+- **Strade chiuse dal fuoco:** sono segnate in rosso sulla mappa. Ogni minuto il percorso viene ricontrollato.
+  - Se il fuoco taglia la strada, si cerca un altro percorso.
+  - Se non ce n'è nessuno, l'evacuazione si **interrompe** e chi è ancora a casa passa in **autoprotezione**.
+  - Una famiglia già in strada con la via tagliata cerca un'altra strada, altrimenti si ferma.
+- **Quando il fuoco raggiunge le persone** (stessa regola per lo schermo e per le stelle):
+  - a casa senza ordine: il pericolo alla porta arriva a `ALARMING`, oppure la casa è colpita;
+  - in autoprotezione: la casa è colpita, oppure il pericolo alla porta arriva a `IMPASSABLE`;
+  - in strada: il pericolo dove si trovano arriva a `IMPASSABLE`.
 
-## 5. Giudizio e finale
+## 5. Stelle e classifica
 
-- **Quattro stelle da 1 a 5** (`rocca::score`), calcolate da fatti simulati rispetto allo stesso incendio senza ordini:
-  - **Persone:** famiglie risparmiate;
+- **Tre stelle da 1 a 5** (`rocca::score`), ognuna come quota risparmiata rispetto allo stesso incendio senza ordini:
+  - **Persone:** persone non raggiunte dal fuoco;
   - **Case:** case non colpite;
-  - **Tempismo:** anticipo degli avvisi sull'arrivo del fuoco;
-  - **Misura:** famiglie mandate in strada da borghi dove il fuoco non è arrivato alle case.
-- **Finale semplice:** stelle grandi, posto nella classifica del giorno, al massimo tre righe di debriefing (la frase della sindaca, il «perché» più utile, l'ordine più discutibile). Pulsanti «Riprova» e «Schermata iniziale».
-- **Classifica dei migliori del giorno**, per livello (`score::Board`): somma delle stelle; a pari merito vince chi ha più stelle Persone, poi chi ha giocato prima. Compare a lato della schermata iniziale e nel finale. L'operatore la azzera.
-- Grafica e debrief usano **gli stessi criteri** del punteggio. Le case colpite si chiamano «colpite», non «distrutte», se il dato è un proxy.
-- Lezione accettata (2026-10-13): «evacua appena autorizzato» rende spesso di più, perché l'ordinanza si esegue. Il costo resta visibile in Misura e nel debrief. Il dilemma vero è **chi preallertare, chi difendere e quando**.
+  - **Ettari:** ettari non bruciati.
+
+  Le soglie sono provvisorie.
+- **Classifica del giorno:** prima le stelle Persone, poi Case, poi Ettari; a pari merito vince chi ha giocato prima (2026-10-14). Compare in apertura e nel finale. L'operatore la azzera.
 
 ## 6. Interfaccia
 
-- La mappa occupa quasi tutto lo schermo. Il rendering 3D del diorama è conservato.
-- **Barra laterale:** stato (livello, vento, ora), messaggio ×1 o conferma dell'evacuazione, **piano a tre colonne trascinabili** (Difesa ordinata | Preallerta | Evacuazione, più «Senza ordini»), mezzi, ultimi aggiornamenti, «Abbandona».
-- **Sulla mappa:** schede dei borghi (cliccabili, con i tre pulsanti Difendi / Preallerta / Evacua), etichette dei mezzi, vie di fuga, previsione, freccia del vento, legenda in un angolo.
-- **Personaggi:** sindaca, vigili del fuoco, meteo, volontaria. Parlano con il nome del giocatore.
-- **Apertura:** nome del giocatore, tre livelli (Facile, Medio, Esperto) e classifica di oggi. Il tutorial si salta con «Salta» o con Esc.
-- **Controlli:** mouse o trackpad. Rotella o scroll a due dita per lo zoom, click e trascina per spostare, tasto destro (o Shift) e trascina per ruotare. Home riporta alla vista iniziale. Funziona senza audio, offline, in italiano.
-- **Operatore** (F2 o «Menu» in alto a sinistra): nuova partita, scelta del caso, livello grafico (Alta / Media / Bassa), «Ferma il mondo», «Vista iniziale», «Azzera classifica».
-- **Chiosco presidiato:** avvio, nuova partita e riavvio sono **manuali**. Nessun reset per inattività.
-- **Mario** è un easter egg (tasto M o Start dal titolo, `docs/MARIO.md`): non fa parte del gioco.
+- La mappa occupa quasi tutto lo schermo; il rendering 3D del diorama è conservato.
+- **Barra in alto:**
+  - giorno e ora;
+  - vento e umidità;
+  - «Pausa: chiedi all'esperto» con il tempo di ricarica, oppure «PAUSA · ancora N min» e «Riprendi»;
+  - in pausa, la spiegazione della previsione e il meteo.
+- **Barra laterale:** la scelta in corso (squadra o borgo) con anteprima e «Conferma» / «Evacua»; l'elenco delle squadre con il loro stato; l'elenco dei borghi; i conteggi.
+- **Sulla mappa:**
+  - etichette cliccabili di squadre e borghi;
+  - esagoni, in pausa o con una squadra scelta;
+  - esagono scelto e percorso, tratteggiati in bianco;
+  - strade percorse dalle squadre, in ciano;
+  - evacuazione, in blu: tratteggiata se proposta, continua se in corso;
+  - strade chiuse, in rosso;
+  - isocrone della previsione e freccia del vento.
+- **Avvisi:** l'ultimo evento, in una riga.
+- **Controlli:**
+  - mouse o trackpad;
+  - trascinare per spostare la mappa, un clic senza trascinare per scegliere;
+  - rotella o pizzico per lo zoom, tasto destro o Shift + trascinare per ruotare;
+  - Home per la vista iniziale.
 
-## 7. Fuori dal gioco
+  Funziona offline e senza audio, in italiano.
+- **Operatore** (F2 o «Menu»): nuova visita, vai al giorno 2, seme 1–3, «Ferma il mondo», vista iniziale, livello grafico, azzera la classifica.
+- **Chiosco presidiato:** nessun reset per inattività.
+- **Mario** (easter egg, `docs/MARIO.md`): **scollegato** dal 2026-10-14. Usava le persone dell'IBM e i vecchi stati del chiosco. Da decidere se ricollegarlo.
 
-Niente controllo diretto dei mezzi, disegno di poligoni, menù da gestionale o lunghe spiegazioni. Nessun punteggio di «risorse di comando» e nessun sistema che decida al posto del giocatore. Il territorio è dichiaratamente immaginario: nella realtà si seguono le indicazioni delle autorità.
+## 7. Fuori dal gioco (per ora)
+
+- Personaggi, sindaca, preallerta, pattuglie porta a porta, coordinatore automatico, debriefing testuale: tolti il 2026-10-14. La comunicazione si riscrive dopo.
+- Mezzi aerei e squadre a piedi: non previsti.
+- Il territorio è dichiaratamente immaginario: nella realtà si seguono le indicazioni delle autorità.

@@ -54,19 +54,6 @@ pub struct UnitView {
     pub id: usize,
 }
 
-/// A messenger patrol (`rocca::messengers`), by its index in `Game::teams`.
-#[derive(Component)]
-pub struct TeamView {
-    pub id: usize,
-}
-
-/// The patrols' colour: white and blue, as the Polizia Locale's cars.
-pub const PATROL: Color = Color::srgb(0.85, 0.90, 1.0);
-
-/// A patrol idle within this of its station is parked there, not drawn: the
-/// station is the fire station, and its engines are drawn on it.
-const PARKED_M: f32 = 40.0;
-
 /// A ring or ribbon belonging to a unit's current order. Rebuilt wholesale
 /// whenever the orders change, which is rare and cheap.
 #[derive(Component)]
@@ -98,6 +85,9 @@ pub struct UnitAssets {
     work_gen: u64,
     cleared_count: usize,
 }
+
+/// The volunteers' (AIB) yellow-green kit; the fire brigade's engines are red.
+pub const VOLUNTEERS: Color = Color::srgb(0.80, 0.85, 0.20);
 
 pub fn colour(kind: UnitKind, state: UnitState) -> Color {
     match state {
@@ -167,23 +157,6 @@ pub fn setup(
         ));
     }
     info!("suppression layer: {} unit symbols", sim.crews.units.len());
-
-    // The messenger patrols, when the territory has them. Their number is
-    // fixed by `game.json`, so a restart keeps the same entities.
-    let patrol = meshes.add(crate::toy::patrol());
-    let patrols = sim.messengers.map_or(0, |m| m.teams);
-    for id in 0..patrols {
-        commands.spawn((
-            MaterialMeshBundle::<RetroMaterial> {
-                mesh: patrol.clone(),
-                material: mat(PATROL, 0.9),
-                transform: Transform::from_scale(Vec3::splat(symbol_scale)),
-                visibility: Visibility::Hidden,
-                ..default()
-            },
-            TeamView { id },
-        ));
-    }
 
     let (order_ring, line_todo) = (hdr_blue(&mut materials, vr, 0.95), hdr_blue(&mut materials, vr, 0.5));
     let mut unlit = |r: f32, g: f32, b: f32, a: f32| {
@@ -298,7 +271,14 @@ pub fn update_units(
         // eight of these, and mutating the material in place is what makes a
         // unit visibly change state without a swap table.
         if let Some(m) = materials.get_mut(mat) {
-            let c = colour(u.kind, u.state);
+            let volunteers = sim.teams.iter().any(|t| t.unit == view.id && t.volunteers);
+            let c = match colour(u.kind, u.state) {
+                c if volunteers && matches!(u.state, UnitState::Staged | UnitState::Moving | UnitState::Working | UnitState::Refilling) => {
+                    let _ = c;
+                    VOLUNTEERS
+                }
+                c => c,
+            };
             if m.base.base_color != c {
                 m.base.base_color = c;
                 m.base.emissive = c.to_linear() * 1.2;
@@ -309,42 +289,6 @@ pub fn update_units(
 
 /// Move the messenger patrols: on the road, at the door they knock on, hidden
 /// while parked at their station; dark once caught by the fire.
-pub fn update_teams(
-    sim: Res<Sim>,
-    mut materials: ResMut<Assets<RetroMaterial>>,
-    mut query: Query<(&TeamView, &mut Transform, &mut Visibility, &Handle<RetroMaterial>)>,
-) {
-    use rocca::messengers::Task as T;
-    if !sim.is_changed() {
-        return;
-    }
-    for (view, mut tf, mut vis, mat) in &mut query {
-        let parked = |t: &rocca::messengers::Team| {
-            matches!(t.task, T::Idle { .. }) && (t.pos.x - t.base.x).hypot(t.pos.y - t.base.y) < PARKED_M
-        };
-        let Some(t) = sim.teams.get(view.id).filter(|t| !parked(t)) else {
-            if *vis != Visibility::Hidden {
-                *vis = Visibility::Hidden;
-            }
-            continue;
-        };
-        if *vis != Visibility::Inherited {
-            *vis = Visibility::Inherited;
-        }
-        let ground = sim.scn.terrain.height_at(t.pos);
-        tf.translation = frame::to_bevy(t.pos, ground + 0.05);
-        // as the ground units: heading zero is east, the mesh's nose is +Z
-        tf.rotation = Quat::from_rotation_y(t.heading + std::f32::consts::FRAC_PI_2);
-        if let Some(m) = materials.get_mut(mat) {
-            let c = if t.task == T::Lost { Color::srgb(0.10, 0.10, 0.10) } else { PATROL };
-            if m.base.base_color != c {
-                m.base.base_color = c;
-                m.base.emissive = c.to_linear() * 0.9;
-            }
-        }
-    }
-}
-
 /// UI-in-3D blue, overbright: unlit output goes through the tone mapper, which
 /// greys anything at or under 1.0 against the terrain, so the glow is >1.
 fn hdr_blue(materials: &mut Assets<RetroMaterial>, vr: bool, a: f32) -> Handle<RetroMaterial> {

@@ -13,7 +13,6 @@ pub enum AppState {
     Playing,
 }
 
-mod agents;
 mod boats;
 mod buildings;
 mod camera;
@@ -25,10 +24,7 @@ mod frame;
 mod kiosk;
 mod landmarks;
 mod models;
-mod mario;
 mod overlays;
-mod life;
-mod people;
 mod pick;
 mod playtest;
 mod quality;
@@ -115,14 +111,9 @@ fn main() -> anyhow::Result<()> {
             fire_view::setup,
             vegetation::spawn,
             buildings::spawn,
-            agents::spawn,
-            people::setup,
             overlays::setup,
-            people::mark_refuges,
-            life::setup,
             units::setup,
-            kiosk::ui::load_logo,
-            kiosk::characters::load_portraits,
+            kiosk::marks::setup,
         ),
     )
     .add_systems(OnExit(AppState::Playing), teardown_scene);
@@ -130,12 +121,6 @@ fn main() -> anyhow::Result<()> {
     if std::env::var("KIOSK_FPS").is_ok() {
         app.add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
             .add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::filtered(vec![bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS]));
-    }
-    app.add_plugins(mario::MarioPlugin);
-    if std::env::var_os("MARIO_DEMO").is_some() {
-        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
-            std::time::Duration::from_secs_f64(1.0 / 30.0),
-        ));
     }
     kiosk_systems(&mut app);
     app.add_plugins(forecast_view::ForecastPlugin);
@@ -223,18 +208,10 @@ fn kiosk_systems(app: &mut App) {
         Update,
         (
             kiosk::launch.run_if(in_state(AppState::SelectingScenario)),
-            (kiosk::ui::draw, kiosk::step, kiosk::snap::drive, kiosk::view::camera.run_if(map_camera_allowed), kiosk::snap::hold, kiosk::shots, playtest::observe)
+            (kiosk::ui::draw, kiosk::step, kiosk::snap::drive, kiosk::view::camera, kiosk::snap::hold, playtest::observe)
                 .chain()
                 .run_if(in_state(AppState::Playing)),
-            kiosk::view::hide_game_overlays
-                .after(overlays::update_markers)
-                .after(overlays::update_wind)
-                .after(overlays::update_orders)
-                .after(overlays::update_routes)
-                .after(units::sync_orders)
-                .after(units::update_work_overlay)
-                .run_if(in_state(AppState::Playing)),
-            (fire_view::reset, buildings::reset, people::reset, overlays::reset, units::reset)
+            (fire_view::reset, buildings::reset, overlays::reset, units::reset, kiosk::marks::reset)
                 .after(kiosk::step)
                 .run_if(in_state(AppState::Playing)),
             (
@@ -242,32 +219,23 @@ fn kiosk_systems(app: &mut App) {
                 fire_view::update_flames,
                 (vegetation::burn, vegetation::lod),
                 buildings::damage,
-                people::spawn_vehicles,
-                people::update_people,
-                people::update_vehicles,
-                life::update.run_if(resource_exists::<life::LifeAssets>),
                 units::update_units,
-                units::update_teams,
-                overlays::update_markers,
                 overlays::update_wind,
                 overlays::animate_wind,
-                overlays::update_orders,
                 overlays::pulse_rings,
                 rings::spin,
                 overlays::no_ui_shadows,
-                overlays::update_routes,
                 units::sync_orders,
                 units::update_work_overlay,
+                kiosk::marks::update_hexes,
+                kiosk::marks::update_orders,
+                kiosk::marks::update_closed,
             )
                 .after(fire_view::reset)
                 .after(buildings::reset)
-                .after(people::reset)
                 .after(units::reset)
+                .after(kiosk::marks::reset)
                 .run_if(in_state(AppState::Playing)),
         ),
     );
-}
-
-fn map_camera_allowed(mario: Res<mario::Playground>) -> bool {
-    !mario.active
 }

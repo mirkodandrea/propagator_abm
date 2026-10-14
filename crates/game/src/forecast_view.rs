@@ -199,7 +199,7 @@ pub fn update(
         }
     }
     // the title screen's game shows no signs, nor does the debrief
-    let hide = kiosk.title || kiosk.phase == crate::kiosk::Phase::Fine;
+    let hide = !matches!(kiosk.phase, crate::kiosk::Phase::Tutorial | crate::kiosk::Phase::Gioco);
     let want = if hide { Visibility::Hidden } else { Visibility::Inherited };
     for (_, mut v) in &mut marks {
         if *v != want {
@@ -218,7 +218,7 @@ pub fn labels(
     cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::OrbitCamera>>,
 ) {
     let Some((_, at)) = &view.shown else { return };
-    if kiosk.title || kiosk.phase == crate::kiosk::Phase::Fine {
+    if !matches!(kiosk.phase, crate::kiosk::Phase::Tutorial | crate::kiosk::Phase::Gioco) {
         return;
     }
     let Ok((cam, gt)) = cameras.get_single() else { return };

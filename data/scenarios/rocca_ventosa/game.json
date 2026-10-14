@@ -3,67 +3,56 @@
   "moisture_pct": 3.0,
   "stations": [
     {
-      "name": "Vigili del fuoco - Castelvento",
+      "name": "Caserma dei Vigili del fuoco - Castelvento",
       "pos": [
         5150.459399563263,
         4968.997322994763
       ]
     },
     {
-      "name": "Squadra AIB (dal traghetto, al porto)",
+      "name": "Presidio dei volontari AIB - San Rocco",
       "pos": [
-        7890.0,
-        3412.6
-      ]
+        6187.0,
+        4261.0
+      ],
+      "volunteers": true
     }
   ],
   "roster": [
     {
-      "kind": "engine",
-      "station": 0
+      "station": 0,
+      "crew": 3
     },
     {
-      "kind": "engine",
-      "station": 0
+      "station": 0,
+      "crew": 3
     },
     {
-      "kind": "hand_crew",
-      "station": 1
+      "station": 0,
+      "crew": 3
+    },
+    {
+      "station": 1,
+      "crew": 3
+    },
+    {
+      "station": 1,
+      "crew": 3
     }
   ],
-  "featured": [
-    "expert",
-    "medium",
-    "easy"
-  ],
-  "levels": [
-    {
-      "name": "Facile",
-      "case": "easy",
-      "about": "Un paese minacciato, il vento non cambia."
-    },
-    {
-      "name": "Medio",
-      "case": "medium",
-      "about": "Più paesi in pericolo e il vento che gira."
-    },
-    {
-      "name": "Esperto",
-      "case": "expert",
-      "about": "Il fuoco punta due paesi e le squadre non bastano per tutti."
-    }
-  ],
-  "messengers": {
-    "teams": 4,
-    "per_min": 1.0,
-    "broadcast": true,
-    "by_priority": false
-  },
-  "mayor": {
-    "lead_s": 1200
-  },
-  "exit_per_min": 6.0,
   "cases": [
+    {
+      "name": "tutorial",
+      "near": "Le Ghiande",
+      "ignition": [
+        3792.0,
+        3295.0
+      ],
+      "radius_m": 40.0,
+      "wind_from_deg": 135.0,
+      "wind_kmh": 20.0,
+      "minutes": 150
+    },
     {
       "name": "expert",
       "near": "Castelvento",
@@ -92,13 +81,14 @@
       "radius_m": 60.0,
       "wind_from_deg": 119.0,
       "wind_kmh": 40.0,
-      "minutes": 180,
+      "minutes": 300,
       "shift": {
         "at_min": 45,
         "wind_from_deg": 50.0,
         "wind_kmh": 40.0,
         "toward": "Pian dei Grilli"
-      }
+      },
+      "start_min": 30
     },
     {
       "name": "easy",
@@ -112,5 +102,30 @@
       "wind_kmh": 40.0,
       "minutes": 180
     }
-  ]
+  ],
+  "evacuation": {
+    "per_min": 20.0,
+    "prep_min": 5.0
+  },
+  "game": "medium",
+  "tutorial": {
+    "case": "tutorial",
+    "moves": [
+      [
+        0,
+        [
+          3792.0,
+          3295.0
+        ]
+      ],
+      [
+        1,
+        [
+          3615.0,
+          3472.0
+        ]
+      ]
+    ],
+    "evacuate": "Le Ghiande"
+  }
 }

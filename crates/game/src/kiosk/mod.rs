@@ -1,31 +1,20 @@
-//! The kiosk: one territory, one game, started and restarted by the operator.
+//! The kiosk: the flow of a visit, around the one simulation and gameplay
+//! authority, [`rocca::Game`]. No rules live here: this module holds what the
+//! player is choosing (a team, a hex, a district), asks the game for its
+//! previews, gives the orders the player confirms, and runs the clock at the
+//! game's speed (docs/01-GIOCO.md).
 //!
-//! Everything the game decides is in [`rocca::Game`]; this module only holds
-//! what the player is composing (the proposed plan), asks the game for its
-//! preview, commits it on request and runs the clock. No rules live here.
-//!
-//! Flow (docs/01-GIOCO.md, 2026-10-13: the world never stops for the player):
-//! **Pianifica**, the decision moment at ×1 (first the map with orders
-//! locked and the world still until a level is picked, then a short tour of
-//! the screen (`tutorial`), then the proposed plan is previewed; later the
-//! same moment on «Decidi») → **Esegui** (×N, speed chosen by the game) ⇄
-//! **Crisi** (×1 with a countdown: the mayor authorises an evacuation) →
-//! **Fine** (stars and facts per district, against the same fire with no
-//! orders). No
-//! inactivity reset: a new game starts from the debrief's «Riprova» / «Altro
-//! incendio» or from the operator bar (F2), never by itself.
-//!
-//! Before all of it, the **title screen**: a scripted game plays behind the
-//! title (same engine, same camera, a fixed plan, crises closed by a timer)
-//! until someone presses «Gioca». A game can be abandoned at any time
-//! (`Kiosk::leave`) and a finished one goes back to the title: both reach the
-//! title the same way, by [`to_title`].
+//! Flow: **Intro** (name, «Inizia») → **Tutorial** (day 1: a scripted small
+//! fire, one prompted step at a time; the world stands still while a step
+//! waits for the player) → **Giorno2** (one screen: a new day, a new fire) →
+//! **Gioco** (×300, pauses at ×60, orders only in pause) → **Fine** (stars
+//! against the same fire with no orders, the day's board). A new visit starts
+//! from the end screen or the operator menu (F2), never by itself.
 
 pub mod board;
-pub mod characters;
 pub mod icons;
+pub mod marks;
 pub mod snap;
-pub mod tutorial;
 pub mod ui;
 pub mod view;
 
@@ -34,28 +23,16 @@ use std::sync::{Arc, Mutex};
 
 use bevy::prelude::*;
 use bevy::window::WindowMode;
-use rocca::district::Exposure;
-use rocca::{Game, Outcome, Plan, Proposal, Territory};
+use rocca::tutorial::{Expect, Script};
+use rocca::{Axial, EvacPlan, MovePlan, Outcome, Territory};
+use scenario::Pos;
 
 use crate::sim::{Sim, SimRestarted};
 use crate::{AppState, DataPath};
 
 pub const TITLE: &str = "Isola di Roccavento";
-/// Simulated seconds per real second while the game runs (spec §2: ×40; user,
-/// 2026-10-12: faster, with a selector in the side bar).
-pub const RUN_SPEED: f32 = 80.0;
-/// Real seconds the player has when the mayor authorises an evacuation
-/// (spec §2: ~45 s at ×1).
-pub const CRISIS_S: f32 = 45.0;
-/// Real seconds the player has to confirm an evacuation, its way out on the
-/// map, at ×1 (user, 2026-10-13); then it is dropped.
-pub const CONFIRM_EVAC_S: f32 = 20.0;
-/// How many times faster the game runs while nothing is happening
-/// (`rocca::Game::is_quiet`): the waits after the orders were the dull part.
-/// ×40·3 = ×120.
-pub const QUIET_BOOST: f32 = 3.0;
-/// Simulated seconds without events before the game counts as quiet.
-pub const QUIET_S: i64 = 10 * 60;
+/// Real seconds a notice (a refused order, a closed road) stays on screen.
+pub const NOTICE_S: f32 = 4.0;
 
 pub fn window_mode() -> WindowMode {
     if cfg!(target_arch = "wasm32") || std::env::var("KIOSK_WINDOWED").is_ok() {
@@ -67,26 +44,25 @@ pub fn window_mode() -> WindowMode {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Phase {
-    /// The opening plan, before «Avvia» (×0 until a level is picked, then
-    /// ×1): the player ranks places and chooses civil orders.
-    Pianifica,
-    /// ×N: the plan in force is being carried out, and the player changes
-    /// it as the world runs (user, 2026-10-13: no pauses, no «Decidi»).
-    Esegui,
-    /// ×1: a crisis, the mayor's authorisation. The active plan goes on; the
-    /// proposed one is applied on confirmation or when the countdown runs out.
-    Crisi,
-    /// The case has run its course.
+    /// The player's name and «Inizia»; the tutorial's fire is on the map, still.
+    Intro,
+    /// Day 1, the scripted tutorial.
+    Tutorial,
+    /// Between the tutorial and the game: «Giorno 2».
+    Giorno2,
+    /// The played game.
+    Gioco,
+    /// The end: stars and board.
     Fine,
 }
 
-/// A camera move asked by the interface: look at `at` (the home view's
-/// middle if `None`) from `zoom` times the home view's distance, with the
-/// home view's yaw and pitch.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct Shot {
-    pub at: Option<scenario::Pos>,
-    pub zoom: f32,
+/// What the player has selected on the map or in the side bar.
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub enum Selection {
+    #[default]
+    None,
+    Team(usize),
+    District(usize),
 }
 
 #[derive(Resource)]
@@ -95,275 +71,159 @@ pub struct Kiosk {
     /// Real seconds since the phase began.
     pub phase_t: f32,
     pub territory: Territory,
-    pub case: String,
+    pub data: PathBuf,
     pub seed: u64,
-    /// The plan being composed: what the map previews.
-    pub proposed: Plan,
-    /// The coordinator's answer to `proposed`, from the state now.
-    pub preview: Option<Proposal>,
-    /// `Sim::generation` the preview was computed at, and whether the
-    /// proposed plan changed since.
-    preview_at: u64,
-    pub dirty: bool,
-    /// Simulated seconds per real second while running.
-    pub speed: f32,
-    pub error: Option<String>,
-    /// The crisis being decided, while in [`Phase::Crisi`].
-    pub crisis: Option<rocca::Crisis>,
-    /// Per district, how the fire stands to it now (refreshed with the preview).
-    pub risk: Vec<Option<Exposure>>,
-    /// Free-flow journey range in minutes and homes without a route.
-    /// Per district, the evacuation journey in minutes (median, longest)
-    /// and the families with no way out.
-    pub evacuation: Vec<(Option<(u32, u32)>, usize)>,
-    /// Per district, the typical minutes families still at home would take
-    /// to get ready once ordered out (the preparation the pre-alert has not
-    /// already done), if anyone is at home.
-    pub readying: Vec<Option<u32>>,
-    /// The same case and seed with no orders, run beside the game for the
-    /// debrief: (case, seed) and the result when it is ready.
-    pub baseline: Arc<Mutex<Option<(String, u64, Result<Outcome, String>)>>>,
-    /// The operator bar (F2).
-    pub operator: bool,
-    /// «Vista iniziale» was pressed: the camera goes back to the home view.
-    pub reset_view: bool,
-    /// While time runs the camera follows the fire; a hand on the map (or
-    /// the button in the view controls) turns it off.
-    pub follow: bool,
-    /// The title screen is showing, with a scripted game behind it ([`demo`]).
-    pub title: bool,
-    /// Real seconds the title screen's game has been on show: the camera
-    /// director's clock ([`demo_shot`]).
-    pub demo_t: f32,
-    /// The simulation speed the director asks for, eased.
-    demo_speed: f32,
-    /// The shot being held (its index) and what it looks at.
-    pub demo_pick: (usize, Subject),
-    /// Leave the game for the title screen at the next frame (the sidebar's
-    /// «Abbandona», the tour's «Esci», the debrief's «Schermata iniziale»).
-    pub leave: bool,
-    /// Real time «Abbandona» was pressed, waiting for the confirmation.
-    pub abort_armed: Option<f64>,
-    /// The opening screen is showing: at launch, after the operator's «Nuova
-    /// partita» (a new visitor) and after «Riprova» (the same one, to pick a
-    /// level; the name is kept).
-    pub intro: bool,
-    /// The visitor picked a difficulty on the opening screen. Before that the map, the fire
-    /// and the chips show, but no order can be given (user, 2026-10-09).
-    pub started: bool,
-    /// The first plan was confirmed («Avvia»): from then on orders apply as
-    /// they are given.
-    pub begun: bool,
-    /// «Evacua» was pressed for this district while the time runs: its way
-    /// out is on the map, the world at ×1, until «Conferma» or «Annulla» or
-    /// [`CONFIRM_EVAC_S`] real seconds (the second value) pass.
-    pub confirm_evac: Option<(usize, f32)>,
-    /// The operator stopped the world (F2): the one way it stands still.
-    pub frozen: bool,
-    /// The world held for a screenshot (`KIOSK_SNAP`), without saying so.
-    pub still: bool,
-    /// The level being played (`Territory::levels`), and the one just
-    /// picked on the opening screen, for `ui::draw` to start.
-    pub level: Option<usize>,
-    pub picked_level: Option<usize>,
-    /// The district whose badge is opened on the map (a click), if any.
-    pub selected: Option<usize>,
-    /// The day's best per level (`rocca::score::Board`, 2026-10-13).
-    pub board: rocca::score::Board,
-    /// The player's first name, typed on the opening screen before the
-    /// first game (user, 2026-10-12): the characters speak to them by it and
-    /// the board shows it. Kept for «Riprova», cleared by the operator's
-    /// «Nuova partita» (a new visitor).
     pub player: String,
-    /// This game is on the day's board.
-    pub saved: bool,
-    /// Where this game stands on the board once saved: the date and the time
-    /// it was stamped with.
-    pub saved_at: (String, u64),
-    /// Real time «Azzera classifica» was first pressed (operator bar).
-    pub board_reset_armed: Option<f64>,
-    /// Real seconds the player has at a crisis; the operator can lengthen it
-    /// for slow readers.
-    pub crisis_s: f32,
-    /// The case chosen in the operator bar for the next game.
-    pub pick: String,
-    /// Real time «Nuova partita» was first pressed, waiting for the second
-    /// press that confirms throwing away a game in progress.
-    pub reset_armed: Option<f64>,
-    /// Logical pixels the side bar takes on the right; the camera draws the
-    /// map in the rest (`view::camera`).
+    /// The tutorial's script and the step on show.
+    pub script: Option<Script>,
+    pub step: usize,
+    pub selection: Selection,
+    /// The move being previewed: the team, the hex and the game's answer.
+    pub move_plan: Option<Result<MovePlan, String>>,
+    pub move_hex: Option<Axial>,
+    /// The evacuation being previewed.
+    pub evac_plan: Option<Result<EvacPlan, String>>,
+    /// `Sim::generation` the previews were computed at.
+    plans_at: u64,
+    /// A short message (refused order, event) and its age in real seconds.
+    pub notice: Option<(String, f32)>,
+    /// Log entries already turned into notices.
+    pub log_seen: usize,
+    /// The same fire with no orders, run beside the game: (case, seed) and
+    /// the result when ready.
+    pub baseline: Arc<Mutex<Option<(String, u64, Result<Outcome, String>)>>>,
+    /// The day's board, and the stamp (day, time) of this game once saved.
+    pub board: rocca::score::Board,
+    pub saved: Option<(String, u64)>,
+    /// Width of the side bar, logical px: the camera frames the map left of it.
     pub side_w: f32,
-    /// Where the camera is flying to, if anywhere; it clears it on arrival.
-    pub shot: Option<Shot>,
-    /// The step of the tour being shown (`tutorial`), if any.
-    pub tour: Option<usize>,
-    /// The tour was shown to this visitor: not again at «Riprova», again
-    /// after the operator's «Nuova partita».
-    pub toured: bool,
-    /// The operator can turn the tour off (F2, or `KIOSK_TUTORIAL=0`).
-    pub tour_on: bool,
-    /// In the browser (no threads) the no-orders game runs here, a few steps
-    /// a frame.
-    #[cfg(target_arch = "wasm32")]
-    run: Option<Box<Game>>,
-    data: PathBuf,
+    /// A ground point clicked on the map this frame (set by [`view::camera`]).
+    pub click: Option<Pos>,
+    pub follow: bool,
+    pub reset_view: bool,
+    /// The operator menu (F2).
+    pub operator: bool,
+    /// «Ferma il mondo» (operator).
+    pub frozen: bool,
+    pub error: Option<String>,
 }
 
 impl Kiosk {
     fn new(territory: Territory, data: PathBuf) -> Kiosk {
-        let case = std::env::var("KIOSK_CASE").ok().filter(|c| territory.case(c).is_some()).unwrap_or_else(|| territory.playlist()[0].clone());
-        let speed = std::env::var("KIOSK_SPEED").ok().and_then(|v| v.parse().ok()).unwrap_or(RUN_SPEED);
         Kiosk {
-            phase: Phase::Pianifica,
+            phase: Phase::Intro,
             phase_t: 0.0,
             territory,
-            case,
-            seed: 1,
-            proposed: Plan::default(),
-            preview: None,
-            preview_at: u64::MAX,
-            dirty: true,
-            speed,
-            error: None,
-            crisis: None,
-            risk: vec![],
-            evacuation: vec![],
-            readying: vec![],
-            baseline: Arc::new(Mutex::new(None)),
-            operator: false,
-            reset_view: false,
-            follow: true,
-            side_w: 0.0,
-            shot: None,
-            tour: None,
-            toured: false,
-            tour_on: std::env::var("KIOSK_TUTORIAL").map_or(true, |v| v != "0"),
-            crisis_s: CRISIS_S,
-            title: true,
-            demo_t: 0.0,
-            demo_speed: 1.0,
-            demo_pick: (usize::MAX, Subject::Crew(usize::MAX)),
-            leave: false,
-            abort_armed: None,
-            intro: false,
-            started: false,
-            begun: false,
-            confirm_evac: None,
-            frozen: false,
-            still: false,
-            level: None,
-            picked_level: None,
-            selected: None,
-            board: board::load(),
-            player: String::new(),
-            saved: false,
-            saved_at: Default::default(),
-            board_reset_armed: None,
-            pick: String::new(),
-            reset_armed: None,
-            #[cfg(target_arch = "wasm32")]
-            run: None,
             data,
+            seed: 1,
+            player: String::new(),
+            script: None,
+            step: 0,
+            selection: Selection::None,
+            move_plan: None,
+            move_hex: None,
+            evac_plan: None,
+            plans_at: 0,
+            notice: None,
+            log_seen: 0,
+            baseline: Default::default(),
+            board: board::load(),
+            saved: None,
+            side_w: 0.0,
+            click: None,
+            follow: true,
+            reset_view: false,
+            operator: false,
+            frozen: false,
+            error: None,
         }
-    }
-
-    /// The next case of the kiosk's playlist («Altro incendio»).
-    pub fn next_case(&self) -> String {
-        let list = self.territory.playlist();
-        let at = list.iter().position(|c| *c == self.case).map_or(0, |i| i + 1);
-        list[at % list.len()].clone()
-    }
-
-    /// The no-orders run for this case and seed, if it has finished.
-    pub fn baseline(&self) -> Option<Result<Outcome, String>> {
-        let b = self.baseline.lock().ok()?;
-        b.as_ref().filter(|(c, s, _)| *c == self.case && *s == self.seed).map(|(_, _, r)| r.clone())
-    }
-
-    /// Start the no-orders run in the background, unless it is already done.
-    fn start_baseline(&mut self) {
-        if self.baseline().is_some() {
-            return;
-        }
-        let (slot, data, case, seed) = (self.baseline.clone(), self.data.clone(), self.case.clone(), self.seed);
-        if let Ok(mut b) = slot.lock() {
-            *b = None;
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        std::thread::spawn(move || {
-            let r = Game::without_orders(&data, &case, seed).map_err(|e| format!("{e:#}"));
-            if let Ok(mut b) = slot.lock() {
-                *b = Some((case, seed, r));
-            }
-        });
-        #[cfg(target_arch = "wasm32")]
-        match Game::new(&data, &case, seed) {
-            Ok(g) => self.run = Some(Box::new(g)),
-            Err(e) => {
-                if let Ok(mut b) = slot.lock() {
-                    *b = Some((case, seed, Err(format!("{e:#}"))));
-                }
-            }
-        }
-    }
-
-    /// Browser only: advance the no-orders game a little (`Game::without_orders`
-    /// in steps).
-    #[cfg(target_arch = "wasm32")]
-    fn advance_baseline(&mut self) {
-        let steps_per_frame = if crate::playtest::active() { 100 } else { 4 };
-        let Some(g) = self.run.as_mut() else { return };
-        let end = g.case.duration_s();
-        for _ in 0..steps_per_frame {
-            if g.time_s() >= end {
-                break;
-            }
-            if let Err(e) = g.step() {
-                let r = Err(format!("{e:#}"));
-                if let Ok(mut b) = self.baseline.lock() {
-                    *b = Some((self.case.clone(), self.seed, r));
-                }
-                self.run = None;
-                return;
-            }
-        }
-        if g.time_s() >= end {
-            let r = Ok(g.outcome());
-            if let Ok(mut b) = self.baseline.lock() {
-                *b = Some((g.case.name.clone(), g.seed, r));
-            }
-            self.run = None;
-        }
-    }
-
-    /// Whether the chips take orders: not before the opening screen's start.
-    pub fn can_order(&self) -> bool {
-        self.started
     }
 
     pub fn enter(&mut self, phase: Phase) {
         self.phase = phase;
         self.phase_t = 0.0;
-        // an opened chip would cover the crisis's own panel
-        self.selected = None;
-        self.confirm_evac = None;
+        self.clear_selection();
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selection = Selection::None;
+        self.move_plan = None;
+        self.move_hex = None;
+        self.evac_plan = None;
+    }
+
+    pub fn notify(&mut self, text: impl Into<String>) {
+        self.notice = Some((text.into(), 0.0));
+    }
+
+    pub fn tutorial_case(&self) -> String {
+        self.territory.tutorial.as_ref().map_or_else(|| self.territory.game.clone(), |t| t.case.clone())
+    }
+
+    /// The tutorial step on show.
+    pub fn expect(&self) -> Option<Expect> {
+        (self.phase == Phase::Tutorial).then(|| self.script.as_ref().and_then(|s| s.steps.get(self.step)).map(|s| s.expect)).flatten()
+    }
+
+    /// Whether the player may do this now: in the tutorial only what the
+    /// step asks; in the game anything, the game itself refusing what its
+    /// rules do not allow.
+    pub fn allows(&self, what: Expect) -> bool {
+        match self.phase {
+            Phase::Gioco => true,
+            Phase::Tutorial => match (self.expect(), what) {
+                (Some(Expect::Move(t, _)), Expect::Select(u)) => t == u,
+                (Some(Expect::Move(t, at)), Expect::Move(u, bt)) => t == u && at == bt,
+                (Some(e), w) => e == w,
+                (None, _) => false,
+            },
+            _ => false,
+        }
+    }
+
+    /// The tutorial goes on when the player did what the step asked.
+    pub fn done(&mut self, what: Expect) {
+        if self.phase == Phase::Tutorial && self.expect() == Some(what) {
+            self.step += 1;
+        }
+    }
+
+    /// The no-orders game of `case`, when it is done.
+    pub fn baseline(&self) -> Option<Result<Outcome, String>> {
+        self.baseline.lock().ok().and_then(|b| b.as_ref().map(|(_, _, r)| r.clone()))
+    }
+
+    fn start_baseline(&mut self, case: &str) {
+        let slot = self.baseline.clone();
+        if let Ok(mut s) = slot.lock() {
+            *s = None;
+        }
+        let (data, case, seed) = (self.data.clone(), case.to_string(), self.seed);
+        #[cfg(not(target_arch = "wasm32"))]
+        std::thread::spawn(move || {
+            let r = rocca::Game::without_orders(&data, &case, seed).map_err(|e| format!("{e:#}"));
+            if let Ok(mut s) = slot.lock() {
+                *s = Some((case, seed, r));
+            }
+        });
+        #[cfg(target_arch = "wasm32")]
+        {
+            // no threads in the browser: computed at the end ([`step`])
+            let _ = (data, case, seed, slot);
+        }
     }
 }
 
-/// Load the territory and start the first game.
 pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<NextState<AppState>>, mut exit: EventWriter<AppExit>) {
     let built = Territory::load(&data.0).and_then(|t| {
         let k = Kiosk::new(t, data.0.clone());
-        let sim = Sim::new(&data.0, &k.case, k.seed)?;
+        let sim = Sim::new(&data.0, &k.tutorial_case(), k.seed)?;
         Ok((k, sim))
     });
     match built {
-        Ok((mut k, sim)) => {
-            k.proposed = Plan::new(sim.districts.len());
-            k.pick = k.case.clone();
+        Ok((k, sim)) => {
             commands.insert_resource(k);
             commands.insert_resource(sim);
-            commands.insert_resource(characters::Speech::default());
             next.set(AppState::Playing);
         }
         Err(e) => {
@@ -373,542 +233,115 @@ pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<Next
     }
 }
 
-/// New game, same territory: the operator's manual restart.
-pub fn new_game(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
-    restart(kiosk, sim, restarted, true);
-}
-
-/// Back to the title screen: a new visitor (the name, the tour and the level
-/// are forgotten) and the next case of the playlist playing by itself.
-pub fn to_title(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
-    kiosk.title = true;
-    kiosk.demo_t = 0.0;
-    kiosk.demo_pick = (usize::MAX, Subject::Crew(usize::MAX));
-    kiosk.intro = false;
-    kiosk.leave = false;
-    kiosk.abort_armed = None;
-    kiosk.tour = None;
-    kiosk.toured = false;
-    kiosk.level = None;
-    kiosk.picked_level = None;
-    kiosk.player.clear();
-    kiosk.case = kiosk.next_case();
-    restart(kiosk, sim, restarted, false);
-}
-
-/// The place a crisis is about, if it is about one.
-fn crisis_place(c: &rocca::Crisis) -> Option<usize> {
-    c.kind.district()
-}
-
-/// Real seconds a shot of the title screen's camera lasts: long enough to
-/// see something happen, not a montage.
-pub const SHOT_S: f32 = 26.0;
-
-/// What the title screen's camera is looking at; chosen once per shot, by
-/// what the game is showing (`view::pick_shot`).
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Subject {
-    /// The whole burning front and the towns near it.
-    Wide,
-    /// The front, close.
-    Front,
-    /// The town the fire is nearest to.
-    District(usize),
-    /// A ground crew working near the fire.
-    Crew(usize),
-}
-
-impl Subject {
-    /// How fast the game runs while this is on show, against the kiosk's
-    /// speed: fast over the whole front, slow enough on a crew to see it move.
-    fn pace(self) -> f32 {
-        match self {
-            Subject::Wide => 1.5,
-            Subject::Front => 0.8,
-            Subject::District(_) => 0.8,
-            Subject::Crew(_) => 0.4,
-        }
+/// A new visit: the tutorial's fire, still, under the name screen.
+pub fn new_visit(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+    let case = k.tutorial_case();
+    if let Err(e) = sim.restart(&case, k.seed) {
+        k.error = Some(format!("{e:#}"));
     }
+    restarted.send(SimRestarted);
+    k.player.clear();
+    k.saved = None;
+    k.log_seen = 0;
+    k.script = None;
+    k.step = 0;
+    k.enter(Phase::Intro);
 }
 
-/// The index of the shot at real time `t` of the title screen.
-pub fn demo_shot(t: f32) -> usize {
-    (t / SHOT_S) as usize
-}
-
-/// The plan every scripted game starts with: the place the fire was picked
-/// for first, the others after it, a pre-alert there.
-fn scripted_plan(sim: &Sim) -> Plan {
-    let near = sim.district_index(&sim.case.near).unwrap_or(0);
-    let mut prio = vec![near];
-    prio.extend((0..sim.districts.len()).filter(|&d| d != near));
-    Plan::new(sim.districts.len()).with_priorities(&prio).with_civil(near, rocca::Civil::Preallerta)
-}
-
-/// The game behind the title screen, played by a script: the plan above, the
-/// place a crisis names put first after a few seconds, and when the case has
-/// run its course the next one starts. Nothing here is scored or saved.
-fn demo(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
-    match kiosk.phase {
-        Phase::Pianifica if kiosk.phase_t > 2.0 => {
-            kiosk.proposed = scripted_plan(sim);
-            commit(kiosk, sim);
-            kiosk.begun = true;
-            kiosk.enter(Phase::Esegui);
-        }
-        Phase::Crisi if kiosk.phase_t > 3.0 => {
-            if let Some(d) = kiosk.crisis.as_ref().and_then(crisis_place) {
-                let mut prio = vec![d];
-                prio.extend(kiosk.proposed.priorities.iter().copied().filter(|&x| x != d));
-                kiosk.proposed.priorities = prio;
-                // the mayor's authorisation: the scripted player takes it
-                if sim.may_evacuate(d) {
-                    kiosk.proposed.civil[d] = rocca::Civil::Evacua;
-                }
-            }
-            close_crisis(kiosk, sim);
-        }
-        Phase::Fine if kiosk.phase_t > 6.0 => {
-            kiosk.case = kiosk.next_case();
-            restart(kiosk, sim, restarted, false);
-        }
-        _ => {}
-    }
-}
-
-/// Start the case again from its beginning; `baseline` also starts the
-/// no-orders run the debrief compares with (not needed by the scripted game).
-fn restart(kiosk: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, baseline: bool) {
-    match sim.restart(&kiosk.case, kiosk.seed) {
-        Ok(()) => {
-            kiosk.proposed = Plan::new(sim.districts.len());
-            kiosk.dirty = true;
-            kiosk.error = None;
-            kiosk.crisis = None;
-            kiosk.started = false;
-            kiosk.begun = false;
-            kiosk.frozen = false;
-            kiosk.selected = None;
-            kiosk.saved = false;
-            if baseline {
-                kiosk.start_baseline();
-            }
-            kiosk.enter(Phase::Pianifica);
-            restarted.send(SimRestarted);
-        }
-        Err(e) => kiosk.error = Some(format!("{e:#}")),
-    }
-}
-
-/// End a crisis: the proposed plan becomes active if the player changed it
-/// (revalidated now); otherwise the active plan simply goes on.
-pub fn close_crisis(kiosk: &mut Kiosk, sim: &mut Sim) {
-    if kiosk.proposed != sim.active || !kiosk.begun {
-        commit(kiosk, sim);
-    }
-    kiosk.crisis = None;
-    kiosk.begun = true;
-    kiosk.enter(Phase::Esegui);
-}
-
-/// Commit the proposed plan: the game revalidates it from the state now.
-pub fn commit(kiosk: &mut Kiosk, sim: &mut Sim) {
-    match sim.commit(kiosk.proposed.clone()) {
-        Ok(_) => {
-            kiosk.proposed = sim.active.clone();
-            kiosk.dirty = true;
-            sim.generation += 1;
-        }
-        Err(e) => kiosk.error = Some(format!("{e:#}")),
-    }
-}
-
-/// Run the clock and keep the preview current.
-pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: EventWriter<SimRestarted>,
-    mario: Res<crate::mario::Playground>,
-    mut was_mario: Local<bool>,
-) {
-    let dt = crate::playtest::delta(time.delta_seconds());
-    // Title exploration has its own clock; the demo director stays suspended
-    // so it cannot restart the world beneath Mario or start the player's game.
-    if mario.active && kiosk.title {
-        sim.speed = if kiosk.frozen || kiosk.still || sim.time_s() >= sim.case.duration_s() {
-            0.
-        } else { mario.simulation_speed };
-        if sim.speed > 0. {
-            if let Err(e) = crate::playtest::tick(&mut sim, dt) { kiosk.error = Some(format!("{e:#}")); }
-            // This is still the title demo: no player decision or new orders.
-            let _ = sim.take_crisis();
-        }
+/// «Inizia»: the tutorial, or straight to the game if there is none.
+pub fn start_tutorial(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+    if k.territory.tutorial.is_none() {
+        start_game(k, sim, restarted);
         return;
     }
-    let mario_clock = {
-        let active = mario.active && kiosk.phase == Phase::Pianifica;
-        if *was_mario && !active { kiosk.dirty = true; }
-        *was_mario = active;
-        active
-    };
-    #[cfg(target_arch = "wasm32")]
-    kiosk.advance_baseline();
-    // the operator's stop holds the countdowns too
-    if !kiosk.frozen {
-        kiosk.phase_t += dt;
+    let case = k.tutorial_case();
+    if sim.case.name != case || sim.time_s() > rocca::STEP_S {
+        if let Err(e) = sim.restart(&case, k.seed) {
+            k.error = Some(format!("{e:#}"));
+        }
+        restarted.send(SimRestarted);
     }
-    if kiosk.title {
-        kiosk.demo_t += dt;
-        demo(&mut kiosk, &mut sim, &mut restarted);
-        // the director's pace: eased, so speed changes are felt, not jumped
-        let want = kiosk.demo_pick.1.pace();
-        kiosk.demo_speed += (want - kiosk.demo_speed) * (1.0 - (-0.4 * dt).exp());
+    k.script = Script::of(sim);
+    k.step = 0;
+    k.log_seen = sim.log.len();
+    k.enter(Phase::Tutorial);
+}
+
+/// Day 2: the played fire, with its no-orders twin started beside it.
+pub fn start_game(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+    let case = k.territory.game.clone();
+    if let Err(e) = sim.restart(&case, k.seed) {
+        k.error = Some(format!("{e:#}"));
     }
-    // The opening plan runs at ×1 once a level is picked; before, and during
-    // the tour, the world waits.
-    let deciding = kiosk.phase == Phase::Pianifica && kiosk.started && !kiosk.title && kiosk.tour.is_none();
-    // Orders given while the time runs apply at once (user, 2026-10-13);
-    // only an evacuation waits for its confirmation, below.
-    if kiosk.phase == Phase::Esegui && kiosk.begun && !kiosk.title && kiosk.proposed != sim.active {
-        commit(&mut kiosk, &mut sim);
-        // refused (revalidated against the state now): back to the plan in force
-        kiosk.proposed = sim.active.clone();
+    restarted.send(SimRestarted);
+    k.start_baseline(&case);
+    k.saved = None;
+    k.log_seen = 0;
+    k.script = None;
+    k.follow = true;
+    k.enter(Phase::Gioco);
+}
+
+/// The clock and the previews. Runs before the view systems.
+pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>) {
+    let dt = crate::playtest::delta(time.delta_seconds());
+    let k = &mut *kiosk;
+    if !k.frozen {
+        k.phase_t += dt;
     }
-    if let Some((d, t)) = kiosk.confirm_evac {
-        let t = t + if kiosk.frozen { 0.0 } else { dt };
-        kiosk.confirm_evac = (kiosk.phase == Phase::Esegui && t < CONFIRM_EVAC_S && sim.active.civil[d] != rocca::Civil::Evacua).then_some((d, t));
+    if let Some((_, age)) = &mut k.notice {
+        *age += dt;
+        if *age > NOTICE_S {
+            k.notice = None;
+        }
     }
-    sim.speed = match kiosk.phase {
-        _ if kiosk.frozen || kiosk.still => 0.0,
-        Phase::Pianifica if mario_clock => mario.simulation_speed,
-        Phase::Pianifica if deciding => 1.0,
-        // faster while nothing is happening and nothing is being composed
-        Phase::Esegui if kiosk.title => kiosk.speed * kiosk.demo_speed,
-        Phase::Esegui if kiosk.confirm_evac.is_some() => 1.0,
-        Phase::Esegui if kiosk.proposed == sim.active && sim.is_quiet(QUIET_S) => kiosk.speed * QUIET_BOOST,
-        Phase::Esegui => kiosk.speed,
-        Phase::Crisi => 1.0,
+    sim.speed = match k.phase {
+        _ if k.frozen => 0.0,
+        // the tutorial waits for the player, then runs by itself
+        Phase::Tutorial if k.expect() == Some(Expect::Over) => sim.game.speed(),
+        Phase::Gioco => sim.game.speed(),
         _ => 0.0,
     };
     if sim.speed > 0.0 {
         if let Err(e) = crate::playtest::tick(&mut sim, dt) {
-            kiosk.error = Some(format!("{e:#}"));
-            kiosk.enter(Phase::Fine);
-        }
-        if let Some(c) = sim.take_crisis() {
-            // while running, the plan in force is what the crisis starts
-            // from; in a decision moment, what the player is composing stays
-            // (the mayor only adds an option)
-            if kiosk.phase == Phase::Esegui {
-                kiosk.proposed = sim.active.clone();
-            }
-            kiosk.crisis = Some(c);
-            kiosk.dirty = true;
-            kiosk.enter(Phase::Crisi);
-        }
-        if kiosk.phase == Phase::Crisi && kiosk.phase_t >= kiosk.crisis_s {
-            let now = sim.time_s();
-            let what = if kiosk.proposed != sim.active { "tempo scaduto: si applica il piano proposto" } else { "tempo scaduto: resta il piano attuale" };
-            sim.log.push(rocca::game::LogEntry { at_s: now, text: what.into() });
-            close_crisis(&mut kiosk, &mut sim);
-        }
-        if sim.time_s() >= sim.case.duration_s() {
-            kiosk.enter(Phase::Fine);
+            k.error = Some(format!("{e:#}"));
         }
     }
-    // The preview follows the plan being composed and the world as it moves,
-    // at most once a simulated review interval while running.
-    let stale = kiosk.dirty || (sim.speed > 0.0 && sim.generation >= kiosk.preview_at.saturating_add(20));
-    if stale && !mario_clock && kiosk.phase != Phase::Fine && !kiosk.title {
-        kiosk.preview = sim.preview(&kiosk.proposed).ok();
-        kiosk.risk = sim.districts.iter().map(|d| rocca::district::exposure(d, &sim.agents, &sim.fire, &sim.scn)).collect();
-        kiosk.evacuation = sim.districts.iter().map(|d| {
-            let mut minutes = Vec::new();
-            let mut blocked = 0;
-            for &i in &d.households {
-                match sim.agents.evacuation_journey_s(i) {
-                    Some(s) => minutes.push((s / 60.0).ceil().max(1.0) as u32),
-                    None => blocked += 1,
+    // what happened, as notices (the latest only)
+    if sim.log.len() > k.log_seen {
+        if k.phase == Phase::Gioco {
+            let e = sim.log.last().unwrap();
+            k.notice = Some((format!("{} {}", rocca::words::clock(e.at_s), e.text), 0.0));
+        }
+        k.log_seen = sim.log.len();
+    }
+    match k.phase {
+        Phase::Tutorial if k.expect() == Some(Expect::Over) && sim.is_over() => k.enter(Phase::Giorno2),
+        Phase::Gioco if sim.is_over() => {
+            #[cfg(target_arch = "wasm32")]
+            if k.baseline().is_none() {
+                let r = rocca::Game::without_orders(&k.data, &sim.case.name, k.seed).map_err(|e| format!("{e:#}"));
+                if let Ok(mut s) = k.baseline.lock() {
+                    *s = Some((sim.case.name.clone(), k.seed, r));
                 }
             }
-            // the typical journey and the longest, not the shortest: the
-            // range "~4–102 min" did not say when it would be over (playtest 3)
-            minutes.sort_unstable();
-            (minutes.last().map(|&b| (minutes[minutes.len() / 2], b)), blocked)
-        }).collect();
-        // the households' own preparation, less what a pre-alert has done
-        // (`Abm::prealert_of`): a fact of the population, not a rule
-        kiosk.readying = sim.districts.iter().map(|d| {
-            let mut minutes: Vec<u32> = d.households.iter()
-                .map(|&i| &sim.agents.households[i])
-                .filter(|h| matches!(h.status, scenario::population::Status::Normal | scenario::population::Status::Warned | scenario::population::Status::Defending))
-                .map(|h| ((h.prep_time_min * 60.0 - h.readied_s).max(60.0) / 60.0).round() as u32)
-                .collect();
-            minutes.sort_unstable();
-            minutes.get(minutes.len() / 2).copied()
-        }).collect();
-        kiosk.preview_at = sim.generation;
-        kiosk.dirty = false;
-    }
-}
-
-/// `KIOSK_SHOT=<dir>`: play one scripted game and save screenshots of each
-/// phase, then quit. For checking the rendering without a person at the mouse.
-#[allow(clippy::too_many_arguments)]
-pub fn shots(
-    time: Res<Time>,
-    mut kiosk: ResMut<Kiosk>,
-    mut sim: ResMut<Sim>,
-    windows: Query<Entity, With<bevy::window::PrimaryWindow>>,
-    mut mgr: ResMut<bevy::render::view::screenshot::ScreenshotManager>,
-    mut exit: EventWriter<AppExit>,
-    mut restarted: EventWriter<SimRestarted>,
-    mut stage: Local<(u32, f32)>,
-) {
-    let Ok(dir) = std::env::var("KIOSK_SHOT") else { return };
-    let Ok(window) = windows.get_single() else { return };
-    let _ = std::fs::create_dir_all(&dir);
-    stage.1 += time.delta_seconds();
-    let mut snap = |name: &str| {
-        let _ = mgr.save_screenshot_to_disk(window, format!("{dir}/{name}.png"));
-    };
-    // `KIOSK_SHOT_END=1`: only the debrief. A plan is committed, the game is
-    // run headless to its end, and the end screen is saved (a few seconds).
-    let end_only = std::env::var_os("KIOSK_SHOT_END").is_some();
-    match stage.0 {
-        0 if end_only && stage.1 > 3.0 => {
-            kiosk.player = "Giulia".into();
-            kiosk.title = false;
-            new_game(&mut kiosk, &mut sim, &mut restarted);
-            kiosk.intro = false;
-            kiosk.started = true;
-            let near = sim.district_index(&sim.case.near).unwrap_or(0);
-            let mut prio = vec![near];
-            prio.extend((0..sim.districts.len()).filter(|&d| d != near));
-            kiosk.proposed = Plan::new(sim.districts.len()).with_priorities(&prio).with_civil(near, rocca::Civil::Preallerta);
-            commit(&mut kiosk, &mut sim);
-            kiosk.begun = true;
-            let end = sim.case.duration_s();
-            if let Err(e) = sim.run_until(end) {
-                kiosk.error = Some(format!("{e:#}"));
-            }
-            sim.generation += 1;
-            kiosk.enter(Phase::Fine);
-            *stage = (6, 0.0);
-        }
-        // the title screen with its game behind, then «Gioca»
-        0 if kiosk.title && stage.1 > 12.0 => {
-            snap("0_titolo");
-            kiosk.title = false;
-            kiosk.case = kiosk.pick.clone();
-            new_game(&mut kiosk, &mut sim, &mut restarted);
-            kiosk.intro = true;
-            stage.1 = 0.0;
-        }
-        // a name typed, as a visitor would, so the intro and the lines show it
-        0 if kiosk.intro && kiosk.player.is_empty() && stage.1 > 4.0 => {
-            snap("0_intro_vuota");
-            kiosk.player = "Giulia".into();
-        }
-        0 if kiosk.intro && stage.1 > 8.0 => {
-            snap("0_intro");
-            kiosk.intro = false;
-            stage.1 = 0.0;
-        }
-        0 if !kiosk.intro && !kiosk.started && stage.1 > 3.0 => {
-            kiosk.started = true;
-            if kiosk.tour_on {
-                tutorial::go(&mut kiosk, &sim, 0);
-            }
-            stage.1 = 0.0;
-        }
-        // each step of the tour once the camera has arrived
-        0 if kiosk.shot.is_none() && stage.1 > 1.5 && kiosk.tour.is_some() => {
-            let i = kiosk.tour.unwrap_or(0);
-            snap(&format!("0_tour_{i}"));
-            tutorial::go(&mut kiosk, &sim, i + 1);
-            stage.1 = 0.0;
-        }
-        0 if kiosk.tour.is_none() && kiosk.shot.is_none() && kiosk.can_order() && stage.1 > 1.5 => {
-            snap("1_pianifica");
-            // the locality the fire was picked for first, then the others
-            let near = sim.district_index(&sim.case.near).unwrap_or(0);
-            let mut prio = vec![near];
-            prio.extend((0..sim.districts.len()).filter(|&d| d != near));
-            kiosk.proposed = Plan::new(sim.districts.len()).with_priorities(&prio).with_civil(near, rocca::Civil::Preallerta);
-            kiosk.dirty = true;
-            // the badge opened, as a click would (the next shot shows it)
-            kiosk.selected = Some(near);
-            *stage = (1, 0.0);
-        }
-        1 if stage.1 > 2.0 => {
-            snap("2_anteprima");
-            commit(&mut kiosk, &mut sim);
-            kiosk.begun = true;
-            kiosk.enter(Phase::Esegui);
-            *stage = (2, 0.0);
-        }
-        2 if stage.1 > 8.0 => {
-            snap("3_esegui");
-            *stage = (5, 0.0);
-        }
-        // at the first crisis, put the place it names first, and show the proposal
-        5 if kiosk.phase == Phase::Crisi && kiosk.phase_t > 1.0 => {
-            if let Some(d) = kiosk.crisis.as_ref().and_then(crisis_place) {
-                let mut prio = vec![d];
-                prio.extend(kiosk.proposed.priorities.iter().copied().filter(|&x| x != d));
-                kiosk.proposed.priorities = prio;
-                kiosk.dirty = true;
-            }
-            *stage = (7, 0.0);
-        }
-        7 if stage.1 > 1.5 => {
-            snap("3b_crisi");
-            close_crisis(&mut kiosk, &mut sim);
-            *stage = (3, 0.0);
-        }
-        5 if kiosk.phase == Phase::Fine => *stage = (3, 0.0),
-        // later in the game: what the volunteer says from the game
-        3 if kiosk.phase == Phase::Esegui && sim.time_s() >= 100 * 60 => {
-            snap("3d_esegui_dopo");
-            *stage = (11, 0.0);
-        }
-        3 | 11 if kiosk.phase == Phase::Crisi && kiosk.phase_t > 1.0 => {
-            snap("3c_crisi");
-            close_crisis(&mut kiosk, &mut sim);
-            *stage = (stage.0, 0.0);
-        }
-        3 | 11 if kiosk.phase == Phase::Fine => *stage = (6, 0.0),
-        6 if stage.1 > 1.0 && kiosk.baseline().is_some() => {
-            snap("4_fine");
-            *stage = (if end_only { 4 } else { 8 }, 0.0);
-        }
-        // «Altro incendio»: the manual restart must leave a clean scene
-        8 if stage.1 > 1.0 => {
-            kiosk.case = kiosk.next_case();
-            new_game(&mut kiosk, &mut sim, &mut restarted);
-            *stage = (9, 0.0);
-        }
-        9 if stage.1 > 4.0 => {
-            snap("5_altro_incendio");
-            *stage = (4, 0.0);
-        }
-        4 if stage.1 > 1.0 => {
-            exit.send(AppExit::Success);
+            k.enter(Phase::Fine);
         }
         _ => {}
     }
-}
-
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod mario_clock_tests {
-    use super::*;
-    use std::path::Path;
-
-    #[test]
-    fn title_mario_controls_the_clock_without_starting_the_game_or_demo_director() {
-        let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
-        let territory = Territory::load(&data).unwrap();
-        let mut kiosk = Kiosk::new(territory, data.clone());
-        kiosk.title = true;
-        kiosk.started = false;
-        kiosk.phase = Phase::Esegui;
-        kiosk.demo_t = 20.0;
-        let mut sim = Sim::new(&data, &kiosk.case, 1).unwrap();
-        let _ = sim.take_crisis();
-        let initial_time = sim.time_s();
-        let mut app = App::new();
-        app.insert_resource(Time::<()>::default())
-            .insert_resource(kiosk).insert_resource(sim)
-            .init_resource::<crate::mario::Playground>()
-            .add_event::<SimRestarted>().add_systems(Update, step);
-        app.world_mut().resource_mut::<crate::mario::Playground>().active = true;
-        app.world_mut().resource_mut::<crate::mario::Playground>().simulation_speed = 0.;
-        app.world_mut().resource_mut::<Time>().advance_by(std::time::Duration::from_secs(6));
-        app.update();
-        assert_eq!(app.world().resource::<Sim>().time_s(), initial_time);
-        assert_eq!(app.world().resource::<Sim>().speed, 0.0);
-        assert_eq!(app.world().resource::<Kiosk>().demo_t, 20.0);
-        assert!(app.world().resource::<Kiosk>().title);
-        assert!(!app.world().resource::<Kiosk>().started);
-        let active = app.world().resource::<Sim>().active.clone();
-        app.world_mut().resource_mut::<crate::mario::Playground>().simulation_speed = 20.;
-        app.world_mut().resource_mut::<Time>().advance_by(std::time::Duration::from_secs(1));
-        app.update();
-        assert_eq!(app.world().resource::<Sim>().time_s(), initial_time + 18);
-        assert_eq!(app.world().resource::<Sim>().active, active);
-        assert_eq!(app.world().resource::<Kiosk>().demo_t, 20.);
-        assert!(app.world().resource::<Kiosk>().title);
-        assert!(!app.world().resource::<Kiosk>().started);
-        app.world_mut().resource_mut::<crate::mario::Playground>().active = false;
-        app.update();
-        assert!(app.world().resource::<Kiosk>().demo_t > 20.0);
-        assert!(app.world().resource::<Kiosk>().title);
-        assert!(!app.world().resource::<Kiosk>().started);
+    // the pause is over: nothing stays half-chosen
+    if k.phase == Phase::Gioco && !sim.paused() && k.selection != Selection::None {
+        k.clear_selection();
     }
-
-    #[test]
-    fn mario_clock_supports_acceleration_pause_and_return_to_plan() {
-        let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
-        let territory = Territory::load(&data).unwrap();
-        let mut kiosk = Kiosk::new(territory, data.clone());
-        kiosk.title = false;
-        kiosk.intro = false;
-        // before the game has started: the world waits unless Mario plays
-        // (once started, the decision moment runs at ×1 anyway)
-        kiosk.started = false;
-        let mut sim = Sim::new(&data, &kiosk.case, 1).unwrap();
-        // a fire already close: the mayor may authorise on the first step,
-        // and the clock stops on a crisis nobody has taken
-        let _ = sim.take_crisis();
-        let initial_time = sim.time_s();
-        kiosk.proposed = Plan::new(sim.districts.len());
-        let active = sim.active.clone();
-        let proposed = kiosk.proposed.clone();
-        let mut app = App::new();
-        app.insert_resource(Time::<()>::default())
-            .insert_resource(kiosk)
-            .insert_resource(sim)
-            .init_resource::<crate::mario::Playground>()
-            .add_event::<SimRestarted>()
-            .add_systems(Update, step);
-        app.world_mut().resource_mut::<Time>().advance_by(std::time::Duration::from_secs(6));
-        app.update();
-        assert_eq!(app.world().resource::<Sim>().time_s(), initial_time);
-        app.world_mut().resource_mut::<crate::mario::Playground>().active = true;
-        app.update();
-        assert_eq!(app.world().resource::<Sim>().speed, 1.0);
-        assert_eq!(app.world().resource::<Sim>().time_s(), initial_time + 6);
-        assert_eq!(app.world().resource::<Kiosk>().phase, Phase::Pianifica);
-        // Even after the ordinary idle timeout, Mario stays in exploration.
-        {
-            let mut k = app.world_mut().resource_mut::<Kiosk>();
-            k.started = true;
-            k.begun = true;
-            k.phase_t = 60.0;
-            k.proposed = active.clone();
+    // previews follow the world (roads close, teams move)
+    let stale = sim.generation >= k.plans_at.saturating_add(10);
+    if stale {
+        k.plans_at = sim.generation;
+        if let (Selection::Team(t), Some(at), Some(_)) = (k.selection, k.move_hex, &k.move_plan) {
+            k.move_plan = Some(sim.plan_move(t, at));
         }
-        app.world_mut().resource_mut::<crate::mario::Playground>().simulation_speed = 20.;
-        app.world_mut().resource_mut::<Time>().advance_by(std::time::Duration::from_secs(1));
-        app.update();
-        assert_eq!(app.world().resource::<Kiosk>().phase, Phase::Pianifica);
-        assert_eq!(app.world().resource::<Sim>().speed, 20.);
-        assert_eq!(app.world().resource::<Sim>().time_s(), initial_time + 24);
-        app.world_mut().resource_mut::<crate::mario::Playground>().simulation_speed = 0.;
-        app.update();
-        assert_eq!(app.world().resource::<Sim>().time_s(), initial_time + 24);
-        {
-            let mut k = app.world_mut().resource_mut::<Kiosk>();
-            k.started = false;
-            k.begun = false;
-            k.proposed = proposed.clone();
+        if let (Selection::District(d), Some(_)) = (k.selection, &k.evac_plan) {
+            k.evac_plan = Some(sim.plan_evacuation(d));
         }
-        app.world_mut().resource_mut::<crate::mario::Playground>().active = false;
-        app.update();
-        let sim = app.world().resource::<Sim>();
-        let kiosk = app.world().resource::<Kiosk>();
-        assert_eq!(sim.speed, 0.0);
-        assert_eq!(sim.time_s(), initial_time + 24);
-        assert_eq!(sim.active, active);
-        assert_eq!(kiosk.proposed, proposed);
-        assert_eq!(kiosk.preview_at, sim.generation, "refresh the plan when Mario returns");
     }
 }

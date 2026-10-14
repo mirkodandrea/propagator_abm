@@ -1,11 +1,10 @@
-//! «Dove andrà il fuoco»: a stochastic forecast of the fire, issued when the
-//! weather service announces a change of wind and again when it happens
-//! (user, 2026-10-13).
+//! «Dove andrà il fuoco»: the scientific expert's forecast, issued at each
+//! pause (docs/01-GIOCO.md §2, user 2026-10-14).
 //!
 //! What it knows is what the player could know: the fire **now** (the core's
-//! own state, [`fire::ensemble::Snapshot`]), the wind now, and the change
-//! the forecast has announced ([`crate::crisis::FORECAST_LEAD_S`] ahead).
-//! Nothing else the simulation will do is read.
+//! own state, [`fire::ensemble::Snapshot`]), the wind now, and the weather
+//! bulletin: the case's change of wind, if it is still to come. Nothing else
+//! the simulation will do is read.
 //!
 //! [`MEMBERS`] runs of the same propagator go forward [`HORIZONS_S`], each
 //! with its own seed and a wind perturbed around the forecast: the wind now
@@ -24,7 +23,6 @@ use anyhow::Result;
 use fire::ensemble::{Member, Snapshot};
 use fire::Weather;
 
-use crate::crisis::FORECAST_LEAD_S;
 use crate::Game;
 
 /// Members of the ensemble (constant: the forecast's resolution is 1/16).
@@ -40,17 +38,8 @@ pub const NOW_SPEED: f64 = 0.10;
 pub const LATER_DIR_DEG: f64 = 20.0;
 pub const LATER_SPEED: f64 = 0.20;
 pub const LATER_AT_S: i64 = 10 * 60;
-/// How long after the wind has turned the map keeps the forecast.
-pub const SHOWN_AFTER_SHIFT_S: i64 = 30 * 60;
-
-/// Why a forecast is due: the boundary conditions the player knows changed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Epoch {
-    /// The weather service has announced the change of wind.
-    Announced,
-    /// The wind has turned.
-    Shifted,
-}
+/// Which forecast: the simulated second of the pause it was asked at.
+pub type Epoch = i64;
 
 /// The forecast: per fire cell, the share of members burnt by each horizon.
 #[derive(Debug, Clone)]
@@ -117,28 +106,17 @@ fn turn(w: Weather, dir_deg: f64, speed: f64) -> Weather {
 }
 
 impl Game {
-    /// The forecast the player should see now, if any: from the announcement
-    /// of the case's change of wind ([`FORECAST_LEAD_S`] ahead) until
-    /// [`SHOWN_AFTER_SHIFT_S`] after it. A new value is a new forecast due;
-    /// `None` is none to show.
+    /// The forecast the player should see now: one per pause, while it lasts.
     pub fn forecast_epoch(&self) -> Option<Epoch> {
-        let (at, _) = self.territory.shifted(&self.case)?;
-        let now = self.time_s();
-        if now < at - FORECAST_LEAD_S || now >= at + SHOWN_AFTER_SHIFT_S {
-            None
-        } else if now < at {
-            Some(Epoch::Announced)
-        } else {
-            Some(Epoch::Shifted)
-        }
+        self.pause_started_s()
     }
 
     /// The ensemble for the forecast due now ([`Game::forecast_epoch`]), or
     /// for the wind as it is when none is due. Reads the state, changes
     /// nothing.
     pub fn forecast_job(&self) -> Result<Job> {
-        let epoch = self.forecast_epoch().unwrap_or(Epoch::Shifted);
         let now = self.time_s();
+        let epoch = self.forecast_epoch().unwrap_or(now);
         let snapshot = self.fire.snapshot(&self.scn)?;
         // the wind as it is known now: the game turns the fire's wind at the
         // start of the step after the shift's time, the forecast at the time
@@ -147,7 +125,7 @@ impl Game {
             _ => self.fire.weather(),
         };
         // the change still to come, as announced; none once it has happened
-        let later = self.territory.shifted(&self.case).filter(|&(at, _)| epoch == Epoch::Announced && at > now);
+        let later = self.territory.shifted(&self.case).filter(|&(at, _)| at > now);
         let key = mix(self.seed ^ mix(now as u64 ^ 0xF0EC_A57));
         let q = |k: usize, what: u64| stratified(k, MEMBERS, mix(key ^ what));
         let members = (0..MEMBERS)

@@ -13,7 +13,7 @@ use rocca::{Game, STEP_S};
 pub struct Sim {
     pub game: Game,
     pub data: PathBuf,
-    /// Simulated seconds per real second. 0 = paused (planning, ×0).
+    /// Simulated seconds per real second; 0 = the world stands still.
     pub speed: f32,
     accumulator: f32,
     /// Bumped whenever the game state changes, so views rebuild only then.
@@ -61,7 +61,7 @@ impl Sim {
     /// or the end. Does not accumulate wall time or skip simulation work.
     pub fn advance_steps(&mut self, max_steps: usize) -> anyhow::Result<usize> {
         let mut count = 0;
-        while count < max_steps && self.game.crisis.is_none() && self.game.time_s() < self.game.case.duration_s() {
+        while count < max_steps && !self.game.is_over() {
             self.game.step()?;
             count += 1;
         }
@@ -70,9 +70,7 @@ impl Sim {
     }
 
     /// Advance by `real_s` of wall time at the current speed. Effects depend on
-    /// simulated time only: steps are always [`STEP_S`] long, and a frame stops
-    /// on the step that raised a crisis, so the player meets it at the same
-    /// simulated time whatever the speed or the frame rate.
+    /// simulated time only: steps are always [`STEP_S`] long.
     pub fn tick(&mut self, real_s: f32) -> anyhow::Result<bool> {
         if self.speed <= 0.0 {
             return Ok(false);
@@ -80,7 +78,7 @@ impl Sim {
         self.accumulator += real_s * self.speed;
         let mut stepped = false;
         for _ in 0..MAX_STEPS_PER_FRAME {
-            if self.accumulator < STEP_S as f32 || self.game.crisis.is_some() || self.game.time_s() >= self.game.case.duration_s() {
+            if self.accumulator < STEP_S as f32 || self.game.is_over() {
                 break;
             }
             self.game.step()?;
@@ -99,44 +97,28 @@ impl Sim {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rocca::{Civil, Plan};
 
-    /// A scripted kiosk game: the near locality first with a pre-alert, and at
-    /// each crisis the place it names moves first. Returns when each crisis
-    /// was met (simulated s) and the outcome.
-    fn play(speed: f32, frame_s: f32, batch: Option<usize>) -> (Vec<i64>, rocca::Outcome) {
+    /// The tutorial's orders, then the game to its end at `speed`, `frame_s`
+    /// of wall time a frame (or `batch` steps a frame).
+    fn play(speed: f32, frame_s: f32, batch: Option<usize>) -> rocca::Outcome {
         let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
-        let mut sim = Sim::new(&data, "medium", 1).unwrap();
-        let n = sim.districts.len();
-        let near = sim.district_index(&sim.case.near.clone()).unwrap();
-        sim.commit(Plan::new(n).with_priorities(&[near]).with_civil(near, Civil::Preallerta)).unwrap();
+        let mut sim = Sim::new(&data, "tutorial", 1).unwrap();
+        let script = rocca::tutorial::Script::of(&sim).unwrap();
+        let orders = rocca::tutorial::Script { steps: script.steps.into_iter().filter(|s| s.expect != rocca::tutorial::Expect::Over).collect() };
+        orders.play(&mut sim).unwrap();
         sim.speed = speed;
-        let mut met = vec![];
-        while sim.time_s() < sim.case.duration_s() {
-            if let Some(batch) = batch { sim.advance_steps(batch).unwrap(); }
-            else { sim.tick(frame_s).unwrap(); }
-            if let Some(c) = sim.take_crisis() {
-                met.push(sim.time_s());
-                let Some(d) = c.kind.district() else { continue };
-                let mut plan = sim.active.clone();
-                plan.priorities.retain(|&x| x != d);
-                plan.priorities.insert(0, d);
-                sim.commit(plan).unwrap();
-            }
+        while !sim.is_over() {
+            if let Some(batch) = batch { sim.advance_steps(batch).unwrap(); } else { sim.tick(frame_s).unwrap(); }
         }
-        (met, sim.outcome())
+        sim.outcome()
     }
 
-    /// Effects depend on simulated time, not on the speed or the frame rate:
-    /// ×20 at 40 FPS, ×120 at 40 FPS, at 4 FPS and with 84 s frames give the same game.
+    /// Effects depend on simulated time, not on the speed or the frame rate.
     #[test]
     fn the_speed_does_not_change_the_game() {
-        let slow = play(20.0, 1.0 / 40.0, None);
-        assert!(!slow.0.is_empty(), "medium should raise a crisis");
-        assert_eq!(play(120.0, 1.0 / 40.0, None), slow);
-        assert_eq!(play(120.0, 0.25, None), slow);
-        assert_eq!(play(120.0, 0.7, None), slow);
-        assert_eq!(play(0.0, 0.0, Some(40)), slow);
+        let slow = play(60.0, 1.0 / 40.0, None);
+        assert_eq!(play(300.0, 1.0 / 40.0, None), slow);
+        assert_eq!(play(300.0, 0.7, None), slow);
         assert_eq!(play(0.0, 0.0, Some(10_000)), slow);
     }
 }

@@ -1,35 +1,32 @@
 # 02 — Il territorio
 
-Un solo territorio sintetico e plausibile, riusato con diversi inneschi e venti: l'**Isola di Roccavento**. La scelta finale di territorio e livelli spetta all'utente.
+Un solo territorio sintetico e plausibile, riusato con diversi inneschi e venti: l'**Isola di Roccavento**. La scelta finale di territorio e incendi spetta all'utente.
 
 ## Com'è fatto
 
 - **Isola di 8×8 km.** La griglia del fuoco è di 20 m (400×400). La riga 0 è il nord, y cresce verso nord, le coordinate sono in metri.
 - Il rendering usa un terreno più fine e smussato: i 20 m valgono solo per il fuoco.
-- **Dati:** `data/scenarios/rocca_ventosa/`, l'unico scenario del gioco. Contiene `dem.f64`, `fuel.i32`, `cover.u8`, `population.json`, `osm.json`, `game.json` (i tre livelli) e il terreno di rendering.
+- **Dati:** `data/scenarios/rocca_ventosa/`, l'unico scenario del gioco. Contiene `dem.f64`, `fuel.i32`, `cover.u8`, `population.json`, `osm.json`, `game.json` (stazioni, squadre, evacuazione, tutorial, incendi) e il terreno di rendering.
 - **Sei borghi:**
   - a est del massiccio: **Castelvento** (190 famiglie, caserma dei vigili), **Fornaci** (90), **Le Terrazze** (30), **San Rocco** (100);
   - a ovest: **Pian dei Grilli** (90) e **Le Ghiande** (38, nuclei sparsi).
 - La **rocca** è in cima, con un anello non combustibile di 130 m.
-- Il **porto** a est è l'unica uscita: lì arriva la squadra AIB. Le aree di raccolta sono a Castelvento e a Pian dei Grilli.
+- Le **aree sicure** dell'evacuazione si ricavano dai dati (`abm::refuge`: nodi stradali con poco combustibile intorno, raggiungibili in auto). Per ogni borgo si sceglie la più vicina su strada, a più di 400 m dalle sue case.
 - **Valico** (2026-10-13): una fascia di macchia alta (classe 9, con faville), circa 117 ha, lungo la Strada del Passo. Va da Le Terrazze, passa la sella e arriva alla macchia sopra Pian dei Grilli. Serve perché il fuoco possa arrivare anche ai borghi a ovest: prima nessun incendio colpiva case sia a est sia a ovest. Il fuoco passa a ovest quando il vento gira da nord-est dentro il passo. Larghezza variabile (in media 320 m), bordo frastagliato di macchia media (classe 8) e qualche isola del bosco vecchio, perché nel chiosco non sembri una striscia dipinta; il nucleo lungo la strada è sempre continuo.
 - **Costa est** (2026-10-13): a nord del porto una baia sabbiosa, un piccolo promontorio e l'angolo nord-est in diagonale, al posto della costa dritta a 300 m dal bordo della finestra; anche il breve tratto dritto a sud del porto è rifatto. Solo terra diventata mare: porto, strade, case e inneschi non cambiano.
 - **Umidità del combustibile:** 3 %, fissa e uniforme. La leva vera è il vento.
-- Mezzi: 2 autobotti alla caserma di Castelvento, 1 squadra AIB al porto.
+- **Squadre** (2026-10-14): 3 squadre dei vigili del fuoco alla caserma di Castelvento, 2 squadre di volontari AIB al presidio di San Rocco. Ogni squadra è un'autobotte con 3 persone.
+- **Esagoni** di 500 m: valgono solo quelli attraversati da una strada carrabile della rete della caserma (`rocca::hex`).
 
-## Livelli (`game.json`)
+## Incendi (`game.json`)
 
-Tutti durano 180 minuti con vento a 40 km/h. Gli inneschi sono in metri; il vento è indicato con la direzione **da cui** soffia.
+Il vento è indicato con la direzione **da cui** soffia. Gli inneschi sono in metri.
 
-| Livello | Caso | Innesco | Vento | Cosa succede (seme 1, senza priorità) |
-|---|---|---|---|---|
-| Facile | `easy` | (5600, 4600), imbocco del valico | fisso da 70° | 258–338 ha; Le Terrazze ~15:02, Le Ghiande ~15:20, Pian dei Grilli in bilico (0,1 km) |
-| Medio | `medium` | (5590, 4370) | da 119°, gira a 50° al minuto 45 | 337–418 ha; Le Terrazze 14:29, Le Ghiande ~15:35, Pian dei Grilli 16:28 (86 case) |
-| Esperto | `expert` | (5870, 4750) | da 119°, gira a 70° al minuto 45 | 273–301 ha; Castelvento 14:32, Le Terrazze 14:51, Le Ghiande colpita, Pian dei Grilli in bilico |
-
-Numeri dei semi 1–3, senza ordini, con lo spegnimento del 13/10 sera; con la priorità «Le Terrazze, Castelvento» i tre incendi restano sotto i 25 ha in quasi tutti i semi (vedi «Aperto»).
-
-I testi `about` dei livelli vanno riscritti per il valico. **Gli incendi sono solo questi tre** (decisione 2026-10-13): prove headless e test usano i livelli, non esistono incendi di prova.
+| Uso | Caso | Innesco | Vento | Durata | Note |
+|---|---|---|---|---|---|
+| Tutorial | `tutorial` | (3792, 3295), sotto Le Ghiande | da 135°, 20 km/h | 150 min | Seme 1. Senza ordini: 90 ha, 17 case colpite, 45 persone colte. Con il copione: 6 ha, nessuna persona colta. Trovato con `examples/tutorial_cerca.rs`. |
+| Partita | `medium` | (5590, 4370) | da 119°, 40 km/h; gira a 50° al minuto 45 | 300 min, segnalato al minuto 30 (`start_min`) | Seme 1. Senza ordini: 638 ha, 137 case colpite, 426 persone colte. |
+| (riserva) | `easy`, `expert` | come prima | | 180 min | Non usati dal chiosco. |
 
 ## Come si modifica
 
@@ -41,11 +38,20 @@ I testi `about` dei livelli vanno riscritti per il valico. **Gli incendi sono so
 
 ## Cosa rende buono il territorio
 
-- Gli incendi dei livelli colpiscono davvero i borghi, anche quelli a ovest, e lasciano **finestre d'intervento** utili. Non si ottimizza per il numero di case colpite.
+- Gli incendi colpiscono davvero i borghi, anche quelli a ovest, e lasciano **finestre d'intervento** utili. Non si ottimizza per il numero di case colpite.
 - Esistono **compromessi**: due borghi minacciati insieme, mezzi che non bastano, un cambio di vento che ribalta il piano.
 - Strade e aree sicure esistono e sono raggiungibili. I percorsi delle squadre hanno ETA plausibili.
 - Nessuna strategia semplice vince sempre: si verifica con le prove di `03-VERIFICHE.md`.
 
 ## Aperto
 
-- Con lo spegnimento in taratura, ogni innesco entro 800 m dalla caserma si spegne subito se le autobotti ci vanno per prime: con la priorità giusta l'ovest non entra mai in gioco. Si decide insieme alla taratura dello spegnimento; un'alternativa è spostare gli inneschi.
+- Segnalazione in ritardo (2026-10-14, `start_min`). Strategia semplice: «tutte le squadre sull'innesco, evacua Le Terrazze», all'inizio. Piano ragionato: quattro pause; squadre a Le Terrazze, Castelvento e Le Ghiande; evacuazioni a turno di Le Terrazze, Le Ghiande, Pian dei Grilli e Fornaci.
+
+  | Ritardo | Seme | Strategia semplice: ha / case / persone colte / stelle P-C-E | Piano ragionato: stelle P-C-E |
+  |---|---|---|---|
+  | 0 | 1 / 2 | 2 / 0 / 0 / 5-5-5 · 3 / 0 / 0 / 5-5-5 | — |
+  | 20 | 1 / 2 | 497 / 118 / 333 / 2-2-2 · 11 / 0 / 0 / 5-5-5 | — |
+  | **30** | 1 / 2 | 481 / 127 / 343 / 1-1-2 · 469 / 126 / 333 / 2-1-2 | 5-2-3 · 5-2-2 |
+  | 40 | 1 / 2 | 483 / 124 / 355 / 1-1-2 · 637 / 135 / 333 / 2-1-1 | — |
+
+  Scelto 30. Da verificare con il seme 3, con «evacua tutto» e con piani migliori: oggi le Case restano basse anche col piano ragionato.
