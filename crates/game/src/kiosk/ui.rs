@@ -123,6 +123,7 @@ pub fn draw(
         }
         Phase::Giorno2 => {
             k.side_w = 0.0;
+            if cfg!(not(target_arch = "wasm32")) && !compact(ctx) { banner(ctx, qr.as_deref()); }
             screens::day_two(ctx, k, &mut sim, &mut restarted, faces.as_deref());
         }
         Phase::Fine => {
@@ -136,6 +137,7 @@ pub fn draw(
             let r = ctx.screen_rect();
             k.side_w = if compact(ctx) && r.width() > r.height() && k.phase == Phase::Tutorial { (r.width() * 0.37).clamp(220.0, 316.0) } else { 0.0 };
             top_bar(ctx, k, &mut sim, cam);
+            if cfg!(not(target_arch = "wasm32")) && !compact(ctx) { banner(ctx, qr.as_deref()); }
             map_badges(ctx, k, &mut sim, cam);
             map_click(k, &mut sim);
             if k.phase == Phase::Tutorial {
@@ -169,9 +171,10 @@ pub(super) fn feedback_url() -> String {
 }
 
 /// The banner at the top right. In the kiosk, «Provami!» with the QR code of
-/// the browser version, on the title and the opening, where a passer-by is
-/// looking at the screen. In the browser, which is already the thing the QR
-/// points to, a button to the feedback form, on the same screens and at the end.
+/// the browser version, on every screen but the end: a passer-by may look at
+/// the screen while someone is playing. In the browser, which is already the
+/// thing the QR points to, a button to the feedback form, on the title, the
+/// opening and the end.
 fn banner(ctx: &egui::Context, qr: Option<&Qr>) {
     egui::Area::new(egui::Id::new("provami")).anchor(Align2::RIGHT_TOP, [-14.0, 14.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         card(AMBER).inner_margin(10.0).show(ui, |ui| {
