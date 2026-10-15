@@ -176,6 +176,40 @@ struct Plant {
     /// Its undersides in the close-range mesh (see [`CLOSE_M`]).
     under_start: u32,
     under_end: u32,
+    /// What its burnt remains are made of, if it has any (grass leaves none).
+    remains: Option<Remains>,
+}
+
+/// Enough of a plant to build its burnt model later: the archetype, where and
+/// how big it stood.
+#[derive(Clone)]
+struct Remains {
+    name: &'static str,
+    base: Vec3,
+    scale: Vec3,
+    yaw: f32,
+}
+
+/// The burnt models of a chunk's plants (`scripts/build_burnt_models.py`),
+/// built when the fire first burns a plant of the chunk, so the forest the
+/// fire never reaches does not pay for them. Every plant's remains are there
+/// from then on, collapsed to a point until the plant is burnt, the way a
+/// cleared plant is (see [`CLEARED`]).
+struct CharLayer {
+    /// Shown within the LOD distance, and beyond it (the `_low` models).
+    near: CharMesh,
+    far: CharMesh,
+}
+
+struct CharMesh {
+    mesh: Handle<Mesh>,
+    entity: Entity,
+    /// Vertex positions with every plant standing, and with every plant
+    /// collapsed.
+    shown: Vec<[f32; 3]>,
+    hidden: Vec<[f32; 3]>,
+    /// Each plant's vertex range.
+    ranges: Vec<(u32, u32)>,
 }
 
 struct Chunk {
@@ -197,6 +231,8 @@ struct Chunk {
     /// Fire cells the chunk covers, `(row0, row1, col0, col1)`, end exclusive.
     cells: (usize, usize, usize, usize),
     plants: Vec<Plant>,
+    /// The burnt remains, once a plant here has burnt.
+    char: Option<CharLayer>,
     /// Colours as generated, before any fire damage.
     base: Vec<[f32; 4]>,
     low_base: Vec<[f32; 4]>,
@@ -216,6 +252,7 @@ struct Chunk {
 #[derive(Resource)]
 pub struct Vegetation {
     chunks: Vec<Chunk>,
+    material: Handle<RetroMaterial>,
     /// Beyond this distance from the camera a chunk shows its proxies.
     lod_m: f32,
     /// Simulated time the plants were last drawn at: the plants are a
@@ -293,6 +330,7 @@ pub fn spawn(
                         let start = builder.full.positions.len() as u32;
                         let low_start = builder.low.positions.len() as u32;
                         let under_start = builder.under.positions.len() as u32;
+                        let remains_before = builder.remains.len();
                         let Some(pos) = scatter_plant(scn, cell, species, &mut rng, &mut builder)
                         else {
                             continue;
@@ -306,6 +344,7 @@ pub fn spawn(
                             low_end: builder.low.positions.len() as u32,
                             under_start,
                             under_end: builder.under.positions.len() as u32,
+                            remains: builder.remains.get(remains_before).cloned(),
                         });
                     }
                 }
@@ -371,6 +410,7 @@ pub fn spawn(
                     ((cx + 1) * CHUNK_CELLS).min(cols),
                 ),
                 plants,
+                char: None,
                 base,
                 low_base,
                 under_base,
@@ -389,7 +429,7 @@ pub fn spawn(
         tri_count as f32 / 1e6,
         low_tri_count as f32 / 1e6
     );
-    commands.insert_resource(Vegetation { chunks, lod_m: gfx.lod_m, drawn_at: None, drawn_cleared: 0 });
+    commands.insert_resource(Vegetation { chunks, material, lod_m: gfx.lod_m, drawn_at: None, drawn_cleared: 0 });
 }
 
 /// Whether the 5 m land cover leaves room for this plant at `p`: nothing grows
@@ -535,11 +575,14 @@ struct Lods {
     low: Builder,
     /// Only the faces the full models leave out, see [`CLOSE_M`].
     under: Builder,
+    /// One entry per plant drawn from an archetype, in order.
+    remains: Vec<Remains>,
 }
 
 impl Lods {
-    fn model(&mut self, name: &str, base: Vec3, scale: Vec3, yaw: f32,
+    fn model(&mut self, name: &'static str, base: Vec3, scale: Vec3, yaw: f32,
         foliage: [f32; 3], wood: [f32; 3]) {
+        self.remains.push(Remains { name, base, scale, yaw });
         let (up, down) = crate::models::split_plant(name);
         self.full.model(up, base, scale, yaw, foliage, wood);
         self.under.model(down, base, scale, yaw, foliage, wood);
@@ -615,6 +658,22 @@ impl Builder {
             self.vertex(base + rotation * (Vec3::from(*p) * scale), mul(color, shade));
         }
         self.indices.extend(model.indices.iter().map(|i| start + i));
+    }
+
+    /// The burnt remains of a plant (see [`CharLayer`]), in absolute colours.
+    fn remains(&mut self, r: &Remains, low: bool) {
+        // which of the three variants, and how dark: fixed by the plant's own
+        // random yaw, so the same plants have the same remains on every run
+        let u = r.yaw / std::f32::consts::TAU;
+        let variant = if u < 0.4 { "a" } else if u < 0.75 { "b" } else { "c" };
+        let shade = 0.85 + 0.3 * (u * 97.0).fract();
+        let kit = crate::models::burnt(&format!("{}_{variant}{}", r.name, if low { "_low" } else { "" }));
+        let start = self.positions.len() as u32;
+        let rotation = Quat::from_rotation_y(r.yaw);
+        for (p, c) in kit.positions.iter().zip(&kit.colors) {
+            self.vertex(r.base + rotation * (Vec3::from(*p) * r.scale), mul(*c, shade));
+        }
+        self.indices.extend(kit.indices.iter().map(|i| start + i));
     }
 
     /// The distant stand-in for [`Builder::model`]: a six-sided crown (a
@@ -791,6 +850,7 @@ impl Builder {
 /// ×40 that is still a step of a few simulated seconds against a flaming
 /// phase of four minutes.
 pub fn burn(
+    mut commands: Commands,
     sim: Res<Sim>,
     time: Res<Time>,
     mut veg: ResMut<Vegetation>,
@@ -832,6 +892,7 @@ pub fn burn(
         line_cells > 0 && (r0..r1).any(|r| cleared[r * cols + c0..r * cols + c1].iter().any(|&b| b))
     };
 
+    let material = veg.material.clone();
     for chunk in &mut veg.chunks {
         if !chunk.touched && !reached(chunk.cells) && !any_cleared(chunk.cells) {
             continue;
@@ -857,6 +918,9 @@ pub fn burn(
         if !dirty {
             continue;
         }
+        if chunk.char.is_none() && wanted.iter().any(|&s| s == CellFire::Burnt as u8) {
+            chunk.char = Some(build_char_layer(&mut commands, &mut meshes, &material, &*chunk));
+        }
 
         let mut colors = chunk.base.clone();
         let mut low_colors = chunk.low_base.clone();
@@ -865,13 +929,17 @@ pub fn burn(
         let mut low_positions = chunk.low_pos_base.clone();
         let mut under_positions = chunk.under_pos_base.clone();
         chunk.touched = false;
-        for ((plant, drawn), s) in chunk.plants.iter().zip(&mut chunk.drawn).zip(wanted) {
+        let mut char_positions = chunk.char.as_ref().map(|l| (l.near.hidden.clone(), l.far.hidden.clone()));
+        for (i, ((plant, drawn), s)) in chunk.plants.iter().zip(&mut chunk.drawn).zip(wanted).enumerate() {
             *drawn = s;
             if s == CellFire::Unburnt as u8 {
                 continue;
             }
             chunk.touched = true;
-            if s == CLEARED {
+            // a burnt plant with remains is replaced by them, near the camera
+            // and far from it
+            let replaced = s == CellFire::Burnt as u8 && plant.remains.is_some();
+            if s == CLEARED || replaced {
                 // collapse every vertex of the plant onto its first one:
                 // degenerate triangles draw nothing
                 for (pos, range) in [
@@ -883,6 +951,14 @@ pub fn burn(
                     if a < b {
                         let first = pos[a];
                         pos[a..b].fill(first);
+                    }
+                }
+                if replaced {
+                    if let (Some((near, far)), Some(layer)) = (&mut char_positions, &chunk.char) {
+                        for (out, m) in [(near, &layer.near), (far, &layer.far)] {
+                            let (a, b) = m.ranges[i];
+                            out[a as usize..b as usize].copy_from_slice(&m.shown[a as usize..b as usize]);
+                        }
                     }
                 }
                 continue;
@@ -907,7 +983,57 @@ pub fn burn(
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, under_colors);
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, under_positions);
         }
+        if let (Some((near, far)), Some(layer)) = (char_positions, &chunk.char) {
+            for (positions, m) in [(near, &layer.near), (far, &layer.far)] {
+                if let Some(mesh) = meshes.get_mut(&m.mesh) {
+                    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+                }
+            }
+        }
     }
+}
+
+/// Build the burnt remains of every plant of `chunk` that has any, hidden.
+fn build_char_layer(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    material: &Handle<RetroMaterial>,
+    chunk: &Chunk,
+) -> CharLayer {
+    let mut make = |low: bool| {
+        let mut builder = Builder::default();
+        let mut ranges = Vec::with_capacity(chunk.plants.len());
+        for plant in &chunk.plants {
+            let start = builder.positions.len() as u32;
+            if let Some(r) = &plant.remains {
+                builder.remains(r, low);
+            }
+            ranges.push((start, builder.positions.len() as u32));
+        }
+        let shown = builder.positions.clone();
+        let mut hidden = shown.clone();
+        for &(a, b) in &ranges {
+            if a < b {
+                let first = hidden[a as usize];
+                hidden[a as usize..b as usize].fill(first);
+            }
+        }
+        let mut mesh = builder.finish();
+        // the normals above are those of the standing remains
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, hidden.clone());
+        let mesh = meshes.add(mesh);
+        let on = chunk.near != low;
+        let entity = commands
+            .spawn(MaterialMeshBundle::<RetroMaterial> {
+                mesh: mesh.clone(),
+                material: material.clone(),
+                visibility: if on { Visibility::Inherited } else { Visibility::Hidden },
+                ..default()
+            })
+            .id();
+        CharMesh { mesh, entity, shown, hidden, ranges }
+    };
+    CharLayer { near: make(false), far: make(true) }
 }
 
 /// Real seconds between two redraws of the burning plants (see [`burn`]).
@@ -976,8 +1102,12 @@ pub fn lod(
         let close = in_range && low_angle;
         if near != chunk.near {
             chunk.near = near;
-            for (e, on) in [(chunk.full, near), (chunk.low, !near)] {
-                if let Ok(mut v) = visibility.get_mut(e) {
+            let (near_char, far_char) = match &chunk.char {
+                Some(l) => (Some(l.near.entity), Some(l.far.entity)),
+                None => (None, None),
+            };
+            for (e, on) in [(Some(chunk.full), near), (Some(chunk.low), !near), (near_char, near), (far_char, !near)] {
+                if let Some(Ok(mut v)) = e.map(|e| visibility.get_mut(e)) {
                     *v = if on { Visibility::Inherited } else { Visibility::Hidden };
                 }
             }
@@ -1034,6 +1164,22 @@ impl Rng {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every plant has three burnt variants, picked from its yaw; each must
+    /// build in range of the index buffer and stay inside the live plant's box.
+    #[test]
+    fn burnt_remains_build_for_every_variant() {
+        for name in ["pine", "chestnut", "bush", "olive"] {
+            for (yaw, low) in [0.3_f32, 3.0, 5.5].into_iter().flat_map(|y| [(y, false), (y, true)]) {
+                let mut b = Builder::default();
+                let scale = Vec3::new(10.0, 12.0, 10.0);
+                b.remains(&Remains { name, base: Vec3::new(5.0, 2.0, 5.0), scale, yaw }, low);
+                assert!(!b.indices.is_empty(), "{name} {yaw}");
+                assert!(b.indices.iter().all(|&i| (i as usize) < b.positions.len()), "{name} {yaw}");
+                assert!(b.positions.iter().all(|p| p[1] >= 1.0 && p[1] <= 2.0 + 12.0 * 1.1), "{name} {yaw}");
+            }
+        }
+    }
 
     /// The distant proxies must stay a fraction of the models they stand in
     /// for, and face outward: `Builder::finish` averages face normals, and an

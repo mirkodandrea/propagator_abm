@@ -154,6 +154,17 @@ pub fn island_mesh(name: &str) -> Mesh {
     mesh
 }
 
+/// A burnt plant of `scripts/build_burnt_models.py`: `<species>_<a|b|c>` with
+/// species pine, chestnut, bush or olive, in the model space of the live plant
+/// of the same name (so the same scale vector fits). Colours are absolute sRGB.
+pub fn burnt(name: &str) -> &'static Kit {
+    static BURNT: OnceLock<HashMap<String, Kit>> = OnceLock::new();
+    BURNT
+        .get_or_init(|| parse_kit(include_str!("../../../assets/models/burnt.json"), "burnt vegetation"))
+        .get(name)
+        .unwrap_or_else(|| panic!("burnt vegetation has no `{name}`"))
+}
+
 /// A model of `scripts/build_unit_models.py` (firefighter, engine, tanker) as
 /// a mesh, in neutral greys so the unit's status tint reads.
 pub fn unit_mesh(name: &str) -> Mesh {
@@ -206,6 +217,24 @@ mod tests {
         for name in ["firefighter", "engine", "tanker"] {
             let m = unit_mesh(name);
             assert!(m.count_vertices() > 0, "{name}");
+        }
+    }
+
+    #[test]
+    fn the_burnt_plants_stand_on_the_ground_within_budget() {
+        for species in ["pine", "chestnut", "bush", "olive"] {
+            let live_h = model(species).positions.iter().map(|p| p[1]).fold(0.0, f32::max);
+            for k in ["a", "b", "c", "a_low", "b_low", "c_low"] {
+                let m = burnt(&format!("{species}_{k}"));
+                assert!(!m.indices.is_empty() && m.indices.len() % 3 == 0, "{species}_{k}");
+                assert!(m.positions.iter().flatten().all(|v| v.is_finite()), "{species}_{k}");
+                let low = m.positions.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min);
+                let high = m.positions.iter().map(|p| p[1]).fold(0.0, f32::max);
+                assert!((-0.05..=0.1).contains(&low), "{species}_{k}: base {low}");
+                assert!(high <= live_h * 1.1, "{species}_{k}: taller than the live plant");
+                let budget = if k.ends_with("low") { 60 } else { 200 };
+                assert!(m.indices.len() / 3 <= budget, "{species}_{k}: {} triangles", m.indices.len() / 3);
+            }
         }
     }
 

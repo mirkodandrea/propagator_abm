@@ -14,6 +14,8 @@ Original, editable Blender assets generated for this project; no external art or
 
 - `units.json`, `units_assets.blend`, `units_preview.png`: the player's teams, from `scripts/build_unit_models.py` (firefighter on foot, engine, air tanker). Neutral greys, so the status tint reads. Regenerate with `/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build_unit_models.py`.
 
+- `burnt.json`, `burnt_assets.blend`, `burnt_preview.png`: the burnt remains of pine, chestnut, bush and olive, three variants each (`_a` charred skeleton or snag, `_b` scorched crown left standing, `_c` stump or broken trunk with fallen wood), from `scripts/build_burnt_models.py`. Same model space as the live plant, absolute sRGB colours. Each also has a `_low` version of a few dozen triangles for chunks beyond the LOD distance. The game shows them in place of a plant once it has finished burning (`vegetation::burn`), built per chunk when the fire first burns something there. Regenerate with `/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build_burnt_models.py`.
+
 Regenerate from the repository root:
 
 ```sh
