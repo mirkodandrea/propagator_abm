@@ -15,10 +15,11 @@ like any other macchia.  The danger on them comes from `fire::threat`.
 Run again it gives the same file (ways with id >= 200 are rebuilt from scratch).
 Stand-alone (numpy only):
 
-    python3 -I tools/factory/strade.py [--out data/scenarios/rocca_strade] [--preview map.json]
+    python3 -I tools/factory/strade.py [--out <dir>] [--preview map.json]
 
-`--out` is a directory that gets only `osm.json`; the other files are symbolic
-links to `rocca_ventosa` (try it with `ROCCA_SCENARIO=rocca_strade`).
+By default it rewrites `osm.json` of the main territory in place (applied
+2026-10-15). With `--out <dir>` the file goes to another directory, whose other
+files become symbolic links to `rocca_ventosa` (a trial: `ROCCA_SCENARIO=<id>`).
 """
 import argparse
 import heapq
@@ -125,7 +126,7 @@ def resample(p, every=25.0):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(ROOT / "data/scenarios/rocca_strade"))
+    ap.add_argument("--out", default=str(SRC))
     ap.add_argument("--preview", help="also write the new ways as JSON for a map")
     a = ap.parse_args()
 
@@ -163,7 +164,7 @@ def main():
     for f in SRC.iterdir():
         if f.name != "osm.json" and not (out / f.name).exists():
             os.symlink(os.path.relpath(f, out), out / f.name)
-    (out / "osm.json").write_text(json.dumps(osm))
+    (out / "osm.json").write_text(json.dumps(osm, indent=2, ensure_ascii=False) + "\n")
     if a.preview:
         Path(a.preview).write_text(json.dumps(new))
 
