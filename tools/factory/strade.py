@@ -40,7 +40,8 @@ FIRST_ID = 200
 WAYS = [
     ("Variante Nord di Castelvento", "tertiary", (5000, 5330), [(5800, 5500)], (6150, 4330), MAX_GRADE),
     ("Strada dei Campi", "unclassified", (4640, 5420), [], (4800, 4900), MAX_GRADE),
-    ("Strada di San Rocco al Mare", "tertiary", (6250, 4200), [], (6450, 2900), MAX_GRADE),
+    # Ends where it first meets the Costiera: aimed further west it ran 1.5 km beside it.
+    ("Strada di San Rocco al Mare", "tertiary", (6250, 4200), [], (7043, 2552), MAX_GRADE),
     ("Strada del Piano", "unclassified", (4800, 4850), [(5600, 4080)], (6200, 4150), 0.18),
 ]
 
@@ -124,6 +125,76 @@ def resample(p, every=25.0):
     return np.stack([np.interp(t, s, p[:, 0]), np.interp(t, s, p[:, 1])], axis=1)
 
 
+def crossing(a, b, c, d):
+    """Where segment ab crosses segment cd, as (point, t on ab, u on cd), or None.
+    A crossing at the very ends of ab is not one (the way is welded there);
+    one at an end of cd is, so a junction already in the old way is reused."""
+    den = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0])
+    if abs(den) < 1e-9:
+        return None
+    t = ((c[0] - a[0]) * (d[1] - c[1]) - (c[1] - a[1]) * (d[0] - c[0])) / den
+    u = ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0])) / den
+    if not (1e-6 < t < 1 - 1e-6 and -1e-3 <= u <= 1 + 1e-3):
+        return None
+    p = [round(a[0] + t * (b[0] - a[0]), 2), round(a[1] + t * (b[1] - a[1]), 2)]
+    # Within half a metre of an old vertex: that vertex, so a second run adds nothing.
+    for end, ue in ((c, 0.0), (d, 1.0)):
+        if np.hypot(p[0] - end[0], p[1] - end[1]) < 0.5:
+            return list(end), t, ue
+    if not 0 < u < 1:
+        return None
+    return p, t, u
+
+
+def stop_at_first_meeting(pts, end, roads):
+    """Cut the way where it first crosses the road it ends on: the routed line
+    can cross it and come back, and that last stretch only doubles the road."""
+    target = [r for r in roads if r["drivable"] and any(v[0] == end[0] and v[1] == end[1] for v in r["line"])]
+    for i in range(len(pts) - 1):
+        for r in target:
+            ol = r["line"]
+            for k in range(len(ol) - 1):
+                hit = crossing(pts[i], pts[i + 1], ol[k], ol[k + 1])
+                if hit:
+                    if 0 < hit[2] < 1:
+                        ol.insert(k + 1, list(hit[0]))
+                    return np.vstack([pts[: i + 1], [hit[0]]])
+    return pts
+
+
+def weld_crossings(way, others):
+    """Put a shared vertex wherever `way` crosses a drivable way of `others`:
+    `abm::network` joins ways only where vertices coincide, so a crossing
+    without one is a bridge, and an engine cannot turn there."""
+    welded = 0
+    changed = True
+    while changed:
+        changed = False
+        line = way["line"]
+        for i in range(len(line) - 1):
+            for o in others:
+                if not o["drivable"] or o is way:
+                    continue
+                ol = o["line"]
+                for k in range(len(ol) - 1):
+                    hit = crossing(line[i], line[i + 1], ol[k], ol[k + 1])
+                    if not hit:
+                        continue
+                    p, _, u = hit
+                    line.insert(i + 1, p)
+                    if 0 < u < 1:
+                        ol.insert(k + 1, list(p))
+                    print(f"  incrocio con {o.get('name')} a ({p[0]:.0f}, {p[1]:.0f})")
+                    welded += 1
+                    changed = True
+                    break
+                if changed:
+                    break
+            if changed:
+                break
+    return welded
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(SRC))
@@ -150,6 +221,8 @@ def main():
             continue
         pts = resample(pts)
         pts[0], pts[-1] = s, e                       # weld to the existing vertex exactly
+        pts = stop_at_first_meeting(pts, e, roads)
+        e = pts[-1]
         length = float(np.hypot(*np.diff(pts, axis=0).T).sum())
         print(f"{name}: {length:5.0f} m, da ({s[0]:.0f}, {s[1]:.0f}) a ({e[0]:.0f}, {e[1]:.0f})")
         new.append({
@@ -157,6 +230,7 @@ def main():
             "name": name, "oneway": False,
             "line": [[round(float(x), 2), round(float(y), 2)] for x, y in pts],
         })
+        weld_crossings(new[-1], roads + new[:-1])
 
     osm["roads"] = roads + new
     out = Path(a.out)
