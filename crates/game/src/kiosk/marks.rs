@@ -23,6 +23,8 @@ const HEX_LINE_M: f32 = 12.0;
 /// The dark under-stroke of the hex lines, wider, a little lower.
 const HEX_UNDER_M: f32 = 24.0;
 const HEX_PICK_M: f32 = 16.0;
+/// The drivable roads shown while a move is chosen.
+const ROAD_M: f32 = 9.0;
 /// Extra pull toward the camera for the hex lines: enough that the hills'
 /// own bumps do not cut them into dashes (the hexes are 500 m wide).
 const HEX_PULL_M: f32 = 60.0;
@@ -50,6 +52,8 @@ const BLINK_HZ: f32 = 1.5;
 #[derive(Resource)]
 pub struct MarkAssets {
     hex: Handle<FlatMaterial>,
+    /// The drivable roads, while a move is chosen.
+    road: Handle<FlatMaterial>,
     /// Dark, under the hexes and the routes.
     under: Handle<FlatMaterial>,
     pick: Handle<FlatMaterial>,
@@ -77,7 +81,8 @@ const WANT: [f32; 3] = [1.0, 0.72, 0.0];
 
 pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>) {
     commands.insert_resource(MarkAssets {
-        hex: materials.add(FlatMaterial::new([1.0, 1.0, 1.0]).pulled(HEX_PULL_M)),
+        hex: materials.add(FlatMaterial::with_alpha([1.0, 1.0, 1.0], 0.55).pulled(HEX_PULL_M)),
+        road: materials.add(FlatMaterial::new([1.0, 0.93, 0.62])),
         under: materials.add(FlatMaterial::new([0.02, 0.03, 0.05]).pulled(HEX_PULL_M - 3.0)),
         pick: materials.add(FlatMaterial::new([1.0, 1.0, 1.0]).pulled(HEX_PULL_M + 4.0)),
         want: materials.add(FlatMaterial::new(WANT).pulled(HEX_PULL_M + 4.0)),
@@ -131,21 +136,70 @@ fn outline(at: rocca::Axial) -> Vec<Pos> {
     c.iter().chain(std::iter::once(&c[0])).copied().collect()
 }
 
-fn spawn<M: Component>(commands: &mut Commands, meshes: &mut Assets<Mesh>, mesh: Mesh, mat: &Handle<FlatMaterial>, tag: M) {
+fn spawn<M: Component>(commands: &mut Commands, meshes: &mut Assets<Mesh>, mesh: Mesh, mat: &Handle<FlatMaterial>, tag: M) -> Entity {
     commands.spawn((
         MaterialMeshBundle::<FlatMaterial> { mesh: meshes.add(mesh), material: mat.clone(), ..default() },
         tag,
         bevy::pbr::NotShadowCaster,
         bevy::pbr::NotShadowReceiver,
         bevy::render::view::NoFrustumCulling,
-    ));
+    )).id()
 }
 
-/// The hex grid is not drawn (user, 2026-10-15): only the start and the
-/// destination hex of a drag show, see [`update_orders`]. This clears any left over.
-pub fn update_hexes(mut commands: Commands, q: Query<Entity, With<HexMark>>) {
-    for e in &q {
-        commands.entity(e).despawn();
+/// The hex grid is not drawn during play (user, 2026-10-15). While a team's
+/// move is being chosen (in pause, the team taken or dragged) the hexes it can
+/// be sent to and the drivable roads show over the canopy (user, 2026-10-15),
+/// so the player sees where a road arrives. Built once, then shown or hidden.
+pub fn update_hexes(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    kiosk: Res<Kiosk>,
+    mut assets: ResMut<MarkAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut old: Query<(Entity, &mut Visibility), With<HexMark>>,
+) {
+    if assets.hex_key.is_none() {
+        for (e, _) in &old {
+            commands.entity(e).despawn();
+        }
+        assets.hex_key = Some("built".into());
+        let net = &sim.net;
+        let main = sim.hexes.hexes.first().map(|h| net.component(h.node, true));
+        let mut roads = vec![];
+        let mut under = vec![];
+        for n in 0..net.len() {
+            let id = n as abm::network::NodeId;
+            if Some(net.component(id, true)) != main {
+                continue;
+            }
+            for e in net.neighbours(id) {
+                if !e.drivable || (e.to as usize) < n {
+                    continue;
+                }
+                let seg = [net.pos(id), net.pos(e.to)];
+                under.push(path_mesh_at(&sim.scn, &seg, ROAD_M * UNDER, None, RING_LIFT_M - 2.0));
+                roads.push(path_mesh(&sim.scn, &seg, ROAD_M, None));
+            }
+        }
+        let hexes = sim.hexes.hexes.iter().map(|h| path_mesh(&sim.scn, &outline(h.at), HEX_LINE_M, None)).collect();
+        for (parts, mat) in [(under, &assets.under), (roads, &assets.road), (hexes, &assets.hex)] {
+            if parts.is_empty() {
+                continue;
+            }
+            let mat = mat.clone();
+            let e = spawn(&mut commands, &mut meshes, merge(parts), &mat, HexMark);
+            commands.entity(e).insert(Visibility::Hidden);
+        }
+        return;
+    }
+    let choosing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco)
+        && sim.paused()
+        && (kiosk.dragging.is_some() || matches!(kiosk.selection, Selection::Team(_)));
+    let vis = if choosing { Visibility::Inherited } else { Visibility::Hidden };
+    for (_, mut v) in &mut old {
+        if *v != vis {
+            *v = vis;
+        }
     }
 }
 
