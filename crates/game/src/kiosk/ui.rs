@@ -458,14 +458,22 @@ fn ground_at(sim: &Sim, cam: (&Camera, &GlobalTransform), p: egui::Pos2) -> Opti
     crate::pick::ray_ground(&sim.scn, ray.origin, *ray.direction)
 }
 
-/// A thin bar: dark track, `frac` (0-1) filled in `col`.
-fn bar_fill(p: &egui::Painter, r: egui::Rect, frac: f32, col: Color32) {
-    p.rect_filled(r, 3.0, Color32::from_black_alpha(200));
+/// A compact ring gauge: dark disc, an arc clockwise from the top for
+/// `frac` (0-1) in `col`.
+fn ring_gauge(p: &egui::Painter, c: egui::Pos2, r: f32, frac: f32, col: Color32) {
+    p.circle_filled(c, r + 3.0, Color32::from_black_alpha(200));
+    p.circle_stroke(c, r, egui::Stroke::new(4.0, Color32::from_white_alpha(40)));
     let f = frac.clamp(0.0, 1.0);
     if f > 0.0 {
-        p.rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(r.width() * f, r.height())), 3.0, col);
+        let n = (48.0 * f).ceil().max(2.0) as usize;
+        let pts: Vec<_> = (0..=n)
+            .map(|i| {
+                let a = -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * f * i as f32 / n as f32;
+                c + r * egui::vec2(a.cos(), a.sin())
+            })
+            .collect();
+        p.add(egui::Shape::line(pts, egui::Stroke::new(4.0, col)));
     }
-    p.rect_stroke(r, 3.0, egui::Stroke::new(1.0, Color32::from_white_alpha(120)));
 }
 
 /// District badges (clicked; the pointer over one shows its evacuation's
@@ -514,14 +522,18 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
                 .stroke(egui::Stroke::new(if on { 3.0 } else { 1.0 }, if on { Color32::WHITE } else { BLUE }))
                 .rounding(6.0)
                 .min_size(egui::vec2(44.0, if compact(ctx) { 44.0 } else { 0.0 }));
-            let r = ui.add(b);
-            // damage: the share of the homes the fire has reached
-            let (hit, homes) = sim.district_damage(d);
-            let bar = egui::Rect::from_min_size(r.rect.left_bottom() + egui::vec2(0.0, 2.0), egui::vec2(r.rect.width(), 6.0));
-            let share = if homes == 0 { 0.0 } else { hit as f32 / homes as f32 };
-            bar_fill(ui.painter(), bar, share, RED);
-            ui.allocate_rect(bar, egui::Sense::hover());
-            r
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                let r = ui.add(b);
+                // life: the share of the homes the fire has not reached
+                let (hit, homes) = sim.district_damage(d);
+                let life = if homes == 0 { 1.0 } else { 1.0 - hit as f32 / homes as f32 };
+                let col = if life > 0.66 { GREEN } else if life > 0.33 { AMBER } else { RED };
+                let (g, _) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
+                ring_gauge(ui.painter(), egui::pos2(g.center().x, r.rect.center().y), 9.0, life, col);
+                r
+            })
+            .inner
         });
         let r = inner.inner;
         rects[d] = Some(inner.response.rect);
@@ -600,7 +612,6 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         let canceled = ctx.input(|i| i.raw.events.iter().any(|e| matches!(e, egui::Event::Touch { phase: egui::TouchPhase::Cancel, .. })));
         let may_drag = sim.paused() && !lost && !multi && !canceled;
         if (multi || canceled) && k.dragging.is_some() { k.clear_selection(); }
-        let fire_d = if lost { None } else { sim.team_fire_distance_m(t) };
         // Keep the active handle alive outside the map until release/cancel;
         // otherwise egui never delivers drag_stopped and the cone stays stuck.
         if compact(ctx) && !drop_rect(ctx, k).intersects(flag) && !k.dragging.is_some_and(|(active, _)| active == t) { continue; }
@@ -613,13 +624,6 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
             super::icons::draw(p, egui::Rect::from_center_size(badge.left_center() + egui::vec2(17.0, 0.0), egui::vec2(22.0, 22.0)), super::icons::Icon::Engine, col);
             let g = p.layout_no_wrap(number.clone(), egui::FontId::proportional(17.0), Color32::WHITE);
             p.galley(egui::pos2(badge.right() - 10.0 - g.size().x, badge.center().y - g.size().y / 2.0), g, Color32::WHITE);
-            // distance from the fire: full while far, shrinking under the critical distance
-            let bar = egui::Rect::from_min_size(badge.left_bottom() + egui::vec2(0.0, 3.0), egui::vec2(badge.width(), 6.0));
-            if let Some(dm) = fire_d {
-                let frac = (dm / rocca::TEAM_FIRE_CRIT_M).min(1.0);
-                let col = if dm < rocca::TEAM_DANGER_M { RED } else if frac < 1.0 { AMBER } else { GREEN };
-                bar_fill(p, bar, frac, col);
-            }
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(if may_drag { egui::CursorIcon::Grab } else { egui::CursorIcon::PointingHand });
             }
