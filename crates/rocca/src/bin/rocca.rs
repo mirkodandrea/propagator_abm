@@ -3,7 +3,7 @@
 //!   rocca <caso> [--seme N] [--dati data]
 //!                [--squadra "min:squadra=x;y,..."] [--evacua "min:Borgo,..."]
 //!   rocca tutorial [--seme N]
-//!   --mira vicino|avanti: which cells the engines wet (default vicino)
+//!   --mira vicino|avanti: which cells the engines wet (default avanti)
 //!   --inizio M: the fire is reported M minutes after ignition (the case's
 //!   `start_min` otherwise); order minutes count from then.
 //!
