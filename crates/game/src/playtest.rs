@@ -7,7 +7,7 @@ use crate::{kiosk::Kiosk, sim::Sim};
 mod browser {
     use super::*;
     use std::cell::RefCell;
-    use wasm_bindgen::JsValue;
+    use wasm_bindgen::{JsValue, JsCast};
     thread_local! { static CONTROLS: RefCell<Vec<serde_json::Value>> = const { RefCell::new(Vec::new()) }; }
     pub fn bridge() -> Option<JsValue> {
         let w = web_sys::window()?;
@@ -30,14 +30,25 @@ mod browser {
             "pointer_down": r.ctx.input(|i| i.pointer.primary_down()),
         })));
     }
-    pub fn publish(k: &Kiosk, sim: &Sim) {
+    pub fn publish(k: &Kiosk, sim: &Sim, view: Option<(&bevy::prelude::Camera, &bevy::prelude::GlobalTransform, &crate::camera::OrbitCamera)>) {
         let Some(b) = bridge() else { return };
+        let target = match (k.expect(), view) {
+            (Some(rocca::tutorial::Expect::Move(t, hex)), Some((camera, transform, _))) => {
+                let p = hex.centre();
+                let pos = crate::frame::to_bevy(p, sim.scn.terrain.height_at(p));
+                camera.world_to_viewport(transform, pos).map(|v| serde_json::json!({"team": t, "x": v.x, "y": v.y}))
+            }
+            _ => None,
+        };
         let state = serde_json::json!({
+            "tutorial_target": target,
+            "camera": view.map(|(c, _, o)| serde_json::json!({"distance": o.distance, "yaw": o.yaw, "focus": [o.focus.x, o.focus.z], "pixels": c.physical_viewport_size().map(|v| [v.x,v.y])})),
+            "wasm_memory_bytes": wasm_bindgen::memory().unchecked_into::<js_sys::WebAssembly::Memory>().buffer().unchecked_into::<js_sys::ArrayBuffer>().byte_length(),
             "phase": format!("{:?}", k.phase), "case": sim.case.name, "time_s": sim.time_s(), "end_s": sim.case.duration_s(),
             "player": k.player, "error": k.error, "baseline_ready": k.baseline().is_some(),
             "step": k.step, "expect": k.expect().map(|e| format!("{e:?}")), "selection": format!("{:?}", k.selection),
             "paused": sim.paused(), "pause_ready_in_s": sim.pause_ready_in_s(), "over": sim.is_over(),
-            "teams": sim.teams.iter().enumerate().map(|(t, team)| serde_json::json!({ "name": team.name, "status": sim.team_status(t) })).collect::<Vec<_>>(),
+            "teams": sim.teams.iter().enumerate().map(|(t, team)| serde_json::json!({ "name": team.name, "status": sim.team_status(t), "hex": team.hex.map(|h| [h.centre().x, h.centre().y]) })).collect::<Vec<_>>(),
             "districts": sim.districts.iter().map(|d| serde_json::json!({ "name": d.name })).collect::<Vec<_>>(),
             "controls": CONTROLS.with(|c| c.borrow().clone()),
         });
@@ -91,7 +102,7 @@ pub fn tick(sim: &mut Sim, dt: f32) -> anyhow::Result<bool> {
     }
     sim.tick(dt)
 }
-pub fn observe(kiosk: bevy::prelude::Res<Kiosk>, sim: bevy::prelude::Res<Sim>) {
-    #[cfg(target_arch = "wasm32")] browser::publish(&kiosk, &sim);
-    #[cfg(not(target_arch = "wasm32"))] let _ = (kiosk, sim);
+pub fn observe(kiosk: bevy::prelude::Res<Kiosk>, sim: bevy::prelude::Res<Sim>, cameras: bevy::prelude::Query<(&bevy::prelude::Camera, &bevy::prelude::GlobalTransform, &crate::camera::OrbitCamera)>) {
+    #[cfg(target_arch = "wasm32")] browser::publish(&kiosk, &sim, cameras.get_single().ok());
+    #[cfg(not(target_arch = "wasm32"))] let _ = (kiosk, sim, cameras);
 }

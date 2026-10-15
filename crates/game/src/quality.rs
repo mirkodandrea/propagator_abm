@@ -74,9 +74,17 @@ impl Graphics {
         ..Graphics::ALTA
     };
 
+    /// Browser budget, also on desktop: no post-processing or shadow passes.
+    pub const WEB: Graphics = Graphics {
+        shadows: false, shadow_map: 256, cascades: 1,
+        vegetation: 0.025, lod_m: 0.0,
+        ..Graphics::BASSA
+    };
+
     /// The preset from `KIOSK_QUALITY`, then the `KIOSK_GFX` overrides, then
     /// the old `KIOSK_VEG_DENSITY` (which still wins for the vegetation).
     pub fn from_env() -> Graphics {
+        if cfg!(target_arch = "wasm32") { return Graphics::WEB; }
         let name = std::env::var("KIOSK_QUALITY").ok().or_else(saved);
         let mut g = match name.as_deref() {
             Some("bassa" | "low") => Graphics::BASSA,

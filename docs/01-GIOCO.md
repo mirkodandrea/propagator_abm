@@ -96,6 +96,7 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
   - **tutorial:** il fumetto della volontaria in basso (grande, testo breve; `**azione**` in arancione e `__luogo__` in blu, 2026-10-15), con il passo (n/N), «Avanti» nei passi di sola lettura e «tocca a te» negli altri; a ogni passo la **camera vola** a ciò di cui si parla (l'innesco, la squadra e l'esagono, il borgo) e per 7 s una **cornice ambra** lampeggiante evidenzia ciò che si deve toccare (pulsante della pausa, bandiera e esagono, borgo); un trascinamento della mappa interrompe il volo; la mappa resta usabile, ma il gioco accetta solo l'azione richiesta; «Salta il tutorial» o Esc;
   - **giorno 2:** carta con il fumetto della volontaria e «Inizia»;
   - **finale:** «Com'è andata, <nome>», le stelle grandi di Persone, Case, Ettari con che cosa contano, il verdetto della volontaria e il confronto con il fuoco senza ordini; a destra il posto in classifica, la riga di avvertenza sulla realtà («quando arriva l'ordine di evacuazione si parte subito») e «Nuova partita».
+- **Web su telefono** (2026-10-15, richiesta dell'utente): supporto verticale e orizzontale, profilo grafico leggero e memoria ridotta; pannelli e messaggi compatti e leggibili, controlli touch con trascinamento delle squadre e alternativa «tocca squadra, poi destinazione». Dettagli e verifiche in `web.md`. Le regole della partita restano condivise.
 - **Controlli:**
   - mouse o trackpad;
   - trascinare per spostare la mappa, un clic senza trascinare per scegliere;

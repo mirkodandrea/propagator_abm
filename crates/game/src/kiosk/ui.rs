@@ -34,6 +34,12 @@ pub(super) const GREY: Color32 = Color32::from_rgb(205, 208, 212);
 pub const VVF: Color32 = Color32::from_rgb(225, 60, 50);
 pub const AIB: Color32 = Color32::from_rgb(200, 215, 60);
 
+/// Use the same layout in either orientation, including short phone viewports.
+pub(super) fn compact(ctx: &egui::Context) -> bool {
+    let r = ctx.screen_rect();
+    r.width() < 1000.0 || r.height() < 600.0
+}
+
 fn clock(s: i64) -> String {
     rocca::words::clock(s)
 }
@@ -93,7 +99,9 @@ pub fn draw(
         k.operator = !k.operator;
     }
     egui::Area::new(egui::Id::new("menu_btn")).anchor(Align2::LEFT_BOTTOM, [10.0, -10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
-        if ui.add(secondary(if k.operator { "Chiudi menu" } else { "Menu" })).clicked() {
+        let r = ui.add(secondary(if k.operator { "Chiudi menu" } else { "Menu" }));
+        crate::playtest::control("Menu", &r, true);
+        if r.clicked() {
             k.operator = !k.operator;
         }
     });
@@ -104,7 +112,7 @@ pub fn draw(
     match k.phase {
         Phase::Intro => {
             k.side_w = 0.0;
-            banner(ctx, qr.as_deref());
+            if !compact(ctx) { banner(ctx, qr.as_deref()); }
             if k.title {
                 if screens::title(ctx, k, logo.as_deref()) {
                     k.title = false;
@@ -119,13 +127,14 @@ pub fn draw(
         }
         Phase::Fine => {
             k.side_w = 0.0;
-            if cfg!(target_arch = "wasm32") {
+            if cfg!(target_arch = "wasm32") && !compact(ctx) {
                 banner(ctx, None);
             }
             screens::end(ctx, k, &mut sim, &mut restarted, faces.as_deref());
         }
         Phase::Tutorial | Phase::Gioco => {
-            k.side_w = 0.0;
+            let r = ctx.screen_rect();
+            k.side_w = if compact(ctx) && r.width() > r.height() && k.phase == Phase::Tutorial { 316.0 } else { 0.0 };
             top_bar(ctx, k, &mut sim, cam);
             map_badges(ctx, k, &mut sim, cam);
             map_click(k, &mut sim);
@@ -133,6 +142,20 @@ pub fn draw(
                 screens::tutorial(ctx, k, &mut sim, &mut restarted, faces.as_deref(), cam);
             }
             notice(ctx, k);
+            if compact(ctx) {
+                egui::Area::new(egui::Id::new("map_tools")).anchor(Align2::RIGHT_BOTTOM, [-8.0, -8.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        for (label, zoom) in [("−", -1.0), ("+", 1.0)] {
+                            let r = ui.add(secondary(label).min_size(egui::vec2(44.0, 44.0)));
+                            crate::playtest::control(label, &r, true);
+                            if r.clicked() { k.zoom_steps += zoom; }
+                        }
+                        let r = ui.add(secondary("Isola"));
+                        crate::playtest::control("Isola", &r, true);
+                        if r.clicked() { k.reset_view = true; }
+                    });
+                });
+            }
         }
     }
     focus.pointer = ctx.is_pointer_over_area();
@@ -173,6 +196,10 @@ fn banner(ctx: &egui::Context, qr: Option<&Qr>) {
 // --- the pause and the weather ------------------------------------------------
 
 fn top_bar(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform)) {
+    if compact(ctx) {
+        compact_top(ctx, k, sim, cam);
+        return;
+    }
     egui::Area::new(egui::Id::new("barra")).anchor(Align2::LEFT_TOP, [10.0, 10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -296,15 +323,16 @@ const DIAL: f32 = 112.0;
 /// (no time limit: play symbol, green ring) or recharging (the ring fills
 /// and the number counts down the seconds to the next pause).
 fn pause_dial(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
+    let dial = if compact(ui.ctx()) { 56.0 } else { DIAL };
     use super::icons::{self, Icon};
     let paused = sim.paused();
     let enabled = if paused { k.allows(Expect::Resume) } else { sim.can_pause() && k.allows(Expect::Pause) };
-    let (r, resp) = ui.allocate_exact_size(egui::vec2(DIAL, DIAL), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(dial, dial), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let p = ui.painter();
     let c = r.center();
-    let radius = DIAL * 0.5 - 7.0;
+    let radius = dial * 0.5 - 7.0;
     let hot = resp.hovered() && enabled;
-    p.circle_filled(c, DIAL * 0.5, if hot { Color32::from_gray(60) } else { Color32::from_black_alpha(90) });
+    p.circle_filled(c, dial * 0.5, if hot { Color32::from_gray(60) } else { Color32::from_black_alpha(90) });
     p.circle_stroke(c, radius, egui::Stroke::new(10.0, Color32::from_gray(55)));
     let (frac, ring, icon, icon_col, secs) = if paused {
         (1.0, GREEN, Icon::Play, GREEN, None)
@@ -315,14 +343,14 @@ fn pause_dial(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
         (1.0, AMBER, Icon::Pause, AMBER, None)
     };
     arc(p, c, radius, 0.0, frac, egui::Stroke::new(10.0, ring));
-    let icon_c = if secs.is_some() { c - egui::vec2(0.0, 20.0) } else { c };
-    icons::draw(p, egui::Rect::from_center_size(icon_c, egui::vec2(DIAL * if secs.is_some() { 0.26 } else { 0.36 }, DIAL * if secs.is_some() { 0.26 } else { 0.36 })), icon, icon_col);
+    let icon_c = if secs.is_some() { c - egui::vec2(0.0, if compact(ui.ctx()) { 8.0 } else { 20.0 }) } else { c };
+    icons::draw(p, egui::Rect::from_center_size(icon_c, egui::vec2(dial * if secs.is_some() { 0.26 } else { 0.36 }, dial * if secs.is_some() { 0.26 } else { 0.36 })), icon, icon_col);
     if let Some(sec) = secs {
-        let g = p.layout_no_wrap(format!("{} s", sec.ceil() as i64), egui::FontId::proportional(30.0), Color32::WHITE);
+        let g = p.layout_no_wrap(format!("{} s", sec.ceil() as i64), egui::FontId::proportional(if compact(ui.ctx()) { 16.0 } else { 30.0 }), Color32::WHITE);
         p.galley(c + egui::vec2(-g.size().x / 2.0, 4.0), g, Color32::WHITE);
     }
     if hot {
-        p.circle_stroke(c, DIAL * 0.5, egui::Stroke::new(2.5, Color32::WHITE));
+        p.circle_stroke(c, dial * 0.5, egui::Stroke::new(2.5, Color32::WHITE));
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     crate::playtest::control(if paused { "Riprendi" } else { "Pausa" }, &resp, enabled);
@@ -343,7 +371,7 @@ fn pause_dial(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
 /// A small icon and a short text, side by side.
 fn chip(ui: &mut egui::Ui, icon: super::icons::Icon, text: &str, col: Color32) {
     super::icons::show(ui, icon, 22.0, col);
-    ui.label(RichText::new(text).size(18.0).strong().color(col));
+    ui.add(egui::Label::new(RichText::new(text).size(18.0).strong().color(col)).wrap());
 }
 
 fn select_team(k: &mut Kiosk, sim: &Sim, t: usize) {
@@ -353,7 +381,10 @@ fn select_team(k: &mut Kiosk, sim: &Sim, t: usize) {
     }
     k.clear_selection();
     k.selection = Selection::Team(t);
+    k.follow = false;
+    k.shot = None;
     k.done(Expect::Select(t));
+    if sim.paused() && k.phase == Phase::Gioco { k.notify("Tocca l'esagono di destinazione, oppure trascina il cono."); }
     if k.phase == Phase::Gioco && !sim.paused() {
         k.notify("Per dare ordini premi «Pausa».");
     }
@@ -440,16 +471,46 @@ fn bar_fill(p: &egui::Painter, r: egui::Rect, frac: f32, col: Color32) {
 fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform)) {
     let mut hovered = None;
     let mut rects = vec![None; sim.districts.len()];
-    for d in 0..sim.districts.len() {
+    let mut occupied: Vec<egui::Rect> = vec![];
+    let mut order: Vec<_> = (0..sim.districts.len()).collect();
+    order.sort_by_key(|&d| !(k.selection == Selection::District(d) || k.expect() == Some(Expect::Evacuate(d))));
+    for d in order {
+        // A chosen team's destination takes priority over labels: town badges
+        // must not intercept a tap or hide the hex under the finger.
+        if compact(ctx) && matches!(k.selection, Selection::Team(_)) { continue; }
         let c = sim.districts[d].centre;
-        let Some(s) = screen(cam, sim, c, 40.0) else { continue };
+        let Some(mut s) = screen(cam, sim, c, 40.0) else { continue };
         let name = sim.districts[d].name.clone();
+        if compact(ctx) {
+            let anchor = s;
+            let bounds = drop_rect(ctx, k).shrink(4.0);
+            if !bounds.contains(anchor) { continue; }
+            let width = ctx.fonts(|f| f.layout_no_wrap(name.clone(), egui::FontId::proportional(16.0), Color32::WHITE)).size().x + 18.0;
+            let size = egui::vec2(width, 52.0);
+            let mut placed = None;
+            for dy in [26.0, 78.0, -30.0, -82.0, 130.0] {
+                for dx in [0.0, -width * 0.55, width * 0.55] {
+                    let center = egui::pos2((anchor.x + dx).clamp(bounds.left() + width * 0.5, (bounds.right() - width * 0.5).max(bounds.left() + width * 0.5)), anchor.y + dy);
+                    let r = egui::Rect::from_center_size(center, size);
+                    if bounds.contains_rect(r) && occupied.iter().all(|o| !o.intersects(r.expand(3.0))) {
+                        placed = Some(r); break;
+                    }
+                }
+                if placed.is_some() { break; }
+            }
+            let Some(r) = placed else { continue };
+            s = r.center();
+            occupied.push(r);
+            ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("town_leaders")))
+                .line_segment([anchor, s], egui::Stroke::new(1.5, BLUE));
+        }
         let on = k.selection == Selection::District(d);
-        let inner = egui::Area::new(egui::Id::new(("borgo", d))).fixed_pos(s).pivot(Align2::CENTER_CENTER).order(egui::Order::Middle).show(ctx, |ui| {
+        let inner = egui::Area::new(egui::Id::new(("borgo", d))).fixed_pos(s).constrain(false).pivot(Align2::CENTER_CENTER).order(egui::Order::Middle).show(ctx, |ui| {
             let b = egui::Button::new(RichText::new(&name).size(16.0).strong().color(Color32::WHITE))
                 .fill(if on { BLUE.gamma_multiply(0.6) } else { Color32::from_black_alpha(170) })
                 .stroke(egui::Stroke::new(if on { 3.0 } else { 1.0 }, if on { Color32::WHITE } else { BLUE }))
-                .rounding(6.0);
+                .rounding(6.0)
+                .min_size(egui::vec2(44.0, if compact(ctx) { 44.0 } else { 0.0 }));
             let r = ui.add(b);
             // damage: the share of the homes the fire has reached
             let (hit, homes) = sim.district_damage(d);
@@ -532,9 +593,13 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         let number = sim.teams[t].name.split_whitespace().last().unwrap_or("").to_string();
         let on = k.selection == Selection::Team(t);
         let lost = sim.crews.units[sim.teams[t].unit].state == abm::suppression::UnitState::Lost;
-        let may_drag = sim.paused() && !lost;
+        let multi = ctx.input(|i| i.multi_touch().is_some_and(|m| m.num_touches > 1));
+        let canceled = ctx.input(|i| i.raw.events.iter().any(|e| matches!(e, egui::Event::Touch { phase: egui::TouchPhase::Cancel, .. })));
+        let may_drag = sim.paused() && !lost && !multi && !canceled;
+        if (multi || canceled) && k.dragging.is_some() { k.clear_selection(); }
         let fire_d = if lost { None } else { sim.team_fire_distance_m(t) };
-        let inner = egui::Area::new(egui::Id::new(("bandiera", t))).fixed_pos(flag.min).order(egui::Order::Middle).show(ctx, |ui| {
+        if compact(ctx) && !drop_rect(ctx, k).intersects(flag) { continue; }
+        let inner = egui::Area::new(egui::Id::new(("bandiera", t))).fixed_pos(flag.min).constrain(false).order(egui::Order::Middle).show(ctx, |ui| {
             let (rect, resp) = ui.allocate_exact_size(flag.size(), egui::Sense::click_and_drag());
             let p = ui.painter();
             let badge = egui::Rect::from_center_size(egui::pos2(rect.center().x, rect.top() + 18.0 + bob), egui::vec2(56.0, 28.0));
@@ -574,9 +639,12 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         // where it would go: the time on the road, next to the cone
         if k.dragging.is_some_and(|(d, _)| d == t) {
             use super::icons::Icon;
-            egui::Area::new(egui::Id::new("trascina")).fixed_pos(flag.right_top() + egui::vec2(8.0, 4.0)).order(egui::Order::Tooltip).interactable(false).show(ctx, |ui| {
+            egui::Area::new(egui::Id::new("trascina")).fixed_pos(if compact(ctx) {
+                egui::pos2(12.0, 122.0)
+            } else { flag.right_top() + egui::vec2(8.0, 4.0) }).order(egui::Order::Tooltip).interactable(false).show(ctx, |ui| {
                 egui::Frame::none().fill(Color32::from_black_alpha(215)).rounding(6.0).inner_margin(egui::Margin::symmetric(8.0, 4.0)).show(ui, |ui| {
-                    ui.horizontal(|ui| match &k.move_plan {
+                    if compact(ctx) { ui.set_width((ctx.screen_rect().width() - 48.0).min(300.0)); }
+                    ui.horizontal_wrapped(|ui| match &k.move_plan {
                         Some(Ok(plan)) => chip(ui, Icon::Clock, &format!("{:.0} min", plan.minutes.ceil()), AMBER),
                         Some(Err(e)) => chip(ui, Icon::Cross, e, RED),
                         None => {}
@@ -585,9 +653,17 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
             });
         }
         if resp.drag_stopped() && k.selection == Selection::Team(t) {
+            // Touch release also emits PointerGone; latest_pos is then None.
+            // The release event still carries the actual drop location.
+            let release = ctx.input(|i| i.raw.events.iter().rev().find_map(|e| match e {
+                egui::Event::Touch { phase: egui::TouchPhase::End, pos, .. } => Some(*pos),
+                egui::Event::PointerButton { pressed: false, pos, .. } => Some(*pos),
+                _ => None,
+            })).or_else(|| ctx.pointer_latest_pos());
+            let on_map = release.is_some_and(|p| drop_rect(ctx, k).contains(p));
             match k.dragging {
-                Some((_, g)) => give_move(k, sim, t, rocca::Axial::of(g)),
-                None => k.clear_selection(),
+                Some((_, g)) if on_map && may_drag => give_move(k, sim, t, rocca::Axial::of(g)),
+                _ => { k.clear_selection(); k.notify("Spostamento annullato: rilascia il cono sulla mappa."); }
             }
         }
     }
@@ -604,12 +680,18 @@ fn confirm_bubble(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Came
     }
     let Selection::District(d) = k.selection else { return };
     let Some(plan) = k.evac_plan.clone() else { return };
-    let Some(s) = screen(cam, sim, sim.districts[d].centre, 40.0) else { return };
+    let s = if compact(ctx) {
+        egui::pos2(if k.side_w > 0.0 { ctx.screen_rect().right() - k.side_w * 0.5 } else { ctx.screen_rect().center().x }, if k.side_w > 0.0 { 8.0 } else { 100.0 })
+    } else {
+        let Some(s) = screen(cam, sim, sim.districts[d].centre, 40.0) else { return };
+        s
+    };
     let this_pause = sim.can_cancel_evacuation();
     let ordered_here = this_pause && sim.evac.active().is_some_and(|e| e.district == d);
     let mut close = false;
     egui::Area::new(egui::Id::new("conferma")).fixed_pos(s + egui::vec2(0.0, 24.0)).pivot(Align2::CENTER_TOP).order(egui::Order::Foreground).show(ctx, |ui| {
-        card(BLUE).show(ui, |ui| {
+        card(BLUE).inner_margin(if compact(ctx) { 10.0 } else { 18.0 }).show(ui, |ui| {
+            if compact(ctx) { ui.set_width((if k.side_w > 0.0 { k.side_w - 40.0 } else { ctx.screen_rect().width() - 48.0 }).min(340.0)); }
             ui.label(RichText::new(&sim.districts[d].name).size(19.0).strong().color(BLUE));
             if ordered_here {
                 ui.horizontal(|ui| chip(ui, Icon::Exit, "evacuazione ordinata", GREEN));
@@ -718,9 +800,10 @@ fn evac_timer(ctx: &egui::Context, sim: &Sim, d: usize, at: egui::Pos2) {
 
 fn notice(ctx: &egui::Context, k: &Kiosk) {
     let Some((text, _)) = &k.notice else { return };
-    egui::Area::new(egui::Id::new("avviso")).anchor(Align2::CENTER_BOTTOM, [0.0, -80.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("avviso")).anchor(Align2::CENTER_TOP, [0.0, if compact(ctx) { 116.0 } else { 170.0 }]).order(egui::Order::Foreground).show(ctx, |ui| {
         panel().show(ui, |ui| {
-            ui.label(RichText::new(text).size(18.0).color(Color32::WHITE));
+            if compact(ctx) { ui.set_width((ctx.screen_rect().width() - 48.0).min(480.0)); }
+            ui.add(egui::Label::new(RichText::new(text).size(16.0).color(Color32::WHITE)).wrap());
         });
     });
 }
@@ -728,11 +811,11 @@ fn notice(ctx: &egui::Context, k: &Kiosk) {
 /// The operator menu (F2): a new visit, the game straight away, the world
 /// stopped, the view, the graphics, the board.
 fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, gfx: &mut crate::quality::Graphics) {
-    egui::Area::new(egui::Id::new("operatore")).anchor(Align2::LEFT_BOTTOM, [10.0, -64.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Window::new("Menu").id(egui::Id::new("operatore")).anchor(Align2::LEFT_BOTTOM, [8.0, -60.0]).default_width((ctx.screen_rect().width() - 48.0).min(380.0)).max_height(ctx.screen_rect().height() - 90.0).resizable(false).collapsible(false).vscroll(true).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.label(RichText::new("Menu (F2 per chiudere)").strong().color(Color32::WHITE));
             ui.label(RichText::new(format!("{} · {} · seme {}", sim.case.name, clock(sim.time_s()), k.seed)).color(GREY));
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if ui.add(secondary("Nuova visita")).clicked() {
                     new_visit(k, sim, restarted);
                 }
@@ -752,7 +835,7 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
                     k.reset_view = true;
                 }
             });
-            ui.horizontal(|ui| {
+            if !cfg!(target_arch = "wasm32") { ui.horizontal(|ui| {
                 use crate::quality::Graphics;
                 ui.label("Grafica:");
                 let now_level = gfx.level();
@@ -765,6 +848,7 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
                     }
                 }
             });
+            }
             if ui.add(secondary("Azzera classifica")).clicked() {
                 k.board = rocca::score::Board::default();
                 if let Err(e) = board::save(&k.board) {
@@ -776,4 +860,51 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
             }
         });
     });
+}
+
+
+fn compact_top(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform)) {
+    egui::Area::new(egui::Id::new("barra_mobile")).anchor(Align2::LEFT_TOP, [8.0, 8.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+        panel().inner_margin(8.0).show(ui, |ui| {
+            ui.set_width((ctx.screen_rect().width() - k.side_w - 32.0).min(460.0));
+            ui.horizontal(|ui| {
+                pause_dial(ui, k, sim);
+                ui.vertical(|ui| {
+                    let day = if k.phase == Phase::Tutorial { 1 } else { 2 };
+                    ui.label(RichText::new(format!("Giorno {day} · {}", clock(sim.time_s()))).size(20.0).strong());
+                    let w = sim.weather();
+                    ui.horizontal(|ui| {
+                        wind_arrow(ui, cam, w.wind_dir_deg, 22.0, Color32::WHITE);
+                        ui.label(format!("{:.0} km/h · umidità {:.0}%", w.wind_speed_kmh, w.moisture_pct));
+                    });
+                    let frac = sim.time_s() as f32 / sim.case.duration_s().max(1) as f32;
+                    ui.add(egui::ProgressBar::new(frac).desired_height(5.0));
+                });
+            });
+            if sim.paused() {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Pausa").strong().color(GREEN));
+                    for (color, label) in [(crate::forecast_view::NEAR_COLOUR, "1 h"), (crate::forecast_view::FAR_COLOUR, "3 h")] {
+                        let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                        ui.painter().line_segment([r.left_center(), r.right_center()], egui::Stroke::new(3.0, color));
+                        ui.colored_label(color, label);
+                    }
+                    if let Some((at, w)) = sim.weather_ahead() {
+                        ui.label(format!("{}: {:.0} km/h da {}", clock(at), w.wind_speed_kmh, rocca::words::compass(w.wind_dir_deg)));
+                    }
+                });
+            }
+        });
+    });
+}
+
+
+fn drop_rect(ctx: &egui::Context, k: &Kiosk) -> egui::Rect {
+    let mut r = ctx.screen_rect();
+    if compact(ctx) {
+        r.min.y += 116.0;
+        r.max.x -= k.side_w;
+        r.max.y -= if k.phase == Phase::Tutorial && k.side_w == 0.0 { (ctx.screen_rect().height() * 0.20).clamp(42.0, 120.0) + 126.0 } else { 58.0 };
+    }
+    r
 }

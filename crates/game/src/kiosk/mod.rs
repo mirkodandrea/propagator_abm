@@ -127,6 +127,7 @@ pub struct Kiosk {
     pub click: Option<Pos>,
     pub follow: bool,
     pub reset_view: bool,
+    pub zoom_steps: f32,
     /// Real seconds the opening screen's fire has been on show: the camera
     /// director's clock ([`demo_shot`]).
     pub demo_t: f32,
@@ -180,6 +181,7 @@ impl Kiosk {
             click: None,
             follow: true,
             reset_view: false,
+            zoom_steps: 0.0,
             operator: false,
             frozen: false,
             error: None,
@@ -437,7 +439,36 @@ pub fn start_game(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimR
 
 
 /// The clock and the previews. Runs before the view systems.
-pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: EventWriter<SimRestarted>) {
+pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: EventWriter<SimRestarted>, mut baseline_job: Local<Option<rocca::Game>>) {
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = &mut baseline_job;
+    #[cfg(target_arch = "wasm32")]
+    {
+        if kiosk.phase != Phase::Fine || kiosk.baseline().is_some() {
+            *baseline_job = None;
+        } else {
+            // Keep the final screen and its buttons responsive. Previously the
+            // whole five-hour comparison ran synchronously in this one frame.
+            let start = js_sys::Date::now();
+            let result = (|| -> anyhow::Result<Option<Outcome>> {
+                if baseline_job.is_none() {
+                    *baseline_job = Some(rocca::Game::new(&kiosk.data, &sim.case.name, kiosk.seed)?);
+                    return Ok(None);
+                }
+                let game = baseline_job.as_mut().unwrap();
+                while !game.is_over() {
+                    game.step()?;
+                    if js_sys::Date::now() - start >= 8.0 { return Ok(None); }
+                }
+                Ok(Some(game.outcome()))
+            })();
+            let done = match result { Ok(Some(o)) => Some(Ok(o)), Err(e) => Some(Err(format!("{e:#}"))), _ => None };
+            if let Some(result) = done {
+                if let Ok(mut slot) = kiosk.baseline.lock() { *slot = Some((sim.case.name.clone(), kiosk.seed, result)); }
+                *baseline_job = None;
+            }
+        }
+    }
     let dt = crate::playtest::delta(time.delta_seconds());
     let k = &mut *kiosk;
     if !k.frozen {
@@ -491,13 +522,6 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
     match k.phase {
         Phase::Tutorial if k.expect() == Some(Expect::Over) && (sim.is_over() || sim.game.evacuation_finished()) => k.enter(Phase::Giorno2),
         Phase::Gioco if sim.is_over() => {
-            #[cfg(target_arch = "wasm32")]
-            if k.baseline().is_none() {
-                let r = rocca::Game::without_orders(&k.data, &sim.case.name, k.seed).map_err(|e| format!("{e:#}"));
-                if let Ok(mut s) = k.baseline.lock() {
-                    *s = Some((sim.case.name.clone(), k.seed, r));
-                }
-            }
             k.enter(Phase::Fine);
         }
         _ => {}

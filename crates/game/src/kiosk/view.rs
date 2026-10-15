@@ -107,6 +107,11 @@ pub struct Drag {
     middle: bool,
     /// How far the left press has moved, logical px.
     moved: f32,
+    touch_id: Option<u64>,
+    touch_map: bool,
+    touch_moved: f32,
+    multi: bool,
+    pair: Option<(u64, u64, Vec2, Vec2)>,
 }
 
 #[derive(SystemParam)]
@@ -179,7 +184,10 @@ pub fn camera(
     let scene_pitch = -0.80;
 
     let window = windows.get_single().ok();
-    let over_map = window.is_some_and(|w| w.focused) && !focus.pointer && window.and_then(|w| crate::pick::cursor_position(camera, w)).is_some();
+    let touch_frame = input.touches.iter().next().is_some()
+        || input.touches.iter_just_released().next().is_some()
+        || input.touches.iter_just_canceled().next().is_some();
+    let over_map = !touch_frame && window.is_some_and(|w| w.focused) && !focus.pointer && window.and_then(|w| crate::pick::cursor_position(camera, w)).is_some();
     if buttons.just_pressed(MouseButton::Left) {
         drag.left = over_map;
         drag.moved = 0.0;
@@ -202,7 +210,8 @@ pub fn camera(
     drag.middle &= buttons.pressed(MouseButton::Middle) && window.is_some_and(|w| w.focused);
 
     let dragging = (drag.left && drag.moved >= CLICK_PX) || drag.right || drag.middle;
-    let touched = input.touches.iter().any(|t| t.delta() != Vec2::ZERO)
+    let touched = input.touches.iter_just_pressed().next().is_some()
+        || input.touches.iter().any(|t| t.delta() != Vec2::ZERO)
         || delta.length_squared() > 0.0 && dragging
         || over_map && (scroll != 0.0 || pinch != 0.0 || rotation != 0.0);
     if touched {
@@ -218,19 +227,61 @@ pub fn camera(
         orbit.yaw -= delta.x * 0.005;
         orbit.pitch -= delta.y * 0.004;
     }
-    if !focus.pointer {
-        let active: Vec<_> = input.touches.iter().collect();
-        match active.as_slice() {
-            [t] => pan(&mut orbit, t.delta(), height),
-            [a, b] => {
-                let now = a.position().distance(b.position());
-                let before = (a.position() - a.delta()).distance(b.position() - b.delta());
-                if now > 1.0 && before > 1.0 {
-                    orbit.distance *= before / now;
-                }
-            }
-            _ => {}
+    // Capture the owner at touch-down. Crossing a badge while panning must
+    // not steal the gesture; starting on a cone must never pan the map.
+    let active: Vec<_> = input.touches.iter().collect();
+    if drag.touch_id.is_none() {
+        if let Some(t) = input.touches.iter_just_pressed().next() {
+            drag.touch_id = Some(t.id());
+            drag.touch_map = !focus.pointer && crate::pick::window_to_viewport(camera, t.position()).is_some();
+            drag.touch_moved = 0.0;
+            drag.multi = false;
         }
+    }
+    if active.len() >= 2 { drag.multi = true; }
+    if drag.touch_map {
+        match active.as_slice() {
+            [t] if !drag.multi => {
+                drag.touch_moved = drag.touch_moved.max(t.distance().length());
+                if drag.touch_moved >= CLICK_PX { pan(&mut orbit, t.delta(), height); }
+                drag.pair = None;
+            }
+            [a, b] => {
+                // Stable ordering avoids a 180-degree jump when the touch map reorders.
+                let (a, b) = if a.id() < b.id() { (a, b) } else { (b, a) };
+                if let Some((ia, ib, pa, pb)) = drag.pair {
+                    if (ia, ib) == (a.id(), b.id()) {
+                        let before = pb - pa;
+                        let now = b.position() - a.position();
+                        if before.length() > 8.0 && now.length() > 8.0 {
+                            orbit.distance *= before.length() / now.length();
+                            orbit.yaw -= before.perp_dot(now).atan2(before.dot(now));
+                            pan(&mut orbit, (a.position() + b.position() - pa - pb) * 0.5, height);
+                        }
+                    }
+                }
+                drag.pair = Some((a.id(), b.id(), a.position(), b.position()));
+            }
+            _ => { drag.pair = None; }
+        }
+        for t in input.touches.iter_just_released() {
+            if Some(t.id()) == drag.touch_id && !drag.multi && drag.touch_moved.max(t.distance().length()) < CLICK_PX && !focus.pointer {
+                kiosk.click = crate::pick::window_to_viewport(camera, t.position())
+                    .and_then(|p| camera.viewport_to_world(gt, p))
+                    .and_then(|ray| crate::pick::ray_ground(&sim.scn, ray.origin, *ray.direction));
+            }
+        }
+    }
+    if active.is_empty() {
+        drag.touch_id = None;
+        drag.touch_map = false;
+        drag.pair = None;
+    }
+    if kiosk.zoom_steps != 0.0 {
+        orbit.distance *= (-kiosk.zoom_steps * 0.25).exp();
+        kiosk.zoom_steps = 0.0;
+        kiosk.follow = false;
+        kiosk.shot = None;
     }
     if over_map {
         orbit.yaw += rotation.to_radians();

@@ -42,6 +42,8 @@ mod ui;
 mod units;
 mod vegetation;
 mod visual_scale;
+#[cfg(target_arch = "wasm32")]
+mod web_input;
 
 use bevy::core_pipeline::bloom::BloomSettings;
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -75,6 +77,7 @@ fn main() -> anyhow::Result<()> {
                 if let Some(s) = std::env::var("KIOSK_SCALE").ok().and_then(|v| v.parse::<f32>().ok()) {
                     r = r.with_scale_factor_override(s);
                 }
+                if cfg!(target_arch = "wasm32") { r = r.with_scale_factor_override(1.0); }
                 r
             },
             mode: kiosk::window_mode(),
@@ -125,6 +128,8 @@ fn main() -> anyhow::Result<()> {
         app.add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
             .add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::filtered(vec![bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS]));
     }
+    #[cfg(target_arch = "wasm32")]
+    app.add_systems(PreUpdate, web_input::normalize.before(bevy::input::InputSystem).before(bevy_egui::EguiSet::ProcessInput));
     kiosk_systems(&mut app);
     app.add_plugins(forecast_view::ForecastPlugin);
     app.add_systems(Update, quality_live::apply_live.run_if(resource_changed::<quality::Graphics>.and_then(not(resource_added::<quality::Graphics>))));
@@ -162,7 +167,7 @@ fn setup_scene(
     let focus = frame::to_bevy(p, h);
     let mut camera = commands.spawn((
         Camera3dBundle {
-            camera: Camera { hdr: true, ..default() },
+            camera: Camera { hdr: !cfg!(target_arch = "wasm32"), ..default() },
             tonemapping: Tonemapping::TonyMcMapface,
             transform: Transform::from_xyz(focus.x, focus.y + distance * 0.77, focus.z + distance * 0.77),
             projection: PerspectiveProjection { far: 40_000.0, ..default() }.into(),

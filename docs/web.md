@@ -2,12 +2,38 @@
 
 La stessa partita del kiosk, nel browser, per farla provare a chi non è al chiosco. Stesso motore (`rocca::Game`) e stessi dati, compilati dentro il `.wasm` (`crates/datafs`).
 
-Differenze solo grafiche, per WebGL:
-- terreno disegnato a 20 m (i dati restano a 5 m);
-- vegetazione al 12 %;
-- niente MSAA.
+## Telefono e budget grafico (2026-10-15)
 
-Il confronto «senza ordini» del debrief avanza di qualche passo per frame invece che in un thread.
+La versione web usa un profilo leggero anche sui computer: terreno a 20 m,
+vegetazione al 2,5% con sagome semplificate (le mesh dettagliate e le chiome
+nascoste non vengono allocate), mare a 60 m vicino all'isola e 600 m al largo.
+Niente ombre, HDR, profondità di campo, bloom o MSAA. Il canvas disegna un pixel
+per pixel CSS anche sui display Retina; gli input sono normalizzati alla stessa
+scala. Le mesh statiche di terreno e mare e i ritratti rilasciano la copia CPU
+dopo il caricamento sulla GPU. Il fuoco conserva al massimo 600 celle con fiamme,
+100 particelle di fumo e 80 braci, con lo strato a terra a 20 m.
+Sono semplificazioni visive: dati del territorio, simulazione, ordini e punteggio
+restano quelli del chiosco. Il menu web non permette di riattivare effetti pesanti.
+
+L'interfaccia compatta si attiva sotto 1000 px di larghezza o 600 px di altezza:
+
+- verticale: istruzioni in basso; orizzontale: tutorial a destra, mappa a sinistra;
+- apertura, giorno 2, finale e menu scorrono se non entrano nello schermo;
+- il nome usa un campo HTML con tastiera del telefono;
+- un dito sposta la mappa, due dita fanno zoom, rotazione e spostamento;
+- in pausa si trascina un cono, oppure si tocca la squadra e poi l'esagono;
+- durante il trascinamento si vedono percorso, tempo o motivo del rifiuto;
+  rilasciare su un pannello annulla l'ordine; una gesture annullata o con due
+  dita non invia ordini;
+- un tocco sul borgo apre la scheda con persone, tempo e «Evacua»;
+- «+», «−» e «Isola» restano disponibili senza gesti o tastiera.
+
+Le istruzioni e i messaggi vanno a capo; i nomi dei borghi vengono disposti
+senza sovrapporsi, con un collegamento al punto sulla mappa. La pagina rispetta
+le aree sicure del telefono e consente di cambiare orientamento senza ricaricare.
+Il confronto «senza ordini» del finale avanza a piccoli blocchi (budget di 8 ms,
+con un passo indivisibile), lasciando disponibili interfaccia e riavvio. La
+previsione mantiene i 16 membri originali, uno per frame nel browser.
 
 ```text
 ./scripts/build_web.sh                                  # sito statico in target/web
@@ -18,9 +44,39 @@ Pubblicazione: `.github/workflows/pages.yml` costruisce e pubblica su GitHub Pag
 
 **Versione provata (2026-10-15):** `crates/game/build.rs` registra il commit della compilazione (`GAME_COMMIT`, con `-modificato` se l'albero non è pulito; in CI è quello pubblicato). Compare sul titolo («versione xxxxxxxx») e il pulsante «Dai un feedback» lo scrive da solo nella domanda «Versione del gioco» del Google Form (`entry.2126742218`).
 
-Serve un computer con mouse e un browser recente; il primo caricamento scarica circa 50 MB. Una scheda in secondo piano viene messa in pausa dal browser.
+Serve un browser con WebGL2. Il primo caricamento resta di circa 53 MiB non compressi:
+la riduzione principale riguarda la memoria e la grafica durante il gioco.
+Una scheda in secondo piano viene sospesa dal browser. In caso di perdita del
+contesto grafico compare un pulsante per ricaricare.
 
-## Playtest headless per agenti (2026-10-13)
+## Verifica touch del gioco attuale
+
+Checkpoint del 2026-10-15: build web e `cargo check -p game` superati.
+Verificati avvio, nome HTML, tutorial in verticale/orizzontale e primo ordine
+con due tocchi a densità 3× (circa 203 MiB di memoria lineare Wasm nel tutorial).
+La regressione completa è ancora aperta: dopo un rilascio sul pannello superiore
+il cono AIB può restare fuori dall'area interattiva; il test segnala
+`Missing control: AIB 1`. Da correggere prima di considerare completato il lavoro.
+
+```sh
+scripts/build_web.sh
+.venv/bin/python scripts/playtest_mobile.py
+# Per usare un Chromium già installato:
+.venv/bin/python scripts/playtest_mobile.py --browser-executable /percorso/chrome-headless-shell
+```
+
+Il test usa eventi touch, viewport 390×844 e 844×390 a densità 3×, poi 320×568.
+Controlla nome con tastiera HTML, tutorial, selezione con due tocchi, drag-and-drop,
+evacuazione, zoom, orientamento, finale e riavvio. Salva PNG, osservazioni e
+`report.json` in `out/playtest/mobile`. La memoria registrata è la capacità della
+memoria lineare Wasm, non la RAM totale del browser/GPU. L'emulazione desktop
+non sostituisce una prova su Safari iOS e Chrome Android su dispositivi reali.
+
+
+## Runner del vecchio flusso (2026-10-13)
+
+La modalità automatica di `playtest.py` qui sotto si riferisce al vecchio gioco
+e va aggiornata; per il flusso attuale usare `playtest_mobile.py`.
 
 Il browser headless rende la stessa UI egui e lo stesso diorama, senza finestre
 sul desktop e senza prendere il focus. Il runner usa un profilo effimero: la

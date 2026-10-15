@@ -8,6 +8,8 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
 
 ### Decisioni recenti
 
+- 2026-10-15 (richiesta dell'utente): **web su telefono**, verticale e orizzontale, con attenzione a drag-and-drop e messaggi. Profilo web senza effetti pesanti, alberi semplificati, mare meno fitto, particelle ridotte e canvas a densità 1×; input corretti anche sui display 3×. UI compatta, nome con tastiera HTML, tutorial laterale in orizzontale, tocchi/trascinamento/pizzico, messaggi a capo e schede visibili. Finale calcolato a piccoli blocchi. Verifiche e limiti in `web.md`; prova su telefoni reali ancora necessaria.
+
 - 2026-10-15 (richiesta dell'utente): **barre sulla mappa**: sotto il cartellino di ogni squadra la distanza dell'autobotte dalla fiamma più vicina (piena oltre `TEAM_FIRE_CRIT_M` = 300 m, poi cala; rossa sotto `TEAM_DANGER_M` = 120 m); sotto il cartellino di ogni borgo il danno (case raggiunte dal fuoco / case, `Game::district_damage`). **Esagoni lampeggianti** (`marks::update_blink`): verde dove la squadra ha un ordine ma nulla da fare (`Game::team_idle`), rosso dove è in pericolo (`Game::team_in_danger`, anche se si ritira). Soglie da tarare. Compila; **grafica non vista**.
 - 2026-10-15 (richiesta dell'utente): le linee di taglio sono **gialle**: tratteggiate (`dashed_ribbon`, 12 m / 8 m) davanti alla squadra, piene dove è già tagliato, e giallo anche lo strato `cleared` (prima marrone e blu). Compila; **grafica non vista**.
 - 2026-10-15 (richiesta dell'utente): **linea di squadra coordinata**: le persone a piedi non tagliano più ognuna per conto proprio. Quando l'autobotte lavora (e di nuovo quando tutti hanno finito) la squadra traccia **una sola curva** a 100 m dalla fiamma più vicina (`CREW_LINE_OFFSET_M`), che segue il fronte, ancorata sul tratto fra fiamma e punto stradale dell'esagono, entro `CREW_RANGE_M`; la divide in tratti contigui, uno per persona (`Game::crews_line_up`, `team_line`). Tolto `CREW_STEP_M`. Test ok. `medium` piano ragionato (2 squadre + Le Terrazze al min 20), seme 1/2/3: ettari 345/531/435 (prima 403/454/507), case 28/44/35, persone colte 147/113/220: misto, nel rumore. **Tabella di bilanciamento da rifare**, grafica non vista.
@@ -42,7 +44,7 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
    - togliere dal crate `abm` il modello IBM delle persone (`Abm`, traffico, comportamenti delle famiglie), tenendo `network`, `drive`, `suppression` e `refuge`;
    - ripulire gli avvisi di compilazione nel chiosco (`icons.rs`, `overlays.rs`).
 8. [ ] **Playtest:** aggiornare `scripts/playtest.py` al nuovo flusso, poi partite con persone che non conoscono il progetto.
-9. [ ] **Versione web:** provare `scripts/build_web.sh`. Il confronto senza ordini si calcola alla fine, nel frame: potrebbe bloccare.
+9. [ ] **Versione web:** completare la regressione touch: il rilascio di un cono sul pannello superiore può lasciarlo fuori dall’area interattiva (`Missing control: AIB 1`); poi prova su Safari iOS e Chrome Android reali (rotazione, trascinamento, memoria su una partita completa); regressione automatica con `scripts/playtest_mobile.py`. Il confronto finale ora avanza a piccoli blocchi.
 10. [ ] **Comunicazione** (fase 4): testi, personaggi e debriefing da riscrivere a posteriori.
 11. [ ] **Mario:** ricollegarlo per ultimo (decisione dell'utente).
 

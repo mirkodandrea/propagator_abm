@@ -56,6 +56,17 @@ fn volunteer(ui: &mut egui::Ui, faces: Option<&Portraits>, mood: Mood, size: f32
 /// only the name and «Gioca». True when «Gioca» was pressed.
 pub fn title(ctx: &egui::Context, k: &Kiosk, logo: Option<&Logo>) -> bool {
     let screen = ctx.screen_rect();
+    if super::ui::compact(ctx) {
+        let mut play = false;
+        compact_page(ctx, "titolo_mobile", |ui| {
+            ui.heading(super::TITLE);
+            ui.label("Aiutaci a gestire un incendio.");
+            ui.add_space(12.0);
+            play = action(ui, "Gioca");
+            ui.label("Trascina la mappa con un dito. Usa due dita per zoom e rotazione.");
+        });
+        return play;
+    }
     let mut play = false;
     egui::Area::new(egui::Id::new("titolo_fondo")).fixed_pos(screen.min).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
         let p = ui.painter();
@@ -105,6 +116,10 @@ pub fn title(ctx: &egui::Context, k: &Kiosk, logo: Option<&Logo>) -> bool {
 // --- the opening --------------------------------------------------------------
 
 pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, logo: Option<&Logo>, faces: Option<&Portraits>) {
+    if super::ui::compact(ctx) {
+        compact_intro(ctx, k, sim, restarted);
+        return;
+    }
     let screen = ctx.screen_rect();
     backdrop(ctx, "intro_fondo", 190);
     // today's board stands on the right of the card, the two centred as a pair
@@ -233,6 +248,10 @@ pub fn tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
         fly_to(k, sim, step.expect);
     }
     highlight(ctx, k, step.expect);
+    if super::ui::compact(ctx) {
+        compact_tutorial(ctx, k, sim, restarted, &step.text, step.expect);
+        return;
+    }
     let total = k.script.as_ref().map_or(0, |s| s.steps.len());
     let mut skip = false;
     let t = ctx.input(|i| i.time) as f32;
@@ -341,6 +360,16 @@ fn highlight(ctx: &egui::Context, k: &Kiosk, expect: Expect) {
 // --- day 2 --------------------------------------------------------------------
 
 pub fn day_two(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, faces: Option<&Portraits>) {
+    if super::ui::compact(ctx) {
+        let mut go = false;
+        compact_page(ctx, "giorno2_mobile", |ui| {
+            ui.heading("Giorno 2");
+            ui.label("Un nuovo incendio: ora decidi tu. La partita parte in pausa; guarda la previsione e dai i primi ordini.");
+            go = action(ui, "Inizia giorno 2");
+        });
+        if go { start_game(k, sim, restarted); }
+        return;
+    }
     backdrop(ctx, "giorno2_fondo", 150);
     let mut go = false;
     egui::Area::new(egui::Id::new("giorno2")).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
@@ -486,6 +515,37 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
         }
         k.saved = Some((day, at));
     }
+    if super::ui::compact(ctx) {
+        let mut again = false;
+        compact_page(ctx, "fine_mobile", |ui| {
+            ui.heading(format!("Com'è andata, {}", k.player));
+            again = action(ui, "Nuova partita");
+            match &base {
+                None => { ui.label("Confronto con lo stesso incendio senza ordini…"); }
+                Some(Err(e)) => { ui.colored_label(RED, e); }
+                Some(Ok(none)) => {
+                    let st = rocca::score::stars(&mine, none);
+                    for (label, n) in [("Persone", st.persone), ("Case", st.case), ("Ettari", st.ettari)] {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(label).size(18.0));
+                            if let Some(n) = n {
+                                for i in 0..5 { star(ui, if i < n { AMBER } else { GREY.gamma_multiply(0.3) }, 22.0); }
+                            } else { ui.label("non conta"); }
+                        });
+                    }
+                    ui.label(verdict(&k.player, &mine, none).1);
+                    ui.label(format!("Tu: {} persone e {} case colpite, {:.0} ha. Senza ordini: {} persone, {} case, {:.0} ha.", mine.caught(), mine.homes_hit(), mine.hectares, none.caught(), none.homes_hit(), none.hectares));
+                }
+            }
+            ui.separator();
+            ui.heading("Classifica di oggi");
+            let name = rocca::score::name(&k.player);
+            board_rows(ui, k, k.saved.as_ref().map(|(_, at)| (name.as_str(), *at)), rocca::score::BOARD_SHOWN);
+            ui.label("Nella realtà segui sempre le indicazioni delle autorità.");
+        });
+        if again { new_visit(k, sim, restarted); }
+        return;
+    }
     backdrop(ctx, "fine_fondo", 200);
     let screen = ctx.screen_rect();
     let side = 340.0;
@@ -561,4 +621,102 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
     if again {
         new_visit(k, sim, restarted);
     }
+}
+
+
+/// Narrow screens keep readable text and scroll, instead of scaling the kiosk UI.
+fn compact_page(ctx: &egui::Context, id: &str, content: impl FnOnce(&mut egui::Ui)) {
+    backdrop(ctx, "mobile_backdrop", 200);
+    let rect = ctx.screen_rect();
+    let width = (rect.width() - 40.0).min(600.0).max(120.0);
+    egui::Area::new(egui::Id::new(id)).anchor(Align2::CENTER_TOP, [0.0, 8.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+        panel_mobile().show(ui, |ui| {
+            ui.set_width(width);
+            egui::ScrollArea::vertical().max_height((rect.height() - 92.0).max(80.0)).show(ui, content);
+        });
+    });
+}
+
+fn panel_mobile() -> egui::Frame {
+    card(AMBER).inner_margin(12.0)
+}
+
+fn action(ui: &mut egui::Ui, label: &str) -> bool {
+    let r = ui.add_sized([ui.available_width(), 46.0], primary(label));
+    crate::playtest::control(label, &r, true);
+    r.clicked()
+}
+
+fn compact_intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+    let mut go = None;
+    compact_page(ctx, "intro_mobile", |ui| {
+        ui.heading(super::TITLE);
+        ui.label("Metti in pausa per spostare le squadre e ordinare l'evacuazione dei borghi.");
+        ui.add_space(6.0);
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen::JsCast;
+            let window = web_sys::window().unwrap();
+            if let Ok(v) = js_sys::Reflect::get(&window, &"roccaPlayerName".into()) {
+                if let Some(name) = v.as_string() {
+                    k.player = rocca::score::name(&name);
+                    let _ = js_sys::Reflect::delete_property(&window, &"roccaPlayerName".into());
+                }
+            }
+            let label = if k.player.is_empty() { "Come ti chiami?".to_string() } else { format!("Nome: {}", k.player) };
+            let r = ui.add_sized([ui.available_width(), 44.0], secondary(&label));
+            crate::playtest::control("Nome", &r, true);
+            if r.clicked() {
+                if let Ok(f) = js_sys::Reflect::get(&window, &"roccaEditName".into()) {
+                    if let Some(f) = f.dyn_ref::<js_sys::Function>() { let _ = f.call1(&window, &k.player.clone().into()); }
+                }
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        { ui.add(egui::TextEdit::singleline(&mut k.player).hint_text("Come ti chiami?")); }
+        if action(ui, "Inizia") { go = Some(true); }
+        let r = ui.add_sized([ui.available_width(), 44.0], secondary("Salta la prova guidata"));
+        crate::playtest::control("Salta la prova guidata", &r, true);
+        if r.clicked() { go = Some(false); }
+        ui.label("Tocca una squadra, poi l'esagono dove mandarla. Tocca un borgo per evacuare. Puoi anche trascinare i coni.");
+        ui.separator();
+        ui.collapsing("Classifica di oggi", |ui| board_rows(ui, k, None, rocca::score::BOARD_SHOWN));
+        ui.label(RichText::new("Territorio immaginario. Nella realtà segui le indicazioni delle autorità.").size(13.0));
+    });
+    if go.is_some() { k.player = rocca::score::name(&k.player); }
+    match go {
+        Some(true) => start_tutorial(k, sim, restarted),
+        Some(false) => start_game(k, sim, restarted),
+        None => {}
+    }
+}
+
+fn compact_tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, text: &str, expect: Expect) {
+    // The evacuation card carries the requested action while it is open.
+    if matches!(k.selection, super::Selection::District(_)) { return; }
+    let mut skip = false;
+    let rect = ctx.screen_rect();
+    let landscape = rect.width() > rect.height();
+    let anchor = if landscape { Align2::RIGHT_TOP } else { Align2::CENTER_BOTTOM };
+    let offset = if landscape { [-8.0, 8.0] } else { [0.0, -58.0] };
+    egui::Area::new(egui::Id::new("tutorial_mobile")).anchor(anchor, offset).order(egui::Order::Foreground).show(ctx, |ui| {
+        panel_mobile().show(ui, |ui| {
+            ui.set_width(if landscape { 276.0 } else { (rect.width() - 40.0).min(600.0) });
+            egui::ScrollArea::vertical().max_height(if landscape { (rect.height() - 180.0).max(42.0) } else { (rect.height() * 0.20).clamp(42.0, 120.0) }).show(ui, |ui| {
+                ui.label(RichText::new(text.replace("**", "").replace("__", "").replace("In basso a destra", "In alto").replace("clicca", "tocca").replace("Trascina il cono", "Tocca la squadra e poi la destinazione, oppure trascina il cono")).size(16.0));
+            });
+            ui.horizontal(|ui| {
+                let r = ui.add(secondary("Salta"));
+                crate::playtest::control("Salta il tutorial", &r, true);
+                skip = r.clicked();
+                ui.label(format!("{}/{}", k.step + 1, k.script.as_ref().map_or(0, |s| s.steps.len())));
+                if expect == Expect::Next {
+                    let r = ui.add(primary("Avanti").min_size(egui::vec2(80.0, 44.0)));
+                    crate::playtest::control("Avanti", &r, true);
+                    if r.clicked() { k.done(Expect::Next); }
+                }
+            });
+        });
+    });
+    if skip { start_game(k, sim, restarted); }
 }

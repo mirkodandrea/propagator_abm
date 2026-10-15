@@ -2,10 +2,17 @@
 <html lang="it">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Isola di Roccavento</title>
     <style>
       html, body, #game { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #d0c6b4; }
+      #game { position: fixed; inset: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); width: auto; height: auto; }
+      body { overscroll-behavior: none; }
+      dialog { box-sizing: border-box; width: min(360px, calc(100vw - 32px)); border: 1px solid #fac346; border-radius: 14px; padding: 20px; background: #121418; color: white; font: 18px system-ui; }
+      dialog::backdrop { background: #000b; }
+      dialog label, dialog input { display: block; width: 100%; box-sizing: border-box; }
+      dialog input { margin: 12px 0; padding: 12px; font: 18px system-ui; }
+      dialog button { min-height: 44px; padding: 8px 18px; border: 0; border-radius: 8px; background: #fac346; font: 18px system-ui; }
       #rocca { display: block; width: 100%; height: 100%; outline: none; touch-action: none; -webkit-user-select: none; user-select: none; }
       #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #222; font: 18px system-ui, sans-serif; pointer-events: none; text-align: center; padding: 0 24px; }
       #loading h1 { margin: 0; font-size: 28px; font-weight: 600; }
@@ -26,6 +33,13 @@
       <div id="status">Caricamento del territorio e della simulazione…</div>
     </div>
     <div id="rom-toast"></div>
+    <dialog id="name-dialog">
+      <form method="dialog">
+        <label for="player-name">Come ti chiami?</label>
+        <input id="player-name" name="name" maxlength="32" autocomplete="given-name" enterkeyhint="done">
+        <button type="submit">Continua</button>
+      </form>
+    </dialog>
     <input id="rom-input" type="file" accept=".z64,.v64,.n64,.rom" hidden>
     <script type="module">
       import init from './game.js';
@@ -112,12 +126,37 @@
       romInput.addEventListener('change', () => { if (romInput.files[0]) takeRom(romInput.files[0]); romInput.value = ''; });
       addEventListener('dragover', e => e.preventDefault());
       addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files[0]) takeRom(e.dataTransfer.files[0]); });
-      store('readonly', s => s.get('sm64')).then(rom => { if (rom) window.marioRom = new Uint8Array(rom); }).catch(() => {});
+      // Mario is disconnected: do not load an unused ROM into phone memory.
 
       // The keyboard reaches the game only through the focused canvas.
       const canvas = document.querySelector('#rocca');
-      canvas.addEventListener('pointerdown', () => canvas.focus());
-      const focusCanvas = () => canvas.focus();
+      const nameDialog = document.querySelector('#name-dialog');
+      const nameInput = document.querySelector('#player-name');
+      window.roccaEditName = name => {
+        nameInput.value = name;
+        nameDialog.showModal();
+        nameInput.focus();
+      };
+      nameDialog.addEventListener('close', () => {
+        window.roccaPlayerName = nameInput.value;
+        canvas.focus({ preventScroll: true });
+      });
+      canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }));
+      const focusCanvas = () => { if (!nameDialog.open) canvas.focus({ preventScroll: true }); };
+      canvas.addEventListener('webglcontextlost', event => {
+        event.preventDefault();
+        const message = document.createElement('div');
+        message.id = 'loading';
+        message.style.pointerEvents = 'auto';
+        message.style.background = '#d0c6b4';
+        message.textContent = 'La grafica è stata interrotta dal browser.';
+        const retry = document.createElement('button');
+        retry.textContent = 'Ricarica il gioco';
+        retry.style.cssText = 'min-height:44px;padding:10px 20px;font:18px system-ui';
+        retry.onclick = () => location.reload();
+        message.append(retry);
+        document.body.append(message);
+      });
       focusCanvas();
       window.addEventListener('focus', focusCanvas);
 

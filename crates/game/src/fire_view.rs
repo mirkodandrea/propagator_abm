@@ -77,7 +77,7 @@ const OVERLAY_MIN_INTERVAL_S: f32 = 0.15;
 
 /// Overlay samples per fire cell along each axis. 2 gives a 10 m lattice,
 /// which with the domain warp is enough to hide the raster completely.
-const OVERLAY_SUBDIV: usize = 2;
+const OVERLAY_SUBDIV: usize = if cfg!(target_arch = "wasm32") { 1 } else { 2 };
 
 /// Above this many cells across, drop to one sample per cell — a fire that
 /// large is being viewed from far enough away that the edge detail is lost
@@ -97,9 +97,9 @@ const FLAMING_S: f32 = 900.0;
 const GLOWING_S: f32 = 1100.0;
 
 /// Caps, all of them per-frame geometry budgets rather than physical limits.
-const MAX_FLAME_CELLS: usize = 3_500;
-const MAX_SMOKE: usize = 800;
-const MAX_EMBERS: usize = 700;
+const MAX_FLAME_CELLS: usize = if cfg!(target_arch = "wasm32") { 600 } else { 3_500 };
+const MAX_SMOKE: usize = if cfg!(target_arch = "wasm32") { 100 } else { 800 };
+const MAX_EMBERS: usize = if cfg!(target_arch = "wasm32") { 80 } else { 700 };
 
 /// Shape of the firebrand's flight, mirroring `compute_spotting` in
 /// `propagator-core/src/kernel.rs` — the median landing distance is linear in

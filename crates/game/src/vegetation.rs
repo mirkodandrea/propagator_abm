@@ -582,6 +582,13 @@ struct Lods {
 impl Lods {
     fn model(&mut self, name: &'static str, base: Vec3, scale: Vec3, yaw: f32,
         foliage: [f32; 3], wood: [f32; 3]) {
+        // Do not allocate the detailed tree or its hidden undersides on web.
+        // Merely hiding that mesh with LOD still retained all its CPU/GPU data.
+        if cfg!(target_arch = "wasm32") {
+            self.full.proxy(name, base, scale, yaw, foliage, wood);
+            self.low.proxy(name, base, scale, yaw, foliage, wood);
+            return;
+        }
         self.remains.push(Remains { name, base, scale, yaw });
         let (up, down) = crate::models::split_plant(name);
         self.full.model(up, base, scale, yaw, foliage, wood);

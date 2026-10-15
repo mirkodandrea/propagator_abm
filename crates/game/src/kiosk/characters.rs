@@ -72,7 +72,7 @@ fn texture(bytes: &[u8], images: &mut Assets<Image>, contexts: &mut EguiContexts
         bevy::render::texture::CompressedImageFormats::NONE,
         true,
         bevy::render::texture::ImageSampler::linear(),
-        bevy::render::render_asset::RenderAssetUsages::all(),
+        bevy::render::render_asset::RenderAssetUsages::RENDER_WORLD,
     )
     .ok()?;
     Some(contexts.add_image(images.add(img)))
