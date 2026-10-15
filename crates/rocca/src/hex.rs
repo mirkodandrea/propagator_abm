@@ -7,8 +7,11 @@ use abm::network::{NodeId, RoadNetwork};
 use scenario::{Pos, Scenario};
 
 /// Distance between the centres of two neighbouring hexes (across the flats),
-/// metres. User, 2026-10-14: 500 m.
-pub const HEX_M: f32 = 500.0;
+/// metres. User, 2026-10-15: 300 m (was 500 m).
+pub const HEX_M: f32 = 300.0;
+
+/// How many hexes around its own a team works (user, 2026-10-15).
+pub const TEAM_REACH_HEXES: i32 = 1;
 
 /// Centre to corner, metres.
 pub fn radius_m() -> f32 {

@@ -468,8 +468,13 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         else {
             continue;
         };
-        let half_w = (e.x - a.x).abs().max(16.0);
-        let flag = egui::Rect::from_min_max(egui::pos2(a.x - half_w, a.y - 18.0), egui::pos2(a.x + half_w, b.y.max(a.y + 10.0)));
+        // the cone bobs and spins, so the handle covers the whole cone down to
+        // the ground ring, with a margin: the point is as good a grip as the badge
+        let ground = cam.0.world_to_viewport(cam.1, crate::frame::to_bevy(foot, sim.scn.terrain.height_at(foot) + crate::rings::RING_LIFT_M));
+        let bob = pins::BOB_M * sc;
+        let half_w = ((e.x - a.x).abs() + 6.0).max(22.0);
+        let bottom = b.y.max(a.y + 10.0).max(ground.map_or(0.0, |g| g.y)) + 8.0;
+        let flag = egui::Rect::from_min_max(egui::pos2(a.x - half_w, a.y - 18.0 - bob), egui::pos2(a.x + half_w, bottom));
         let col = if sim.teams[t].volunteers { AIB } else { VVF };
         let number = sim.teams[t].name.split_whitespace().last().unwrap_or("").to_string();
         let on = k.selection == Selection::Team(t);
@@ -478,7 +483,7 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         let inner = egui::Area::new(egui::Id::new(("bandiera", t))).fixed_pos(flag.min).order(egui::Order::Middle).show(ctx, |ui| {
             let (rect, resp) = ui.allocate_exact_size(flag.size(), egui::Sense::click_and_drag());
             let p = ui.painter();
-            let badge = egui::Rect::from_center_size(egui::pos2(rect.center().x, rect.top() + 18.0), egui::vec2(56.0, 28.0));
+            let badge = egui::Rect::from_center_size(egui::pos2(rect.center().x, rect.top() + 18.0 + bob), egui::vec2(56.0, 28.0));
             p.rect_filled(badge, 14.0, Color32::from_black_alpha(200));
             p.rect_stroke(badge, 14.0, egui::Stroke::new(if on || resp.hovered() { 2.5 } else { 1.5 }, if on || resp.hovered() { Color32::WHITE } else { col }));
             super::icons::draw(p, egui::Rect::from_center_size(badge.left_center() + egui::vec2(17.0, 0.0), egui::vec2(22.0, 22.0)), super::icons::Icon::Engine, col);

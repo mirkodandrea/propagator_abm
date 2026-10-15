@@ -22,7 +22,7 @@ pub const CONE_H_M: f32 = 120.0;
 pub const CONE_R_M: f32 = 55.0;
 pub const LIFT_M: f32 = 40.0;
 /// How far the cone bobs up and down, metres at scale 1.
-const BOB_M: f32 = 12.0;
+pub const BOB_M: f32 = 12.0;
 const RING_R_M: f32 = 45.0;
 /// At this distance from the camera a cone is drawn at scale 1.
 const UNIT_DIST_M: f32 = 2200.0;

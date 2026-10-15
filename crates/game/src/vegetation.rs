@@ -201,6 +201,11 @@ struct Chunk {
     base: Vec<[f32; 4]>,
     low_base: Vec<[f32; 4]>,
     under_base: Vec<[f32; 4]>,
+    /// Vertex positions as generated, so a plant hidden on cleared ground
+    /// (see [`CLEARED`]) can be brought back when the game restarts.
+    pos_base: Vec<[f32; 3]>,
+    low_pos_base: Vec<[f32; 3]>,
+    under_pos_base: Vec<[f32; 3]>,
     /// Fire state each plant was last drawn with, so a chunk is rebuilt only
     /// when something in it actually changed.
     drawn: Vec<u8>,
@@ -217,7 +222,16 @@ pub struct Vegetation {
     /// function of the fire and the clock, so an unchanged clock (a paused
     /// world, the planning phase) costs nothing.
     drawn_at: Option<f32>,
+    /// Cells cleared by crews when the plants were last drawn.
+    drawn_cleared: usize,
 }
+
+/// Drawn state of a plant standing on ground a crew has cleared: it is gone,
+/// leaving bare earth (the ground itself is tinted by `fire_view`). Above
+/// the `CellFire` values.
+const CLEARED: u8 = 10;
+/// Share of the plants inside a cleared line that are taken away.
+const CLEARED_SHARE: f32 = 0.85;
 
 pub fn spawn(
     mut commands: Commands,
@@ -312,6 +326,9 @@ pub fn spawn(
             let low_base = builder.low.colors.clone();
             let under_base = builder.under.colors.clone();
             let drawn = vec![CellFire::Unburnt as u8; plants.len()];
+            let pos_base = builder.full.positions.clone();
+            let low_pos_base = builder.low.positions.clone();
+            let under_pos_base = builder.under.positions.clone();
             let mesh = meshes.add(builder.full.finish());
             let low_mesh = meshes.add(builder.low.finish());
             let under = (!builder.under.positions.is_empty()).then(|| {
@@ -357,6 +374,9 @@ pub fn spawn(
                 base,
                 low_base,
                 under_base,
+                pos_base,
+                low_pos_base,
+                under_pos_base,
                 drawn,
                 touched: false,
             });
@@ -369,7 +389,7 @@ pub fn spawn(
         tri_count as f32 / 1e6,
         low_tri_count as f32 / 1e6
     );
-    commands.insert_resource(Vegetation { chunks, lod_m: gfx.lod_m, drawn_at: None });
+    commands.insert_resource(Vegetation { chunks, lod_m: gfx.lod_m, drawn_at: None, drawn_cleared: 0 });
 }
 
 /// Whether the 5 m land cover leaves room for this plant at `p`: nothing grows
@@ -784,15 +804,18 @@ pub fn burn(
         return;
     }
     let now = sim.time_s() as f32;
-    if veg.drawn_at == Some(now) && !restarted {
+    let line_cells = sim.fire.line_cells;
+    if veg.drawn_at == Some(now) && veg.drawn_cleared == line_cells && !restarted {
         return;
     }
     *since = 0.0;
     veg.drawn_at = Some(now);
+    veg.drawn_cleared = line_cells;
     let field = FireField {
         state: sim.fire.state(),
         arrival: sim.fire.arrival_times(),
         intensity: sim.fire.intensity(),
+        cleared: sim.fire.cleared(),
         world: sim.scn.world,
     };
     let (rows, cols) = (sim.scn.world.fire_rows, sim.scn.world.fire_cols);
@@ -804,14 +827,30 @@ pub fn burn(
         })
     };
 
+    let cleared = sim.fire.cleared();
+    let any_cleared = |(r0, r1, c0, c1): (usize, usize, usize, usize)| {
+        line_cells > 0 && (r0..r1).any(|r| cleared[r * cols + c0..r * cols + c1].iter().any(|&b| b))
+    };
+
     for chunk in &mut veg.chunks {
-        if !chunk.touched && !reached(chunk.cells) {
+        if !chunk.touched && !reached(chunk.cells) && !any_cleared(chunk.cells) {
             continue;
         }
         let mut wanted = Vec::with_capacity(chunk.plants.len());
         let mut dirty = false;
         for (plant, &drawn) in chunk.plants.iter().zip(&chunk.drawn) {
-            let s = plant_state(&field, plant, now);
+            let mut s = plant_state(&field, plant, now);
+            if s == CellFire::Unburnt as u8 {
+                // Thinned, not razed: the closer the plant is to the middle of
+                // the cut, the likelier it is gone, decided by its own fixed
+                // random number, so the same plants fall on every redraw and a
+                // few survive inside the line. The edge is sharp (a narrow
+                // ramp around the half-way point).
+                let inside = ((field.cleared_fraction(plant.pos) - 0.45) / 0.15).clamp(0.0, 1.0);
+                if plant.lag_s / 45.0 < CLEARED_SHARE * inside {
+                    s = CLEARED;
+                }
+            }
             dirty |= s != drawn;
             wanted.push(s);
         }
@@ -822,6 +861,9 @@ pub fn burn(
         let mut colors = chunk.base.clone();
         let mut low_colors = chunk.low_base.clone();
         let mut under_colors = chunk.under_base.clone();
+        let mut positions = chunk.pos_base.clone();
+        let mut low_positions = chunk.low_pos_base.clone();
+        let mut under_positions = chunk.under_pos_base.clone();
         chunk.touched = false;
         for ((plant, drawn), s) in chunk.plants.iter().zip(&mut chunk.drawn).zip(wanted) {
             *drawn = s;
@@ -829,6 +871,22 @@ pub fn burn(
                 continue;
             }
             chunk.touched = true;
+            if s == CLEARED {
+                // collapse every vertex of the plant onto its first one:
+                // degenerate triangles draw nothing
+                for (pos, range) in [
+                    (&mut positions, plant.vert_start..plant.vert_end),
+                    (&mut low_positions, plant.low_start..plant.low_end),
+                    (&mut under_positions, plant.under_start..plant.under_end),
+                ] {
+                    let (a, b) = (range.start as usize, range.end as usize);
+                    if a < b {
+                        let first = pos[a];
+                        pos[a..b].fill(first);
+                    }
+                }
+                continue;
+            }
             // scaled by local intensity, so a grass flare and a crowning
             // conifer do not glow identically
             let k = (field.intensity(plant.pos) / 4000.0).clamp(0.2, 1.0);
@@ -839,12 +897,15 @@ pub fn burn(
 
         if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         }
         if let Some(mesh) = meshes.get_mut(&chunk.low_mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, low_colors);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, low_positions);
         }
         if let Some(mesh) = chunk.under.as_ref().and_then(|(m, _)| meshes.get_mut(m)) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, under_colors);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, under_positions);
         }
     }
 }

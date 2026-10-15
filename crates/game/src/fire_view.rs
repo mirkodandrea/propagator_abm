@@ -299,6 +299,7 @@ pub fn update_overlay(
         state: sim.fire.state(),
         arrival: sim.fire.arrival_times(),
         intensity: sim.fire.intensity(),
+        cleared: sim.fire.cleared(),
         world: w,
     };
 
@@ -377,8 +378,9 @@ fn touched_bounds(
     let w = sim.scn.world;
     let (mut r0, mut r1, mut c0, mut c1) = (usize::MAX, 0usize, usize::MAX, 0usize);
     for (i, state) in sim.fire.state().iter().enumerate() {
-        let touched =
-            *state != CellFire::Unburnt || (layer == FireLayer::Hazard && hazard[i] > 0.01);
+        let touched = *state != CellFire::Unburnt
+            || sim.fire.cleared()[i]
+            || (layer == FireLayer::Hazard && hazard[i] > 0.01);
         if !touched {
             continue;
         }
@@ -410,6 +412,18 @@ fn sample_color(
     // staircase of cell edges into a burn perimeter. The band is narrow —
     // widen it and the perimeter stops being a perimeter and becomes a haze.
     let cover = ((field.burnt_fraction(p) - 0.42) / 0.20).clamp(0.0, 1.0);
+    if cover <= 0.0 && layer == FireLayer::Flames {
+        // Fuel a crew has cleared: bare earth, with the same grain as the
+        // ash so the strip does not read as a painted road.
+        let bare = ((field.cleared_fraction(p) - 0.42) / 0.20).clamp(0.0, 1.0);
+        if bare > 0.0 {
+            let grain = 0.8
+                + 0.4
+                    * (0.6 * noise(p.x / 17.0, p.y / 17.0, 0x31)
+                        + 0.4 * noise(p.x / 6.0, p.y / 6.0, 0x32));
+            return [0.36 * grain, 0.28 * grain, 0.19 * grain, bare * 0.95];
+        }
+    }
     if cover <= 0.0 && layer != FireLayer::Hazard {
         return [0.0, 0.0, 0.0, 0.0];
     }
@@ -641,6 +655,7 @@ pub fn update_flames(
         state: sim.fire.state(),
         arrival: sim.fire.arrival_times(),
         intensity: sim.fire.intensity(),
+        cleared: sim.fire.cleared(),
         world: scn.world,
     };
 

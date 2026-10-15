@@ -38,12 +38,21 @@ pub const PAUSE_COOLDOWN_REAL_S: f32 = 10.0;
 pub const PAUSE_COOLDOWN_S: i64 = (PAUSE_COOLDOWN_REAL_S * RUN_X) as i64;
 /// Spegnimento rispetto al modello calibrato (scelta dell'utente 2026-10-13:
 /// linea ×3, acqua ×30, portata ×20).
-pub const SUPPRESSION: UnitEffect = UnitEffect { line_x: 3.0, water_x: 30.0, reach_x: 20.0, nerve_x: 1.0 };
+pub const SUPPRESSION: UnitEffect = UnitEffect {
+    line_x: 3.0,
+    water_x: 30.0,
+    reach_x: ENGINE_RANGE_M / abm::suppression::ENGINE_REACH_M,
+    nerve_x: 1.0,
+};
+/// How far from its road point an engine wets the fuel: its hex and the ring
+/// around it, about one and a half hexes (user, 2026-10-15; was 1200 m).
+pub const ENGINE_RANGE_M: f32 = 1.5 * crate::hex::HEX_M;
 /// An engine that emptied its tank stays where it is and is full again after
 /// this long, simulated: the water is brought to it (user, 2026-10-14).
 pub const REFILL_S: f32 = 10.0 * 60.0;
-/// How far from its hex's road point a team's people on foot go to work.
-pub const CREW_RANGE_M: f32 = 400.0;
+/// How far from its hex's road point a team's people on foot go to work: the hexes
+/// around its own (user, 2026-10-15; was 400 m with hexes of 500 m).
+pub const CREW_RANGE_M: f32 = crate::hex::TEAM_REACH_HEXES as f32 * crate::hex::HEX_M;
 /// How much closer to the fire each new line is cut.
 pub const CREW_STEP_M: f32 = 80.0;
 /// A team standing in a place protects the homes this close to it.

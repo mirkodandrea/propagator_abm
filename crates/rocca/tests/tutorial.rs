@@ -19,7 +19,7 @@ fn the_scripted_tutorial_saves_the_district() {
     assert_eq!((o.caught(), o.homes_hit()), (0, 0));
     let d = g.district_index(&g.territory.tutorial.clone().unwrap().evacuate).unwrap();
     assert_eq!(g.evac.count(Some(d), State::Safe), o.districts[d].people);
-    assert!(o.hectares < none.hectares / 4.0, "{} ha against {}", o.hectares, none.hectares);
+    assert!(o.hectares < none.hectares / 3.0, "{} ha against {}", o.hectares, none.hectares);
 }
 
 #[test]

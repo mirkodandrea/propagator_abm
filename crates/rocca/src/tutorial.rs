@@ -61,7 +61,7 @@ impl Script {
         let mut steps = vec![
             Step { text: format!("Giorno 1. Un incendio è partito vicino a __{name}__. Il tempo è **fermo**: ora puoi dare gli ordini."), expect: Expect::Next },
             Step {
-                text: "Le aree colorate mostrano dove il fuoco può arrivare **tra 1 ora** e **tra 3 ore**, se nessuno interviene. In alto c'è il __vento__.".into(),
+                text: "Le aree colorate mostrano dove il fuoco può arrivare **tra 1 ora** e **tra 3 ore**, se nessuno interviene. In basso a destra vedi le __condizioni__: il vento e l'umidità.".into(),
                 expect: Expect::Next,
             },
         ];

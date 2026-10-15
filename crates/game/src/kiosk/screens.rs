@@ -348,7 +348,7 @@ pub fn day_two(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
             ui.set_width(640.0);
             ui.label(RichText::new("Giorno 2").size(40.0).strong().color(Color32::WHITE));
             ui.add_space(8.0);
-            let text = characters::to(&k.player, "Ben fatto, il fuoco è sotto controllo! Ma domani c'è un nuovo incendio, più grande, e il vento può cambiare. Ora decidi tu: ti aiuto solo se me lo chiedi.");
+            let text = characters::to(&k.player, "Ben fatto, il fuoco è sotto controllo! Ma domani c'è un nuovo incendio, più grande, e il vento può cambiare. Ora decidi tu.");
             volunteer(ui, faces, Mood::Calmo, 110.0, &text, 420.0);
             ui.add_space(14.0);
             ui.label(RichText::new("La partita parte in pausa: guarda la previsione e dai i primi ordini.").size(16.0).color(GREY));

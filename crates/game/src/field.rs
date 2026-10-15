@@ -24,6 +24,8 @@ pub struct FireField<'a> {
     pub state: &'a [CellFire],
     pub arrival: &'a [i32],
     pub intensity: &'a [f32],
+    /// Cells a crew on foot has cleared to bare ground.
+    pub cleared: &'a [bool],
     pub world: World,
 }
 
@@ -71,6 +73,14 @@ impl<'a> FireField<'a> {
     pub fn burnt_fraction(&self, p: Pos) -> f32 {
         let (idx, tx, ty) = self.corners(p);
         let v = |i: usize| f32::from(self.state[i] != CellFire::Unburnt);
+        bilinear(v(idx[0]), v(idx[1]), v(idx[2]), v(idx[3]), tx, ty)
+    }
+
+    /// How much of this point is cleared ground, in `[0, 1]`, continuous
+    /// across the edge of the line like [`Self::burnt_fraction`].
+    pub fn cleared_fraction(&self, p: Pos) -> f32 {
+        let (idx, tx, ty) = self.corners(p);
+        let v = |i: usize| f32::from(self.cleared[i]);
         bilinear(v(idx[0]), v(idx[1]), v(idx[2]), v(idx[3]), tx, ty)
     }
 

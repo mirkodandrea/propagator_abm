@@ -142,6 +142,7 @@ pub fn camera(
     mut refit: Local<(Option<UVec2>, u8)>,
     mut last_cursor: Local<Option<Vec2>>,
     mut tracked: Local<Option<(Vec2, f32)>>,
+    mut smooth_h: Local<Option<(f32, f32)>>,
 ) {
     input.motion.clear();
     let cursor = windows.get_single().ok().and_then(|w| w.cursor_position());
@@ -355,11 +356,51 @@ pub fn camera(
         orbit.focus.x = home.x + c.x;
         orbit.focus.z = home.z + c.y;
     }
-    orbit.focus.y = sim.scn.terrain.height_at(crate::frame::to_world(orbit.focus));
+    let terrain = &sim.scn.terrain;
+    // the intro flies low over the relief: the raw height under the focus and
+    // under the eye wiggles with every ridge, so there both are averaged over
+    // a wide ring and then eased in time (the eye never dips, it only rises
+    // with the broad shape of the ground)
+    let area = |p: Pos, r: f32| {
+        let mut sum = terrain.height_at(p);
+        let mut top = sum;
+        for k in 0..8 {
+            let a = k as f32 * std::f32::consts::FRAC_PI_4;
+            let h = terrain.height_at(Pos { x: p.x + r * a.cos(), y: p.y + r * a.sin() });
+            sum += h;
+            top = top.max(h);
+        }
+        (sum / 9.0, top)
+    };
+    let intro = kiosk.phase == Phase::Intro && !kiosk.frozen;
+    if intro {
+        let dt = time.delta_seconds().min(0.1);
+        let k = 1.0 - (-1.5 * dt).exp();
+        let (fy, _) = area(crate::frame::to_world(orbit.focus), 300.0);
+        let (sf, sg) = *smooth_h.get_or_insert((fy, 0.0));
+        let sf = sf + (fy - sf) * k;
+        *smooth_h = Some((sf, sg));
+        orbit.focus.y = sf;
+    } else {
+        orbit.focus.y = terrain.height_at(crate::frame::to_world(orbit.focus));
+    }
     let dir = Vec3::new(orbit.yaw.sin() * orbit.pitch.cos(), -orbit.pitch.sin(), orbit.yaw.cos() * orbit.pitch.cos());
     tf.translation = orbit.focus + dir * orbit.distance;
-    let ground = sim.scn.terrain.height_at(crate::frame::to_world(tf.translation));
-    tf.translation.y = tf.translation.y.max(ground + 25.0);
+    if intro {
+        let dt = time.delta_seconds().min(0.1);
+        let k = 1.0 - (-1.0 * dt).exp();
+        let (mean, top) = area(crate::frame::to_world(tf.translation), 400.0);
+        let want = mean.max(top - 40.0) + 60.0;
+        let (sf, sg) = smooth_h.unwrap_or((orbit.focus.y, want));
+        let sg = if sg == 0.0 { want } else { sg };
+        let sg = sg + (want - sg) * k;
+        *smooth_h = Some((sf, sg));
+        tf.translation.y = tf.translation.y.max(sg);
+        orbit.focus.y = sf;
+    } else {
+        let ground = terrain.height_at(crate::frame::to_world(tf.translation));
+        tf.translation.y = tf.translation.y.max(ground + 25.0);
+    }
     tf.look_at(orbit.focus, Vec3::Y);
     if let Some(dof) = dof.as_mut() {
         dof.focal_distance = tf.translation.distance(orbit.focus);

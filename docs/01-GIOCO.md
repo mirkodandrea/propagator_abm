@@ -31,12 +31,13 @@ Uno strategico in tempo reale, sul modello di StarCraft, per il chiosco della *S
 ## 3. Le squadre
 
 - **Una squadra** è un'autobotte con 3 persone. Ci sono 3 squadre dei **vigili del fuoco** alla caserma di Castelvento, il borgo più grande, e 2 squadre di **volontari AIB** al presidio di Pian dei Grilli, un borgo minore a ovest, dall'altra parte dell'isola rispetto a Castelvento (`game.json`: `stations`, `roster`).
-- Si spostano su una **griglia esagonale** di 500 m tra centri adiacenti (`rocca::hex`). Si può scegliere solo un esagono attraversato da una strada carrabile della rete principale: la squadra guida fino al punto stradale dell'esagono più vicino al centro.
+- Si spostano su una **griglia esagonale** di 300 m tra centri adiacenti (`rocca::hex`; 2026-10-15, prima 500 m). Si può scegliere solo un esagono attraversato da una strada carrabile della rete principale: la squadra guida fino al punto stradale dell'esagono più vicino al centro.
 - Ogni squadra ha un **cono 3D semitrasparente**, che fluttua e oscilla sopra il punto dove è assegnata: sull'esagono dell'ultimo ordine, oppure alla sua sede (`kiosk::pins`). Sul cono, un'etichetta con autobotte e numero. Il veicolo non ha icone sopra (2026-10-14).
 - In pausa si **trascina il cono** sull'esagono scelto: durante il trascinamento il gioco mostra **percorso e tempo di viaggio**, evitando le strade chiuse dal fuoco (`Game::plan_move`). **Lasciato il cono, l'ordine è dato**, senza conferma (2026-10-14). Anche un clic sul cono e poi sull'esagono funziona.
+- Con una squadra scelta o trascinata, il chiosco **illumina gli esagoni dell'area d'intervento** (gli esagoni adiacenti al suo, `TEAM_REACH_HEXES`, 2026-10-15), in azzurro; non si illuminano se l'esagono è rifiutato (rosso).
 - Arrivata, la squadra **attacca il fuoco come può** (2026-10-14), con il modello di spegnimento conservato (`abm::suppression`):
   - l'**autobotte** aumenta l'umidità del combustibile che riesce a raggiungere dalla strada (acqua, portata della manichetta);
-  - le **persone a piedi** tagliano la vegetazione di traverso alla via del fuoco. Finita una linea, ne tagliano un'altra più vicina al fuoco, entro 400 m dal punto stradale dell'esagono (`CREW_RANGE_M`).
+  - le **persone a piedi** tagliano la vegetazione di traverso alla via del fuoco. Finita una linea, ne tagliano un'altra più vicina al fuoco, entro **1 esagono** intorno (300 m) dal punto stradale dell'esagono (`CREW_RANGE_M`; 2026-10-15, prima 400 m).
 
   Viaggiano insieme all'autobotte e insieme ricevono gli ordini. La squadra **protegge anche le case** entro 300 m (`PROTECT_M`). Quando l'autobotte ha finito l'acqua **resta dov'è** e la ricarica è implicita: torna piena dopo **10 min simulati** (`REFILL_S`); intanto continua a proteggere le case vicine (2026-10-14, prima andava agli idranti). Si ritira se il pericolo è troppo alto e può essere persa.
 - Evacuazione e difesa sono **slegate**: le squadre non evacuano e l'evacuazione non muove squadre.

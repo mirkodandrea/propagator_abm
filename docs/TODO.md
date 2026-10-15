@@ -8,6 +8,8 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
 
 ### Decisioni recenti
 
+- 2026-10-15: dove una squadra a piedi taglia la linea (`FireSim::cleared`) l'85 % delle piante sparisce dal diorama, a caso ma con bordo netto (`vegetation::burn`, vertici collassati, `CLEARED_SHARE`) e il suolo diventa terra nuda (strato di terra di `fire_view`, `FireField::cleared_fraction`). Solo grafica; compilato, **non ancora visto a schermo** (nessuno screenshot, su richiesta dell'utente).
+- 2026-10-15: esagoni di **300 m** (`HEX_M`, prima 500) e raggio d'azione delle persone a piedi di **1 esagono** intorno = 300 m (2 esagoni = 600 m erano stati provati e scartati) (`CREW_RANGE_M`, prima 400 m), richiesta dell'utente. Con 300 m, `medium` (2 squadre a 5590;4400 e 5300;4600 + evacua Le Terrazze), semi 1/2/3: ettari 392/387/379 (prima 95/364/488), persone colte 150/130/112 (prima 55/158/172): il punto stradale dell'esagono cambia con la griglia. Tutorial: la prima mossa passa a 3792;3595 (con 3295 colpiva 5 persone); il test chiede ettari < senza ordini / 3 (prima / 4: 3,3 ha contro 12,2). **Da riverificare nella tabella di bilanciamento.** `PROTECT_M` (300 m) invariato.
 - 2026-10-15: la simulazione parte alle **11:00** (prima 14:00), richiesta dell'utente: `rocca::words::START_H`; l'orologio e il sole del chiosco ne derivano (11:00–14:00). Il meteo dello scenario non dipende dall'ora.
 - 2026-10-14: le strade si riaprono 8 min dopo l'accensione delle celle vicine (`FLAME_S` in `fire`): le celle che covano non chiudono più la strada (restano a 0,25 come le bruciate). Traccia dell'acqua e della linea tagliata più visibile (`units.rs`). **Da riverificare nella tabella di bilanciamento.**
 

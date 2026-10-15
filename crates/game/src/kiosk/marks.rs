@@ -48,6 +48,8 @@ pub struct MarkAssets {
     under: Handle<FlatMaterial>,
     pick: Handle<FlatMaterial>,
     want: Handle<FlatMaterial>,
+    /// The hexes a team placed on a hex covers.
+    area: Handle<FlatMaterial>,
     route: Handle<FlatMaterial>,
     evac: Handle<FlatMaterial>,
     closed: Handle<FlatMaterial>,
@@ -71,6 +73,7 @@ pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>
         under: materials.add(FlatMaterial::new([0.02, 0.03, 0.05]).pulled(HEX_PULL_M - 3.0)),
         pick: materials.add(FlatMaterial::new([1.0, 1.0, 1.0]).pulled(HEX_PULL_M + 4.0)),
         want: materials.add(FlatMaterial::new(WANT).pulled(HEX_PULL_M + 4.0)),
+        area: materials.add(FlatMaterial::new(ROUTE).pulled(HEX_PULL_M + 2.0)),
         route: materials.add(FlatMaterial::new(ROUTE)),
         evac: materials.add(FlatMaterial::new(EVAC).pulled(2.0)),
         closed: materials.add(FlatMaterial::new(CLOSED).pulled(1.0)),
@@ -99,6 +102,18 @@ fn merge(parts: Vec<Mesh>) -> Mesh {
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32, 0.0]; n]);
     mesh.insert_indices(Indices::U32(idx));
     mesh
+}
+
+/// The hexes within the team's reach of `at` (its own not included).
+fn reach(at: rocca::Axial) -> impl Iterator<Item = rocca::Axial> {
+    let n = rocca::TEAM_REACH_HEXES;
+    (-n..=n).flat_map(move |dq| (-n..=n).map(move |dr| rocca::Axial { q: at.q + dq, r: at.r + dr })).filter(move |h| (1..=n).contains(&h.distance(at)))
+}
+
+/// The hex a selected team is placed on, or being placed on.
+fn area_hex(kiosk: &Kiosk, sim: &Sim) -> Option<rocca::Axial> {
+    let Selection::Team(t) = kiosk.selection else { return None };
+    kiosk.move_hex.or(sim.teams.get(t)?.hex)
 }
 
 fn outline(at: rocca::Axial) -> Vec<Pos> {
@@ -137,14 +152,19 @@ pub fn update_orders(
     let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
     let mut key = (sim.time_s() / (2 * rocca::STEP_S)) as u64 ^ (playing as u64) << 63;
     let mut mix = |v: u64| key = key.wrapping_mul(0x100_0000_01b3) ^ v;
+    if let Some(at) = area_hex(&kiosk, &sim) {
+        mix((at.q as i64 as u64) << 8 ^ at.r as i64 as u64 ^ 0xa4ea);
+    }
     if let Some(at) = kiosk.move_hex {
         mix((at.q as i64 as u64) << 20 ^ at.r as i64 as u64);
         if let Selection::Team(t) = kiosk.selection {
             mix(t as u64 + 77);
         }
     }
-    if let Some(Ok(p)) = &kiosk.move_plan {
-        mix(p.path.len() as u64);
+    match &kiosk.move_plan {
+        Some(Ok(p)) => mix(p.path.len() as u64),
+        Some(Err(_)) => mix(0xbad),
+        None => {}
     }
     if let Some(Ok(p)) = &kiosk.evac_plan {
         mix(p.district as u64 + 1000 + p.path.points.len() as u64);
@@ -169,6 +189,11 @@ pub fn update_orders(
     if let Some(Expect::Move(_, at)) = kiosk.expect() {
         spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(at), HEX_PICK_M, None), &assets.want, OrderMark);
     }
+    // the area the team works around its hex, lit up
+    if let Some(at) = area_hex(&kiosk, &sim).filter(|_| !matches!(kiosk.move_plan, Some(Err(_)))) {
+        let rings = reach(at).map(|h| path_mesh(&sim.scn, &outline(h), HEX_PICK_M * 0.6, None)).collect();
+        spawn(&mut commands, &mut meshes, merge(rings), &assets.area, OrderMark);
+    }
     // the move being chosen: start hex and destination hex
     if let (Some(_), Selection::Team(t)) = (kiosk.move_hex, kiosk.selection) {
         let u = &sim.crews.units[sim.teams[t].unit];
@@ -176,7 +201,10 @@ pub fn update_orders(
         spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(from), HEX_PICK_M, None), &assets.pick, OrderMark);
     }
     if let Some(at) = kiosk.move_hex {
-        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(at), HEX_PICK_M, None), &assets.pick, OrderMark);
+        // a hex the team cannot go to is red, not white
+        let refused = matches!(kiosk.move_plan, Some(Err(_)));
+        let mat = if refused { &assets.closed } else { &assets.pick };
+        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(at), HEX_PICK_M, None), mat, OrderMark);
     }
     if let Some(Ok(p)) = &kiosk.move_plan {
         if p.path.len() >= 2 {

@@ -21,4 +21,4 @@ pub mod words;
 pub use case::{Case, Territory};
 pub use evac::{EvacPlan, State};
 pub use game::{DistrictOutcome, Game, LogEntry, MovePlan, Outcome, Team, PAUSE_COOLDOWN_REAL_S, PAUSE_COOLDOWN_S, REFILL_S, RUN_X, STEP_S};
-pub use hex::{Axial, Hex, HexGrid, HEX_M};
+pub use hex::{Axial, Hex, HexGrid, HEX_M, TEAM_REACH_HEXES};
