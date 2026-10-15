@@ -1,6 +1,6 @@
 """Secondary roads: alternative routes for the island (2026-10-15).
 
-Adds drivable ways (ids >= 200) to `osm.json` for the eastern plain, where the
+Adds drivable ways (ids >= 200) to `osm.json` for the eastern plain and the promontory, where the
 fires are: a north bypass of the SP 12, a road across the plain south of the
 ignition (access to the flank), a link from Fornaci to Le Terrazze and a road
 from San Rocco to the Costiera.  Links over the massif (Le Ghiande, Grilli)
