@@ -54,11 +54,32 @@ contesto grafico compare un pulsante per ricaricare.
 
 ## Verifica touch del gioco attuale
 
-Verifica del 2026-10-15: `scripts/build_web.sh`, `cargo check -p game` e la
+Correzione Safari del 2026-10-15, dopo la segnalazione di «Gioca» non
+cliccabile su iPhone: riprodotto con WebKit 26.0 a densità 3×. Il resize
+del browser riportava 1170×2532 per un canvas CSS da 390×844, nonostante
+l'override 1×; l'interfaccia e i tocchi finivano così su scale diverse.
+L'adattatore web sincronizza la risoluzione con le dimensioni CSS del canvas
+prima di elaborare gli input; il CSS conserva le dimensioni del contenitore
+anche quando winit richiede un resize. La verifica WebKit con tocchi nativi
+copre «Gioca», nome HTML, avvio e avanzamento del tutorial e rotazione:
+superata, senza errori browser; PNG controllati. Non è una prova su iPhone
+fisico né certifica specificamente iOS 27.
+
+Rieseguita anche la regressione Chromium dopo la correzione: tutti i controlli
+di interazione fino al finale e al riavvio superati, nessun errore browser.
+L'esecuzione fallisce però sul controllo di memoria: 353 MiB Wasm al finale,
+oltre il limite di 320 MiB. Il consumo al finale resta da indagare.
+
+```sh
+.venv/bin/python -m playwright install webkit
+.venv/bin/python scripts/playtest_mobile.py --browser webkit --smoke --output out/playtest/webkit
+```
+
+Verifica precedente del 2026-10-15: `scripts/build_web.sh`, `cargo check -p game` e la
 regressione touch completa superati. Chromium headless su macOS, densità 3×:
 390×844, 844×390, 320×568, 568×320 e mouse a 1280×800. Nell'ultima esecuzione
 (24 s) nessun errore browser; memoria lineare Wasm circa 203 MiB nel tutorial
-e 273 MiB al finale (295 MiB in una precedente esecuzione). Il test impone
+e 273 MiB al finale (295 MiB in un'altra esecuzione). Il test impone
 un limite di regressione di 320 MiB. Vegetazione: circa 10.900 piante e 180.000
 triangoli nel profilo web. PNG controllati per tutorial, evacuazione, partita,
 finale e telefono piccolo.

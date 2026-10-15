@@ -4,16 +4,32 @@
 use bevy::ecs::event::ManualEventReader;
 use bevy::input::touch::TouchInput;
 use bevy::prelude::*;
-use bevy::window::{CursorMoved, PrimaryWindow};
+use bevy::window::{CursorMoved, PrimaryWindow, WindowResized};
 
 pub fn normalize(
-    mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    mut windows: Query<(Entity, &mut Window), With<PrimaryWindow>>,
+    mut resized: EventWriter<WindowResized>,
     mut touches: ResMut<Events<TouchInput>>,
     mut cursors: ResMut<Events<CursorMoved>>,
     mut touch_reader: Local<ManualEventReader<TouchInput>>,
     mut cursor_reader: Local<ManualEventReader<CursorMoved>>,
 ) {
-    let Ok(mut window) = windows.get_single_mut() else { return };
+    let Ok((entity, mut window)) = windows.get_single_mut() else { return };
+    // WebKit's ResizeObserver reports CSS size × browser DPR even with our
+    // 1x override. Keep rendering, egui layout and input in CSS pixels after
+    // every resize (including rotation and Safari's changing browser bars).
+    if let Some(canvas) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id("rocca"))
+    {
+        let (width, height) = (canvas.client_width() as u32, canvas.client_height() as u32);
+        if width > 0 && height > 0
+            && (window.physical_width(), window.physical_height()) != (width, height)
+        {
+            window.resolution.set_physical_resolution(width, height);
+            resized.send(WindowResized { window: entity, width: window.width(), height: window.height() });
+        }
+    }
     let ratio = window.resolution.scale_factor() / window.resolution.base_scale_factor();
     let touch_events: Vec<_> = touch_reader.read(&touches).cloned().map(|mut e| {
         e.position *= ratio;

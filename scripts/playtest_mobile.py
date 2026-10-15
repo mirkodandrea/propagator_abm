@@ -18,8 +18,12 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--browser-executable')
+    parser.add_argument('--browser', choices=['chromium', 'webkit'], default='chromium')
+    parser.add_argument('--smoke', action='store_true', help='Test native taps through title, name and tutorial, in both orientations')
     parser.add_argument('--output', type=Path, default=ROOT / 'out/playtest/mobile')
     args = parser.parse_args()
+    if args.browser == 'webkit' and not args.smoke:
+        parser.error('WebKit supports --smoke; full gestures use Chromium CDP')
     args.output.mkdir(parents=True, exist_ok=True)
     class Quiet(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *_): pass
@@ -31,12 +35,12 @@ def main():
     try:
         with sync_playwright() as pw:
             gpu = ['--enable-gpu'] + (['--use-angle=metal'] if sys.platform == 'darwin' else [])
-            browser = pw.chromium.launch(headless=True, executable_path=args.browser_executable, args=gpu)
+            browser = getattr(pw, args.browser).launch(headless=True, executable_path=args.browser_executable, args=gpu if args.browser == 'chromium' else [])
             page = browser.new_page(viewport={'width': 390, 'height': 844}, device_scale_factor=3, is_mobile=True, has_touch=True)
             page.set_default_timeout(120000)
             page.on('pageerror', lambda e: errors.append(str(e)) if 'Using exceptions for control flow' not in str(e) else None)
             page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
-            cdp = page.context.new_cdp_session(page)
+            cdp = page.context.new_cdp_session(page) if args.browser == 'chromium' else None
             def state(): return page.evaluate('window.roccaPlaytest.state')
             def frames(n=4):
                 frame = page.evaluate('window.roccaPlaytest.frame')
@@ -54,7 +58,12 @@ def main():
                 frames(2)
             def tap(label):
                 c = control(label)
-                touch('touchStart', [(0, c['x'], c['y'])]); touch('touchEnd', [])
+                if args.smoke:
+                    # Native taps include browser event ordering and no artificial
+                    # frame delay between press/release (especially on Safari).
+                    page.touchscreen.tap(c['x'], c['y']); frames()
+                else:
+                    touch('touchStart', [(0, c['x'], c['y'])]); touch('touchEnd', [])
                 actions.append(label)
             def drag(start, end, screenshot=None):
                 touch('touchStart', [(0, *start)])
@@ -71,6 +80,10 @@ def main():
                 print(name, s['phase'], s['expect'], round(s['wasm_memory_bytes'] / 1048576, 1), 'MiB', flush=True)
             def rotate(w, h):
                 page.set_viewport_size({'width': w, 'height': h}); frames(12)
+                # The tutorial reserves part of the camera viewport for its
+                # sidebar; check the entire canvas backing buffer instead.
+                size = page.locator('#rocca').evaluate('c => [c.width, c.height]')
+                assert size == [w, h], size
             def advance(seconds):
                 page.evaluate('s => window.roccaPlaytest.advance_s = s', seconds)
                 page.wait_for_function('window.roccaPlaytest.advance_s === 0'); frames()
@@ -85,6 +98,13 @@ def main():
                 assert state()['player'] == 'Prova telefono'
                 snap('02-intro-portrait')
                 tap('Inizia'); frames(90); snap('03-tutorial-portrait')
+                if args.smoke:
+                    tap('Avanti'); assert state()['step'] == 1
+                    rotate(844, 390); snap('04-tutorial-landscape')
+                    tap('Avanti'); assert state()['step'] == 2
+                    assert not errors, errors
+                    passed = True
+                    return
                 tap('Avanti'); tap('Avanti'); frames(120)
                 target = state()['tutorial_target']; assert target
                 team = state()['teams'][target['team']]['name']
@@ -165,6 +185,6 @@ def main():
                 browser.close()
     finally:
         server.shutdown()
-        (args.output / 'report.json').write_text(json.dumps({'passed': passed, 'seconds': time.monotonic()-started, 'errors': errors, 'samples': samples, 'actions': actions}, ensure_ascii=False, indent=2))
+        (args.output / 'report.json').write_text(json.dumps({'browser': args.browser, 'smoke': args.smoke, 'passed': passed, 'seconds': time.monotonic()-started, 'errors': errors, 'samples': samples, 'actions': actions}, ensure_ascii=False, indent=2))
 
 if __name__ == '__main__': main()

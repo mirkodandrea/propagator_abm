@@ -8,6 +8,8 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
 
 ### Decisioni recenti
 
+- 2026-10-15 (bug segnalato dall'utente): **«Gioca» non cliccabile su iPhone**. Riprodotto su WebKit 26.0 a 3×: canvas logico 1170×2532 invece di 390×844, hit target diversi dai tocchi. Risoluzione sincronizzata alle dimensioni CSS prima degli input e dimensioni CSS protette dai resize inline di winit. Test con tocchi nativi su WebKit superato per titolo, nome, tutorial e rotazione; dettagli in `web.md`. Resta da verificare su iPhone fisico con iOS 27.
+
 - 2026-10-15 (richiesta dell'utente): **ottimizzazioni web trasferite al locale senza ridurre la qualità grafica**: terreno e mare rilasciano la copia CPU delle mesh dopo l'upload GPU anche nel chiosco (`RENDER_WORLD`). Geometria e shader restano identici; le interrogazioni delle altezze e il pavimento di Mario usano i dati del terreno. Vegetazione e fuoco conservano le mesh modificabili; i ritratti conservano le immagini richieste da bevy_egui. Previsione e confronto finale sono già su thread nel locale. `cargo check -p game --offline` e `git diff --check` superati; grafica non riverificata a schermo e risparmio RAM non misurato.
 
 - 2026-10-15 (richiesta dell'utente): **web su telefono**, verticale e orizzontale, con attenzione a drag-and-drop e messaggi. Profilo web senza effetti pesanti, alberi semplificati, mare meno fitto, particelle ridotte e canvas a densità 1×; input corretti anche sui display 3×. UI compatta, nome con tastiera HTML, tutorial laterale in orizzontale, tocchi/trascinamento/pizzico, messaggi a capo e schede visibili. Finale calcolato a piccoli blocchi. Build web, compilazione nativa e regressione touch completa superate (24 s, nessun errore browser; 203 MiB Wasm nel tutorial, 273 MiB al finale nell’ultima prova). Rilascio fuori mappa e `touchCancel` corretti e verificati; PNG controllati anche a 320×568 e 568×320. Verifiche e limiti in `web.md`; prova su telefoni reali ancora necessaria.
@@ -46,7 +48,7 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
    - togliere dal crate `abm` il modello IBM delle persone (`Abm`, traffico, comportamenti delle famiglie), tenendo `network`, `drive`, `suppression` e `refuge`;
    - ripulire gli avvisi di compilazione nel chiosco (`icons.rs`, `overlays.rs`).
 8. [ ] **Playtest:** aggiornare `scripts/playtest.py` al nuovo flusso, poi partite con persone che non conoscono il progetto.
-9. [ ] **Versione web:** prova su Safari iOS e Chrome Android reali (rotazione, trascinamento, memoria su una partita completa); regressione automatica con `scripts/playtest_mobile.py`. Il confronto finale ora avanza a piccoli blocchi.
+9. [ ] **Versione web:** prova su Safari iOS e Chrome Android reali (rotazione, trascinamento, memoria su una partita completa); regressione automatica con `scripts/playtest_mobile.py`. Il confronto finale ora avanza a piccoli blocchi. Nell'esecuzione dopo il fix Safari del 2026-10-15 tutte le interazioni Chromium passano, ma la memoria Wasm al finale arriva a 353 MiB e supera il limite di 320 MiB: da indagare.
 10. [ ] **Comunicazione** (fase 4): testi, personaggi e debriefing da riscrivere a posteriori.
 11. [ ] **Mario:** ricollegarlo per ultimo (decisione dell'utente).
 
