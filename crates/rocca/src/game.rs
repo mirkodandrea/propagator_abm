@@ -12,7 +12,7 @@
 use std::path::Path;
 
 use abm::network::{self, RoadNetwork};
-use abm::suppression::{Task, UnitEffect, UnitKind, UnitState, ENGINE_SPEED};
+use abm::suppression::{Task, UnitEffect, UnitKind, UnitState};
 use abm::traffic::Traffic;
 use abm::Suppression;
 use anyhow::{Context, Result};
@@ -61,8 +61,10 @@ pub const REFILL_S: f32 = 10.0 * 60.0;
 /// How far from its hex's road point a team's people on foot go to work: the hexes
 /// around its own (user, 2026-10-15; was 400 m with hexes of 500 m).
 pub const CREW_RANGE_M: f32 = crate::hex::TEAM_REACH_HEXES as f32 * crate::hex::HEX_M;
-/// How much closer to the fire each new line is cut.
-pub const CREW_STEP_M: f32 = 80.0;
+/// How far from the nearest flame the team's line is cut, metres.
+pub const CREW_LINE_OFFSET_M: f32 = 100.0;
+/// Spacing of the points that trace the curve, metres.
+pub const CREW_LINE_STEP_M: f32 = 30.0;
 /// The people of a team fan out around the hex's road point by this much,
 /// metres, and each then works on their own.
 pub const CREW_SPREAD_M: f32 = 60.0;
@@ -348,8 +350,9 @@ impl Game {
         let from = self.net.nearest(u.pos, true).ok_or("la squadra non è su una strada")?;
         let nodes = network::route(&self.net, from, hex.node, self.fire.threat(), true).ok_or("tutte le strade per arrivarci sono chiuse dal fuoco")?;
         let path: Vec<Pos> = std::iter::once(u.pos).chain(std::iter::once(self.net.pos(from))).chain(nodes.iter().map(|&n| self.net.pos(n))).collect();
-        let m: f32 = path.windows(2).map(|w| dist(w[0], w[1])).sum();
-        Ok(MovePlan { team: t, hex, path, minutes: m / ENGINE_SPEED / 60.0 })
+        let way: Vec<_> = std::iter::once(from).chain(nodes.iter().copied()).collect();
+        let secs = abm::drive::route_time_s(&self.net, u.pos, Some(u.heading), None, &way, abm::suppression::vehicle(u.kind));
+        Ok(MovePlan { team: t, hex, path, minutes: secs / 60.0 })
     }
 
     /// Send team `t` to hex `at`: it drives there and works the fire around
@@ -408,8 +411,8 @@ impl Game {
 
     /// Minutes of driving left for team `t`, if it is driving.
     pub fn team_eta_min(&self, t: usize) -> Option<f32> {
-        let m = self.crews.route_remaining_m(self.teams[t].unit, &self.net);
-        (m > 1.0).then(|| m / ENGINE_SPEED / 60.0)
+        let s = self.crews.route_remaining_s(self.teams[t].unit, &self.net);
+        (s > 1.0).then(|| s / 60.0)
     }
 
     /// Metres from team `t`'s engine to the nearest flame; `None` when nothing burns.
@@ -564,7 +567,7 @@ impl Game {
         for a in self.crews.step(STEP_S as f32, &self.net, &self.traffic, &self.fire, &self.scn) {
             self.fire.queue(a);
         }
-        self.crews_follow_the_fire();
+        self.crews_line_up();
         self.engines_follow_the_fire();
         let prot = self.protection();
         self.fire.set_structure_protection(&prot);
@@ -595,28 +598,134 @@ impl Game {
         Ok(())
     }
 
-    /// People on foot who finished their line cut the next one closer to the
-    /// fire, within [`CREW_RANGE_M`] of their hex's road point.
-    fn crews_follow_the_fire(&mut self) {
-        for (t, crew) in self.teams.iter().enumerate().flat_map(|(t, team)| team.crew_units.iter().map(move |&c| (t, c))).collect::<Vec<_>>() {
-            let Some(at) = self.teams[t].hex else { continue };
-            let u = &self.crews.units[crew];
-            if u.state != UnitState::Staged || u.task != Task::Hold || u.note != "line complete" || u.aboard {
+    /// The people of a team cut **one line together**: a curve at
+    /// [`CREW_LINE_OFFSET_M`] from the fire, wrapping round the front next to
+    /// the hex's road point, split into consecutive stretches, one per person
+    /// (user, 2026-10-15). It is drawn when the engine has arrived, and again
+    /// when everyone has finished, on the fire as it is then.
+    fn crews_line_up(&mut self) {
+        for t in 0..self.teams.len() {
+            let team = &self.teams[t];
+            let Some(at) = team.hex else { continue };
+            if team.pending.is_some() || self.crews.units[team.unit].state != UnitState::Working {
+                continue;
+            }
+            let alive: Vec<usize> = team.crew_units.iter().copied().filter(|&c| self.crews.units[c].state != UnitState::Lost).collect();
+            let unplanned = alive.iter().any(|&c| matches!(self.crews.units[c].task, Task::Attack { .. }));
+            let finished = !alive.is_empty() && alive.iter().all(|&c| {
+                let u = &self.crews.units[c];
+                !u.aboard && u.task == Task::Hold && u.note == "line complete"
+            });
+            if !unplanned && !finished {
                 continue;
             }
             let Some(hex) = self.hexes.get(at) else { continue };
-            let here = u.pos;
-            let Some(f) = self.fire.active_cells().iter().map(|c| self.scn.world.centre_of(*c)).min_by(|a, b| dist(*a, here).total_cmp(&dist(*b, here))) else { continue };
-            let d = dist(f, here);
-            if d < 1.0 {
-                continue;
-            }
-            let step = CREW_STEP_M.min(d * 0.5);
-            let next = Pos { x: here.x + (f.x - here.x) / d * step, y: here.y + (f.y - here.y) / d * step };
-            if dist(next, hex.target) <= CREW_RANGE_M {
-                let _ = self.crews.assign(crew, Task::Attack { at: next });
+            let Some(stretches) = self.team_line(hex.target, &alive) else { continue };
+            for (&c, (from, to)) in alive.iter().zip(stretches) {
+                let _ = self.crews.assign(c, Task::Line { from, to });
             }
         }
+    }
+
+    /// The stretches of the curve for `crew`, one each, in the order that
+    /// keeps the people from crossing. None when the fire is out or too far.
+    fn team_line(&self, target: Pos, crew: &[usize]) -> Option<Vec<(Pos, Pos)>> {
+        let world = self.scn.world;
+        let active: Vec<Pos> = self.fire.active_cells().iter().map(|c| world.centre_of(*c)).collect();
+        let nearest = |p: Pos| active.iter().copied().min_by(|a, b| dist(*a, p).total_cmp(&dist(*b, p)));
+        let n = crew.len();
+        if n == 0 {
+            return None;
+        }
+        // The anchor: on the way from the nearest flame to the road point.
+        let f = nearest(target)?;
+        let d = dist(f, target);
+        if d < 1.0 {
+            return None;
+        }
+        let anchor = Pos { x: f.x + (target.x - f.x) / d * CREW_LINE_OFFSET_M, y: f.y + (target.y - f.y) / d * CREW_LINE_OFFSET_M };
+        let total = n as f32 * abm::suppression::LINE_M_PER_H * 1.5;
+        // Walk along the level curve of the distance from the fire, both ways.
+        let walk = |sign: f32| -> Vec<Pos> {
+            let mut pts = vec![anchor];
+            let mut p = anchor;
+            let mut len = 0.0;
+            while len < total {
+                let Some(f) = nearest(p) else { break };
+                let dd = dist(f, p).max(1.0);
+                let (gx, gy) = ((p.x - f.x) / dd, (p.y - f.y) / dd);
+                let step = CREW_LINE_STEP_M;
+                let mut q = Pos { x: p.x - gy * sign * step, y: p.y + gx * sign * step };
+                // Back onto the curve.
+                if let Some(fq) = nearest(q) {
+                    let dq = dist(fq, q).max(1.0);
+                    let k = (CREW_LINE_OFFSET_M - dq) / dq;
+                    q = Pos { x: q.x + (q.x - fq.x) * k, y: q.y + (q.y - fq.y) * k };
+                }
+                if !world.contains(q) || dist(q, target) > CREW_RANGE_M {
+                    break;
+                }
+                len += dist(p, q);
+                pts.push(q);
+                p = q;
+            }
+            pts
+        };
+        let (a, b) = (walk(1.0), walk(-1.0));
+        let length = |v: &[Pos]| v.windows(2).map(|w| dist(w[0], w[1])).sum::<f32>();
+        let (la, lb) = (length(&a), length(&b));
+        let take_a = la.min((total / 2.0).max(total - lb));
+        let take_b = lb.min(total - take_a);
+        let clip = |v: Vec<Pos>, max: f32| -> Vec<Pos> {
+            let mut out = vec![v[0]];
+            let mut run = 0.0;
+            for w in v.windows(2) {
+                let seg = dist(w[0], w[1]);
+                if run + seg >= max {
+                    let k = if seg > 0.0 { (max - run) / seg } else { 0.0 };
+                    out.push(Pos { x: w[0].x + (w[1].x - w[0].x) * k, y: w[0].y + (w[1].y - w[0].y) * k });
+                    return out;
+                }
+                run += seg;
+                out.push(w[1]);
+            }
+            out
+        };
+        let mut curve: Vec<Pos> = clip(b, take_b).into_iter().rev().collect();
+        curve.extend(clip(a, take_a).into_iter().skip(1));
+        let len = length(&curve);
+        if len < 20.0 {
+            return None;
+        }
+        // The point at arc length `s`.
+        let at = |s: f32| -> Pos {
+            let mut run = 0.0;
+            for w in curve.windows(2) {
+                let seg = dist(w[0], w[1]);
+                if run + seg >= s {
+                    let k = if seg > 0.0 { (s - run) / seg } else { 0.0 };
+                    return Pos { x: w[0].x + (w[1].x - w[0].x) * k, y: w[0].y + (w[1].y - w[0].y) * k };
+                }
+                run += seg;
+            }
+            *curve.last().unwrap()
+        };
+        // People in order along the curve, from its start.
+        let (c0, c1) = (curve[0], *curve.last().unwrap());
+        let (ux, uy) = ((c1.x - c0.x) / dist(c0, c1).max(1.0), (c1.y - c0.y) / dist(c0, c1).max(1.0));
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by(|&i, &j| {
+            let key = |k: usize| {
+                let p = self.crews.units[crew[k]].pos;
+                (p.x - c0.x) * ux + (p.y - c0.y) * uy
+            };
+            key(i).total_cmp(&key(j))
+        });
+        let mut out = vec![(c0, c0); n];
+        for (rank, &k) in order.iter().enumerate() {
+            out[k] = (at(len * rank as f32 / n as f32), at(len * (rank + 1) as f32 / n as f32));
+        }
+        Some(out)
     }
 
     /// An engine with nothing to wet within [`ENGINE_RANGE_M`] drives, on the

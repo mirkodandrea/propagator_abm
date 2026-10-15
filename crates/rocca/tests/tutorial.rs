@@ -67,13 +67,15 @@ fn the_engine_keeps_to_the_road_and_its_people_get_off_and_spread() {
     let team = g.teams[0].clone();
     assert!(team.crew_units.len() > 1, "the people are separate units");
     let (mut walked, mut apart) = (false, false);
+    // Later drives (to refill) leave the crew working on foot: the riding rule
+    // is for the trip out.
     for _ in 0..400 {
         g.run_until(g.time_s() + 60).unwrap();
         let e = g.crews.units[team.unit].pos;
         let driving = g.team_eta_min(0).is_some();
         for &c in &team.crew_units {
             let u = &g.crews.units[c];
-            if driving {
+            if driving && !walked {
                 assert!(u.aboard && u.pos == e, "while the engine drives, its people ride in it");
             }
             walked |= !u.aboard && (u.pos.x - e.x).hypot(u.pos.y - e.y) > 20.0;

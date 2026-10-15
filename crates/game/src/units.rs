@@ -68,7 +68,6 @@ pub struct UnitAssets {
     order_ring: Handle<RetroMaterial>,
     line_cut: Handle<RetroMaterial>,
     line_todo: Handle<RetroMaterial>,
-    cleared: Handle<RetroMaterial>,
     wetted: Handle<RetroMaterial>,
     /// Suppression generation the markers were built for.
     orders_gen: u64,
@@ -76,7 +75,6 @@ pub struct UnitAssets {
     /// built from: the overlay only changes when a cell is newly cut or newly
     /// wet, which is far rarer than the fire changing.
     work_gen: u64,
-    cleared_count: usize,
     /// Wet cells seen at the last scan (so a cell is announced once, when it
     /// first gets wet) and the ones on show now, with the real time they appeared.
     wet_seen: std::collections::HashSet<usize>,
@@ -155,7 +153,7 @@ pub fn setup(
     }
     info!("suppression layer: {} unit symbols", sim.crews.units.len());
 
-    let (order_ring, line_todo) = (hdr_blue(&mut materials, vr, 0.95), hdr_blue(&mut materials, vr, 0.5));
+    let order_ring = hdr_blue(&mut materials, vr, 0.95);
     let mut unlit = |r: f32, g: f32, b: f32, a: f32| {
         materials.add(retro::material(StandardMaterial {
             base_color: Color::srgba(r, g, b, a),
@@ -169,17 +167,16 @@ pub fn setup(
     };
     commands.insert_resource(UnitAssets {
         order_ring,
-        line_cut: unlit(0.55, 0.42, 0.30, 0.95),
-        line_todo,
+        // Lines to cut: dashed yellow ahead of the crew, solid yellow once cut (user, 2026-10-15).
+        line_cut: unlit(1.0, 0.85, 0.10, 0.95),
+        line_todo: unlit(1.0, 0.85, 0.10, 0.95),
         // Cut line reads as bare earth; wetted ground as a cool wash. The wash
         // is deliberately faint: a busy pair of aircraft saturates a hundred
         // cells inside an hour, and at any higher alpha that is a lake painted
         // over the hillside rather than an indication of where the water went.
-        cleared: unlit(0.62, 0.40, 0.18, 0.95),
         wetted: unlit(0.15, 0.55, 1.00, 0.60),
         orders_gen: u64::MAX,
         work_gen: u64::MAX,
-        cleared_count: usize::MAX,
         wet_seen: Default::default(),
         wet_shown: Vec::new(),
         wet_built: 0,
@@ -210,7 +207,6 @@ pub fn reset(
     }
     assets.orders_gen = u64::MAX;
     assets.work_gen = u64::MAX;
-    assets.cleared_count = usize::MAX;
     assets.wet_seen.clear();
     assets.wet_shown.clear();
     assets.wet_built = 0;
@@ -365,7 +361,7 @@ pub fn sync_orders(
                 if done < 0.999 {
                     commands.spawn((
                         MaterialMeshBundle::<RetroMaterial> {
-                            mesh: meshes.add(ribbon(&sim.scn, head, to, 4.0)),
+                            mesh: meshes.add(dashed_ribbon(&sim.scn, head, to, 4.0)),
                             material: assets.line_todo.clone(),
                             ..default()
                         },
@@ -431,7 +427,6 @@ pub fn update_work_overlay(
 ) {
     let now = time.elapsed_seconds();
     let w = sim.scn.world;
-    let cleared_now = sim.fire.cleared().iter().filter(|c| **c).count();
     // Scan for newly wet cells on the sim generation (the moisture changes
     // slowly); each one is shown for WET_SHOW_S of real time, then dropped.
     let gen = sim.generation / WET_REFRESH_GENERATIONS;
@@ -452,34 +447,22 @@ pub fn update_work_overlay(
     let before = assets.wet_shown.len();
     assets.wet_shown.retain(|(_, t0)| now - *t0 < WET_SHOW_S);
     let wet_len = assets.wet_shown.len();
-    if !scan && assets.cleared_count == cleared_now && wet_len == before && assets.wet_built == wet_len {
+    if !scan && wet_len == before && assets.wet_built == wet_len {
         return;
     }
-    assets.cleared_count = cleared_now;
     assets.work_gen = gen;
     assets.wet_built = wet_len;
     for e in &existing {
         commands.entity(e).despawn();
     }
 
-    let cleared: Vec<Cell> = sim
-        .fire
-        .cleared()
-        .iter()
-        .enumerate()
-        .filter(|(_, f)| **f)
-        .map(|(i, _)| Cell { row: i / w.fire_cols, col: i % w.fire_cols })
-        .collect();
     let wet: Vec<Cell> = assets
         .wet_shown
         .iter()
         .map(|(i, _)| Cell { row: i / w.fire_cols, col: i % w.fire_cols })
         .collect();
 
-    for (cells, material) in [
-        (cleared, assets.cleared.clone()),
-        (wet, assets.wetted.clone()),
-    ] {
+    for (cells, material) in [(wet, assets.wetted.clone())] {
         if cells.is_empty() {
             continue;
         }
@@ -549,36 +532,60 @@ fn cell_patches(scn: &Scenario, cells: &[Cell]) -> Mesh {
 /// over a ridge drawn as one long quad drapes as a chord *through* the hill and
 /// disappears into it. Vertices only exist where you put them.
 pub(crate) fn ribbon(scn: &Scenario, a: Pos, b: Pos, width_m: f32) -> Mesh {
-    const RESAMPLE_M: f32 = 5.0;
-    let (dx, dy) = (b.x - a.x, b.y - a.y);
-    let len = (dx * dx + dy * dy).sqrt();
-    let steps = (len / RESAMPLE_M).ceil().max(1.0) as usize;
-    let (nx, ny) = if len > 1e-3 {
-        (-dy / len * width_m * 0.5, dx / len * width_m * 0.5)
-    } else {
-        (width_m * 0.5, 0.0)
-    };
+    ribbon_pieces(scn, &[(a, b)], width_m)
+}
 
-    let mut positions = Vec::with_capacity((steps + 1) * 2);
-    let mut normals = Vec::with_capacity((steps + 1) * 2);
-    let mut uvs = Vec::with_capacity((steps + 1) * 2);
-    let mut indices = Vec::with_capacity(steps * 6);
-    for i in 0..=steps {
-        let t = i as f32 / steps as f32;
-        let c = lerp(a, b, t);
-        for s in [-1.0f32, 1.0] {
-            let p = Pos {
-                x: c.x + nx * s,
-                y: c.y + ny * s,
-            };
-            positions.push([p.x, scn.terrain.height_at(p) + RING_LIFT_M, -p.y]);
-            normals.push([0.0, 1.0, 0.0]);
-            uvs.push([(s > 0.0) as u32 as f32, t]);
-        }
+/// A ribbon of dashes: DASH_M drawn, GAP_M left out.
+pub(crate) fn dashed_ribbon(scn: &Scenario, a: Pos, b: Pos, width_m: f32) -> Mesh {
+    const DASH_M: f32 = 12.0;
+    const GAP_M: f32 = 8.0;
+    let len = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+    let mut pieces = Vec::new();
+    let mut s = 0.0;
+    while s < len {
+        let e = (s + DASH_M).min(len);
+        pieces.push((lerp(a, b, s / len), lerp(a, b, e / len)));
+        s = e + GAP_M;
     }
-    for i in 0..steps as u32 {
-        let k = i * 2;
-        indices.extend_from_slice(&[k, k + 2, k + 1, k + 1, k + 2, k + 3]);
+    if pieces.is_empty() {
+        pieces.push((a, b));
+    }
+    ribbon_pieces(scn, &pieces, width_m)
+}
+
+fn ribbon_pieces(scn: &Scenario, pieces: &[(Pos, Pos)], width_m: f32) -> Mesh {
+    const RESAMPLE_M: f32 = 5.0;
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut uvs = Vec::new();
+    let mut indices = Vec::new();
+    for &(a, b) in pieces {
+        let base = positions.len() as u32;
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let len = (dx * dx + dy * dy).sqrt();
+        let steps = (len / RESAMPLE_M).ceil().max(1.0) as usize;
+        let (nx, ny) = if len > 1e-3 {
+            (-dy / len * width_m * 0.5, dx / len * width_m * 0.5)
+        } else {
+            (width_m * 0.5, 0.0)
+        };
+        for i in 0..=steps {
+            let t = i as f32 / steps as f32;
+            let c = lerp(a, b, t);
+            for s in [-1.0f32, 1.0] {
+                let p = Pos {
+                    x: c.x + nx * s,
+                    y: c.y + ny * s,
+                };
+                positions.push([p.x, scn.terrain.height_at(p) + RING_LIFT_M, -p.y]);
+                normals.push([0.0, 1.0, 0.0]);
+                uvs.push([(s > 0.0) as u32 as f32, t]);
+            }
+        }
+        for i in 0..steps as u32 {
+            let k = base + i * 2;
+            indices.extend_from_slice(&[k, k + 2, k + 1, k + 1, k + 2, k + 3]);
+        }
     }
 
     let mut mesh = Mesh::new(
