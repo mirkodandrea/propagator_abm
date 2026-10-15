@@ -139,18 +139,16 @@ pub fn person() -> Mesh {
     t.finish()
 }
 
-/// Three of them close together: a hand crew. Yellow once tinted.
+/// One crew member on foot: the bean figure with a hard hat and a tool on the
+/// shoulder. Yellow once tinted. Each person of a team is a unit of its own.
 pub fn crew() -> Mesh {
     let mut t = Toy::default();
-    for (x, z, s) in [(-0.9, 0.5, 0.95), (0.9, 0.4, 1.0), (0.0, -0.7, 1.05)] {
-        let k = s;
-        t.ellipsoid(V3::new(x, 0.62 * k, z), V3::new(0.46, 0.62, 0.40) * k, WHITE);
-        t.ellipsoid(V3::new(x, 1.50 * k, z), V3::new(0.36, 0.36, 0.34) * k, [0.95, 0.95, 0.95]);
-        // hard hat
-        t.ellipsoid(V3::new(x, 1.72 * k, z), V3::new(0.40, 0.2, 0.38) * k, [0.9, 0.9, 0.9]);
-    }
-    // a tool bundle, so it reads as work and not as a gathering
-    t.cuboid(V3::new(0.0, 0.5, 0.9), V3::new(0.9, 0.06, 0.06), [0.4, 0.3, 0.2]);
+    t.ellipsoid(V3::new(0.0, 0.62, 0.0), V3::new(0.46, 0.62, 0.40), WHITE);
+    t.ellipsoid(V3::new(0.0, 1.50, 0.02), V3::new(0.36, 0.36, 0.34), [0.95, 0.95, 0.95]);
+    // hard hat
+    t.ellipsoid(V3::new(0.0, 1.72, 0.02), V3::new(0.40, 0.2, 0.38), [0.9, 0.9, 0.9]);
+    // tool, so it reads as work and not as a passer-by
+    t.cuboid(V3::new(0.5, 0.9, 0.0), V3::new(0.05, 0.05, 0.8), [0.4, 0.3, 0.2]);
     t.finish()
 }
 

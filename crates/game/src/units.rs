@@ -258,7 +258,10 @@ pub fn update_units(
         }
 
         if u.kind == UnitKind::HandCrew {
-            let want = if u.state == UnitState::Working { &crew_meshes.squad } else { &crew_meshes.van };
+            // Off the vehicle (carrier set, not aboard) they are people on foot,
+            // walking or working; only a crew with no carrier drives its own van.
+            let on_foot = u.state == UnitState::Working || u.carrier.is_some();
+            let want = if on_foot { &crew_meshes.squad } else { &crew_meshes.van };
             if *mesh != *want {
                 *mesh = want.clone();
             }
