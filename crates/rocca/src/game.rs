@@ -432,21 +432,6 @@ impl Game {
         u.state == UnitState::Withdrawing || self.team_fire_distance_m(t).is_some_and(|d| d < TEAM_DANGER_M)
     }
 
-    /// Team `t` has an order but nothing to do: it stands where it was sent
-    /// with no fire to work on.
-    pub fn team_idle(&self, t: usize) -> bool {
-        let team = &self.teams[t];
-        let u = &self.crews.units[team.unit];
-        team.hex.is_some()
-            && team.pending.is_none()
-            && !u.aboard
-            && match u.state {
-                UnitState::Staged => true,
-                UnitState::Working => u.note.starts_with("waiting"),
-                _ => false,
-            }
-    }
-
     /// Homes of district `d` the fire has reached, and all its homes.
     pub fn district_damage(&self, d: usize) -> (usize, usize) {
         let ex = self.fire.exposure().fields();

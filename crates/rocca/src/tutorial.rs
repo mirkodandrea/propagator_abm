@@ -64,6 +64,10 @@ impl Script {
                 text: "Le aree colorate mostrano dove il fuoco può arrivare **tra 1 ora** e **tra 3 ore**, se nessuno interviene. In basso a destra vedi le __condizioni__: il vento e l'umidità.".into(),
                 expect: Expect::Next,
             },
+            Step {
+                text: "L'anello accanto al nome di ogni __borgo__ indica la sua **vita**: si svuota quando il fuoco raggiunge le case. Passa da **verde** a **giallo**, poi a **rosso**, man mano che le case rimaste intatte diminuiscono.".into(),
+                expect: Expect::Next,
+            },
         ];
         for &(t, p) in &tu.moves {
             let hex = game.hexes.nearest(scenario::Pos::from(p))?;
@@ -78,6 +82,10 @@ impl Script {
                 expect: Expect::Move(t, hex.at),
             });
         }
+        steps.push(Step {
+            text: "Gli esagoni a cui hai assegnato le squadre sono evidenziati in **giallo fisso**.".into(),
+            expect: Expect::Next,
+        });
         let t0 = game.time_s();
         steps.push(Step { text: "Ordini dati. Premi **Riprendi** (in alto a sinistra): il tempo riparte.".into(), expect: Expect::Resume });
         steps.push(Step {
