@@ -388,6 +388,16 @@ fn ground_at(sim: &Sim, cam: (&Camera, &GlobalTransform), p: egui::Pos2) -> Opti
     crate::pick::ray_ground(&sim.scn, ray.origin, *ray.direction)
 }
 
+/// A thin bar: dark track, `frac` (0-1) filled in `col`.
+fn bar_fill(p: &egui::Painter, r: egui::Rect, frac: f32, col: Color32) {
+    p.rect_filled(r, 3.0, Color32::from_black_alpha(200));
+    let f = frac.clamp(0.0, 1.0);
+    if f > 0.0 {
+        p.rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(r.width() * f, r.height())), 3.0, col);
+    }
+    p.rect_stroke(r, 3.0, egui::Stroke::new(1.0, Color32::from_white_alpha(120)));
+}
+
 /// District badges (clicked; the pointer over one shows its evacuation's
 /// route and time), the teams' flags (dragged onto a hex, the order given on
 /// release), the evacuation's «Evacua», and the evacuations' timers.
@@ -404,7 +414,14 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
                 .fill(if on { BLUE.gamma_multiply(0.6) } else { Color32::from_black_alpha(170) })
                 .stroke(egui::Stroke::new(if on { 3.0 } else { 1.0 }, if on { Color32::WHITE } else { BLUE }))
                 .rounding(6.0);
-            ui.add(b)
+            let r = ui.add(b);
+            // damage: the share of the homes the fire has reached
+            let (hit, homes) = sim.district_damage(d);
+            let bar = egui::Rect::from_min_size(r.rect.left_bottom() + egui::vec2(0.0, 2.0), egui::vec2(r.rect.width(), 6.0));
+            let share = if homes == 0 { 0.0 } else { hit as f32 / homes as f32 };
+            bar_fill(ui.painter(), bar, share, RED);
+            ui.allocate_rect(bar, egui::Sense::hover());
+            r
         });
         let r = inner.inner;
         rects[d] = Some(inner.response.rect);
@@ -480,6 +497,7 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         let on = k.selection == Selection::Team(t);
         let lost = sim.crews.units[sim.teams[t].unit].state == abm::suppression::UnitState::Lost;
         let may_drag = sim.paused() && !lost;
+        let fire_d = if lost { None } else { sim.team_fire_distance_m(t) };
         let inner = egui::Area::new(egui::Id::new(("bandiera", t))).fixed_pos(flag.min).order(egui::Order::Middle).show(ctx, |ui| {
             let (rect, resp) = ui.allocate_exact_size(flag.size(), egui::Sense::click_and_drag());
             let p = ui.painter();
@@ -489,6 +507,13 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
             super::icons::draw(p, egui::Rect::from_center_size(badge.left_center() + egui::vec2(17.0, 0.0), egui::vec2(22.0, 22.0)), super::icons::Icon::Engine, col);
             let g = p.layout_no_wrap(number.clone(), egui::FontId::proportional(17.0), Color32::WHITE);
             p.galley(egui::pos2(badge.right() - 10.0 - g.size().x, badge.center().y - g.size().y / 2.0), g, Color32::WHITE);
+            // distance from the fire: full while far, shrinking under the critical distance
+            let bar = egui::Rect::from_min_size(badge.left_bottom() + egui::vec2(0.0, 3.0), egui::vec2(badge.width(), 6.0));
+            if let Some(dm) = fire_d {
+                let frac = (dm / rocca::TEAM_FIRE_CRIT_M).min(1.0);
+                let col = if dm < rocca::TEAM_DANGER_M { RED } else if frac < 1.0 { AMBER } else { GREEN };
+                bar_fill(p, bar, frac, col);
+            }
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(if may_drag { egui::CursorIcon::Grab } else { egui::CursorIcon::PointingHand });
             }

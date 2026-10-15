@@ -66,6 +66,10 @@ pub const CREW_STEP_M: f32 = 80.0;
 /// The people of a team fan out around the hex's road point by this much,
 /// metres, and each then works on their own.
 pub const CREW_SPREAD_M: f32 = 60.0;
+/// Under this distance from the nearest flame the team's bar starts to shrink.
+pub const TEAM_FIRE_CRIT_M: f32 = 300.0;
+/// Under this distance (or when it withdraws) the team is in danger.
+pub const TEAM_DANGER_M: f32 = 120.0;
 /// A team standing in a place protects the homes this close to it.
 pub const PROTECT_M: f32 = 300.0;
 
@@ -406,6 +410,45 @@ impl Game {
     pub fn team_eta_min(&self, t: usize) -> Option<f32> {
         let m = self.crews.route_remaining_m(self.teams[t].unit, &self.net);
         (m > 1.0).then(|| m / ENGINE_SPEED / 60.0)
+    }
+
+    /// Metres from team `t`'s engine to the nearest flame; `None` when nothing burns.
+    pub fn team_fire_distance_m(&self, t: usize) -> Option<f32> {
+        let p = self.crews.units[self.teams[t].unit].pos;
+        let w = &self.scn.world;
+        let d2 = self.fire.active_cells().iter().map(|c| district::dist(w.centre_of(*c), p).powi(2)).fold(f32::INFINITY, f32::min);
+        d2.is_finite().then(|| d2.sqrt())
+    }
+
+    /// Team `t` is in danger: withdrawing, or the fire is within `TEAM_DANGER_M`.
+    pub fn team_in_danger(&self, t: usize) -> bool {
+        let u = &self.crews.units[self.teams[t].unit];
+        if matches!(u.state, UnitState::Lost | UnitState::Staged | UnitState::Unavailable | UnitState::Inbound) && self.teams[t].hex.is_none() {
+            return false;
+        }
+        u.state == UnitState::Withdrawing || self.team_fire_distance_m(t).is_some_and(|d| d < TEAM_DANGER_M)
+    }
+
+    /// Team `t` has an order but nothing to do: it stands where it was sent
+    /// with no fire to work on.
+    pub fn team_idle(&self, t: usize) -> bool {
+        let team = &self.teams[t];
+        let u = &self.crews.units[team.unit];
+        team.hex.is_some()
+            && team.pending.is_none()
+            && !u.aboard
+            && match u.state {
+                UnitState::Staged => true,
+                UnitState::Working => u.note.starts_with("waiting"),
+                _ => false,
+            }
+    }
+
+    /// Homes of district `d` the fire has reached, and all its homes.
+    pub fn district_damage(&self, d: usize) -> (usize, usize) {
+        let ex = self.fire.exposure().fields();
+        let hh = &self.districts[d].households;
+        (hh.iter().filter(|&&i| ex[i].alight).count(), hh.len())
     }
 
     /// What team `t` is doing, in Italian.

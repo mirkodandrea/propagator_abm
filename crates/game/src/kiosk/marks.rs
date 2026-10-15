@@ -40,6 +40,12 @@ pub struct HexMark;
 pub struct OrderMark;
 #[derive(Component)]
 pub struct ClosedMark;
+/// A blinking hex: a team idle there (green) or in danger (red).
+#[derive(Component)]
+pub struct BlinkMark;
+
+/// Blinks per second of the idle / danger hexes.
+const BLINK_HZ: f32 = 1.5;
 
 #[derive(Resource)]
 pub struct MarkAssets {
@@ -53,6 +59,8 @@ pub struct MarkAssets {
     route: Handle<FlatMaterial>,
     evac: Handle<FlatMaterial>,
     closed: Handle<FlatMaterial>,
+    idle: Handle<FlatMaterial>,
+    blink_key: u64,
     /// What the hex grid, the orders and the closed roads were built for.
     hex_key: Option<String>,
     order_key: u64,
@@ -77,6 +85,8 @@ pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>
         route: materials.add(FlatMaterial::new(ROUTE)),
         evac: materials.add(FlatMaterial::new(EVAC).pulled(2.0)),
         closed: materials.add(FlatMaterial::new(CLOSED).pulled(1.0)),
+        idle: materials.add(FlatMaterial::new(EVAC).pulled(HEX_PULL_M + 6.0)),
+        blink_key: u64::MAX,
         hex_key: None,
         order_key: u64::MAX,
         closed_key: u64::MAX,
@@ -228,6 +238,55 @@ pub fn update_orders(
     }
 }
 
+/// The hexes of the teams with nothing to do blink green, those of the teams
+/// in danger red. Rebuilt when the set changes; the blink is the visibility.
+pub fn update_blink(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    kiosk: Res<Kiosk>,
+    time: Res<Time>,
+    mut assets: ResMut<MarkAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut old: Query<(Entity, &mut Visibility), With<BlinkMark>>,
+) {
+    let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
+    let mut idle = vec![];
+    let mut danger = vec![];
+    if playing {
+        for t in 0..sim.teams.len() {
+            let Some(h) = sim.teams[t].hex else { continue };
+            if sim.team_in_danger(t) {
+                danger.push(h);
+            } else if sim.team_idle(t) {
+                idle.push(h);
+            }
+        }
+    }
+    let mut key = playing as u64;
+    for (n, h) in idle.iter().chain(&danger).enumerate() {
+        key = key.wrapping_mul(0x100_0000_01b3) ^ ((h.q as i64 as u64) << 24 ^ h.r as i64 as u64 ^ (n < idle.len()) as u64);
+    }
+    key ^= (idle.len() as u64) << 56;
+    if key != assets.blink_key {
+        assets.blink_key = key;
+        for (e, _) in &old {
+            commands.entity(e).despawn();
+        }
+        for (hexes, mat) in [(&idle, assets.idle.clone()), (&danger, assets.closed.clone())] {
+            if hexes.is_empty() {
+                continue;
+            }
+            let parts = hexes.iter().map(|h| path_mesh(&sim.scn, &outline(*h), HEX_PICK_M * 1.4, None)).collect();
+            spawn(&mut commands, &mut meshes, merge(parts), &mat, BlinkMark);
+        }
+        return;
+    }
+    let on = (time.elapsed_seconds() * BLINK_HZ * 2.0) as u64 % 2 == 0;
+    for (_, mut v) in &mut old {
+        *v = if on { Visibility::Inherited } else { Visibility::Hidden };
+    }
+}
+
 /// The roads the fire has closed, red.
 pub fn update_closed(
     mut commands: Commands,
@@ -261,5 +320,6 @@ pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut assets: R
         assets.hex_key = None;
         assets.order_key = u64::MAX;
         assets.closed_key = u64::MAX;
+        assets.blink_key = u64::MAX;
     }
 }

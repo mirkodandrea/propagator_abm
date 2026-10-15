@@ -231,6 +231,7 @@ fn kiosk_systems(app: &mut App) {
                 kiosk::marks::update_hexes,
                 kiosk::marks::update_orders,
                 kiosk::marks::update_closed,
+                kiosk::marks::update_blink,
                 kiosk::pins::update,
             )
                 .after(fire_view::reset)
