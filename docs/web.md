@@ -20,19 +20,35 @@ restano quelli del chiosco. Il menu web non permette di riattivare effetti pesan
 
 L'interfaccia compatta si attiva sotto 1000 px di larghezza o 600 px di altezza:
 
+- vista iniziale dall'alto (nadirale), nord in alto e zoom ampio sull'incendio;
 - verticale: istruzioni in basso; orizzontale: tutorial a destra, mappa a sinistra;
 - apertura, giorno 2, finale e menu scorrono se non entrano nello schermo;
 - il nome usa un campo HTML con tastiera del telefono;
 - un dito sposta la mappa, due dita fanno zoom, rotazione e spostamento;
 - in pausa si trascina un cono, oppure si tocca la squadra e poi l'esagono;
 - durante il trascinamento si vedono percorso, tempo o motivo del rifiuto;
+  tenendo il cono vicino al bordo della mappa, la vista scorre in quella
+  direzione, più rapidamente avvicinandosi al bordo;
   rilasciare su un pannello annulla l'ordine; una gesture annullata o con due
   dita non invia ordini;
 - un tocco sul borgo apre la scheda con persone, tempo e «Evacua»;
 - «+», «−» e «Isola» restano disponibili senza gesti o tastiera.
 
-Le istruzioni e i messaggi vanno a capo; i nomi dei borghi vengono disposti
-senza sovrapporsi, con un collegamento al punto sulla mappa. La pagina rispetta
+Vista nadirale e icone dei paesi verificate il 2026-10-15 con build web e
+test WebKit `--smoke`: avvio, nome, tutorial e rotazione superati; PNG
+verticale e orizzontale controllati (`out/playtest/mobile-nadir`).
+
+Lo scorrimento durante il trascinamento usa gli ultimi 48 px della mappa
+libera, con velocità progressiva e proporzionata allo zoom. Pannelli e
+istruzioni sono esclusi; tornando al centro, rilasciando o annullando il
+gesto lo scorrimento si ferma. Verificato con Chromium touch a 390×844,
+densità 3×, sui quattro bordi, arresto al centro e sui pannelli, `touchCancel`
+e rilascio sul pannello senza ordini (`scripts/playtest_mobile.py --edge-pan`,
+PNG in `out/playtest/mobile-edge-pan`).
+
+Le istruzioni e i messaggi vanno a capo; sul web mobile i borghi sono indicati
+da icone di casa senza nome, disposte senza sovrapporsi e con un collegamento
+al punto sulla mappa. Il nome compare nella scheda aperta al tocco. La pagina rispetta
 le aree sicure del telefono e consente di cambiare orientamento senza ricaricare.
 Il confronto «senza ordini» del finale avanza a piccoli blocchi (budget di 8 ms,
 con un passo indivisibile), lasciando disponibili interfaccia e riavvio. La

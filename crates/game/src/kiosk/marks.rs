@@ -38,6 +38,9 @@ const CLOSED_EVERY: u64 = 10;
 
 #[derive(Component)]
 pub struct HexMark;
+/// The drivable roads, shown while a move is chosen.
+#[derive(Component)]
+pub struct RoadNetMark;
 #[derive(Component)]
 pub struct OrderMark;
 #[derive(Component)]
@@ -64,6 +67,8 @@ pub struct MarkAssets {
     team_key: u64,
     /// What the hex grid, the orders and the closed roads were built for.
     hex_key: Option<String>,
+    /// The team, time and tutorial hex the usable hexes were built for.
+    targets_key: Option<(usize, i64, Option<rocca::Axial>)>,
     order_key: u64,
     closed_key: u64,
 }
@@ -90,6 +95,7 @@ pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>
         active: materials.add(FlatMaterial::new([1.0, 0.9, 0.0]).pulled(HEX_PULL_M + 6.0)),
         team_key: u64::MAX,
         hex_key: None,
+        targets_key: None,
         order_key: u64::MAX,
         closed_key: u64::MAX,
     });
@@ -144,26 +150,29 @@ fn spawn<M: Component>(commands: &mut Commands, meshes: &mut Assets<Mesh>, mesh:
 }
 
 /// The hex grid is not drawn during play (user, 2026-10-15). While a team's
-/// move is being chosen (in pause, the team taken or dragged) the hexes it can
-/// be sent to and the drivable roads show over the canopy (user, 2026-10-15),
-/// so the player sees where a road arrives. Built once, then shown or hidden.
+/// move is being chosen (in pause, the team taken or dragged) the drivable
+/// roads show over the canopy, and the hexes the team can actually be sent to
+/// ([`rocca::Game::move_targets`], the rule of the order itself; in the
+/// tutorial only the one the step asks). The roads are built once, then shown
+/// or hidden; the hexes are rebuilt for each team and pause.
 pub fn update_hexes(
     mut commands: Commands,
     sim: Res<Sim>,
     kiosk: Res<Kiosk>,
     mut assets: ResMut<MarkAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut old: Query<(Entity, &mut Visibility), With<HexMark>>,
+    mut roads: Query<(Entity, &mut Visibility), (With<RoadNetMark>, Without<HexMark>)>,
+    hexes: Query<Entity, With<HexMark>>,
 ) {
     if assets.hex_key.is_none() {
-        for (e, _) in &old {
+        for (e, _) in &roads {
             commands.entity(e).despawn();
         }
-        assets.hex_key = Some("built".into());
+        assets.hex_key = Some(String::new());
+        assets.targets_key = None;
         let net = &sim.net;
         let main = sim.hexes.hexes.first().map(|h| net.component(h.node, true));
-        let mut roads = vec![];
-        let mut under = vec![];
+        let (mut lines, mut under) = (vec![], vec![]);
         for n in 0..net.len() {
             let id = n as abm::network::NodeId;
             if Some(net.component(id, true)) != main {
@@ -175,28 +184,46 @@ pub fn update_hexes(
                 }
                 let seg = [net.pos(id), net.pos(e.to)];
                 under.push(path_mesh_at(&sim.scn, &seg, ROAD_M * UNDER, None, RING_LIFT_M - 2.0));
-                roads.push(path_mesh(&sim.scn, &seg, ROAD_M, None));
+                lines.push(path_mesh(&sim.scn, &seg, ROAD_M, None));
             }
         }
-        let hexes = sim.hexes.hexes.iter().map(|h| path_mesh(&sim.scn, &outline(h.at), HEX_LINE_M, None)).collect();
-        for (parts, mat) in [(under, &assets.under), (roads, &assets.road), (hexes, &assets.hex)] {
-            if parts.is_empty() {
-                continue;
+        for (parts, mat) in [(under, assets.under.clone()), (lines, assets.road.clone())] {
+            if !parts.is_empty() {
+                let e = spawn(&mut commands, &mut meshes, merge(parts), &mat, RoadNetMark);
+                commands.entity(e).insert(Visibility::Hidden);
             }
-            let mat = mat.clone();
-            let e = spawn(&mut commands, &mut meshes, merge(parts), &mat, HexMark);
-            commands.entity(e).insert(Visibility::Hidden);
         }
         return;
     }
-    let choosing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco)
-        && sim.paused()
-        && (kiosk.dragging.is_some() || matches!(kiosk.selection, Selection::Team(_)));
+    let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
+    let team = kiosk.dragging.map(|(t, _)| t).or(match kiosk.selection {
+        Selection::Team(t) => Some(t),
+        _ => None,
+    });
+    let choosing = playing && sim.paused() && team.is_some();
     let vis = if choosing { Visibility::Inherited } else { Visibility::Hidden };
-    for (_, mut v) in &mut old {
+    for (_, mut v) in &mut roads {
         if *v != vis {
             *v = vis;
         }
+    }
+    let want = match kiosk.expect() {
+        Some(Expect::Move(_, at)) => Some(at),
+        _ => None,
+    };
+    let key = choosing.then(|| (team.unwrap_or(0), sim.time_s(), want));
+    if key == assets.targets_key {
+        return;
+    }
+    assets.targets_key = key;
+    for e in &hexes {
+        commands.entity(e).despawn();
+    }
+    let Some((t, _, want)) = key else { return };
+    let targets: Vec<rocca::Axial> = sim.move_targets(t).into_iter().filter(|&h| want.map_or(true, |w| w == h)).collect();
+    if !targets.is_empty() {
+        let parts = targets.iter().map(|&h| path_mesh(&sim.scn, &outline(h), HEX_LINE_M, None)).collect();
+        spawn(&mut commands, &mut meshes, merge(parts), &assets.hex, HexMark);
     }
 }
 

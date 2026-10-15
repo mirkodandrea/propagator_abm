@@ -86,3 +86,21 @@ fn the_engine_keeps_to_the_road_and_its_people_get_off_and_spread() {
     assert!(walked, "the people get off and walk to the fire");
     assert!(apart, "they work apart");
 }
+
+#[test]
+fn the_hexes_shown_for_a_move_are_those_the_game_accepts() {
+    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+    let mut g = Game::new(&data, "medium", 1).unwrap();
+    let mut refused = 0;
+    // at 480 min the fire has closed the roads to a hex
+    for minutes in [0, 240, 480] {
+        g.run_until(minutes * 60).unwrap();
+        for t in 0..g.teams.len() {
+            let shown = g.move_targets(t);
+            let accepted: Vec<_> = g.hexes.hexes.iter().map(|h| h.at).filter(|&at| g.plan_move(t, at).is_ok()).collect();
+            refused += g.hexes.hexes.len() - shown.len();
+            assert_eq!(shown, accepted, "team {t} at {minutes} min");
+        }
+    }
+    assert!(refused > 0, "the test must see a hex refused");
+}

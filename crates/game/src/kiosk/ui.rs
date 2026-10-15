@@ -87,6 +87,7 @@ pub fn draw(
     crate::playtest::begin();
     let ctx = contexts.ctx_mut();
     let k = &mut *kiosk;
+    k.drag_pan = Vec2::ZERO;
     let Ok(cam) = cameras.get_single() else { return };
     if ctx.style().visuals.interact_cursor.is_none() {
         ctx.style_mut(|s| {
@@ -480,6 +481,7 @@ fn ring_gauge(p: &egui::Painter, c: egui::Pos2, r: f32, frac: f32, col: Color32)
 /// route and time), the teams' flags (dragged onto a hex, the order given on
 /// release), the evacuation's «Evacua», and the evacuations' timers.
 fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform)) {
+    let hide_names = cfg!(target_arch = "wasm32") && compact(ctx);
     let mut hovered = None;
     let mut rects = vec![None; sim.districts.len()];
     let mut occupied: Vec<egui::Rect> = vec![];
@@ -496,7 +498,9 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
             let anchor = s;
             let bounds = drop_rect(ctx, k).shrink(4.0);
             if !bounds.contains(anchor) { continue; }
-            let width = ctx.fonts(|f| f.layout_no_wrap(name.clone(), egui::FontId::proportional(16.0), Color32::WHITE)).size().x + 18.0;
+            let width = if hide_names { 72.0 } else {
+                ctx.fonts(|f| f.layout_no_wrap(name.clone(), egui::FontId::proportional(16.0), Color32::WHITE)).size().x + 18.0
+            };
             let size = egui::vec2(width, 52.0);
             let mut placed = None;
             for dy in [26.0, 78.0, -30.0, -82.0, 130.0] {
@@ -517,7 +521,7 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         }
         let on = k.selection == Selection::District(d);
         let inner = egui::Area::new(egui::Id::new(("borgo", d))).fixed_pos(s).constrain(false).pivot(Align2::CENTER_CENTER).order(egui::Order::Middle).show(ctx, |ui| {
-            let b = egui::Button::new(RichText::new(&name).size(16.0).strong().color(Color32::WHITE))
+            let b = egui::Button::new(RichText::new(if hide_names { "" } else { &name }).size(16.0).strong().color(Color32::WHITE))
                 .fill(if on { BLUE.gamma_multiply(0.6) } else { Color32::from_black_alpha(170) })
                 .stroke(egui::Stroke::new(if on { 3.0 } else { 1.0 }, if on { Color32::WHITE } else { BLUE }))
                 .rounding(6.0)
@@ -525,6 +529,10 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 let r = ui.add(b);
+                if hide_names {
+                    super::icons::draw(ui.painter(), egui::Rect::from_center_size(r.rect.center(), egui::vec2(22.0, 22.0)), super::icons::Icon::House, Color32::WHITE);
+                    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+                }
                 // life: the share of the homes the fire has not reached
                 let (hit, homes) = sim.district_damage(d);
                 let life = if homes == 0 { 1.0 } else { 1.0 - hit as f32 / homes as f32 };
@@ -640,6 +648,9 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         }
         if resp.dragged() && may_drag && k.selection == Selection::Team(t) {
             ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+            if let Some(p) = ctx.pointer_latest_pos() {
+                k.drag_pan = edge_pan(drop_rect(ctx, k), p);
+            }
             if let Some(g) = ctx.pointer_latest_pos().and_then(|p| ground_at(sim, cam, p)) {
                 preview_move(k, sim, t, rocca::Axial::of(g));
                 k.dragging = Some((t, g));
@@ -917,4 +928,18 @@ fn drop_rect(ctx: &egui::Context, k: &Kiosk) -> egui::Rect {
         r.max.y -= if k.phase == Phase::Tutorial && k.side_w == 0.0 { (ctx.screen_rect().height() * 0.20).clamp(42.0, 120.0) + 126.0 } else { 58.0 };
     }
     r
+}
+
+/// Speed ramps up over the last 48 logical pixels of the usable map.
+/// Outside it (HUD, tutorial panel or browser edge), the drag must not pan.
+fn edge_pan(rect: egui::Rect, p: egui::Pos2) -> Vec2 {
+    if !rect.contains(p) { return Vec2::ZERO; }
+    let axis = |p: f32, lo: f32, hi: f32| {
+        let band = 48.0_f32.min((hi - lo) * 0.25);
+        if band <= 0.0 { return 0.0; }
+        let negative = (1.0 - (p - lo) / band).clamp(0.0, 1.0);
+        let positive = (1.0 - (hi - p) / band).clamp(0.0, 1.0);
+        positive * positive - negative * negative
+    };
+    Vec2::new(axis(p.x, rect.left(), rect.right()), axis(p.y, rect.top(), rect.bottom())).clamp_length_max(1.0)
 }

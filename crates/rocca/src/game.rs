@@ -355,6 +355,19 @@ impl Game {
         Ok(MovePlan { team: t, hex, path, minutes: secs / 60.0 })
     }
 
+    /// The hexes team `t` can be sent to now: those [`Self::plan_move`]
+    /// accepts, all at once.
+    pub fn move_targets(&self, t: usize) -> Vec<Axial> {
+        let Some(team) = self.teams.get(t) else { return vec![] };
+        let u = &self.crews.units[team.unit];
+        if u.state == UnitState::Lost {
+            return vec![];
+        }
+        let Some(from) = self.net.nearest(u.pos, true) else { return vec![] };
+        let seen = network::reachable_from(&self.net, from, self.fire.threat(), true);
+        self.hexes.hexes.iter().filter(|h| seen[h.node as usize]).map(|h| h.at).collect()
+    }
+
     /// Send team `t` to hex `at`: it drives there and works the fire around
     /// it. Only during a pause.
     pub fn move_team(&mut self, t: usize, at: Axial) -> Result<MovePlan, String> {

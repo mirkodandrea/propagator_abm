@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--browser-executable')
     parser.add_argument('--browser', choices=['chromium', 'webkit'], default='chromium')
     parser.add_argument('--smoke', action='store_true', help='Test native taps through title, name and tutorial, in both orientations')
+    parser.add_argument('--edge-pan', action='store_true', help='Test dragging at each map edge, stopping and cancellation')
     parser.add_argument('--output', type=Path, default=ROOT / 'out/playtest/mobile')
     args = parser.parse_args()
     if args.browser == 'webkit' and not args.smoke:
@@ -108,6 +109,44 @@ def main():
                 tap('Avanti'); tap('Avanti'); frames(120)
                 target = state()['tutorial_target']; assert target
                 team = state()['teams'][target['team']]['name']
+                if args.edge_pan:
+                    c = control(team)
+                    touch('touchStart', [(0, c['x'], c['y'])])
+                    touch('touchMove', [(0, c['x'] + 14, c['y'] - 14)])
+                    center = (195, 350)
+                    for x, y, axis, sign in [(382, 350, 0, 1), (8, 350, 0, -1), (195, 124, 1, -1), (195, 590, 1, 1)]:
+                        touch('touchMove', [(0, *center)]); frames(8)
+                        before = state()['camera']['focus']
+                        touch('touchMove', [(0, x, y)])
+                        page.wait_for_timeout(250); frames(4)
+                        after = state()['camera']['focus']
+                        assert (after[axis] - before[axis]) * sign > 10, (before, after, x, y)
+                    snap('edge-pan-held')
+                    # A stationary finger in the center must stop the motion.
+                    touch('touchMove', [(0, *center)]); frames(8)
+                    before = state()['camera']['focus']; frames(20)
+                    assert sum(abs(a-b) for a,b in zip(before, state()['camera']['focus'])) < 1
+                    # Panels do not pan, and cancel must leave no queued motion/order.
+                    touch('touchMove', [(0, 100, 40)]); frames(8)
+                    before = state()['camera']['focus']; frames(20)
+                    assert sum(abs(a-b) for a,b in zip(before, state()['camera']['focus'])) < 1
+                    touch('touchCancel', []); frames(20)
+                    assert sum(abs(a-b) for a,b in zip(before, state()['camera']['focus'])) < 1
+                    assert state()['step'] == 2 and state()['teams'][target['team']]['hex'] is None
+                    snap('edge-pan-canceled')
+                    c = control(team)
+                    touch('touchStart', [(0, c['x'], c['y'])])
+                    touch('touchMove', [(0, c['x'] + 14, c['y'] - 14)])
+                    touch('touchMove', [(0, 382, 350)])
+                    page.wait_for_timeout(150); frames(4)
+                    # Release on the HUD cancels the order and stops panning.
+                    touch('touchMove', [(0, 100, 40)]); touch('touchEnd', [])
+                    before = state()['camera']['focus']; frames(20)
+                    assert sum(abs(a-b) for a,b in zip(before, state()['camera']['focus'])) < 1
+                    assert state()['step'] == 2 and state()['teams'][target['team']]['hex'] is None
+                    assert not errors, errors
+                    passed = True
+                    return
                 # Tap-select then tap the ground: this never depended on a mouse.
                 tap(team)
                 target = state()['tutorial_target']

@@ -536,6 +536,43 @@ pub fn route(
     Some(path)
 }
 
+/// Every node [`route`] can reach from `from`, by the same rule: an edge whose
+/// danger reaches [`DANGER_CUT`] is refused, except as the last one of the way
+/// (a hot destination is often exactly where the work is).
+pub fn reachable_from(
+    net: &RoadNetwork,
+    from: NodeId,
+    threat: &fire::ThreatField,
+    drivable_only: bool,
+) -> Vec<bool> {
+    let mut seen = vec![false; net.len()];
+    if from == NO_NODE {
+        return seen;
+    }
+    // only nodes reached by a safe edge are passed through
+    let mut through = vec![false; net.len()];
+    seen[from as usize] = true;
+    through[from as usize] = true;
+    let mut stack = vec![from];
+    while let Some(node) = stack.pop() {
+        for e in net.neighbours(node) {
+            if drivable_only && !e.drivable {
+                continue;
+            }
+            seen[e.to as usize] = true;
+            if through[e.to as usize] {
+                continue;
+            }
+            let mid = midpoint(net.pos(node), net.pos(e.to));
+            if threat.at(mid).max(threat.at(net.pos(e.to))) < DANGER_CUT {
+                through[e.to as usize] = true;
+                stack.push(e.to);
+            }
+        }
+    }
+    seen
+}
+
 /// Min-heap entry. `BinaryHeap` is a max-heap and `f32` is not `Ord`, so the
 /// ordering is reversed and NaN-free costs are compared by `partial_cmp`.
 struct Entry {

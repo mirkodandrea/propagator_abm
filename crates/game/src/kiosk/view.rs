@@ -27,6 +27,15 @@ const MAX_DIST: f32 = 12000.0;
 const PAN_RADIUS_M: f32 = 2500.0;
 /// A press that moved less than this (logical px) is a click.
 const CLICK_PX: f32 = 6.0;
+// A tiny offset from vertical keeps look_at's up vector well-defined.
+const NADIR_PITCH: f32 = -std::f32::consts::FRAC_PI_2 + 0.001;
+
+fn mobile_opening(camera: &Camera, sim: &Sim, home: Vec3, distance: f32) -> (Vec3, f32) {
+    let Some((mid, span)) = fire_extent(sim) else { return (home, distance) };
+    let aspect = camera.logical_viewport_size().map_or(1.0, |s| s.x / s.y.max(1.0));
+    let focus = Vec3::new(mid.x, home.y, mid.y);
+    (focus, (span * 2.8 / aspect.min(1.0)).clamp(distance * 0.65, MAX_DIST))
+}
 
 /// The places the frame has to hold: every home and where the fire started.
 fn frame_points(game: &Game) -> Vec<Pos> {
@@ -190,7 +199,8 @@ pub fn camera(
     }
     let camera = &*camera;
     let home = home_focus(&sim);
-    let scene_pitch = -0.80;
+    let mobile_web = cfg!(target_arch = "wasm32") && windows.get_single().is_ok_and(|w| w.width() < 1000.0 || w.height() < 600.0);
+    let scene_pitch = if mobile_web { NADIR_PITCH } else { -0.80 };
 
     let window = windows.get_single().ok();
     let touch_frame = input.touches.iter().next().is_some()
@@ -296,6 +306,13 @@ pub fn camera(
         orbit.yaw += rotation.to_radians();
         orbit.distance *= (-scroll.clamp(-6.0, 6.0) * 0.1 - pinch.clamp(-1.0, 1.0)).exp();
     }
+    if kiosk.dragging.is_some() && sim.paused() && kiosk.drag_pan != Vec2::ZERO {
+        kiosk.follow = false;
+        kiosk.shot = None;
+        // Opposite to finger-panning: approaching the right edge reveals
+        // ground to the right. Use real time so holding still keeps moving.
+        pan(&mut orbit, -kiosk.drag_pan * 280.0 * time.delta_seconds().min(0.1), height);
+    }
     // a new game: settle on the home framing once
     let game_key = (sim.case.name.clone(), sim.generation.min(1));
     if settled.as_ref().map(|s| &s.0) != Some(&game_key.0) || sim.time_s() <= rocca::STEP_S && settled.as_ref().is_none_or(|s| s.1 == 0) {
@@ -307,6 +324,10 @@ pub fn camera(
             orbit.yaw = yaw;
             orbit.pitch = scene_pitch;
             orbit.distance = d * shot_zoom();
+            if mobile_web {
+                (orbit.focus, orbit.distance) = mobile_opening(camera, &sim, home, d);
+                orbit.yaw = 0.0;
+            }
         }
     }
     if refit.1 > 0 {
@@ -319,6 +340,10 @@ pub fn camera(
                     orbit.yaw = yaw;
                     orbit.pitch = scene_pitch;
                     orbit.distance = d * shot_zoom();
+                    if mobile_web {
+                        (orbit.focus, orbit.distance) = mobile_opening(camera, &sim, home, d);
+                        orbit.yaw = 0.0;
+                    }
                 }
             }
         }
@@ -338,7 +363,14 @@ pub fn camera(
     // Behind the name screen: a director, not a follower. A shot lasts
     // `SHOT_S`; its subject is picked when it begins, from what the fire is
     // doing then, and the camera glides to it slowly.
-    if kiosk.phase == Phase::Intro && !kiosk.frozen {
+    if mobile_web && kiosk.phase == Phase::Intro && !kiosk.frozen {
+        if let Some((_, d)) = *home_view {
+            (orbit.focus, orbit.distance) = mobile_opening(camera, &sim, home, d);
+            orbit.pitch = NADIR_PITCH;
+            orbit.yaw = 0.0;
+        }
+    }
+    if !mobile_web && kiosk.phase == Phase::Intro && !kiosk.frozen {
         if let Some((yaw0, d)) = *home_view {
             let n = super::demo_shot(kiosk.demo_t);
             if kiosk.demo_pick.0 != n {
@@ -408,7 +440,7 @@ pub fn camera(
     }
 
     orbit.yaw = orbit.yaw.clamp(-MAX_YAW, MAX_YAW);
-    orbit.pitch = orbit.pitch.clamp(MIN_PITCH, MAX_PITCH);
+    orbit.pitch = orbit.pitch.clamp(if mobile_web { NADIR_PITCH } else { MIN_PITCH }, MAX_PITCH);
     orbit.distance = orbit.distance.clamp(MIN_DIST * shot_zoom().min(1.0), MAX_DIST);
     let off = Vec2::new(orbit.focus.x - home.x, orbit.focus.z - home.z);
     if off.length() > PAN_RADIUS_M {
@@ -539,4 +571,3 @@ fn shot_focus() -> Option<(f32, f32)> {
         Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
     })
 }
-
