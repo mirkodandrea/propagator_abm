@@ -18,7 +18,7 @@ use bevy_egui::EguiContexts;
 use rocca::tutorial::Expect;
 use scenario::Pos;
 
-use super::characters::{Logo, Portraits};
+use super::characters::{Logo, Portraits, Qr};
 use super::{board, new_visit, screens, start_game, Kiosk, Phase, Selection};
 use crate::sim::{Sim, SimRestarted};
 
@@ -76,6 +76,7 @@ pub fn draw(
     mut gfx: ResMut<crate::quality::Graphics>,
     faces: Option<Res<Portraits>>,
     logo: Option<Res<Logo>>,
+    qr: Option<Res<Qr>>,
 ) {
     crate::playtest::begin();
     let ctx = contexts.ctx_mut();
@@ -103,6 +104,7 @@ pub fn draw(
     match k.phase {
         Phase::Intro => {
             k.side_w = 0.0;
+            banner(ctx, qr.as_deref());
             if k.title {
                 if screens::title(ctx, k, logo.as_deref()) {
                     k.title = false;
@@ -117,6 +119,9 @@ pub fn draw(
         }
         Phase::Fine => {
             k.side_w = 0.0;
+            if cfg!(target_arch = "wasm32") {
+                banner(ctx, None);
+            }
             screens::end(ctx, k, &mut sim, &mut restarted, faces.as_deref());
         }
         Phase::Tutorial | Phase::Gioco => {
@@ -132,6 +137,34 @@ pub fn draw(
     }
     focus.pointer = ctx.is_pointer_over_area();
     k.click = None;
+}
+
+/// The Google Form for the feedback of those who play in the browser.
+const FEEDBACK_URL: &str = "https://forms.gle/ssJ1HyatH3QqCG6a8";
+
+/// The banner at the top right. In the kiosk, «Provami!» with the QR code of
+/// the browser version, on the title and the opening, where a passer-by is
+/// looking at the screen. In the browser, which is already the thing the QR
+/// points to, a button to the feedback form, on the same screens and at the end.
+fn banner(ctx: &egui::Context, qr: Option<&Qr>) {
+    egui::Area::new(egui::Id::new("provami")).anchor(Align2::RIGHT_TOP, [-14.0, 14.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+        card(AMBER).inner_margin(10.0).show(ui, |ui| {
+            ui.vertical_centered(|ui| {
+                if cfg!(target_arch = "wasm32") {
+                    ui.label(RichText::new("Dicci cosa ne pensi").size(20.0).strong().color(AMBER));
+                    ui.add_space(4.0);
+                    if ui.add(primary("Dai un feedback")).clicked() {
+                        ctx.open_url(egui::OpenUrl::new_tab(FEEDBACK_URL));
+                    }
+                } else if let Some(qr) = qr {
+                    ui.label(RichText::new("Provami!").size(26.0).strong().color(AMBER));
+                    ui.label(RichText::new("Gioca dal tuo computer").size(15.0).color(GREY));
+                    ui.add_space(4.0);
+                    ui.add(egui::Image::new(egui::load::SizedTexture::new(qr.0, egui::vec2(150.0, 150.0))));
+                }
+            });
+        });
+    });
 }
 
 // --- the pause and the weather ------------------------------------------------
