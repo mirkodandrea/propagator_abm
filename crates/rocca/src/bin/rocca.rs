@@ -3,6 +3,7 @@
 //!   rocca <caso> [--seme N] [--dati data]
 //!                [--squadra "min:squadra=x;y,..."] [--evacua "min:Borgo,..."]
 //!   rocca tutorial [--seme N]
+//!   --mira vicino|avanti: which cells the engines wet (default vicino)
 //!   --inizio M: the fire is reported M minutes after ignition (the case's
 //!   `start_min` otherwise); order minutes count from then.
 //!
@@ -98,6 +99,7 @@ fn main() -> Result<()> {
     let case = args.next().context("uso: rocca <caso> [--seme N] [--squadra ...] [--evacua ...]")?;
     let (mut seed, mut data, mut teams, mut evac) = (2u64, PathBuf::from("data"), String::new(), String::new());
     let mut start: Option<i64> = None;
+    let mut aim = abm::suppression::EngineAim::default();
     while let Some(a) = args.next() {
         let mut v = || args.next().with_context(|| format!("{a}: manca il valore"));
         match a.as_str() {
@@ -105,6 +107,13 @@ fn main() -> Result<()> {
             "--dati" => data = PathBuf::from(v()?),
             "--squadra" => teams = v()?,
             "--evacua" => evac = v()?,
+            "--mira" => {
+                aim = match v()?.as_str() {
+                    "vicino" => abm::suppression::EngineAim::Hottest,
+                    "avanti" => abm::suppression::EngineAim::Ahead,
+                    x => bail!("--mira: vicino|avanti, non {x:?}"),
+                }
+            }
             "--inizio" => start = Some(v()?.parse::<i64>()?),
             x => bail!("argomento sconosciuto: {x}"),
         }
@@ -133,6 +142,7 @@ fn main() -> Result<()> {
             c.start_min = s;
         }
         let mut g = Game::with_case(&data, t, c.clone(), seed)?;
+        g.crews.engine_aim = aim;
         let t0 = g.time_s();
         let orders: Vec<_> = parse(&teams, &evac)?.into_iter().map(|(at, o)| (at + t0, o)).collect();
         play(&mut g, &orders)?;

@@ -44,9 +44,17 @@ pub const SUPPRESSION: UnitEffect = UnitEffect {
     reach_x: ENGINE_RANGE_M / abm::suppression::ENGINE_REACH_M,
     nerve_x: 1.0,
 };
-/// How far from its road point an engine wets the fuel: its hex and the ring
-/// around it, about one and a half hexes (user, 2026-10-15; was 1200 m).
-pub const ENGINE_RANGE_M: f32 = 1.5 * crate::hex::HEX_M;
+/// How far from where it actually stands an engine wets the fuel (user,
+/// 2026-10-15; was 1.5 hexes = 450 m from the hex's road point). To reach the
+/// fire it moves along the roads of its hexes of activity
+/// ([`Game::engines_follow_the_fire`]).
+pub const ENGINE_RANGE_M: f32 = 100.0;
+/// How often a team's engine looks for a better place to stand, simulated seconds.
+pub const ENGINE_LOOK_S: i64 = 60;
+/// An engine will not park where the threat is above this.
+pub const ENGINE_PARK_THREAT: f32 = 0.1;
+/// ... nor closer than this to a burning cell, metres.
+pub const ENGINE_PARK_FLAME_M: f32 = 80.0;
 /// An engine that emptied its tank stays where it is and is full again after
 /// this long, simulated: the water is brought to it (user, 2026-10-14).
 pub const REFILL_S: f32 = 10.0 * 60.0;
@@ -514,6 +522,7 @@ impl Game {
             self.fire.queue(a);
         }
         self.crews_follow_the_fire();
+        self.engines_follow_the_fire();
         let prot = self.protection();
         self.fire.set_structure_protection(&prot);
         let now = self.time_s();
@@ -563,6 +572,68 @@ impl Game {
             let next = Pos { x: here.x + (f.x - here.x) / d * step, y: here.y + (f.y - here.y) / d * step };
             if dist(next, hex.target) <= CREW_RANGE_M {
                 let _ = self.crews.assign(crew, Task::Attack { at: next });
+            }
+        }
+    }
+
+    /// An engine with nothing to wet within [`ENGINE_RANGE_M`] drives, on the
+    /// roads of its hexes of activity (its own and the ring around it), to the
+    /// place from which it has the most threatened fuel in reach, or, if the
+    /// fire is not yet near, the one nearest to the fire.
+    fn engines_follow_the_fire(&mut self) {
+        if self.time_s() % ENGINE_LOOK_S != 0 {
+            return;
+        }
+        let world = self.scn.world;
+        let work_at = |g: &Game, p: Pos| -> f32 {
+            fire::cells_in_radius(&world, p, ENGINE_RANGE_M)
+                .into_iter()
+                .filter(|c| g.fire.is_suppressible(*c, &g.scn))
+                .map(|c| g.fire.threat().at(world.centre_of(c)))
+                .sum()
+        };
+        for t in 0..self.teams.len() {
+            let team = &self.teams[t];
+            let Some(at) = team.hex else { continue };
+            if team.pending.is_some() {
+                continue;
+            }
+            let u = &self.crews.units[team.unit];
+            if u.state != UnitState::Working || !matches!(u.task, Task::Attack { .. }) || u.aboard {
+                continue;
+            }
+            let here = u.pos;
+            if work_at(self, here) > 0.0 {
+                continue;
+            }
+            let active: Vec<Pos> = self.fire.active_cells().iter().map(|c| world.centre_of(*c)).collect();
+            if active.is_empty() {
+                continue;
+            }
+            let Some(hex) = self.hexes.get(at) else { continue };
+            let comp = self.net.component(hex.node, true);
+            let mut best: Option<(f32, Pos)> = None;
+            for (i, &p) in self.net.nodes.iter().enumerate() {
+                let n = i as network::NodeId;
+                if !self.net.is_drivable_node(n) || Axial::of(p).distance(at) > crate::hex::TEAM_REACH_HEXES || self.net.component(n, true) != comp || !world.contains(p) {
+                    continue;
+                }
+                let nearest = active.iter().map(|f| dist(*f, p)).fold(f32::INFINITY, f32::min);
+                if self.fire.threat().at(p) >= ENGINE_PARK_THREAT || nearest < ENGINE_PARK_FLAME_M {
+                    continue;
+                }
+                let w = work_at(self, p);
+                // Work in reach beats everything; otherwise the nearest to the fire.
+                let score = if w > 0.0 { 1.0e6 + w } else { -nearest };
+                if best.map_or(true, |(b, _)| score > b) {
+                    best = Some((score, p));
+                }
+            }
+            if let Some((_, p)) = best {
+                if dist(p, here) > 30.0 {
+                    let unit = self.teams[t].unit;
+                    let _ = self.crews.assign(unit, Task::Attack { at: p });
+                }
             }
         }
     }

@@ -375,8 +375,28 @@ impl Default for UnitEffect {
     }
 }
 
+/// How an engine picks, among the fuel in hose reach, the cells to wet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EngineAim {
+    /// The cells closest to any flame (highest threat), whichever side of the
+    /// front they are on.
+    #[default]
+    Hottest,
+    /// Cells the front is about to reach: threat, plus a bonus where the fire
+    /// is on the upwind side and a penalty where it is on the downwind side.
+    Ahead,
+}
+
+/// Distance either side of a cell at which [`EngineAim::Ahead`] samples the
+/// threat along the wind, metres.
+pub const AHEAD_PROBE_M: f32 = 60.0;
+/// Weight of the along-wind difference against the threat itself.
+pub const AHEAD_WEIGHT: f32 = 1.0;
+
 pub struct Suppression {
     pub units: Vec<Unit>,
+    /// Which cells an engine wets; `Hottest` unless a variant says otherwise.
+    pub engine_aim: EngineAim,
     /// See [`UnitEffect`]; `ONE` unless a variant says otherwise.
     pub effect: UnitEffect,
     /// Hydrants and open water, split because they mean different things: an
@@ -517,6 +537,7 @@ impl Suppression {
         Ok(Suppression {
             units,
             effect: UnitEffect::ONE,
+            engine_aim: EngineAim::default(),
             hydrants,
             open_water,
             refill_in_place_s: None,
@@ -1183,7 +1204,7 @@ impl Suppression {
         // no burning cell is within [`PREWET_M`]. Hold the water for when it
         // comes, rather than wetting fuel that dries again (1 %/min) while the
         // tank goes back and forth to a hydrant and the post stands empty.
-        let hottest = fire.threat().at(scn.world.centre_of(cells[0]));
+        let hottest = cells.iter().map(|c| fire.threat().at(scn.world.centre_of(*c))).fold(0.0f32, f32::max);
         let front_near = fire
             .active_cells()
             .iter()
@@ -1612,10 +1633,28 @@ impl Suppression {
         // measure, so sorting on it descending puts the water on the fuel the
         // front is about to reach -- without scanning the whole active front
         // once per candidate cell.
-        cells.sort_by_key(|c| {
-            let p = scn.world.centre_of(*c);
-            -(fire.threat().at(p) * 1000.0) as i32
-        });
+        match self.engine_aim {
+            EngineAim::Hottest => cells.sort_by_key(|c| {
+                let p = scn.world.centre_of(*c);
+                -(fire.threat().at(p) * 1000.0) as i32
+            }),
+            EngineAim::Ahead => {
+                // The fire runs with the wind, so the cells it reaches next are
+                // those with flame upwind of them. The threat field is read a
+                // little upwind and downwind of each cell: the difference is
+                // positive ahead of the front, negative behind it.
+                let toward = (fire.weather().wind_dir_deg + 180.0).to_radians() as f32;
+                let (wx, wy) = (toward.sin() * AHEAD_PROBE_M, toward.cos() * AHEAD_PROBE_M);
+                let score = |c: &Cell| {
+                    let p = scn.world.centre_of(*c);
+                    let t = fire.threat();
+                    let up = t.at(Pos { x: p.x - wx, y: p.y - wy });
+                    let down = t.at(Pos { x: p.x + wx, y: p.y + wy });
+                    -((t.at(p) + AHEAD_WEIGHT * (up - down)) * 1000.0) as i32
+                };
+                cells.sort_by_key(score);
+            }
+        }
         // Four cells, 1,600 m². A full 2,500 L tank spread over that is
         // 1.5 L/m², or ~45 points of moisture: past the core's extinction
         // threshold, so an engine can genuinely hold a couple of cells and
