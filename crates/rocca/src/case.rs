@@ -84,6 +84,9 @@ pub struct Case {
     /// Where the wind blows FROM, degrees.
     pub wind_from_deg: f64,
     pub wind_kmh: f64,
+    /// Fuel moisture of this fire; the territory's `moisture_pct` if absent.
+    #[serde(default)]
+    pub moisture_pct: Option<f64>,
     pub minutes: i64,
     #[serde(default)]
     pub shift: Option<Shift>,
@@ -168,11 +171,11 @@ impl Territory {
     }
 
     pub fn weather(&self, c: &Case) -> Weather {
-        Weather { wind_dir_deg: c.wind_from_deg, wind_speed_kmh: c.wind_kmh, moisture_pct: self.moisture_pct }
+        Weather { wind_dir_deg: c.wind_from_deg, wind_speed_kmh: c.wind_kmh, moisture_pct: c.moisture_pct.unwrap_or(self.moisture_pct) }
     }
 
     /// The weather after the case's wind shift, if it has one.
     pub fn shifted(&self, c: &Case) -> Option<(i64, Weather)> {
-        c.shift.map(|s| (s.at_min * 60, Weather { wind_dir_deg: s.wind_from_deg, wind_speed_kmh: s.wind_kmh, moisture_pct: self.moisture_pct }))
+        c.shift.map(|s| (s.at_min * 60, Weather { wind_dir_deg: s.wind_from_deg, wind_speed_kmh: s.wind_kmh, moisture_pct: c.moisture_pct.unwrap_or(self.moisture_pct) }))
     }
 }

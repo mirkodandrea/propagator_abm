@@ -62,12 +62,13 @@
       ],
       "radius_m": 60.0,
       "wind_from_deg": 119.0,
-      "wind_kmh": 40.0,
+      "wind_kmh": 30.0,
+      "moisture_pct": 7.0,
       "minutes": 180,
       "shift": {
         "at_min": 45,
         "wind_from_deg": 70.0,
-        "wind_kmh": 40.0,
+        "wind_kmh": 30.0,
         "toward": "Pian dei Grilli"
       }
     },
@@ -80,12 +81,13 @@
       ],
       "radius_m": 60.0,
       "wind_from_deg": 119.0,
-      "wind_kmh": 40.0,
+      "wind_kmh": 30.0,
+      "moisture_pct": 7.0,
       "minutes": 300,
       "shift": {
         "at_min": 45,
         "wind_from_deg": 50.0,
-        "wind_kmh": 40.0,
+        "wind_kmh": 30.0,
         "toward": "Pian dei Grilli"
       },
       "start_min": 30
@@ -99,7 +101,8 @@
       ],
       "radius_m": 60.0,
       "wind_from_deg": 70.0,
-      "wind_kmh": 40.0,
+      "wind_kmh": 30.0,
+      "moisture_pct": 7.0,
       "minutes": 180
     }
   ],

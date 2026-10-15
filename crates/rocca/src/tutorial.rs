@@ -59,9 +59,9 @@ impl Script {
         let d = game.district_index(&tu.evacuate)?;
         let name = game.districts[d].name.clone();
         let mut steps = vec![
-            Step { text: format!("Giorno 1. Un piccolo incendio è partito vicino a {name}. Il gioco comincia in pausa: il tempo è fermo e puoi dare gli ordini."), expect: Expect::Next },
+            Step { text: format!("Giorno 1. Un incendio è partito vicino a __{name}__. Il tempo è **fermo**: ora puoi dare gli ordini."), expect: Expect::Next },
             Step {
-                text: "Le aree colorate sono dove il fuoco può arrivare tra 1 ora e tra 3 ore, senza interventi. In alto il vento previsto.".into(),
+                text: "Le aree colorate mostrano dove il fuoco può arrivare **tra 1 ora** e **tra 3 ore**, se nessuno interviene. In alto c'è il __vento__.".into(),
                 expect: Expect::Next,
             },
         ];
@@ -72,24 +72,24 @@ impl Script {
             let from = game.territory.stations[team.station].name.rsplit(" - ").next().unwrap_or_default().to_string();
             steps.push(Step {
                 text: format!(
-                    "Manda {} da {from}: trascina la sua bandiera (un'autobotte e {} {who}) sull'esagono indicato. Mentre la trascini vedi il percorso e il tempo di viaggio. Lasciala lì: la squadra parte.",
-                    team.name, team.crew
+                    "Squadra di {who} da __{from}__ ({} persone). **Trascina il cono** sull'esagono indicato e lascialo lì: vedi il percorso e il tempo di viaggio.",
+                    team.crew
                 ),
                 expect: Expect::Move(t, hex.at),
             });
         }
         let t0 = game.time_s();
-        steps.push(Step { text: "Gli ordini sono dati. Premi «Riprendi» (in alto a destra): il tempo torna a scorrere.".into(), expect: Expect::Resume });
+        steps.push(Step { text: "Ordini dati. Premi **Riprendi** (in alto a sinistra): il tempo riparte.".into(), expect: Expect::Resume });
         steps.push(Step {
-            text: "Guarda le squadre arrivare e il fuoco avanzare: passerà mezz'ora di gioco, circa 30 secondi.".into(),
+            text: format!("Guarda le squadre arrivare e il fuoco avanzare: passano **{RUN_MIN} minuti** di gioco, circa {} secondi.", RUN_MIN * 60 / crate::RUN_X as i64),
             expect: Expect::Run(t0 + RUN_MIN * 60),
         });
         steps.push(Step {
-            text: format!("Il gioco si è fermato da solo, solo per questa prova. Nella partita vera dovrai fermarlo tu, premendo «Pausa»: vedrai anche le previsioni di dove andrà il fuoco nelle prossime ore, e potrai rimetterla dopo 30 secondi. Ora le persone: passa sopra {name}, vedi il percorso verso l'area sicura e quanto ci vorrà. Poi clicca {name} e premi «Evacua»."),
+            text: format!("Il gioco si è fermato da solo. Nella partita vera premi tu **Pausa**: la mappa mostra le previsioni e puoi dare ordini.\n\nOra le persone: clicca __{name}__, poi premi **Evacua**."),
             expect: Expect::Evacuate(d),
         });
-        steps.push(Step { text: "Premi «Riprendi»: il tempo torna a scorrere finché l'evacuazione non è finita.".into(), expect: Expect::Resume });
-        steps.push(Step { text: "Guarda le persone lasciare le case e mettersi al sicuro: il tutorial finisce quando l'evacuazione è terminata.".into(), expect: Expect::Over });
+        steps.push(Step { text: "Premi **Riprendi**: il tempo scorre finché l'evacuazione non è finita.".into(), expect: Expect::Resume });
+        steps.push(Step { text: "Guarda le persone mettersi al sicuro. Il tutorial finisce **a evacuazione completata**.".into(), expect: Expect::Over });
         Some(Script { steps })
     }
 

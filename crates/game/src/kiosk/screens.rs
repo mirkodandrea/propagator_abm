@@ -109,7 +109,7 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
     backdrop(ctx, "intro_fondo", 190);
     // today's board stands on the right of the card, the two centred as a pair
     let (panel_w, gap) = (300.0, 16.0);
-    let card_w = (screen.width() - 72.0 - panel_w - gap - 24.0).min(820.0);
+    let card_w = (screen.width() - 72.0 - panel_w - gap - 24.0).min(650.0);
     let pair = card_w + 72.0 + gap + panel_w;
     egui::Area::new(egui::Id::new("intro_classifica")).anchor(Align2::CENTER_CENTER, [(pair - panel_w) / 2.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         egui::Frame::none()
@@ -240,16 +240,16 @@ pub fn tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.add_space(8.0);
-                characters::portrait(ui, faces, Who::Volontaria, Mood::Calmo, 100.0);
+                characters::portrait(ui, faces, Who::Volontaria, Mood::Calmo, 130.0);
             });
             ui.add_space(18.0);
             characters::bubble(ui, Who::Volontaria, |ui| {
                 ui.vertical(|ui| {
-                    ui.set_max_width(560.0);
+                    ui.set_max_width(650.0);
                     // «benvenuto/a» would guess a gender: greet by the name
                     let hello = if k.player.is_empty() { "Ciao, grazie dell'aiuto!".to_string() } else { format!("Ciao {}, grazie dell'aiuto!", k.player) };
                     let text = if k.step == 0 { format!("{hello} {}", step.text) } else { step.text.clone() };
-                    characters::says(ui, Who::Volontaria, &text, 560.0);
+                    characters::says(ui, Who::Volontaria, &text, 650.0);
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         let r = ui.add(secondary("Salta il tutorial"));

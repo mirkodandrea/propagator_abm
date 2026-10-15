@@ -120,12 +120,45 @@ pub fn bubble<R>(ui: &mut egui::Ui, who: Who, add: impl FnOnce(&mut egui::Ui) ->
 }
 
 /// Text inside a bubble: dark on light, with the speaker's role on top.
+/// `**x**` marks an action (bold, orange), `__x__` a place or thing (bold, blue).
 pub fn says(ui: &mut egui::Ui, who: Who, text: &str, width: f32) {
     ui.vertical(|ui| {
         ui.set_max_width(width);
-        ui.label(egui::RichText::new(who.name()).size(14.0).strong().color(egui::Color32::from_gray(90)));
-        ui.add(egui::Label::new(egui::RichText::new(text).size(19.0).color(egui::Color32::from_rgb(20, 22, 26))).wrap());
+        ui.label(egui::RichText::new(who.name()).size(16.0).strong().color(egui::Color32::from_gray(90)));
+        ui.add(egui::Label::new(marked(text, 27.0)).wrap());
     });
+}
+
+/// The text as a layout job, with the `**` and `__` marks turned into colour.
+fn marked(text: &str, size: f32) -> egui::text::LayoutJob {
+    use egui::{text::TextFormat, Color32, FontId};
+    let base = Color32::from_rgb(20, 22, 26);
+    let mut job = egui::text::LayoutJob::default();
+    job.wrap.max_width = f32::INFINITY;
+    let mut mode = 0; // 0 plain, 1 action, 2 place
+    let mut rest = text;
+    while !rest.is_empty() {
+        let next = [("**", 1), ("__", 2)].iter().filter_map(|&(m, k)| rest.find(m).map(|i| (i, k))).min();
+        let (chunk, tail, toggle) = match next {
+            Some((i, k)) => (&rest[..i], &rest[i + 2..], Some(k)),
+            None => (rest, "", None),
+        };
+        let (colour, bold) = match mode {
+            1 => (Color32::from_rgb(196, 78, 0), true),
+            2 => (Color32::from_rgb(20, 80, 170), true),
+            _ => (base, false),
+        };
+        let mut f = TextFormat { font_id: FontId::proportional(if bold { size + 1.0 } else { size }), color: colour, ..Default::default() };
+        if bold {
+            f.underline = egui::Stroke::new(1.5, colour.gamma_multiply(0.45));
+        }
+        job.append(chunk, 0.0, f);
+        if let Some(k) = toggle {
+            mode = if mode == k { 0 } else { k };
+        }
+        rest = tail;
+    }
+    job
 }
 
 /// A line said to the player by name, if they gave one:
