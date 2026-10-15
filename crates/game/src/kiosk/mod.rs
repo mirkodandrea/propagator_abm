@@ -153,7 +153,7 @@ impl Kiosk {
             demo_order_at: 2.0,
             territory,
             data,
-            seed: 1,
+            seed: 2,
             player: String::new(),
             script: None,
             step: 0,

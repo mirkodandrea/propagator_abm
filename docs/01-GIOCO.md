@@ -101,7 +101,7 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
   - Home per la vista iniziale.
 
   Funziona offline e senza audio, in italiano.
-- **Operatore** (F2 o «Menu»): nuova visita, vai al giorno 2, seme 1–3, «Ferma il mondo», vista iniziale, livello grafico, azzera la classifica.
+- **Operatore** (F2 o «Menu»): nuova visita, vai al giorno 2, seme 1–3 (predefinito 2, utente 2026-10-15), «Ferma il mondo», vista iniziale, livello grafico, azzera la classifica.
 - **Chiosco presidiato:** nessun reset per inattività.
 - **Mario** (easter egg, `docs/MARIO.md`): **scollegato** dal 2026-10-14. Usava le persone dell'IBM e i vecchi stati del chiosco. Da decidere se ricollegarlo.
 

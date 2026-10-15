@@ -35,7 +35,7 @@ Il vento è indicato con la direzione **da cui** soffia. Gli inneschi sono in me
 | Uso | Caso | Innesco | Vento | Durata | Note |
 |---|---|---|---|---|---|
 | Tutorial | `tutorial` | (3792, 3295), sotto Le Ghiande | da 135°, 20 km/h | 150 min | Seme 1. Senza ordini: 90 ha, 17 case colpite, 45 persone colte. Con il copione: 6 ha, nessuna persona colta. Trovato con `examples/tutorial_cerca.rs`. |
-| Partita | `medium` | (5590, 4370) | da 119°, 35 km/h, umidità 5 %; gira a 50° (35 km/h) al minuto 45 | 300 min, segnalato al minuto 30 (`start_min`) | Seme 1. Senza ordini (ha, case, persone): seme 1 467, 28, 137; seme 2 384, 33, 195; seme 3 386, 33, 257 (30 km/h: 79, 0, 9 / 362, 29, 222 / 208, 17, 121). |
+| Partita | `medium` | (5590, 4370) | da 119°, 36 km/h, umidità 5 %; gira a 50° (36 km/h) al minuto 45 | 300 min, segnalato al minuto 30 (`start_min`) | Seme 1. Senza ordini (ha, case, persone): seme 1 512, 28, 172; seme 2 361, 38, 185; seme 3 506, 35, 190 (35 km/h: 467, 28, 137 / 384, 33, 195 / 386, 33, 257). |
 | (riserva) | `easy`, `expert` | come prima | | 180 min | Non usati dal chiosco. |
 
 ## Come si modifica

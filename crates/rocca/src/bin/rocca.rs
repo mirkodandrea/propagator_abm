@@ -96,7 +96,7 @@ fn table(g: &Game, o: &Outcome) {
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let case = args.next().context("uso: rocca <caso> [--seme N] [--squadra ...] [--evacua ...]")?;
-    let (mut seed, mut data, mut teams, mut evac) = (1u64, PathBuf::from("data"), String::new(), String::new());
+    let (mut seed, mut data, mut teams, mut evac) = (2u64, PathBuf::from("data"), String::new(), String::new());
     let mut start: Option<i64> = None;
     while let Some(a) = args.next() {
         let mut v = || args.next().with_context(|| format!("{a}: manca il valore"));
