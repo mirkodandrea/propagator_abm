@@ -63,13 +63,6 @@ pub struct OrderMarker;
 #[derive(Component)]
 pub struct WorkOverlay;
 
-/// A hand crew drives to the job in a van and works on foot.
-#[derive(Resource)]
-pub struct CrewMeshes {
-    van: Handle<Mesh>,
-    squad: Handle<Mesh>,
-}
-
 #[derive(Resource)]
 pub struct UnitAssets {
     order_ring: Handle<RetroMaterial>,
@@ -116,13 +109,11 @@ pub fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
-    let engine = meshes.add(crate::toy::engine());
-    let crew = meshes.add(crate::toy::van());
-    let tanker = meshes.add(crate::toy::tanker());
-    commands.insert_resource(CrewMeshes {
-        van: crew.clone(),
-        squad: meshes.add(crate::toy::crew()),
-    });
+    // Blender models (scripts/build_unit_models.py): the engine, a firefighter
+    // on foot (each person of a team is a unit of its own) and the air tanker.
+    let engine = meshes.add(crate::models::unit_mesh("engine"));
+    let crew = meshes.add(crate::models::unit_mesh("firefighter"));
+    let tanker = meshes.add(crate::models::unit_mesh("tanker"));
 
     let vr = false;
     let symbol_scale = symbol_scale(vr);
@@ -227,20 +218,18 @@ pub fn reset(
 
 pub fn update_units(
     sim: Res<Sim>,
-    crew_meshes: Res<CrewMeshes>,
     mut materials: ResMut<Assets<RetroMaterial>>,
     mut query: Query<(
         &UnitView,
         &mut Transform,
         &mut Visibility,
         &Handle<RetroMaterial>,
-        &mut Handle<Mesh>,
     )>,
 ) {
     if !sim.is_changed() {
         return;
     }
-    for (view, mut tf, mut vis, mat, mut mesh) in &mut query {
+    for (view, mut tf, mut vis, mat) in &mut query {
         let Some(u) = sim.crews.units.get(view.id) else {
             continue;
         };
@@ -257,15 +246,6 @@ pub fn update_units(
             continue;
         }
 
-        if u.kind == UnitKind::HandCrew {
-            // Off the vehicle (carrier set, not aboard) they are people on foot,
-            // walking or working; only a crew with no carrier drives its own van.
-            let on_foot = u.state == UnitState::Working || u.carrier.is_some();
-            let want = if on_foot { &crew_meshes.squad } else { &crew_meshes.van };
-            if *mesh != *want {
-                *mesh = want.clone();
-            }
-        }
         let ground = sim.scn.terrain.height_at(u.pos);
         let lift = if u.kind.is_air() {
             AIR_ALTITUDE_M

@@ -12,6 +12,8 @@ Original, editable Blender assets generated for this project; no external art or
 - `meshes.json`: baked positions, normals, vertex colors, triangle indices and bark masks, embedded in the native and web game.
 - `preview.png`: Blender studio render. The fire engine is shown with red paint; game symbols use their live operational status tint.
 
+- `units.json`, `units_assets.blend`, `units_preview.png`: the player's teams, from `scripts/build_unit_models.py` (firefighter on foot, engine, air tanker). Neutral greys, so the status tint reads. Regenerate with `/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build_unit_models.py`.
+
 Regenerate from the repository root:
 
 ```sh

@@ -154,6 +154,23 @@ pub fn island_mesh(name: &str) -> Mesh {
     mesh
 }
 
+/// A model of `scripts/build_unit_models.py` (firefighter, engine, tanker) as
+/// a mesh, in neutral greys so the unit's status tint reads.
+pub fn unit_mesh(name: &str) -> Mesh {
+    static UNITS: OnceLock<HashMap<String, Kit>> = OnceLock::new();
+    let m = UNITS
+        .get_or_init(|| parse_kit(include_str!("../../../assets/models/units.json"), "unit models"))
+        .get(name)
+        .unwrap_or_else(|| panic!("unit models have no `{name}`"));
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, m.positions.clone());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, m.normals.clone());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, m.colors.iter().map(|c| [c[0], c[1], c[2], 1.0]).collect::<Vec<_>>());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; m.positions.len()]);
+    mesh.insert_indices(Indices::U32(m.indices.clone()));
+    mesh
+}
+
 /// A kit piece as a standalone mesh (people and vehicles, which move).
 pub fn kit_mesh(name: &str) -> Mesh {
     let m = kit(name);
@@ -183,6 +200,14 @@ pub fn mesh(name: &str) -> Mesh {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_unit_models_load_and_stand_on_the_ground() {
+        for name in ["firefighter", "engine", "tanker"] {
+            let m = unit_mesh(name);
+            assert!(m.count_vertices() > 0, "{name}");
+        }
+    }
 
     #[test]
     fn the_island_models_stand_on_the_ground() {

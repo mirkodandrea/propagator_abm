@@ -37,7 +37,6 @@ mod sea;
 mod sky;
 mod sim;
 mod terrain_mesh;
-mod toy;
 mod textures;
 mod ui;
 mod units;
