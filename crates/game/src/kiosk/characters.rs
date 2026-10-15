@@ -72,7 +72,9 @@ fn texture(bytes: &[u8], images: &mut Assets<Image>, contexts: &mut EguiContexts
         bevy::render::texture::CompressedImageFormats::NONE,
         true,
         bevy::render::texture::ImageSampler::linear(),
-        bevy::render::render_asset::RenderAssetUsages::RENDER_WORLD,
+        // Not RENDER_WORLD alone: Bevy then drops the image from the main world
+        // after upload, and bevy_egui forgets the texture on that removal.
+        bevy::render::render_asset::RenderAssetUsages::all(),
     )
     .ok()?;
     Some(contexts.add_image(images.add(img)))
