@@ -24,7 +24,7 @@ Un solo territorio sintetico e plausibile, riusato con diversi inneschi e venti:
 - Le **aree sicure** dell'evacuazione si ricavano dai dati (`abm::refuge`: nodi stradali con poco combustibile intorno, raggiungibili in auto). Per ogni borgo si sceglie la più vicina su strada, a più di 400 m dalle sue case.
 - **Valico** (2026-10-13): una fascia di macchia alta (classe 9, con faville), circa 117 ha, lungo la Strada del Passo. Va da Le Terrazze, passa la sella e arriva alla macchia sopra Pian dei Grilli. Serve perché il fuoco possa arrivare anche ai borghi a ovest: prima nessun incendio colpiva case sia a est sia a ovest. Il fuoco passa a ovest quando il vento gira da nord-est dentro il passo. Larghezza variabile (in media 320 m), bordo frastagliato di macchia media (classe 8) e qualche isola del bosco vecchio, perché nel chiosco non sembri una striscia dipinta; il nucleo lungo la strada è sempre continuo.
 - **Costa est** (2026-10-13): a nord del porto una baia sabbiosa, un piccolo promontorio e l'angolo nord-est in diagonale, al posto della costa dritta a 300 m dal bordo della finestra; anche il breve tratto dritto a sud del porto è rifatto. Solo terra diventata mare: porto, strade, case e inneschi non cambiano.
-- **Umidità del combustibile:** 5 % (tutorial), 7 % negli incendi di gioco (`moisture_pct` del caso; utente, 2026-10-15). Uniforme. La leva vera è il vento.
+- **Umidità del combustibile:** 5 % in tutti gli incendi (`moisture_pct` del caso, sovrascrivibile; il 7 % di gioco è stato ripristinato a 5 % dall'utente, 2026-10-15). Uniforme. La leva vera è il vento.
 - **Squadre** (2026-10-14): 3 squadre dei vigili del fuoco alla caserma di Castelvento, 2 squadre di volontari AIB al presidio di Pian dei Grilli (dal 2026-10-14, dall'altra parte dell'isola rispetto a Castelvento). Ogni squadra è un'autobotte con 3 persone.
 - **Esagoni** di 500 m: valgono solo quelli attraversati da una strada carrabile della rete della caserma (`rocca::hex`).
 
@@ -35,7 +35,7 @@ Il vento è indicato con la direzione **da cui** soffia. Gli inneschi sono in me
 | Uso | Caso | Innesco | Vento | Durata | Note |
 |---|---|---|---|---|---|
 | Tutorial | `tutorial` | (3792, 3295), sotto Le Ghiande | da 135°, 20 km/h | 150 min | Seme 1. Senza ordini: 90 ha, 17 case colpite, 45 persone colte. Con il copione: 6 ha, nessuna persona colta. Trovato con `examples/tutorial_cerca.rs`. |
-| Partita | `medium` | (5590, 4370) | da 119°, 30 km/h, umidità 7 %; gira a 50° (30 km/h) al minuto 45 | 300 min, segnalato al minuto 30 (`start_min`) | Seme 1. Senza ordini: 132 ha, 17 case colpite, 70 persone colte (prima, con 40 km/h e 5 %: 638 ha, 137 case, 426 persone). |
+| Partita | `medium` | (5590, 4370) | da 119°, 35 km/h, umidità 5 %; gira a 50° (35 km/h) al minuto 45 | 300 min, segnalato al minuto 30 (`start_min`) | Seme 1. Senza ordini (ha, case, persone): seme 1 467, 28, 137; seme 2 384, 33, 195; seme 3 386, 33, 257 (30 km/h: 79, 0, 9 / 362, 29, 222 / 208, 17, 121). |
 | (riserva) | `easy`, `expert` | come prima | | 180 min | Non usati dal chiosco. |
 
 ## Come si modifica
