@@ -394,15 +394,6 @@ pub const AHEAD_PROBE_M: f32 = 60.0;
 /// Weight of the along-wind difference against the threat itself.
 pub const AHEAD_WEIGHT: f32 = 1.0;
 
-/// What a unit of this kind drives, and how fast at most.
-pub fn vehicle(kind: UnitKind) -> Vehicle {
-    Vehicle {
-        drivable_only: kind.drivable_only(),
-        road_speed: ENGINE_SPEED,
-        path_speed: if kind == UnitKind::HandCrew { CREW_SPEED } else { ENGINE_SPEED },
-    }
-}
-
 pub struct Suppression {
     pub units: Vec<Unit>,
     /// Which cells an engine wets; `Ahead` unless a variant says otherwise.
@@ -694,13 +685,6 @@ impl Suppression {
             at = p;
         }
         m
-    }
-
-    /// Seconds of driving left on a ground unit's current route, by the rule
-    /// that drives it (0 if it has none).
-    pub fn route_remaining_s(&self, id: usize, net: &RoadNetwork) -> f32 {
-        let Some(u) = self.units.get(id) else { return 0.0 };
-        crate::drive::route_time_s(net, u.pos, Some(u.heading), u.drive.last_node(), u.drive.route(), vehicle(u.kind))
     }
 
     /// The road still ahead of a ground unit, from where it is: for the map.
@@ -1457,7 +1441,11 @@ impl Suppression {
         }
         // Crews ride their vehicle on carriageways and go at [`CREW_SPEED`]
         // on tracks and paths.
-        let how = vehicle(kind);
+        let how = Vehicle {
+            drivable_only: kind.drivable_only(),
+            road_speed: ENGINE_SPEED,
+            path_speed: if kind == UnitKind::HandCrew { CREW_SPEED } else { ENGINE_SPEED },
+        };
         let now = self.time_s;
         let u = &mut self.units[i];
         let leg = u.drive.step(&mut u.pos, &mut u.heading, target, now, dt, how, net, traffic, fire.threat());
