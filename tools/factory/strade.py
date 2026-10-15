@@ -35,14 +35,27 @@ W = 8000.0
 STEP = 40.0                      # routing grid, m
 MAX_GRADE = 0.13                 # a lorry road
 FIRST_ID = 200
+MOVES_8 = [(a, b) for a in (-1, 0, 1) for b in (-1, 0, 1) if a or b]
+# Plus the knight moves: on a 40-50 % slope the 8 moves cannot follow a contour
+# closely enough to stay under the ceiling, so hairpins need these.
+MOVES_16 = MOVES_8 + [(a, b) for a in (-2, -1, 1, 2) for b in (-2, -1, 1, 2) if abs(a) != abs(b)]
 
-# name, class, start (x, y), via points, end (x, y), grade ceiling.  Ends snap to existing vertices.
+# name, class, start (x, y), via points, end (x, y), grade ceiling[, moves].  Ends snap to existing vertices.
 WAYS = [
     ("Variante Nord di Castelvento", "tertiary", (5000, 5330), [(5800, 5500)], (6150, 4330), MAX_GRADE),
     ("Strada dei Campi", "unclassified", (4640, 5420), [], (4800, 4900), MAX_GRADE),
     # Ends where it first meets the Costiera: aimed further west it ran 1.5 km beside it.
     ("Strada di San Rocco al Mare", "tertiary", (6250, 4200), [], (7043, 2552), MAX_GRADE),
     ("Strada del Piano", "unclassified", (4800, 4850), [(5600, 4080)], (6200, 4150), 0.18),
+    # Over the ridge of the promontory (2026-10-15).  West of x 5800 no crossing
+    # stays under 20 % or 5 km: the south face is 40-50 %.  The Tornanti branch
+    # off the Sella: from the Costiera at x 6000 they could only run beside it.
+    ("Strada della Sella", "unclassified", (6450, 2950), [(6450, 3500)], (6150, 4180), MAX_GRADE, MOVES_16),
+    ("Strada dei Tornanti", "unclassified", (6720, 3300), [(6000, 3620)], (5900, 4180), 0.16, MOVES_16),
+    # Across the head of the `medium` fire in its first hour (30-90 min from
+    # the ignition, west-south-west along the north flank of the ridge), from the
+    # Strada del Piano to the upper hairpins of the Strada del Passo.
+    ("Strada di Mezzacosta", "unclassified", (5436, 4208), [(4900, 4150), (4500, 4200)], (4144, 4324), MAX_GRADE, MOVES_16),
 ]
 
 
@@ -52,7 +65,7 @@ def load_dem(n_hint=None):
     return dem.reshape(n, n)
 
 
-def route(dem, a, b, via, max_grade=MAX_GRADE):
+def route(dem, a, b, via, max_grade=MAX_GRADE, moves=MOVES_8):
     n = dem.shape[0]
     cell = W / n
     g = int(W / STEP)
@@ -75,25 +88,22 @@ def route(dem, a, b, via, max_grade=MAX_GRADE):
                 break
             if d > dist[u]:
                 continue
-            for di in (-1, 0, 1):
-                for dj in (-1, 0, 1):
-                    if not (di or dj):
-                        continue
-                    v = (u[0] + di, u[1] + dj)
-                    if not (0 <= v[0] < g and 0 <= v[1] < g):
-                        continue
-                    ev = elev(*v)
-                    if ev < 4.0:
-                        continue
-                    ln = STEP * (1.414 if di and dj else 1.0)
-                    grade = abs(ev - elev(*u)) / ln
-                    if grade > max_grade:
-                        continue
-                    nd = d + ln * (1 + (grade / 0.06) ** 2)
-                    if nd < dist.get(v, 1e18):
-                        dist[v] = nd
-                        prev[v] = u
-                        heapq.heappush(pq, (nd, v))
+            for di, dj in moves:
+                v = (u[0] + di, u[1] + dj)
+                if not (0 <= v[0] < g and 0 <= v[1] < g):
+                    continue
+                ev = elev(*v)
+                if ev < 4.0:
+                    continue
+                ln = STEP * (1.414 if abs(di) == abs(dj) else 1.0 if not (di and dj) else 5 ** 0.5)
+                grade = abs(ev - elev(*u)) / ln
+                if grade > max_grade:
+                    continue
+                nd = d + ln * (1 + (grade / 0.06) ** 2)
+                if nd < dist.get(v, 1e18):
+                    dist[v] = nd
+                    prev[v] = u
+                    heapq.heappush(pq, (nd, v))
         if t not in prev and s != t:
             raise RuntimeError(f"no road between {s} and {t} under the {max_grade} grade ceiling")
         out = [t]
@@ -205,24 +215,24 @@ def main():
     roads = [r for r in osm["roads"] if r["id"] < FIRST_ID]
     dem = load_dem()
 
-    verts = np.array([v for r in roads if r["drivable"] for v in r["line"]])
-
-    def snap(p):
+    def snap(p):  # also onto the ways built so far, so a way can branch off another
+        verts = np.array([v for r in roads + new if r["drivable"] for v in r["line"]])
         d = np.hypot(verts[:, 0] - p[0], verts[:, 1] - p[1])
         return verts[int(d.argmin())]
 
     new = []
-    for name, cls, s, via, e, grade in WAYS:
+    for name, cls, s, via, e, grade, *moves in WAYS:
         s, e = snap(s), snap(e)
         try:
-            pts = smooth(route(dem, tuple(s), tuple(e), via, grade))
+            pts = smooth(route(dem, tuple(s), tuple(e), via, grade, *moves))
         except RuntimeError as err:
             print(f"{name}: SALTATA ({err})")
             continue
         pts = resample(pts)
         pts[0], pts[-1] = s, e                       # weld to the existing vertex exactly
-        pts = stop_at_first_meeting(pts, e, roads)
-        e = pts[-1]
+        pts = stop_at_first_meeting(pts, e, roads + new)
+        pts = stop_at_first_meeting(pts[::-1], s, roads + new)[::-1]   # and the same at the start
+        s, e = pts[0], pts[-1]
         length = float(np.hypot(*np.diff(pts, axis=0).T).sum())
         print(f"{name}: {length:5.0f} m, da ({s[0]:.0f}, {s[1]:.0f}) a ({e[0]:.0f}, {e[1]:.0f})")
         new.append({
