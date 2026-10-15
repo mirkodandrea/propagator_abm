@@ -9,8 +9,11 @@ vegetazione al 2,5% con sagome semplificate (le mesh dettagliate e le chiome
 nascoste non vengono allocate), mare a 60 m vicino all'isola e 600 m al largo.
 Niente ombre, HDR, profondità di campo, bloom o MSAA. Il canvas disegna un pixel
 per pixel CSS anche sui display Retina; gli input sono normalizzati alla stessa
-scala. Le mesh statiche di terreno e mare e i ritratti rilasciano la copia CPU
-dopo il caricamento sulla GPU. Il fuoco conserva al massimo 600 celle con fiamme,
+scala. Le mesh statiche di terreno e mare rilasciano la copia CPU
+dopo il caricamento sulla GPU, anche nella versione locale, a geometria e resa
+invariate. I ritratti conservano invece la copia CPU: bevy_egui richiede che
+l'immagine resti negli asset per mantenere la texture registrata.
+Il fuoco conserva al massimo 600 celle con fiamme,
 100 particelle di fumo e 80 braci, con lo strato a terra a 20 m.
 Sono semplificazioni visive: dati del territorio, simulazione, ordini e punteggio
 restano quelli del chiosco. Il menu web non permette di riattivare effetti pesanti.

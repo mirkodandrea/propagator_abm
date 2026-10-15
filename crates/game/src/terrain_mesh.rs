@@ -417,7 +417,10 @@ pub fn build(
 
             let mut mesh = Mesh::new(
                 PrimitiveTopology::TriangleList,
-                if cfg!(target_arch = "wasm32") { RenderAssetUsages::RENDER_WORLD } else { RenderAssetUsages::default() },
+                // Static geometry: release the CPU copy after GPU upload on
+                // native too. Height queries and Mario's floor use the terrain
+                // data directly, not this rendered mesh.
+                RenderAssetUsages::RENDER_WORLD,
             );
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
             mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);

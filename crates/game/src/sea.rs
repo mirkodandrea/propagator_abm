@@ -388,7 +388,8 @@ fn spawn_patch(
 
             let mut mesh = Mesh::new(
                 PrimitiveTopology::TriangleList,
-                if cfg!(target_arch = "wasm32") { RenderAssetUsages::RENDER_WORLD } else { RenderAssetUsages::default() },
+                // Waves animate in the shader; no CPU reader or mesh updates.
+                RenderAssetUsages::RENDER_WORLD,
             );
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
             mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
