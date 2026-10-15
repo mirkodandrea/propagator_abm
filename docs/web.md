@@ -16,6 +16,8 @@ python3 -m http.server 8765 --directory target/web      # http://localhost:8765
 
 Pubblicazione: `.github/workflows/pages.yml` costruisce e pubblica su GitHub Pages a ogni push su `main`, `settimana-protezione-civile` o `nuovo-gioco`. Indirizzo: https://mirkodandrea.github.io/propagator_abm/
 
+**Versione provata (2026-10-15):** `crates/game/build.rs` registra il commit della compilazione (`GAME_COMMIT`, con `-modificato` se l'albero non è pulito; in CI è quello pubblicato). Compare sul titolo («versione xxxxxxxx») e il pulsante «Dai un feedback» lo scrive da solo nella domanda «Versione del gioco» del Google Form (`entry.2126742218`).
+
 Serve un computer con mouse e un browser recente; il primo caricamento scarica circa 50 MB. Una scheda in secondo piano viene messa in pausa dal browser.
 
 ## Playtest headless per agenti (2026-10-13)

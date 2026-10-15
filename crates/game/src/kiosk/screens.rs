@@ -96,7 +96,7 @@ pub fn title(ctx: &egui::Context, k: &Kiosk, logo: Option<&Logo>) -> bool {
         });
     });
     egui::Area::new(egui::Id::new("titolo_nota")).anchor(Align2::RIGHT_BOTTOM, [-18.0, -14.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
-        ui.label(RichText::new(format!("Simulazione dimostrativa · {}", k.territory.game)).size(14.0).color(GREY.gamma_multiply(0.75)));
+        ui.label(RichText::new(format!("Simulazione dimostrativa · {} · versione {}", k.territory.game, super::BUILD)).size(14.0).color(GREY.gamma_multiply(0.75)));
     });
     ctx.request_repaint();
     play

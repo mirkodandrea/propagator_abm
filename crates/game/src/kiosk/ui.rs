@@ -139,8 +139,11 @@ pub fn draw(
     k.click = None;
 }
 
-/// The Google Form for the feedback of those who play in the browser.
-const FEEDBACK_URL: &str = "https://forms.gle/ssJ1HyatH3QqCG6a8";
+/// The Google Form for the feedback of those who play in the browser, with the
+/// «Versione del gioco» answer filled in by the build's commit.
+fn feedback_url() -> String {
+    format!("https://docs.google.com/forms/d/e/1FAIpQLSfHWmJHJwLLzqLmjomK-HA3YikUQfw4wz5L9cSjqpgS4i1ipw/viewform?usp=pp_url&entry.2126742218={}", super::BUILD)
+}
 
 /// The banner at the top right. In the kiosk, «Provami!» with the QR code of
 /// the browser version, on the title and the opening, where a passer-by is
@@ -154,7 +157,7 @@ fn banner(ctx: &egui::Context, qr: Option<&Qr>) {
                     ui.label(RichText::new("Dicci cosa ne pensi").size(20.0).strong().color(AMBER));
                     ui.add_space(4.0);
                     if ui.add(primary("Dai un feedback")).clicked() {
-                        ctx.open_url(egui::OpenUrl::new_tab(FEEDBACK_URL));
+                        ctx.open_url(egui::OpenUrl::new_tab(feedback_url()));
                     }
                 } else if let Some(qr) = qr {
                     ui.label(RichText::new("Provami!").size(26.0).strong().color(AMBER));

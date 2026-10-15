@@ -35,6 +35,10 @@ use crate::sim::{Sim, SimRestarted};
 use crate::{AppState, DataPath};
 
 pub const TITLE: &str = "Isola di Roccavento";
+
+/// The commit this build comes from (`build.rs`), written on the title screen
+/// and sent with the feedback.
+pub const BUILD: &str = env!("GAME_COMMIT");
 /// Real seconds a notice (a refused order, a closed road) stays on screen.
 pub const NOTICE_S: f32 = 4.0;
 
