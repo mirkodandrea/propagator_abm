@@ -55,6 +55,9 @@ pub const REFILL_S: f32 = 10.0 * 60.0;
 pub const CREW_RANGE_M: f32 = crate::hex::TEAM_REACH_HEXES as f32 * crate::hex::HEX_M;
 /// How much closer to the fire each new line is cut.
 pub const CREW_STEP_M: f32 = 80.0;
+/// The people of a team fan out around the hex's road point by this much,
+/// metres, and each then works on their own.
+pub const CREW_SPREAD_M: f32 = 60.0;
 /// A team standing in a place protects the homes this close to it.
 pub const PROTECT_M: f32 = 300.0;
 
@@ -81,15 +84,18 @@ pub struct Team {
     /// The engine: index into `Game::crews.units`. It wets the fuel it can
     /// reach from the road.
     pub unit: usize,
-    /// The people on foot (a hand crew unit riding with the engine): they
-    /// cut the vegetation across the fire's way (user, 2026-10-14).
-    pub crew_unit: usize,
+    /// The people on foot, one unit each: they ride in the engine along the
+    /// carriageways, get off where it stops, and cut the vegetation across the
+    /// fire's way, each on their own (user, 2026-10-14 and 2026-10-15).
+    pub crew_units: Vec<usize>,
     pub name: String,
     pub station: usize,
     pub volunteers: bool,
     pub crew: u8,
     /// The hex it was last sent to.
     pub hex: Option<Axial>,
+    /// The order is waiting for the people still on foot to get back aboard.
+    pub pending: Option<Pos>,
 }
 
 /// What sending a team to a hex would be ([`Game::plan_move`]).
@@ -185,24 +191,35 @@ impl Game {
             .iter()
             .map(|s| net.nearest_reachable(Pos::from(s.pos), true, main).map_or(Pos::from(s.pos), |n| net.pos(n)))
             .collect();
-        // each team: its engine, then its people on foot, at the same station
-        let roster: Vec<(UnitKind, Pos)> =
-            territory.roster.iter().flat_map(|s| [(s.kind.unit_kind(), stations[s.station]), (UnitKind::HandCrew, stations[s.station])]).collect();
+        // each team: its engine, then its people on foot (one unit each), at the same station
+        let roster: Vec<(UnitKind, Pos)> = territory
+            .roster
+            .iter()
+            .flat_map(|s| std::iter::once((s.kind.unit_kind(), stations[s.station])).chain((0..s.crew.max(1)).map(|_| (UnitKind::HandCrew, stations[s.station]))))
+            .collect();
         let mut crews = Suppression::with_roster(&scn, &roster, policy)?;
         crews.effect = SUPPRESSION;
         crews.refill_in_place_s = Some(REFILL_S);
         let mut per_station = vec![0; territory.stations.len()];
+        let mut next = 0;
         let teams: Vec<Team> = territory
             .roster
             .iter()
-            .enumerate()
-            .map(|(k, s)| {
+            .map(|s| {
                 per_station[s.station] += 1;
                 let st = &territory.stations[s.station];
                 let name = format!("{} {}", if st.volunteers { "AIB" } else { "VVF" }, per_station[s.station]);
-                crews.units[2 * k].callsign = name.clone();
-                crews.units[2 * k + 1].callsign = format!("{name}, a piedi");
-                Team { unit: 2 * k, crew_unit: 2 * k + 1, name, station: s.station, volunteers: st.volunteers, crew: s.crew, hex: None }
+                let unit = next;
+                crews.units[unit].callsign = name.clone();
+                let crew_units: Vec<usize> = (unit + 1..unit + 1 + s.crew.max(1) as usize).collect();
+                next = unit + 1 + crew_units.len();
+                for (j, &c) in crew_units.iter().enumerate() {
+                    let u = &mut crews.units[c];
+                    u.callsign = format!("{name}, a piedi {}", j + 1);
+                    u.carrier = Some(unit);
+                    u.aboard = true;
+                }
+                Team { unit, crew_units, name, station: s.station, volunteers: st.volunteers, crew: s.crew, hex: None, pending: None }
             })
             .collect();
         let hexes = HexGrid::build(&scn, &net, main);
@@ -331,16 +348,45 @@ impl Game {
         }
         let plan = self.plan_move(t, at)?;
         let unit = self.teams[t].unit;
-        self.crews.assign(unit, Task::Attack { at: plan.hex.target }).map_err(|e| e.to_string())?;
-        // the people ride with the engine and work from where it stops
-        let crew = self.teams[t].crew_unit;
-        if self.crews.units[crew].state != UnitState::Lost {
-            let _ = self.crews.assign(crew, Task::Attack { at: plan.hex.target });
+        if self.crews.units[unit].state == UnitState::Lost {
+            return Err(format!("{} è fuori servizio", self.teams[t].name));
         }
+        // the engine leaves when its people are aboard; they work from where it stops
+        self.teams[t].pending = Some(plan.hex.target);
+        self.dispatch(t);
         self.teams[t].hex = Some(at);
         let text = format!("{} verso {} ({} min)", self.teams[t].name, self.place_name(plan.hex.target), plan.minutes.ceil());
         self.log.push(LogEntry { at_s: self.time_s(), text });
         Ok(plan)
+    }
+
+    /// Carry out the order waiting for team `t`: the people left on foot walk
+    /// back to the engine, and when all are aboard it drives off and they
+    /// spread around the hex's road point.
+    fn dispatch(&mut self, t: usize) {
+        let Some(target) = self.teams[t].pending else { return };
+        let alive: Vec<usize> = self.teams[t].crew_units.iter().copied().filter(|&c| self.crews.units[c].state != UnitState::Lost).collect();
+        let mut all_aboard = true;
+        for &c in &alive {
+            let u = &self.crews.units[c];
+            if !u.aboard {
+                all_aboard = false;
+                if u.task != Task::Return {
+                    let _ = self.crews.assign(c, Task::Return);
+                }
+            }
+        }
+        if !all_aboard {
+            return;
+        }
+        self.teams[t].pending = None;
+        let _ = self.crews.assign(self.teams[t].unit, Task::Attack { at: target });
+        let n = alive.len();
+        for (j, &c) in alive.iter().enumerate() {
+            let a = std::f32::consts::TAU * j as f32 / n.max(1) as f32;
+            let off = if n > 1 { CREW_SPREAD_M } else { 0.0 };
+            let _ = self.crews.assign(c, Task::Attack { at: Pos { x: target.x + off * a.cos(), y: target.y + off * a.sin() } });
+        }
     }
 
     /// The road still ahead of team `t`.
@@ -461,6 +507,9 @@ impl Game {
             }
         }
         self.fire.advance(STEP_S)?;
+        for t in 0..self.teams.len() {
+            self.dispatch(t);
+        }
         for a in self.crews.step(STEP_S as f32, &self.net, &self.traffic, &self.fire, &self.scn) {
             self.fire.queue(a);
         }
@@ -497,10 +546,10 @@ impl Game {
     /// People on foot who finished their line cut the next one closer to the
     /// fire, within [`CREW_RANGE_M`] of their hex's road point.
     fn crews_follow_the_fire(&mut self) {
-        for t in 0..self.teams.len() {
-            let (Some(at), crew) = (self.teams[t].hex, self.teams[t].crew_unit) else { continue };
+        for (t, crew) in self.teams.iter().enumerate().flat_map(|(t, team)| team.crew_units.iter().map(move |&c| (t, c))).collect::<Vec<_>>() {
+            let Some(at) = self.teams[t].hex else { continue };
             let u = &self.crews.units[crew];
-            if u.state != UnitState::Staged || u.task != Task::Hold || u.note != "line complete" {
+            if u.state != UnitState::Staged || u.task != Task::Hold || u.note != "line complete" || u.aboard {
                 continue;
             }
             let Some(hex) = self.hexes.get(at) else { continue };

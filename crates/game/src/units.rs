@@ -244,7 +244,8 @@ pub fn update_units(
         let Some(u) = sim.crews.units.get(view.id) else {
             continue;
         };
-        let want = if u.on_scene() || u.state == UnitState::Lost {
+        // people sitting in the engine are the engine's symbol
+        let want = if (u.on_scene() && !u.aboard) || u.state == UnitState::Lost {
             Visibility::Inherited
         } else {
             Visibility::Hidden

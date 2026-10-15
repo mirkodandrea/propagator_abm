@@ -356,7 +356,7 @@ fn demo_give_orders(k: &mut Kiosk, sim: &mut Sim) {
         let p = fire[(t + 1) * fire.len() / (n + 1)];
         if let Some(h) = sim.hexes.nearest(p).map(|h| h.at) {
             match sim.move_team(t, h) {
-                Ok(_) if first.is_none() => first = Some(sim.teams[t].crew_unit),
+                Ok(_) if first.is_none() => first = sim.teams[t].crew_units.first().copied(),
                 Err(e) => eprintln!("DEMOTMP move {t}: {e}"),
                 _ => {}
             }

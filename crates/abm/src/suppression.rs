@@ -262,6 +262,12 @@ pub struct Unit {
     /// Why this unit is not doing what it was told, in words the UI can show.
     /// Empty when it is simply getting on with it.
     pub note: &'static str,
+    /// A person on foot who travels in this engine's vehicle: the engine's
+    /// unit id. The vehicle stays on the carriageways; the person gets off
+    /// where it stops and walks, straight, to the work.
+    pub carrier: Option<usize>,
+    /// Sitting in the carrier's vehicle: the position is the carrier's.
+    pub aboard: bool,
 
     /// Route and progress on the network ([`crate::drive`]). Ground units
     /// only; air flies straight.
@@ -497,6 +503,8 @@ impl Suppression {
                 line_cut_m: 0.0,
                 drops: 0,
                 note: "",
+                carrier: None,
+                aboard: false,
                 drive: Drive::default(),
                 resume: None,
                 tasked_at_s: 0.0,
@@ -994,6 +1002,12 @@ impl Suppression {
         scn: &Scenario,
         out: &mut Vec<Intervention>,
     ) {
+        // A person sitting in the engine's vehicle goes where it goes and is
+        // exposed to what it is exposed to.
+        if self.units[i].aboard && self.ride(i) {
+            return;
+        }
+
         // --- physics, before anything else ---------------------------------
         // Burning over is not a decision and is not authorable: a unit standing
         // in flame accumulates exposure and is lost, whatever any policy says.
@@ -1020,10 +1034,11 @@ impl Suppression {
 
         match self.units[i].state {
             UnitState::Withdrawing => {
-                let base = self.units[i].base;
+                let base = self.rally(i);
                 self.drive_toward(i, base, dt, net, traffic, fire, scn);
                 if dist(self.units[i].pos, base) < ARRIVE_M {
                     let u = &mut self.units[i];
+                    u.aboard = u.carrier.is_some();
                     u.state = UnitState::Staged;
                     u.task = Task::Hold;
                     u.note = "back at staging, awaiting orders";
@@ -1036,10 +1051,11 @@ impl Suppression {
                 match task {
                     Task::Hold => self.units[i].state = UnitState::Staged,
                     Task::Return => {
-                        let base = self.units[i].base;
+                        let base = self.rally(i);
                         self.drive_toward(i, base, dt, net, traffic, fire, scn);
                         if dist(self.units[i].pos, base) < ARRIVE_M {
                             let u = &mut self.units[i];
+                            u.aboard = u.carrier.is_some();
                             u.state = UnitState::Staged;
                             u.task = Task::Hold;
                             u.note = "";
@@ -1070,6 +1086,51 @@ impl Suppression {
             }
             UnitState::Unavailable | UnitState::Inbound | UnitState::Lost => {}
         }
+    }
+
+    /// Where unit `i` goes to pull back: its staging, or for a person on foot
+    /// the vehicle that brought them (wherever it stands now).
+    fn rally(&self, i: usize) -> Pos {
+        let u = &self.units[i];
+        match u.carrier.map(|c| &self.units[c]) {
+            Some(e) if e.state != UnitState::Lost => e.pos,
+            _ => u.base,
+        }
+    }
+
+    /// A person aboard follows their vehicle. True if that was the whole
+    /// step; false when they get off to start work (the order is theirs to
+    /// carry out on foot, from where the vehicle stopped).
+    fn ride(&mut self, i: usize) -> bool {
+        let Some(c) = self.units[i].carrier else {
+            self.units[i].aboard = false;
+            return false;
+        };
+        let (pos, heading, state, driving) = {
+            let e = &self.units[c];
+            (e.pos, e.heading, e.state, !e.drive.route().is_empty())
+        };
+        let u = &mut self.units[i];
+        if state == UnitState::Lost {
+            u.state = UnitState::Lost;
+            u.note = "burnt over";
+            return true;
+        }
+        u.pos = pos;
+        u.heading = heading;
+        let work = matches!(u.task, Task::Attack { .. } | Task::Line { .. });
+        if driving {
+            u.state = UnitState::Moving;
+            return true;
+        }
+        if work {
+            u.aboard = false;
+            u.drive.reset();
+            return false;
+        }
+        u.state = UnitState::Staged;
+        u.task = Task::Hold;
+        true
     }
 
     /// An engine works from the road: drive as close to the target as the
@@ -1342,6 +1403,20 @@ impl Suppression {
     ) {
         const NO_ROAD: &str = "no road to there that is still open";
         let kind = self.units[i].kind;
+        if kind == UnitKind::HandCrew && self.units[i].carrier.is_some() {
+            // On foot: no road, no track, a straight walk (the vehicle brought
+            // them as far as it can go).
+            let u = &mut self.units[i];
+            let walk = CREW_WALK_SPEED * (1.0 - scn.terrain.slope_deg_at(u.pos) / 45.0).clamp(0.35, 1.0);
+            let d = dist(u.pos, target);
+            if d > 0.1 {
+                let f = (walk * dt / d).min(1.0);
+                u.heading = (target.y - u.pos.y).atan2(target.x - u.pos.x);
+                u.pos.x += (target.x - u.pos.x) * f;
+                u.pos.y += (target.y - u.pos.y) * f;
+            }
+            return;
+        }
         // Crews ride their vehicle on carriageways and go at [`CREW_SPEED`]
         // on tracks and paths.
         let how = Vehicle {

@@ -55,3 +55,32 @@ fn orders_only_in_pause_and_one_evacuation_at_a_time() {
         assert!(g.cancel_evacuation().is_err());
     }
 }
+
+#[test]
+fn the_engine_keeps_to_the_road_and_its_people_get_off_and_spread() {
+    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+    let mut g = Game::new(&data, "medium", 1).unwrap();
+    let hex = g.hexes.nearest(g.case.ignition()).unwrap().at;
+    g.pause().unwrap();
+    g.move_team(0, hex).unwrap();
+    g.resume();
+    let team = g.teams[0].clone();
+    assert!(team.crew_units.len() > 1, "the people are separate units");
+    let (mut walked, mut apart) = (false, false);
+    for _ in 0..400 {
+        g.run_until(g.time_s() + 60).unwrap();
+        let e = g.crews.units[team.unit].pos;
+        let driving = g.team_eta_min(0).is_some();
+        for &c in &team.crew_units {
+            let u = &g.crews.units[c];
+            if driving {
+                assert!(u.aboard && u.pos == e, "while the engine drives, its people ride in it");
+            }
+            walked |= !u.aboard && (u.pos.x - e.x).hypot(u.pos.y - e.y) > 20.0;
+        }
+        let pos: Vec<_> = team.crew_units.iter().filter(|&&c| !g.crews.units[c].aboard).map(|&c| g.crews.units[c].pos).collect();
+        apart |= pos.windows(2).any(|w| (w[0].x - w[1].x).hypot(w[0].y - w[1].y) > 10.0);
+    }
+    assert!(walked, "the people get off and walk to the fire");
+    assert!(apart, "they work apart");
+}
