@@ -131,9 +131,11 @@ def main():
                 teams = state()['teams']
                 dist = state()['camera']['distance']; tap('+')
                 assert state()['camera']['distance'] < dist
+                pinch_before = state()['camera']['distance']
                 touch('touchStart', [(0, 80, 420), (1, 260, 420)])
                 touch('touchMove', [(0, 60, 430), (1, 290, 400)])
                 touch('touchEnd', [])
+                assert state()['camera']['distance'] < pinch_before * 0.9
                 assert [t['hex'] for t in state()['teams']] == [t['hex'] for t in teams]
                 tap('Isola'); frames(10)
                 snap('10-game-home')
@@ -145,7 +147,16 @@ def main():
                 tap('Nuova partita'); snap('13-restart')
                 assert state()['phase'] == 'Intro'
                 rotate(320, 568); snap('14-small-phone'); tap('Gioca'); snap('15-small-intro')
+                tap('Inizia'); frames(90)
+                rotate(568, 320); frames(90); snap('16-small-landscape')
+                tap('Avanti'); assert state()['step'] == 1
+                # Also smoke-test mouse input on a desktop Retina viewport.
+                page.set_viewport_size({'width': 1280, 'height': 800}); frames(12)
+                c = control('Avanti'); page.mouse.click(c['x'], c['y']); frames()
+                assert state()['step'] == 2
+                snap('17-desktop-mouse')
                 assert not errors, errors
+                assert max(s['memory_bytes'] for s in samples) <= 320 * 1048576, samples
                 passed = True
             finally:
                 if not passed:

@@ -129,7 +129,10 @@ fn main() -> anyhow::Result<()> {
             .add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::filtered(vec![bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS]));
     }
     #[cfg(target_arch = "wasm32")]
-    app.add_systems(PreUpdate, web_input::normalize.before(bevy::input::InputSystem).before(bevy_egui::EguiSet::ProcessInput));
+    app.add_systems(PreUpdate, (
+        web_input::normalize.before(bevy::input::InputSystem).before(bevy_egui::EguiSet::ProcessInput),
+        web_input::finish_canceled_touch.after(bevy_egui::EguiSet::ProcessInput).before(bevy_egui::EguiSet::BeginFrame),
+    ));
     kiosk_systems(&mut app);
     app.add_plugins(forecast_view::ForecastPlugin);
     app.add_systems(Update, quality_live::apply_live.run_if(resource_changed::<quality::Graphics>.and_then(not(resource_added::<quality::Graphics>))));

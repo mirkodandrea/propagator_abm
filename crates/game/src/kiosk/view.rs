@@ -174,6 +174,15 @@ pub fn camera(
         let full = UVec2::new(w.physical_width(), w.physical_height());
         let size = UVec2::new(full.x.saturating_sub(side).max(1), full.y.max(1));
         if refit.0 != Some(size) {
+            if let Some(old) = refit.0 {
+                // Keep a comparable area visible after rotating a phone. A
+                // portrait viewport otherwise crops the landscape framing.
+                let old_aspect = old.x as f32 / old.y.max(1) as f32;
+                let aspect = size.x as f32 / size.y.max(1) as f32;
+                orbit.distance *= old_aspect.min(1.0) / aspect.min(1.0);
+                *drag = Drag::default();
+                if kiosk.dragging.is_some() { kiosk.clear_selection(); }
+            }
             refit.0 = Some(size);
             refit.1 = 2;
             camera.viewport = (size != full).then(|| bevy::render::camera::Viewport { physical_position: UVec2::ZERO, physical_size: size, ..default() });

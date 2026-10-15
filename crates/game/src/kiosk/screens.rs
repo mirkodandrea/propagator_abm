@@ -632,7 +632,18 @@ fn compact_page(ctx: &egui::Context, id: &str, content: impl FnOnce(&mut egui::U
     egui::Area::new(egui::Id::new(id)).anchor(Align2::CENTER_TOP, [0.0, 8.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         panel_mobile().show(ui, |ui| {
             ui.set_width(width);
-            egui::ScrollArea::vertical().max_height((rect.height() - 92.0).max(80.0)).show(ui, content);
+            // Areas remember their last measured size. Let the scroll viewport
+            // grow again when results arrive asynchronously or the phone rotates.
+            ui.set_max_height((rect.height() - 92.0).max(80.0));
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+            egui::ScrollArea::vertical().max_height((rect.height() - 92.0).max(80.0)).show(ui, |ui| {
+                content(ui);
+                ui.add_space(8.0);
+                ui.label(RichText::new(format!("versione {}", super::BUILD)).size(12.0).color(GREY));
+                if cfg!(target_arch = "wasm32") && ui.add(secondary("Dai un feedback")).clicked() {
+                    ctx.open_url(egui::OpenUrl::new_tab(super::ui::feedback_url()));
+                }
+            });
         });
     });
 }
@@ -701,7 +712,7 @@ fn compact_tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted
     let offset = if landscape { [-8.0, 8.0] } else { [0.0, -58.0] };
     egui::Area::new(egui::Id::new("tutorial_mobile")).anchor(anchor, offset).order(egui::Order::Foreground).show(ctx, |ui| {
         panel_mobile().show(ui, |ui| {
-            ui.set_width(if landscape { 276.0 } else { (rect.width() - 40.0).min(600.0) });
+            ui.set_width(if landscape { k.side_w - 40.0 } else { (rect.width() - 40.0).min(600.0) });
             egui::ScrollArea::vertical().max_height(if landscape { (rect.height() - 180.0).max(42.0) } else { (rect.height() * 0.20).clamp(42.0, 120.0) }).show(ui, |ui| {
                 ui.label(RichText::new(text.replace("**", "").replace("__", "").replace("In basso a destra", "In alto").replace("clicca", "tocca").replace("Trascina il cono", "Tocca la squadra e poi la destinazione, oppure trascina il cono")).size(16.0));
             });

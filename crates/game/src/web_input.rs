@@ -34,3 +34,23 @@ pub fn normalize(
     cursors.send_batch(cursor_events);
     cursor_reader.clear(&cursors);
 }
+
+/// bevy_egui 0.28 emits PointerGone on touchCancel without releasing its
+/// emulated mouse button. Explicitly release it, while retaining Touch::Cancel
+/// so the game can discard the order rather than treat this as a drop.
+pub fn finish_canceled_touch(mut inputs: Query<&mut bevy_egui::EguiInput>) {
+    use bevy_egui::egui;
+    for mut input in &mut inputs {
+        let canceled = input.events.iter().find_map(|event| match event {
+            egui::Event::Touch { phase: egui::TouchPhase::Cancel, pos, .. } => Some(*pos),
+            _ => None,
+        });
+        if let Some(pos) = canceled {
+            let modifiers = input.modifiers;
+            input.events.push(egui::Event::PointerButton {
+                pos, button: egui::PointerButton::Primary, pressed: false, modifiers,
+            });
+            input.events.push(egui::Event::PointerGone);
+        }
+    }
+}

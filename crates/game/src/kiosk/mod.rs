@@ -191,6 +191,7 @@ impl Kiosk {
     pub fn enter(&mut self, phase: Phase) {
         self.phase = phase;
         self.phase_t = 0.0;
+        self.notice = None;
         self.clear_selection();
     }
 

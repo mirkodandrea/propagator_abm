@@ -134,7 +134,7 @@ pub fn draw(
         }
         Phase::Tutorial | Phase::Gioco => {
             let r = ctx.screen_rect();
-            k.side_w = if compact(ctx) && r.width() > r.height() && k.phase == Phase::Tutorial { 316.0 } else { 0.0 };
+            k.side_w = if compact(ctx) && r.width() > r.height() && k.phase == Phase::Tutorial { (r.width() * 0.37).clamp(220.0, 316.0) } else { 0.0 };
             top_bar(ctx, k, &mut sim, cam);
             map_badges(ctx, k, &mut sim, cam);
             map_click(k, &mut sim);
@@ -164,7 +164,7 @@ pub fn draw(
 
 /// The Google Form for the feedback of those who play in the browser, with the
 /// «Versione del gioco» answer filled in by the build's commit.
-fn feedback_url() -> String {
+pub(super) fn feedback_url() -> String {
     format!("https://docs.google.com/forms/d/e/1FAIpQLSfHWmJHJwLLzqLmjomK-HA3YikUQfw4wz5L9cSjqpgS4i1ipw/viewform?usp=pp_url&entry.2126742218={}", super::BUILD)
 }
 
@@ -384,7 +384,7 @@ fn select_team(k: &mut Kiosk, sim: &Sim, t: usize) {
     k.follow = false;
     k.shot = None;
     k.done(Expect::Select(t));
-    if sim.paused() && k.phase == Phase::Gioco { k.notify("Tocca l'esagono di destinazione, oppure trascina il cono."); }
+
     if k.phase == Phase::Gioco && !sim.paused() {
         k.notify("Per dare ordini premi «Pausa».");
     }
@@ -432,7 +432,7 @@ fn give_move(k: &mut Kiosk, sim: &mut Sim, t: usize, at: rocca::Axial) {
         None => Ok(()),
     };
     match result {
-        Ok(()) => k.done(Expect::Move(t, at)),
+        Ok(()) => { k.notice = None; k.done(Expect::Move(t, at)); }
         Err(e) => k.notify(e),
     }
     k.clear_selection();
@@ -598,7 +598,9 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         let may_drag = sim.paused() && !lost && !multi && !canceled;
         if (multi || canceled) && k.dragging.is_some() { k.clear_selection(); }
         let fire_d = if lost { None } else { sim.team_fire_distance_m(t) };
-        if compact(ctx) && !drop_rect(ctx, k).intersects(flag) { continue; }
+        // Keep the active handle alive outside the map until release/cancel;
+        // otherwise egui never delivers drag_stopped and the cone stays stuck.
+        if compact(ctx) && !drop_rect(ctx, k).intersects(flag) && !k.dragging.is_some_and(|(active, _)| active == t) { continue; }
         let inner = egui::Area::new(egui::Id::new(("bandiera", t))).fixed_pos(flag.min).constrain(false).order(egui::Order::Middle).show(ctx, |ui| {
             let (rect, resp) = ui.allocate_exact_size(flag.size(), egui::Sense::click_and_drag());
             let p = ui.painter();
@@ -799,6 +801,7 @@ fn evac_timer(ctx: &egui::Context, sim: &Sim, d: usize, at: egui::Pos2) {
 }
 
 fn notice(ctx: &egui::Context, k: &Kiosk) {
+    if k.dragging.is_some() { return; }
     let Some((text, _)) = &k.notice else { return };
     egui::Area::new(egui::Id::new("avviso")).anchor(Align2::CENTER_TOP, [0.0, if compact(ctx) { 116.0 } else { 170.0 }]).order(egui::Order::Foreground).show(ctx, |ui| {
         panel().show(ui, |ui| {
@@ -883,7 +886,7 @@ fn compact_top(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera,
             });
             if sim.paused() {
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new("Pausa").strong().color(GREEN));
+                    ui.label(RichText::new(if matches!(k.selection, Selection::Team(_)) { "Tocca un esagono" } else { "Pausa" }).strong().color(GREEN));
                     for (color, label) in [(crate::forecast_view::NEAR_COLOUR, "1 h"), (crate::forecast_view::FAR_COLOUR, "3 h")] {
                         let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
                         ui.painter().line_segment([r.left_center(), r.right_center()], egui::Stroke::new(3.0, color));

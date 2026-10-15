@@ -51,12 +51,19 @@ contesto grafico compare un pulsante per ricaricare.
 
 ## Verifica touch del gioco attuale
 
-Checkpoint del 2026-10-15: build web e `cargo check -p game` superati.
-Verificati avvio, nome HTML, tutorial in verticale/orizzontale e primo ordine
-con due tocchi a densità 3× (circa 203 MiB di memoria lineare Wasm nel tutorial).
-La regressione completa è ancora aperta: dopo un rilascio sul pannello superiore
-il cono AIB può restare fuori dall'area interattiva; il test segnala
-`Missing control: AIB 1`. Da correggere prima di considerare completato il lavoro.
+Verifica del 2026-10-15: `scripts/build_web.sh`, `cargo check -p game` e la
+regressione touch completa superati. Chromium headless su macOS, densità 3×:
+390×844, 844×390, 320×568, 568×320 e mouse a 1280×800. Nell'ultima esecuzione
+(24 s) nessun errore browser; memoria lineare Wasm circa 203 MiB nel tutorial
+e 273 MiB al finale (295 MiB in una precedente esecuzione). Il test impone
+un limite di regressione di 320 MiB. Vegetazione: circa 10.900 piante e 180.000
+triangoli nel profilo web. PNG controllati per tutorial, evacuazione, partita,
+finale e telefono piccolo.
+
+Il test copre anche rilascio sul pannello e `touchCancel`: il cono torna al suo
+posto e il gesto successivo funziona. La versione di bevy_egui usata lasciava
+premuto il suo pulsante mouse virtuale dopo `touchCancel`; l'adattatore web lo
+rilascia esplicitamente senza trasformare l'interruzione in un ordine.
 
 ```sh
 scripts/build_web.sh
@@ -65,7 +72,8 @@ scripts/build_web.sh
 .venv/bin/python scripts/playtest_mobile.py --browser-executable /percorso/chrome-headless-shell
 ```
 
-Il test usa eventi touch, viewport 390×844 e 844×390 a densità 3×, poi 320×568.
+Il test usa eventi touch, viewport 390×844 e 844×390 a densità 3×, poi 320×568 e 568×320.
+Controlla anche il mouse a 1280×800.
 Controlla nome con tastiera HTML, tutorial, selezione con due tocchi, drag-and-drop,
 evacuazione, zoom, orientamento, finale e riavvio. Salva PNG, osservazioni e
 `report.json` in `out/playtest/mobile`. La memoria registrata è la capacità della
