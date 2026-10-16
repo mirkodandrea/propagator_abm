@@ -15,6 +15,7 @@
 #import bevy_pbr::mesh_view_bindings::{view, globals, fog, lights}
 #import bevy_pbr::mesh_view_types
 #import bevy_pbr::fog as scene_fog
+#import rocca::noise::{hash21, value_noise}
 
 struct WaterUniform {
     // xy: downwind unit direction in world XZ (bevy x, z). z: wind speed, m/s.
@@ -120,23 +121,6 @@ fn apply_scene_fog(input_color: vec4<f32>, world_position: vec3<f32>) -> vec4<f3
         return scene_fog::atmospheric_fog(fog, input_color, distance, scattering);
     }
     return input_color;
-}
-
-fn hash21(p: vec2<f32>) -> f32 {
-    var p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-}
-
-fn value_noise(p: vec2<f32>) -> f32 {
-    let i = floor(p);
-    let f = fract(p);
-    let a = hash21(i);
-    let b = hash21(i + vec2<f32>(1.0, 0.0));
-    let c = hash21(i + vec2<f32>(0.0, 1.0));
-    let d = hash21(i + vec2<f32>(1.0, 1.0));
-    let u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
 @fragment

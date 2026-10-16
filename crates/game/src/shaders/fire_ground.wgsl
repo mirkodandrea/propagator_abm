@@ -11,6 +11,7 @@
 
 #import bevy_pbr::forward_io::VertexOutput
 #import bevy_pbr::mesh_view_bindings::globals
+#import rocca::noise::{hash21, value_noise}
 
 @group(2) @binding(0) var road_tex: texture_2d<f32>;
 @group(2) @binding(1) var road_samp: sampler;
@@ -18,23 +19,6 @@
 
 // Keep in step with `ground_mask.rs` and `retro.wgsl`.
 const RANGE_M: f32 = 12.0;
-
-fn hash21(p: vec2<f32>) -> f32 {
-    var p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-}
-
-fn value_noise(p: vec2<f32>) -> f32 {
-    let i = floor(p);
-    let f = fract(p);
-    let a = hash21(i);
-    let b = hash21(i + vec2<f32>(1.0, 0.0));
-    let c = hash21(i + vec2<f32>(0.0, 1.0));
-    let d = hash21(i + vec2<f32>(1.0, 1.0));
-    let u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
 
 // Fractal Brownian motion, domain-warped: the warp is what turns blobby
 // noise into the tendrilled, branching texture of a real fire front.

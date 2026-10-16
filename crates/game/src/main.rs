@@ -35,6 +35,7 @@ mod retro;
 mod rings;
 mod ground_mask;
 mod roads;
+mod shader_lib;
 mod sea;
 mod sky;
 mod sim;
@@ -99,6 +100,7 @@ fn main() -> anyhow::Result<()> {
     .insert_resource(gfx)
     .insert_resource(bevy::pbr::DirectionalLightShadowMap { size: gfx.shadow_map })
     .add_plugins(EguiPlugin)
+    .add_plugins(shader_lib::ShaderLibPlugin)
     .add_plugins(fire_shader::FireShaderPlugin)
     .add_plugins(retro::RetroShaderPlugin)
     .add_plugins(flat::FlatPlugin)
