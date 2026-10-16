@@ -122,27 +122,11 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
     }
     let screen = ctx.screen_rect();
     backdrop(ctx, "intro_fondo", 190);
-    // today's board stands on the right of the card, the two centred as a pair
-    let (panel_w, gap) = (300.0, 16.0);
-    let card_w = (screen.width() - 72.0 - panel_w - gap - 24.0).min(650.0);
-    let pair = card_w + 72.0 + gap + panel_w;
-    egui::Area::new(egui::Id::new("intro_classifica")).anchor(Align2::CENTER_CENTER, [(pair - panel_w) / 2.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
-        egui::Frame::none()
-            .fill(INK)
-            .stroke(egui::Stroke::new(1.5, AMBER.gamma_multiply(0.55)))
-            .rounding(18.0)
-            .inner_margin(egui::Margin { left: 16.0, right: 16.0, top: 16.0, bottom: 12.0 })
-            .show(ui, |ui| {
-                ui.set_width(panel_w - 32.0);
-                ui.label(RichText::new("Classifica di oggi").size(22.0).strong().color(Color32::WHITE));
-                ui.label(RichText::new("le stelle di Persone, Case, Ettari").size(13.0).color(GREY));
-                ui.add_space(8.0);
-                let rows = if screen.height() >= 900.0 { rocca::score::BOARD_SHOWN } else { 4 };
-                board_rows(ui, k, &sim.case.name, None, rows);
-            });
-    });
+    // one centred card: the volunteer on the left, today's board on the right
+    let (panel_w, gap) = (290.0, 28.0);
+    let card_w = (screen.width() - 72.0 - 48.0).min(900.0);
     let mut go = None;
-    egui::Area::new(egui::Id::new("intro")).anchor(Align2::CENTER_CENTER, [-(pair - card_w - 72.0) / 2.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("intro")).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         big_card().show(ui, |ui| {
             ui.set_width(card_w);
             ui.horizontal(|ui| {
@@ -160,9 +144,30 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
             ui.add_space(10.0);
             let teams = k.territory.roster.len();
             let text = format!(
-                "Un incendio minaccia i borghi dell'isola e ci serve il tuo aiuto! Abbiamo {teams} squadre AIB, per tanti borghi: non bastano per tutti. Il tempo scorre veloce; per decidere metti in pausa: vedrai le previsioni di dove andrà il fuoco. Prima proviamo insieme con un piccolo incendio, poi tocca a te.",
+                "Un incendio minaccia i borghi dell'isola! Abbiamo {teams} squadre AIB, ma non bastano per tutti. Aiutaci a proteggere persone e case.",
             );
-            volunteer(ui, faces, Mood::Preoccupato, 110.0, &text, TALK_W.min(card_w - 200.0));
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(card_w - panel_w - gap);
+                    volunteer(ui, faces, Mood::Preoccupato, 110.0, &text, (card_w - panel_w - gap - 230.0).max(260.0));
+                });
+                ui.add_space(gap);
+                egui::Frame::none()
+                    .fill(Color32::from_white_alpha(8))
+                    .stroke(egui::Stroke::new(1.0, AMBER.gamma_multiply(0.35)))
+                    .rounding(14.0)
+                    .inner_margin(egui::Margin { left: 16.0, right: 16.0, top: 14.0, bottom: 10.0 })
+                    .show(ui, |ui| {
+                        ui.set_width(panel_w - 34.0);
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new("Classifica di oggi").size(22.0).strong().color(Color32::WHITE));
+                            ui.label(RichText::new("le stelle di Persone, Case, Ettari").size(13.0).color(GREY));
+                            ui.add_space(8.0);
+                            let rows = if screen.height() >= 900.0 { rocca::score::BOARD_SHOWN } else { 4 };
+                            board_rows(ui, k, &sim.case.name, None, rows);
+                        });
+                    });
+            });
             ui.add_space(12.0);
             ui.label(RichText::new("LE PERSONE CON CUI LAVORI").size(13.0).strong().color(GREY.gamma_multiply(0.7)));
             ui.add_space(6.0);
@@ -205,15 +210,21 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
             });
             ui.add_space(14.0);
             ui.horizontal(|ui| {
-                let b = egui::Button::new(RichText::new("Inizia").size(30.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(280.0, 64.0));
+                ui.spacing_mut().item_spacing.x = 16.0;
+                let w = (card_w - 16.0) / 2.0;
+                let b = egui::Button::new(RichText::new("TUTORIAL").size(28.0).strong().color(Color32::WHITE))
+                    .fill(Color32::from_gray(62))
+                    .stroke(egui::Stroke::new(1.0, Color32::from_gray(110)))
+                    .rounding(12.0)
+                    .min_size(egui::vec2(w, 64.0));
                 let r = ui.add(b);
-                crate::playtest::control("Inizia", &r, true);
+                crate::playtest::control("Tutorial", &r, true);
                 if super::icons::pointing(r).clicked() {
                     go = Some(true);
                 }
-                ui.add_space(8.0);
-                let r = ui.add(secondary("Salta la prova guidata"));
-                crate::playtest::control("Salta la prova guidata", &r, true);
+                let b = egui::Button::new(RichText::new("INIZIA").size(28.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(w, 64.0));
+                let r = ui.add(b);
+                crate::playtest::control("Inizia", &r, true);
                 if super::icons::pointing(r).clicked() {
                     go = Some(false);
                 }
@@ -712,9 +723,9 @@ fn compact_intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &
         }
         #[cfg(not(target_arch = "wasm32"))]
         { ui.add(egui::TextEdit::singleline(&mut k.player).hint_text("Come ti chiami?")); }
-        if action(ui, "Inizia") { go = Some(true); }
-        let r = ui.add_sized([ui.available_width(), 44.0], secondary("Salta la prova guidata"));
-        crate::playtest::control("Salta la prova guidata", &r, true);
+        if action(ui, "TUTORIAL") { go = Some(true); }
+        let r = ui.add_sized([ui.available_width(), 44.0], secondary("INIZIA"));
+        crate::playtest::control("Inizia", &r, true);
         if r.clicked() { go = Some(false); }
         ui.label("Tocca una squadra, poi l'esagono dove mandarla. Tocca un borgo per evacuare. Puoi anche trascinare le squadre.");
         ui.separator();
