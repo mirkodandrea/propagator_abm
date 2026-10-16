@@ -79,6 +79,29 @@ Variabili utili del chiosco:
 
 Il seme si sceglie dal menu operatore (F2).
 
+### Immagini comparative degli scenari (senza finestre)
+
+Lo script **`tools/factory/scenario_images.py`** salva le tre mappe comparative
+mostrate in chat: stessa isola, scala e seme 2, senza ordini. Usa Matplotlib con
+backend `Agg` (dipendenze Python: NumPy e Matplotlib); l’esempio Rust
+**`crates/rocca/examples/scenario_maps.rs`** esporta gli arrivi reali del fuoco,
+le case e gli impatti per borgo da `rocca::Game`.
+
+Dalla radice del progetto, con gli esiti della suite già disponibili
+(`variety-cases.json` e `variety-candidates.json` in
+`results/scenario-impacts/focused/`):
+
+```sh
+cargo run --offline --release -p rocca --example scenario_maps -j 1 -- results/scenario-impacts/focused/variety-cases.json results/scenario-impacts/focused/images/data 2
+MPLCONFIGDIR=/tmp/rocca-mpl .venv/bin/python tools/factory/scenario_images.py
+```
+
+Output: `results/scenario-impacts/focused/images/01_valico.png`,
+`02_rotazione_est.png` e `03_quattro_borghi.png`. Per ricreare gli input della
+ricerca, vedere [`tools/factory/SCENARI.md`](tools/factory/SCENARI.md).
+**Durante l’evento non rubare mai il focus alla demo:** per queste immagini usare
+solo la procedura headless qui sopra, senza avviare o riavviare il chiosco.
+
 ### Screenshot di stati arbitrari (`KIOSK_SNAP`)
 
 Per controllare grafica e UX **non giocare una partita**: `kiosk/snap.rs` porta il gioco a uno stato descritto in una riga e salva il PNG. Serve la build `--release` e una finestra vera.

@@ -18,6 +18,14 @@ termina anche il launcher. La geometria è salvata in `target/kiosk-window.json`
 eliminare quel file per ripartire dalla posizione predefinita. `KIOSK_SIZE`
 ha precedenza sulle dimensioni salvate. Non occorre fare commit o pull.
 
+Le **immagini comparative degli scenari** si generano con
+[`tools/factory/scenario_images.py`](tools/factory/scenario_images.py): tre PNG
+con terreno, strade, innesco, vento, arrivi del fuoco e impatti sui borghi, alla
+stessa scala e con seme 2. I dati vengono dalla simulazione senza ordini,
+esportata da `crates/rocca/examples/scenario_maps.rs`. Tutto avviene senza aprire
+finestre, riavviare il chiosco o sottrargli il focus. Comandi, dati necessari e
+cartella di uscita nella [guida della suite](tools/factory/SCENARI.md#immagini-comparative-senza-aprire-il-kiosk).
+
 - Regole: [`docs/01-GIOCO.md`](docs/01-GIOCO.md).
 - Territorio e incendi: [`docs/02-TERRITORIO.md`](docs/02-TERRITORIO.md).
 - Fasi e prove: [`docs/03-VERIFICHE.md`](docs/03-VERIFICHE.md).
