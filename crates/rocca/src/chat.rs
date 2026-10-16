@@ -16,7 +16,6 @@ pub enum Voice {
 pub enum Kind {
     Order,
     Arrived,
-    Refill,
     Withdraw,
     Lost,
     EvacStart,

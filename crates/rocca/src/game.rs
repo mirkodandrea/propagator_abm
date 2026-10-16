@@ -604,7 +604,6 @@ impl Game {
                 let line = match (was, u.state) {
                     (UnitState::Moving, UnitState::Staged) => Some((Kind::Arrived, "siamo arrivati, pronti a muoverci 👍")),
                     (UnitState::Moving, UnitState::Working) => Some((Kind::Arrived, "siamo arrivati, attacchiamo il fuoco 🔥")),
-                    (_, UnitState::Refilling) => Some((Kind::Refill, "acqua finita, andiamo a ricaricare 💧")),
                     (_, UnitState::Withdrawing) => Some((Kind::Withdraw, "ci ritiriamo, troppo fuoco ⚠️")),
                     (_, UnitState::Lost) => Some((Kind::Lost, "il fuoco ci ha raggiunti, SOS 🆘")),
                     _ => None,
@@ -841,7 +840,7 @@ impl Game {
     /// not repeated within [`crate::chat::REPEAT_S`].
     fn say(&mut self, who: Voice, kind: Kind, text: String) {
         let now = self.time_s();
-        let once_per_order = matches!(kind, Kind::Arrived | Kind::Refill);
+        let once_per_order = matches!(kind, Kind::Arrived);
         let repeated = match kind {
             Kind::Order | Kind::EvacStart | Kind::EvacCancel => false,
             _ if once_per_order => self.chat.iter().rev().take_while(|m| !(m.who == who && m.kind == Kind::Order)).any(|m| m.who == who && m.kind == kind),
