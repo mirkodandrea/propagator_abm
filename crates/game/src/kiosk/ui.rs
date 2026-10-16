@@ -441,9 +441,21 @@ fn map_click(k: &mut Kiosk, sim: &mut Sim) {
     let Some(p) = k.click else { return };
     if let Selection::Team(t) = k.selection {
         if sim.paused() {
-            give_move(k, sim, t, rocca::Axial::of(p));
+            give_move(k, sim, t, rocca::Axial::of(snap_to_target(sim, t, p)));
         }
     }
+}
+
+/// A point not on a usable hex is pulled to the road point of the nearest
+/// hex the team can be sent to, if that is within one hex (user, 2026-10-16).
+fn snap_to_target(sim: &Sim, t: usize, g: Pos) -> Pos {
+    let targets = sim.move_targets(t);
+    if targets.contains(&rocca::Axial::of(g)) {
+        return g;
+    }
+    let near = targets.iter().filter_map(|&a| sim.hexes.get(a)).map(|h| (rocca::hex::dist(h.at.centre(), g), h.target))
+        .filter(|(d, _)| *d <= rocca::hex::HEX_M).min_by(|a, b| a.0.total_cmp(&b.0));
+    near.map_or(g, |(_, p)| p)
 }
 
 /// The ground under a screen point (egui logical px).
@@ -642,6 +654,7 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
                 k.drag_pan = edge_pan(drop_rect(ctx, k), p);
             }
             if let Some(g) = ctx.pointer_latest_pos().and_then(|p| ground_at(sim, cam, p)) {
+                let g = snap_to_target(sim, t, g);
                 preview_move(k, sim, t, rocca::Axial::of(g));
                 k.dragging = Some((t, g));
             }
