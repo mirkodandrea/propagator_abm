@@ -35,7 +35,7 @@ pub const RUN_X: f32 = 120.0;
 /// linea ×3, acqua ×30, portata ×20).
 pub const SUPPRESSION: UnitEffect = UnitEffect {
     line_x: 2.0,
-    water_x: 10.0,
+    water_x: 20.0,
     reach_x: ENGINE_RANGE_M / abm::suppression::ENGINE_REACH_M,
     nerve_x: 1.0,
 };
@@ -52,7 +52,7 @@ pub const ENGINE_PARK_THREAT: f32 = 0.1;
 pub const ENGINE_PARK_FLAME_M: f32 = 80.0;
 /// An engine that emptied its tank stays where it is and is full again after
 /// this long, simulated: the water is brought to it (user, 2026-10-14).
-pub const REFILL_S: f32 = 15.0 * 60.0;
+pub const REFILL_S: f32 = 12.0 * 60.0;
 /// How far from its hex's road point a team's people on foot go to work: the hexes
 /// around its own (user, 2026-10-15; was 400 m with hexes of 500 m).
 pub const CREW_RANGE_M: f32 = crate::hex::TEAM_REACH_HEXES as f32 * crate::hex::HEX_M;
