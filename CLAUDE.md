@@ -18,7 +18,7 @@ Nuovo progetto dal 2026-10-14. È uno strategico in tempo reale per un chiosco p
 
 - **Giorno 1:** tutorial scriptato e guidato.
 - **Giorno 2:** un nuovo incendio, giocato.
-- Il tempo scorre a ×300. La **pausa** (il mondo si ferma, 30 s reali, poi 30 s di ricarica) è la richiesta della previsione all'esperto, ed è l'unico momento per dare ordini: trascinare i coni delle squadre (autobotte con 3 persone) sugli esagoni di 500 m ed evacuare un borgo alla volta. Il giorno 2 parte in pausa.
+- Il tempo scorre a ×300. La **pausa** (il mondo si ferma, senza limite di tempo né attesa per la successiva) è la richiesta della previsione all'esperto, ed è l'unico momento per dare ordini: trascinare i coni delle squadre (autobotte con 3 persone) sugli esagoni di 500 m ed evacuare un borgo alla volta. Il giorno 2 parte in pausa.
 - Alla fine: stelle e classifica del giorno.
 
 Dettagli in `docs/01-GIOCO.md`.

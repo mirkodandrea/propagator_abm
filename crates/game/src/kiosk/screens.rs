@@ -239,7 +239,7 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
 
 // --- the tutorial -------------------------------------------------------------
 
-/// The volunteer's bubble at the foot of the map: the step's text, «Avanti»
+/// The volunteer's bubble at the top of the map: the step's text, «Avanti»
 /// when the step only asks to read, «Salta» always. The map stays usable:
 /// the step asks the player to act on it.
 pub fn tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, faces: Option<&Portraits>, cam: (&Camera, &GlobalTransform)) {
@@ -255,7 +255,7 @@ pub fn tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
     let total = k.script.as_ref().map_or(0, |s| s.steps.len());
     let mut skip = false;
     let t = ctx.input(|i| i.time) as f32;
-    egui::Area::new(egui::Id::new("tutorial")).anchor(Align2::CENTER_BOTTOM, [0.0, -64.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("tutorial")).anchor(Align2::CENTER_TOP, [0.0, 10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.add_space(8.0);
@@ -338,7 +338,7 @@ fn highlight(ctx: &egui::Context, k: &Kiosk, expect: Expect) {
     }
     let area = |id: egui::Id| ctx.memory(|m| m.area_rect(id));
     let targets: Vec<Option<egui::Rect>> = match expect {
-        Expect::Pause | Expect::Resume => vec![area(egui::Id::new("pausa"))],
+        Expect::Pause | Expect::Resume => vec![area(egui::Id::new("barra")), area(egui::Id::new("barra_mobile"))],
         // no box on a drag: the cone and the hex on the map are signs enough
         Expect::Move(..) => vec![],
         Expect::Evacuate(d) => vec![area(egui::Id::new(("borgo", d)))],

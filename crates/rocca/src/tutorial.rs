@@ -87,7 +87,7 @@ impl Script {
             expect: Expect::Next,
         });
         let t0 = game.time_s();
-        steps.push(Step { text: "Ordini dati. Premi **Riprendi** (in alto a sinistra): il tempo riparte.".into(), expect: Expect::Resume });
+        steps.push(Step { text: "Ordini dati. Premi **Riprendi** (in basso al centro): il tempo riparte.".into(), expect: Expect::Resume });
         steps.push(Step {
             text: format!("Guarda le squadre arrivare e il fuoco avanzare: passano **{RUN_MIN} minuti** di gioco, circa {} secondi.", RUN_MIN * 60 / crate::RUN_X as i64),
             expect: Expect::Run(t0 + RUN_MIN * 60),

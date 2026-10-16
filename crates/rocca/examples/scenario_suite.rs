@@ -341,7 +341,7 @@ fn main() -> Result<()> {
             }
             g.resume();
             first_orders = false;
-            next_orders = g.time_s() + rocca::PAUSE_COOLDOWN_S;
+            next_orders = g.time_s() + 20 * 60;
         }
         g.step()?;
         let o = g.outcome();

@@ -31,12 +31,6 @@ pub const STEP_S: i64 = 6;
 /// Simulated seconds per real second while the game runs: the game goes at
 /// ×120 or it is stopped, nothing else (user, 2026-10-14).
 pub const RUN_X: f32 = 120.0;
-/// Real seconds after a pause before the next can be asked (user,
-/// 2026-10-14). The game only runs at [`RUN_X`] between pauses, so it is
-/// kept as simulated time: [`PAUSE_COOLDOWN_S`].
-pub const PAUSE_COOLDOWN_REAL_S: f32 = 10.0;
-/// Simulated time after a pause before the next can be asked: 20 min.
-pub const PAUSE_COOLDOWN_S: i64 = (PAUSE_COOLDOWN_REAL_S * RUN_X) as i64;
 /// Spegnimento rispetto al modello calibrato (scelta dell'utente 2026-10-13:
 /// linea ×3, acqua ×30, portata ×20).
 pub const SUPPRESSION: UnitEffect = UnitEffect {
@@ -173,8 +167,6 @@ pub struct Game {
     pub log: Vec<LogEntry>,
     pause_from: Option<i64>,
     /// The pause in course uses up the expert (false: the opening one).
-    pause_costs: bool,
-    pause_ready_s: i64,
     pub pauses: u32,
     logged: Vec<UnitState>,
     /// The group chat of the operation (see [`crate::chat`]).
@@ -259,8 +251,6 @@ impl Game {
             evac,
             log: vec![],
             pause_from: None,
-            pause_costs: false,
-            pause_ready_s: 0,
             pauses: 0,
             logged,
             chat: vec![],
@@ -293,13 +283,8 @@ impl Game {
         self.pause_from
     }
 
-    /// Simulated seconds before a pause can be asked (0: now).
-    pub fn pause_ready_in_s(&self) -> i64 {
-        (self.pause_ready_s - self.time_s()).max(0)
-    }
-
     pub fn can_pause(&self) -> bool {
-        !self.paused() && self.pause_ready_in_s() == 0 && !self.is_over()
+        !self.paused() && !self.is_over()
     }
 
     /// Ask the expert: the pause begins, the forecast is due.
@@ -307,33 +292,24 @@ impl Game {
         if self.paused() {
             return Err("sei già in pausa".into());
         }
-        if self.pause_ready_in_s() > 0 {
-            return Err(format!("la pausa sarà di nuovo disponibile tra {} minuti", (self.pause_ready_in_s() + 59) / 60));
-        }
         self.pause_from = Some(self.time_s());
-        self.pause_costs = true;
         self.pauses += 1;
         Ok(())
     }
 
     /// The opening pause: the game starts still, with no time limit, to look
-    /// at the scene and give the first orders. It does not use up the expert
+    /// at the scene and give the first orders. It is not counted as a pause asked
     /// (user, 2026-10-14: «parte in pausa»).
     pub fn opening_pause(&mut self) {
         if !self.paused() {
             self.pause_from = Some(self.time_s());
-            self.pause_costs = false;
         }
     }
 
-    /// End the pause now (also when its time is up). After the opening
-    /// pause the expert is ready at once.
+    /// End the pause now. The expert is ready again at once (user,
+    /// 2026-10-16: no wait for a new pause).
     pub fn resume(&mut self) {
-        if self.pause_from.take().is_some() {
-            if std::mem::take(&mut self.pause_costs) {
-                self.pause_ready_s = self.time_s() + PAUSE_COOLDOWN_S;
-            }
-        }
+        self.pause_from = None;
     }
 
     /// Simulated seconds per real second now: the pause stops the world.

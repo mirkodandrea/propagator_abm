@@ -1,6 +1,6 @@
 //! The group chat of the operation: what `rocca::Game::chat` says, drawn as
 //! small bubbles with a tiny portrait and the time. On a desktop it is a panel
-//! at the bottom left; on a phone it is a notification at the top, for a few
+//! at the top left; on a phone it is a notification at the top, for a few
 //! seconds. Nothing here decides anything: it only shows what the game said.
 
 use bevy_egui::egui::{self, Align2, Color32, RichText};
@@ -115,7 +115,7 @@ pub(super) fn show(ctx: &egui::Context, sim: &Sim, faces: Option<&Portraits>, no
     if sim.chat.is_empty() {
         return;
     }
-    egui::Area::new(egui::Id::new("chat_panel")).anchor(Align2::LEFT_BOTTOM, [10.0, -62.0]).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("chat_panel")).anchor(Align2::LEFT_TOP, [10.0, 10.0]).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
         let from = len.saturating_sub(SHOWN);
         for (n, m) in sim.chat[from..].iter().enumerate() {
             // the oldest lines get duller

@@ -45,9 +45,8 @@ fn orders_only_in_pause_and_one_evacuation_at_a_time() {
     assert!(g.evac.active().is_none());
     g.evacuate(a).unwrap();
     g.resume();
-    assert!(!g.can_pause(), "the expert needs time before the next pause");
-    g.run_until(g.time_s() + rocca::PAUSE_COOLDOWN_S).unwrap();
-    assert!(g.can_pause());
+    assert!(g.can_pause(), "no wait for the next pause");
+    g.run_until(g.time_s() + 20 * 60).unwrap();
     // after the pause the evacuation under way stands: one at a time
     g.pause().unwrap();
     if g.evac.active().is_some() {

@@ -1,7 +1,7 @@
 //! The kiosk's interface (egui): few words, big buttons (docs/01-GIOCO.md §6).
 //!
-//! - top bar: day, clock, wind and fuel moisture, the pause («Chiedi
-//!   all'esperto») with its countdown or its recharge;
+//! - bottom bar, centred: day, clock and the pause («Chiedi all'esperto»);
+//!   wind and fuel moisture bottom right; the group chat top left;
 //! - side bar: the teams and the districts, and what is selected: the move or
 //!   the evacuation with its time, to confirm;
 //! - on the map: a badge per team and per district (clickable), the notice
@@ -207,7 +207,7 @@ fn top_bar(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &Gl
         compact_top(ctx, k, sim, cam);
         return;
     }
-    egui::Area::new(egui::Id::new("barra")).anchor(Align2::LEFT_TOP, [10.0, 10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("barra")).anchor(Align2::CENTER_BOTTOM, [0.0, -10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.horizontal(|ui| {
                 pause_dial(ui, k, sim);
@@ -326,9 +326,8 @@ fn arc(p: &egui::Painter, c: egui::Pos2, radius: f32, from: f32, frac: f32, stro
 
 const DIAL: f32 = 112.0;
 
-/// The pause, a big round button: ready (amber ring, pause symbol), in pause
-/// (no time limit: play symbol, green ring) or recharging (the ring fills
-/// and the number counts down the seconds to the next pause).
+/// The pause, a big round button: ready (amber ring, pause symbol) or in
+/// pause (no time limit: play symbol, green ring). No wait between pauses.
 fn pause_dial(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
     let dial = if compact(ui.ctx()) { 56.0 } else { DIAL };
     use super::icons::{self, Icon};
@@ -341,21 +340,13 @@ fn pause_dial(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
     let hot = resp.hovered() && enabled;
     p.circle_filled(c, dial * 0.5, if hot { Color32::from_gray(60) } else { Color32::from_black_alpha(90) });
     p.circle_stroke(c, radius, egui::Stroke::new(10.0, Color32::from_gray(55)));
-    let (frac, ring, icon, icon_col, secs) = if paused {
-        (1.0, GREEN, Icon::Play, GREEN, None)
-    } else if sim.pause_ready_in_s() > 0 {
-        let left = sim.pause_ready_in_s() as f32 / rocca::RUN_X;
-        (1.0 - left / rocca::PAUSE_COOLDOWN_REAL_S, AMBER, Icon::Pause, Color32::from_gray(150), Some(left))
+    let (frac, ring, icon, icon_col) = if paused {
+        (1.0, GREEN, Icon::Play, GREEN)
     } else {
-        (1.0, AMBER, Icon::Pause, AMBER, None)
+        (1.0, AMBER, Icon::Pause, AMBER)
     };
     arc(p, c, radius, 0.0, frac, egui::Stroke::new(10.0, ring));
-    let icon_c = if secs.is_some() { c - egui::vec2(0.0, if compact(ui.ctx()) { 8.0 } else { 20.0 }) } else { c };
-    icons::draw(p, egui::Rect::from_center_size(icon_c, egui::vec2(dial * if secs.is_some() { 0.26 } else { 0.36 }, dial * if secs.is_some() { 0.26 } else { 0.36 })), icon, icon_col);
-    if let Some(sec) = secs {
-        let g = p.layout_no_wrap(format!("{} s", sec.ceil() as i64), egui::FontId::proportional(if compact(ui.ctx()) { 16.0 } else { 30.0 }), Color32::WHITE);
-        p.galley(c + egui::vec2(-g.size().x / 2.0, 4.0), g, Color32::WHITE);
-    }
+    icons::draw(p, egui::Rect::from_center_size(c, egui::vec2(dial * 0.36, dial * 0.36)), icon, icon_col);
     if hot {
         p.circle_stroke(c, dial * 0.5, egui::Stroke::new(2.5, Color32::WHITE));
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -829,7 +820,7 @@ fn evac_timer(ctx: &egui::Context, sim: &Sim, d: usize, at: egui::Pos2) {
 fn notice(ctx: &egui::Context, k: &Kiosk) {
     if k.dragging.is_some() { return; }
     let Some((text, _)) = &k.notice else { return };
-    egui::Area::new(egui::Id::new("avviso")).anchor(Align2::CENTER_TOP, [0.0, if compact(ctx) { 116.0 } else { 170.0 }]).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("avviso")).anchor(Align2::CENTER_TOP, [0.0, if compact(ctx) { 116.0 } else if k.phase == Phase::Tutorial { 170.0 } else { 10.0 }]).order(egui::Order::Foreground).show(ctx, |ui| {
         panel().show(ui, |ui| {
             if compact(ctx) { ui.set_width((ctx.screen_rect().width() - 48.0).min(480.0)); }
             ui.add(egui::Label::new(RichText::new(text).size(16.0).color(Color32::WHITE)).wrap());

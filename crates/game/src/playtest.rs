@@ -47,7 +47,7 @@ mod browser {
             "phase": format!("{:?}", k.phase), "case": sim.case.name, "time_s": sim.time_s(), "end_s": sim.case.duration_s(),
             "player": k.player, "error": k.error, "baseline_ready": k.baseline().is_some(),
             "step": k.step, "expect": k.expect().map(|e| format!("{e:?}")), "selection": format!("{:?}", k.selection),
-            "paused": sim.paused(), "pause_ready_in_s": sim.pause_ready_in_s(), "over": sim.is_over(),
+            "paused": sim.paused(), "over": sim.is_over(),
             "teams": sim.teams.iter().enumerate().map(|(t, team)| serde_json::json!({ "name": team.name, "status": sim.team_status(t), "hex": team.hex.map(|h| [h.centre().x, h.centre().y]) })).collect::<Vec<_>>(),
             "districts": sim.districts.iter().map(|d| serde_json::json!({ "name": d.name })).collect::<Vec<_>>(),
             "controls": CONTROLS.with(|c| c.borrow().clone()),
