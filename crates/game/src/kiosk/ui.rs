@@ -145,6 +145,9 @@ pub fn draw(
                 screens::tutorial(ctx, k, &mut sim, &mut restarted, faces.as_deref(), cam);
             }
             notice(ctx, k);
+            if k.phase == Phase::Gioco {
+                super::chat::show(ctx, &sim, faces.as_deref(), k.notice.is_some());
+            }
             if compact(ctx) {
                 egui::Area::new(egui::Id::new("map_tools")).anchor(Align2::RIGHT_BOTTOM, [-8.0, -8.0]).order(egui::Order::Foreground).show(ctx, |ui| {
                     ui.horizontal(|ui| {
@@ -420,7 +423,7 @@ fn preview_move(k: &mut Kiosk, sim: &Sim, t: usize, at: rocca::Axial) {
     }
     k.move_hex = Some(at);
     k.move_plan = Some(match k.expect() {
-        Some(Expect::Move(_, want)) if at != want => Err("Porta la squadra sull'esagono evidenziato.".into()),
+        Some(Expect::Move(_, want)) if at != want => Err("usa l'esagono evidenziato".into()),
         _ => sim.plan_move(t, at),
     });
 }
@@ -663,11 +666,16 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
                 egui::pos2(12.0, 122.0)
             } else { flag.right_top() + egui::vec2(8.0, 4.0) }).order(egui::Order::Tooltip).interactable(false).show(ctx, |ui| {
                 egui::Frame::none().fill(Color32::from_black_alpha(215)).rounding(6.0).inner_margin(egui::Margin::symmetric(8.0, 4.0)).show(ui, |ui| {
-                    if compact(ctx) { ui.set_width((ctx.screen_rect().width() - 48.0).min(300.0)); }
-                    ui.horizontal_wrapped(|ui| match &k.move_plan {
-                        Some(Ok(plan)) => chip(ui, Icon::Clock, &format!("{:.0} min", plan.minutes.ceil()), AMBER),
-                        Some(Err(e)) => chip(ui, Icon::Cross, e, RED),
-                        None => {}
+                    // one short line: an icon and a few words, never wrapped
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        let (icon, text, col) = match &k.move_plan {
+                            Some(Ok(plan)) => (Icon::Clock, format!("{:.0} min", plan.minutes.ceil()), AMBER),
+                            Some(Err(e)) => (Icon::Cross, e.clone(), RED),
+                            None => return,
+                        };
+                        super::icons::show(ui, icon, 22.0, col);
+                        ui.add(egui::Label::new(RichText::new(text).size(18.0).strong().color(col)).wrap_mode(egui::TextWrapMode::Extend));
                     });
                 });
             });

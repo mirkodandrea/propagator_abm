@@ -83,6 +83,7 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
 - **Sulla mappa:**
   - coni 3D delle squadre, dove sono assegnate, da trascinare (in pausa), e etichette dei borghi: passandoci sopra, percorso e persone e minuti dell'evacuazione; al clic il riquadro con persone, minuti e «Evacua» / «Annulla»;
   - sul borgo in evacuazione, un **timer circolare**: l'anello si svuota col tempo che resta fino all'arrivo dell'ultima famiglia, con i minuti al centro. Parte dai minuti annunciati e scende di un minuto per minuto simulato: annuncio e timer vengono dalla stessa regola (`Evacuations::remaining_min`, 2026-10-14); a fine evacuazione una spunta, se il fuoco l'ha interrotta un avviso;
+  - la **chat di gruppo** (2026-10-16): in basso a sinistra, righe brevi e colloquiali con ritratto piccolo, ora ed emoji, dette da squadre, sindaca ed esperto su ciò che accade (partenza, arrivo, acqua finita, ritirata, evacuazione partita/deviata/completata, vento). Sul telefono compare solo come notifica in alto. Il testo viene dal nucleo (`Game::chat`);
   - i segni sulla mappa (esagoni, percorsi, strade chiuse, isocrone) hanno un **materiale loro** (`flat`): colore pieno e acceso, senza luce né nebbia, con un bordo scuro, disegnati sopra la vegetazione (2026-10-14);
   - esagoni, in pausa o con una squadra scelta;
   - esagono scelto e percorso, tratteggiati in bianco;

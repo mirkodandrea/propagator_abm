@@ -104,3 +104,25 @@ fn the_hexes_shown_for_a_move_are_those_the_game_accepts() {
     }
     assert!(refused > 0, "the test must see a hex refused");
 }
+
+#[test]
+fn the_group_chat_tells_what_the_orders_do() {
+    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+    let mut g = Game::new(&data, "medium", 1).unwrap();
+    assert!(g.chat.is_empty(), "nothing is said before the first order");
+    let hex = g.hexes.nearest(g.case.ignition()).unwrap().at;
+    g.pause().unwrap();
+    g.move_team(0, hex).unwrap();
+    g.evacuate(g.district_index("Le Terrazze").unwrap()).unwrap();
+    g.resume();
+    g.run_until(g.time_s() + 3 * 3600).unwrap();
+    for m in &g.chat {
+        println!("{} {:?} {}", rocca::words::clock(m.at_s), m.who, m.text);
+    }
+    use rocca::{Kind, Voice};
+    assert!(g.chat.iter().any(|m| m.who == Voice::Team(0) && m.kind == Kind::Order));
+    assert!(g.chat.iter().any(|m| m.who == Voice::Mayor && m.kind == Kind::EvacStart));
+    assert!(g.chat.windows(2).all(|w| w[0].at_s <= w[1].at_s), "in time order");
+    let same = |a: &rocca::ChatMsg, b: &rocca::ChatMsg| a.who == b.who && a.kind == b.kind && a.text == b.text;
+    assert!(!g.chat.windows(2).any(|w| same(&w[0], &w[1]) && w[0].kind != Kind::Order), "no line twice in a row");
+}

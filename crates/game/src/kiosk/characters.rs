@@ -11,6 +11,7 @@ pub enum Who {
     Volontaria,
     Esperto,
     Vigili,
+    Sindaca,
 }
 
 impl Who {
@@ -19,6 +20,7 @@ impl Who {
             Who::Volontaria => "La volontaria di protezione civile",
             Who::Esperto => "L'esperto di previsioni",
             Who::Vigili => "Il caposquadra dei vigili del fuoco",
+            Who::Sindaca => "La sindaca",
         }
     }
 
@@ -28,6 +30,7 @@ impl Who {
             Who::Volontaria => "La volontaria",
             Who::Esperto => "L'esperto",
             Who::Vigili => "I vigili del fuoco",
+            Who::Sindaca => "La sindaca",
         }
     }
 
@@ -37,6 +40,7 @@ impl Who {
             Who::Volontaria => egui::Color32::from_rgb(250, 195, 70),
             Who::Esperto => egui::Color32::from_rgb(110, 185, 255),
             Who::Vigili => egui::Color32::from_rgb(235, 80, 60),
+            Who::Sindaca => egui::Color32::from_rgb(120, 205, 140),
         }
     }
 }
@@ -86,13 +90,15 @@ pub fn load_portraits(mut commands: Commands, mut images: ResMut<Assets<Image>>,
             include_bytes!(concat!("../../../../assets/characters/", $f, ".png")).as_slice()
         };
     }
-    let all: [((Who, Mood), &[u8]); 6] = [
+    let all: [((Who, Mood), &[u8]); 8] = [
         ((Who::Volontaria, Mood::Calmo), png!("volontaria_calmo")),
         ((Who::Volontaria, Mood::Preoccupato), png!("volontaria_preoccupato")),
         ((Who::Esperto, Mood::Calmo), png!("meteo_calmo")),
         ((Who::Esperto, Mood::Preoccupato), png!("meteo_preoccupato")),
         ((Who::Vigili, Mood::Calmo), png!("dos_calmo")),
         ((Who::Vigili, Mood::Preoccupato), png!("dos_preoccupato")),
+        ((Who::Sindaca, Mood::Calmo), png!("sindaca_calmo")),
+        ((Who::Sindaca, Mood::Preoccupato), png!("sindaca_preoccupato")),
     ];
     let out = all.into_iter().filter_map(|(key, bytes)| texture(bytes, &mut images, &mut contexts).map(|t| (key, t))).collect();
     commands.insert_resource(Portraits(out));

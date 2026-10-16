@@ -8,6 +8,8 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
 
 ### Decisioni recenti
 
+- 2026-10-16 (richiesta dell'utente): **chat di gruppo dell'operazione** al posto dell'avviso a riga singola. `Game::chat` (`rocca::chat`): righe brevi e colloquiali con emoji, dalle squadre (ricevuto/partiamo, arrivati, acqua finita, ritirata, persa), dalla sindaca (evacuazione partita, deviata, bloccata, completata, annullata) e dall'esperto (vento che gira); «arrivati» e «acqua finita» una volta per ordine. Desktop: pannello in basso a sinistra, ultime 6 righe con ritratto da 28 px (squadre = caposquadra) e ora; telefono: solo notifica in alto per 6 s. `notice` resta per gli ordini rifiutati, ora brevi con icona (⛔ «no strade», «strade chiuse dal fuoco», «fuori servizio»), su una riga senza a capo. Test `the_group_chat_tells_what_the_orders_do`. **Grafica e resa delle emoji non viste** (nessun chiosco avviato). Falliscono per altro, non per la chat: `the_scripted_tutorial_saves_the_district` (già noto) e `models::the_island_models_stand_on_the_ground`.
+
 - 2026-10-15 (richiesta dell'utente): **esagoni dimezzati a 150 m** e raggio d’intervento portato a **2 esagoni** (`HEX_M`, `TEAM_REACH_HEXES`); portata delle persone invariata a 300 m. Tutorial aggiornato con vita dei borghi ed esagoni gialli fissi. Tutti i 10 test `rocca` e `cargo check -p game` superati.
 
 - 2026-10-15 (richiesta dell'utente): **scorrimento della mappa trascinando una squadra al bordo**: mantenere il cono negli ultimi 48 px della mappa sposta la vista nella direzione del bordo, con velocità progressiva. Si ferma tornando al centro, entrando nei pannelli, rilasciando o annullando il gesto.

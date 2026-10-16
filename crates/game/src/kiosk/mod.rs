@@ -13,6 +13,7 @@
 //! from the end screen or the operator menu (F2), never by itself.
 
 pub mod board;
+pub mod chat;
 pub mod characters;
 pub mod icons;
 pub mod marks;
@@ -516,12 +517,8 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
             k.done(Expect::Run(until));
         }
     }
-    // what happened, as notices (the latest only)
+    // what happened goes to the group chat (`chat.rs`); the log only counts
     if sim.log.len() > k.log_seen {
-        if k.phase == Phase::Gioco {
-            let e = sim.log.last().unwrap();
-            k.notice = Some((format!("{} {}", rocca::words::clock(e.at_s), e.text), 0.0));
-        }
         k.log_seen = sim.log.len();
     }
     match k.phase {
