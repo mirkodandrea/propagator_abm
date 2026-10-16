@@ -19,7 +19,7 @@ Uno strategico in tempo reale, sul modello di StarCraft, per il chiosco della *S
 
 - Nessun turno. Il tempo scorre a **×120** o è **fermo**, nient'altro (2026-10-15, richiesta dell'utente; prima ×60): 1 s reale vale 2 min simulati (`rocca::RUN_X`).
 - **Pausa = chiedere all'esperto scientifico.** In pausa il **mondo si ferma** (2026-10-14: «pausa è stop, non tempo rallentato»). La pausa **non ha limite di tempo** (2026-10-14, richiesta dell'utente): finisce quando il giocatore preme «Riprendi». **Nessuna attesa tra una pausa e la successiva** (2026-10-16, richiesta dell'utente: tolti `PAUSE_COOLDOWN_REAL_S` e `PAUSE_COOLDOWN_S`).
-- **In pausa il piano si può cambiare:** una squadra si sposta di nuovo trascinando il suo cono; un'evacuazione ordinata nella stessa pausa si annulla, oppure si sostituisce scegliendo un altro borgo (`Game::cancel_evacuation`). Dopo la ripresa no (2026-10-14).
+- **In pausa il piano si può cambiare:** una squadra si sposta di nuovo trascinando la sua icona; un'evacuazione ordinata nella stessa pausa si annulla, oppure si sostituisce scegliendo un altro borgo (`Game::cancel_evacuation`). Dopo la ripresa no (2026-10-14).
 - **Tutti gli ordini si danno solo in pausa:** spostare le squadre ed evacuare.
 - In pausa compaiono:
   - la **previsione**: isocrone al 50 % di 16 simulazioni dal fuoco attuale, a +1 h e +3 h, senza interventi (`rocca::forecast`);
@@ -32,8 +32,8 @@ Uno strategico in tempo reale, sul modello di StarCraft, per il chiosco della *S
 
 - **Una squadra** è un'autobotte con 3 persone. Ci sono 3 squadre dei **vigili del fuoco** alla caserma di Castelvento, il borgo più grande, e 2 squadre di **volontari AIB** al presidio di Pian dei Grilli, un borgo minore a ovest, dall'altra parte dell'isola rispetto a Castelvento (`game.json`: `stations`, `roster`).
 - Si spostano su una **griglia esagonale** di 150 m tra centri adiacenti (`rocca::hex`; 2026-10-15, dimezzati da 300 m). Si può scegliere solo un esagono attraversato da una strada carrabile della rete principale: la squadra guida fino al punto stradale dell'esagono più vicino al centro.
-- Ogni squadra ha un **cono 3D semitrasparente**, che fluttua e oscilla sopra il punto dove è assegnata: sull'esagono dell'ultimo ordine, oppure alla sua sede (`kiosk::pins`). Sul cono, un'etichetta con autobotte e numero. Il veicolo non ha icone sopra (2026-10-14).
-- In pausa si **trascina il cono** sull'esagono scelto: durante il trascinamento il gioco mostra **percorso e tempo di viaggio**, evitando le strade chiuse dal fuoco (`Game::plan_move`). **Lasciato il cono, l'ordine è dato**, senza conferma (2026-10-14). Anche un clic sul cono e poi sull'esagono funziona.
+- Ogni squadra ha una **grande icona** (autobotte e numero), non più un cono, sopra il punto dove è assegnata: sull'esagono dell'ultimo ordine, oppure alla sua sede (`kiosk::pins`). Sul cono, un'etichetta con autobotte e numero. Il veicolo non ha icone sopra (2026-10-14).
+- In pausa si **trascina l'icona della squadra** sull'esagono scelto: durante il trascinamento il gioco mostra **percorso e tempo di viaggio**, evitando le strade chiuse dal fuoco (`Game::plan_move`). **Lasciata l'icona, l'ordine è dato**, senza conferma (2026-10-14). Anche un clic sul cono e poi sull'esagono funziona.
 - Con una squadra scelta o trascinata, il chiosco **illumina gli esagoni dell'area d'intervento** (fino a 2 esagoni dal suo, `TEAM_REACH_HEXES`, 2026-10-15), in azzurro; non si illuminano se l'esagono è rifiutato (rosso).
 - Arrivata, la squadra **attacca il fuoco come può** (2026-10-14), con il modello di spegnimento conservato (`abm::suppression`):
   - l'**autobotte** aumenta l'umidità del combustibile entro **100 m** da dove sta (acqua, manichetta). Durante l'intervento si sposta **sulle strade degli esagoni di competenza** (il suo e quelli intorno) verso il combustibile minacciato, senza avvicinarsi a meno di 80 m dalle fiamme (2026-10-15, richiesta dell'utente);
@@ -81,7 +81,7 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
   - in pausa, la spiegazione della previsione e il meteo.
 - **Barra laterale:** solo informazioni, nessun ordine: l'elenco delle squadre con il loro stato; l'elenco dei borghi; i conteggi. Gli ordini si danno sulla mappa (2026-10-14).
 - **Sulla mappa:**
-  - coni 3D delle squadre, dove sono assegnate, da trascinare (in pausa), e etichette dei borghi: passandoci sopra, percorso e persone e minuti dell'evacuazione; al clic il riquadro con persone, minuti e «Evacua» / «Annulla»;
+  - icone delle squadre, dove sono assegnate, da trascinare (in pausa), e etichette dei borghi: passandoci sopra, percorso e persone e minuti dell'evacuazione; al clic il riquadro con persone, minuti e «Evacua» / «Annulla»;
   - sul borgo in evacuazione, un **timer circolare**: l'anello si svuota col tempo che resta fino all'arrivo dell'ultima famiglia, con i minuti al centro. Parte dai minuti annunciati e scende di un minuto per minuto simulato: annuncio e timer vengono dalla stessa regola (`Evacuations::remaining_min`, 2026-10-14); a fine evacuazione una spunta, se il fuoco l'ha interrotta un avviso;
   - la **chat di gruppo** (2026-10-16): in alto a sinistra (2026-10-16, spostata dall'utente), righe brevi e colloquiali con ritratto piccolo, ora ed emoji, dette da squadre, sindaca ed esperto su ciò che accade (partenza, arrivo, acqua finita, ritirata, evacuazione partita/deviata/completata, vento). Sul telefono compare solo come notifica in alto. Il testo viene dal nucleo (`Game::chat`);
   - i segni sulla mappa (esagoni, percorsi, strade chiuse, isocrone) hanno un **materiale loro** (`flat`): colore pieno e acceso, senza luce né nebbia, con un bordo scuro, disegnati sopra la vegetazione (2026-10-14);

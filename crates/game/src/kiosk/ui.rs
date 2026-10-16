@@ -516,26 +516,34 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         let on = k.selection == Selection::District(d);
         let inner = egui::Area::new(egui::Id::new(("borgo", d))).fixed_pos(s).constrain(false).pivot(Align2::CENTER_CENTER).order(egui::Order::Middle).show(ctx, |ui| {
             let b = egui::Button::new(RichText::new(if hide_names { "" } else { &name }).size(16.0).strong().color(Color32::WHITE))
-                .fill(if on { BLUE.gamma_multiply(0.6) } else { Color32::from_black_alpha(170) })
+                .frame(false)
+                .min_size(egui::vec2(44.0, if compact(ctx) { 44.0 } else { 28.0 }));
+            // one container: name, life of the homes, evacuation timer
+            egui::Frame::none()
+                .fill(if on { BLUE.gamma_multiply(0.6) } else { Color32::from_black_alpha(190) })
                 .stroke(egui::Stroke::new(if on { 3.0 } else { 1.0 }, if on { Color32::WHITE } else { BLUE }))
-                .rounding(6.0)
-                .min_size(egui::vec2(44.0, if compact(ctx) { 44.0 } else { 0.0 }));
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                let r = ui.add(b);
-                if hide_names {
-                    super::icons::draw(ui.painter(), egui::Rect::from_center_size(r.rect.center(), egui::vec2(22.0, 22.0)), super::icons::Icon::House, Color32::WHITE);
-                    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
-                }
-                // life: the share of the homes the fire has not reached
-                let (hit, homes) = sim.district_damage(d);
-                let life = if homes == 0 { 1.0 } else { 1.0 - hit as f32 / homes as f32 };
-                let col = if life > 0.66 { GREEN } else if life > 0.33 { AMBER } else { RED };
-                let (g, _) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
-                ring_gauge(ui.painter(), egui::pos2(g.center().x, r.rect.center().y), 9.0, life, col);
-                r
-            })
-            .inner
+                .rounding(8.0)
+                .inner_margin(egui::Margin::symmetric(6.0, 3.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        let r = ui.add(b);
+                        if hide_names {
+                            super::icons::draw(ui.painter(), egui::Rect::from_center_size(r.rect.center(), egui::vec2(22.0, 22.0)), super::icons::Icon::House, Color32::WHITE);
+                            r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+                        }
+                        // life: the share of the homes the fire has not reached
+                        let (hit, homes) = sim.district_damage(d);
+                        let life = if homes == 0 { 1.0 } else { 1.0 - hit as f32 / homes as f32 };
+                        let col = if life > 0.66 { GREEN } else if life > 0.33 { AMBER } else { RED };
+                        let (g, _) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
+                        ring_gauge(ui.painter(), egui::pos2(g.center().x, r.rect.center().y), 9.0, life, col);
+                        evac_timer(ui, sim, d);
+                        r
+                    })
+                    .inner
+                })
+                .inner
         });
         let r = inner.inner;
         rects[d] = Some(inner.response.rect);
@@ -546,7 +554,6 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         if r.hovered() && ctx.dragged_id().is_none() && sim.evac.of(d).is_none() {
             hovered = Some(d);
         }
-        evac_timer(ctx, sim, d, s - egui::vec2(88.0, 6.0));
     }
     // the evacuation under the pointer: its route (on the map) and its time
     match hovered {
@@ -590,22 +597,10 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
     let feet = pins::feet(k, sim, cam.1.translation(), right);
     for t in 0..sim.teams.len() {
         let Some((foot, sc)) = feet[t] else { continue };
-        // the cone's lid: the handle, with the team's engine and number on it
-        let lift = crate::rings::RING_LIFT_M + (pins::LIFT_M + pins::CONE_H_M) * sc;
-        let lid = crate::frame::to_bevy(foot, sim.scn.terrain.height_at(foot) + lift);
-        let tip = crate::frame::to_bevy(foot, sim.scn.terrain.height_at(foot) + lift - pins::CONE_H_M * sc);
-        let (Some(a), Some(b), Some(e)) =
-            (cam.0.world_to_viewport(cam.1, lid), cam.0.world_to_viewport(cam.1, tip), cam.0.world_to_viewport(cam.1, lid + right * pins::CONE_R_M * sc))
-        else {
-            continue;
-        };
-        // the cone bobs and spins, so the handle covers the whole cone down to
-        // the ground ring, with a margin: the point is as good a grip as the badge
-        let ground = cam.0.world_to_viewport(cam.1, crate::frame::to_bevy(foot, sim.scn.terrain.height_at(foot) + crate::rings::RING_LIFT_M));
-        let bob = pins::BOB_M * sc;
-        let half_w = ((e.x - a.x).abs() + 6.0).max(22.0);
-        let bottom = b.y.max(a.y + 10.0).max(ground.map_or(0.0, |g| g.y)) + 8.0;
-        let flag = egui::Rect::from_min_max(egui::pos2(a.x - half_w, a.y - 18.0 - bob), egui::pos2(a.x + half_w, bottom));
+        // the handle: a big badge over the team's spot, kept near the ground
+        let lift = crate::rings::RING_LIFT_M + pins::LIFT_M * sc;
+        let Some(a) = cam.0.world_to_viewport(cam.1, crate::frame::to_bevy(foot, sim.scn.terrain.height_at(foot) + lift)) else { continue };
+        let flag = egui::Rect::from_center_size(egui::pos2(a.x, a.y - 8.0), egui::vec2(96.0, 56.0));
         let col = if sim.teams[t].volunteers { AIB } else { VVF };
         let number = sim.teams[t].name.split_whitespace().last().unwrap_or("").to_string();
         let on = k.selection == Selection::Team(t);
@@ -620,12 +615,13 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         let inner = egui::Area::new(egui::Id::new(("bandiera", t))).fixed_pos(flag.min).constrain(false).order(egui::Order::Middle).show(ctx, |ui| {
             let (rect, resp) = ui.allocate_exact_size(flag.size(), egui::Sense::click_and_drag());
             let p = ui.painter();
-            let badge = egui::Rect::from_center_size(egui::pos2(rect.center().x, rect.top() + 18.0 + bob), egui::vec2(56.0, 28.0));
-            p.rect_filled(badge, 14.0, Color32::from_black_alpha(200));
-            p.rect_stroke(badge, 14.0, egui::Stroke::new(if on || resp.hovered() { 2.5 } else { 1.5 }, if on || resp.hovered() { Color32::WHITE } else { col }));
-            super::icons::draw(p, egui::Rect::from_center_size(badge.left_center() + egui::vec2(17.0, 0.0), egui::vec2(22.0, 22.0)), super::icons::Icon::Engine, col);
-            let g = p.layout_no_wrap(number.clone(), egui::FontId::proportional(17.0), Color32::WHITE);
-            p.galley(egui::pos2(badge.right() - 10.0 - g.size().x, badge.center().y - g.size().y / 2.0), g, Color32::WHITE);
+            let badge = rect.shrink(4.0);
+            let hot = on || resp.hovered();
+            p.rect_filled(badge, 16.0, Color32::from_black_alpha(215));
+            p.rect_stroke(badge, 16.0, egui::Stroke::new(if hot { 3.5 } else { 2.5 }, if hot { Color32::WHITE } else { col }));
+            super::icons::draw(p, egui::Rect::from_center_size(badge.left_center() + egui::vec2(24.0, 0.0), egui::vec2(34.0, 34.0)), super::icons::Icon::Engine, col);
+            let g = p.layout_no_wrap(number.clone(), egui::FontId::proportional(26.0), Color32::WHITE);
+            p.galley(egui::pos2(badge.right() - 14.0 - g.size().x, badge.center().y - g.size().y / 2.0), g, Color32::WHITE);
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(if may_drag { egui::CursorIcon::Grab } else { egui::CursorIcon::PointingHand });
             }
@@ -650,7 +646,7 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
                 k.dragging = Some((t, g));
             }
         }
-        // where it would go: the time on the road, next to the cone
+        // where it would go: the time on the road, next to the team
         if k.dragging.is_some_and(|(d, _)| d == t) {
             use super::icons::Icon;
             egui::Area::new(egui::Id::new("trascina")).fixed_pos(if compact(ctx) {
@@ -682,7 +678,7 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
             let on_map = release.is_some_and(|p| drop_rect(ctx, k).contains(p));
             match k.dragging {
                 Some((_, g)) if on_map && may_drag => give_move(k, sim, t, rocca::Axial::of(g)),
-                _ => { k.clear_selection(); k.notify("Spostamento annullato: rilascia il cono sulla mappa."); }
+                _ => { k.clear_selection(); k.notify("Spostamento annullato: rilascia la squadra sulla mappa."); }
             }
         }
     }
@@ -776,7 +772,7 @@ fn confirm_bubble(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Came
 /// left until the last family reaches the refuge (`Evacuations::remaining_min`,
 /// the rule of the time announced); a check when it is done, an alert when
 /// the fire cut it short.
-fn evac_timer(ctx: &egui::Context, sim: &Sim, d: usize, at: egui::Pos2) {
+fn evac_timer(ui: &mut egui::Ui, sim: &Sim, d: usize) {
     use super::icons::{self, Icon};
     let Some(e) = sim.evac.of(d) else { return };
     let left = sim.evac.remaining_min(d, sim.time_s());
@@ -788,14 +784,13 @@ fn evac_timer(ctx: &egui::Context, sim: &Sim, d: usize, at: egui::Pos2) {
         }
         None => (1.0, None, GREEN, Some(Icon::Check)),
     };
-    let size = if minutes.is_some() { 60.0 } else { 40.0 };
-    egui::Area::new(egui::Id::new(("timer", d))).fixed_pos(at).pivot(Align2::CENTER_CENTER).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
+    let size = if minutes.is_some() { 44.0 } else { 30.0 };
+    {
         let (r, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
         let p = ui.painter();
         let c = r.center();
         let radius = size * 0.5 - 4.0;
-        p.circle_filled(c, size * 0.5, Color32::from_black_alpha(215));
-        p.circle_stroke(c, radius, egui::Stroke::new(5.0, Color32::from_gray(60)));
+                p.circle_stroke(c, radius, egui::Stroke::new(4.0, Color32::from_gray(60)));
         // the time left: an arc from the top, clockwise, that shrinks
         let n = ((frac * 64.0).ceil() as usize).max(1);
         let pts: Vec<egui::Pos2> = (0..=n)
@@ -804,17 +799,17 @@ fn evac_timer(ctx: &egui::Context, sim: &Sim, d: usize, at: egui::Pos2) {
                 c + egui::vec2(a.cos(), a.sin()) * radius
             })
             .collect();
-        p.add(egui::Shape::line(pts, egui::Stroke::new(5.0, col)));
+        p.add(egui::Shape::line(pts, egui::Stroke::new(4.0, col)));
         if let Some(m) = minutes {
-            let g = p.layout_no_wrap(format!("{m}"), egui::FontId::proportional(20.0), Color32::WHITE);
-            p.galley(c - egui::vec2(g.size().x / 2.0, g.size().y / 2.0 + 4.0), g, Color32::WHITE);
-            let g = p.layout_no_wrap("min".into(), egui::FontId::proportional(11.0), GREY);
-            p.galley(c + egui::vec2(-g.size().x / 2.0, 7.0), g, GREY);
+            let g = p.layout_no_wrap(format!("{m}"), egui::FontId::proportional(16.0), Color32::WHITE);
+            p.galley(c - egui::vec2(g.size().x / 2.0, g.size().y / 2.0 + 3.0), g, Color32::WHITE);
+            let g = p.layout_no_wrap("min".into(), egui::FontId::proportional(9.0), GREY);
+            p.galley(c + egui::vec2(-g.size().x / 2.0, 5.0), g, GREY);
         }
         if let Some(icon) = icon {
             icons::draw(p, egui::Rect::from_center_size(c, egui::vec2(size * 0.5, size * 0.5)), icon, col);
         }
-    });
+    }
 }
 
 fn notice(ctx: &egui::Context, k: &Kiosk) {

@@ -76,7 +76,7 @@ impl Script {
             let from = game.territory.stations[team.station].name.rsplit(" - ").next().unwrap_or_default().to_string();
             steps.push(Step {
                 text: format!(
-                    "Squadra di {who} da __{from}__ ({} persone). **Trascina il cono** sull'esagono indicato e lascialo lì: vedi il percorso e il tempo di viaggio.",
+                    "Squadra di {who} da __{from}__ ({} persone). **Trascina la squadra** sull'esagono indicato e lascialo lì: vedi il percorso e il tempo di viaggio.",
                     team.crew
                 ),
                 expect: Expect::Move(t, hex.at),

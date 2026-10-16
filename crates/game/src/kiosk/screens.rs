@@ -717,7 +717,7 @@ fn compact_intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &
         let r = ui.add_sized([ui.available_width(), 44.0], secondary("Salta la prova guidata"));
         crate::playtest::control("Salta la prova guidata", &r, true);
         if r.clicked() { go = Some(false); }
-        ui.label("Tocca una squadra, poi l'esagono dove mandarla. Tocca un borgo per evacuare. Puoi anche trascinare i coni.");
+        ui.label("Tocca una squadra, poi l'esagono dove mandarla. Tocca un borgo per evacuare. Puoi anche trascinare le squadre.");
         ui.separator();
         ui.collapsing("Classifica di oggi", |ui| board_rows(ui, k, &sim.case.name, None, rocca::score::BOARD_SHOWN));
         ui.label(RichText::new("Territorio immaginario. Nella realtà segui le indicazioni delle autorità.").size(13.0));
@@ -742,7 +742,7 @@ fn compact_tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted
         panel_mobile().show(ui, |ui| {
             ui.set_width(if landscape { k.side_w - 40.0 } else { (rect.width() - 40.0).min(600.0) });
             egui::ScrollArea::vertical().max_height(if landscape { (rect.height() - 180.0).max(42.0) } else { (rect.height() * 0.20).clamp(42.0, 120.0) }).show(ui, |ui| {
-                ui.label(RichText::new(text.replace("**", "").replace("__", "").replace("In basso a destra", "In alto").replace("clicca", "tocca").replace("Trascina il cono", "Tocca la squadra e poi la destinazione, oppure trascina il cono")).size(16.0));
+                ui.label(RichText::new(text.replace("**", "").replace("__", "").replace("In basso a destra", "In alto").replace("clicca", "tocca").replace("Trascina la squadra", "Tocca la squadra e poi la destinazione, oppure trascina la squadra")).size(16.0));
             });
             ui.horizontal(|ui| {
                 let r = ui.add(secondary("Salta"));

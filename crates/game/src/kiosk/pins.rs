@@ -17,12 +17,8 @@ use crate::retro::{self, RetroMaterial};
 use crate::sim::Sim;
 use bevy_egui::egui::Color32;
 
-/// The cone at scale 1, metres: its tip floats [`LIFT_M`] over the ground.
-pub const CONE_H_M: f32 = 120.0;
-pub const CONE_R_M: f32 = 55.0;
+/// How high over the ground the team's handle floats, metres at scale 1.
 pub const LIFT_M: f32 = 40.0;
-/// How far the cone bobs up and down, metres at scale 1.
-pub const BOB_M: f32 = 12.0;
 const RING_R_M: f32 = 45.0;
 /// At this distance from the camera a cone is drawn at scale 1.
 const UNIT_DIST_M: f32 = 2200.0;
@@ -81,37 +77,9 @@ pub fn feet(k: &Kiosk, sim: &Sim, eye: Vec3, right: Vec3) -> Vec<Option<(Pos, f3
 
 #[derive(Resource)]
 pub struct PinAssets {
-    cone: Handle<Mesh>,
     ring: Handle<Mesh>,
     vvf: Handle<RetroMaterial>,
     aib: Handle<RetroMaterial>,
-}
-
-/// A cone with its tip at the origin, opening upward to radius `r` at `h`,
-/// closed by a lid.
-fn cone_mesh(r: f32, h: f32) -> Mesh {
-    use bevy::render::mesh::{Indices, PrimitiveTopology};
-    use bevy::render::render_asset::RenderAssetUsages;
-    const N: u32 = 32;
-    let mut pos = vec![[0.0, 0.0, 0.0], [0.0, h, 0.0]];
-    let mut nor = vec![[0.0, -1.0, 0.0], [0.0, 1.0, 0.0]];
-    for i in 0..N {
-        let a = i as f32 / N as f32 * std::f32::consts::TAU;
-        pos.push([r * a.cos(), h, r * a.sin()]);
-        nor.push(Vec3::new(a.cos() * h, -r, a.sin() * h).normalize().into());
-    }
-    let mut idx = vec![];
-    for i in 0..N {
-        let (a, b) = (2 + i, 2 + (i + 1) % N);
-        idx.extend([0, b, a, 1, a, b]);
-    }
-    let n = pos.len();
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, nor);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32, 0.0]; n]);
-    mesh.insert_indices(Indices::U32(idx));
-    mesh
 }
 
 /// See-through and bright: the cones must read on any ground without hiding it.
@@ -135,7 +103,6 @@ fn glass(c: Color32) -> RetroMaterial {
 pub fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<RetroMaterial>>) {
     let ring = Mesh::from(Annulus::new(RING_R_M * 0.75, RING_R_M)).rotated_by(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2));
     commands.insert_resource(PinAssets {
-        cone: meshes.add(cone_mesh(CONE_R_M, CONE_H_M)),
         ring: meshes.add(ring),
         vvf: materials.add(glass(super::ui::VVF)),
         aib: materials.add(glass(super::ui::AIB)),
@@ -148,10 +115,8 @@ pub fn update(
     sim: Res<Sim>,
     kiosk: Res<Kiosk>,
     assets: Res<PinAssets>,
-    time: Res<Time>,
     cameras: Query<&GlobalTransform, With<crate::camera::OrbitCamera>>,
-    mut pins: Query<(Entity, &Pin, &mut Transform, &mut Visibility, &Children)>,
-    mut parts: Query<&mut Transform, Without<Pin>>,
+    mut pins: Query<(Entity, &Pin, &mut Transform, &mut Visibility)>,
 ) {
     let Ok(cam) = cameras.get_single() else { return };
     let have = pins.iter().count();
@@ -164,7 +129,7 @@ pub fn update(
             commands
                 .spawn((SpatialBundle { visibility: Visibility::Hidden, ..default() }, Pin(t)))
                 .with_children(|c| {
-                    for mesh in [&assets.cone, &assets.ring] {
+                    for mesh in [&assets.ring] {
                         c.spawn((
                             MaterialMeshBundle::<RetroMaterial> { mesh: mesh.clone(), material: colour.clone(), ..default() },
                             bevy::pbr::NotShadowCaster,
@@ -178,8 +143,8 @@ pub fn update(
     let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
     let eye = cam.translation();
     let feet = feet(&kiosk, &sim, eye, cam.right().into());
-    let t_s = time.elapsed_seconds();
-    for (_, pin, mut tf, mut vis, children) in &mut pins {
+    
+    for (_, pin, mut tf, mut vis) in &mut pins {
         let Some(Some((p, s))) = feet.get(pin.0).copied().filter(|_| playing) else {
             *vis = Visibility::Hidden;
             continue;
@@ -188,12 +153,5 @@ pub fn update(
         // the ground ring stays put; the cone floats over it, bobbing
         let ground = crate::frame::to_bevy(p, sim.scn.terrain.height_at(p) + crate::rings::RING_LIFT_M);
         *tf = Transform::from_translation(ground).with_scale(Vec3::splat(s));
-        let bob = LIFT_M + BOB_M * (t_s * 2.2 + pin.0 as f32 * 1.3).sin();
-        if let Some(&cone) = children.first() {
-            if let Ok(mut c) = parts.get_mut(cone) {
-                c.translation.y = bob;
-                c.rotation = Quat::from_rotation_y(t_s * 0.8);
-            }
-        }
     }
 }
