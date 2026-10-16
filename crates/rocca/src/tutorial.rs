@@ -65,24 +65,30 @@ impl Script {
                 expect: Expect::Next,
             },
             Step {
-                text: "L'anello accanto al nome di ogni __borgo__ indica la sua **vita**: si svuota quando il fuoco raggiunge le case. Passa da **verde** a **giallo**, poi a **rosso**, man mano che le case rimaste intatte diminuiscono.".into(),
+                text: "L'anello accanto al nome di ogni __borgo__ indica la sua **vita**: si svuota quando il fuoco raggiunge le case, e il cartellino passa da **blu** a **giallo**, poi a **rosso**. Un borgo **evacuato** diventa **verde**. Da lontano i borghi tranquilli si riducono a un anello: passaci sopra per leggere il nome.".into(),
+                expect: Expect::Next,
+            },
+            Step {
+                text: "Se qualcosa va storto **fuori dalla vista** (un borgo perde case, una squadra è in pericolo) compare una **freccia rossa** sul bordo dello schermo: **cliccala** e la mappa ti ci porta.".into(),
                 expect: Expect::Next,
             },
         ];
-        for &(t, p) in &tu.moves {
+        for (i, &(t, p)) in tu.moves.iter().enumerate() {
             let hex = game.hexes.nearest(scenario::Pos::from(p))?;
             let team = &game.teams[t];
             let from = game.territory.stations[team.station].name.rsplit(" - ").next().unwrap_or_default().to_string();
+            let how = if i == 0 {
+                "Ogni squadra ha il suo **colore**. **Trascina il cono** sull'esagono indicato, oppure **clicca la squadra** e poi l'esagono: vedi strada e tempo prima di decidere. **Esc** annulla."
+            } else {
+                "Anche stavolta: trascina il cono sull'esagono indicato, o cliccalo e poi clicca l'esagono."
+            };
             steps.push(Step {
-                text: format!(
-                    "La {} parte da __{from}__ ({} persone). **Trascina la squadra** sull'esagono indicato e lascialo lì: vedi il percorso e il tempo di viaggio.",
-                    team.name, team.crew
-                ),
+                text: format!("La {} parte da __{from}__ ({} persone). {how}", team.name, team.crew),
                 expect: Expect::Move(t, hex.at),
             });
         }
         steps.push(Step {
-            text: "Il contorno **giallo** mostra la zona che le squadre schierate possono coprire.".into(),
+            text: "Il contorno **del colore di ogni squadra** mostra la zona che può coprire. Una squadra che il fuoco minaccia **lampeggia in rosso** e si ritira da sola.".into(),
             expect: Expect::Next,
         });
         let t0 = game.time_s();
@@ -92,7 +98,7 @@ impl Script {
             expect: Expect::Run(t0 + RUN_MIN * 60),
         });
         steps.push(Step {
-            text: format!("Il gioco si è fermato da solo. Nella partita vera premi tu **Pausa**: la mappa mostra le previsioni e puoi dare ordini.\n\nOra le persone: clicca __{name}__, poi premi **Evacua**."),
+            text: format!("Il gioco si è fermato da solo. Nella partita vera il tempo si ferma anche **cliccando un borgo o una squadra**, oppure con **Pausa**: la mappa mostra le previsioni e puoi dare ordini.\n\nOra le persone: clicca __{name}__, poi premi **Evacua**."),
             expect: Expect::Evacuate(d),
         });
         steps.push(Step { text: "Premi **Riprendi**: il tempo scorre finché l'evacuazione non è finita.".into(), expect: Expect::Resume });

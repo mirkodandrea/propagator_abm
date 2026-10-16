@@ -752,7 +752,7 @@ fn compact_tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted
         panel_mobile().show(ui, |ui| {
             ui.set_width(if landscape { k.side_w - 40.0 } else { (rect.width() - 40.0).min(600.0) });
             egui::ScrollArea::vertical().max_height(if landscape { (rect.height() - 180.0).max(42.0) } else { (rect.height() * 0.20).clamp(42.0, 120.0) }).show(ui, |ui| {
-                ui.label(RichText::new(text.replace("**", "").replace("__", "").replace("In basso a destra", "In alto").replace("clicca", "tocca").replace("Trascina la squadra", "Tocca la squadra e poi la destinazione, oppure trascina la squadra")).size(16.0));
+                ui.label(RichText::new(text.replace("**", "").replace("__", "").replace("In basso a destra", "In alto").replace(" Esc annulla.", "").replace("clicca", "tocca").replace("cliccando", "toccando").replace("cliccala", "toccala").replace("Trascina la squadra", "Tocca la squadra e poi la destinazione, oppure trascina la squadra")).size(16.0));
             });
             ui.horizontal(|ui| {
                 let r = ui.add(secondary("Salta"));

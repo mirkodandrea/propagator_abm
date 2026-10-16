@@ -78,7 +78,8 @@ pub fn feet(k: &Kiosk, sim: &Sim, eye: Vec3, right: Vec3) -> Vec<Option<(Pos, f3
 #[derive(Resource)]
 pub struct PinAssets {
     ring: Handle<Mesh>,
-    aib: Handle<RetroMaterial>,
+    /// One material per team colour.
+    teams: Vec<Handle<RetroMaterial>>,
 }
 
 /// See-through and bright: the cones must read on any ground without hiding it.
@@ -103,7 +104,7 @@ pub fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mater
     let ring = Mesh::from(Annulus::new(RING_R_M * 0.75, RING_R_M)).rotated_by(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2));
     commands.insert_resource(PinAssets {
         ring: meshes.add(ring),
-        aib: materials.add(glass(super::ui::AIB)),
+        teams: super::marks::TEAM_COLOURS.iter().map(|c| materials.add(glass(Color32::from_rgb((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8)))).collect(),
     });
 }
 
@@ -123,7 +124,7 @@ pub fn update(
             commands.entity(e).despawn_recursive();
         }
         for t in 0..sim.teams.len() {
-            let colour = assets.aib.clone();
+            let colour = assets.teams[t % assets.teams.len()].clone();
             commands
                 .spawn((SpatialBundle { visibility: Visibility::Hidden, ..default() }, Pin(t)))
                 .with_children(|c| {

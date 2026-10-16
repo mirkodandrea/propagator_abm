@@ -11,7 +11,7 @@ use super::ui::compact;
 use crate::sim::Sim;
 
 /// Lines kept in the panel.
-const SHOWN: usize = 6;
+const SHOWN: usize = 4;
 /// Real seconds a notification stays up on a phone, and how many at once.
 const TOAST_S: f64 = 6.0;
 const TOASTS: usize = 2;
@@ -36,7 +36,7 @@ fn who(sim: &Sim, voice: Voice) -> (Who, String) {
 
 fn mood(kind: Kind) -> Mood {
     match kind {
-        Kind::Withdraw | Kind::Lost | Kind::EvacStuck | Kind::Wind => Mood::Preoccupato,
+        Kind::Withdraw | Kind::Lost | Kind::EvacStuck | Kind::HomesHit | Kind::Wind => Mood::Preoccupato,
         _ => Mood::Calmo,
     }
 }

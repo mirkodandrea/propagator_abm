@@ -251,8 +251,9 @@ pub struct Game {
     logged: Vec<UnitState>,
     /// The group chat of the operation (see [`crate::chat`]).
     pub chat: Vec<ChatMsg>,
-    /// Lines of the orders given in the pause: said when the game resumes.
-    held: Vec<(Voice, Kind, String)>,
+    /// How far the fire has gone into each district's homes, as told in the
+    /// chat: 0 nothing, 1 the first homes, 2 a third of them.
+    told_homes: Vec<u8>,
     /// The dials of the working algorithms (the laboratory turns them).
     pub tuning: Tuning,
 }
@@ -319,6 +320,7 @@ impl Game {
         let evac = Evacuations::new(&scn, &net, &districts, territory.evacuation.clone());
         let traffic = Traffic::new(&net);
         let logged = crews.units.iter().map(|u| u.state).collect();
+        let districts_len = districts.len();
         let mut game = Game {
             scn,
             fire,
@@ -337,7 +339,7 @@ impl Game {
             pauses: 0,
             logged,
             chat: vec![],
-            held: vec![],
+            told_homes: vec![0; districts_len],
             tuning: Tuning::default(),
         };
         // the automatic work of the teams as the game plays it
@@ -406,10 +408,6 @@ impl Game {
     /// 2026-10-16: no wait for a new pause).
     pub fn resume(&mut self) {
         self.pause_from = None;
-        // the teams get their orders now: the chat answers only once the world runs
-        for (who, kind, text) in std::mem::take(&mut self.held) {
-            self.say(who, kind, text);
-        }
     }
 
     /// Simulated seconds per real second now: the pause stops the world.
@@ -465,7 +463,6 @@ impl Game {
         self.teams[t].hex = Some(at);
         let text = format!("{} verso {} ({} min)", self.teams[t].name, self.place_name(plan.hex.target), plan.minutes.ceil());
         self.log.push(LogEntry { at_s: self.time_s(), text });
-        self.say(Voice::Team(t), Kind::Order, format!("ricevuto, partiamo! 🚒 {} min", plan.minutes.ceil()));
         Ok(plan)
     }
 
@@ -579,7 +576,6 @@ impl Game {
         self.evac.start(&plan, &self.districts, self.time_s())?;
         let text = format!("evacuazione di {}: {} persone verso {} ({} min)", self.districts[d].name, plan.people, plan.path.to, plan.total_min().ceil());
         self.log.push(LogEntry { at_s: self.time_s(), text });
-        self.say(Voice::Mayor, Kind::EvacStart, format!("{}: evacuazione partita, {} persone in marcia 🚶", self.districts[d].name, plan.people));
         Ok(plan)
     }
 
@@ -598,7 +594,6 @@ impl Game {
         let since = self.pause_from.unwrap_or(i64::MAX);
         let d = self.evac.cancel(since).ok_or("l'evacuazione è già cominciata")?;
         self.log.push(LogEntry { at_s: self.time_s(), text: format!("evacuazione di {} annullata", self.districts[d].name) });
-        self.say(Voice::Mayor, Kind::EvacCancel, format!("{}: evacuazione annullata ↩️", self.districts[d].name));
         Ok(d)
     }
 
@@ -655,13 +650,16 @@ impl Game {
         let prot = self.protection();
         self.fire.set_structure_protection(&prot);
         let now = self.time_s();
+        self.tell_homes_hit();
         for e in self.evac.step(STEP_S as f32, now, &self.districts, &self.net, &self.fire) {
-            let (kind, chat) = match e {
-                evac::Event::Rerouted { district } => (Kind::EvacRoute, format!("{}: strada chiusa dal fuoco, cambiamo percorso 🔀", self.districts[district].name)),
-                evac::Event::Interrupted { district, families } => (Kind::EvacStuck, format!("{}: nessuna strada aperta, {families} famiglie restano al riparo 🏠", self.districts[district].name)),
-                evac::Event::Done { district } => (Kind::EvacDone, format!("{}: evacuazione completata! ✅", self.districts[district].name)),
+            let line = match e {
+                evac::Event::Rerouted { .. } => None,
+                evac::Event::Interrupted { district, families } => Some((Kind::EvacStuck, format!("{}: nessuna strada aperta, {families} famiglie restano al riparo 🏠", self.districts[district].name))),
+                evac::Event::Done { district } => Some((Kind::EvacDone, format!("{}: evacuazione completata! ✅", self.districts[district].name))),
             };
-            self.say(Voice::Mayor, kind, chat);
+            if let Some((kind, chat)) = line {
+                self.say(Voice::Mayor, kind, chat);
+            }
             let text = match e {
                 evac::Event::Rerouted { district } => format!("evacuazione di {}: strada chiusa dal fuoco, nuovo percorso", self.districts[district].name),
                 evac::Event::Interrupted { district, families } => {
@@ -679,8 +677,6 @@ impl Game {
             }
             if let Some(t) = self.teams.iter().position(|t| t.unit == k) {
                 let line = match (was, u.state) {
-                    (UnitState::Moving, UnitState::Staged) => Some((Kind::Arrived, "siamo arrivati, pronti a muoverci 👍")),
-                    (UnitState::Moving, UnitState::Working) => Some((Kind::Arrived, "siamo arrivati, attacchiamo il fuoco 🔥")),
                     (_, UnitState::Withdrawing) => Some((Kind::Withdraw, "ci ritiriamo, troppo fuoco ⚠️")),
                     (_, UnitState::Lost) => Some((Kind::Lost, "il fuoco ci ha raggiunti, SOS 🆘")),
                     _ => None,
@@ -1026,33 +1022,28 @@ impl Game {
     }
 
     /// The district nearest `p`, by name.
-    /// A line in the group chat. A team says «arrived» and «out of water» once
-    /// per order (the refill cycle would repeat them for hours); the rest is
-    /// not repeated within [`crate::chat::REPEAT_S`].
-    fn say(&mut self, who: Voice, kind: Kind, text: String) {
-        if self.paused() {
-            // orders given in the pause are answered when the game resumes; a
-            // new order replaces the old one, a cancelled evacuation never speaks
-            match kind {
-                Kind::Order => self.held.retain(|h| !(h.0 == who && h.1 == Kind::Order)),
-                Kind::EvacCancel => {
-                    if let Some(i) = self.held.iter().position(|h| h.1 == Kind::EvacStart) {
-                        self.held.remove(i);
-                        return;
-                    }
-                }
-                _ => {}
+    /// The mayor tells when the fire first reaches a district's homes, and
+    /// again when it has reached a third of them.
+    fn tell_homes_hit(&mut self) {
+        for d in 0..self.districts.len() {
+            if self.told_homes[d] >= 2 {
+                continue;
             }
-            self.held.push((who, kind, text));
-            return;
+            let (hit, homes) = self.district_damage(d);
+            let level = if hit * 3 >= homes.max(1) { 2 } else { u8::from(hit > 0) };
+            if level > self.told_homes[d] {
+                self.told_homes[d] = level;
+                let text = if level == 1 { format!("{}: il fuoco ha raggiunto le prime case 🏠🔥", self.districts[d].name) } else { format!("{}: colpita una casa su tre 🔥", self.districts[d].name) };
+                self.say(Voice::Mayor, Kind::HomesHit, text);
+            }
         }
+    }
+
+    /// A line in the group chat: only what helps to decide. A voice does not
+    /// repeat the same line within [`crate::chat::REPEAT_S`].
+    fn say(&mut self, who: Voice, kind: Kind, text: String) {
         let now = self.time_s();
-        let once_per_order = matches!(kind, Kind::Arrived);
-        let repeated = match kind {
-            Kind::Order | Kind::EvacStart | Kind::EvacCancel => false,
-            _ if once_per_order => self.chat.iter().rev().take_while(|m| !(m.who == who && m.kind == Kind::Order)).any(|m| m.who == who && m.kind == kind),
-            _ => self.chat.iter().rev().take_while(|m| now - m.at_s < crate::chat::REPEAT_S).any(|m| m.who == who && m.kind == kind && m.text == text),
-        };
+        let repeated = self.chat.iter().rev().take_while(|m| now - m.at_s < crate::chat::REPEAT_S).any(|m| m.who == who && m.kind == kind && m.text == text);
         if !repeated {
             self.chat.push(ChatMsg { at_s: now, who, kind, text });
         }

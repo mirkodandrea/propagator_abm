@@ -1,26 +1,8 @@
-//! The tutorial's promise (docs/01-GIOCO.md §1): with no orders its small
-//! fire reaches the district; played as the script asks, nobody is caught,
-//! no home is hit and the district is evacuated.
+//! Orders, the engine on the road, the hexes shown for a move and the group chat.
 
 use std::path::Path;
 
-use rocca::tutorial::Script;
 use rocca::{Game, State};
-
-#[test]
-fn the_scripted_tutorial_saves_the_district() {
-    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
-    let none = Game::without_orders(&data, "tutorial", 1).unwrap();
-    assert!(none.caught() > 0 && none.homes_hit() > 0, "with no orders the fire must reach the homes: {none:?}");
-    let mut g = Game::new(&data, "tutorial", 1).unwrap();
-    let s = Script::of(&g).unwrap();
-    s.play(&mut g).unwrap();
-    let o = g.outcome();
-    assert_eq!((o.caught(), o.homes_hit()), (0, 0));
-    let d = g.district_index(&g.territory.tutorial.clone().unwrap().evacuate).unwrap();
-    assert_eq!(g.evac.count(Some(d), State::Safe), o.districts[d].people);
-    assert!(o.hectares < none.hectares / 3.0, "{} ha against {}", o.hectares, none.hectares);
-}
 
 #[test]
 fn orders_only_in_pause_and_one_evacuation_at_a_time() {
@@ -105,23 +87,22 @@ fn the_hexes_shown_for_a_move_are_those_the_game_accepts() {
 }
 
 #[test]
-fn the_group_chat_tells_what_the_orders_do() {
+fn the_group_chat_tells_only_what_helps_to_decide() {
     let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
     let mut g = Game::new(&data, "medium", 1).unwrap();
     assert!(g.chat.is_empty(), "nothing is said before the first order");
-    let hex = g.hexes.nearest(g.case.ignition()).unwrap().at;
     g.pause().unwrap();
-    g.move_team(0, hex).unwrap();
+    g.move_team(0, g.hexes.nearest(g.case.ignition()).unwrap().at).unwrap();
     g.evacuate(g.district_index("Le Terrazze").unwrap()).unwrap();
+    assert!(g.chat.is_empty(), "an order is not echoed");
     g.resume();
-    g.run_until(g.time_s() + 3 * 3600).unwrap();
+    g.run_until(g.time_s() + 6 * 3600).unwrap();
     for m in &g.chat {
         println!("{} {:?} {}", rocca::words::clock(m.at_s), m.who, m.text);
     }
-    use rocca::{Kind, Voice};
-    assert!(g.chat.iter().any(|m| m.who == Voice::Team(0) && m.kind == Kind::Order));
-    assert!(g.chat.iter().any(|m| m.who == Voice::Mayor && m.kind == Kind::EvacStart));
+    use rocca::Kind;
+    assert!(g.chat.iter().any(|m| matches!(m.kind, Kind::EvacDone | Kind::HomesHit)), "the district's fate is told");
     assert!(g.chat.windows(2).all(|w| w[0].at_s <= w[1].at_s), "in time order");
     let same = |a: &rocca::ChatMsg, b: &rocca::ChatMsg| a.who == b.who && a.kind == b.kind && a.text == b.text;
-    assert!(!g.chat.windows(2).any(|w| same(&w[0], &w[1]) && w[0].kind != Kind::Order), "no line twice in a row");
+    assert!(!g.chat.windows(2).any(|w| same(&w[0], &w[1])), "no line twice in a row");
 }

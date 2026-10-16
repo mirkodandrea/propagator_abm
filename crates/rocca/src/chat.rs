@@ -12,17 +12,15 @@ pub enum Voice {
 }
 
 /// What a line is about: one line per voice and kind within `REPEAT_S`.
+/// Only what helps the player decide: a team in trouble, a district hit,
+/// an evacuation that stops or ends, the wind that turns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    Order,
-    Arrived,
     Withdraw,
     Lost,
-    EvacStart,
-    EvacRoute,
+    HomesHit,
     EvacStuck,
     EvacDone,
-    EvacCancel,
     Wind,
 }
 

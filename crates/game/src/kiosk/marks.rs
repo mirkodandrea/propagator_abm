@@ -73,8 +73,10 @@ pub struct MarkAssets {
     evac: Handle<FlatMaterial>,
     closed: Handle<FlatMaterial>,
     active: Handle<FlatMaterial>,
-    /// The boundary of the zone covered by the deployed teams, assigned-hex yellow, solid.
-    zone: Handle<FlatMaterial>,
+    /// Per team: zone line, the road it drives and its hex outline.
+    team_zone: Vec<Handle<FlatMaterial>>,
+    team_route: Vec<Handle<FlatMaterial>>,
+    team_hex: Vec<Handle<FlatMaterial>>,
     team_key: u64,
     /// What the hex grid, the orders and the closed roads were built for.
     hex_key: Option<String>,
@@ -84,9 +86,24 @@ pub struct MarkAssets {
     closed_key: u64,
 }
 
-/// The colours of the signs (sRGB). Each means one thing: the teams' roads
-/// are cyan, the evacuation's green (the escape-route sign), the closed
-/// roads red, the hex the tutorial wants amber.
+/// One colour per team (sRGB), the same on its badge, cone, zone and road.
+/// Red is kept for danger, green for the evacuation, amber for the tutorial.
+pub const TEAM_COLOURS: [[f32; 3]; 5] = [
+    [0.25, 0.66, 1.0],  // A blue
+    [1.0, 0.54, 0.16],  // B orange
+    [0.86, 0.38, 1.0],  // C magenta
+    [1.0, 0.88, 0.25],  // D yellow
+    [0.90, 0.92, 0.95], // E white
+];
+
+/// The colour of team `t`.
+pub fn team_rgb(t: usize) -> [f32; 3] {
+    TEAM_COLOURS[t % TEAM_COLOURS.len()]
+}
+
+/// The colours of the signs (sRGB). Each means one thing: the evacuation's
+/// is green (the escape-route sign), the closed roads red, the hex the
+/// tutorial wants amber; a team's own signs wear its colour.
 pub const ROUTE: [f32; 3] = [0.0, 0.85, 1.0];
 pub const EVAC: [f32; 3] = [0.25, 1.0, 0.2];
 const CLOSED: [f32; 3] = [1.0, 0.12, 0.08];
@@ -95,7 +112,7 @@ const WANT: [f32; 3] = [1.0, 0.72, 0.0];
 pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>) {
     commands.insert_resource(MarkAssets {
         hex: materials.add(FlatMaterial::with_alpha([1.0, 1.0, 1.0], 0.55).pulled(HEX_PULL_M)),
-        road: materials.add(FlatMaterial::new([1.0, 0.93, 0.62])),
+        road: materials.add(FlatMaterial::with_alpha([1.0, 0.93, 0.62], 0.5)),
         under: materials.add(FlatMaterial::new([0.02, 0.03, 0.05]).pulled(HEX_PULL_M - 3.0)),
         pick: materials.add(FlatMaterial::new([1.0, 1.0, 1.0]).pulled(HEX_PULL_M + 4.0)),
         want: materials.add(FlatMaterial::new(WANT).pulled(HEX_PULL_M + 4.0)),
@@ -104,8 +121,9 @@ pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>
         evac: materials.add(FlatMaterial::new(EVAC).pulled(2.0)),
         closed: materials.add(FlatMaterial::new(CLOSED).pulled(1.0)),
         active: materials.add(FlatMaterial::new([1.0, 0.9, 0.0]).pulled(HEX_PULL_M + 6.0)),
-        // the same yellow as the assigned hexes
-        zone: materials.add(FlatMaterial::new([1.0, 0.9, 0.0]).pulled(HEX_PULL_M + 3.0)),
+        team_zone: TEAM_COLOURS.iter().map(|&c| materials.add(FlatMaterial::new(c).pulled(HEX_PULL_M + 3.0))).collect(),
+        team_route: TEAM_COLOURS.iter().map(|&c| materials.add(FlatMaterial::new(c).pulled(3.0))).collect(),
+        team_hex: TEAM_COLOURS.iter().map(|&c| materials.add(FlatMaterial::new(c).pulled(HEX_PULL_M + 5.0))).collect(),
         team_key: u64::MAX,
         hex_key: None,
         targets_key: None,
@@ -338,10 +356,15 @@ pub fn update_orders(
     if let Some(Expect::Move(_, at)) = kiosk.expect() {
         spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(at), HEX_PICK_M, None), &assets.want, OrderMark);
     }
-    // the area the team works around its hex, lit up
+    let chosen = match kiosk.selection {
+        Selection::Team(t) => Some(t),
+        _ => None,
+    };
+    // the area the team works around its hex, lit up in its colour
     if let Some(at) = area_hex(&kiosk, &sim).filter(|_| !matches!(kiosk.move_plan, Some(Err(_)))) {
         let rings = reach(at).map(|h| path_mesh(&sim.scn, &outline(h), HEX_PICK_M * 0.6, None)).collect();
-        spawn(&mut commands, &mut meshes, merge(rings), &assets.area, OrderMark);
+        let mat = chosen.map_or(&assets.area, |t| &assets.team_hex[t % TEAM_COLOURS.len()]);
+        spawn(&mut commands, &mut meshes, merge(rings), mat, OrderMark);
     }
     // the move being chosen: start hex and destination hex
     if let (Some(_), Selection::Team(t)) = (kiosk.move_hex, kiosk.selection) {
@@ -352,21 +375,24 @@ pub fn update_orders(
     if let Some(at) = kiosk.move_hex {
         // a hex the team cannot go to is red, not white
         let refused = matches!(kiosk.move_plan, Some(Err(_)));
-        let mat = if refused { &assets.closed } else { &assets.pick };
-        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(at), HEX_PICK_M, None), mat, OrderMark);
+        let mat = if refused { &assets.closed } else { chosen.map_or(&assets.pick, |t| &assets.team_hex[t % TEAM_COLOURS.len()]) };
+        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(at), HEX_PICK_M * 1.4, None), mat, OrderMark);
     }
+    // the road the chosen team would drive: solid, wide, in its colour
     if let Some(Ok(p)) = &kiosk.move_plan {
         if p.path.len() >= 2 {
-            spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &p.path, ROUTE_M, Some(DASH_M)), &assets.pick, OrderMark);
+            let mat = chosen.map_or(&assets.pick, |t| &assets.team_route[t % TEAM_COLOURS.len()]);
+            spawn(&mut commands, &mut meshes, path_mesh_at(&sim.scn, &p.path, ROUTE_M * 1.5 * UNDER, None, RING_LIFT_M - 2.0), &assets.under, OrderMark);
+            spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &p.path, ROUTE_M * 1.5, None), mat, OrderMark);
         }
     }
-    // the teams' roads
-    let routes: Vec<Vec<Pos>> = (0..sim.teams.len()).map(|t| sim.team_route(t)).filter(|r| r.len() >= 2).collect();
-    if !routes.is_empty() {
-        let under = routes.iter().map(|r| path_mesh_at(&sim.scn, r, ROUTE_M * UNDER, None, RING_LIFT_M - 2.0)).collect();
-        spawn(&mut commands, &mut meshes, merge(under), &assets.under, OrderMark);
-        let lines = routes.iter().map(|r| path_mesh(&sim.scn, r, ROUTE_M, None)).collect();
-        spawn(&mut commands, &mut meshes, merge(lines), &assets.route, OrderMark);
+    // the teams' roads, each in its colour
+    for t in 0..sim.teams.len() {
+        let r = sim.team_route(t);
+        if r.len() >= 2 {
+            spawn(&mut commands, &mut meshes, path_mesh_at(&sim.scn, &r, ROUTE_M * UNDER, None, RING_LIFT_M - 2.0), &assets.under, OrderMark);
+            spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &r, ROUTE_M, None), &assets.team_route[t % TEAM_COLOURS.len()], OrderMark);
+        }
     }
     // the evacuation: under the pointer or chosen (dashed), and in course
     let hover = kiosk.evac_hover.as_ref().and_then(|(_, _, p)| p.as_ref().ok());
@@ -377,7 +403,8 @@ pub fn update_orders(
     }
 }
 
-/// Assigned team hexes stay yellow. Rebuilt when the set changes.
+/// Each team's zone, the hexes it works in, outlined in its colour.
+/// Rebuilt when the set changes.
 pub fn update_teams(
     mut commands: Commands,
     sim: Res<Sim>,
@@ -387,29 +414,23 @@ pub fn update_teams(
     old: Query<Entity, With<TeamMark>>,
 ) {
     let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
-    let mut hexes: Vec<_> = if playing {
-        sim.teams.iter().filter_map(|t| t.hex).collect()
+    let zones: Vec<(usize, Vec<rocca::Axial>)> = if playing {
+        sim.teams.iter().enumerate().filter_map(|(t, team)| {
+            let h = team.hex?;
+            let mut z = vec![h];
+            z.extend(reach(h));
+            z.sort_unstable();
+            Some((t, z))
+        }).collect()
     } else {
         vec![]
     };
-    hexes.sort_unstable();
-    hexes.dedup();
-    // the zone the deployed teams cover: only its outer boundary is drawn
-    let mut zone: Vec<rocca::Axial> = vec![];
-    if playing {
-        for h in &hexes {
-            zone.push(*h);
-            zone.extend(reach(*h));
-        }
-    }
-    zone.sort_unstable();
-    zone.dedup();
     let mut key = playing as u64;
-    for h in &zone {
-        key = key.wrapping_mul(0x100_0000_01b3) ^ ((1u64 << 50) ^ (h.q as i64 as u64) << 24 ^ h.r as i64 as u64);
-    }
-    for h in &hexes {
-        key = key.wrapping_mul(0x100_0000_01b3) ^ ((h.q as i64 as u64) << 24 ^ h.r as i64 as u64);
+    for (t, z) in &zones {
+        key = key.wrapping_mul(0x100_0000_01b3) ^ (*t as u64 + 1) << 56;
+        for h in z {
+            key = key.wrapping_mul(0x100_0000_01b3) ^ ((1u64 << 50) ^ (h.q as i64 as u64) << 24 ^ h.r as i64 as u64);
+        }
     }
     if key == assets.team_key {
         return;
@@ -418,14 +439,17 @@ pub fn update_teams(
     for e in &old {
         commands.entity(e).despawn();
     }
-    let loops = boundary(&zone);
-    if !loops.is_empty() {
-        // a dark under-stroke lifts the yellow off the ground
+    for (t, z) in &zones {
+        let loops = boundary(z);
+        if loops.is_empty() {
+            continue;
+        }
+        // a dark under-stroke lifts the colour off the ground
         let under = loops.iter().map(|l| path_mesh_at(&sim.scn, l, ZONE_LINE_M * UNDER, None, RING_LIFT_M - 2.0)).collect();
         let e = spawn(&mut commands, &mut meshes, merge(under), &assets.under, TeamMark);
         commands.entity(e).insert(ZoneBob);
         let parts = loops.iter().map(|l| path_mesh(&sim.scn, l, ZONE_LINE_M, None)).collect();
-        let e = spawn(&mut commands, &mut meshes, merge(parts), &assets.zone, TeamMark);
+        let e = spawn(&mut commands, &mut meshes, merge(parts), &assets.team_zone[t % TEAM_COLOURS.len()], TeamMark);
         commands.entity(e).insert(ZoneBob);
     }
 }
