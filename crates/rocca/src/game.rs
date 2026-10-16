@@ -43,7 +43,7 @@ pub const SUPPRESSION: UnitEffect = UnitEffect {
 /// 2026-10-15; was 1.5 hexes = 450 m from the hex's road point). To reach the
 /// fire it moves along the roads of its hexes of activity
 /// ([`Game::engines_follow_the_fire`]).
-pub const ENGINE_RANGE_M: f32 = 100.0;
+pub const ENGINE_RANGE_M: f32 = 70.0;
 /// How often a team's engine looks for a better place to stand, simulated seconds.
 pub const ENGINE_LOOK_S: i64 = 60;
 /// An engine will not park where the threat is above this.
