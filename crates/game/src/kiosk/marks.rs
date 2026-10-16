@@ -24,9 +24,10 @@ const HEX_LINE_M: f32 = 12.0;
 const HEX_UNDER_M: f32 = 24.0;
 const HEX_PICK_M: f32 = 16.0;
 /// The covered zone's boundary line.
-const ZONE_LINE_M: f32 = 11.0;
-/// Dash length of the zone boundary.
-const ZONE_DASH_M: f32 = 60.0;
+const ZONE_LINE_M: f32 = 6.0;
+/// The zone line bobs up and down by this much, metres, once per period.
+const ZONE_BOB_M: f32 = 6.0;
+const ZONE_BOB_S: f32 = 1.6;
 /// The drivable roads shown while a move is chosen.
 const ROAD_M: f32 = 9.0;
 /// Extra pull toward the camera for the hex lines: enough that the hills'
@@ -53,6 +54,10 @@ pub struct ClosedMark;
 #[derive(Component)]
 pub struct TeamMark;
 
+/// The zone line and its under-stroke, which bob.
+#[derive(Component)]
+pub struct ZoneBob;
+
 #[derive(Resource)]
 pub struct MarkAssets {
     hex: Handle<FlatMaterial>,
@@ -68,7 +73,7 @@ pub struct MarkAssets {
     evac: Handle<FlatMaterial>,
     closed: Handle<FlatMaterial>,
     active: Handle<FlatMaterial>,
-    /// The boundary of the zone covered by the deployed teams, assigned-hex yellow, dashed.
+    /// The boundary of the zone covered by the deployed teams, assigned-hex yellow, solid.
     zone: Handle<FlatMaterial>,
     team_key: u64,
     /// What the hex grid, the orders and the closed roads were built for.
@@ -99,7 +104,7 @@ pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>
         evac: materials.add(FlatMaterial::new(EVAC).pulled(2.0)),
         closed: materials.add(FlatMaterial::new(CLOSED).pulled(1.0)),
         active: materials.add(FlatMaterial::new([1.0, 0.9, 0.0]).pulled(HEX_PULL_M + 6.0)),
-        // the same yellow as the assigned hexes, dashed
+        // the same yellow as the assigned hexes
         zone: materials.add(FlatMaterial::new([1.0, 0.9, 0.0]).pulled(HEX_PULL_M + 3.0)),
         team_key: u64::MAX,
         hex_key: None,
@@ -415,12 +420,28 @@ pub fn update_teams(
     }
     let loops = boundary(&zone);
     if !loops.is_empty() {
-        let parts = loops.iter().map(|l| path_mesh(&sim.scn, l, ZONE_LINE_M, Some(ZONE_DASH_M))).collect();
-        spawn(&mut commands, &mut meshes, merge(parts), &assets.zone, TeamMark);
+        // a dark under-stroke lifts the yellow off the ground
+        let under = loops.iter().map(|l| path_mesh_at(&sim.scn, l, ZONE_LINE_M * UNDER, None, RING_LIFT_M - 2.0)).collect();
+        let e = spawn(&mut commands, &mut meshes, merge(under), &assets.under, TeamMark);
+        commands.entity(e).insert(ZoneBob);
+        let parts = loops.iter().map(|l| path_mesh(&sim.scn, l, ZONE_LINE_M, None)).collect();
+        let e = spawn(&mut commands, &mut meshes, merge(parts), &assets.zone, TeamMark);
+        commands.entity(e).insert(ZoneBob);
     }
     if !hexes.is_empty() {
+        let under = hexes.iter().map(|h| path_mesh_at(&sim.scn, &outline(*h), HEX_PICK_M * 1.4 * UNDER, None, RING_LIFT_M - 2.0)).collect();
+        spawn(&mut commands, &mut meshes, merge(under), &assets.under, TeamMark);
         let parts = hexes.iter().map(|h| path_mesh(&sim.scn, &outline(*h), HEX_PICK_M * 1.4, None)).collect();
         spawn(&mut commands, &mut meshes, merge(parts), &assets.active, TeamMark);
+    }
+}
+
+/// The zone line floats up and down a little, on real time: the world is
+/// paused when it matters most.
+pub fn bob_zone(time: Res<Time<Real>>, mut marks: Query<&mut Transform, With<ZoneBob>>) {
+    let y = ZONE_BOB_M * 0.5 * (1.0 - (time.elapsed_seconds() * std::f32::consts::TAU / ZONE_BOB_S).cos());
+    for mut t in &mut marks {
+        t.translation.y = y;
     }
 }
 

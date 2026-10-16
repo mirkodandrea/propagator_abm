@@ -37,7 +37,7 @@ use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
 use fire::CellFire;
-use scenario::{Cell, Pos, Scenario};
+use scenario::{Cell, CoverClass, Pos, Scenario};
 
 use crate::field::{noise, FireField};
 use crate::retro;
@@ -449,6 +449,28 @@ fn on_natural_cover(scn: &Scenario, species: Species, p: Pos) -> bool {
         .all(|(dx, dy)| cover.is_natural(Pos { x: p.x + dx, y: p.y + dy }))
 }
 
+/// Share of the plants kept near a road or track: the wood thins out
+/// toward the verge, so the roads read against it. Looks only; the fuel
+/// cells, and so the fire, are untouched.
+fn road_side_keep(scn: &Scenario, p: Pos) -> f32 {
+    const RADII_M: [f32; 4] = [6.0, 12.0, 18.0, 26.0];
+    const EDGE_KEEP: f32 = 0.2;
+    let Some(cover) = &scn.cover else {
+        return 1.0;
+    };
+    let is_road = |q: Pos| matches!(cover.at(q), CoverClass::Road | CoverClass::Track);
+    for r in RADII_M {
+        let hit = (0..8).any(|i| {
+            let a = i as f32 * std::f32::consts::FRAC_PI_4;
+            is_road(Pos { x: p.x + r * a.cos(), y: p.y + r * a.sin() })
+        });
+        if hit {
+            return EDGE_KEEP + (1.0 - EDGE_KEEP) * (r - RADII_M[0]) / (RADII_M[3] - RADII_M[0] + 6.0);
+        }
+    }
+    1.0
+}
+
 /// Place one plant somewhere inside `cell` and emit its geometry, returning
 /// where it ended up.
 fn scatter_plant(
@@ -465,6 +487,9 @@ fn scatter_plant(
         y: centre.y + (rng.unit() * 2.0 - 1.0) * half,
     };
     if !scn.world.contains(p) || !on_natural_cover(scn, species, p) {
+        return None;
+    }
+    if species != Species::Grass && rng.unit() > road_side_keep(scn, p) {
         return None;
     }
     let ground = scn.terrain.height_at(p);
