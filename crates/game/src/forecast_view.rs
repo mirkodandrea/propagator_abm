@@ -31,14 +31,15 @@ const SMOOTH_SIGMA_M: f32 = 90.0;
 const SMOOTH_STEP_M: f32 = 12.0;
 /// Label lift above the ground, metres.
 const LABEL_LIFT_M: f32 = 30.0;
-/// All isochrones in one colour (user, 2026-10-16), told apart by their labels.
-const LINE: [f32; 3] = [1.0, 0.22, 0.14];
+/// Shades of red, +1 h the deepest and +3 h the palest (user, 2026-10-16).
+const LINES: [[f32; 3]; HORIZONS] = [[0.95, 0.05, 0.05], [1.0, 0.42, 0.36], [1.0, 0.74, 0.70]];
 /// The same, for the legend in the interface.
-pub const LINE_COLOUR: bevy_egui::egui::Color32 = bevy_egui::egui::Color32::from_rgb(255, 56, 36);
+pub const LINE_COLOURS: [bevy_egui::egui::Color32; HORIZONS] = [
+    bevy_egui::egui::Color32::from_rgb(242, 13, 13),
+    bevy_egui::egui::Color32::from_rgb(255, 107, 92),
+    bevy_egui::egui::Color32::from_rgb(255, 189, 179),
+];
 pub const LABELS: [&str; HORIZONS] = ["tra 1 ora", "tra 2 ore", "tra 3 ore"];
-/// Cells (20 m) an isochrone keeps clear of the one inside it: where the fire
-/// barely spreads, two horizons would otherwise draw the same line twice.
-const GAP_CELLS: i64 = 2;
 /// A label keeps this far from the others on the screen, pixels.
 const LABEL_APART_PX: egui::Vec2 = egui::vec2(96.0, 26.0);
 
@@ -60,7 +61,7 @@ pub struct ForecastView {
     /// The forecast on the map, and per horizon the points a label may
     /// stand on, leading edge (down the wind) first.
     shown: Option<(Forecast, [Vec<Pos>; HORIZONS])>,
-    materials: Option<[Handle<FlatMaterial>; 2]>,
+    materials: Option<[Handle<FlatMaterial>; HORIZONS + 1]>,
 }
 
 pub struct ForecastPlugin;
@@ -167,7 +168,9 @@ pub fn update(
                 let mats = view
                     .materials
                     .get_or_insert_with(|| {
-                        [materials.add(FlatMaterial::new(LINE)), materials.add(FlatMaterial::new([0.03, 0.02, 0.06]).pulled(-12.0))]
+                        let mut m = LINES.map(|c| materials.add(FlatMaterial::new(c)));
+                        let under = materials.add(FlatMaterial::new([0.03, 0.02, 0.06]).pulled(-12.0));
+                        [m[0].clone(), std::mem::take(&mut m[1]), std::mem::take(&mut m[2]), under]
                     })
                     .clone();
                 let world = sim.scn.world;
@@ -185,7 +188,7 @@ pub fn update(
                     // the outer lines sit a little lower than the inner ones
                     let lift = crate::rings::RING_LIFT_M + 2.0 - 2.0 * h as f32;
                     for pts in &lines {
-                        for (w, dl, m) in [(UNDER_M, -2.0, &mats[1]), (LINE_M, 0.0, &mats[0])] {
+                        for (w, dl, m) in [(UNDER_M, -2.0, &mats[HORIZONS]), (LINE_M, 0.0, &mats[h])] {
                             let mesh = crate::rings::path_mesh_at(&sim.scn, pts, w, None, lift + dl);
                             commands.spawn((
                                 MaterialMeshBundle::<FlatMaterial> { mesh: meshes.add(mesh), material: m.clone(), ..default() },
@@ -239,7 +242,7 @@ pub fn labels(
         });
         let Some(s) = on_map else { continue };
         placed.push(s);
-        let c = LINE.map(|x| (x * 255.0) as u8);
+        let c = LINES[h].map(|x| (x * 255.0) as u8);
         egui::Area::new(egui::Id::new(("previsione", h)))
             .fixed_pos(egui::pos2(s.x + 8.0, s.y - 14.0))
             .order(egui::Order::Background)
@@ -257,33 +260,9 @@ pub fn labels(
     }
 }
 
-/// The likely cells of each horizon, prepared so that the lines do not
-/// overlap: each horizon takes in the one before it (a cell burnt by +1 h is
-/// burnt by +2 h, whatever the members say) grown by `GAP_CELLS`, so two
-/// isochrones never coincide where the fire does not spread and never cross.
+/// The likely cells of each horizon, as the forecast gives them.
 fn masks(f: &Forecast) -> [Vec<bool>; HORIZONS] {
-    let (rows, cols) = (f.rows as i64, f.cols as i64);
-    let mut out: [Vec<bool>; HORIZONS] = std::array::from_fn(|h| (0..f.rows * f.cols).map(|i| f.likely(h, i)).collect());
-    for h in 1..HORIZONS {
-        let inner = out[h - 1].clone();
-        // separable dilation: along the rows, then along the columns
-        let grow = |src: &[bool], horizontal: bool| -> Vec<bool> {
-            (0..rows * cols)
-                .map(|i| {
-                    let (r, c) = (i / cols, i % cols);
-                    (-GAP_CELLS..=GAP_CELLS).any(|d| {
-                        let (r, c) = if horizontal { (r, c + d) } else { (r + d, c) };
-                        r >= 0 && c >= 0 && r < rows && c < cols && src[(r * cols + c) as usize]
-                    })
-                })
-                .collect()
-        };
-        let grown = grow(&grow(&inner, true), false);
-        for (o, g) in out[h].iter_mut().zip(grown) {
-            *o |= g;
-        }
-    }
-    out
+    std::array::from_fn(|h| (0..f.rows * f.cols).map(|i| f.likely(h, i)).collect())
 }
 
 /// The 50 % contour of horizon `h`, as closed or open polylines in world
