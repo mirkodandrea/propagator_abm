@@ -104,7 +104,7 @@ pub struct UnitAssets {
 }
 
 
-/// The volunteers' (AIB) yellow-green kit; the fire brigade's engines are red.
+/// The AIB yellow-green kit: every team is AIB (user, 2026-10-16).
 pub const VOLUNTEERS: Color = Color::srgb(0.80, 0.85, 0.20);
 
 pub fn colour(kind: UnitKind, state: UnitState) -> Color {
@@ -113,9 +113,7 @@ pub fn colour(kind: UnitKind, state: UnitState) -> Color {
         UnitState::Lost => Color::srgb(0.10, 0.10, 0.10),
         UnitState::Withdrawing => Color::srgb(1.00, 0.35, 0.30),
         _ => match kind {
-            // Italian fire service red, and the yellow-green of an AIB squad's
-            // kit: these are the colours the real things are.
-            UnitKind::Engine => Color::srgb(0.85, 0.13, 0.12),
+            UnitKind::Engine => VOLUNTEERS,
             UnitKind::HandCrew => Color::srgb(0.95, 0.80, 0.15),
             UnitKind::AirTanker => Color::srgb(0.95, 0.95, 0.98),
         },
@@ -307,14 +305,7 @@ pub fn update_units(
         // eight of these, and mutating the material in place is what makes a
         // unit visibly change state without a swap table.
         if let Some(m) = materials.get_mut(mat) {
-            let volunteers = sim.teams.iter().any(|t| t.unit == view.id && t.volunteers);
-            let c = match colour(u.kind, u.state) {
-                c if volunteers && matches!(u.state, UnitState::Staged | UnitState::Moving | UnitState::Working | UnitState::Refilling) => {
-                    let _ = c;
-                    VOLUNTEERS
-                }
-                c => c,
-            };
+            let c = colour(u.kind, u.state);
             if m.base.base_color != c {
                 m.base.base_color = c;
                 m.base.emissive = c.to_linear() * 1.2;

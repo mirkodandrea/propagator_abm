@@ -13,7 +13,7 @@
 //! **Senza interventi**: the members carry the lines already cut and the
 //! water already dropped, but no crew works in them from now on, so the
 //! forecast is pessimistic where the units are working. Per cell, the share
-//! of members in which it has burnt by +1 h and by +3 h; the 50 % contour
+//! of members in which it has burnt by +1, +2 and +3 h; the 50 % contour
 //! is the isochrone the map draws.
 //!
 //! Deterministic: the members' seeds and winds come from the game's seed and
@@ -28,7 +28,10 @@ use crate::Game;
 /// Members of the ensemble (constant: the forecast's resolution is 1/16).
 pub const MEMBERS: usize = 16;
 /// The forecast's horizons from the time of issue, simulated seconds.
-pub const HORIZONS_S: [i64; 2] = [3600, 3 * 3600];
+pub const HORIZONS_S: [i64; 3] = [3600, 2 * 3600, 3 * 3600];
+/// How many horizons, and the last one (what the members run to).
+pub const HORIZONS: usize = HORIZONS_S.len();
+const LAST_S: i64 = HORIZONS_S[HORIZONS - 1];
 /// The share of members a cell must have burnt in to be inside the isochrone.
 pub const LIKELY: f32 = 0.5;
 /// Spread of the wind now (observed: small), degrees and fraction of speed.
@@ -50,8 +53,8 @@ pub struct Forecast {
     pub members: usize,
     pub rows: usize,
     pub cols: usize,
-    /// `[+1 h, +3 h]`, row-major on the fire grid (row 0 north), 0-1.
-    pub prob: [Vec<f32>; 2],
+    /// `[+1 h, +2 h, +3 h]`, row-major on the fire grid (row 0 north), 0-1.
+    pub prob: [Vec<f32>; HORIZONS],
 }
 
 impl Forecast {
@@ -74,7 +77,7 @@ pub struct Job {
     snapshot: Snapshot,
     members: Vec<Member>,
     done: usize,
-    counts: [Vec<u16>; 2],
+    counts: [Vec<u16>; HORIZONS],
 }
 
 /// splitmix64: a few good bits from a seed, no dependency.
@@ -139,7 +142,7 @@ impl Game {
             })
             .collect();
         let n = snapshot.rows * snapshot.cols;
-        Ok(Job { epoch, snapshot, members, done: 0, counts: [vec![0; n], vec![0; n]] })
+        Ok(Job { epoch, snapshot, members, done: 0, counts: std::array::from_fn(|_| vec![0; n]) })
     }
 
     /// The forecast due now, computed here (headless; the kiosk runs
@@ -180,7 +183,7 @@ impl Job {
     /// Run the next member. Returns whether all are done.
     pub fn step(&mut self) -> Result<bool> {
         if let Some(m) = self.members.get(self.done).copied() {
-            let a = self.snapshot.run(&m, HORIZONS_S[1])?;
+            let a = self.snapshot.run(&m, LAST_S)?;
             self.add(&a);
             self.done += 1;
         }
@@ -197,7 +200,7 @@ impl Job {
             let chunk = left.len().div_ceil(threads).max(1);
             let snap = &self.snapshot;
             let runs: Vec<Result<Vec<Vec<i32>>>> = std::thread::scope(|s| {
-                let hs: Vec<_> = left.chunks(chunk).map(|ms| s.spawn(move || ms.iter().map(|m| snap.run(m, HORIZONS_S[1])).collect())).collect();
+                let hs: Vec<_> = left.chunks(chunk).map(|ms| s.spawn(move || ms.iter().map(|m| snap.run(m, LAST_S)).collect())).collect();
                 hs.into_iter().map(|h| h.join().expect("forecast member panicked")).collect()
             });
             for r in runs {
@@ -214,7 +217,6 @@ impl Job {
     /// The forecast from the members run so far.
     pub fn finish(self) -> Forecast {
         let n = self.done.max(1) as f32;
-        let [a, b] = self.counts;
         let p = |c: Vec<u16>| c.into_iter().map(|c| c as f32 / n).collect();
         Forecast {
             epoch: self.epoch,
@@ -222,7 +224,7 @@ impl Job {
             members: self.done,
             rows: self.snapshot.rows,
             cols: self.snapshot.cols,
-            prob: [p(a), p(b)],
+            prob: self.counts.map(p),
         }
     }
 }

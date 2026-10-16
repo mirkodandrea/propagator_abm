@@ -14,9 +14,6 @@ use abm::suppression::UnitKind;
 pub struct Station {
     pub name: String,
     pub pos: [f32; 2],
-    /// A volunteers' post (AIB) rather than the fire brigade (VVF).
-    #[serde(default)]
-    pub volunteers: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

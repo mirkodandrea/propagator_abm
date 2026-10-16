@@ -78,7 +78,6 @@ pub fn feet(k: &Kiosk, sim: &Sim, eye: Vec3, right: Vec3) -> Vec<Option<(Pos, f3
 #[derive(Resource)]
 pub struct PinAssets {
     ring: Handle<Mesh>,
-    vvf: Handle<RetroMaterial>,
     aib: Handle<RetroMaterial>,
 }
 
@@ -104,7 +103,6 @@ pub fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mater
     let ring = Mesh::from(Annulus::new(RING_R_M * 0.75, RING_R_M)).rotated_by(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2));
     commands.insert_resource(PinAssets {
         ring: meshes.add(ring),
-        vvf: materials.add(glass(super::ui::VVF)),
         aib: materials.add(glass(super::ui::AIB)),
     });
 }
@@ -125,7 +123,7 @@ pub fn update(
             commands.entity(e).despawn_recursive();
         }
         for t in 0..sim.teams.len() {
-            let colour = if sim.teams[t].volunteers { assets.aib.clone() } else { assets.vvf.clone() };
+            let colour = assets.aib.clone();
             commands
                 .spawn((SpatialBundle { visibility: Visibility::Hidden, ..default() }, Pin(t)))
                 .with_children(|c| {

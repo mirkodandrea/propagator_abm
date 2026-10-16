@@ -61,7 +61,7 @@ impl Script {
         let mut steps = vec![
             Step { text: format!("Giorno 1. Un incendio è partito vicino a __{name}__. Il tempo è **fermo**: ora puoi dare gli ordini."), expect: Expect::Next },
             Step {
-                text: "Le aree colorate mostrano dove il fuoco può arrivare **tra 1 ora** e **tra 3 ore**, se nessuno interviene. In basso a destra vedi le __condizioni__: il vento e l'umidità.".into(),
+                text: "Le linee rosse mostrano dove il fuoco può arrivare **tra 1, 2 e 3 ore**, se nessuno interviene. In basso a destra vedi le __condizioni__: il vento e l'umidità.".into(),
                 expect: Expect::Next,
             },
             Step {
@@ -72,12 +72,11 @@ impl Script {
         for &(t, p) in &tu.moves {
             let hex = game.hexes.nearest(scenario::Pos::from(p))?;
             let team = &game.teams[t];
-            let who = if team.volunteers { "volontari" } else { "vigili" };
             let from = game.territory.stations[team.station].name.rsplit(" - ").next().unwrap_or_default().to_string();
             steps.push(Step {
                 text: format!(
-                    "Squadra di {who} da __{from}__ ({} persone). **Trascina la squadra** sull'esagono indicato e lascialo lì: vedi il percorso e il tempo di viaggio.",
-                    team.crew
+                    "La {} parte da __{from}__ ({} persone). **Trascina la squadra** sull'esagono indicato e lascialo lì: vedi il percorso e il tempo di viaggio.",
+                    team.name, team.crew
                 ),
                 expect: Expect::Move(t, hex.at),
             });

@@ -99,7 +99,6 @@ pub struct Team {
     pub crew_units: Vec<usize>,
     pub name: String,
     pub station: usize,
-    pub volunteers: bool,
     pub crew: u8,
     /// The hex it was last sent to.
     pub hex: Option<Axial>,
@@ -211,15 +210,14 @@ impl Game {
         let mut crews = Suppression::with_roster(&scn, &roster, policy)?;
         crews.effect = SUPPRESSION;
         crews.refill_in_place_s = Some(REFILL_S);
-        let mut per_station = vec![0; territory.stations.len()];
         let mut next = 0;
         let teams: Vec<Team> = territory
             .roster
             .iter()
-            .map(|s| {
-                per_station[s.station] += 1;
-                let st = &territory.stations[s.station];
-                let name = format!("{} {}", if st.volunteers { "AIB" } else { "VVF" }, per_station[s.station]);
+            .enumerate()
+            .map(|(i, s)| {
+                // «Squadra A», «Squadra B»…: all teams are AIB, told apart by a letter (user, 2026-10-16)
+                let name = format!("Squadra {}", (b'A' + i as u8) as char);
                 let unit = next;
                 crews.units[unit].callsign = name.clone();
                 let crew_units: Vec<usize> = (unit + 1..unit + 1 + s.crew.max(1) as usize).collect();
@@ -230,7 +228,7 @@ impl Game {
                     u.carrier = Some(unit);
                     u.aboard = true;
                 }
-                Team { unit, crew_units, name, station: s.station, volunteers: st.volunteers, crew: s.crew, hex: None, pending: None }
+                Team { unit, crew_units, name, station: s.station, crew: s.crew, hex: None, pending: None }
             })
             .collect();
         let hexes = HexGrid::build(&scn, &net, main);

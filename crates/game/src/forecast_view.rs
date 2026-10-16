@@ -13,16 +13,16 @@
 use bevy::pbr::{NotShadowCaster, NotShadowReceiver};
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
-use rocca::forecast::{Epoch, Forecast, Job};
+use rocca::forecast::{Epoch, Forecast, Job, HORIZONS};
 use scenario::{Pos, World};
 
 use crate::flat::FlatMaterial;
 use crate::sim::{Sim, SimRestarted};
 
 /// Ribbon width of an isochrone, metres.
-const LINE_M: f32 = 24.0;
+const LINE_M: f32 = 12.0;
 /// The dark under-stroke, wider.
-const UNDER_M: f32 = 40.0;
+const UNDER_M: f32 = 20.0;
 /// Contours shorter than this (a lone spot fire's cell) are not drawn.
 const MIN_LOOP_M: f32 = 160.0;
 /// Gaussian smoothing of the isochrones along their length, and the spacing
@@ -31,14 +31,16 @@ const SMOOTH_SIGMA_M: f32 = 90.0;
 const SMOOTH_STEP_M: f32 = 12.0;
 /// Label lift above the ground, metres.
 const LABEL_LIFT_M: f32 = 30.0;
-/// Colours: the UI's warm red for +1 h, magenta for +3 h (no other sign on
-/// the map is magenta: it reads on the woods and on the dry grass alike).
-const NEAR: [f32; 3] = [1.0, 0.36, 0.24];
-const FAR: [f32; 3] = [0.80, 0.45, 1.0];
+/// All isochrones in one colour (user, 2026-10-16), told apart by their labels.
+const LINE: [f32; 3] = [1.0, 0.22, 0.14];
 /// The same, for the legend in the interface.
-pub const NEAR_COLOUR: bevy_egui::egui::Color32 = bevy_egui::egui::Color32::from_rgb(255, 92, 61);
-pub const FAR_COLOUR: bevy_egui::egui::Color32 = bevy_egui::egui::Color32::from_rgb(204, 115, 255);
-pub const LABELS: [&str; 2] = ["tra 1 ora", "tra 3 ore"];
+pub const LINE_COLOUR: bevy_egui::egui::Color32 = bevy_egui::egui::Color32::from_rgb(255, 56, 36);
+pub const LABELS: [&str; HORIZONS] = ["tra 1 ora", "tra 2 ore", "tra 3 ore"];
+/// Cells (20 m) an isochrone keeps clear of the one inside it: where the fire
+/// barely spreads, two horizons would otherwise draw the same line twice.
+const GAP_CELLS: i64 = 2;
+/// A label keeps this far from the others on the screen, pixels.
+const LABEL_APART_PX: egui::Vec2 = egui::vec2(96.0, 26.0);
 
 #[derive(Component)]
 pub struct ForecastMark;
@@ -57,8 +59,8 @@ pub struct ForecastView {
     running: Option<(u64, Running)>,
     /// The forecast on the map, and per horizon the points a label may
     /// stand on, leading edge (down the wind) first.
-    shown: Option<(Forecast, [Vec<Pos>; 2])>,
-    materials: Option<[Handle<FlatMaterial>; 3]>,
+    shown: Option<(Forecast, [Vec<Pos>; HORIZONS])>,
+    materials: Option<[Handle<FlatMaterial>; 2]>,
 }
 
 pub struct ForecastPlugin;
@@ -165,8 +167,7 @@ pub fn update(
                 let mats = view
                     .materials
                     .get_or_insert_with(|| {
-                        let [near, far] = [NEAR, FAR].map(|c| materials.add(FlatMaterial::new(c)));
-                        [near, far, materials.add(FlatMaterial::new([0.03, 0.02, 0.06]).pulled(-12.0))]
+                        [materials.add(FlatMaterial::new(LINE)), materials.add(FlatMaterial::new([0.03, 0.02, 0.06]).pulled(-12.0))]
                     })
                     .clone();
                 let world = sim.scn.world;
@@ -174,16 +175,17 @@ pub fn update(
                 // the wind the forecast is about (the announced one, if any)
                 let w = sim.territory.shifted(&sim.case).map_or(sim.fire.weather(), |(_, w)| w);
                 let to = (w.wind_dir_deg as f32 + 180.0).to_radians();
-                let mut at: [Vec<Pos>; 2] = Default::default();
-                for h in 0..2 {
-                    let lines = isochrone(&f, h, &world);
+                let mut at: [Vec<Pos>; HORIZONS] = Default::default();
+                let masks = masks(&f);
+                for h in 0..HORIZONS {
+                    let lines = isochrone(&masks[h], f.rows, f.cols, &world);
                     let ahead = |p: &Pos| p.x * to.sin() + p.y * to.cos();
                     at[h] = lines.iter().flatten().step_by(4).copied().collect();
                     at[h].sort_by(|a, b| ahead(b).total_cmp(&ahead(a)));
-                    // the +3 h line sits a little lower than the +1 h one
-                    let lift = crate::rings::RING_LIFT_M + if h == 1 { -2.0 } else { 2.0 };
+                    // the outer lines sit a little lower than the inner ones
+                    let lift = crate::rings::RING_LIFT_M + 2.0 - 2.0 * h as f32;
                     for pts in &lines {
-                        for (w, dl, m) in [(UNDER_M, -2.0, &mats[2]), (LINE_M, 0.0, &mats[h])] {
+                        for (w, dl, m) in [(UNDER_M, -2.0, &mats[1]), (LINE_M, 0.0, &mats[0])] {
                             let mesh = crate::rings::path_mesh_at(&sim.scn, pts, w, None, lift + dl);
                             commands.spawn((
                                 MaterialMeshBundle::<FlatMaterial> { mesh: meshes.add(mesh), material: m.clone(), ..default() },
@@ -226,13 +228,18 @@ pub fn labels(
     let ctx = contexts.ctx_mut();
     // after the sidebar: what is left is the map
     let map = ctx.available_rect().shrink(40.0);
+    let mut placed: Vec<egui::Pos2> = vec![];
     for (h, pts) in at.iter().enumerate() {
+        // the first point on the map that is not on top of an earlier label
         let on_map = pts.iter().find_map(|&p| {
             let v = crate::frame::to_bevy(p, sim.scn.terrain.height_at(p) + LABEL_LIFT_M);
-            cam.world_to_viewport(gt, v).filter(|s| map.contains(egui::pos2(s.x, s.y)))
+            let s = cam.world_to_viewport(gt, v).filter(|s| map.contains(egui::pos2(s.x, s.y)))?;
+            let s = egui::pos2(s.x, s.y);
+            placed.iter().all(|q| (s.x - q.x).abs() >= LABEL_APART_PX.x || (s.y - q.y).abs() >= LABEL_APART_PX.y).then_some(s)
         });
         let Some(s) = on_map else { continue };
-        let c = [NEAR, FAR][h].map(|x| (x * 255.0) as u8);
+        placed.push(s);
+        let c = LINE.map(|x| (x * 255.0) as u8);
         egui::Area::new(egui::Id::new(("previsione", h)))
             .fixed_pos(egui::pos2(s.x + 8.0, s.y - 14.0))
             .order(egui::Order::Background)
@@ -250,14 +257,43 @@ pub fn labels(
     }
 }
 
+/// The likely cells of each horizon, prepared so that the lines do not
+/// overlap: each horizon takes in the one before it (a cell burnt by +1 h is
+/// burnt by +2 h, whatever the members say) grown by `GAP_CELLS`, so two
+/// isochrones never coincide where the fire does not spread and never cross.
+fn masks(f: &Forecast) -> [Vec<bool>; HORIZONS] {
+    let (rows, cols) = (f.rows as i64, f.cols as i64);
+    let mut out: [Vec<bool>; HORIZONS] = std::array::from_fn(|h| (0..f.rows * f.cols).map(|i| f.likely(h, i)).collect());
+    for h in 1..HORIZONS {
+        let inner = out[h - 1].clone();
+        // separable dilation: along the rows, then along the columns
+        let grow = |src: &[bool], horizontal: bool| -> Vec<bool> {
+            (0..rows * cols)
+                .map(|i| {
+                    let (r, c) = (i / cols, i % cols);
+                    (-GAP_CELLS..=GAP_CELLS).any(|d| {
+                        let (r, c) = if horizontal { (r, c + d) } else { (r + d, c) };
+                        r >= 0 && c >= 0 && r < rows && c < cols && src[(r * cols + c) as usize]
+                    })
+                })
+                .collect()
+        };
+        let grown = grow(&grow(&inner, true), false);
+        for (o, g) in out[h].iter_mut().zip(grown) {
+            *o |= g;
+        }
+    }
+    out
+}
+
 /// The 50 % contour of horizon `h`, as closed or open polylines in world
 /// metres: marching squares on the fire grid's cell centres, padded so every
 /// contour closes, joined into lines and smoothed.
-pub fn isochrone(f: &Forecast, h: usize, world: &World) -> Vec<Vec<Pos>> {
-    let (rows, cols) = (f.rows as i64 + 2, f.cols as i64 + 2);
+pub fn isochrone(mask: &[bool], fire_rows: usize, fire_cols: usize, world: &World) -> Vec<Vec<Pos>> {
+    let (rows, cols) = (fire_rows as i64 + 2, fire_cols as i64 + 2);
     let inside = |r: i64, c: i64| -> bool {
         let (r, c) = (r - 1, c - 1);
-        r >= 0 && c >= 0 && r < f.rows as i64 && c < f.cols as i64 && f.likely(h, (r * f.cols as i64 + c) as usize)
+        r >= 0 && c >= 0 && r < fire_rows as i64 && c < fire_cols as i64 && mask[(r * fire_cols as i64 + c) as usize]
     };
     // edges by id: horizontal (r, c)-(r, c+1) is 2*(r*cols+c), vertical (r, c)-(r+1, c) is that + 1
     let hz = |r: i64, c: i64| 2 * (r * cols + c);

@@ -30,8 +30,7 @@ const GREEN: Color32 = Color32::from_rgb(110, 230, 150);
 /// The evacuation's colour, the same as its route on the map (`marks::EVAC`).
 const EVAC: Color32 = Color32::from_rgb((super::marks::EVAC[0] * 255.0) as u8, (super::marks::EVAC[1] * 255.0) as u8, (super::marks::EVAC[2] * 255.0) as u8);
 pub(super) const GREY: Color32 = Color32::from_rgb(205, 208, 212);
-/// The fire brigade's red and the volunteers' yellow-green, as on the map.
-pub const VVF: Color32 = Color32::from_rgb(225, 60, 50);
+/// The AIB teams' yellow-green, as on the map.
 pub const AIB: Color32 = Color32::from_rgb(200, 215, 60);
 
 /// Use the same layout in either orientation, including short phone viewports.
@@ -275,12 +274,11 @@ fn conditions(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform)) 
             if sim.paused() {
                 ui.separator();
                 ui.horizontal(|ui| {
-                    for (col, text) in [(crate::forecast_view::NEAR_COLOUR, "1 h"), (crate::forecast_view::FAR_COLOUR, "3 h")] {
-                        let (r, _) = ui.allocate_exact_size(egui::vec2(30.0, 24.0), egui::Sense::hover());
-                        ui.painter().line_segment([r.left_center(), r.right_center()], egui::Stroke::new(7.0, col));
-                        ui.label(RichText::new(text).size(20.0).strong().color(col));
-                        ui.add_space(6.0);
-                    }
+                    let col = crate::forecast_view::LINE_COLOUR;
+                    let (r, _) = ui.allocate_exact_size(egui::vec2(30.0, 24.0), egui::Sense::hover());
+                    ui.painter().line_segment([r.left_center(), r.right_center()], egui::Stroke::new(5.0, col));
+                    ui.label(RichText::new("1 · 2 · 3 h").size(20.0).strong().color(col));
+                    ui.add_space(6.0);
                     if let Some((at, w2)) = sim.weather_ahead() {
                         ui.add_space(10.0);
                         icons::show(ui, Icon::Clock, 24.0, AMBER);
@@ -613,12 +611,19 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         let lift = crate::rings::RING_LIFT_M + pins::LIFT_M * sc;
         let Some(a) = cam.0.world_to_viewport(cam.1, crate::frame::to_bevy(foot, sim.scn.terrain.height_at(foot) + lift)) else { continue };
         let flag = egui::Rect::from_center_size(egui::pos2(a.x, a.y - 8.0), egui::vec2(96.0, 56.0));
-        let col = if sim.teams[t].volunteers { AIB } else { VVF };
-        let number = sim.teams[t].name.split_whitespace().last().unwrap_or("").to_string();
+        let col = AIB;
+        // «Squadra A» → «A»
+        let letter = sim.teams[t].name.split_whitespace().last().unwrap_or("").to_string();
         let on = k.selection == Selection::Team(t);
         let lost = sim.crews.units[sim.teams[t].unit].state == abm::suppression::UnitState::Lost;
         let multi = ctx.input(|i| i.multi_touch().is_some_and(|m| m.num_touches > 1));
         let canceled = ctx.input(|i| i.raw.events.iter().any(|e| matches!(e, egui::Event::Touch { phase: egui::TouchPhase::Cancel, .. })));
+        // in danger the badge blinks red; the team then withdraws on its own (`Game::team_in_danger`)
+        let alarm = !lost && sim.team_in_danger(t);
+        let blink = alarm && ctx.input(|i| (i.time * 3.0) as i64 % 2 == 0);
+        if alarm {
+            ctx.request_repaint_after(std::time::Duration::from_millis(150));
+        }
         let may_drag = sim.paused() && !lost && !multi && !canceled;
         if (multi || canceled) && k.dragging.is_some() { k.clear_selection(); }
         // Keep the active handle alive outside the map until release/cancel;
@@ -629,10 +634,11 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
             let p = ui.painter();
             let badge = rect.shrink(4.0);
             let hot = on || resp.hovered();
-            p.rect_filled(badge, 16.0, Color32::from_black_alpha(215));
-            p.rect_stroke(badge, 16.0, egui::Stroke::new(if hot { 3.5 } else { 2.5 }, if hot { Color32::WHITE } else { col }));
-            super::icons::draw(p, egui::Rect::from_center_size(badge.left_center() + egui::vec2(24.0, 0.0), egui::vec2(34.0, 34.0)), super::icons::Icon::Engine, col);
-            let g = p.layout_no_wrap(number.clone(), egui::FontId::proportional(26.0), Color32::WHITE);
+            let (fill, edge) = if blink { (Color32::from_rgb(200, 30, 25), Color32::WHITE) } else { (Color32::from_black_alpha(215), if alarm { RED } else if hot { Color32::WHITE } else { col }) };
+            p.rect_filled(badge, 16.0, fill);
+            p.rect_stroke(badge, 16.0, egui::Stroke::new(if hot || alarm { 3.5 } else { 2.5 }, edge));
+            super::icons::draw(p, egui::Rect::from_center_size(badge.left_center() + egui::vec2(24.0, 0.0), egui::vec2(34.0, 34.0)), super::icons::Icon::Engine, if blink { Color32::WHITE } else { col });
+            let g = p.layout_no_wrap(letter.clone(), egui::FontId::proportional(26.0), Color32::WHITE);
             p.galley(egui::pos2(badge.right() - 14.0 - g.size().x, badge.center().y - g.size().y / 2.0), g, Color32::WHITE);
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(if may_drag { egui::CursorIcon::Grab } else { egui::CursorIcon::PointingHand });
@@ -930,11 +936,10 @@ fn compact_top(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera,
             if sim.paused() {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(if matches!(k.selection, Selection::Team(_)) { "Tocca un esagono" } else { "Pausa" }).strong().color(GREEN));
-                    for (color, label) in [(crate::forecast_view::NEAR_COLOUR, "1 h"), (crate::forecast_view::FAR_COLOUR, "3 h")] {
-                        let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                        ui.painter().line_segment([r.left_center(), r.right_center()], egui::Stroke::new(3.0, color));
-                        ui.colored_label(color, label);
-                    }
+                    let color = crate::forecast_view::LINE_COLOUR;
+                    let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                    ui.painter().line_segment([r.left_center(), r.right_center()], egui::Stroke::new(3.0, color));
+                    ui.colored_label(color, "1 · 2 · 3 h");
                     if let Some((at, w)) = sim.weather_ahead() {
                         ui.label(format!("{}: {:.0} km/h da {}", clock(at), w.wind_speed_kmh, rocca::words::compass(w.wind_dir_deg)));
                     }

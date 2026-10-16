@@ -158,10 +158,9 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
             ui.add_space(12.0);
             ui.separator();
             ui.add_space(10.0);
-            let volunteers = |v: bool| k.territory.roster.iter().filter(|s| k.territory.stations[s.station].volunteers == v).count();
-            let (vvf, aib) = (volunteers(false), volunteers(true));
+            let teams = k.territory.roster.len();
             let text = format!(
-                "Un incendio minaccia i borghi dell'isola e ci serve il tuo aiuto! Abbiamo {vvf} squadre dei vigili del fuoco e {aib} di volontari, per tanti borghi: non bastano per tutti. Il tempo scorre veloce; per decidere metti in pausa: vedrai le previsioni di dove andrà il fuoco. Prima proviamo insieme con un piccolo incendio, poi tocca a te.",
+                "Un incendio minaccia i borghi dell'isola e ci serve il tuo aiuto! Abbiamo {teams} squadre AIB, per tanti borghi: non bastano per tutti. Il tempo scorre veloce; per decidere metti in pausa: vedrai le previsioni di dove andrà il fuoco. Prima proviamo insieme con un piccolo incendio, poi tocca a te.",
             );
             volunteer(ui, faces, Mood::Preoccupato, 110.0, &text, TALK_W.min(card_w - 200.0));
             ui.add_space(12.0);

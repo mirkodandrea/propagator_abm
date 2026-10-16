@@ -23,6 +23,8 @@ const HEX_LINE_M: f32 = 12.0;
 /// The dark under-stroke of the hex lines, wider, a little lower.
 const HEX_UNDER_M: f32 = 24.0;
 const HEX_PICK_M: f32 = 16.0;
+/// The covered zone's boundary line.
+const ZONE_LINE_M: f32 = 7.0;
 /// The drivable roads shown while a move is chosen.
 const ROAD_M: f32 = 9.0;
 /// Extra pull toward the camera for the hex lines: enough that the hills'
@@ -64,8 +66,8 @@ pub struct MarkAssets {
     evac: Handle<FlatMaterial>,
     closed: Handle<FlatMaterial>,
     active: Handle<FlatMaterial>,
-    /// The zones covered by the deployed teams: [VVF, AIB].
-    zone: [Handle<FlatMaterial>; 2],
+    /// The boundary of the zone covered by the deployed teams, AIB yellow.
+    zone: Handle<FlatMaterial>,
     team_key: u64,
     /// What the hex grid, the orders and the closed roads were built for.
     hex_key: Option<String>,
@@ -95,10 +97,10 @@ pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>
         evac: materials.add(FlatMaterial::new(EVAC).pulled(2.0)),
         closed: materials.add(FlatMaterial::new(CLOSED).pulled(1.0)),
         active: materials.add(FlatMaterial::new([1.0, 0.9, 0.0]).pulled(HEX_PULL_M + 6.0)),
-        zone: [super::ui::VVF, super::ui::AIB].map(|c| {
-            let [r, g, b, _] = c.to_array();
+        zone: {
+            let [r, g, b, _] = super::ui::AIB.to_array();
             materials.add(FlatMaterial::new([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]).pulled(HEX_PULL_M + 3.0))
-        }),
+        },
         team_key: u64::MAX,
         hex_key: None,
         targets_key: None,
@@ -143,6 +145,54 @@ fn area_hex(kiosk: &Kiosk, sim: &Sim) -> Option<rocca::Axial> {
 fn outline(at: rocca::Axial) -> Vec<Pos> {
     let c = at.corners();
     c.iter().chain(std::iter::once(&c[0])).copied().collect()
+}
+
+/// The outer boundary of a set of hexes as closed paths: the edges that
+/// belong to one hex of the set only, chained end to end.
+fn boundary(hexes: &[rocca::Axial]) -> Vec<Vec<Pos>> {
+    use std::collections::HashMap;
+    let key = |p: Pos| ((p.x * 0.5).round() as i64, (p.y * 0.5).round() as i64);
+    let mut edges: HashMap<((i64, i64), (i64, i64)), (Pos, Pos, u8)> = HashMap::new();
+    for h in hexes {
+        let c = h.corners();
+        for i in 0..6 {
+            let (a, b) = (c[i], c[(i + 1) % 6]);
+            let k = if key(a) <= key(b) { (key(a), key(b)) } else { (key(b), key(a)) };
+            edges.entry(k).or_insert((a, b, 0)).2 += 1;
+        }
+    }
+    // from each boundary point, the boundary edges that start or end there
+    let mut at: HashMap<(i64, i64), Vec<(Pos, Pos)>> = HashMap::new();
+    for (a, b, _) in edges.into_values().filter(|e| e.2 == 1) {
+        at.entry(key(a)).or_default().push((a, b));
+        at.entry(key(b)).or_default().push((b, a));
+    }
+    let mut loops = vec![];
+    while let Some(&start) = at.keys().next() {
+        let mut path: Vec<Pos> = vec![];
+        let mut here = start;
+        loop {
+            let Some(out) = at.get_mut(&here) else { break };
+            let Some((a, b)) = out.pop() else { break };
+            // the edge is used: take it off the other end too
+            if let Some(back) = at.get_mut(&key(b)) {
+                back.retain(|&(x, y)| !(key(x) == key(b) && key(y) == key(a)));
+            }
+            if path.is_empty() {
+                path.push(a);
+            }
+            path.push(b);
+            here = key(b);
+            if here == start {
+                break;
+            }
+        }
+        at.retain(|_, v| !v.is_empty());
+        if path.len() > 2 {
+            loops.push(path);
+        }
+    }
+    loops
 }
 
 fn spawn<M: Component>(commands: &mut Commands, meshes: &mut Assets<Mesh>, mesh: Mesh, mat: &Handle<FlatMaterial>, tag: M) -> Entity {
@@ -339,24 +389,19 @@ pub fn update_teams(
     };
     hexes.sort_unstable();
     hexes.dedup();
-    // the zone each deployed team covers, in its colour (VVF / AIB)
-    let mut zones: [Vec<rocca::Axial>; 2] = [vec![], vec![]];
+    // the zone the deployed teams cover: only its outer boundary is drawn
+    let mut zone: Vec<rocca::Axial> = vec![];
     if playing {
-        for t in &sim.teams {
-            if let Some(h) = t.hex {
-                zones[t.volunteers as usize].extend(reach(h));
-            }
+        for h in &hexes {
+            zone.push(*h);
+            zone.extend(reach(*h));
         }
     }
-    for z in &mut zones {
-        z.sort_unstable();
-        z.dedup();
-    }
+    zone.sort_unstable();
+    zone.dedup();
     let mut key = playing as u64;
-    for (i, z) in zones.iter().enumerate() {
-        for h in z {
-            key = key.wrapping_mul(0x100_0000_01b3) ^ ((i as u64) << 50 ^ (h.q as i64 as u64) << 24 ^ h.r as i64 as u64);
-        }
+    for h in &zone {
+        key = key.wrapping_mul(0x100_0000_01b3) ^ ((1u64 << 50) ^ (h.q as i64 as u64) << 24 ^ h.r as i64 as u64);
     }
     for h in &hexes {
         key = key.wrapping_mul(0x100_0000_01b3) ^ ((h.q as i64 as u64) << 24 ^ h.r as i64 as u64);
@@ -368,9 +413,10 @@ pub fn update_teams(
     for e in &old {
         commands.entity(e).despawn();
     }
-    for (i, z) in zones.iter().enumerate().filter(|(_, z)| !z.is_empty()) {
-        let parts = z.iter().map(|h| path_mesh(&sim.scn, &outline(*h), HEX_PICK_M * 0.9, None)).collect();
-        spawn(&mut commands, &mut meshes, merge(parts), &assets.zone[i], TeamMark);
+    let loops = boundary(&zone);
+    if !loops.is_empty() {
+        let parts = loops.iter().map(|l| path_mesh(&sim.scn, l, ZONE_LINE_M, None)).collect();
+        spawn(&mut commands, &mut meshes, merge(parts), &assets.zone, TeamMark);
     }
     if !hexes.is_empty() {
         let parts = hexes.iter().map(|h| path_mesh(&sim.scn, &outline(*h), HEX_PICK_M * 1.4, None)).collect();

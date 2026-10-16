@@ -19,7 +19,7 @@ impl Who {
         match self {
             Who::Volontaria => "La volontaria di protezione civile",
             Who::Esperto => "L'esperto di previsioni",
-            Who::Vigili => "Il caposquadra dei vigili del fuoco",
+            Who::Vigili => "Il caposquadra AIB",
             Who::Sindaca => "La sindaca",
         }
     }
@@ -29,7 +29,7 @@ impl Who {
         match self {
             Who::Volontaria => "La volontaria",
             Who::Esperto => "L'esperto",
-            Who::Vigili => "I vigili del fuoco",
+            Who::Vigili => "I caposquadra AIB",
             Who::Sindaca => "La sindaca",
         }
     }
@@ -39,7 +39,7 @@ impl Who {
         match self {
             Who::Volontaria => egui::Color32::from_rgb(250, 195, 70),
             Who::Esperto => egui::Color32::from_rgb(110, 185, 255),
-            Who::Vigili => egui::Color32::from_rgb(235, 80, 60),
+            Who::Vigili => egui::Color32::from_rgb(200, 215, 60),
             Who::Sindaca => egui::Color32::from_rgb(120, 205, 140),
         }
     }

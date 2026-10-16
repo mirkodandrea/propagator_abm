@@ -3,19 +3,18 @@
   "moisture_pct": 5.0,
   "stations": [
     {
-      "name": "Caserma dei Vigili del fuoco - Castelvento",
+      "name": "Presidio AIB - Castelvento",
       "pos": [
         5150.459399563263,
         4968.997322994763
       ]
     },
     {
-      "name": "Presidio dei volontari AIB - Pian dei Grilli",
+      "name": "Presidio AIB - Pian dei Grilli",
       "pos": [
         2450.0,
         2598.0
-      ],
-      "volunteers": true
+      ]
     }
   ],
   "roster": [
