@@ -39,6 +39,47 @@ Il vento è indicato con la direzione **da cui** soffia. Gli inneschi sono in me
 | Partita | `medium` | (5590, 4370) | da 119°, 36 km/h, umidità 5 %; gira a 50° (36 km/h) al minuto 45 | 300 min, segnalato al minuto 30 (`start_min`) | Seme 1. Senza ordini (ha, case, persone): seme 1 512, 28, 172; seme 2 361, 38, 185; seme 3 506, 35, 190 (35 km/h: 467, 28, 137 / 384, 33, 195 / 386, 33, 257). |
 | (riserva) | `easy`, `expert` | come prima | | 180 min | Non usati dal chiosco. |
 
+## Ricerca di nuovi scenari (2026-10-16)
+
+Priorità dell'utente: **varietà degli impatti**, oltre a una sfida giocabile.
+Cambiare vento e innesco senza cambiare i borghi colpiti non basta. La suite
+`tools/factory/scenarios.py` misura per borgo persone, case e tempi del primo impatto
+senza ordini; confronta quattro politiche sui semi 1–3, conferma sui semi 4–5 e
+prova primi ordini ritardati di 10 min. Il chiosco continua a girare: solo prove
+headless, nessuna finestra o intervento sul focus.
+
+65 combinazioni esplorative, poi 9 prove mirate sui nuclei sparsi, per 557 run
+salvati (212 nella verifica mirata finale). 17 test della suite superati. La
+politica `planner=nuclei` considera case visibili, fiamme attuali e cambio di vento
+annunciato, assegna le squadre per ETA e conserva gli incarichi adatti. Massimo
+15 spostamenti e 4 evacuazioni. **Non è un automatismo aggiunto al gioco**.
+
+Tre configurazioni native approvate dall’utente e aggiunte al selettore operatore, tutte con segnalazione al minuto 30:
+
+| Profilo | Identificativo | Innesco; vento; umidità; durata | Impatti senza ordini nei semi 1–5 |
+|---|---|---|---|
+| Attraversamento del valico | `impatti_valico_due_lati_30_6` | (5590, 4370); 30 km/h da 119°, poi 50° al min 75; 6%; 240 min | Le Terrazze e Le Ghiande; Castelvento marginale in un seme. 2–3 borghi totali. |
+| Pressione su quattro borghi | `impatti_nuclei_valico_costante_lungo_28_7_0_60` | (5590, 4370); 28 km/h da 119°, costante; 7%; 300 min | Castelvento, Fornaci, Le Terrazze e Le Ghiande: quattro impatti consistenti in tutti i cinque semi. |
+| Rotazione da est | `impatti_nuclei_est_giro_lungo_28_6_75_60` | (5870, 4750); 28 km/h da 119°, poi 50° al min 75; 6%; 300 min | Le Terrazze e Le Ghiande; Castelvento consistente in 4/5 semi; San Rocco marginale in 4/5. 3–4 borghi totali. |
+
+Con il piano ordinario, nei cinque semi: nessuna unità persa; persone colte
+0/0/0/0/0 per valico e quattro borghi, 0/0/7/0/0 per rotazione est. Case colpite:
+0/0/0/1/0 al valico, zero negli altri due casi. Il valico supera anche i filtri del
+test di ritardo (fino a 17 case colpite ma nessuna persona o unità persa).
+Gli altri due casi sono **meno indulgenti**: con 10 min di ritardo perdono un'unità
+in un seme; nella rotazione est il ritardo porta anche a 44 persone colte in un
+altro seme. Queste fragilità restano esplicite, non vengono promosse come robustezza.
+
+Rapporto in `results/scenario-impacts/focused/report.md`; i tre casi, configurazioni
+complete e cinque piani per caso sono in `variety-cases.json`, `review-configs/` e
+`review-plans/`. `game-cases.json` mantiene la sola selezione che passa anche i
+filtri rigorosi del ritardo. Su richiesta dell’utente i tre casi sono ora in
+`game.json`, esposti tramite `levels` nel solo menu operatore. `game: medium`
+rimane il default; tutorial invariato. La demo in esecuzione non è stata
+riavviata né portata in primo piano. La prova umana resta utile per il bilanciamento. Istruzioni e criteri in
+[`tools/factory/SCENARI.md`](../tools/factory/SCENARI.md). Le vecchie ricerche della
+sola giocabilità restano separate in `results/scenario-playable/`.
+
 ## Come si modifica
 
 - La vecchia pipeline di generazione è stata **cancellata** (2026-10-13, resta nella storia git): il territorio non si rigenera da zero.

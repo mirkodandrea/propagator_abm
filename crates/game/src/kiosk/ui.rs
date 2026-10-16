@@ -115,7 +115,7 @@ pub fn draw(
             k.side_w = 0.0;
             if !compact(ctx) { banner(ctx, qr.as_deref()); }
             if k.title {
-                if screens::title(ctx, k, logo.as_deref()) {
+                if screens::title(ctx, k, &sim, logo.as_deref()) {
                     k.title = false;
                 }
             } else {
@@ -843,7 +843,25 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
     egui::Window::new("Menu").id(egui::Id::new("operatore")).anchor(Align2::LEFT_BOTTOM, [8.0, -60.0]).default_width((ctx.screen_rect().width() - 48.0).min(380.0)).max_height(ctx.screen_rect().height() - 90.0).resizable(false).collapsible(false).vscroll(true).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.label(RichText::new("Menu (F2 per chiudere)").strong().color(Color32::WHITE));
-            ui.label(RichText::new(format!("{} · {} · seme {}", sim.case.name, clock(sim.time_s()), k.seed)).color(GREY));
+            let active_label = k.territory.levels.iter().find(|l| l.case == sim.case.name)
+                .map_or(sim.case.name.as_str(), |l| l.name.as_str());
+            ui.label(RichText::new(format!("{} · {} · seme {}", active_label, clock(sim.time_s()), sim.seed)).color(GREY));
+            ui.label("Scenario della prossima partita:");
+            let label = k.territory.levels.iter().find(|l| l.case == k.selected_case)
+                .map_or(k.selected_case.as_str(), |l| l.name.as_str());
+            egui::ComboBox::from_id_source("scenario_operatore").selected_text(label).width(ui.available_width().min(320.0)).show_ui(ui, |ui| {
+                // The default is always reachable, even with an older territory file.
+                if !k.territory.levels.iter().any(|l| l.case == k.territory.game) {
+                    ui.selectable_value(&mut k.selected_case, k.territory.game.clone(), "Attuale (predefinito)");
+                }
+                for level in &k.territory.levels {
+                    ui.selectable_value(&mut k.selected_case, level.case.clone(), &level.name);
+                }
+            });
+            if let Some(level) = k.territory.levels.iter().find(|l| l.case == k.selected_case) {
+                ui.add(egui::Label::new(RichText::new(&level.about).color(GREY)).wrap());
+            }
+            ui.label(RichText::new("Si applica con Nuova visita o Vai al giorno 2.").small().color(GREY));
             ui.horizontal_wrapped(|ui| {
                 if ui.add(secondary("Nuova visita")).clicked() {
                     new_visit(k, sim, restarted);

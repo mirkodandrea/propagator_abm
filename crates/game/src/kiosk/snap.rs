@@ -131,7 +131,7 @@ fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<S
         "fine" => Phase::Fine,
         _ => Phase::Gioco,
     };
-    let case = if matches!(phase, Phase::Tutorial) { k.tutorial_case() } else { k.territory.game.clone() };
+    let case = if matches!(phase, Phase::Tutorial) { k.tutorial_case() } else { k.selected_case.clone() };
     let t_s = (st.t_min * 60.0) as i64;
     if k.player.is_empty() {
         k.player = "Giulia".into();

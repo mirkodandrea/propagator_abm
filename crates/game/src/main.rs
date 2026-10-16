@@ -42,6 +42,8 @@ mod ui;
 mod units;
 mod vegetation;
 mod visual_scale;
+#[cfg(not(target_arch = "wasm32"))]
+mod window_state;
 #[cfg(target_arch = "wasm32")]
 mod web_input;
 
@@ -124,6 +126,9 @@ fn main() -> anyhow::Result<()> {
     )
     .add_systems(OnExit(AppState::Playing), teardown_scene);
 
+    #[cfg(not(target_arch = "wasm32"))]
+    window_state::install(&mut app);
+
     if std::env::var("KIOSK_FPS").is_ok() {
         app.add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
             .add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::filtered(vec![bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS]));
@@ -136,7 +141,11 @@ fn main() -> anyhow::Result<()> {
     kiosk_systems(&mut app);
     app.add_plugins(forecast_view::ForecastPlugin);
     app.add_systems(Update, quality_live::apply_live.run_if(resource_changed::<quality::Graphics>.and_then(not(resource_added::<quality::Graphics>))));
-    app.run();
+    let exit = app.run();
+    #[cfg(not(target_arch = "wasm32"))]
+    if let bevy::app::AppExit::Error(code) = exit {
+        std::process::exit(i32::from(code.get()));
+    }
     Ok(())
 }
 
@@ -236,6 +245,7 @@ fn kiosk_systems(app: &mut App) {
                 overlays::no_ui_shadows,
                 units::sync_orders,
                 units::update_work_overlay,
+                units::animate_spray,
                 kiosk::marks::update_hexes,
                 kiosk::marks::update_orders,
                 kiosk::marks::update_closed,
@@ -245,7 +255,6 @@ fn kiosk_systems(app: &mut App) {
                 .after(fire_view::reset)
                 .after(buildings::reset)
                 .after(units::reset)
-                units::animate_spray,
                 .after(kiosk::marks::reset)
                 .run_if(in_state(AppState::Playing)),
         ),

@@ -90,6 +90,8 @@ pub struct Kiosk {
     pub territory: Territory,
     pub data: PathBuf,
     pub seed: u64,
+    /// Operator choice for the next visit/day 2; never changes a running game.
+    pub selected_case: String,
     pub player: String,
     /// The tutorial's script and the step on show.
     pub script: Option<Script>,
@@ -159,6 +161,7 @@ impl Kiosk {
             demo_speed: 0.0,
             demo_pick: (usize::MAX, Subject::Wide),
             demo_order_at: 2.0,
+            selected_case: territory.game.clone(),
             territory,
             data,
             seed: 2,
@@ -250,10 +253,9 @@ impl Kiosk {
     }
 
     fn start_baseline(&mut self, case: &str) {
+        // A finished worker from a previous game must not replace this result.
+        self.baseline = Default::default();
         let slot = self.baseline.clone();
-        if let Ok(mut s) = slot.lock() {
-            *s = None;
-        }
         let (data, case, seed) = (self.data.clone(), case.to_string(), self.seed);
         #[cfg(not(target_arch = "wasm32"))]
         std::thread::spawn(move || {
@@ -326,10 +328,10 @@ pub fn demo_shot(t: f32) -> usize {
 
 /// The fire behind the name screen: the played case, no orders, from its
 /// start; when it has run its course it starts again.
-fn demo_restart(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
-    let case = k.territory.game.clone();
-    if let Err(e) = sim.restart(&case, k.seed) {
+fn demo_restart(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, case: &str, seed: u64) {
+    if let Err(e) = sim.restart(case, seed) {
         k.error = Some(format!("{e:#}"));
+        return;
     }
     restarted.send(SimRestarted);
     k.demo_pick = (usize::MAX, Subject::Wide);
@@ -390,7 +392,8 @@ fn demo_give_orders(k: &mut Kiosk, sim: &mut Sim) {
 
 /// A new visit: the played fire runs by itself under the name screen.
 pub fn new_visit(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
-    demo_restart(k, sim, restarted);
+    let case = k.selected_case.clone();
+    demo_restart(k, sim, restarted, &case, k.seed);
     k.demo_t = 0.0;
     k.demo_order_at = 2.0;
     k.demo_speed = 0.0;
@@ -428,9 +431,10 @@ pub fn start_tutorial(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<
 
 /// Day 2: the played fire, with its no-orders twin started beside it.
 pub fn start_game(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
-    let case = k.territory.game.clone();
+    let case = k.selected_case.clone();
     if let Err(e) = sim.restart(&case, k.seed) {
         k.error = Some(format!("{e:#}"));
+        return;
     }
     restarted.send(SimRestarted);
     k.start_baseline(&case);
@@ -458,7 +462,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
             let start = js_sys::Date::now();
             let result = (|| -> anyhow::Result<Option<Outcome>> {
                 if baseline_job.is_none() {
-                    *baseline_job = Some(rocca::Game::new(&kiosk.data, &sim.case.name, kiosk.seed)?);
+                    *baseline_job = Some(rocca::Game::new(&kiosk.data, &sim.case.name, sim.seed)?);
                     return Ok(None);
                 }
                 let game = baseline_job.as_mut().unwrap();
@@ -470,7 +474,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
             })();
             let done = match result { Ok(Some(o)) => Some(Ok(o)), Err(e) => Some(Err(format!("{e:#}"))), _ => None };
             if let Some(result) = done {
-                if let Ok(mut slot) = kiosk.baseline.lock() { *slot = Some((sim.case.name.clone(), kiosk.seed, result)); }
+                if let Ok(mut slot) = kiosk.baseline.lock() { *slot = Some((sim.case.name.clone(), sim.seed, result)); }
                 *baseline_job = None;
             }
         }
@@ -494,7 +498,8 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         k.demo_speed += (want - k.demo_speed) * (1.0 - (-1.5 * dt.min(0.1)).exp());
         demo_orders(k, &mut sim);
         if sim.is_over() && k.demo_t > 3.0 {
-            demo_restart(k, &mut sim, &mut restarted);
+            let (case, seed) = (sim.case.name.clone(), sim.seed);
+            demo_restart(k, &mut sim, &mut restarted, &case, seed);
         }
     }
     sim.speed = match k.phase {
@@ -542,5 +547,52 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         if let (Selection::District(d), Some(_)) = (k.selection, &k.evac_plan) {
             k.evac_plan = Some(sim.plan_evacuation(d));
         }
+    }
+}
+
+#[cfg(test)]
+mod scenario_selection_tests {
+    use super::*;
+    use bevy::ecs::system::SystemState;
+
+    #[test]
+    fn scenario_selection_applies_on_restart_and_keeps_the_default() {
+        let data = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let territory = Territory::load(&data).unwrap();
+        assert_eq!(territory.game, "medium");
+        assert_eq!(territory.tutorial.as_ref().unwrap().case, "tutorial");
+        assert_eq!(territory.levels.len(), 4);
+        for name in ["medium", "impatti_valico_due_lati_30_6",
+            "impatti_nuclei_valico_costante_lungo_28_7_0_60",
+            "impatti_nuclei_est_giro_lungo_28_6_75_60"] {
+            assert!(territory.case(name).is_some());
+            assert_eq!(territory.levels.iter().filter(|l| l.case == name).count(), 1);
+        }
+        let mut sim = Sim::new(&data, &territory.game, 2).unwrap();
+        let mut k = Kiosk::new(territory, data);
+        assert_eq!(k.selected_case, "medium");
+        let next = "impatti_valico_due_lati_30_6";
+        k.selected_case = next.into();
+        assert_eq!(sim.case.name, "medium", "selecting alone leaves the running fire intact");
+        let previous = k.baseline.clone();
+        let mut world = World::new();
+        world.init_resource::<Events<SimRestarted>>();
+        let mut state = SystemState::<EventWriter<SimRestarted>>::new(&mut world);
+        let mut events = state.get_mut(&mut world);
+        start_game(&mut k, &mut sim, &mut events);
+        assert_eq!(sim.case.name, next);
+        assert_eq!(k.phase, Phase::Gioco);
+        assert!(sim.paused());
+        assert!(!Arc::ptr_eq(&previous, &k.baseline), "older baseline workers are isolated");
+        k.selected_case = "medium".into();
+        assert_eq!(sim.case.name, next, "a pending selection does not change score scope");
+        let (active, seed) = (sim.case.name.clone(), sim.seed);
+        demo_restart(&mut k, &mut sim, &mut events, &active, seed);
+        assert_eq!(sim.case.name, next, "the automatic demo loop keeps the active case");
+        new_visit(&mut k, &mut sim, &mut events);
+        assert_eq!(sim.case.name, "medium");
+        assert_eq!(k.phase, Phase::Intro);
+        assert_eq!(k.territory.game, "medium");
+        assert_eq!(k.tutorial_case(), "tutorial");
     }
 }

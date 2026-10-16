@@ -104,6 +104,58 @@
       "wind_kmh": 36.0,
       "moisture_pct": 5.0,
       "minutes": 180
+    },
+    {
+      "name": "impatti_nuclei_valico_costante_lungo_28_7_0_60",
+      "near": "Le Terrazze",
+      "ignition": [
+        5590,
+        4370
+      ],
+      "radius_m": 60,
+      "wind_from_deg": 119,
+      "wind_kmh": 28,
+      "moisture_pct": 7,
+      "minutes": 300,
+      "start_min": 30
+    },
+    {
+      "name": "impatti_nuclei_est_giro_lungo_28_6_75_60",
+      "near": "Castelvento",
+      "ignition": [
+        5870,
+        4750
+      ],
+      "radius_m": 60,
+      "wind_from_deg": 119,
+      "wind_kmh": 28,
+      "moisture_pct": 6,
+      "minutes": 300,
+      "start_min": 30,
+      "shift": {
+        "at_min": 75,
+        "wind_from_deg": 50,
+        "wind_kmh": 28
+      }
+    },
+    {
+      "name": "impatti_valico_due_lati_30_6",
+      "near": "Le Terrazze",
+      "ignition": [
+        5590,
+        4370
+      ],
+      "radius_m": 60,
+      "wind_from_deg": 119,
+      "wind_kmh": 30,
+      "moisture_pct": 6,
+      "minutes": 240,
+      "start_min": 30,
+      "shift": {
+        "at_min": 75,
+        "wind_from_deg": 50,
+        "wind_kmh": 30
+      }
     }
   ],
   "evacuation": {
@@ -137,5 +189,27 @@
       ]
     ],
     "evacuate": "Le Ghiande"
-  }
+  },
+  "levels": [
+    {
+      "name": "Attuale (predefinito)",
+      "case": "medium",
+      "about": "La configurazione già in uso nella demo."
+    },
+    {
+      "name": "Attraversamento del valico",
+      "case": "impatti_valico_due_lati_30_6",
+      "about": "2–3 borghi colpiti senza ordini. Il profilo più permissivo dei tre nuovi."
+    },
+    {
+      "name": "Pressione su quattro borghi",
+      "case": "impatti_nuclei_valico_costante_lungo_28_7_0_60",
+      "about": "Castelvento, Fornaci, Le Terrazze e Le Ghiande. Vento costante; serve tempestività."
+    },
+    {
+      "name": "Rotazione da est",
+      "case": "impatti_nuclei_est_giro_lungo_28_6_75_60",
+      "about": "3–4 borghi colpiti senza ordini. Cambio di vento e meno margine per i ritardi."
+    }
+  ]
 }

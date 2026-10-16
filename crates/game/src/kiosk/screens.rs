@@ -54,7 +54,7 @@ fn volunteer(ui: &mut egui::Ui, faces: Option<&Portraits>, mood: Mood, size: f32
 
 /// The title screen: the fire plays behind it with the roaming camera, here
 /// only the name and «Gioca». True when «Gioca» was pressed.
-pub fn title(ctx: &egui::Context, k: &Kiosk, logo: Option<&Logo>) -> bool {
+pub fn title(ctx: &egui::Context, k: &Kiosk, sim: &Sim, logo: Option<&Logo>) -> bool {
     let screen = ctx.screen_rect();
     if super::ui::compact(ctx) {
         let mut play = false;
@@ -107,7 +107,7 @@ pub fn title(ctx: &egui::Context, k: &Kiosk, logo: Option<&Logo>) -> bool {
         });
     });
     egui::Area::new(egui::Id::new("titolo_nota")).anchor(Align2::RIGHT_BOTTOM, [-18.0, -14.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
-        ui.label(RichText::new(format!("Simulazione dimostrativa · {} · versione {}", k.territory.game, super::BUILD)).size(14.0).color(GREY.gamma_multiply(0.75)));
+        ui.label(RichText::new(format!("Simulazione dimostrativa · {} · versione {}", k.territory.levels.iter().find(|l| l.case == sim.case.name).map_or(sim.case.name.as_str(), |l| l.name.as_str()), super::BUILD)).size(14.0).color(GREY.gamma_multiply(0.75)));
     });
     ctx.request_repaint();
     play
@@ -138,7 +138,7 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
                 ui.label(RichText::new("le stelle di Persone, Case, Ettari").size(13.0).color(GREY));
                 ui.add_space(8.0);
                 let rows = if screen.height() >= 900.0 { rocca::score::BOARD_SHOWN } else { 4 };
-                board_rows(ui, k, None, rows);
+                board_rows(ui, k, &sim.case.name, None, rows);
             });
     });
     let mut go = None;
@@ -484,9 +484,9 @@ fn learning(ui: &mut egui::Ui, mine: &rocca::Outcome, none: Option<&rocca::Outco
 
 /// A level's board, the best `rows`; the player's own row (`mine`: name and
 /// time stamp) lit, and appended with its place when it ranks lower.
-fn board_rows(ui: &mut egui::Ui, k: &Kiosk, mine: Option<(&str, u64)>, rows: usize) {
+fn board_rows(ui: &mut egui::Ui, k: &Kiosk, case: &str, mine: Option<(&str, u64)>, rows: usize) {
     let (day, _) = board::now();
-    let ranking = k.board.ranking(&k.territory.game, &day);
+    let ranking = k.board.ranking(case, &day);
     if ranking.is_empty() {
         ui.label(RichText::new("Nessuna partita oggi").size(14.0).color(GREY.gamma_multiply(0.8)));
         return;
@@ -565,7 +565,7 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             ui.separator();
             ui.heading("Classifica di oggi");
             let name = rocca::score::name(&k.player);
-            board_rows(ui, k, k.saved.as_ref().map(|(_, at)| (name.as_str(), *at)), rocca::score::BOARD_SHOWN);
+            board_rows(ui, k, &sim.case.name, k.saved.as_ref().map(|(_, at)| (name.as_str(), *at)), rocca::score::BOARD_SHOWN);
         });
         if again { new_visit(k, sim, restarted); }
         return;
@@ -626,14 +626,14 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                         ui.set_width(side - 36.0);
                         let stamp = k.saved.as_ref().map(|(_, at)| (name.as_str(), *at));
                         if let Some((day, at)) = &k.saved {
-                            let (place, of) = (k.board.place(&k.territory.game, day, &name, *at), k.board.count(&k.territory.game, day));
+                            let (place, of) = (k.board.place(&sim.case.name, day, &name, *at), k.board.count(&sim.case.name, day));
                             if let Some(p) = place {
                                 ui.add(egui::Label::new(RichText::new(place_words(p, of)).size(22.0).strong().color(Color32::WHITE)).wrap());
                             }
                         }
                         ui.label(RichText::new("Classifica di oggi").size(14.0).color(GREY));
                         ui.add_space(6.0);
-                        board_rows(ui, k, stamp, rocca::score::BOARD_SHOWN);
+                        board_rows(ui, k, &sim.case.name, stamp, rocca::score::BOARD_SHOWN);
                     });
                     ui.add_space(12.0);
                     ui.add(egui::Label::new(RichText::new("Nella realtà, quando arriva l'ordine di evacuazione si parte subito. Aspettare di vedere il fuoco è uno degli errori più pericolosi.").size(13.0).italics().color(AMBER)).wrap());
@@ -719,7 +719,7 @@ fn compact_intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &
         if r.clicked() { go = Some(false); }
         ui.label("Tocca una squadra, poi l'esagono dove mandarla. Tocca un borgo per evacuare. Puoi anche trascinare i coni.");
         ui.separator();
-        ui.collapsing("Classifica di oggi", |ui| board_rows(ui, k, None, rocca::score::BOARD_SHOWN));
+        ui.collapsing("Classifica di oggi", |ui| board_rows(ui, k, &sim.case.name, None, rocca::score::BOARD_SHOWN));
         ui.label(RichText::new("Territorio immaginario. Nella realtà segui le indicazioni delle autorità.").size(13.0));
     });
     if go.is_some() { k.player = rocca::score::name(&k.player); }

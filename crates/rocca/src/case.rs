@@ -117,7 +117,7 @@ pub struct Territory {
     /// runner and the operator.
     #[serde(default)]
     pub featured: Vec<String>,
-    /// What the visitor chooses at the start, easiest first.
+    /// Named scenarios offered in the operator menu, in display order.
     #[serde(default)]
     pub levels: Vec<Level>,
     /// The evacuation's limits ([`crate::evac`]).
@@ -133,7 +133,7 @@ pub struct Territory {
     pub cases: Vec<Case>,
 }
 
-/// A difficulty the visitor can pick: a name, the case it plays and one
+/// An operator scenario choice: a name, the case it plays and one
 /// line on what makes it so.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Level {

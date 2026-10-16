@@ -568,7 +568,7 @@
   "hhv": 21000.0,
   "humidity": 45.0,
   "spotting": true,
-  "prob_ign_by_embers": 0.4,
+  "prob_ign_by_embers": 0.1,
   "burn": true,
   "spread_probability": [
    [
@@ -638,7 +638,7 @@
   "hhv": 21000.0,
   "humidity": 45.0,
   "spotting": true,
-  "prob_ign_by_embers": 0.4,
+  "prob_ign_by_embers": 0.1,
   "burn": true,
   "spread_probability": [
    [
@@ -708,7 +708,7 @@
   "hhv": 21000.0,
   "humidity": 45.0,
   "spotting": true,
-  "prob_ign_by_embers": 0.4,
+  "prob_ign_by_embers": 0.1,
   "burn": true,
   "spread_probability": [
    [
