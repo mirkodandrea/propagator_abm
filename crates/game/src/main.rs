@@ -245,6 +245,7 @@ fn kiosk_systems(app: &mut App) {
                 .after(fire_view::reset)
                 .after(buildings::reset)
                 .after(units::reset)
+                units::animate_spray,
                 .after(kiosk::marks::reset)
                 .run_if(in_state(AppState::Playing)),
         ),

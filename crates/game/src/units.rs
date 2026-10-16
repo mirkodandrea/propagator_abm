@@ -59,7 +59,28 @@ pub struct UnitView {
 #[derive(Component)]
 pub struct OrderMarker;
 
-/// The cut-line and wetted-ground overlay.
+/// One drop of a fire engine's jet.
+#[derive(Component)]
+pub struct Droplet {
+    unit: usize,
+    jet: usize,
+    k: usize,
+}
+
+/// Jets an engine throws at once (one per cell it is wetting), and drops per jet.
+const JETS: usize = 4;
+const DROPS: usize = 12;
+/// Height of the nozzle above the ground, and of the arc's crown over the chord, metres.
+const NOZZLE_M: f32 = 9.0;
+const ARC_BASE_M: f32 = 8.0;
+const ARC_PER_M: f32 = 0.18;
+/// Drop size in flight and when it bursts on the fuel, metres.
+const DROP_M: f32 = 2.6;
+const SPLASH_M: f32 = 9.0;
+/// Seconds a drop takes from nozzle to fuel.
+const FLIGHT_S: f32 = 0.9;
+
+/// The cut-line overlay (nothing is drawn on the wetted ground any more).
 #[derive(Component)]
 pub struct WorkOverlay;
 
@@ -68,7 +89,6 @@ pub struct UnitAssets {
     order_ring: Handle<RetroMaterial>,
     line_cut: Handle<RetroMaterial>,
     line_todo: Handle<RetroMaterial>,
-    wetted: Handle<RetroMaterial>,
     /// Suppression generation the markers were built for.
     orders_gen: u64,
     /// Fire generation the work overlay was built for, plus the counts it was
@@ -76,12 +96,13 @@ pub struct UnitAssets {
     /// wet, which is far rarer than the fire changing.
     work_gen: u64,
     /// Wet cells seen at the last scan (so a cell is announced once, when it
-    /// first gets wet) and the ones on show now, with the real time they appeared.
+    /// first gets wet) and the ones on show now, with the simulated time they appeared.
     wet_seen: std::collections::HashSet<usize>,
     wet_shown: Vec<(usize, f32)>,
     /// What the overlay was last built from, to rebuild only on a change.
     wet_built: usize,
 }
+
 
 /// The volunteers' (AIB) yellow-green kit; the fire brigade's engines are red.
 pub const VOLUNTEERS: Color = Color::srgb(0.80, 0.85, 0.20);
@@ -153,6 +174,30 @@ pub fn setup(
     }
     info!("suppression layer: {} unit symbols", sim.crews.units.len());
 
+    // The jets: a pool of droplets per engine, moved every frame by `animate_spray`.
+    let drop_mesh = meshes.add(Sphere::new(1.0));
+    let drop_mat = materials.add(retro::material(StandardMaterial {
+        base_color: Color::LinearRgba(LinearRgba::new(0.55, 1.3, 2.6, 0.75)),
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        ..default()
+    }, vr));
+    for u in sim.crews.units.iter().filter(|u| u.kind == UnitKind::Engine) {
+        for jet in 0..JETS {
+            for k in 0..DROPS {
+                commands.spawn((
+                    MaterialMeshBundle::<RetroMaterial> {
+                        mesh: drop_mesh.clone(),
+                        material: drop_mat.clone(),
+                        visibility: Visibility::Hidden,
+                        ..default()
+                    },
+                    Droplet { unit: u.id, jet, k },
+                ));
+            }
+        }
+    }
+
     let order_ring = hdr_blue(&mut materials, vr, 0.95);
     let mut unlit = |r: f32, g: f32, b: f32, a: f32| {
         materials.add(retro::material(StandardMaterial {
@@ -174,7 +219,6 @@ pub fn setup(
         // is deliberately faint: a busy pair of aircraft saturates a hundred
         // cells inside an hour, and at any higher alpha that is a lake painted
         // over the hillside rather than an indication of where the water went.
-        wetted: unlit(0.15, 0.55, 1.00, 0.60),
         orders_gen: u64::MAX,
         work_gen: u64::MAX,
         wet_seen: Default::default(),
@@ -411,25 +455,14 @@ fn orders_fingerprint(sim: &Sim) -> u64 {
     h
 }
 
-/// Rebuild the cut-line and wetted-ground overlay.
-///
-/// Two meshes, one draw each: at 20 m a cell is four vertices, and even a
-/// heavily worked incident is a few hundred cells. Rebuilt only when the *set*
-/// changes — cleared cells are monotonic within a run, and the wetted set is
-/// thresholded, so this fires a handful of times a minute rather than per frame.
-pub fn update_work_overlay(
-    mut commands: Commands,
-    sim: Res<Sim>,
-    time: Res<Time>,
-    mut assets: ResMut<UnitAssets>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    existing: Query<Entity, With<WorkOverlay>>,
-) {
-    let now = time.elapsed_seconds();
-    let w = sim.scn.world;
+/// Keep the list of cells the engines have just wetted. They are no longer
+/// painted blue (user, 2026-10-16): [`animate_spray`] aims a jet of water at them.
+pub fn update_work_overlay(sim: Res<Sim>, mut assets: ResMut<UnitAssets>) {
+    // Simulated time, so a jet stays up while the world is paused.
+    let now = sim.time_s() as f32;
     // Scan for newly wet cells on the sim generation (the moisture changes
     // slowly); each one is shown for WET_SHOW_S of real time, then dropped.
-    let gen = sim.generation / WET_REFRESH_GENERATIONS;
+    let gen = sim.generation;
     let scan = assets.work_gen != gen;
     if scan {
         let moist = sim.fire.added_moisture();
@@ -444,50 +477,17 @@ pub fn update_work_overlay(
         }
         assets.wet_seen = seen;
     }
-    let before = assets.wet_shown.len();
-    assets.wet_shown.retain(|(_, t0)| now - *t0 < WET_SHOW_S);
-    let wet_len = assets.wet_shown.len();
-    if !scan && wet_len == before && assets.wet_built == wet_len {
-        return;
-    }
     assets.work_gen = gen;
-    assets.wet_built = wet_len;
-    for e in &existing {
-        commands.entity(e).despawn();
-    }
-
-    let wet: Vec<Cell> = assets
-        .wet_shown
-        .iter()
-        .map(|(i, _)| Cell { row: i / w.fire_cols, col: i % w.fire_cols })
-        .collect();
-
-    for (cells, material) in [(wet, assets.wetted.clone())] {
-        if cells.is_empty() {
-            continue;
-        }
-        commands.spawn((
-            MaterialMeshBundle::<RetroMaterial> {
-                mesh: meshes.add(cell_patches(&sim.scn, &cells)),
-                material,
-                ..default()
-            },
-            WorkOverlay,
-        ));
-    }
+    assets.wet_shown.retain(|(_, t0)| now - *t0 < WET_SHOW_S);
 }
 
-/// How long the water an engine laid stays drawn, in real seconds.
-const WET_SHOW_S: f32 = 3.0;
+/// How long the water an engine laid stays drawn, in simulated seconds.
+const WET_SHOW_S: f32 = 600.0;
 /// Added moisture at which a cell is worth showing as wet, percentage points.
 /// A tenth of the core's moisture of extinction: enough to see where a drop
 /// landed, high enough that the 1%/minute decay makes it fade rather than
 /// linger as a stain for the rest of the incident.
 const WET_SHOW_PTS: f32 = 1.5;
-/// Rebuild the wet overlay every N sim generations. At 2 s steps this is a
-/// refresh every ~20 simulated seconds, which is smooth for something that
-/// decays with a 69-minute half life.
-const WET_REFRESH_GENERATIONS: u64 = 10;
 
 /// One flat quad per cell, draped at each corner.
 fn cell_patches(scn: &Scenario, cells: &[Cell]) -> Mesh {
@@ -656,5 +656,64 @@ fn lerp(a: Pos, b: Pos, t: f32) -> Pos {
     Pos {
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t,
+    }
+}
+
+/// The engines' water: a jet of drops from each working engine to the cells it
+/// has just wetted, hottest first (the same order the model wets them in), with
+/// a burst of spray where it lands.
+pub fn animate_spray(
+    sim: Res<Sim>,
+    time: Res<Time>,
+    assets: Res<UnitAssets>,
+    mut drops: Query<(&Droplet, &mut Transform, &mut Visibility)>,
+) {
+    let now = time.elapsed_seconds();
+    let w = sim.scn.world;
+    let reach = rocca::game::ENGINE_RANGE_M * 1.5;
+    // The targets of each engine, computed once per frame and not per drop.
+    let mut jets: std::collections::HashMap<usize, Vec<Pos>> = Default::default();
+    for u in sim.crews.units.iter().filter(|u| u.kind == UnitKind::Engine) {
+        if u.state != UnitState::Working || u.aboard || !matches!(u.task, Task::Attack { .. }) {
+            continue;
+        }
+        let mut near: Vec<(f32, Pos)> = assets
+            .wet_shown
+            .iter()
+            .map(|(i, _)| w.centre_of(Cell { row: i / w.fire_cols, col: i % w.fire_cols }))
+            .filter(|p| (p.x - u.pos.x).hypot(p.y - u.pos.y) <= reach)
+            .map(|p| (sim.fire.threat().at(p), p))
+            .collect();
+        near.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        jets.insert(u.id, near.into_iter().take(JETS).map(|(_, p)| p).collect());
+    }
+    for (d, mut tf, mut vis) in &mut drops {
+        let target = jets.get(&d.unit).and_then(|j| j.get(d.jet));
+        let (Some(&to), Some(u)) = (target, sim.crews.units.get(d.unit)) else {
+            if *vis != Visibility::Hidden {
+                *vis = Visibility::Hidden;
+            }
+            continue;
+        };
+        let phase = (now / FLIGHT_S + d.k as f32 / DROPS as f32 + d.jet as f32 * 0.37).fract();
+        let from_y = sim.scn.terrain.height_at(u.pos) + NOZZLE_M;
+        let to_y = sim.scn.terrain.height_at(to) + RING_LIFT_M;
+        let len = (to.x - u.pos.x).hypot(to.y - u.pos.y);
+        // A little scatter so the jet is a stream rather than a string of beads.
+        let wob = ((d.k * 7 + d.jet * 13) as f32).sin();
+        let t = phase.min(1.0);
+        let p = Pos {
+            x: u.pos.x + (to.x - u.pos.x) * t + wob * 1.5 * (t * (1.0 - t)),
+            y: u.pos.y + (to.y - u.pos.y) * t + wob * 1.5 * (t * (1.0 - t)),
+        };
+        let crown = ARC_BASE_M + ARC_PER_M * len;
+        let y = from_y + (to_y - from_y) * t + crown * 4.0 * t * (1.0 - t);
+        tf.translation = frame::to_bevy(p, y);
+        // Bursts into mist on landing: grows and thins over the last tenth.
+        let burst = ((phase - 0.9) / 0.1).clamp(0.0, 1.0);
+        tf.scale = Vec3::splat(DROP_M + (SPLASH_M - DROP_M) * burst);
+        if *vis != Visibility::Inherited {
+            *vis = Visibility::Inherited;
+        }
     }
 }

@@ -39,6 +39,7 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
 - 2026-10-15: la simulazione parte alle **11:00** (prima 14:00), richiesta dell'utente: `rocca::words::START_H`; l'orologio e il sole del chiosco ne derivano (11:00–14:00). Il meteo dello scenario non dipende dall'ora.
 - 2026-10-14: le strade si riaprono 8 min dopo l'accensione delle celle vicine (`FLAME_S` in `fire`): le celle che covano non chiudono più la strada (restano a 0,25 come le bruciate). Traccia dell'acqua e della linea tagliata più visibile (`units.rs`). **Da riverificare nella tabella di bilanciamento.**
 
+- 2026-10-16 (richiesta dell'utente): l'intervento dell'autobotte è **mirato** (`EngineAim::Ahead`, già il predefinito dal 2026-10-15: nessun cambio di regole) e si vede come **getto d'acqua animato** (`units::animate_spray`): fino a 4 getti per autobotte, gocce in arco dall'ugello alle celle appena bagnate, le più minacciate per prime, con spruzzo all'arrivo. Le celle non si colorano più di blu. I getti scadono sul tempo simulato (restano in pausa) e le celle bagnate si leggono a ogni generazione. Scatto `KIOSK_SNAP` visto (11:44, `t=44`, senza `pause=1`: la previsione in pausa copre l'autobotte): i getti partono dall'autobotte verso il fronte.
 ### Da fare, in ordine
 
 1. [ ] **Tabella di bilanciamento** (`target/release/rocca medium --seme N ...`), semi 1–3, con ritardo di 30 min. Strategie:
