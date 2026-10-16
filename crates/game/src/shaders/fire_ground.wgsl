@@ -12,6 +12,13 @@
 #import bevy_pbr::forward_io::VertexOutput
 #import bevy_pbr::mesh_view_bindings::globals
 
+@group(2) @binding(0) var road_tex: texture_2d<f32>;
+@group(2) @binding(1) var road_samp: sampler;
+@group(2) @binding(2) var<uniform> mask_rect: vec4<f32>;
+
+// Keep in step with `ground_mask.rs` and `retro.wgsl`.
+const RANGE_M: f32 = 12.0;
+
 fn hash21(p: vec2<f32>) -> f32 {
     var p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
@@ -94,5 +101,25 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         let alpha = mix(col.a, col.a * edge, w);
         col = vec4<f32>(rgb, alpha);
     }
+
+    // Cold scar: ragged edge and ash grain at pixel scale, and the roads
+    // showing through it. The vertex lattice is 5 m or coarser, so without
+    // this the scar's border is a visible staircase and roads vanish under it.
+    let wpc = in.world_position.xz;
+    let cold = 1.0 - w;
+    if cold > 0.0 && col.a > 0.0 {
+        let n2 = 0.6 * value_noise(wpc * 0.45) + 0.4 * value_noise(wpc * 1.7 + 5.3);
+        let ragged = smoothstep(0.10, 0.60, col.a + (n2 - 0.5) * 0.7);
+        let grain = 0.80 + 0.40 * (0.5 * n2 + 0.5 * value_noise(wpc * 5.0));
+        col = vec4<f32>(col.rgb * mix(1.0, grain, cold), mix(col.a, col.a * ragged, cold));
+    }
+    let road_d = (textureSample(road_tex, road_samp, vec2<f32>(wpc.x, -wpc.y) * mask_rect.xy).rg * 2.0 - 1.0) * RANGE_M;
+    let mpp = max(length(dpdx(wpc)), length(dpdy(wpc)));
+    let aa = max(0.5 * mpp, 0.25);
+    let on_road = max(
+        1.0 - smoothstep(max(0.0, 0.8 * mpp - 4.8) - aa, max(0.0, 0.8 * mpp - 4.8) + aa, road_d.x),
+        1.0 - smoothstep(max(0.0, 0.8 * mpp - 1.6) - aa, max(0.0, 0.8 * mpp - 1.6) + aa, road_d.y),
+    );
+    col.a = col.a * (1.0 - 0.72 * on_road * cold);
     return col;
 }

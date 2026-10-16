@@ -61,7 +61,14 @@ impl Material for FireMaterial {
 /// vertex colour, animated only where `sample_color` has marked a fragment as
 /// glowing. See `shaders/fire_ground.wgsl`.
 #[derive(Asset, TypePath, AsBindGroup, Clone, Default)]
-pub struct FireGroundMaterial {}
+pub struct FireGroundMaterial {
+    /// Road distance field (`ground_mask`), so a scar can let the road show.
+    #[texture(0)]
+    #[sampler(1)]
+    pub road_mask: Option<Handle<Image>>,
+    #[uniform(2)]
+    pub mask_rect: Vec4,
+}
 
 impl Material for FireGroundMaterial {
     fn fragment_shader() -> ShaderRef {

@@ -199,7 +199,8 @@ fn built_tint(cover: &Cover, p: Pos) -> ([f32; 3], f32) {
             CoverClass::Track => [0.66, 0.58, 0.44],
             CoverClass::Irrigated => [0.46, 0.68, 0.32],
             CoverClass::Water => [0.20, 0.36, 0.44],
-            CoverClass::Road | CoverClass::Building | CoverClass::Yard => PAVING,
+            // Paving is drawn per pixel by the terrain shader (`ground_mask`).
+            CoverClass::Road | CoverClass::Building | CoverClass::Yard => continue,
         };
         for i in 0..3 {
             sum[i] += c[i];
@@ -262,8 +263,8 @@ fn cover_tint(scn: &Scenario, p: Pos) -> [f32; 3] {
 /// `slope_cos` is the vertical component of the surface normal: 1 on the flat,
 /// falling toward 0 on a cliff. Ligurian ground is dry pale limestone soil,
 /// with bare rock showing wherever it is too steep to hold any.
-fn ground_color(scn: &Scenario, elev: f32, slope_cos: f32, p: Pos, shore: f32) -> [f32; 3] {
-    if elev <= 0.5 {
+fn ground_color(scn: &Scenario, sea: &crate::ground_mask::SeaGrid, elev: f32, slope_cos: f32, p: Pos, shore: f32) -> [f32; 3] {
+    if elev <= 0.5 && sea.is_sea(p) {
         return [0.07, 0.13, 0.26]; // sea
     }
 
@@ -338,9 +339,12 @@ pub fn build(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<RetroMaterial>,
+    images: &mut Assets<Image>,
 ) {
     let t = &scn.terrain;
-    let material = materials.add(retro::material(StandardMaterial {
+    let mask = crate::ground_mask::build(scn);
+    images.insert(&crate::ground_mask::GRASS_MAP, crate::ground_mask::grass_map(scn));
+    let material = materials.add(retro::terrain_material(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 1.0,
         metallic: 0.0,
@@ -350,7 +354,8 @@ pub fn build(
         ..default()
     // The terrain is the backdrop, not a participating neon object: keep the
     // dev floor matte and opt it out of the animated edge treatment.
-    }, false));
+    }, { images.insert(&crate::ground_mask::ROAD_MASK, mask.image); crate::ground_mask::ROAD_MASK }, mask.rect));
+    let mask = mask.sea;
 
     // the mesh's own grid: every STRIDE-th sample
     let (cols, rows, posting) = ((t.cols - 1) / STRIDE + 1, (t.rows - 1) / STRIDE + 1, t.posting * STRIDE as f32);
@@ -394,7 +399,7 @@ pub fn build(
                     let n = t.normal_at(p);
                     normals.push([n[0], n[1], -n[2]]);
 
-                    let col = ground_color(scn, elev, n[1], p, shore.at(p));
+                    let col = ground_color(scn, &mask, elev, n[1], p, shore.at(p));
                     let col = Color::srgb(col[0], col[1], col[2]).to_linear();
                     colors.push([col.red, col.green, col.blue, 1.0]);
                     uvs.push([c as f32 / cn as f32, r as f32 / rn as f32]);

@@ -18,6 +18,18 @@ pub struct RetroExtension {
     // controls in one vec4: enabled, edge strength, pulse strength, spare.
     #[uniform(100)]
     pub enabled: Vec4,
+    /// Road distance field, for the terrain only (`enabled.w` = 1). Other
+    /// materials leave it unset and Bevy binds a fallback texture.
+    #[texture(101)]
+    #[sampler(102)]
+    pub road_mask: Option<Handle<Image>>,
+    /// World metres to mask coordinates (`ground_mask::RoadMask::rect`).
+    #[uniform(103)]
+    pub mask_rect: Vec4,
+    /// Meadow cover, one texel per fire cell (`ground_mask::grass_map`).
+    #[texture(104)]
+    #[sampler(105)]
+    pub grass_map: Option<Handle<Image>>,
 }
 
 /// Per-material strength of the training-simulation finish.
@@ -96,6 +108,18 @@ pub fn material_with_style(
                 style.pulse.clamp(0.0, 1.0),
                 0.0,
             ),
+            ..default()
         },
     }
+}
+
+/// The terrain's material: the retro finish plus the road mask the shader
+/// draws the road network from.
+pub fn terrain_material(base: StandardMaterial, mask: Handle<Image>, rect: Vec4) -> RetroMaterial {
+    let mut m = material_with_style(base, false, RetroStyle::BACKGROUND);
+    m.extension.enabled.w = 1.0;
+    m.extension.road_mask = Some(mask);
+    m.extension.mask_rect = rect;
+    m.extension.grass_map = Some(crate::ground_mask::GRASS_MAP);
+    m
 }

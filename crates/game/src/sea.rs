@@ -182,12 +182,18 @@ pub struct WaterUniform {
     pub sun_color: Vec4,
     pub deep_color: Vec4,
     pub shallow_color: Vec4,
+    /// World metres to ground-mask coordinates (`ground_mask::RoadMask::rect`).
+    pub mask_rect: Vec4,
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct WaterMaterial {
     #[uniform(0)]
     pub uniform: WaterUniform,
+    /// The ground mask, whose alpha is the signed distance to the waterline.
+    #[texture(1)]
+    #[sampler(2)]
+    pub shore: Option<Handle<Image>>,
 }
 
 impl Material for WaterMaterial {
@@ -276,7 +282,9 @@ fn spawn_sea(
             sun_color: Vec4::ONE,
             deep_color: Vec4::new(0.02, 0.09, 0.20, 1.0),
             shallow_color: Vec4::new(0.09, 0.42, 0.40, 1.0),
+            mask_rect: Vec4::new(1.0 / scn.world.width_m, 1.0 / scn.world.height_m, 0.0, 0.0),
         },
+        shore: Some(crate::ground_mask::ROAD_MASK),
     });
     commands.insert_resource(WaterHandle(handle.clone()));
 

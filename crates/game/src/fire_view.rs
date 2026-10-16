@@ -156,6 +156,7 @@ pub fn setup(
     mut fire_materials: ResMut<Assets<FireMaterial>>,
     mut ground_materials: ResMut<Assets<FireGroundMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    sim: Res<crate::sim::Sim>,
 ) {
     let overlay = meshes.add(empty_mesh());
     let flames = meshes.add(empty_mesh());
@@ -169,7 +170,10 @@ pub fn setup(
     // A shader material: the overlay's own colour already carries the glow
     // flag (red channel > 1.0), so the fragment shader only needs to animate
     // it. See `crate::fire_shader`.
-    let overlay_mat = ground_materials.add(FireGroundMaterial {});
+    let overlay_mat = ground_materials.add(FireGroundMaterial {
+        road_mask: Some(crate::ground_mask::ROAD_MASK),
+        mask_rect: Vec4::new(1.0 / sim.scn.world.width_m, 1.0 / sim.scn.world.height_m, 0.0, 0.0),
+    });
     // Shader materials, additive: flames and embers are light, not surfaces.
     // Vertex colours run above 1.0 so the camera's bloom pass catches them,
     // and the fragment shader domain-warps the texture lookup so the flame

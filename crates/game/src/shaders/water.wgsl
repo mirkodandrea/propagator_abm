@@ -24,8 +24,14 @@ struct WaterUniform {
     sun_color: vec4<f32>,
     deep_color: vec4<f32>,
     shallow_color: vec4<f32>,
+    // xy: world metres to ground-mask coordinates.
+    mask_rect: vec4<f32>,
 };
 @group(2) @binding(0) var<uniform> water: WaterUniform;
+// The ground mask; its alpha is the signed distance to the waterline, 1 m a
+// step around 127.5 (above: in the water). See `ground_mask.rs`.
+@group(2) @binding(1) var shore_tex: texture_2d<f32>;
+@group(2) @binding(2) var shore_samp: sampler;
 
 // A wave the lattice cannot sample (under ~2 points per wavelength) only
 // aliases into a checkerboard, so each component fades out as the local
@@ -165,8 +171,20 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // `in.color.r` carries the distance to the shore in metres from `crate::sea` (0 at the
     // shoreline), `.g` the lattice spacing, sampled from the same terrain heightfield the ground
     // colour under the water uses.
-    let depth = clamp(in.color.r / 70.0, 0.0, 1.0);
-    var col = mix(water.shallow_color.rgb, water.deep_color.rgb, depth);
+    // Inside the mask the distance is read per pixel from its texture: the
+    // lattice's own value is one probe per 15 m vertex and bands visibly.
+    let mask_uv = vec2<f32>(in.world_position.x, -in.world_position.z) * water.mask_rect.xy;
+    let mask_a = textureSample(shore_tex, shore_samp, mask_uv).a;
+    let inside = all(mask_uv > vec2<f32>(0.0)) && all(mask_uv < vec2<f32>(1.0));
+    let shore_d = select(in.color.r, max(mask_a * 255.0 - 127.5, 0.0), inside);
+    // The lattice reaches over low ground that the mask calls land (a quay, a
+    // hollow below sea level): no water there.
+    if inside && mask_a * 255.0 - 127.5 < -0.5 {
+        discard;
+    }
+    let depth = clamp(shore_d / 70.0, 0.0, 1.0);
+    // Shallows hold their turquoise a while, then drop to deep blue.
+    var col = mix(water.shallow_color.rgb, water.deep_color.rgb, smoothstep(0.0, 1.0, pow(depth, 0.8)));
 
     // This shader does not run through the scene's own lighting, so it has
     // to dim itself: without this the sea stays lit like noon after the sun
@@ -192,7 +210,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     col += water.sun_color.rgb * spec * 2.5;
 
     // Foam only right at the shoreline, thickening with wind.
-    let foam_edge = 1.0 - smoothstep(0.0, 0.35 + chop * 0.5, depth);
+    // A band of a few metres that breathes in and out with the swell.
+    let foam_w = 3.0 + chop * 4.0 + 1.5 * sin(t * 0.9 + shore_d * 0.25 + in.world_position.x * 0.02);
+    let foam_edge = 1.0 - smoothstep(0.0, foam_w, shore_d);
     let foam_noise = value_noise(in.world_position.xz * 0.15 + t * 0.3);
     let foam = foam_edge * step(0.35, foam_noise + foam_edge * 0.4);
     col = mix(col, vec3<f32>(0.9, 0.93, 0.95) * light, foam * 0.85);
@@ -202,7 +222,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // an opaque horizon; shore distance is a clarity proxy, not measured depth.
     let near_view = 1.0 - smoothstep(35.0, 260.0, view_distance);
     let clear_angle = smoothstep(0.15, 0.75, facing);
-    let clarity = 1.0 - smoothstep(10.0, 90.0, in.color.r);
+    let clarity = 1.0 - smoothstep(10.0, 90.0, shore_d);
     let transmission = near_view * clear_angle * (1.0 - fresnel)
         * mix(0.16, 0.70, clarity);
     // Foam and sun glitter cover the transmitted view rather than fading out.
