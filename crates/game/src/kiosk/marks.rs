@@ -64,6 +64,8 @@ pub struct MarkAssets {
     evac: Handle<FlatMaterial>,
     closed: Handle<FlatMaterial>,
     active: Handle<FlatMaterial>,
+    /// The zones covered by the deployed teams: [VVF, AIB].
+    zone: [Handle<FlatMaterial>; 2],
     team_key: u64,
     /// What the hex grid, the orders and the closed roads were built for.
     hex_key: Option<String>,
@@ -93,6 +95,10 @@ pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>
         evac: materials.add(FlatMaterial::new(EVAC).pulled(2.0)),
         closed: materials.add(FlatMaterial::new(CLOSED).pulled(1.0)),
         active: materials.add(FlatMaterial::new([1.0, 0.9, 0.0]).pulled(HEX_PULL_M + 6.0)),
+        zone: [super::ui::VVF, super::ui::AIB].map(|c| {
+            let [r, g, b, _] = c.to_array();
+            materials.add(FlatMaterial::new([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]).pulled(HEX_PULL_M + 3.0))
+        }),
         team_key: u64::MAX,
         hex_key: None,
         targets_key: None,
@@ -333,7 +339,25 @@ pub fn update_teams(
     };
     hexes.sort_unstable();
     hexes.dedup();
+    // the zone each deployed team covers, in its colour (VVF / AIB)
+    let mut zones: [Vec<rocca::Axial>; 2] = [vec![], vec![]];
+    if playing {
+        for t in &sim.teams {
+            if let Some(h) = t.hex {
+                zones[t.volunteers as usize].extend(reach(h));
+            }
+        }
+    }
+    for z in &mut zones {
+        z.sort_unstable();
+        z.dedup();
+    }
     let mut key = playing as u64;
+    for (i, z) in zones.iter().enumerate() {
+        for h in z {
+            key = key.wrapping_mul(0x100_0000_01b3) ^ ((i as u64) << 50 ^ (h.q as i64 as u64) << 24 ^ h.r as i64 as u64);
+        }
+    }
     for h in &hexes {
         key = key.wrapping_mul(0x100_0000_01b3) ^ ((h.q as i64 as u64) << 24 ^ h.r as i64 as u64);
     }
@@ -343,6 +367,10 @@ pub fn update_teams(
     assets.team_key = key;
     for e in &old {
         commands.entity(e).despawn();
+    }
+    for (i, z) in zones.iter().enumerate().filter(|(_, z)| !z.is_empty()) {
+        let parts = z.iter().map(|h| path_mesh(&sim.scn, &outline(*h), HEX_PICK_M * 0.9, None)).collect();
+        spawn(&mut commands, &mut meshes, merge(parts), &assets.zone[i], TeamMark);
     }
     if !hexes.is_empty() {
         let parts = hexes.iter().map(|h| path_mesh(&sim.scn, &outline(*h), HEX_PICK_M * 1.4, None)).collect();
