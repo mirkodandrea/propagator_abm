@@ -302,6 +302,8 @@ pub fn spawn(
         unlit: false,
         ..default()
     }, false, retro::RetroStyle::BACKGROUND));
+    // Foliage finish (clump / speckle shading) in the retro shader.
+    materials.get_mut(&material).unwrap().extension.enabled.w = 2.0;
 
     let (rows, cols) = (scn.world.fire_rows, scn.world.fire_cols);
     let chunks_y = rows.div_ceil(CHUNK_CELLS);
@@ -531,9 +533,16 @@ fn scatter_plant(
             let height = (7.0 + rng.unit() * 5.0) * scale * crate::visual_scale::TREE;
             out.model("olive", base, Vec3::splat(height), yaw, [0.33, 0.40, 0.26], wood);
         }
+        // Meadow tufts are drawn by the terrain shader (`shaders/retro.wgsl`)
+        // unless `ROCCA_GRASS_MESH` asks for the old geometry.
+        Species::Grass if crate::ground_mask::shader_grass() => return None,
         Species::Grass => grass(out, base, scale, yaw, foliage, rng),
     }
     Some(p)
+}
+
+fn leaf(is_leaf: bool) -> f32 {
+    if is_leaf { 1.0 } else { 0.0 }
 }
 
 fn mul(c: [f32; 3], k: f32) -> [f32; 3] {
@@ -687,7 +696,7 @@ impl Builder {
             let color = if model.wood[i] { wood } else { foliage };
             // Preserve species colour and the authored crown's tonal variation.
             let shade = if model.wood[i] { 1.0 } else { model.colors[i][1] / 0.38 };
-            self.vertex(base + rotation * (Vec3::from(*p) * scale), mul(color, shade));
+            self.vertex_a(base + rotation * (Vec3::from(*p) * scale), mul(color, shade), leaf(!model.wood[i]));
         }
         self.indices.extend(model.indices.iter().map(|i| start + i));
     }
@@ -738,16 +747,16 @@ impl Builder {
         }
 
         let y = |t: f32| lo.y + (hi.y - lo.y) * t;
-        let bottom = self.vertex(at(Vec3::new(centre.x, y(0.04), centre.z)), mul(foliage, p.shade_low * 0.8));
+        let bottom = self.vertex_a(at(Vec3::new(centre.x, y(0.04), centre.z)), mul(foliage, p.shade_low * 0.8), 1.0);
         let ring = self.positions.len() as u32;
         for (t, k, shade) in [(0.3, 0.85, p.shade_low), (0.62, 1.0, p.shade_high)] {
             for i in 0..SIDES {
                 let a = (i as f32 + 0.5 * t) * std::f32::consts::TAU / SIDES as f32;
                 let v = Vec3::new(centre.x + a.cos() * radius.x * k, y(t), centre.z + a.sin() * radius.z * k);
-                self.vertex(at(v), mul(foliage, shade));
+                self.vertex_a(at(v), mul(foliage, shade), 1.0);
             }
         }
-        let top = self.vertex(at(Vec3::new(centre.x, hi.y, centre.z)), mul(foliage, p.shade_high * 1.05));
+        let top = self.vertex_a(at(Vec3::new(centre.x, hi.y, centre.z)), mul(foliage, p.shade_high * 1.05), 1.0);
         for i in 0..SIDES {
             let (a, b) = (ring + i, ring + (i + 1) % SIDES);
             let (c, d) = (a + SIDES, b + SIDES);
@@ -758,13 +767,20 @@ impl Builder {
     }
 
     fn vertex(&mut self, p: Vec3, c: [f32; 3]) -> u32 {
+        self.vertex_a(p, c, 0.0)
+    }
+
+    /// `leaf` goes in the colour's alpha (the material is opaque, so nothing
+    /// else reads it): 1 for living foliage, which the shader textures; 0 for
+    /// wood, rock, grass and everything fire has touched (see `paint`).
+    fn vertex_a(&mut self, p: Vec3, c: [f32; 3], leaf: f32) -> u32 {
         let i = self.positions.len() as u32;
         self.positions.push([p.x, p.y, p.z]);
         self.normals.push([0.0, 1.0, 0.0]); // replaced in `finish`
         // Vertex colours are linear in Bevy. Ecological palettes above are
         // sRGB; without conversion dark foliage washes out to pastel mint.
         let linear = Color::srgb(c[0], c[1], c[2]).to_linear();
-        self.colors.push([linear.red, linear.green, linear.blue, 1.0]);
+        self.colors.push([linear.red, linear.green, linear.blue, leaf]);
         i
     }
 
@@ -1076,7 +1092,7 @@ fn paint(colors: &mut [[f32; 4]], state: u8, k: f32) {
     if state == CellFire::Burning as u8 {
         // Alight: pushed above 1.0 so the bloom pass catches it.
         for c in colors {
-            *c = [1.0 + 2.2 * k, 0.42 + 0.25 * k, 0.06, 1.0];
+            *c = [1.0 + 2.2 * k, 0.42 + 0.25 * k, 0.06, 0.0];
         }
     } else {
         // Charcoal, keeping a trace of the original tint so a burnt
@@ -1086,7 +1102,7 @@ fn paint(colors: &mut [[f32; 4]], state: u8, k: f32) {
                 0.07 + c[0] * 0.10,
                 0.06 + c[1] * 0.08,
                 0.06 + c[2] * 0.08,
-                1.0,
+                0.0,
             ];
         }
     }

@@ -61,6 +61,46 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let edge = max(silhouette_edge, facet_edge) * edge_strength * burn_gate;
     let edge_pulse = (0.30 + carrier * 0.18 + scan * 0.08 + grain * 0.03) * edge;
 
+    // Vegetation only (`enabled.w` = 2): breaks the flat vertex colour into
+    // leaf clumps and a fine speckle, plus a warm sunlit / cool shaded lean.
+    // Two value-noise taps, faded out once a pixel spans more than ~2 m, so
+    // the far forest costs next to nothing and never shimmers.
+    if retro.enabled.w > 1.5 {
+        let px_m = max(length(dpdx(p)), length(dpdy(p)));
+        let fine = 1.0 - smoothstep(1.0, 3.5, px_m);
+        let mid = 1.0 - smoothstep(2.0, 7.0, px_m);
+        // Per-patch tint on a ~3.5 m lattice: about one macchia shrub each, so
+        // neighbouring bushes differ in tone; it outlives the fine detail.
+        let patch_tone = hash21(floor(p.xz / 3.5)) - 0.5;
+        let clump = value_noise(p.xz * 0.9 + vec2<f32>(p.y * 0.6, p.y * 0.35));
+        // Posterised clumps: distinct light and dark leaf masses with soft
+        // steps between them, rather than a smooth gradient.
+        let steps = floor(clump * 3.0) / 3.0 + smoothstep(0.0, 0.18, fract(clump * 3.0)) / 3.0;
+        var tone = patch_tone * 0.45 * mid + (mix(clump, steps, 0.7) - 0.5) * 0.75 * mid;
+        if fine > 0.0 {
+            let speck = value_noise(p.xz * 3.2 + vec2<f32>(p.y * 3.3, -p.y * 2.1));
+            // Sharp leaf dots: bright tips, dark gaps between them.
+            let leaves = smoothstep(0.38, 0.62, speck);
+            tone += (leaves - 0.5) * 0.60 * fine - (1.0 - leaves) * 0.10 * fine;
+        }
+        let up = clamp(normalize(in.world_normal).y * 0.5 + 0.5, 0.0, 1.0);
+        let warm = vec3<f32>(1.14, 1.06, 0.76);
+        let cool = vec3<f32>(0.80, 0.96, 1.08);
+        let lean = mix(cool, warm, up * (0.5 + clump * 0.5));
+        // Which vertices are living foliage is decided where the mesh is
+        // built: vertex alpha is 1 on leaves, 0 on wood, rock, grass and
+        // anything burning or burnt (`vegetation.rs`).
+        let c = pbr_input.material.base_color.rgb;
+#ifdef VERTEX_COLORS
+        let alive = in.color.a;
+#else
+        let alive = 0.0;
+#endif
+        let k = mid * alive;
+        let rgb = c * (1.0 + tone * alive) * mix(vec3<f32>(1.0), lean, k);
+        pbr_input.material.base_color = vec4<f32>(rgb, pbr_input.material.base_color.a);
+    }
+
     // A small additive lift is much more visible than changing emissive on an
     // unlit StandardMaterial, and it remains a single coherent GPU pass.
     pbr_input.material.base_color = vec4<f32>(
@@ -86,4 +126,15 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     );
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
     return out;
+}
+
+fn value_noise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let a = hash21(i);
+    let b = hash21(i + vec2<f32>(1.0, 0.0));
+    let c = hash21(i + vec2<f32>(0.0, 1.0));
+    let d = hash21(i + vec2<f32>(1.0, 1.0));
+    let u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
