@@ -24,7 +24,9 @@ const HEX_LINE_M: f32 = 12.0;
 const HEX_UNDER_M: f32 = 24.0;
 const HEX_PICK_M: f32 = 16.0;
 /// The covered zone's boundary line.
-const ZONE_LINE_M: f32 = 7.0;
+const ZONE_LINE_M: f32 = 11.0;
+/// Dash length of the zone boundary.
+const ZONE_DASH_M: f32 = 60.0;
 /// The drivable roads shown while a move is chosen.
 const ROAD_M: f32 = 9.0;
 /// Extra pull toward the camera for the hex lines: enough that the hills'
@@ -66,7 +68,7 @@ pub struct MarkAssets {
     evac: Handle<FlatMaterial>,
     closed: Handle<FlatMaterial>,
     active: Handle<FlatMaterial>,
-    /// The boundary of the zone covered by the deployed teams, AIB yellow.
+    /// The boundary of the zone covered by the deployed teams, assigned-hex yellow, dashed.
     zone: Handle<FlatMaterial>,
     team_key: u64,
     /// What the hex grid, the orders and the closed roads were built for.
@@ -97,10 +99,8 @@ pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>
         evac: materials.add(FlatMaterial::new(EVAC).pulled(2.0)),
         closed: materials.add(FlatMaterial::new(CLOSED).pulled(1.0)),
         active: materials.add(FlatMaterial::new([1.0, 0.9, 0.0]).pulled(HEX_PULL_M + 6.0)),
-        zone: {
-            let [r, g, b, _] = super::ui::AIB.to_array();
-            materials.add(FlatMaterial::new([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]).pulled(HEX_PULL_M + 3.0))
-        },
+        // the same yellow as the assigned hexes, dashed
+        zone: materials.add(FlatMaterial::new([1.0, 0.9, 0.0]).pulled(HEX_PULL_M + 3.0)),
         team_key: u64::MAX,
         hex_key: None,
         targets_key: None,
@@ -415,7 +415,7 @@ pub fn update_teams(
     }
     let loops = boundary(&zone);
     if !loops.is_empty() {
-        let parts = loops.iter().map(|l| path_mesh(&sim.scn, l, ZONE_LINE_M, None)).collect();
+        let parts = loops.iter().map(|l| path_mesh(&sim.scn, l, ZONE_LINE_M, Some(ZONE_DASH_M))).collect();
         spawn(&mut commands, &mut meshes, merge(parts), &assets.zone, TeamMark);
     }
     if !hexes.is_empty() {
