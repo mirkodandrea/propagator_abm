@@ -29,6 +29,7 @@ Dalla radice del repository, in release (`cargo build --release -p rocca --examp
 | Tutorial | `TRACCIA=1 target/release/rocca tutorial` | Con il copione nessuna persona colta né casa colpita; senza ordini sì. |
 | Partita con ordini | `target/release/rocca medium --squadra "20:0=5590;4400,20:1=5300;4600" --evacua "20:Le Terrazze"` | Tabella per borgo, ettari, stelle contro «senza ordini». `TRACCIA=1` stampa ogni 10 min fuoco, distanze e squadre. |
 | Ricerca dell'innesco del tutorial | `target/release/examples/tutorial_cerca [VENTO_KMH MINUTI]` | Inneschi in cui il fuoco raggiunge il borgo senza ordini e si spegne con due squadre. |
+| Laboratorio di spegnimento | `target/release/lab [--scenari ..] [--strategie "lead;planner"] [--squadre 1,2,4] [--semi 1-3] [--sweep chiave=v1,v2] [--senza-una] [--serie]` (`lab --lista`) | Scenari sintetici, strategie di coordinamento e telemetria completa: `docs/05-LABORATORIO.md`. |
 
 ## Verifiche che non si possono saltare
 

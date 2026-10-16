@@ -32,14 +32,13 @@ const SMOOTH_STEP_M: f32 = 12.0;
 /// Label lift above the ground, metres.
 const LABEL_LIFT_M: f32 = 30.0;
 /// Shades of red, +1 h the deepest and +3 h the palest (user, 2026-10-16).
-const LINES: [[f32; 3]; HORIZONS] = [[0.95, 0.05, 0.05], [1.0, 0.42, 0.36], [1.0, 0.74, 0.70]];
+const LINES: [[f32; 3]; HORIZONS] = [[0.95, 0.05, 0.05], [1.0, 0.74, 0.70]];
 /// The same, for the legend in the interface.
 pub const LINE_COLOURS: [bevy_egui::egui::Color32; HORIZONS] = [
     bevy_egui::egui::Color32::from_rgb(242, 13, 13),
-    bevy_egui::egui::Color32::from_rgb(255, 107, 92),
     bevy_egui::egui::Color32::from_rgb(255, 189, 179),
 ];
-pub const LABELS: [&str; HORIZONS] = ["tra 1 ora", "tra 2 ore", "tra 3 ore"];
+pub const LABELS: [&str; HORIZONS] = ["tra 1 ora", "tra 3 ore"];
 /// A label keeps this far from the others on the screen, pixels.
 const LABEL_APART_PX: egui::Vec2 = egui::vec2(96.0, 26.0);
 
@@ -170,7 +169,7 @@ pub fn update(
                     .get_or_insert_with(|| {
                         let mut m = LINES.map(|c| materials.add(FlatMaterial::new(c)));
                         let under = materials.add(FlatMaterial::new([0.03, 0.02, 0.06]).pulled(-12.0));
-                        [m[0].clone(), std::mem::take(&mut m[1]), std::mem::take(&mut m[2]), under]
+                        [m[0].clone(), std::mem::take(&mut m[1]), under]
                     })
                     .clone();
                 let world = sim.scn.world;

@@ -13,7 +13,7 @@
 //! **Senza interventi**: the members carry the lines already cut and the
 //! water already dropped, but no crew works in them from now on, so the
 //! forecast is pessimistic where the units are working. Per cell, the share
-//! of members in which it has burnt by +1, +2 and +3 h; the 50 % contour
+//! of members in which it has burnt by +1 and +3 h; the 50 % contour
 //! is the isochrone the map draws.
 //!
 //! Deterministic: the members' seeds and winds come from the game's seed and
@@ -28,7 +28,7 @@ use crate::Game;
 /// Members of the ensemble (constant: the forecast's resolution is 1/16).
 pub const MEMBERS: usize = 16;
 /// The forecast's horizons from the time of issue, simulated seconds.
-pub const HORIZONS_S: [i64; 3] = [3600, 2 * 3600, 3 * 3600];
+pub const HORIZONS_S: [i64; 2] = [3600, 3 * 3600];
 /// How many horizons, and the last one (what the members run to).
 pub const HORIZONS: usize = HORIZONS_S.len();
 const LAST_S: i64 = HORIZONS_S[HORIZONS - 1];
@@ -53,7 +53,7 @@ pub struct Forecast {
     pub members: usize,
     pub rows: usize,
     pub cols: usize,
-    /// `[+1 h, +2 h, +3 h]`, row-major on the fire grid (row 0 north), 0-1.
+    /// `[+1 h, +3 h]`, row-major on the fire grid (row 0 north), 0-1.
     pub prob: [Vec<f32>; HORIZONS],
 }
 

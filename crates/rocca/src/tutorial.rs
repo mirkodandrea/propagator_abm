@@ -61,7 +61,7 @@ impl Script {
         let mut steps = vec![
             Step { text: format!("Giorno 1. Un incendio è partito vicino a __{name}__. Il tempo è **fermo**: ora puoi dare gli ordini."), expect: Expect::Next },
             Step {
-                text: "Le linee rosse mostrano dove il fuoco può arrivare **tra 1, 2 e 3 ore**, se nessuno interviene. In basso a destra vedi le __condizioni__: il vento e l'umidità.".into(),
+                text: "Le linee rosse mostrano dove il fuoco può arrivare **tra 1 e 3 ore**, se nessuno interviene. In basso a destra vedi le __condizioni__: il vento e l'umidità.".into(),
                 expect: Expect::Next,
             },
             Step {
@@ -82,7 +82,7 @@ impl Script {
             });
         }
         steps.push(Step {
-            text: "Gli esagoni a cui hai assegnato le squadre sono evidenziati in **giallo fisso**.".into(),
+            text: "Il contorno **giallo** mostra la zona che le squadre schierate possono coprire.".into(),
             expect: Expect::Next,
         });
         let t0 = game.time_s();

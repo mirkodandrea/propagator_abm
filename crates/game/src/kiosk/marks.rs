@@ -428,12 +428,6 @@ pub fn update_teams(
         let e = spawn(&mut commands, &mut meshes, merge(parts), &assets.zone, TeamMark);
         commands.entity(e).insert(ZoneBob);
     }
-    if !hexes.is_empty() {
-        let under = hexes.iter().map(|h| path_mesh_at(&sim.scn, &outline(*h), HEX_PICK_M * 1.4 * UNDER, None, RING_LIFT_M - 2.0)).collect();
-        spawn(&mut commands, &mut meshes, merge(under), &assets.under, TeamMark);
-        let parts = hexes.iter().map(|h| path_mesh(&sim.scn, &outline(*h), HEX_PICK_M * 1.4, None)).collect();
-        spawn(&mut commands, &mut meshes, merge(parts), &assets.active, TeamMark);
-    }
 }
 
 /// The zone line floats up and down a little, on real time: the world is

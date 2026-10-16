@@ -274,7 +274,7 @@ fn conditions(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform)) 
             if sim.paused() {
                 ui.separator();
                 ui.horizontal(|ui| {
-                    for (col, text) in crate::forecast_view::LINE_COLOURS.into_iter().zip(["1 h", "2 h", "3 h"]) {
+                    for (col, text) in crate::forecast_view::LINE_COLOURS.into_iter().zip(["1 h", "3 h"]) {
                         let (r, _) = ui.allocate_exact_size(egui::vec2(26.0, 24.0), egui::Sense::hover());
                         ui.painter().line_segment([r.left_center(), r.right_center()], egui::Stroke::new(5.0, col));
                         ui.label(RichText::new(text).size(20.0).strong().color(col));
@@ -937,7 +937,7 @@ fn compact_top(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera,
             if sim.paused() {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(if matches!(k.selection, Selection::Team(_)) { "Tocca un esagono" } else { "Pausa" }).strong().color(GREEN));
-                    for (color, label) in crate::forecast_view::LINE_COLOURS.into_iter().zip(["1 h", "2 h", "3 h"]) {
+                    for (color, label) in crate::forecast_view::LINE_COLOURS.into_iter().zip(["1 h", "3 h"]) {
                         let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
                         ui.painter().line_segment([r.left_center(), r.right_center()], egui::Stroke::new(3.0, color));
                         ui.colored_label(color, label);

@@ -417,6 +417,14 @@ pub struct Suppression {
     /// it is and is full again after `s` seconds (the water is brought to it).
     /// `None` (the default): it drives to the nearest hydrant.
     pub refill_in_place_s: Option<f32>,
+    /// An engine starts wetting once a burning cell is this close (or the fuel
+    /// in reach is already under threat). [`PREWET_M`] unless a variant says otherwise.
+    pub prewet_m: f32,
+    /// `Some(pts)`: an engine does not wet fuel that already holds this much
+    /// added moisture (it is soaked: more water there is wasted), and has
+    /// nothing to do where all the fuel in reach is soaked. `None` (the
+    /// default): it wets whatever is in reach, soaked or not.
+    pub soaked_pts: Option<f32>,
     time_s: f32,
     /// The editable unit policy. There is no alternate hand-written policy.
     policy: UnitRuntime,
@@ -551,6 +559,8 @@ impl Suppression {
             hydrants,
             open_water,
             refill_in_place_s: None,
+            prewet_m: PREWET_M,
+            soaked_pts: None,
             time_s: 0.0,
             policy,
             generation: 0,
@@ -1225,7 +1235,7 @@ impl Suppression {
         let front_near = fire
             .active_cells()
             .iter()
-            .any(|c| dist(scn.world.centre_of(*c), pos) <= PREWET_M);
+            .any(|c| dist(scn.world.centre_of(*c), pos) <= self.prewet_m);
         if hottest <= 0.0 && !front_near {
             let u = &mut self.units[i];
             u.state = UnitState::Working;
@@ -1641,6 +1651,7 @@ impl Suppression {
         let mut cells: Vec<Cell> = fire::cells_in_radius(&scn.world, pos, reach)
             .into_iter()
             .filter(|c| fire.is_suppressible(*c, scn))
+            .filter(|c| self.soaked_pts.map_or(true, |pts| fire.added_moisture_at(*c) < pts))
             .collect();
         // Hottest first. The threat field is already a distance-to-flame
         // measure, so sorting on it descending puts the water on the fuel the

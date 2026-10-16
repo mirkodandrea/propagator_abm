@@ -70,6 +70,87 @@ pub const TEAM_DANGER_M: f32 = 120.0;
 /// A team standing in a place protects the homes this close to it.
 pub const PROTECT_M: f32 = 300.0;
 
+/// Added moisture (percentage points; extinction is 30) above which fuel is
+/// soaked: an engine does not wet it again and moves on to dry fuel when all
+/// in its reach is soaked (2026-10-16, laboratory: one tank already puts ~70
+/// points on everything in reach, so the second one was wasted).
+pub const SOAKED_PTS: f32 = 40.0;
+
+/// The dials of the teams' working algorithms, gathered so the headless
+/// laboratory (`rocca::lab`) can sweep them. [`Tuning::default`] is what the
+/// game plays: the constants above and the automatic work chosen in the
+/// laboratory on 2026-10-16 (`docs/05-LABORATORIO.md`); every switch can be
+/// turned off for the comparison, and off it is the code as before.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Tuning {
+    pub engine_range_m: f32,
+    pub engine_look_s: i64,
+    pub engine_park_threat: f32,
+    pub engine_park_flame_m: f32,
+    pub refill_s: f32,
+    pub crew_range_m: f32,
+    pub crew_line_offset_m: f32,
+    pub crew_line_step_m: f32,
+    pub crew_spread_m: f32,
+    pub protect_m: f32,
+    /// Multipliers on the calibrated physics ([`SUPPRESSION`]).
+    pub line_x: f32,
+    pub water_x: f32,
+    pub nerve_x: f32,
+    // --- the automatic work after the player's order (2026-10-16) ---------
+    /// An engine starts wetting once a flame is this close (metres).
+    pub prewet_m: f32,
+    /// Fuel holding this much added moisture is soaked: the engine does not
+    /// wet it again and moves on when all in reach is soaked (0 = off).
+    pub soaked_pts: f32,
+    /// After a withdrawal, a team goes back to its hex when it is safe again.
+    pub reengage: bool,
+    /// The people on foot draw a new line also while the engine refills, and
+    /// those back aboard (after pulling back) count as free.
+    pub crew_relaunch: bool,
+    /// Where to park: the threatened fuel counts more ahead of the front (on
+    /// the downwind side of the flames) than behind it.
+    pub park_ahead: bool,
+    /// Fuel already within reach of another team's engine does not count for
+    /// a team choosing where to park, and with nothing in reach it keeps away
+    /// from the other engines.
+    pub share_fuel: bool,
+    /// An engine with work in reach still moves if another place in its hexes
+    /// has this many times more (0 = only when it has nothing in reach).
+    pub relocate_x: f32,
+    /// The people's line starts ahead of the head-most flame in their reach
+    /// (downwind of it), not on the way from the nearest flame to the road.
+    pub crew_line_ahead: bool,
+}
+
+impl Default for Tuning {
+    fn default() -> Tuning {
+        Tuning {
+            engine_range_m: ENGINE_RANGE_M,
+            engine_look_s: ENGINE_LOOK_S,
+            engine_park_threat: ENGINE_PARK_THREAT,
+            engine_park_flame_m: ENGINE_PARK_FLAME_M,
+            refill_s: REFILL_S,
+            crew_range_m: CREW_RANGE_M,
+            crew_line_offset_m: CREW_LINE_OFFSET_M,
+            crew_line_step_m: CREW_LINE_STEP_M,
+            crew_spread_m: CREW_SPREAD_M,
+            protect_m: PROTECT_M,
+            line_x: SUPPRESSION.line_x,
+            water_x: SUPPRESSION.water_x,
+            nerve_x: SUPPRESSION.nerve_x,
+            prewet_m: abm::suppression::PREWET_M,
+            soaked_pts: SOAKED_PTS,
+            reengage: true,
+            crew_relaunch: false,
+            park_ahead: false,
+            share_fuel: true,
+            relocate_x: 0.0,
+            crew_line_ahead: false,
+        }
+    }
+}
+
 /// How much a team protects the homes around it (0-1): an engine with water
 /// does the full job, an empty one part of it.
 pub fn protection_of(kind: UnitKind, water_l: f32) -> f32 {
@@ -172,6 +253,8 @@ pub struct Game {
     pub chat: Vec<ChatMsg>,
     /// Lines of the orders given in the pause: said when the game resumes.
     held: Vec<(Voice, Kind, String)>,
+    /// The dials of the working algorithms (the laboratory turns them).
+    pub tuning: Tuning,
 }
 
 impl Game {
@@ -255,7 +338,10 @@ impl Game {
             logged,
             chat: vec![],
             held: vec![],
+            tuning: Tuning::default(),
         };
+        // the automatic work of the teams as the game plays it
+        game.set_tuning(Tuning::default());
         // The ignition is applied on the core's next advance: one step puts
         // the opening fire into the state.
         game.step()?;
@@ -267,6 +353,15 @@ impl Game {
 
     pub fn time_s(&self) -> i64 {
         self.fire.time_s()
+    }
+
+    /// Turn the dials of the working algorithms (laboratory only).
+    pub fn set_tuning(&mut self, t: Tuning) {
+        self.tuning = t;
+        self.crews.effect = UnitEffect { line_x: t.line_x, water_x: t.water_x, reach_x: t.engine_range_m / abm::suppression::ENGINE_REACH_M, nerve_x: t.nerve_x };
+        self.crews.refill_in_place_s = Some(t.refill_s);
+        self.crews.prewet_m = t.prewet_m;
+        self.crews.soaked_pts = (t.soaked_pts > 0.0).then_some(t.soaked_pts);
     }
 
     pub fn district_index(&self, name: &str) -> Option<usize> {
@@ -398,7 +493,7 @@ impl Game {
         let n = alive.len();
         for (j, &c) in alive.iter().enumerate() {
             let a = std::f32::consts::TAU * j as f32 / n.max(1) as f32;
-            let off = if n > 1 { CREW_SPREAD_M } else { 0.0 };
+            let off = if n > 1 { self.tuning.crew_spread_m } else { 0.0 };
             let _ = self.crews.assign(c, Task::Attack { at: Pos { x: target.x + off * a.cos(), y: target.y + off * a.sin() } });
         }
     }
@@ -448,7 +543,7 @@ impl Game {
             },
             UnitState::Working if u.note.starts_with("waiting") => "in attesa del fuoco".into(),
             UnitState::Working => "al lavoro".into(),
-            UnitState::Refilling => format!("ricarica l'acqua, {} min", ((1.0 - u.water_frac()) * REFILL_S / 60.0).ceil()),
+            UnitState::Refilling => format!("ricarica l'acqua, {} min", ((1.0 - u.water_frac()) * self.tuning.refill_s / 60.0).ceil()),
             UnitState::Withdrawing => "si ritira: troppo pericoloso".into(),
             UnitState::Lost => "fuori servizio".into(),
             UnitState::Staged if self.teams[t].hex.is_none() => "in caserma".into(),
@@ -556,6 +651,7 @@ impl Game {
         }
         self.crews_line_up();
         self.engines_follow_the_fire();
+        self.teams_return_to_work();
         let prot = self.protection();
         self.fire.set_structure_protection(&prot);
         let now = self.time_s();
@@ -613,14 +709,19 @@ impl Game {
         for t in 0..self.teams.len() {
             let team = &self.teams[t];
             let Some(at) = team.hex else { continue };
-            if team.pending.is_some() || self.crews.units[team.unit].state != UnitState::Working {
+            let relaunch = self.tuning.crew_relaunch;
+            let engine = &self.crews.units[team.unit];
+            // with `crew_relaunch` the engine refilling in place is still on the job
+            let on_job = engine.state == UnitState::Working || (relaunch && engine.state == UnitState::Refilling && !engine.aboard);
+            if team.pending.is_some() || !on_job {
                 continue;
             }
             let alive: Vec<usize> = team.crew_units.iter().copied().filter(|&c| self.crews.units[c].state != UnitState::Lost).collect();
             let unplanned = alive.iter().any(|&c| matches!(self.crews.units[c].task, Task::Attack { .. }));
             let finished = !alive.is_empty() && alive.iter().all(|&c| {
                 let u = &self.crews.units[c];
-                !u.aboard && u.task == Task::Hold && u.note == "line complete"
+                // with `crew_relaunch` someone back aboard after pulling back is free too
+                (!u.aboard && u.task == Task::Hold && u.note == "line complete") || (relaunch && u.aboard && u.task == Task::Hold && u.state == UnitState::Staged)
             });
             if !unplanned && !finished {
                 continue;
@@ -649,29 +750,54 @@ impl Game {
         if d < 1.0 {
             return None;
         }
-        let anchor = Pos { x: f.x + (target.x - f.x) / d * CREW_LINE_OFFSET_M, y: f.y + (target.y - f.y) / d * CREW_LINE_OFFSET_M };
+        let off = self.tuning.crew_line_offset_m;
+        let mut anchor = Pos { x: f.x + (target.x - f.x) / d * off, y: f.y + (target.y - f.y) / d * off };
+        if self.tuning.crew_line_ahead {
+            // ahead of the head-most flame within reach, if it is clear of the others
+            let to = (self.fire.weather().wind_dir_deg + 180.0).to_radians() as f32;
+            let w = (to.sin(), to.cos());
+            let head = active
+                .iter()
+                .copied()
+                .filter(|p| dist(*p, target) <= self.tuning.crew_range_m + off)
+                .max_by(|a, b| (a.x * w.0 + a.y * w.1).total_cmp(&(b.x * w.0 + b.y * w.1)));
+            if let Some(h) = head {
+                let a = Pos { x: h.x + w.0 * off, y: h.y + w.1 * off };
+                let clear = nearest(a).is_some_and(|q| dist(q, a) >= 0.8 * off);
+                if clear && world.contains(a) && dist(a, target) <= self.tuning.crew_range_m {
+                    anchor = a;
+                }
+            }
+        }
         let total = n as f32 * abm::suppression::LINE_M_PER_H * 1.5;
         // Walk along the level curve of the distance from the fire, both ways.
         let walk = |sign: f32| -> Vec<Pos> {
             let mut pts = vec![anchor];
             let mut p = anchor;
             let mut len = 0.0;
-            while len < total {
+            // the walk must advance: with the point back on the curve it can stand still
+            let mut guard = 0;
+            while len < total && guard < 1000 {
+                guard += 1;
                 let Some(f) = nearest(p) else { break };
                 let dd = dist(f, p).max(1.0);
                 let (gx, gy) = ((p.x - f.x) / dd, (p.y - f.y) / dd);
-                let step = CREW_LINE_STEP_M;
+                let step = self.tuning.crew_line_step_m;
                 let mut q = Pos { x: p.x - gy * sign * step, y: p.y + gx * sign * step };
                 // Back onto the curve.
                 if let Some(fq) = nearest(q) {
                     let dq = dist(fq, q).max(1.0);
-                    let k = (CREW_LINE_OFFSET_M - dq) / dq;
+                    let k = (self.tuning.crew_line_offset_m - dq) / dq;
                     q = Pos { x: q.x + (q.x - fq.x) * k, y: q.y + (q.y - fq.y) * k };
                 }
-                if !world.contains(q) || dist(q, target) > CREW_RANGE_M {
+                if !world.contains(q) || dist(q, target) > self.tuning.crew_range_m {
                     break;
                 }
-                len += dist(p, q);
+                let advance = dist(p, q);
+                if !(advance > 1.0) {
+                    break;
+                }
+                len += advance;
                 pts.push(q);
                 p = q;
             }
@@ -738,17 +864,39 @@ impl Game {
     /// roads of its hexes of activity (its own and the ring around it), to the
     /// place from which it has the most threatened fuel in reach, or, if the
     /// fire is not yet near, the one nearest to the fire.
+    ///
+    /// Dials ([`Tuning`], 2026-10-16): soaked fuel is no work
+    /// (`soaked_pts`); fuel ahead of the front counts more than fuel behind it
+    /// (`park_ahead`); fuel another team's engine already reaches does not
+    /// count (`share_fuel`); an engine with work still moves when another
+    /// place has `relocate_x` times more.
     fn engines_follow_the_fire(&mut self) {
-        if self.time_s() % ENGINE_LOOK_S != 0 {
+        if self.time_s() % self.tuning.engine_look_s != 0 {
             return;
         }
         let world = self.scn.world;
-        let work_at = |g: &Game, p: Pos| -> f32 {
-            fire::cells_in_radius(&world, p, ENGINE_RANGE_M)
-                .into_iter()
-                .filter(|c| g.fire.is_suppressible(*c, &g.scn))
-                .map(|c| g.fire.threat().at(world.centre_of(c)))
-                .sum()
+        let tu = self.tuning;
+        let active: Vec<Pos> = self.fire.active_cells().iter().map(|c| world.centre_of(*c)).collect();
+        if active.is_empty() {
+            return;
+        }
+        let toward = (self.fire.weather().wind_dir_deg + 180.0).to_radians() as f32;
+        let probe = abm::suppression::AHEAD_PROBE_M;
+        let (wx, wy) = (toward.sin() * probe, toward.cos() * probe);
+        // What wetting cell `c` is worth.
+        let worth = |g: &Game, c: scenario::Cell| -> f32 {
+            if !g.fire.is_suppressible(c, &g.scn) || (tu.soaked_pts > 0.0 && g.fire.added_moisture_at(c) >= tu.soaked_pts) {
+                return 0.0;
+            }
+            let p = world.centre_of(c);
+            let th = g.fire.threat();
+            let t = th.at(p);
+            if !tu.park_ahead || t <= 0.0 {
+                return t;
+            }
+            // flame upwind of the cell: the front is coming; downwind: it has passed
+            let ahead = th.at(Pos { x: p.x - wx, y: p.y - wy }) - th.at(Pos { x: p.x + wx, y: p.y + wy });
+            (t + ahead).max(0.1 * t)
         };
         for t in 0..self.teams.len() {
             let team = &self.teams[t];
@@ -761,38 +909,100 @@ impl Game {
                 continue;
             }
             let here = u.pos;
-            if work_at(self, here) > 0.0 {
-                continue;
-            }
-            let active: Vec<Pos> = self.fire.active_cells().iter().map(|c| world.centre_of(*c)).collect();
-            if active.is_empty() {
+            // where the other teams' engines work, or are going to
+            let others: Vec<Pos> = if tu.share_fuel {
+                self.teams
+                    .iter()
+                    .enumerate()
+                    .filter(|&(k, _)| k != t)
+                    .map(|(_, o)| &self.crews.units[o.unit])
+                    .filter(|o| matches!(o.state, UnitState::Working | UnitState::Moving | UnitState::Refilling))
+                    .filter_map(|o| match o.task {
+                        Task::Attack { at } => Some(at),
+                        _ => None,
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+            let reach = tu.engine_range_m;
+            let work_at = |g: &Game, p: Pos| -> f32 {
+                fire::cells_in_radius(&world, p, reach)
+                    .into_iter()
+                    .filter(|c| {
+                        let q = world.centre_of(*c);
+                        others.iter().all(|o| dist(*o, q) > reach)
+                    })
+                    .map(|c| worth(g, c))
+                    .sum()
+            };
+            let here_w = work_at(self, here);
+            if here_w > 0.0 && tu.relocate_x <= 0.0 {
                 continue;
             }
             let Some(hex) = self.hexes.get(at) else { continue };
             let comp = self.net.component(hex.node, true);
-            let mut best: Option<(f32, Pos)> = None;
+            let mut best: Option<(f32, f32, Pos)> = None;
             for (i, &p) in self.net.nodes.iter().enumerate() {
                 let n = i as network::NodeId;
                 if !self.net.is_drivable_node(n) || Axial::of(p).distance(at) > crate::hex::TEAM_REACH_HEXES || self.net.component(n, true) != comp || !world.contains(p) {
                     continue;
                 }
                 let nearest = active.iter().map(|f| dist(*f, p)).fold(f32::INFINITY, f32::min);
-                if self.fire.threat().at(p) >= ENGINE_PARK_THREAT || nearest < ENGINE_PARK_FLAME_M {
+                if self.fire.threat().at(p) >= tu.engine_park_threat || nearest < tu.engine_park_flame_m {
                     continue;
                 }
                 let w = work_at(self, p);
-                // Work in reach beats everything; otherwise the nearest to the fire.
-                let score = if w > 0.0 { 1.0e6 + w } else { -nearest };
-                if best.map_or(true, |(b, _)| score > b) {
-                    best = Some((score, p));
+                // Work in reach beats everything; otherwise the nearest to the
+                // fire (away from the other engines when they share the fuel).
+                let crowd = others.iter().map(|o| (2.0 * reach - dist(*o, p)).max(0.0)).sum::<f32>();
+                let score = if w > 0.0 { 1.0e6 + w } else { -nearest - crowd };
+                if best.map_or(true, |(b, _, _)| score > b) {
+                    best = Some((score, w, p));
                 }
             }
-            if let Some((_, p)) = best {
+            if let Some((_, w, p)) = best {
+                // with work here, move only for clearly more
+                if here_w > 0.0 && w <= tu.relocate_x * here_w {
+                    continue;
+                }
                 if dist(p, here) > 30.0 {
                     let unit = self.teams[t].unit;
                     let _ = self.crews.assign(unit, Task::Attack { at: p });
                 }
             }
+        }
+    }
+
+    /// After a withdrawal the team goes back to work when its hex can be
+    /// reached again (`reengage`, 2026-10-16): before, the engine stood at its
+    /// station «awaiting orders» until the player gave a new one.
+    fn teams_return_to_work(&mut self) {
+        let tu = self.tuning;
+        if !tu.reengage || self.time_s() % tu.engine_look_s != 0 {
+            return;
+        }
+        for t in 0..self.teams.len() {
+            let team = &self.teams[t];
+            let Some(at) = team.hex else { continue };
+            if team.pending.is_some() {
+                continue;
+            }
+            let unit = team.unit;
+            let u = &self.crews.units[unit];
+            // standing with no task while it has a hex: it came back from a withdrawal
+            if u.state != UnitState::Staged || u.task != Task::Hold || u.aboard {
+                continue;
+            }
+            let Some(hex) = self.hexes.get(at).copied() else { continue };
+            if self.fire.threat().at(u.pos) >= tu.engine_park_threat {
+                continue;
+            }
+            let Some(from) = self.net.nearest(u.pos, true) else { continue };
+            if network::route(&self.net, from, hex.node, self.fire.threat(), true).is_none() {
+                continue;
+            }
+            let _ = self.crews.assign(unit, Task::Attack { at: hex.target });
         }
     }
 
@@ -807,7 +1017,7 @@ impl Game {
             }
             let v = protection_of(u.kind, u.water_l);
             for (i, h) in homes.iter().enumerate() {
-                if dist(Pos::from(h.pos), u.pos) <= PROTECT_M {
+                if dist(Pos::from(h.pos), u.pos) <= self.tuning.protect_m {
                     p[i] = p[i].max(v);
                 }
             }
