@@ -35,7 +35,7 @@ Dettagli in `docs/01-GIOCO.md`.
 | `abm` | Rete stradale (`network`), guida (`drive`), squadre e spegnimento (`suppression`), aree sicure (`refuge`). Il modello IBM delle persone (`Abm`) è ancora qui, ma il gioco non lo usa più: da togliere. |
 | `behavior` | Grafi di comportamento delle squadre (`data/behaviours`). |
 | `rocca` | Il gioco: `game` (pausa, ordini, passo), `hex`, `evac`, `tutorial`, `forecast`, `score`, `district`, `case`. CLI `rocca`, esempio `tutorial_cerca`, test. |
-| `game` | Il chiosco Bevy: `sim.rs` (orologio attorno a `Game`), `kiosk/` (flusso, `ui`, `marks` sulla mappa, camera e clic in `view`, `snap`), rendering del diorama, `forecast_view`. Mario scollegato. |
+| `game` | Il chiosco Bevy: `sim.rs` (orologio attorno a `Game`), `kiosk/` (flusso, `ui`, `marks` sulla mappa, camera e clic in `view`, `snap`), rendering del diorama, `forecast_view`. Mario (`mario.rs`, `M` a mondo fermo). |
 | `datafs`, `libsm64-native` | Accesso ai dati (anche dal web); Mario. |
 
 Dati: `data/scenarios/rocca_ventosa/`, con territorio e `game.json`: stazioni, squadre, regole dell'evacuazione, tutorial, incendi (`tutorial` e la partita `medium`). Python per il territorio: script autonomi in `tools/factory/`.

@@ -449,7 +449,7 @@ pub fn start_game(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimR
 
 
 /// The clock and the previews. Runs before the view systems.
-pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: EventWriter<SimRestarted>, mut baseline_job: Local<Option<rocca::Game>>) {
+pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: EventWriter<SimRestarted>, mut baseline_job: Local<Option<rocca::Game>>, mario: Res<crate::mario::Playground>) {
     #[cfg(not(target_arch = "wasm32"))]
     let _ = &mut baseline_job;
     #[cfg(target_arch = "wasm32")]
@@ -492,7 +492,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         }
     }
     // the opening screen: the fire plays, at the pace of the shot on show
-    if k.phase == Phase::Intro && !k.frozen {
+    if k.phase == Phase::Intro && !k.frozen && !mario.active {
         k.demo_t += dt;
         let want = rocca::RUN_X * k.demo_pick.1.pace();
         k.demo_speed += (want - k.demo_speed) * (1.0 - (-1.5 * dt.min(0.1)).exp());
@@ -504,6 +504,8 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
     }
     sim.speed = match k.phase {
         _ if k.frozen => 0.0,
+        // Mario chooses how fast the world moves (0 = still)
+        _ if mario.active => mario.simulation_speed,
         Phase::Intro => k.demo_speed,
         // the tutorial waits for the player, then runs by itself
         Phase::Tutorial if matches!(k.expect(), Some(Expect::Over | Expect::Run(_))) => sim.game.speed(),

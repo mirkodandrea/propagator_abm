@@ -23,6 +23,7 @@ mod forecast_view;
 mod frame;
 mod kiosk;
 mod landmarks;
+mod mario;
 mod models;
 mod overlays;
 mod pick;
@@ -140,6 +141,7 @@ fn main() -> anyhow::Result<()> {
         web_input::normalize.before(bevy::input::InputSystem).before(bevy_egui::EguiSet::ProcessInput),
         web_input::finish_canceled_touch.after(bevy_egui::EguiSet::ProcessInput).before(bevy_egui::EguiSet::BeginFrame),
     ));
+    app.add_plugins(mario::MarioPlugin);
     kiosk_systems(&mut app);
     app.add_plugins(forecast_view::ForecastPlugin);
     app.add_systems(PostUpdate, kiosk::snap::hide_ui.after(bevy_egui::EguiSet::ProcessOutput));
@@ -233,7 +235,7 @@ fn kiosk_systems(app: &mut App) {
         Update,
         (
             kiosk::launch.run_if(in_state(AppState::SelectingScenario)),
-            (kiosk::ui::draw, kiosk::step, kiosk::snap::drive, kiosk::view::camera, kiosk::snap::hold, playtest::observe)
+            (kiosk::ui::draw, kiosk::step, kiosk::snap::drive, kiosk::view::camera.run_if(map_camera_allowed), kiosk::snap::hold, playtest::observe)
                 .chain()
                 .run_if(in_state(AppState::Playing)),
             kiosk::snap::hide_marks
@@ -270,4 +272,8 @@ fn kiosk_systems(app: &mut App) {
                 .run_if(in_state(AppState::Playing)),
         ),
     );
+}
+
+fn map_camera_allowed(mario: Res<mario::Playground>) -> bool {
+    !mario.active
 }

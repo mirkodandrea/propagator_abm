@@ -82,9 +82,15 @@ pub fn draw(
     faces: Option<Res<Portraits>>,
     logo: Option<Res<Logo>>,
     qr: Option<Res<Qr>>,
+    mario: Res<crate::mario::Playground>,
 ) {
     crate::playtest::begin();
     let ctx = contexts.ctx_mut();
+    // Mario has the screen: his own panel is all there is
+    if mario.active {
+        focus.pointer = ctx.is_pointer_over_area();
+        return;
+    }
     let k = &mut *kiosk;
     k.drag_pan = Vec2::ZERO;
     let Ok(cam) = cameras.get_single() else { return };
