@@ -431,14 +431,13 @@ fn big_stars(ui: &mut egui::Ui, st: &rocca::score::Stars, size: f32) {
                     for i in 0..5 {
                         star(ui, if i < n as usize { AMBER } else { Color32::from_gray(70) }, size);
                     }
-                    ui.add_space(8.0);
-                    ui.label(RichText::new(what).size(14.0).color(GREY));
                 }
                 None => {
-                    ui.label(RichText::new("non conta: senza ordini non sarebbe successo").size(15.0).color(GREY));
+                    ui.label(RichText::new("nessun danno nel riferimento").size(15.0).color(GREY));
                 }
             }
         });
+        ui.label(RichText::new(what).size(14.0).color(GREY));
         ui.add_space(4.0);
     }
 }
@@ -447,15 +446,40 @@ fn big_stars(ui: &mut egui::Ui, st: &rocca::score::Stars, size: f32) {
 fn verdict(name: &str, mine: &rocca::Outcome, none: &rocca::Outcome) -> (Mood, String) {
     let (caught, saved) = (mine.caught(), none.caught().saturating_sub(mine.caught()));
     let (mood, text) = if caught == 0 && saved > 0 {
-        (Mood::Calmo, format!("Il fuoco non ha raggiunto nessuno: senza i tuoi ordini avrebbe colpito {} persone. Ottimo lavoro!", none.caught()))
+        (Mood::Calmo, format!("Il fuoco non ha raggiunto nessuno. Senza i tuoi ordini avrebbe colpito {saved} persone: hai fatto la differenza!"))
     } else if caught == 0 {
-        (Mood::Calmo, "Nessuno è rimasto in pericolo. Ben fatto!".to_string())
+        (Mood::Calmo, "Il fuoco non ha raggiunto nessuno. Vediamo insieme come sono andate anche le altre cose.".to_string())
     } else if saved > 0 {
-        (Mood::Preoccupato, format!("Hai messo in salvo {saved} persone in più rispetto a nessun ordine, ma il fuoco ne ha raggiunte {caught}. Si poteva fare meglio?"))
+        (Mood::Preoccupato, format!("Con i tuoi ordini il fuoco ha raggiunto {saved} persone in meno. Ne ha colpite {caught}: proviamo a migliorare ancora."))
     } else {
-        (Mood::Preoccupato, format!("Il fuoco ha raggiunto {caught} persone. Quando conviene dare l'ordine di evacuare?"))
+        (Mood::Preoccupato, format!("Il fuoco ha raggiunto {caught} persone. Puoi riprovare: la previsione ti aiuta a capire quando evacuare."))
     };
     (mood, characters::to(name, &text))
+}
+
+/// Same debrief on every screen size, including when the baseline fails.
+fn learning(ui: &mut egui::Ui, mine: &rocca::Outcome, none: Option<&rocca::Outcome>) {
+    if let Some(none) = none {
+        let report = rocca::score::debrief(mine, none);
+        ui.label(RichText::new("Confronto con la partita senza ordini").strong().size(18.0).color(Color32::WHITE));
+        for text in &report.results {
+            ui.add(egui::Label::new(RichText::new(text).size(15.0).color(GREY)).wrap());
+        }
+        ui.add_space(6.0);
+        ui.add(egui::Label::new(RichText::new(report.next_try).size(15.0).color(AMBER)).wrap());
+    }
+    if mine.units_lost > 0 {
+        ui.label(RichText::new(format!("Unità di soccorso perse: {}.", mine.units_lost)).color(AMBER));
+    }
+    ui.add_space(10.0);
+    ui.separator();
+    ui.label(RichText::new("Nella realtà: protezione civile").strong().size(18.0).color(Color32::WHITE));
+    for (title, text) in rocca::score::CIVIL_PROTECTION {
+        ui.label(RichText::new(title).strong().size(15.0).color(AMBER));
+        ui.add(egui::Label::new(RichText::new(text).size(15.0).color(GREY)).wrap());
+    }
+    ui.hyperlink_to("Fonte: Io non rischio · Protezione Civile", rocca::score::CIVIL_PROTECTION_SOURCE);
+    ui.add(egui::Label::new(RichText::new("Quest'isola è immaginaria. Nella realtà, segui sempre le indicazioni delle autorità.").size(13.0).italics().color(GREY)).wrap());
 }
 
 /// A level's board, the best `rows`; the player's own row (`mine`: name and
@@ -530,18 +554,18 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                             ui.label(RichText::new(label).size(18.0));
                             if let Some(n) = n {
                                 for i in 0..5 { star(ui, if i < n { AMBER } else { GREY.gamma_multiply(0.3) }, 22.0); }
-                            } else { ui.label("non conta"); }
+                            } else { ui.label("nessun danno nel riferimento"); }
                         });
                     }
                     ui.label(verdict(&k.player, &mine, none).1);
                     ui.label(format!("Tu: {} persone e {} case colpite, {:.0} ha. Senza ordini: {} persone, {} case, {:.0} ha.", mine.caught(), mine.homes_hit(), mine.hectares, none.caught(), none.homes_hit(), none.hectares));
                 }
             }
+            learning(ui, &mine, base.as_ref().and_then(|r| r.as_ref().ok()));
             ui.separator();
             ui.heading("Classifica di oggi");
             let name = rocca::score::name(&k.player);
             board_rows(ui, k, k.saved.as_ref().map(|(_, at)| (name.as_str(), *at)), rocca::score::BOARD_SHOWN);
-            ui.label("Nella realtà segui sempre le indicazioni delle autorità.");
         });
         if again { new_visit(k, sim, restarted); }
         return;
@@ -557,39 +581,43 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
         big_card().show(ui, |ui| {
             ui.set_width(inner);
             ui.horizontal_top(|ui| {
-                ui.allocate_ui_with_layout(egui::vec2(left, 10.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.allocate_ui_with_layout(egui::vec2(left, (screen.height() - 150.0).max(160.0)), egui::Layout::top_down(egui::Align::Min), |ui| {
                     ui.set_width(left);
-                    let title = if k.player.trim().is_empty() { "Com'è andata".to_string() } else { format!("Com'è andata, {}", k.player.trim()) };
-                    ui.label(RichText::new(title).size(34.0).strong().color(Color32::WHITE));
-                    ui.add_space(12.0);
-                    match &base {
-                        None => {
-                            ui.label(RichText::new("Confronto con lo stesso incendio senza ordini…").size(20.0).color(GREY));
+                    egui::ScrollArea::vertical().id_source("fine_spiegazione").max_height((screen.height() - 150.0).max(160.0)).show(ui, |ui| {
+                        let title = if k.player.trim().is_empty() { "Com'è andata".to_string() } else { format!("Com'è andata, {}", k.player.trim()) };
+                        ui.label(RichText::new(title).size(34.0).strong().color(Color32::WHITE));
+                        ui.add_space(12.0);
+                        match &base {
+                            None => {
+                                ui.label(RichText::new("Confronto con lo stesso incendio senza ordini…").size(20.0).color(GREY));
+                            }
+                            Some(Err(e)) => {
+                                ui.colored_label(RED, e);
+                            }
+                            Some(Ok(none)) => {
+                                big_stars(ui, &rocca::score::stars(&mine, none), 36.0);
+                                ui.add_space(10.0);
+                                let (mood, text) = verdict(&k.player, &mine, none);
+                                volunteer(ui, faces, mood, 90.0, &text, left - 190.0);
+                                ui.add_space(10.0);
+                                ui.label(
+                                    RichText::new(format!(
+                                        "Tu: {} persone e {} case colpite, {:.0} ettari bruciati. Senza ordini: {} persone, {} case, {:.0} ettari.",
+                                        mine.caught(),
+                                        mine.homes_hit(),
+                                        mine.hectares,
+                                        none.caught(),
+                                        none.homes_hit(),
+                                        none.hectares
+                                    ))
+                                    .size(15.0)
+                                    .color(GREY),
+                                );
+                            }
                         }
-                        Some(Err(e)) => {
-                            ui.colored_label(RED, e);
-                        }
-                        Some(Ok(none)) => {
-                            big_stars(ui, &rocca::score::stars(&mine, none), 36.0);
-                            ui.add_space(10.0);
-                            let (mood, text) = verdict(&k.player, &mine, none);
-                            volunteer(ui, faces, mood, 90.0, &text, left - 190.0);
-                            ui.add_space(10.0);
-                            ui.label(
-                                RichText::new(format!(
-                                    "Tu: {} persone e {} case colpite, {:.0} ettari bruciati. Senza ordini: {} persone, {} case, {:.0} ettari.",
-                                    mine.caught(),
-                                    mine.homes_hit(),
-                                    mine.hectares,
-                                    none.caught(),
-                                    none.homes_hit(),
-                                    none.hectares
-                                ))
-                                .size(15.0)
-                                .color(GREY),
-                            );
-                        }
-                    }
+                        ui.add_space(10.0);
+                        learning(ui, &mine, base.as_ref().and_then(|r| r.as_ref().ok()));
+                    });
                 });
                 ui.add_space(24.0);
                 ui.vertical(|ui| {

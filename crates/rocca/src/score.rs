@@ -42,6 +42,75 @@ pub fn stars(mine: &Outcome, without: &Outcome) -> Stars {
     }
 }
 
+/// Candidate scale for review, deliberately separate from the live board.
+/// 10/25/50/75% of people, 5/15/30/50% of homes, 5/10/20/35% of land spared.
+pub fn proposed_stars(mine: &Outcome, without: &Outcome) -> Stars {
+    let spared = |risk: f64, lost: f64, thresholds| {
+        (risk > 0.0).then(|| stars_of(((risk - lost) / risk).max(0.0), thresholds))
+    };
+    Stars {
+        persone: spared(without.caught() as f64, mine.caught() as f64, [0.10, 0.25, 0.50, 0.75]),
+        case: spared(without.homes_hit() as f64, mine.homes_hit() as f64, [0.05, 0.15, 0.30, 0.50]),
+        ettari: spared(without.hectares as f64, mine.hectares as f64, [0.05, 0.10, 0.20, 0.35]),
+    }
+}
+
+/// A factual debrief, shared by desktop and mobile. Outcomes establish the
+/// difference, not the cause: never infer which order was early or late.
+pub struct Debrief {
+    pub results: [String; 3],
+    pub next_try: &'static str,
+}
+
+pub fn debrief(mine: &Outcome, without: &Outcome) -> Debrief {
+    fn result(label: &str, lost: f64, risk: f64, unit: &str) -> String {
+        if risk <= 0.0 {
+            return if lost > 0.0 {
+                format!("{label}: il fuoco ha colpito {lost:.0} {unit}, mentre senza ordini nessuno sarebbe stato colpito.")
+            } else {
+                format!("{label}: qui non ci sono stati danni, nemmeno senza ordini. Questa voce non assegna stelle.")
+            };
+        }
+        let difference = risk - lost;
+        if difference < 0.0 {
+            format!("{label}: il fuoco ha colpito {:.0} {unit} in più rispetto alla partita senza ordini.", -difference)
+        } else if difference == 0.0 {
+            format!("{label}: il fuoco ha colpito {lost:.0} {unit}, lo stesso danno della partita senza ordini.")
+        } else {
+            let percent = 100.0 * difference / risk;
+            format!("{label}: il fuoco ha colpito {:.0} {unit} in meno. Hai evitato il {percent:.0}% del danno.", difference)
+        }
+    }
+    let next_try = if mine.caught() > 0 {
+        "La prossima volta, guarda quanto richiede l'evacuazione e dove potrebbe arrivare il fuoco. Metti al primo posto le persone."
+    } else if mine.districts.iter().any(|d| d.on_the_road > 0) {
+        "Il fuoco non ha raggiunto nessuno, ma alcune persone sono ancora in viaggio: devono ancora arrivare al sicuro."
+    } else if mine.units_lost > 0 {
+        "Anche i soccorritori hanno bisogno di protezione. Prima di spostarli, controlla il percorso e la previsione."
+    } else if mine.homes_hit() > 0 {
+        "La prossima volta, prova a difendere i borghi minacciati ricordando che anche le squadre hanno bisogno di tempo per arrivare."
+    } else {
+        "Prova a cambiare il momento degli ordini e osserva cosa succede. La previsione ti aiuta, ma non può dirti tutto con certezza."
+    };
+    Debrief {
+        results: [
+            result("Persone", mine.caught() as f64, without.caught() as f64, "abitanti"),
+            result("Case", mine.homes_hit() as f64, without.homes_hit() as f64, "edifici"),
+            result("Bosco", mine.hectares as f64, without.hectares as f64, "ettari"),
+        ],
+        next_try,
+    }
+}
+
+/// Offline-readable civic advice, paraphrased from the official Io non rischio
+/// wildfire guidance. These are citizen actions, not simulated crew tactics.
+pub const CIVIL_PROTECTION: [(&str, &str); 3] = [
+    ("Preparati prima", "Sai cosa fare se un incendio si avvicina? Informati sul Piano di protezione civile del tuo Comune: meglio prepararsi prima."),
+    ("Segnala fumo e fiamme", "Se vedi fumo o fiamme, chiama subito il 115 o, dove attivo, il 112. Spiega bene dove sei: non aspettare che chiami qualcun altro."),
+    ("Lascia passare i soccorsi", "Lascia libere le strade per chi sta intervenendo. Segui le indicazioni delle autorità e, se ti chiedono di evacuare, parti subito."),
+];
+pub const CIVIL_PROTECTION_SOURCE: &str = "https://iononrischio.protezionecivile.gov.it/it/preparati/incendi-boschivi/cosa-fare/";
+
 impl Stars {
     /// Persone, Case, Ettari.
     pub fn all(&self) -> [Option<u8>; 3] {
@@ -165,6 +234,44 @@ mod tests {
         assert_eq!(stars(&outcome(50, 30, 400.0), &none).persone, Some(1));
         // nothing at stake
         assert_eq!(stars(&outcome(0, 0, 10.0), &outcome(0, 0, 50.0)).all(), [None, None, Some(5)]);
+    }
+
+    #[test]
+    fn proposed_scale_rewards_progress_without_rewarding_inaction() {
+        let base = outcome(100, 100, 100.0);
+        assert_eq!(proposed_stars(&base, &base).all(), [Some(1); 3]);
+        assert_eq!(proposed_stars(&outcome(50, 50, 50.0), &base).all(), [Some(4), Some(5), Some(5)]);
+        assert_eq!(proposed_stars(&outcome(0, 0, 0.0), &outcome(0, 0, 0.0)).all(), [None; 3]);
+        let mut previous = [1; 3];
+        for saved in 0..=100 {
+            let mine = outcome(100 - saved, (100 - saved) as usize, (100 - saved) as f32);
+            let live = stars(&mine, &base).all();
+            let candidate = proposed_stars(&mine, &base).all();
+            for i in 0..3 {
+                let value = candidate[i].unwrap();
+                assert!(value >= previous[i] && value >= live[i].unwrap());
+                previous[i] = value;
+            }
+        }
+    }
+
+    #[test]
+    fn feedback_explains_progress_regressions_and_no_risk() {
+        let base = outcome(100, 20, 200.0);
+        let report = debrief(&outcome(50, 10, 100.0), &base);
+        assert!(report.results[0].contains("50%"));
+        assert!(report.next_try.contains("evacuazione"));
+        assert!(debrief(&outcome(110, 21, 201.0), &base).results[0].contains("in più"));
+        assert!(debrief(&base, &base).results[1].contains("stesso danno"));
+        let zero = outcome(0, 0, 0.0);
+        assert!(debrief(&zero, &zero).results[0].contains("non assegna stelle"));
+        assert!(debrief(&base, &zero).results[0].contains("senza ordini nessuno"));
+        let mut unfinished = zero.clone();
+        unfinished.districts[0].on_the_road = 12;
+        assert!(debrief(&unfinished, &base).next_try.contains("ancora in viaggio"));
+        let mut crew_lost = zero.clone();
+        crew_lost.units_lost = 1;
+        assert!(debrief(&crew_lost, &base).next_try.contains("soccorritori"));
     }
 
     fn game(name: &str, stars: [u8; 3], day: &str, at: u64) -> Played {

@@ -67,7 +67,7 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
   - **Case:** case non colpite;
   - **Ettari:** ettari non bruciati.
 
-  Le soglie sono provvisorie.
+  Le soglie sono provvisorie. Dal 2026-10-16 il finale spiega quantità e percentuale del danno evitato, distingue peggioramenti e propone cosa osservare alla prossima prova; include tre messaggi di protezione civile per i cittadini, con fonte ufficiale, anche offline. La scala più generosa è pronta **solo come proposta**, con prove in [`04-VALUTAZIONE.md`](04-VALUTAZIONE.md): le soglie del gioco non cambiano prima della scelta dell'utente.
 - **Classifica del giorno:** prima le stelle Persone, poi Case, poi Ettari; a pari merito vince chi ha giocato prima (2026-10-14). Compare in apertura e nel finale. L'operatore la azzera.
 
 ## 6. Interfaccia
@@ -111,6 +111,6 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
 
 ## 7. Fuori dal gioco (per ora)
 
-- Personaggi, sindaca, preallerta, pattuglie porta a porta, coordinatore automatico, debriefing testuale: tolti il 2026-10-14. La comunicazione si riscrive dopo.
+- Sindaca, preallerta, pattuglie porta a porta, coordinatore automatico: tolti il 2026-10-14. La comunicazione si riscrive dopo.
 - Mezzi aerei e squadre a piedi: non previsti.
 - Il territorio è dichiaratamente immaginario: nella realtà si seguono le indicazioni delle autorità.
