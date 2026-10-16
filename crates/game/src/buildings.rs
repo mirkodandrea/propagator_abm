@@ -137,7 +137,7 @@ pub fn spawn(
         residents.entry(h.building).or_default().push(h.id as u32);
     }
 
-    let material = materials.add(retro::material_with_style(StandardMaterial {
+    let material = materials.add(retro::finished_material(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 0.75,
         metallic: 0.0,
@@ -150,7 +150,7 @@ pub fn spawn(
         // plaster.
         unlit: false,
         ..default()
-    }, false, retro::RetroStyle::STRUCTURE));
+    }, retro::RetroStyle::STRUCTURE, retro::Finish::Town));
 
     let cols = (scn.world.width_m / CHUNK_M).ceil() as usize + 1;
     let rows = (scn.world.height_m / CHUNK_M).ceil() as usize + 1;

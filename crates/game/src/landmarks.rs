@@ -11,6 +11,7 @@ use bevy::prelude::*;
 use scenario::Pos;
 
 use crate::models;
+use crate::retro::{self, RetroMaterial};
 use crate::sim::Sim;
 
 pub struct LandmarksPlugin;
@@ -25,13 +26,13 @@ fn spawn_landmarks(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
     let path = sim.data.join("scenarios").join(sim.scn.id.as_str()).join("island.json");
     let Some(island) = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) else {
         return; // a scenario that is not an island has none
     };
-    let material = materials.add(StandardMaterial {
+    let material = materials.add(retro::finished_material(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 0.9,
         reflectance: 0.08,
@@ -39,7 +40,7 @@ fn spawn_landmarks(
         cull_mode: None,
         double_sided: true,
         ..default()
-    });
+    }, retro::RetroStyle::STRUCTURE, retro::Finish::Stone));
     for (key, model) in [("rocca", "rocca"), ("torre", "torre_pietra")] {
         let l = &island["landmarks"][key];
         let (Some(x), Some(y), Some(ground)) = (l["pos"][0].as_f64(), l["pos"][1].as_f64(), l["ground_m"].as_f64()) else { continue };
@@ -51,7 +52,7 @@ fn spawn_landmarks(
         let ground = ground as f32 - 0.3;
         let at = crate::frame::to_bevy(Pos { x: x as f32, y: y as f32 }, ground);
         info!("landmark {key}: {model} at ({x:.0}, {y:.0}), ground {ground:.1} m, scale {scale}, yaw {:.0} deg", yaw.to_degrees());
-        commands.spawn((PbrBundle {
+        commands.spawn((MaterialMeshBundle::<RetroMaterial> {
             mesh: meshes.add(models::island_mesh(model)),
             material: material.clone(),
             transform: Transform { translation: at, rotation: Quat::from_rotation_y(yaw), scale: Vec3::splat(scale) },

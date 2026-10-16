@@ -10,6 +10,7 @@
     forward_io::{VertexOutput, FragmentOutput},
 }
 #import bevy_pbr::mesh_view_bindings::globals
+#import bevy_pbr::mesh_functions::get_world_from_local
 #import rocca::noise::{hash21, value_noise}
 
 struct RetroUniform {
@@ -201,6 +202,150 @@ fn foliage_albedo(base: vec4<f32>, p: vec3<f32>, normal: vec3<f32>, alive: f32) 
     return vec4<f32>(rgb, base.a);
 }
 
+
+// Object-space position in metres: the world offset from the mesh origin
+// projected on its (orthogonal) axes. For merged meshes with an identity
+// transform (all the town) it is simply the world position.
+fn local_metres(p: vec3<f32>, instance_index: u32) -> vec3<f32> {
+    let m = get_world_from_local(instance_index);
+    let d = p - m[3].xyz;
+    let ax = normalize(m[0].xyz);
+    let ay = normalize(m[1].xyz);
+    let az = normalize(m[2].xyz);
+    return vec3<f32>(dot(d, ax), dot(d, ay), dot(d, az));
+}
+
+// Exposed so windows (dark glass), lit windows and burning or charred
+// vertices keep their colour: only ordinary painted surfaces get a texture.
+fn surface_gate(c: vec3<f32>) -> f32 {
+    let luma = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    return smoothstep(0.09, 0.16, luma) * (1.0 - smoothstep(1.0, 1.3, max(c.r, max(c.g, c.b))));
+}
+
+// Town (`enabled.w` = 3): plaster, roof tiles, flat-roof gravel and the
+// planks of the pier, all in world metres.
+fn town_albedo(base: vec4<f32>, p: vec3<f32>, normal: vec3<f32>) -> vec4<f32> {
+    let n = normalize(normal);
+    let px_m = max(length(dpdx(p)), length(dpdy(p)));
+    let fine = 1.0 - smoothstep(0.25, 1.2, px_m);
+    let mid = 1.0 - smoothstep(0.9, 4.0, px_m);
+    let c = base.rgb;
+    let gate = surface_gate(c);
+    var tone = 0.0;
+    var rgb = c;
+    let wood = c.r > c.g && c.g > c.b && c.r < 0.6 && c.r - c.b > 0.12 && c.r - c.b < 0.3;
+    if n.y > 0.35 && wood {
+        // Pier and decking: planks across the walkway, each with its own
+        // tone, a dark gap between them and a long grain.
+        let row = floor(p.z / 0.28);
+        let f = fract(p.z / 0.28);
+        let gap = 1.0 - smoothstep(0.0, 0.12 + 0.5 * px_m, min(f, 1.0 - f) * 2.0);
+        let grain = value_noise(vec2<f32>(p.x * 5.0, p.z * 40.0));
+        tone = (hash21(vec2<f32>(row, 3.0)) - 0.5) * 0.35 + (grain - 0.5) * 0.25 * fine - gap * 0.35 * mid;
+    } else if n.y > 0.35 {
+        // Roofs. Pitched ones: courses of clay tiles along the slope, rows
+        // at constant height, columns along the eave. Flat ones: gravel.
+        let along = normalize(vec2<f32>(-n.z, n.x) + vec2<f32>(1e-4, 0.0));
+        let u = dot(p.xz, along) / 0.34;
+        let v = p.y / (0.30 * max(n.y, 0.25) / max(length(n.xz), 0.25) + 0.12);
+        if n.y < 0.93 {
+            let rowi = floor(v);
+            let uu = u + 0.5 * (rowi - 2.0 * floor(rowi * 0.5));
+            let col = hash21(vec2<f32>(floor(uu), rowi));
+            let fv = fract(v);
+            let fu = fract(uu);
+            let lip = smoothstep(0.0, 0.35, fv) * (1.0 - 0.45 * smoothstep(0.6, 1.0, fv)) ;
+            let seam = 1.0 - smoothstep(0.0, 0.2 + 0.4 * px_m, min(fu, 1.0 - fu));
+            let moss = smoothstep(0.55, 0.85, value_noise(p.xz * 0.5 + 11.0));
+            tone = (col - 0.5) * 0.40 * mid + (lip - 0.75) * 0.55 * mid - seam * 0.22 * fine - moss * 0.08 * mid
+                 + (value_noise(p.xz * 0.12) - 0.5) * 0.25;
+        } else {
+            let grit = value_noise(p.xz * 6.0);
+            tone = (value_noise(p.xz * 0.35) - 0.5) * 0.28 + (grit - 0.5) * 0.30 * fine;
+        }
+    } else {
+        // Walls: lime plaster. Large damp and sun patches, small stucco
+        // grain, vertical runs of dirt under the eaves and a darker foot.
+        let blot = value_noise(vec2<f32>((p.x + p.z) * 0.22, p.y * 0.30) + 3.0);
+        let grain = value_noise(vec2<f32>(p.x + p.z, p.y) * 3.5);
+        let streak = value_noise(vec2<f32>((p.x + p.z) * 2.2, p.y * 0.18));
+        tone = (blot - 0.5) * 0.30 * mid + (grain - 0.5) * 0.22 * fine - smoothstep(0.62, 0.9, streak) * 0.12 * mid;
+        // stone plinth: the lowest metre or so reads darker
+        let foot = 1.0 - smoothstep(0.0, 1.6, p.y - 0.0);
+        tone -= 0.0 * foot;
+    }
+    rgb = c * (1.0 + tone * gate);
+    return vec4<f32>(rgb, base.a);
+}
+
+// Stone (`enabled.w` = 4): dressed ashlar in running bond, in the object's
+// own frame so the courses follow the walls, with lichen on the top faces.
+fn stone_albedo(base: vec4<f32>, lp: vec3<f32>, normal: vec3<f32>, p: vec3<f32>) -> vec4<f32> {
+    let n = normalize(normal);
+    let px_m = max(length(dpdx(p)), length(dpdy(p)));
+    let fine = 1.0 - smoothstep(0.35, 1.6, px_m);
+    let mid = 1.0 - smoothstep(1.2, 6.0, px_m);
+    let c = base.rgb;
+    let gate = surface_gate(c);
+    let along = normalize(vec2<f32>(-n.z, n.x) + vec2<f32>(1e-4, 0.0));
+    var q: vec2<f32>;
+    if abs(n.y) > 0.7 {
+        q = lp.xz / vec2<f32>(1.6, 1.0);
+    } else {
+        q = vec2<f32>(dot(lp.xz, along) / 1.6, lp.y / 0.8);
+    }
+    let row = floor(q.y);
+    let qq = vec2<f32>(q.x + 0.5 * (row - 2.0 * floor(row * 0.5)) + hash21(vec2<f32>(row, 1.0)), q.y);
+    let cell = floor(qq);
+    let f = fract(qq);
+    let e = min(min(f.x * 1.6, (1.0 - f.x) * 1.6), min(f.y * 0.8, (1.0 - f.y) * 0.8));
+    let mortar = 1.0 - smoothstep(0.02, 0.05 + 0.6 * px_m, e);
+    let block = (hash21(cell) - 0.5) * 0.30 + (value_noise(lp.xz * 1.3 + lp.y * 0.7) - 0.5) * 0.18 * fine;
+    let weather = (value_noise(lp.xz * 0.15 + lp.y * 0.1) - 0.5) * 0.30;
+    let lichen = smoothstep(0.55, 0.8, value_noise(lp.xz * 0.8 + 5.0)) * smoothstep(0.2, 0.8, n.y);
+    var rgb = c * (1.0 + (block - mortar * 0.38) * mid * gate + weather * gate);
+    rgb = mix(rgb, rgb * vec3<f32>(0.78, 0.92, 0.55), lichen * 0.55 * gate * mid);
+    return vec4<f32>(rgb, base.a);
+}
+
+// Boats (`enabled.w` = 5): planked hulls, panelled sails. Told apart by
+// the baked colour: pale and neutral is cloth, anything else is timber or paint.
+fn boat_albedo(base: vec4<f32>, lp: vec3<f32>, normal: vec3<f32>, p: vec3<f32>) -> vec4<f32> {
+    let n = normalize(normal);
+    let px_m = max(length(dpdx(p)), length(dpdy(p)));
+    let fine = 1.0 - smoothstep(0.4, 2.5, px_m);
+    let mid = 1.0 - smoothstep(1.5, 8.0, px_m);
+    let c = base.rgb;
+    let gate = surface_gate(c);
+    let luma = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let sat = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+    let cloth = smoothstep(0.55, 0.75, luma) * (1.0 - smoothstep(0.12, 0.3, sat)) * (1.0 - smoothstep(0.55, 0.9, abs(n.y)));
+    var tone = 0.0;
+    if cloth > 0.5 && abs(n.y) < 0.8 {
+        // Sail: cloths sewn in vertical panels with a seam, billowing shade
+        // and a sun-bleached upper edge.
+        let panel = lp.x * 0.7 + lp.z * 0.7;
+        let seam = 1.0 - smoothstep(0.0, 0.05 + 0.5 * px_m, abs(fract(panel / 0.55) - 0.5) * 2.0 - 0.0);
+        let seam_line = smoothstep(0.92, 1.0, abs(fract(panel / 0.55) - 0.5) * 2.0);
+        tone = -seam_line * 0.30 * mid + (value_noise(vec2<f32>(panel * 0.6, lp.y * 0.5)) - 0.5) * 0.22 * mid
+             + (value_noise(vec2<f32>(panel * 4.0, lp.y * 4.0)) - 0.5) * 0.07 * fine;
+    } else if abs(n.y) > 0.6 {
+        // Deck: teak boards along the boat.
+        let row = floor(lp.z / 0.22);
+        let f = fract(lp.z / 0.22);
+        let gap = 1.0 - smoothstep(0.0, 0.1 + 0.5 * px_m, min(f, 1.0 - f) * 2.0);
+        tone = (hash21(vec2<f32>(row, 9.0)) - 0.5) * 0.35 * mid - gap * 0.50 * mid
+             + (value_noise(vec2<f32>(lp.x * 3.0, lp.z * 30.0)) - 0.5) * 0.14 * fine;
+    } else {
+        // Hull: strakes of planking, a slightly glossy paint, grain.
+        let f = fract(lp.y / 0.28);
+        let gap = 1.0 - smoothstep(0.0, 0.1 + 0.5 * px_m, min(f, 1.0 - f) * 2.0);
+        tone = -gap * 0.45 * mid + (hash21(vec2<f32>(floor(lp.y / 0.28), 4.0)) - 0.5) * 0.22 * mid
+             + (value_noise(vec2<f32>(lp.x * 2.5, lp.y * 24.0)) - 0.5) * 0.10 * fine;
+    }
+    return vec4<f32>(c * (1.0 + tone * gate), base.a);
+}
+
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     var pbr_input = pbr_input_from_standard_material(in, is_front);
@@ -249,7 +394,16 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         pbr_input.material.base_color = terrain_albedo(pbr_input.material.base_color, p, mask_s, meadow);
     }
 
-    if retro.enabled.w > 1.5 {
+    if retro.enabled.w > 2.5 {
+        let lp = local_metres(p, in.instance_index);
+        if retro.enabled.w < 3.5 {
+            pbr_input.material.base_color = town_albedo(pbr_input.material.base_color, p, in.world_normal);
+        } else if retro.enabled.w < 4.5 {
+            pbr_input.material.base_color = stone_albedo(pbr_input.material.base_color, lp, in.world_normal, p);
+        } else {
+            pbr_input.material.base_color = boat_albedo(pbr_input.material.base_color, lp, in.world_normal, p);
+        }
+    } else if retro.enabled.w > 1.5 {
         // Which vertices are living foliage is decided where the mesh is
         // built: vertex alpha is 1 on leaves, 0 on wood, rock, grass and
         // anything burning or burnt (`vegetation.rs`).

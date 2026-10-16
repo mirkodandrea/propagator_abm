@@ -13,6 +13,7 @@ use bevy::prelude::*;
 use scenario::Pos;
 
 use crate::models;
+use crate::retro::{self, RetroMaterial};
 use crate::sea;
 use crate::sim::Sim;
 use crate::visual_scale;
@@ -73,17 +74,17 @@ fn spawn_boats(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<RetroMaterial>>,
 ) {
     let scn = &sim.scn;
-    let material = materials.add(StandardMaterial {
+    let material = materials.add(retro::finished_material(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 0.55,
         reflectance: 0.2,
         cull_mode: None,
         double_sided: true,
         ..default()
-    });
+    }, retro::RetroStyle::STANDARD, retro::Finish::Boat));
     // The Blender models (`scripts/build_island_models.py`): sloops under sail
     // for the open sea, the same hulls with the sails furled for the berths.
     let sailing_meshes: Vec<_> = ["veliero_bianco", "veliero_crema", "veliero_rosso", "veliero_blu", "veliero_giallo"]
@@ -95,9 +96,9 @@ fn spawn_boats(
     let upwind = (-drift.y).atan2(-drift.x);
     let mut rng = Lcg(0x0B0A_7500_1D);
     let scale = Vec3::splat(visual_scale::BOAT);
-    let bundle = |mesh: Handle<Mesh>, material: Handle<StandardMaterial>, at: Vec3, heading: f32| {
+    let bundle = |mesh: Handle<Mesh>, material: Handle<RetroMaterial>, at: Vec3, heading: f32| {
         (
-            PbrBundle {
+            MaterialMeshBundle::<RetroMaterial> {
                 mesh,
                 material,
                 transform: Transform { translation: at, rotation: Quat::from_rotation_y(-heading), scale },

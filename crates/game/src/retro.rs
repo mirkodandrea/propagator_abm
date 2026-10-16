@@ -123,3 +123,21 @@ pub fn terrain_material(base: StandardMaterial, mask: Handle<Image>, rect: Vec4)
     m.extension.grass_map = Some(crate::ground_mask::GRASS_MAP);
     m
 }
+
+/// Surface finish of a structure's material (`enabled.w` of the shader).
+#[derive(Debug, Clone, Copy)]
+pub enum Finish {
+    /// Town buildings, kit props and the pier: plaster, tiles, planks.
+    Town = 3,
+    /// Landmarks: dressed stone.
+    Stone = 4,
+    /// Boats: planking, deck boards, sail panels.
+    Boat = 5,
+}
+
+/// A structure material with a procedural surface finish.
+pub fn finished_material(base: StandardMaterial, style: RetroStyle, finish: Finish) -> RetroMaterial {
+    let mut m = material_with_style(base, false, style);
+    m.extension.enabled.w = finish as u8 as f32;
+    m
+}
