@@ -104,6 +104,7 @@ fn main() -> anyhow::Result<()> {
     .add_plugins((sky::SkyPlugin, sea::SeaPlugin, boats::BoatsPlugin, landmarks::LandmarksPlugin))
     .init_state::<AppState>()
     .init_resource::<kiosk::snap::SnapView>()
+    .init_resource::<kiosk::snap::SnapHide>()
     .init_resource::<ui::UiFocus>()
     .add_event::<sim::SimRestarted>()
     .insert_resource(DataPath(std::path::PathBuf::from(&data)))
@@ -140,6 +141,7 @@ fn main() -> anyhow::Result<()> {
     ));
     kiosk_systems(&mut app);
     app.add_plugins(forecast_view::ForecastPlugin);
+    app.add_systems(PostUpdate, kiosk::snap::hide_ui.after(bevy_egui::EguiSet::ProcessOutput));
     app.add_systems(Update, quality_live::apply_live.run_if(resource_changed::<quality::Graphics>.and_then(not(resource_added::<quality::Graphics>))));
     let exit = app.run();
     #[cfg(not(target_arch = "wasm32"))]
@@ -230,6 +232,11 @@ fn kiosk_systems(app: &mut App) {
             kiosk::launch.run_if(in_state(AppState::SelectingScenario)),
             (kiosk::ui::draw, kiosk::step, kiosk::snap::drive, kiosk::view::camera, kiosk::snap::hold, playtest::observe)
                 .chain()
+                .run_if(in_state(AppState::Playing)),
+            kiosk::snap::hide_marks
+                .after(kiosk::pins::update)
+                .after(kiosk::marks::update_teams)
+                .after(forecast_view::update)
                 .run_if(in_state(AppState::Playing)),
             (fire_view::reset, buildings::reset, overlays::reset, units::reset, kiosk::marks::reset)
                 .after(kiosk::step)

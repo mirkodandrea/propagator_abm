@@ -17,6 +17,9 @@
 //! | `hover`  | the district under the pointer (its route and time shown)            |
 //! | `at`     | camera focus: `home`, `fire`, `district:<name>`, `team:<n>`, `<x>:<y>` |
 //! | `dist`, `yaw`, `pitch` | the view, metres and degrees                           |
+//! | `iso`    | `0`: no isochrones (lines and labels)                                |
+//! | `marks`  | `0`: no team, order, hex, road or flag marks on the map              |
+//! | `ui`     | `0`: no interface at all (panels, labels, buttons)                   |
 //!
 //! The game is that of the phase (the tutorial's fire or the played one).
 //! Time only goes forward: a state with an earlier `t` or another phase's
@@ -65,6 +68,15 @@ struct State {
     dist: Option<f32>,
     yaw: Option<f32>,
     pitch: Option<f32>,
+    hide: SnapHide,
+}
+
+/// What the state on show leaves out of the picture.
+#[derive(Resource, Default, Clone, Copy)]
+pub struct SnapHide {
+    pub iso: bool,
+    pub marks: bool,
+    pub ui: bool,
 }
 
 fn xy(v: &str) -> Option<Pos> {
@@ -100,6 +112,9 @@ fn parse(spec: &str) -> Vec<State> {
                     "dist" => st.dist = v.parse().ok(),
                     "yaw" => st.yaw = v.parse().ok(),
                     "pitch" => st.pitch = v.parse().ok(),
+                    "iso" => st.hide.iso = v == "0",
+                    "marks" => st.hide.marks = v == "0",
+                    "ui" => st.hide.ui = v == "0",
                     other => eprintln!("snap: unknown key `{other}`"),
                 }
             }
@@ -240,6 +255,7 @@ pub fn drive(
     mut exit: EventWriter<AppExit>,
     mut restarted: EventWriter<SimRestarted>,
     mut view: ResMut<SnapView>,
+    mut hide: ResMut<SnapHide>,
     mut p: Local<Progress>,
 ) {
     let Ok(dir) = std::env::var("KIOSK_SNAP") else { return };
@@ -265,6 +281,7 @@ pub fn drive(
         p.waited = 0.0;
     }
     p.waited += dt;
+    *hide = st.hide;
     if let Some((focus, dist, yaw, pitch)) = p.goal {
         *view = SnapView { focus: (!focus.is_nan()).then_some(focus), dist, yaw: yaw.map(f32::to_radians), pitch: pitch.map(f32::to_radians) };
         if let Ok(mut o) = orbit.get_single_mut() {
@@ -319,5 +336,48 @@ pub fn hold(view: Res<SnapView>, sim: Res<Sim>, mut cam: Query<(&mut OrbitCamera
     tf.look_at(orbit.focus, Vec3::Y);
     if let Some(dof) = dof.as_mut() {
         dof.focal_distance = tf.translation.distance(orbit.focus);
+    }
+}
+
+/// Runs after the marks are updated: hides what the state leaves out.
+pub fn hide_marks(
+    hide: Res<SnapHide>,
+    mut iso: Query<&mut Visibility, With<crate::forecast_view::ForecastMark>>,
+    mut marks: Query<
+        &mut Visibility,
+        (
+            Without<crate::forecast_view::ForecastMark>,
+            Or<(
+                With<super::marks::HexMark>,
+                With<super::marks::RoadNetMark>,
+                With<super::marks::OrderMark>,
+                With<super::marks::ClosedMark>,
+                With<super::marks::TeamMark>,
+                With<super::pins::Pin>,
+            )>,
+        ),
+    >,
+) {
+    if !active() {
+        return;
+    }
+    if hide.iso {
+        for mut v in &mut iso {
+            *v = Visibility::Hidden;
+        }
+    }
+    if hide.marks {
+        for mut v in &mut marks {
+            *v = Visibility::Hidden;
+        }
+    }
+}
+
+/// After egui has made its output: no interface in the picture.
+pub fn hide_ui(hide: Res<SnapHide>, mut out: Query<&mut bevy_egui::EguiRenderOutput>) {
+    if hide.ui {
+        for mut o in &mut out {
+            o.paint_jobs.clear();
+        }
     }
 }

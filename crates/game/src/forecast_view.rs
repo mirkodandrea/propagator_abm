@@ -222,7 +222,11 @@ pub fn labels(
     sim: Res<Sim>,
     kiosk: Res<crate::kiosk::Kiosk>,
     cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::OrbitCamera>>,
+    snap_hide: Res<crate::kiosk::snap::SnapHide>,
 ) {
+    if snap_hide.iso {
+        return;
+    }
     let Some((_, at)) = &view.shown else { return };
     if !matches!(kiosk.phase, crate::kiosk::Phase::Tutorial | crate::kiosk::Phase::Gioco) {
         return;
