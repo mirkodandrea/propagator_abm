@@ -171,6 +171,8 @@ pub struct Game {
     logged: Vec<UnitState>,
     /// The group chat of the operation (see [`crate::chat`]).
     pub chat: Vec<ChatMsg>,
+    /// Lines of the orders given in the pause: said when the game resumes.
+    held: Vec<(Voice, Kind, String)>,
 }
 
 impl Game {
@@ -254,6 +256,7 @@ impl Game {
             pauses: 0,
             logged,
             chat: vec![],
+            held: vec![],
         };
         // The ignition is applied on the core's next advance: one step puts
         // the opening fire into the state.
@@ -310,6 +313,10 @@ impl Game {
     /// 2026-10-16: no wait for a new pause).
     pub fn resume(&mut self) {
         self.pause_from = None;
+        // the teams get their orders now: the chat answers only once the world runs
+        for (who, kind, text) in std::mem::take(&mut self.held) {
+            self.say(who, kind, text);
+        }
     }
 
     /// Simulated seconds per real second now: the pause stops the world.
@@ -815,6 +822,22 @@ impl Game {
     /// per order (the refill cycle would repeat them for hours); the rest is
     /// not repeated within [`crate::chat::REPEAT_S`].
     fn say(&mut self, who: Voice, kind: Kind, text: String) {
+        if self.paused() {
+            // orders given in the pause are answered when the game resumes; a
+            // new order replaces the old one, a cancelled evacuation never speaks
+            match kind {
+                Kind::Order => self.held.retain(|h| !(h.0 == who && h.1 == Kind::Order)),
+                Kind::EvacCancel => {
+                    if let Some(i) = self.held.iter().position(|h| h.1 == Kind::EvacStart) {
+                        self.held.remove(i);
+                        return;
+                    }
+                }
+                _ => {}
+            }
+            self.held.push((who, kind, text));
+            return;
+        }
         let now = self.time_s();
         let once_per_order = matches!(kind, Kind::Arrived);
         let repeated = match kind {
