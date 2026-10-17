@@ -102,6 +102,18 @@ pub struct Kit {
     pub colors: Vec<[f32; 3]>,
     pub indices: Vec<u32>,
     pub footprint: Option<[f32; 2]>,
+    /// Set on the animated parts of a unit (`<unit>.<part>` in `units.json`).
+    pub rig: Option<Rig>,
+}
+
+/// How an animated part of a unit moves: about `pivot` (model space, metres)
+/// around `axis`, in the way `kind` names (wheel, prop, swing, tool, blink).
+#[derive(Clone, Debug)]
+pub struct Rig {
+    pub pivot: Vec3,
+    pub axis: Vec3,
+    pub kind: String,
+    pub phase: f32,
 }
 
 fn parse_kit(json: &str, what: &str) -> HashMap<String, Kit> {
@@ -119,6 +131,12 @@ fn parse_kit(json: &str, what: &str) -> HashMap<String, Kit> {
                     colors: serde_json::from_value(v["colors"].clone()).unwrap(),
                     indices: serde_json::from_value(v["indices"].clone()).unwrap(),
                     footprint: serde_json::from_value(v["footprint"].clone()).unwrap_or(None),
+                    rig: v.get("rig").map(|r| Rig {
+                        pivot: Vec3::from_array(serde_json::from_value(r["pivot"].clone()).unwrap()),
+                        axis: Vec3::from_array(serde_json::from_value(r["axis"].clone()).unwrap()),
+                        kind: r["kind"].as_str().unwrap().to_string(),
+                        phase: r["phase"].as_f64().unwrap_or(0.0) as f32,
+                    }),
                 },
             )
         })
@@ -165,21 +183,42 @@ pub fn burnt(name: &str) -> &'static Kit {
         .unwrap_or_else(|| panic!("burnt vegetation has no `{name}`"))
 }
 
-/// A model of `scripts/build_unit_models.py` (firefighter, engine, tanker) as
-/// a mesh, in neutral greys so the unit's status tint reads.
-pub fn unit_mesh(name: &str) -> Mesh {
+fn units() -> &'static HashMap<String, Kit> {
     static UNITS: OnceLock<HashMap<String, Kit>> = OnceLock::new();
-    let m = UNITS
-        .get_or_init(|| parse_kit(include_str!("../../../assets/models/units.json"), "unit models"))
-        .get(name)
-        .unwrap_or_else(|| panic!("unit models have no `{name}`"));
+    UNITS.get_or_init(|| parse_kit(include_str!("../../../assets/models/units.json"), "unit models"))
+}
+
+fn kit_to_mesh(m: &Kit, shift: Vec3) -> Mesh {
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, m.positions.clone());
+    let positions: Vec<[f32; 3]> = m.positions.iter().map(|p| (Vec3::from_array(*p) - shift).to_array()).collect();
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, m.normals.clone());
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, m.colors.iter().map(|c| [c[0], c[1], c[2], 1.0]).collect::<Vec<_>>());
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; m.positions.len()]);
     mesh.insert_indices(Indices::U32(m.indices.clone()));
     mesh
+}
+
+/// The still body of a model of `scripts/build_unit_models.py` (firefighter,
+/// engine, tanker), in its real colours (vertex colours, linear).
+pub fn unit_mesh(name: &str) -> Mesh {
+    let m = units().get(name).unwrap_or_else(|| panic!("unit models have no `{name}`"));
+    kit_to_mesh(m, Vec3::ZERO)
+}
+
+/// The animated parts of a unit (wheels, propellers, limbs, beacons), each
+/// with its mesh centred on its pivot, sorted by name.
+pub fn unit_parts(name: &str) -> Vec<(String, Mesh, Rig)> {
+    let prefix = format!("{name}.");
+    let mut parts: Vec<_> = units()
+        .iter()
+        .filter_map(|(k, m)| {
+            let rig = m.rig.clone()?;
+            Some((k.strip_prefix(&prefix)?.to_string(), kit_to_mesh(m, rig.pivot), rig))
+        })
+        .collect();
+    parts.sort_by(|a, b| a.0.cmp(&b.0));
+    parts
 }
 
 /// A kit piece as a standalone mesh (people and vehicles, which move).
@@ -214,9 +253,10 @@ mod tests {
 
     #[test]
     fn the_unit_models_load_and_stand_on_the_ground() {
-        for name in ["firefighter", "engine", "tanker"] {
+        for (name, parts) in [("firefighter", 4), ("engine", 6), ("tanker", 2)] {
             let m = unit_mesh(name);
             assert!(m.count_vertices() > 0, "{name}");
+            assert_eq!(unit_parts(name).len(), parts, "{name}: animated parts");
         }
     }
 

@@ -258,6 +258,7 @@ fn kiosk_systems(app: &mut App) {
                 (vegetation::burn, vegetation::lod),
                 buildings::damage,
                 units::update_units,
+                units::animate_units,
                 overlays::pulse_rings,
                 rings::spin,
                 overlays::no_ui_shadows,

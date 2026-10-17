@@ -104,20 +104,40 @@ pub struct UnitAssets {
 }
 
 
-/// The AIB yellow-green kit: every team is AIB (user, 2026-10-16).
-pub const VOLUNTEERS: Color = Color::srgb(0.80, 0.85, 0.20);
-
-pub fn colour(kind: UnitKind, state: UnitState) -> Color {
+/// The models carry their real colours (red engine, orange jackets, white
+/// aircraft), so the material tint is white. Only the two states the player must
+/// not miss colour them: a unit pulling out and one that is lost.
+pub fn tint(state: UnitState) -> Color {
     match state {
-        // A lost unit is the one outcome the player must not miss.
         UnitState::Lost => Color::srgb(0.10, 0.10, 0.10),
-        UnitState::Withdrawing => Color::srgb(1.00, 0.35, 0.30),
-        _ => match kind {
-            UnitKind::Engine => VOLUNTEERS,
-            UnitKind::HandCrew => Color::srgb(0.95, 0.80, 0.15),
-            UnitKind::AirTanker => Color::srgb(0.95, 0.95, 0.98),
-        },
+        UnitState::Withdrawing => Color::srgb(1.00, 0.55, 0.50),
+        _ => Color::WHITE,
     }
+}
+
+/// How much the models glow on their own, so they stay findable in smoke
+/// shadow without flattening their colours.
+const SELF_LIGHT: f32 = 0.12;
+
+/// An animated part of a unit (a wheel, a propeller, a limb, a beacon): a child
+/// of the unit's symbol, turning about the pivot of its model.
+#[derive(Component)]
+pub struct Rigged {
+    unit: usize,
+    rig: crate::models::Rig,
+    /// Accumulated rotation, or the gait clock for limbs, radians.
+    clock: f32,
+    /// How much of the gait is on, 0..1, so limbs ease in and out.
+    amp: f32,
+}
+
+/// Where a unit was last frame and when it last moved, in real seconds.
+#[derive(Clone, Copy)]
+pub struct Motion {
+    pub pos: Pos,
+    pub moved_at: f32,
+    /// Metres per real second at the last move.
+    pub speed: f32,
 }
 
 pub fn setup(
@@ -153,22 +173,42 @@ pub fn setup(
             UnitKind::AirTanker => (tanker.clone(), symbol_scale * 1.6),
         };
         let ground = sim.scn.terrain.height_at(u.pos);
-        commands.spawn((
+        let material = mat(tint(u.state), SELF_LIGHT);
+        let model = match u.kind {
+            UnitKind::Engine => "engine",
+            UnitKind::HandCrew => "firefighter",
+            UnitKind::AirTanker => "tanker",
+        };
+        commands
+            .spawn((
                 MaterialMeshBundle::<RetroMaterial> {
-                mesh,
-                material: mat(colour(u.kind, u.state), 1.2),
-                transform: Transform::from_translation(frame::to_bevy(u.pos, ground))
-                    .with_scale(Vec3::splat(scale)),
-                // Air support is not on the map until it is actually here.
-                visibility: if u.on_scene() {
-                    Visibility::Inherited
-                } else {
-                    Visibility::Hidden
+                    mesh,
+                    material: material.clone(),
+                    transform: Transform::from_translation(frame::to_bevy(u.pos, ground))
+                        .with_scale(Vec3::splat(scale)),
+                    // Air support is not on the map until it is actually here.
+                    visibility: if u.on_scene() {
+                        Visibility::Inherited
+                    } else {
+                        Visibility::Hidden
+                    },
+                    ..default()
                 },
-                ..default()
-            },
-            UnitView { id: u.id },
-        ));
+                UnitView { id: u.id },
+            ))
+            .with_children(|parent| {
+                for (_, part, rig) in crate::models::unit_parts(model) {
+                    parent.spawn((
+                        MaterialMeshBundle::<RetroMaterial> {
+                            mesh: meshes.add(part),
+                            material: material.clone(),
+                            transform: Transform::from_translation(rig.pivot),
+                            ..default()
+                        },
+                        Rigged { unit: u.id, rig, clock: 0.0, amp: 0.0 },
+                    ));
+                }
+            });
     }
     info!("suppression layer: {} unit symbols", sim.crews.units.len());
 
@@ -305,11 +345,89 @@ pub fn update_units(
         // eight of these, and mutating the material in place is what makes a
         // unit visibly change state without a swap table.
         if let Some(m) = materials.get_mut(mat) {
-            let c = colour(u.kind, u.state);
+            let c = tint(u.state);
             if m.base.base_color != c {
                 m.base.base_color = c;
-                m.base.emissive = c.to_linear() * 1.2;
+                m.base.emissive = c.to_linear() * SELF_LIGHT;
             }
+        }
+    }
+}
+
+/// Turn the wheels and propellers, swing the limbs, blink the beacons. On real
+/// time and on what the unit is doing: the sim runs at x300, and wheels or legs
+/// tied to it would only strobe. A unit that moved in the last quarter second
+/// is travelling; the world paused, everything stands still (but the aircraft's
+/// propellers and the beacons).
+pub fn animate_units(
+    sim: Res<Sim>,
+    time: Res<Time>,
+    mut motion: Local<Vec<Option<Motion>>>,
+    mut parts: Query<(&mut Rigged, &mut Transform, &mut Visibility)>,
+) {
+    let now = time.elapsed_seconds();
+    let dt = time.delta_seconds().max(1e-4);
+    if motion.len() != sim.crews.units.len() {
+        motion.clear();
+        motion.resize(sim.crews.units.len(), None);
+    }
+    for (u, m) in sim.crews.units.iter().zip(motion.iter_mut()) {
+        let moved = m.map_or(0.0, |m| (u.pos.x - m.pos.x).hypot(u.pos.y - m.pos.y));
+        let prev = m.unwrap_or(Motion { pos: u.pos, moved_at: f32::NEG_INFINITY, speed: 0.0 });
+        *m = Some(if moved > 0.05 {
+            Motion { pos: u.pos, moved_at: now, speed: moved / dt }
+        } else {
+            Motion { pos: u.pos, ..prev }
+        });
+    }
+
+    for (mut p, mut tf, mut vis) in &mut parts {
+        let (Some(u), Some(Some(m))) = (sim.crews.units.get(p.unit), motion.get(p.unit)) else {
+            continue;
+        };
+        let travelling = now - m.moved_at < 0.25;
+        let working = u.state == UnitState::Working;
+        let axis = p.rig.axis;
+        let phase = p.rig.phase;
+        let kind = p.rig.kind.clone();
+        match kind.as_str() {
+            "wheel" => {
+                // rolling without slipping on a 0.52 m wheel, capped before it strobes
+                let omega = if travelling { (m.speed / 0.52).min(12.0) } else { 0.0 };
+                p.clock = (p.clock + omega * dt) % std::f32::consts::TAU;
+                tf.rotation = Quat::from_axis_angle(axis, p.clock);
+            }
+            "prop" => {
+                p.clock = (p.clock + 30.0 * dt) % std::f32::consts::TAU;
+                tf.rotation = Quat::from_axis_angle(axis, p.clock);
+            }
+            kind @ ("swing" | "tool") => {
+                let on = if kind == "tool" { travelling || working } else { travelling };
+                let target = if on { 1.0 } else { 0.0 };
+                p.amp += (target - p.amp) * (8.0 * dt).min(1.0);
+                // legs and arms keep step; the tool arm carries gently while walking
+                // and chops when the crew works
+                let (rate, reach) = match (kind, working && !travelling) {
+                    ("tool", true) => (5.0, 0.9),
+                    ("tool", false) => (9.0, 0.3),
+                    _ => (9.0, 0.7),
+                };
+                p.clock += rate * dt;
+                let a = p.amp * reach * (p.clock + phase).sin();
+                tf.rotation = Quat::from_axis_angle(axis, a);
+            }
+            "blink" => {
+                let active = matches!(
+                    u.state,
+                    UnitState::Moving | UnitState::Working | UnitState::Refilling | UnitState::Withdrawing
+                );
+                let lit = active && ((now * 4.0).floor() as i32 + phase as i32) % 2 == 0;
+                let want = if lit { Visibility::Inherited } else { Visibility::Hidden };
+                if *vis != want {
+                    *vis = want;
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -336,11 +454,15 @@ pub fn sync_orders(
     mut assets: ResMut<UnitAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     existing: Query<Entity, With<OrderMarker>>,
+    kiosk: Res<crate::kiosk::Kiosk>,
 ) {
+    // The opening demo does not draw the lines the crews on foot are cutting
+    // (user, 2026-10-17).
+    let demo = kiosk.phase == crate::kiosk::Phase::Intro;
     // `Suppression::generation` bumps every step, so gate on the orders
     // themselves: a marker set that is rebuilt 30 times a second would be a
     // mesh allocation per frame for no visible change.
-    let fingerprint = orders_fingerprint(&sim);
+    let fingerprint = orders_fingerprint(&sim) ^ demo as u64;
     if assets.orders_gen == fingerprint {
         return;
     }
@@ -376,6 +498,7 @@ pub fn sync_orders(
                     TubeSpin,
                 ));
             }
+            Task::Line { .. } if demo => {}
             Task::Line { from, to } => {
                 let total = ((to.x - from.x).powi(2) + (to.y - from.y).powi(2)).sqrt();
                 let done = (u.line_done_m / total.max(1e-3)).clamp(0.0, 1.0);
