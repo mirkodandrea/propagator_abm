@@ -44,7 +44,6 @@ const ROUTE_M: f32 = 12.0;
 /// As wide as the road drawn under it (`roads::DRIVABLE_HALF_W`), a little above it.
 const CLOSED_M: f32 = 9.6;
 const CLOSED_LIFT_M: f32 = 0.8;
-const DASH_M: f32 = 40.0;
 /// Closed roads are recomputed this often, in game steps.
 const CLOSED_EVERY: u64 = 10;
 /// How much wider the dark under-stroke of a route is than the route.
@@ -83,7 +82,9 @@ pub struct MarkAssets {
     /// The hexes a team placed on a hex covers.
     area: Handle<FlatMaterial>,
     route: Handle<FlatMaterial>,
-    evac: Handle<FlatMaterial>,
+    /// The evacuation's route, in course (flowing light) and proposed (plain).
+    evac_line: Handle<RouteMaterial>,
+    evac_plan: Handle<RouteMaterial>,
     closed: Handle<FlatMaterial>,
     tape: Handle<TapeMaterial>,
     tape_open: Handle<TapeMaterial>,
@@ -134,7 +135,8 @@ pub fn setup(mut commands: Commands, mut lines: ResMut<Assets<RouteMaterial>>, m
         want: materials.add(FlatMaterial::new(WANT).pulled(HEX_PULL_M + 4.0)),
         area: materials.add(FlatMaterial::new(ROUTE).pulled(HEX_PULL_M + 2.0)),
         route: materials.add(FlatMaterial::new(ROUTE)),
-        evac: materials.add(FlatMaterial::new(EVAC).pulled(2.0)),
+        evac_line: lines.add(RouteMaterial::new(EVAC, ROUTE_M * 1.0, ROUTE_M * 1.8)),
+        evac_plan: lines.add(RouteMaterial::plain(EVAC, ROUTE_M * 1.0, ROUTE_M * 1.8, 0.92)),
         closed: materials.add(FlatMaterial::new(CLOSED).pulled(1.0)),
         active: materials.add(FlatMaterial::new([1.0, 0.9, 0.0]).pulled(HEX_PULL_M + 6.0)),
         team_zone: TEAM_COLOURS.iter().map(|&c| materials.add(FlatMaterial::new(c).pulled(HEX_PULL_M + 3.0))).collect(),
@@ -401,12 +403,20 @@ pub fn update_orders(
             ));
         }
     }
-    // the evacuation: under the pointer or chosen (dashed), and in course
+    // the evacuation: under the pointer or chosen (plain), and in course (flowing light)
     let hover = kiosk.evac_hover.as_ref().and_then(|(_, _, p)| p.as_ref().ok());
-    let dashed = kiosk.evac_plan.as_ref().and_then(|p| p.as_ref().ok()).into_iter().chain(hover).map(|p| (&p.path.points, Some(DASH_M)));
-    for (pts, dash) in dashed.chain(sim.evac.active().map(|e| (&e.path.points, None))) {
-        spawn(&mut commands, &mut meshes, path_mesh_at(&sim.scn, pts, ROUTE_M * 1.4 * UNDER, None, RING_LIFT_M - 2.0), &assets.under, OrderMark);
-        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, pts, ROUTE_M * 1.4, dash), &assets.evac, OrderMark);
+    let proposed = kiosk.evac_plan.as_ref().and_then(|p| p.as_ref().ok()).into_iter().chain(hover).map(|p| (&p.path.points, true));
+    for (pts, plan) in proposed.chain(sim.evac.active().map(|e| (&e.path.points, false))) {
+        if let Some(mesh) = route_mesh(&sim.scn, pts, ROUTE_M * 1.8 + 6.0) {
+            let material = if plan { assets.evac_plan.clone() } else { assets.evac_line.clone() };
+            commands.spawn((
+                MaterialMeshBundle::<RouteMaterial> { mesh: meshes.add(mesh), material, ..default() },
+                OrderMark,
+                bevy::pbr::NotShadowCaster,
+                bevy::pbr::NotShadowReceiver,
+                bevy::render::view::NoFrustumCulling,
+            ));
+        }
     }
 }
 
