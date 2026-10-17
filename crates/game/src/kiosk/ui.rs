@@ -115,16 +115,17 @@ pub fn draw(
         k.operator = !k.operator;
     }
     egui::Area::new(egui::Id::new("menu_btn")).anchor(Align2::LEFT_BOTTOM, [10.0, -10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
         let r = ui.add(secondary(if k.operator { "Chiudi menu" } else { "Menu" }));
         crate::playtest::control("Menu", &r, true);
         if r.clicked() {
             k.operator = !k.operator;
         }
     });
-    if k.operator {
-        operator(ctx, k, &mut sim, &mut restarted, &mut gfx);
-    }
-
+    // On a phone the menu is a page of its own: nothing is drawn under it.
+    if k.operator && compact(ctx) {
+        k.side_w = 0.0;
+    } else {
     match k.phase {
         Phase::Intro => {
             k.side_w = 0.0;
@@ -194,11 +195,15 @@ pub fn draw(
             }
         }
     }
+    }
     if pads.iter().next().is_some() {
         pad_help(ctx, k, &sim);
         if matches!(k.phase, Phase::Tutorial | Phase::Gioco) {
             pad_list(ctx, k, &sim);
         }
+    }
+    if k.operator {
+        operator(ctx, k, &mut sim, &mut restarted, &mut gfx);
     }
     pad_mode.game = matches!(k.phase, Phase::Tutorial | Phase::Gioco);
     focus.pointer = ctx.is_pointer_over_area();
@@ -1329,9 +1334,34 @@ fn notice(ctx: &egui::Context, k: &Kiosk) {
 /// The operator menu (F2): a new visit, the game straight away, the world
 /// stopped, the view, the graphics, the board.
 fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, gfx: &mut crate::quality::Graphics) {
+    if compact(ctx) {
+        // On a phone: a page of its own over the screen, big buttons, and
+        // «Chiudi» pinned under the scrolling controls.
+        let mut close = false;
+        super::screens::compact_page_footer(ctx, "operatore_mobile", |ui| {
+            ui.heading("Menu");
+            operator_body(ui, k, sim, restarted, gfx, true);
+        }, |ui| {
+            close = ui.add_sized([ui.available_width(), 46.0], secondary("Chiudi")).clicked();
+        });
+        if close { k.operator = false; }
+        return;
+    }
     egui::Window::new("Menu").id(egui::Id::new("operatore")).anchor(Align2::LEFT_BOTTOM, [8.0, -60.0]).default_width((ctx.screen_rect().width() - 48.0).min(380.0)).max_height(ctx.screen_rect().height() - 90.0).resizable(false).collapsible(false).vscroll(true).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.label(RichText::new("Menu (F2 per chiudere)").strong().color(Color32::WHITE));
+            operator_body(ui, k, sim, restarted, gfx, false);
+        });
+    });
+}
+
+/// The controls of the operator menu. `touch`: finger-sized buttons.
+fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, gfx: &mut crate::quality::Graphics, touch: bool) {
+    let button = |ui: &mut egui::Ui, label: &str| -> bool {
+        if touch { ui.add_sized([ui.available_width(), 46.0], secondary(label)).clicked() } else { ui.add(secondary(label)).clicked() }
+    };
+    {
+        {
             let active_label = k.territory.levels.iter().find(|l| l.case == sim.case.name)
                 .map_or(sim.case.name.as_str(), |l| l.name.as_str());
             ui.label(RichText::new(format!("{} · {} · seme {}", active_label, clock(sim.time_s()), sim.seed)).color(GREY));
@@ -1352,22 +1382,26 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
             }
             ui.label(RichText::new("Si applica con Nuova visita o Vai al giorno 2.").small().color(GREY));
             ui.horizontal_wrapped(|ui| {
-                if ui.add(secondary("Nuova visita")).clicked() {
+                if button(ui, "Nuova visita") {
                     new_visit(k, sim, restarted);
                 }
-                if ui.add(secondary("Vai al giorno 2")).clicked() {
+                if button(ui, "Vai al giorno 2") {
                     start_game(k, sim, restarted);
                 }
             });
             ui.horizontal(|ui| {
                 ui.label("Seme:");
                 for s in 1..=3u64 {
-                    ui.selectable_value(&mut k.seed, s, s.to_string());
+                    if touch {
+                        if ui.add_sized([56.0, 46.0], egui::SelectableLabel::new(k.seed == s, s.to_string())).clicked() { k.seed = s; }
+                    } else {
+                        ui.selectable_value(&mut k.seed, s, s.to_string());
+                    }
                 }
             });
             ui.horizontal(|ui| {
                 ui.checkbox(&mut k.frozen, "Ferma il mondo");
-                if ui.add(secondary("Vista iniziale")).clicked() {
+                if button(ui, "Vista iniziale") {
                     k.reset_view = true;
                 }
             });
@@ -1385,7 +1419,7 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
                 }
             });
             }
-            if ui.add(secondary("Azzera classifica")).clicked() {
+            if button(ui, "Azzera classifica") {
                 k.board = rocca::score::Board::default();
                 if let Err(e) = board::save(&k.board) {
                     k.error = Some(e);
@@ -1394,8 +1428,8 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
             if let Some(e) = &k.error {
                 ui.colored_label(RED, e);
             }
-        });
-    });
+        }
+    }
 }
 
 

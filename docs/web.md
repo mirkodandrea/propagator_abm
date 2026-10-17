@@ -83,10 +83,10 @@ copre «Gioca», nome HTML, avvio e avanzamento del tutorial e rotazione:
 superata, senza errori browser; PNG controllati. Non è una prova su iPhone
 fisico né certifica specificamente iOS 27.
 
-Rieseguita anche la regressione Chromium dopo la correzione: tutti i controlli
+Regressione Chromium del 2026-10-17 (flusso con scelta dell'incendio): tutti i controlli
 di interazione fino al finale e al riavvio superati, nessun errore browser.
-L'esecuzione fallisce però sul controllo di memoria: 353 MiB Wasm al finale,
-oltre il limite di 320 MiB. Il consumo al finale resta da indagare.
+Falliscono solo i 320 MiB di memoria: 295 MiB nel tutorial, 379–416 MiB al finale.
+La crescita avviene durante la partita, non al confronto senza ordini; vedi `docs/TODO.md`.
 
 ```sh
 .venv/bin/python -m playwright install webkit

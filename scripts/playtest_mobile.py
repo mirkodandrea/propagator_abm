@@ -93,12 +93,14 @@ def main():
                 page.wait_for_function('window.roccaPlaytest?.state && !document.querySelector("#loading")')
                 frames(); assert state()['camera']['pixels'] == [390, 844]
                 snap('01-title-portrait')
+                tap('Menu'); snap('01b-menu-portrait')
+                rotate(844, 390); snap('01c-menu-landscape'); tap('Menu'); rotate(390, 844)
                 tap('Gioca'); tap('Nome')
                 page.locator('#player-name').fill('Prova telefono')
                 page.get_by_role('button', name='Continua', exact=True).click(); frames()
                 assert state()['player'] == 'Prova telefono'
                 snap('02-intro-portrait')
-                tap('Inizia'); frames(90); snap('03-tutorial-portrait')
+                tap('TUTORIAL'); frames(90); snap('03-tutorial-portrait')
                 if args.smoke:
                     tap('Avanti'); assert state()['step'] == 1
                     rotate(844, 390); snap('04-tutorial-landscape')
@@ -106,8 +108,13 @@ def main():
                     assert not errors, errors
                     passed = True
                     return
-                tap('Avanti'); tap('Avanti'); frames(120)
+                # The script's explanatory steps come first: «Avanti» up to the first drag.
+                for _ in range(20):
+                    if state()['tutorial_target']: break
+                    tap('Avanti')
+                frames(120)
                 target = state()['tutorial_target']; assert target
+                s0 = state()['step']
                 team = state()['teams'][target['team']]['name']
                 if args.edge_pan:
                     c = control(team)
@@ -132,7 +139,7 @@ def main():
                     assert sum(abs(a-b) for a,b in zip(before, state()['camera']['focus'])) < 1
                     touch('touchCancel', []); frames(20)
                     assert sum(abs(a-b) for a,b in zip(before, state()['camera']['focus'])) < 1
-                    assert state()['step'] == 2 and state()['teams'][target['team']]['hex'] is None
+                    assert state()['step'] == s0 and state()['teams'][target['team']]['hex'] is None
                     snap('edge-pan-canceled')
                     c = control(team)
                     touch('touchStart', [(0, c['x'], c['y'])])
@@ -143,7 +150,7 @@ def main():
                     touch('touchMove', [(0, 100, 40)]); touch('touchEnd', [])
                     before = state()['camera']['focus']; frames(20)
                     assert sum(abs(a-b) for a,b in zip(before, state()['camera']['focus'])) < 1
-                    assert state()['step'] == 2 and state()['teams'][target['team']]['hex'] is None
+                    assert state()['step'] == s0 and state()['teams'][target['team']]['hex'] is None
                     assert not errors, errors
                     passed = True
                     return
@@ -151,40 +158,48 @@ def main():
                 tap(team)
                 target = state()['tutorial_target']
                 touch('touchStart', [(0, target['x'], target['y'])]); touch('touchEnd', [])
-                assert state()['step'] == 3, state()
+                assert state()['step'] == s0 + 1, state()
                 rotate(844, 390); frames(120); snap('04-tutorial-landscape')
                 target = state()['tutorial_target']; team = state()['teams'][target['team']]['name']
                 c = control(team)
                 # Releasing over the HUD cancels; the tutorial must stay put.
                 drag((c['x'], c['y']), (100, 40))
-                assert state()['step'] == 3 and state()['teams'][target['team']]['hex'] is None
+                assert state()['step'] == s0 + 1 and state()['teams'][target['team']]['hex'] is None
                 snap('04b-canceled-drop')
                 c = control(team)
                 touch('touchStart', [(0, c['x'], c['y'])])
                 touch('touchMove', [(0, c['x'] + 14, c['y'] - 14)])
                 touch('touchCancel', [])
-                assert state()['step'] == 3 and state()['teams'][target['team']]['hex'] is None
+                assert state()['step'] == s0 + 1 and state()['teams'][target['team']]['hex'] is None
                 c = control(team)
                 target = state()['tutorial_target']
                 before = state()['camera']['focus']
                 drag((c['x'], c['y']), (target['x'], target['y']), '05-drag-preview')
-                assert state()['step'] == 4, state()
+                assert state()['step'] == s0 + 2, state()
                 assert state()['teams'][target['team']]['hex'] is not None
                 # A fresh camera flight can start after the valid drop, so
                 # ownership is checked in the saved in-drag observation.
                 in_drag = json.loads((args.output / '05-drag-preview.json').read_text())
                 assert sum(abs(a-b) for a,b in zip(before,in_drag['camera']['focus'])) < 10
-                tap('Riprendi'); advance(1800); frames(120)
+                def read_until(expect):
+                    for _ in range(20):
+                        if state()['expect'].startswith(expect): return
+                        tap('Avanti')
+                    assert False, (expect, state()['expect'])
+                read_until('Resume'); tap('Riprendi'); advance(1800); frames(120)
+                read_until('Evacuate')
                 snap('06-evacuation-instruction')
-                tap('Le Ghiande'); snap('07-evacuation-card'); tap('Evacua')
-                assert state()['step'] == 7, state()
-                tap('Riprendi')
+                tap('Le Ghiande'); snap('07-evacuation-card'); before_step = state()['step']; tap('Evacua')
+                assert state()['step'] > before_step, state()
+                read_until('Resume'); tap('Riprendi')
                 # Keep each batch short enough to stop at the tutorial boundary.
                 for _ in range(40):
                     if state()['phase'] != 'Tutorial': break
                     advance(120)
                 assert state()['phase'] == 'Giorno2', state()
-                snap('08-day-two'); tap('Inizia giorno 2'); frames(40)
+                snap('08-day-two'); tap('Inizia giorno 2'); frames(10)
+                assert state()['phase'] == 'Scenario', state()
+                snap('08b-scenario'); tap('Parti'); frames(40)
                 rotate(390, 844); snap('09-game-portrait')
                 # Zoom, two-finger pan/rotation, and cancellation must not issue orders.
                 teams = state()['teams']
@@ -198,7 +213,11 @@ def main():
                 assert [t['hex'] for t in state()['teams']] == [t['hex'] for t in teams]
                 tap('Isola'); frames(10)
                 snap('10-game-home')
-                tap('Riprendi'); advance(18000)
+                tap('Riprendi')
+                for _ in range(30):
+                    if state()['phase'] == 'Fine': break
+                    advance(600); m = state()['wasm_memory_bytes'] / 1048576
+                    print('  run', state()['phase'], round(m, 1), 'MiB', flush=True)
                 assert state()['phase'] == 'Fine', state()
                 page.wait_for_function('window.roccaPlaytest.state.baseline_ready')
                 snap('11-end-portrait')
@@ -206,7 +225,7 @@ def main():
                 tap('Nuova partita'); snap('13-restart')
                 assert state()['phase'] == 'Intro'
                 rotate(320, 568); snap('14-small-phone'); tap('Gioca'); snap('15-small-intro')
-                tap('Inizia'); frames(90)
+                tap('TUTORIAL'); frames(90)
                 rotate(568, 320); frames(90); snap('16-small-landscape')
                 tap('Avanti'); assert state()['step'] == 1
                 # Also smoke-test mouse input on a desktop Retina viewport.

@@ -421,7 +421,7 @@ pub fn scenario(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
     let compact = super::ui::compact(ctx);
     let mut go = false;
     let mut back = false;
-    let body = |ui: &mut egui::Ui, k: &mut Kiosk, go: &mut bool, back: &mut bool, wide: bool| {
+    let body = |ui: &mut egui::Ui, k: &mut Kiosk, wide: bool| {
         ui.label(RichText::new("Scegli l'incendio").size(if wide { 36.0 } else { 22.0 }).strong().color(Color32::WHITE));
         ui.add_space(6.0);
         let levels = k.territory.levels.clone();
@@ -473,6 +473,8 @@ pub fn scenario(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
                 ui.add_space(6.0);
             }
         }
+    };
+    let footer = |ui: &mut egui::Ui, go: &mut bool, back: &mut bool, wide: bool| {
         ui.add_space(8.0);
         let full = ui.available_width();
         ui.horizontal(|ui| {
@@ -486,13 +488,15 @@ pub fn scenario(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
         });
     };
     if compact {
-        compact_page(ctx, "scenario_mobile", |ui| body(ui, k, &mut go, &mut back, false));
+        // «Indietro» and «PARTI» stay in view: on a landscape phone the cards fill the screen.
+        compact_page_footer(ctx, "scenario_mobile", |ui| body(ui, k, false), |ui| footer(ui, &mut go, &mut back, false));
     } else {
         backdrop(ctx, "scenario_fondo", 170);
         egui::Area::new(egui::Id::new("scenario")).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
             big_card().show(ui, |ui| {
                 ui.set_width(860.0);
-                body(ui, k, &mut go, &mut back, true);
+                body(ui, k, true);
+                footer(ui, &mut go, &mut back, true);
             });
         });
     }
@@ -651,9 +655,9 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
     }
     if super::ui::compact(ctx) {
         let mut again = false;
-        compact_page(ctx, "fine_mobile", |ui| {
-            ui.heading(format!("Com'è andata, {}", k.player));
-            again = action(ui, "Nuova partita");
+        // «Nuova partita» stays in view under the scrolling results
+        compact_page_footer(ctx, "fine_mobile", |ui| {
+            ui.heading(if k.player.trim().is_empty() { "Com'è andata".to_string() } else { format!("Com'è andata, {}", k.player.trim()) });
             match &base {
                 None => { ui.label("Confronto con lo stesso incendio senza ordini…"); }
                 Some(Err(e)) => { ui.colored_label(RED, e); }
@@ -668,7 +672,6 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                         });
                     }
                     ui.label(verdict(&k.player, &mine, none).1);
-                    ui.label(format!("Tu: {} persone e {} case colpite, {:.0} ha. Senza ordini: {} persone, {} case, {:.0} ha.", mine.caught(), mine.homes_hit(), mine.hectares, none.caught(), none.homes_hit(), none.hectares));
                 }
             }
             learning(ui, &mine, base.as_ref().and_then(|r| r.as_ref().ok()));
@@ -676,7 +679,7 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             ui.heading("Classifica di oggi");
             let name = rocca::score::name(&k.player);
             board_rows(ui, k, &sim.case.name, k.saved.as_ref().map(|(_, at)| (name.as_str(), *at)), rocca::score::BOARD_SHOWN);
-        });
+        }, |ui| again = action(ui, "Nuova partita"));
         if again { new_visit(k, sim, restarted); }
         return;
     }
@@ -764,17 +767,27 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
 
 /// Narrow screens keep readable text and scroll, instead of scaling the kiosk UI.
 fn compact_page(ctx: &egui::Context, id: &str, content: impl FnOnce(&mut egui::Ui)) {
+    compact_page_footer(ctx, id, content, |_| {});
+}
+
+/// `compact_page` with a `footer` pinned under the scrolling content.
+pub(super) fn compact_page_footer(ctx: &egui::Context, id: &str, content: impl FnOnce(&mut egui::Ui), footer: impl FnOnce(&mut egui::Ui)) {
     backdrop(ctx, "mobile_backdrop", 200);
     let rect = ctx.screen_rect();
     let width = (rect.width() - 40.0).min(600.0).max(120.0);
+    // the footer, when there is one, takes its row out of the scroll area
+    let mut footer_h = 0.0;
+    let mut footer = Some(footer);
     egui::Area::new(egui::Id::new(id)).anchor(Align2::CENTER_TOP, [0.0, 8.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         panel_mobile().show(ui, |ui| {
             ui.set_width(width);
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+            let footer_room: f32 = ctx.memory(|m| m.data.get_temp(egui::Id::new((id, "footer_h"))).unwrap_or(0.0));
             // Areas remember their last measured size. Let the scroll viewport
             // grow again when results arrive asynchronously or the phone rotates.
-            ui.set_max_height((rect.height() - 92.0).max(80.0));
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-            egui::ScrollArea::vertical().max_height((rect.height() - 92.0).max(80.0)).show(ui, |ui| {
+            let max_h = (rect.height() - 92.0 - footer_room).max(80.0);
+            ui.set_max_height(max_h + footer_room);
+            egui::ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
                 content(ui);
                 ui.add_space(8.0);
                 ui.label(RichText::new(format!("versione {}", super::BUILD)).size(12.0).color(GREY));
@@ -782,8 +795,15 @@ fn compact_page(ctx: &egui::Context, id: &str, content: impl FnOnce(&mut egui::U
                     ctx.open_url(egui::OpenUrl::new_tab(super::ui::feedback_url()));
                 }
             });
+            let before = ui.cursor().top();
+            if let Some(f) = footer.take() {
+                ui.add_space(6.0);
+                f(ui);
+            }
+            footer_h = ui.min_rect().bottom() - before;
         });
     });
+    ctx.memory_mut(|m| m.data.insert_temp(egui::Id::new((id, "footer_h")), footer_h));
 }
 
 fn panel_mobile() -> egui::Frame {
@@ -852,15 +872,18 @@ fn compact_tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted
         panel_mobile().show(ui, |ui| {
             ui.set_width(if landscape { k.side_w - 40.0 } else { (rect.width() - 40.0).min(600.0) });
             egui::ScrollArea::vertical().max_height(if landscape { (rect.height() - 180.0).max(42.0) } else { (rect.height() * 0.20).clamp(42.0, 120.0) }).show(ui, |ui| {
-                ui.label(RichText::new(text.replace("**", "").replace("__", "").replace("In basso a destra", "In alto").replace(" Esc annulla.", "").replace("clicca", "tocca").replace("cliccando", "toccando").replace("cliccala", "toccala").replace("Trascina la squadra", "Tocca la squadra e poi la destinazione, oppure trascina la squadra")).size(16.0));
+                ui.label(RichText::new(text.replace("**", "").replace("__", "").replace("In basso a destra", "In alto").replace(" Esc annulla.", "").replace("clicca", "tocca").replace("cliccando", "toccando").replace("cliccala", "toccala").replace("Trascina la squadra", "Tocca la squadra e poi la destinazione, oppure trascina la squadra")).size(if landscape { 18.0 } else { 17.0 }));
             });
+            let steps = k.script.as_ref().map_or(0, |s| s.steps.len());
+            ui.add(egui::ProgressBar::new((k.step + 1) as f32 / steps.max(1) as f32).desired_height(4.0));
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                let r = ui.add(secondary("Salta"));
+                // «Avanti» takes the room left: the easiest thing to hit
+                let r = ui.add(secondary("Salta").min_size(egui::vec2(60.0, 44.0)));
                 crate::playtest::control("Salta il tutorial", &r, true);
                 skip = r.clicked();
-                ui.label(format!("{}/{}", k.step + 1, k.script.as_ref().map_or(0, |s| s.steps.len())));
                 if expect == Expect::Next {
-                    let r = ui.add(primary("Avanti").min_size(egui::vec2(80.0, 44.0)));
+                    let r = ui.add_sized([ui.available_width(), 44.0], primary("Avanti"));
                     crate::playtest::control("Avanti", &r, true);
                     if r.clicked() { k.done(Expect::Next); }
                 }
