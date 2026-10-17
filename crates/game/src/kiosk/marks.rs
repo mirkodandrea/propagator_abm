@@ -20,7 +20,9 @@ use crate::sim::Sim;
 use crate::tape::TapeMaterial;
 
 /// Widths on the map, metres.
-const HEX_LINE_M: f32 = 5.0;
+/// Width of the band along the roads where a team can be placed (a buffer of
+/// half of it on each side; the internal rule stays the hex grid).
+const BUFFER_M: f32 = 110.0;
 /// The dark under-stroke of the hex lines, wider, a little lower.
 const HEX_UNDER_M: f32 = 24.0;
 const HEX_PICK_M: f32 = 16.0;
@@ -174,11 +176,6 @@ fn area_hex(kiosk: &Kiosk, sim: &Sim) -> Option<rocca::Axial> {
     kiosk.move_hex.or(sim.teams.get(t)?.hex)
 }
 
-fn outline(at: rocca::Axial) -> Vec<Pos> {
-    let c = at.corners();
-    c.iter().chain(std::iter::once(&c[0])).copied().collect()
-}
-
 /// A small circle: where a team is, goes or is asked to go.
 fn dot(c: Pos, r: f32) -> Vec<Pos> {
     (0..=32).map(|i| {
@@ -215,10 +212,10 @@ fn spawn<M: Component>(commands: &mut Commands, meshes: &mut Assets<Mesh>, mesh:
 
 /// While a team's move is being chosen (in pause, the team taken or dragged)
 /// the drivable roads show over the canopy, and the hexes the team can
-/// actually be sent to ([`rocca::Game::move_targets`], the rule of the order
-/// itself; in the tutorial only the one the step asks), very faint (user,
-/// 2026-10-17): the grid is the fine one of the orders. The roads are built
-/// once, then shown or hidden; the hexes are rebuilt for each team and pause.
+/// a faint band along the roads the team can drive to (a buffer; user,
+/// 2026-10-17: no hex outlines, the grid stays the internal rule of the
+/// order). The roads are built once, then shown or hidden; the band is rebuilt
+/// for each team and pause.
 pub fn update_hexes(
     mut commands: Commands,
     sim: Res<Sim>,
@@ -284,9 +281,27 @@ pub fn update_hexes(
         commands.entity(e).despawn();
     }
     let Some((t, _, want)) = key else { return };
-    let targets: Vec<rocca::Axial> = sim.move_targets(t).into_iter().filter(|&h| want.map_or(true, |w| w == h)).collect();
-    if !targets.is_empty() {
-        let parts = targets.iter().map(|&h| path_mesh(&sim.scn, &outline(h), HEX_LINE_M, None)).collect();
+    // the tutorial's step asks for one place, shown by the order marks
+    if want.is_some() {
+        return;
+    }
+    // a band along the roads the team can drive to now
+    let Some(team) = sim.teams.get(t) else { return };
+    let Some(from) = sim.net.nearest(sim.crews.units[team.unit].pos, true) else { return };
+    let seen = abm::network::reachable_from(&sim.net, from, sim.fire.threat(), true);
+    let mut parts = vec![];
+    for n in 0..sim.net.len() {
+        let id = n as abm::network::NodeId;
+        if !seen[n] {
+            continue;
+        }
+        for e in sim.net.neighbours(id) {
+            if e.drivable && (e.to as usize) > n && seen[e.to as usize] {
+                parts.push(path_mesh(&sim.scn, &[sim.net.pos(id), sim.net.pos(e.to)], BUFFER_M, None));
+            }
+        }
+    }
+    if !parts.is_empty() {
         spawn(&mut commands, &mut meshes, merge(parts), &assets.hex, HexMark);
     }
 }

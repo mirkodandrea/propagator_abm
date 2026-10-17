@@ -511,7 +511,7 @@ fn hover_move(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, &Glo
 }
 
 /// How far from a usable spot a click is still pulled to it, metres.
-const SNAP_M: f32 = 150.0;
+const SNAP_M: f32 = 250.0;
 
 /// A point not on a usable hex is pulled to the road point of the nearest
 /// hex the team can be sent to, if that is within one hex (user, 2026-10-16).
