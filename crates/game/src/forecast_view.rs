@@ -27,11 +27,11 @@ const SMOOTH_STEP_M: f32 = 12.0;
 /// Label lift above the ground, metres.
 const LABEL_LIFT_M: f32 = 30.0;
 /// Shades of red, +1 h the deepest and +3 h the palest (user, 2026-10-16).
-const LINES: [[f32; 3]; HORIZONS] = [[0.95, 0.05, 0.05], [1.0, 0.74, 0.70]];
+const LINES: [[f32; 3]; HORIZONS] = [[1.0, 0.04, 0.02], [1.0, 0.85, 0.0]];
 /// The same, for the legend in the interface.
 pub const LINE_COLOURS: [bevy_egui::egui::Color32; HORIZONS] = [
-    bevy_egui::egui::Color32::from_rgb(242, 13, 13),
-    bevy_egui::egui::Color32::from_rgb(255, 189, 179),
+    bevy_egui::egui::Color32::from_rgb(255, 10, 5),
+    bevy_egui::egui::Color32::from_rgb(255, 217, 0),
 ];
 pub const LABELS: [&str; HORIZONS] = ["tra 1 ora", "tra 3 ore"];
 /// A label keeps this far from the others on the screen, pixels.

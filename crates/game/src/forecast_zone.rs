@@ -19,10 +19,12 @@ const GRID_M: f32 = 30.0;
 const LIFT_M: f32 = crate::rings::RING_LIFT_M;
 /// Opacity of the fill of +1 h and +3 h, and of the contour lines (none: they
 /// made too much confusion, user 2026-10-17).
-const FILL: [f32; HORIZONS] = [0.34, 0.22];
+const FILL: [f32; HORIZONS] = [0.6, 0.5];
 const LINE: f32 = 0.0;
 /// Distances are held within this, metres: far from every line it is all the same.
 const REACH_M: f32 = 300.0;
+/// Gaussian smoothing of the arrival-time field, in fire cells.
+const ETA_SIGMA_CELLS: f32 = 1.5;
 /// The same pull toward the camera as `FlatMaterial`'s.
 const PULL: Vec4 = Vec4::new(0.04, 40.0, 220.0, 0.0);
 
@@ -140,22 +142,29 @@ pub fn grid_mesh(scn: &Scenario, lines: &[Vec<Vec<Pos>>; HORIZONS], eta_s: &[f32
         }
         any.then_some((lo, hi))
     });
-    // the forecast's arrival time at a point, minutes after issue, bilinear
-    // between the fire cells' centres; what never burns counts as the last horizon
+    // the forecast's arrival time at a point, minutes after issue: the
+    // members' median per fire cell is blocky and noisy, so it is smoothed
+    // first and then read with a bicubic filter, for a clean wave front
     let world = scn.world;
     let last = rocca::forecast::HORIZONS_S[HORIZONS - 1] as f32;
+    let (rows, cols) = (world.fire_rows, world.fire_cols);
+    let field = smooth_eta(eta_s, rows, cols, last);
     let cell = |r: i64, c: i64| {
-        let (r, c) = (r.clamp(0, world.fire_rows as i64 - 1), c.clamp(0, world.fire_cols as i64 - 1));
-        eta_s.get(r as usize * world.fire_cols + c as usize).map_or(last, |t| t.min(last))
+        let (r, c) = (r.clamp(0, rows as i64 - 1), c.clamp(0, cols as i64 - 1));
+        field[r as usize * cols + c as usize]
     };
     let eta_min = |p: Pos| {
         let (fc, fr) = (p.x / world.cellsize - 0.5, (world.height_m - p.y) / world.cellsize - 0.5);
         let (c0, r0) = (fc.floor(), fr.floor());
-        let (tc, tr) = (fc - c0, fr - r0);
+        let (wc, wr) = (catmull_rom(fc - c0), catmull_rom(fr - r0));
         let (c0, r0) = (c0 as i64, r0 as i64);
-        let top = cell(r0, c0) * (1.0 - tc) + cell(r0, c0 + 1) * tc;
-        let bottom = cell(r0 + 1, c0) * (1.0 - tc) + cell(r0 + 1, c0 + 1) * tc;
-        (top * (1.0 - tr) + bottom * tr) / 60.0
+        let mut v = 0.0;
+        for (j, wj) in wr.iter().enumerate() {
+            for (i, wi) in wc.iter().enumerate() {
+                v += wj * wi * cell(r0 + j as i64 - 1, c0 + i as i64 - 1);
+            }
+        }
+        v.clamp(0.0, last) / 60.0
     };
     let mut etas: Vec<[f32; 2]> = Vec::new();
     let mut positions = Vec::with_capacity((nx + 1) * (ny + 1));
@@ -194,4 +203,40 @@ pub fn grid_mesh(scn: &Scenario, lines: &[Vec<Vec<Pos>>; HORIZONS], eta_s: &[f32
     m.insert_attribute(Mesh::ATTRIBUTE_UV_1, etas);
     m.insert_indices(Indices::U32(indices));
     m
+}
+
+/// Catmull-Rom weights of the four samples around a point at fraction `t`.
+fn catmull_rom(t: f32) -> [f32; 4] {
+    let (t2, t3) = (t * t, t * t * t);
+    [
+        0.5 * (-t3 + 2.0 * t2 - t),
+        0.5 * (3.0 * t3 - 5.0 * t2 + 2.0),
+        0.5 * (-3.0 * t3 + 4.0 * t2 + t),
+        0.5 * (t3 - t2),
+    ]
+}
+
+/// The arrival times (seconds) with what never burns held at `last`, then
+/// blurred by a separable Gaussian of `ETA_SIGMA_CELLS`.
+fn smooth_eta(eta_s: &[f32], rows: usize, cols: usize, last: f32) -> Vec<f32> {
+    let mut f: Vec<f32> = (0..rows * cols).map(|i| eta_s.get(i).map_or(last, |t| t.min(last))).collect();
+    let reach = (ETA_SIGMA_CELLS * 3.0).ceil() as i64;
+    let k: Vec<f32> = (-reach..=reach).map(|d| (-0.5 * (d as f32 / ETA_SIGMA_CELLS).powi(2)).exp()).collect();
+    let norm: f32 = k.iter().sum();
+    let mut g = f.clone();
+    for horizontal in [true, false] {
+        for r in 0..rows as i64 {
+            for c in 0..cols as i64 {
+                let mut acc = 0.0;
+                for (n, w) in k.iter().enumerate() {
+                    let d = n as i64 - reach;
+                    let (rr, cc) = if horizontal { (r, (c + d).clamp(0, cols as i64 - 1)) } else { ((r + d).clamp(0, rows as i64 - 1), c) };
+                    acc += w * f[rr as usize * cols + cc as usize];
+                }
+                g[r as usize * cols + c as usize] = acc / norm;
+            }
+        }
+        std::mem::swap(&mut f, &mut g);
+    }
+    f
 }
