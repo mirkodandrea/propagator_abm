@@ -557,41 +557,13 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
     let hide_names = cfg!(target_arch = "wasm32") && compact(ctx);
     let mut hovered = None;
     let mut rects = vec![None; sim.districts.len()];
-    let mut occupied: Vec<egui::Rect> = vec![];
+    let placed = declutter(ctx, k, sim, cam);
     let mut order: Vec<_> = (0..sim.districts.len()).collect();
     order.sort_by_key(|&d| !(k.selection == Selection::District(d) || k.expect() == Some(Expect::Evacuate(d))));
     for d in order {
-        // A chosen team's destination takes priority over labels: town badges
-        // must not intercept a tap or hide the hex under the finger.
-        if compact(ctx) && matches!(k.selection, Selection::Team(_)) { continue; }
+        let Some(s) = placed.district[d] else { continue };
         let c = sim.districts[d].centre;
-        let Some(mut s) = screen(cam, sim, c, 40.0) else { continue };
         let name = sim.districts[d].name.clone();
-        if compact(ctx) {
-            let anchor = s;
-            let bounds = drop_rect(ctx, k).shrink(4.0);
-            if !bounds.contains(anchor) { continue; }
-            let width = if hide_names { 72.0 } else {
-                ctx.fonts(|f| f.layout_no_wrap(name.clone(), egui::FontId::proportional(16.0), Color32::WHITE)).size().x + 18.0
-            };
-            let size = egui::vec2(width, 52.0);
-            let mut placed = None;
-            for dy in [26.0, 78.0, -30.0, -82.0, 130.0] {
-                for dx in [0.0, -width * 0.55, width * 0.55] {
-                    let center = egui::pos2((anchor.x + dx).clamp(bounds.left() + width * 0.5, (bounds.right() - width * 0.5).max(bounds.left() + width * 0.5)), anchor.y + dy);
-                    let r = egui::Rect::from_center_size(center, size);
-                    if bounds.contains_rect(r) && occupied.iter().all(|o| !o.intersects(r.expand(3.0))) {
-                        placed = Some(r); break;
-                    }
-                }
-                if placed.is_some() { break; }
-            }
-            let Some(r) = placed else { continue };
-            s = r.center();
-            occupied.push(r);
-            ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("town_leaders")))
-                .line_segment([anchor, s], egui::Stroke::new(1.5, BLUE));
-        }
         let on = k.selection == Selection::District(d);
         // life: the share of the homes the fire has not reached
         let (hit, homes) = sim.district_damage(d);
@@ -645,6 +617,7 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         });
         let r = inner.inner;
         rects[d] = Some(inner.response.rect);
+        ctx.data_mut(|m| m.insert_temp(egui::Id::new(("bsz", "d", d)), inner.response.rect.size()));
         crate::playtest::control(&name, &r, true);
         if r.clicked() {
             select_district(k, sim, d);
@@ -682,7 +655,7 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
             });
         }
     }
-    team_flags(ctx, k, sim, cam);
+    team_flags(ctx, k, sim, cam, &placed);
     confirm_bubble(ctx, k, sim, cam);
 }
 
@@ -690,15 +663,14 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
 /// in the pause a flag is dragged onto a hex and the team goes there when it
 /// is let go; a click on a flag and then on a hex does the same, with the hex
 /// under the pointer previewed (`hover_move`). A team in trouble says so.
-fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform)) {
+fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform), placed: &Placed) {
     use super::pins;
     let right: Vec3 = cam.1.right().into();
     let feet = pins::feet(k, sim, cam.1.translation(), right);
     for t in 0..sim.teams.len() {
-        let Some((foot, sc)) = feet[t] else { continue };
-        // the handle: a badge over the team's spot, kept near the ground
-        let lift = crate::rings::RING_LIFT_M + pins::LIFT_M * sc;
-        let Some(a) = cam.0.world_to_viewport(cam.1, crate::frame::to_bevy(foot, sim.scn.terrain.height_at(foot) + lift)) else { continue };
+        let Some((_, sc)) = feet[t] else { continue };
+        // the handle: a badge over the team's spot, moved aside if it would cover another (`declutter`)
+        let Some(centre) = placed.team[t] else { continue };
         let col = team_colour(t);
         // «Squadra A» → «A»
         let letter = sim.teams[t].name.split_whitespace().last().unwrap_or("").to_string();
@@ -717,13 +689,11 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         // far away and quiet: just the letter, to leave the map readable
         let small = sc > SMALL_FLAG_SCALE && !on && !alarm && !k.dragging.is_some_and(|(d, _)| d == t);
         let size = if small { egui::vec2(50.0, 44.0) } else { egui::vec2(96.0, 56.0) };
-        let flag = egui::Rect::from_center_size(egui::pos2(a.x, a.y - 8.0), size);
+        let flag = egui::Rect::from_center_size(centre, size);
+        ctx.data_mut(|m| m.insert_temp(egui::Id::new(("bsz", "t", t)), size));
         let can_order = !lost && !multi && !canceled;
         let mut may_drag = sim.paused() && can_order;
         if (multi || canceled) && k.dragging.is_some() { k.clear_selection(); }
-        // Keep the active handle alive outside the map until release/cancel;
-        // otherwise egui never delivers drag_stopped and the cone stays stuck.
-        if compact(ctx) && !drop_rect(ctx, k).intersects(flag) && !k.dragging.is_some_and(|(active, _)| active == t) { continue; }
         let inner = egui::Area::new(egui::Id::new(("bandiera", t))).fixed_pos(flag.min).constrain(false).order(egui::Order::Middle).show(ctx, |ui| {
             let (rect, resp) = ui.allocate_exact_size(flag.size(), egui::Sense::click_and_drag());
             let p = ui.painter();
@@ -816,6 +786,144 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
             }
         }
     }
+}
+
+/// Where the badges sit on the screen this frame: the centre of each
+/// district's and the badge of each team's.
+struct Placed {
+    district: Vec<Option<egui::Pos2>>,
+    team: Vec<Option<egui::Pos2>>,
+}
+
+/// Puts every badge where it covers no other badge and no other entity's
+/// spot. Each one wants the place over its entity; in order of importance
+/// (the team being moved, a team in danger, the other teams, the chosen
+/// district, the rest) it takes the nearest free place: the last frame's, to
+/// keep still, then rings of growing radius. A badge that had to leave is tied
+/// to its entity with a line.
+fn declutter(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTransform)) -> Placed {
+    use super::pins;
+    struct Item {
+        team: bool,
+        idx: usize,
+        anchor: egui::Pos2,
+        size: egui::Vec2,
+        /// the preferred centre, from the anchor
+        pref: egui::Vec2,
+        /// room reserved under the badge (a team's two words of trouble)
+        below: f32,
+        col: Color32,
+        prio: usize,
+        must: bool,
+    }
+    let compact = compact(ctx);
+    let bounds = if compact { drop_rect(ctx, k).shrink(4.0) } else { ctx.screen_rect().shrink(4.0) };
+    let size_of = |kind: &str, i: usize, dflt: egui::Vec2| ctx.data(|m| m.get_temp::<egui::Vec2>(egui::Id::new(("bsz", kind, i)))).unwrap_or(dflt);
+    let mut items: Vec<Item> = vec![];
+    let right: Vec3 = cam.1.right().into();
+    let feet = pins::feet(k, sim, cam.1.translation(), right);
+    for t in 0..sim.teams.len() {
+        let Some((foot, sc)) = feet[t] else { continue };
+        let lift = crate::rings::RING_LIFT_M + pins::LIFT_M * sc;
+        let Some(a) = cam.0.world_to_viewport(cam.1, crate::frame::to_bevy(foot, sim.scn.terrain.height_at(foot) + lift)) else { continue };
+        let unit = &sim.crews.units[sim.teams[t].unit];
+        let lost = unit.state == abm::suppression::UnitState::Lost;
+        let alarm = !lost && sim.team_in_danger(t);
+        let trouble = lost || alarm || unit.state == abm::suppression::UnitState::Withdrawing;
+        let dragged = k.dragging.is_some_and(|(d, _)| d == t);
+        let prio = if dragged { 0 } else if k.selection == Selection::Team(t) { 1 } else if alarm { 2 } else { 3 };
+        items.push(Item {
+            team: true,
+            idx: t,
+            anchor: egui::pos2(a.x, a.y),
+            size: size_of("t", t, egui::vec2(96.0, 56.0)),
+            pref: egui::vec2(0.0, -8.0),
+            below: if trouble { 28.0 } else { 0.0 },
+            col: team_colour(t),
+            prio,
+            // an order can only be given through its badge: never dropped
+            must: true,
+        });
+    }
+    // a chosen team's destination takes priority over the labels of the towns
+    if !(compact && matches!(k.selection, Selection::Team(_))) {
+        for d in 0..sim.districts.len() {
+            let c = sim.districts[d].centre;
+            let Some(s) = screen(cam, sim, c, 40.0) else { continue };
+            let picked = k.selection == Selection::District(d) || k.expect() == Some(Expect::Evacuate(d));
+            items.push(Item {
+                team: false,
+                idx: d,
+                anchor: s,
+                size: size_of("d", d, egui::vec2(150.0, 40.0)),
+                pref: egui::vec2(0.0, if compact { 26.0 } else { 0.0 }),
+                below: 0.0,
+                col: BLUE,
+                prio: if picked { 4 } else { 5 },
+                must: false,
+            });
+        }
+    }
+    items.retain(|i| {
+        let dragged = i.team && k.dragging.is_some_and(|(d, _)| d == i.idx);
+        dragged || bounds.expand(if compact { 0.0 } else { 40.0 }).contains(i.anchor)
+    });
+    items.sort_by_key(|i| (i.prio, i.team as usize ^ 1, i.idx));
+
+    // candidate offsets, nearest first: wide rings, since badges are wide
+    let mut ring: Vec<egui::Vec2> = vec![];
+    for i in 1..=14 {
+        let r = 26.0 * i as f32;
+        let n = (6 + 3 * i).min(36);
+        for j in 0..n {
+            let m = ((j + 1) / 2) as f32;
+            let a = -std::f32::consts::FRAC_PI_2 + if j % 2 == 1 { 1.0 } else { -1.0 } * std::f32::consts::TAU * m / n as f32;
+            ring.push(egui::vec2(a.cos() * r * 1.5, a.sin() * r));
+        }
+    }
+    let spots: Vec<egui::Pos2> = items.iter().map(|i| i.anchor).collect();
+    let mut taken: Vec<egui::Rect> = vec![];
+    let mut out = Placed { district: vec![None; sim.districts.len()], team: vec![None; sim.teams.len()] };
+    let leaders = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("badge_leaders")));
+    for (n, it) in items.iter().enumerate() {
+        let key = egui::Id::new(("boff", it.team, it.idx));
+        let last = ctx.data(|m| m.get_temp::<egui::Vec2>(key));
+        let reserved = |off: egui::Vec2| {
+            let centre = it.anchor + off;
+            egui::Rect::from_min_size(centre - it.size * 0.5, it.size + egui::vec2(0.0, it.below))
+        };
+        let free = |r: egui::Rect| {
+            bounds.contains_rect(r)
+                && taken.iter().all(|o| !o.intersects(r.expand(4.0)))
+                && spots.iter().enumerate().all(|(i, &p)| i == n || !r.expand(3.0).contains(p))
+        };
+        let mut off = std::iter::once(it.pref).chain(last).chain(ring.iter().map(|o| it.pref + *o)).find(|&o| free(reserved(o)));
+        if off.is_none() && it.must {
+            // no free place at all: keep it reachable, over the others
+            off = Some(it.pref);
+        }
+        let Some(mut off) = off else { continue };
+        let mut r = reserved(off);
+        if it.must && !bounds.contains_rect(r) {
+            let dx = (bounds.left() - r.left()).max(0.0) - (r.right() - bounds.right()).max(0.0);
+            let dy = (bounds.top() - r.top()).max(0.0) - (r.bottom() - bounds.bottom()).max(0.0);
+            off += egui::vec2(dx, dy);
+            r = reserved(off);
+        }
+        taken.push(r);
+        ctx.data_mut(|m| m.insert_temp(key, off));
+        let centre = it.anchor + off;
+        // away from its entity: a line to it
+        if !r.expand(6.0).contains(it.anchor) {
+            let end = egui::pos2(it.anchor.x.clamp(r.left(), r.right()), it.anchor.y.clamp(r.top(), r.bottom()));
+            leaders.line_segment([it.anchor, end], egui::Stroke::new(4.5, Color32::from_black_alpha(160)));
+            leaders.line_segment([it.anchor, end], egui::Stroke::new(2.0, it.col));
+            leaders.circle_filled(it.anchor, 5.0, Color32::from_black_alpha(200));
+            leaders.circle_filled(it.anchor, 3.5, it.col);
+        }
+        if it.team { out.team[it.idx] = Some(centre) } else { out.district[it.idx] = Some(centre) }
+    }
+    out
 }
 
 /// Seen from this far (`pins::scale`) a quiet team is only its letter.

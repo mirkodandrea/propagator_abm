@@ -127,3 +127,4 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
 - 2026-10-13: portata dello spegnimento ×20 (`game::SUPPRESSION` = linea 3, acqua 30, portata 20).
 - 2026-10-13: territorio dell'isola con valico e costa est rifatta (`02-TERRITORIO.md`).
 - 2026-10-12: schermo del chiosco di almeno 1080p.
+- 2026-10-16 (richiesta dell'utente): l'intervento dell'autobotte è **mirato** (`EngineAim::Ahead`, già il predefinito dal 2026-10-15: nessun cambio di regole) e si vede come **getto d'acqua animato** (`units::animate_spray`): fino a 4 getti per autobotte, gocce in arco dall'ugello alle celle appena bagnate, le più minacciate per prime, con spruzzo all'arrivo. Le celle non si colorano più di blu. I getti scadono sul tempo simulato (restano in pausa) e le celle bagnate si leggono a ogni generazione. Scatto `KIOSK_SNAP` visto (11:44, `t=44`, senza `pause=1`: la previsione in pausa copre l'autobotte): i getti partono dall'autobotte verso il fronte.
