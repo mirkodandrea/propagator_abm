@@ -252,7 +252,8 @@ pub fn camera(
         let dt = time.delta_seconds().min(0.1);
         pan(&mut orbit, Vec2::new(-padview.pan.x, padview.pan.y) * 700.0 * dt, height);
         orbit.distance *= (-padview.zoom * 1.2 * dt).exp();
-        orbit.yaw += padview.turn * 0.9 * dt;
+        orbit.yaw += padview.look.x * 1.6 * dt;
+        orbit.pitch += padview.look.y * 0.9 * dt;
     }
     if drag.right || (drag.left && shift) {
         orbit.yaw -= delta.x * 0.005;

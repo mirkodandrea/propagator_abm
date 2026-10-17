@@ -90,6 +90,9 @@ pub fn draw(
     qr: Option<Res<Qr>>,
     scenario_icons: Option<Res<ScenarioIcons>>,
     mario: Res<crate::mario::Playground>,
+    pad: Res<crate::pad::PadView>,
+    pads: Res<Gamepads>,
+    mut pad_mode: ResMut<crate::pad::PadMode>,
 ) {
     crate::playtest::begin();
     let ctx = contexts.ctx_mut();
@@ -160,7 +163,10 @@ pub fn draw(
                 k.clear_selection();
             }
             map_badges(ctx, k, &mut sim, cam);
-            hover_move(ctx, k, &sim, cam);
+            pad_orders(k, &mut sim, cam, &pad, pads.iter().next().is_some(), ctx);
+            if pads.iter().next().is_none() {
+                hover_move(ctx, k, &sim, cam);
+            }
             map_click(k, &mut sim, ctx.input(|i| i.has_touch_screen()));
             if k.phase == Phase::Gioco {
                 offscreen_alerts(ctx, k, &sim, cam);
@@ -188,6 +194,13 @@ pub fn draw(
             }
         }
     }
+    if pads.iter().next().is_some() {
+        pad_help(ctx, k, &sim);
+        if matches!(k.phase, Phase::Tutorial | Phase::Gioco) {
+            pad_list(ctx, k, &sim);
+        }
+    }
+    pad_mode.game = matches!(k.phase, Phase::Tutorial | Phase::Gioco);
     focus.pointer = ctx.is_pointer_over_area();
     k.click = None;
 }
@@ -474,6 +487,163 @@ fn give_move(k: &mut Kiosk, sim: &mut Sim, t: usize, at: rocca::Axial) {
         Err(e) => k.notify(e),
     }
     k.clear_selection();
+}
+
+/// The gamepad's controls in the game (2026-10-17), as the mouse's calls: the
+/// d-pad left/right chooses a team and up/down a district, Y stops or starts
+/// the world, RB shows the island. With a team
+/// chosen the aim is the centre of the screen, moved with the camera, and A
+/// sends the team there; with a district chosen X evacuates it.
+fn pad_orders(k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform), pad: &crate::pad::PadView, connected: bool, ctx: &egui::Context) {
+    if pad.pause && k.phase == Phase::Gioco {
+        if sim.paused() {
+            k.clear_selection();
+            sim.resume();
+        } else {
+            auto_pause(k, sim);
+        }
+    }
+    if pad.home {
+        k.reset_view = true;
+    }
+    let (teams, districts) = (sim.teams.len() as i32, sim.districts.len() as i32);
+    // the camera flies to what is chosen
+    if pad.team != 0 && teams > 0 {
+        let t = match k.selection {
+            Selection::Team(t) => (t as i32 + pad.team).rem_euclid(teams),
+            _ if pad.team > 0 => 0,
+            _ => teams - 1,
+        };
+        select_team(k, sim, t as usize);
+        if let Selection::Team(t) = k.selection {
+            let team = &sim.teams[t];
+            let at = team.hex.map_or(Pos::from(sim.territory.stations[team.station].pos), |h| h.centre());
+            k.shot = Some(super::Shot { at: Some(at), zoom: 0.5 });
+        }
+    }
+    if pad.district != 0 && districts > 0 {
+        let d = match k.selection {
+            Selection::District(d) => (d as i32 + pad.district).rem_euclid(districts),
+            _ if pad.district > 0 => 0,
+            _ => districts - 1,
+        };
+        select_district(k, sim, d as usize);
+        if k.selection == Selection::District(d as usize) {
+            k.shot = Some(super::Shot { at: Some(sim.districts[d as usize].centre), zoom: 0.5 });
+        }
+    }
+    if !sim.paused() {
+        return;
+    }
+    match k.selection {
+        Selection::Team(t) if connected => {
+            let r = ctx.screen_rect();
+            let centre = egui::pos2((r.width() - k.side_w) * 0.5, r.height() * 0.5);
+            if let Some(g) = ground_at(sim, cam, centre) {
+                preview_move(k, sim, t, rocca::Axial::of(snap_to_target(sim, t, g)));
+            }
+            aim(ctx, centre);
+            if let (true, Some(at)) = (pad.confirm, k.move_hex) {
+                give_move(k, sim, t, at);
+            }
+        }
+        Selection::District(d) if pad.evacuate => {
+            if k.evac_plan.as_ref().is_some_and(|p| p.is_ok()) && k.allows(Expect::Evacuate(d)) {
+                match sim.evacuate(d) {
+                    Ok(_) => {
+                        k.done(Expect::Evacuate(d));
+                        resume_after_order(k, sim);
+                        k.clear_selection();
+                    }
+                    Err(e) => k.notify(e),
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// What the buttons do now, shown while a gamepad is connected (2026-10-17).
+fn pad_help(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
+    let rows: &[(&str, Color32, &str)] = match k.selection {
+        Selection::Team(_) if sim.paused() => &[
+            ("Stick sx", Color32::WHITE, "porta il mirino sull'esagono"),
+            ("A", GREEN, "manda la squadra"),
+            ("B", RED, "annulla"),
+            ("◀ ▶", Color32::WHITE, "altra squadra"),
+            ("▲ ▼", Color32::WHITE, "scegli il borgo"),
+        ],
+        Selection::District(_) => &[("X", BLUE, "evacua"), ("B", RED, "annulla"), ("▲ ▼", Color32::WHITE, "altro borgo"), ("◀ ▶", Color32::WHITE, "scegli la squadra")],
+        _ if matches!(k.phase, Phase::Tutorial | Phase::Gioco) => &[
+            ("◀ ▶", Color32::WHITE, "scegli la squadra"),
+            ("▲ ▼", Color32::WHITE, "scegli il borgo"),
+            ("Y", AMBER, "ferma / riprendi"),
+            ("Stick sx", Color32::WHITE, "muovi la mappa"),
+            ("Stick dx", Color32::WHITE, "ruota e inclina"),
+            ("LT RT", Color32::WHITE, "zoom"),
+            ("RB", Color32::WHITE, "tutta l'isola"),
+            ("LB + stick", Color32::WHITE, "cursore"),
+        ],
+        _ => &[("Stick", Color32::WHITE, "cursore"), ("A", GREEN, "clic")],
+    };
+    egui::Area::new(egui::Id::new("pad_help")).anchor(Align2::RIGHT_BOTTOM, [-10.0, -10.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
+        panel().show(ui, |ui| {
+            ui.label(RichText::new("Gamepad").size(15.0).strong().color(Color32::from_gray(200)));
+            for (key, col, what) in rows {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!(" {key} ")).size(16.0).strong().color(Color32::BLACK).background_color(*col));
+                    ui.label(RichText::new(*what).size(16.0).color(Color32::WHITE));
+                });
+            }
+        });
+    });
+}
+
+/// The teams, then the districts, with the chosen one outlined.
+fn pad_list(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
+    let teams = sim.teams.len();
+    let max_h = (ctx.screen_rect().height() * 0.55).max(120.0);
+    egui::Area::new(egui::Id::new("pad_list")).anchor(Align2::LEFT_CENTER, [10.0 + k.side_w, 0.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
+        panel().show(ui, |ui| {
+            ui.set_min_width(170.0);
+            egui::ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
+                let row = |ui: &mut egui::Ui, i: usize, dot: Color32, name: &str, chosen: bool| {
+                                        let r = egui::Frame::none()
+                        .fill(if chosen { Color32::from_gray(70) } else { Color32::TRANSPARENT })
+                        .stroke(egui::Stroke::new(2.0, if chosen { AMBER } else { Color32::TRANSPARENT }))
+                        .rounding(6.0)
+                        .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("●").size(16.0).color(dot));
+                                ui.label(RichText::new(name).size(17.0).color(Color32::WHITE));
+                            });
+                        })
+                        .response;
+                    if chosen {
+                        r.scroll_to_me(None);
+                    }
+                };
+                ui.label(RichText::new("Squadre").size(14.0).strong().color(Color32::from_gray(170)));
+                for (t, team) in sim.teams.iter().enumerate() {
+                    row(ui, t, team_colour(t), &team.name, k.selection == Selection::Team(t));
+                }
+                ui.add_space(4.0);
+                ui.label(RichText::new("Borghi").size(14.0).strong().color(Color32::from_gray(170)));
+                for (d, district) in sim.districts.iter().enumerate() {
+                    row(ui, teams + d, EVAC, &district.name, k.selection == Selection::District(d));
+                }
+            });
+        });
+    });
+}
+
+/// The aim of the gamepad: a small ring at the centre of the map.
+fn aim(ctx: &egui::Context, c: egui::Pos2) {
+    let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("pad_aim")));
+    p.circle_stroke(c, 14.0, egui::Stroke::new(4.0, Color32::BLACK));
+    p.circle_stroke(c, 14.0, egui::Stroke::new(2.0, Color32::WHITE));
+    p.circle_filled(c, 2.5, Color32::WHITE);
 }
 
 /// A click on the map with a team selected: the team goes to the hex under it.

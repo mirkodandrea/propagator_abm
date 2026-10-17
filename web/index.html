@@ -58,8 +58,27 @@
       // it to init as a streaming Response. The size is not shown: the
       // Content-Length is the compressed one, the chunks are not.
       async function download(url) {
-        const response = await fetch(url);
+        // The URL carries the build hash (build_web.sh), so a cached copy is
+        // valid for as long as the URL is the same. Phone browsers evict or
+        // revalidate big HTTP-cache entries, hence Cache Storage; any failure
+        // there falls back to the plain download.
+        const versioned = url.includes('?v=');
+        let store = null;
+        let response = null;
+        if (versioned && window.caches) {
+          try {
+            store = await caches.open('rocca-wasm');
+            response = await store.match(url);
+            for (const key of await store.keys()) if (key.url !== new URL(url, location.href).href) await store.delete(key);
+          } catch (e) { store = null; }
+        }
+        if (response) {
+          status.textContent = 'Avvio della simulazione…';
+          return response;
+        }
+        response = await fetch(url);
         if (!response.ok) throw new Error(`${url}: ${response.status}`);
+        if (store) store.put(url, response.clone()).catch(() => {});
         if (!response.body) return response;
         let loaded = 0;
         const counted = response.body.pipeThrough(new TransformStream({

@@ -63,6 +63,8 @@ Pubblicazione: `.github/workflows/pages.yml` costruisce e pubblica su GitHub Pag
 
 **Versione provata (2026-10-15):** `crates/game/build.rs` registra il commit della compilazione (`GAME_COMMIT`, con `-modificato` se l'albero non è pulito; in CI è quello pubblicato). Compare sul titolo («versione xxxxxxxx») e il pulsante «Dai un feedback» lo scrive da solo nella domanda «Versione del gioco» del Google Form (`entry.2126742218`).
 
+**Cache del download (2026-10-17):** il `.wasm` è salvato in Cache Storage (`rocca-wasm`) con chiave l'URL versionato (`?v=<hash>`). Finché la build non cambia, i caricamenti successivi su telefono non scaricano nulla; con una nuova build si scarica di nuovo e la copia vecchia viene cancellata. Se Cache Storage non c'è o fallisce, si scarica come prima. Non provato su telefono.
+
 Serve un browser con WebGL2. Il primo caricamento resta di circa 53 MiB non compressi:
 la riduzione principale riguarda la memoria e la grafica durante il gioco.
 Una scheda in secondo piano viene sospesa dal browser. In caso di perdita del
