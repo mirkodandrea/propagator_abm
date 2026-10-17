@@ -546,6 +546,11 @@ impl Controls<'_> {
             .iter()
             .any(|p| self.buttons.just_pressed(GamepadButton::new(p, button)))
     }
+    /// Ctrl + Shift held: Mario opens only with this plus `M`, on purpose hidden.
+    fn hidden_combo(&self) -> bool {
+        (self.keys.pressed(KeyCode::ControlLeft) || self.keys.pressed(KeyCode::ControlRight))
+            && (self.keys.pressed(KeyCode::ShiftLeft) || self.keys.pressed(KeyCode::ShiftRight))
+    }
     fn crouch(&self) -> bool {
         self.keys.pressed(KeyCode::ShiftLeft)
             || self.keys.pressed(KeyCode::ShiftRight)
@@ -655,8 +660,7 @@ fn drive(
     let focused = crate::kiosk::snap::active() || windows.get_single().is_ok_and(|w| w.focused);
     let reset = restarted.read().count() > 0;
     let toggle = std::mem::take(&mut mode.toggle)
-        || focused && keyboard_free && controls.keys.just_pressed(KeyCode::KeyM)
-        || focused && pressed(GamepadButtonType::Start)
+        || focused && keyboard_free && controls.keys.just_pressed(KeyCode::KeyM) && controls.hidden_combo()
         || awaiting_rom_arrived(&mut mode);
     let stop = mode.active
         && (!can_play

@@ -26,6 +26,7 @@ mod landmarks;
 mod mario;
 mod models;
 mod overlays;
+mod pad;
 mod pick;
 mod playtest;
 mod quality;
@@ -144,6 +145,7 @@ fn main() -> anyhow::Result<()> {
         web_input::finish_canceled_touch.after(bevy_egui::EguiSet::ProcessInput).before(bevy_egui::EguiSet::BeginFrame),
     ));
     app.add_plugins(mario::MarioPlugin);
+    app.add_plugins(pad::PadPlugin);
     kiosk_systems(&mut app);
     app.add_plugins(forecast_view::ForecastPlugin);
     app.add_systems(PostUpdate, kiosk::snap::hide_ui.after(bevy_egui::EguiSet::ProcessOutput));

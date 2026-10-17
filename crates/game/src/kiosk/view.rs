@@ -146,6 +146,7 @@ pub fn camera(
     mut kiosk: ResMut<Kiosk>,
     sim: Res<Sim>,
     focus: Res<crate::ui::UiFocus>,
+    padview: Res<crate::pad::PadView>,
     mut input: ViewInput,
     windows: Query<&Window, With<PrimaryWindow>>,
     mut query: Query<(&mut OrbitCamera, &mut Transform, &mut Camera, &GlobalTransform, Option<&mut bevy::core_pipeline::dof::DepthOfFieldSettings>)>,
@@ -232,6 +233,7 @@ pub fn camera(
     let touched = input.touches.iter_just_pressed().next().is_some()
         || input.touches.iter().any(|t| t.delta() != Vec2::ZERO)
         || delta.length_squared() > 0.0 && dragging
+        || padview.active()
         || over_map && (scroll != 0.0 || pinch != 0.0 || rotation != 0.0);
     if touched {
         kiosk.follow = false;
@@ -241,6 +243,12 @@ pub fn camera(
     let height = camera.logical_viewport_size().map_or(1000.0, |s| s.y);
     if (drag.left && drag.moved >= CLICK_PX && !shift) || drag.middle {
         pan(&mut orbit, delta, height);
+    }
+    if padview.active() {
+        let dt = time.delta_seconds().min(0.1);
+        pan(&mut orbit, Vec2::new(-padview.pan.x, padview.pan.y) * 700.0 * dt, height);
+        orbit.distance *= (-padview.zoom * 1.2 * dt).exp();
+        orbit.yaw += padview.turn * 0.9 * dt;
     }
     if drag.right || (drag.left && shift) {
         orbit.yaw -= delta.x * 0.005;

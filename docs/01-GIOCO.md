@@ -104,7 +104,7 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
   - **finale:** «Com'è andata, <nome>», le stelle grandi di Persone, Case, Ettari con che cosa contano, il verdetto della volontaria e il confronto con il fuoco senza ordini; a destra il posto in classifica, la riga di avvertenza sulla realtà («quando arriva l'ordine di evacuazione si parte subito») e «Nuova partita».
 - **Web su telefono** (2026-10-15, richiesta dell'utente): supporto verticale e orizzontale, profilo grafico leggero e memoria ridotta; pannelli e messaggi compatti e leggibili, controlli touch con trascinamento delle squadre e alternativa «tocca squadra, poi destinazione». Dettagli e verifiche in `web.md`. Le regole della partita restano condivise.
 - **Controlli:**
-  - mouse o trackpad;
+  - mouse o trackpad; oppure **gamepad** (2026-10-17): stick sinistro = cursore, A = clic (tenuto = trascina), B = Esc, stick destro = muove la mappa, LT/RT = zoom, LB/RB = ruota. Mario tiene i suoi comandi;
   - trascinare per spostare la mappa, un clic senza trascinare per scegliere;
   - rotella o pizzico per lo zoom, tasto destro o Shift + trascinare per ruotare;
   - Home per la vista iniziale.
