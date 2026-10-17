@@ -12,7 +12,7 @@ use rocca::tutorial::Expect;
 
 use super::characters::{self, Logo, Mood, Portraits, Who};
 use super::ui::{card, primary, secondary, AMBER, GREY, RED};
-use super::{board, new_visit, start_game, start_tutorial, Kiosk, Shot};
+use super::{board, choose_scenario, new_visit, start_game, start_tutorial, Kiosk, Shot};
 use scenario::Pos;
 use crate::sim::{Sim, SimRestarted};
 
@@ -242,7 +242,7 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
     }
     match go {
         Some(true) => start_tutorial(k, sim, restarted),
-        Some(false) => start_game(k, sim, restarted),
+        Some(false) => choose_scenario(k),
         None => {}
     }
 }
@@ -369,7 +369,7 @@ fn highlight(ctx: &egui::Context, k: &Kiosk, expect: Expect) {
 
 // --- day 2 --------------------------------------------------------------------
 
-pub fn day_two(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, faces: Option<&Portraits>) {
+pub fn day_two(ctx: &egui::Context, k: &mut Kiosk, _sim: &mut Sim, _restarted: &mut EventWriter<SimRestarted>, faces: Option<&Portraits>) {
     if super::ui::compact(ctx) {
         let mut go = false;
         compact_page(ctx, "giorno2_mobile", |ui| {
@@ -377,7 +377,7 @@ pub fn day_two(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
             ui.label("Un nuovo incendio: ora decidi tu. La partita parte in pausa; guarda la previsione e dai i primi ordini.");
             go = action(ui, "Inizia giorno 2");
         });
-        if go { start_game(k, sim, restarted); }
+        if go { choose_scenario(k); }
         return;
     }
     backdrop(ctx, "giorno2_fondo", 150);
@@ -399,7 +399,107 @@ pub fn day_two(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
         });
     });
     if go {
+        choose_scenario(k);
+    }
+}
+
+// --- the scenario ---------------------------------------------------------------
+
+/// The label of a scenario's difficulty and its colour.
+fn difficulty_style(d: &str) -> (String, Color32) {
+    let colour = match d.to_lowercase().as_str() {
+        "facile" => Color32::from_rgb(120, 200, 110),
+        "medio" => Color32::from_rgb(240, 200, 70),
+        "difficile" => Color32::from_rgb(240, 140, 60),
+        _ => Color32::from_rgb(230, 80, 70),
+    };
+    (format!(" {} ", d.to_uppercase()), colour)
+}
+
+/// After «Inizia»: the fire to fight (the four named scenarios) and the level.
+pub fn scenario(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, icons: Option<&super::characters::ScenarioIcons>) {
+    let compact = super::ui::compact(ctx);
+    let mut go = false;
+    let mut back = false;
+    let body = |ui: &mut egui::Ui, k: &mut Kiosk, go: &mut bool, back: &mut bool, wide: bool| {
+        ui.label(RichText::new("Scegli l'incendio").size(if wide { 36.0 } else { 22.0 }).strong().color(Color32::WHITE));
+        ui.add_space(6.0);
+        let levels = k.territory.levels.clone();
+        let card_w = if wide { (ui.available_width() - 14.0) / 2.0 } else { ui.available_width() };
+        let pick = |ui: &mut egui::Ui, k: &mut Kiosk, i: usize| {
+            let l = &levels[i];
+            let on = k.selected_case == l.case;
+            let fill = if on { AMBER.gamma_multiply(0.20) } else { Color32::from_white_alpha(8) };
+            let stroke = if on { egui::Stroke::new(3.0, AMBER) } else { egui::Stroke::new(1.0, Color32::from_gray(90)) };
+            let icon = if wide { 148.0 } else { 88.0 };
+            let (name, colour) = difficulty_style(&l.difficulty);
+            let r = egui::Frame::none().fill(fill).stroke(stroke).rounding(14.0).inner_margin(10.0).show(ui, |ui| {
+                ui.set_width(card_w - 22.0);
+                ui.set_min_height(icon);
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = 14.0;
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(icon, icon), egui::Sense::hover());
+                    ui.painter().rect_filled(rect, 10.0, Color32::from_gray(30));
+                    if let Some(t) = icons.and_then(|x| x.get(&l.case)) {
+                        egui::Image::new(egui::load::SizedTexture::new(t, rect.size())).rounding(10.0).paint_at(ui, rect);
+                    }
+                    ui.painter().rect_stroke(rect, 10.0, egui::Stroke::new(2.0, colour));
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 4.0;
+                        ui.label(RichText::new(name.trim()).size(if wide { 14.0 } else { 12.0 }).strong().color(Color32::BLACK).background_color(colour));
+                        ui.add(egui::Label::new(RichText::new(&l.name).size(if wide { 21.0 } else { 17.0 }).strong().color(if on { AMBER } else { Color32::WHITE })).wrap());
+                        ui.add(egui::Label::new(RichText::new(&l.about).size(if wide { 15.0 } else { 13.0 }).color(GREY)).wrap());
+                    });
+                });
+            }).response.interact(egui::Sense::click());
+            crate::playtest::control(&l.name, &r, true);
+            if super::icons::pointing(r).clicked() {
+                k.selected_case = l.case.clone();
+            }
+        };
+        if wide {
+            for row in 0..levels.len().div_ceil(2) {
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = 14.0;
+                    for i in [row * 2, row * 2 + 1] {
+                        if i < levels.len() { pick(ui, k, i); }
+                    }
+                });
+                ui.add_space(10.0);
+            }
+        } else {
+            for i in 0..levels.len() {
+                pick(ui, k, i);
+                ui.add_space(6.0);
+            }
+        }
+        ui.add_space(8.0);
+        let full = ui.available_width();
+        ui.horizontal(|ui| {
+            let back_w = if wide { 160.0 } else { full * 0.3 };
+            let r = ui.add_sized([back_w, 60.0], secondary("Indietro"));
+            crate::playtest::control("Indietro", &r, true);
+            if r.clicked() { *back = true; }
+            let r = ui.add_sized([full - back_w - ui.spacing().item_spacing.x, 60.0], egui::Button::new(RichText::new("PARTI").size(28.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0));
+            crate::playtest::control("Parti", &r, true);
+            if super::icons::pointing(r).clicked() { *go = true; }
+        });
+    };
+    if compact {
+        compact_page(ctx, "scenario_mobile", |ui| body(ui, k, &mut go, &mut back, false));
+    } else {
+        backdrop(ctx, "scenario_fondo", 170);
+        egui::Area::new(egui::Id::new("scenario")).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+            big_card().show(ui, |ui| {
+                ui.set_width(860.0);
+                body(ui, k, &mut go, &mut back, true);
+            });
+        });
+    }
+    if go {
         start_game(k, sim, restarted);
+    } else if back {
+        new_visit(k, sim, restarted);
     }
 }
 
@@ -735,7 +835,7 @@ fn compact_intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &
     if go.is_some() { k.player = rocca::score::name(&k.player); }
     match go {
         Some(true) => start_tutorial(k, sim, restarted),
-        Some(false) => start_game(k, sim, restarted),
+        Some(false) => choose_scenario(k),
         None => {}
     }
 }

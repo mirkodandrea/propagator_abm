@@ -18,7 +18,7 @@ use bevy_egui::EguiContexts;
 use rocca::tutorial::Expect;
 use scenario::Pos;
 
-use super::characters::{Logo, Portraits, Qr};
+use super::characters::{Logo, Portraits, Qr, ScenarioIcons};
 use super::{board, new_visit, screens, start_game, Kiosk, Phase, Selection};
 use crate::sim::{Sim, SimRestarted};
 
@@ -88,6 +88,7 @@ pub fn draw(
     faces: Option<Res<Portraits>>,
     logo: Option<Res<Logo>>,
     qr: Option<Res<Qr>>,
+    scenario_icons: Option<Res<ScenarioIcons>>,
     mario: Res<crate::mario::Playground>,
 ) {
     crate::playtest::begin();
@@ -137,6 +138,10 @@ pub fn draw(
             k.side_w = 0.0;
             if cfg!(not(target_arch = "wasm32")) && !compact(ctx) { banner(ctx, qr.as_deref()); }
             screens::day_two(ctx, k, &mut sim, &mut restarted, faces.as_deref());
+        }
+        Phase::Scenario => {
+            k.side_w = 0.0;
+            screens::scenario(ctx, k, &mut sim, &mut restarted, scenario_icons.as_deref());
         }
         Phase::Fine => {
             k.side_w = 0.0;

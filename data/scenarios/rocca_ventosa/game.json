@@ -191,23 +191,27 @@
   },
   "levels": [
     {
-      "name": "Attuale (predefinito)",
-      "case": "medium",
-      "about": "La configurazione già in uso nella demo."
-    },
-    {
       "name": "Attraversamento del valico",
       "case": "impatti_valico_due_lati_30_6",
+      "difficulty": "Facile",
       "about": "2–3 borghi colpiti senza ordini. Il profilo più permissivo dei tre nuovi."
+    },
+    {
+      "name": "Il fuoco della demo",
+      "case": "medium",
+      "difficulty": "Medio",
+      "about": "Il fuoco di riferimento: la configurazione già in uso nella demo."
     },
     {
       "name": "Pressione su quattro borghi",
       "case": "impatti_nuclei_valico_costante_lungo_28_7_0_60",
+      "difficulty": "Difficile",
       "about": "Castelvento, Fornaci, Le Terrazze e Le Ghiande. Vento costante; serve tempestività."
     },
     {
       "name": "Rotazione da est",
       "case": "impatti_nuclei_est_giro_lungo_28_6_75_60",
+      "difficulty": "Esperto",
       "about": "3–4 borghi colpiti senza ordini. Cambio di vento e meno margine per i ritardi."
     }
   ]

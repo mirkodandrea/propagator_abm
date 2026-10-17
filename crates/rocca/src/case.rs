@@ -136,6 +136,9 @@ pub struct Territory {
 pub struct Level {
     pub name: String,
     pub case: String,
+    /// «Facile», «Medio», «Difficile» or «Esperto».
+    #[serde(default)]
+    pub difficulty: String,
     pub about: String,
 }
 

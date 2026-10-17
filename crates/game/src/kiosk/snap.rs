@@ -143,6 +143,7 @@ fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<S
         "intro" | "title" => Phase::Intro,
         "tutorial" => Phase::Tutorial,
         "giorno2" => Phase::Giorno2,
+        "scenario" => Phase::Scenario,
         "fine" => Phase::Fine,
         _ => Phase::Gioco,
     };

@@ -59,6 +59,8 @@ pub enum Phase {
     Tutorial,
     /// Between the tutorial and the game: «Giorno 2».
     Giorno2,
+    /// After «Inizia»: which fire to fight, and how hard.
+    Scenario,
     /// The played game.
     Gioco,
     /// The end: stars and board.
@@ -427,6 +429,11 @@ pub fn start_tutorial(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<
     k.shot = None;
     k.log_seen = sim.log.len();
     k.enter(Phase::Tutorial);
+}
+
+/// «Inizia» and «Giorno 2» lead here: the player picks the fire and the level.
+pub fn choose_scenario(k: &mut Kiosk) {
+    k.enter(Phase::Scenario);
 }
 
 /// Day 2: the played fire, with its no-orders twin started beside it.

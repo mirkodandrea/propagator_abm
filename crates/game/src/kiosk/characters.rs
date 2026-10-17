@@ -69,6 +69,16 @@ pub struct Logo(pub egui::TextureId);
 #[derive(Resource)]
 pub struct Qr(pub egui::TextureId);
 
+/// The scenario screen's icons (`tools/factory/scenario_icons.py`), by case.
+#[derive(Resource)]
+pub struct ScenarioIcons(pub Vec<(&'static str, egui::TextureId)>);
+
+impl ScenarioIcons {
+    pub fn get(&self, case: &str) -> Option<egui::TextureId> {
+        self.0.iter().find(|(c, _)| *c == case).map(|(_, t)| *t)
+    }
+}
+
 fn texture(bytes: &[u8], images: &mut Assets<Image>, contexts: &mut EguiContexts) -> Option<egui::TextureId> {
     let img = Image::from_buffer(
         bytes,
@@ -102,6 +112,19 @@ pub fn load_portraits(mut commands: Commands, mut images: ResMut<Assets<Image>>,
     ];
     let out = all.into_iter().filter_map(|(key, bytes)| texture(bytes, &mut images, &mut contexts).map(|t| (key, t))).collect();
     commands.insert_resource(Portraits(out));
+    macro_rules! icon {
+        ($f:literal) => {
+            ($f, include_bytes!(concat!("../../../../assets/scenarios/", $f, ".png")).as_slice())
+        };
+    }
+    let icons: [(&'static str, &[u8]); 4] = [
+        icon!("medium"),
+        icon!("impatti_valico_due_lati_30_6"),
+        icon!("impatti_nuclei_valico_costante_lungo_28_7_0_60"),
+        icon!("impatti_nuclei_est_giro_lungo_28_6_75_60"),
+    ];
+    let icons = icons.into_iter().filter_map(|(c, bytes)| texture(bytes, &mut images, &mut contexts).map(|t| (c, t))).collect();
+    commands.insert_resource(ScenarioIcons(icons));
     let logo = include_bytes!("../../../../assets/brand/cima_logo_white.png");
     if let Some(t) = texture(logo, &mut images, &mut contexts) {
         commands.insert_resource(Logo(t));
