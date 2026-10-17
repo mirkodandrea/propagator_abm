@@ -1,7 +1,7 @@
 //! Signs on the map for the orders (docs/01-GIOCO.md §6): the hexes a team
 //! can be sent to (in pause, or with a team selected), the hex chosen and the
 //! road to it, the roads the teams are driving, the evacuation's route
-//! (proposed, dashed; in course, solid), and the roads the fire has closed.
+//! (proposed, dashed; in course, solid).
 //!
 //! Everything sits above the canopy (`rings::RING_LIFT_M`), in flat bright
 //! colours drawn over the trees (`flat::FlatMaterial`), and is rebuilt from the game's state behind a key, so a restart needs nothing
@@ -34,12 +34,9 @@ const ROAD_M: f32 = 9.0;
 /// own bumps do not cut them into dashes.
 const HEX_PULL_M: f32 = 60.0;
 const ROUTE_M: f32 = 12.0;
-const CLOSED_M: f32 = 18.0;
 const DASH_M: f32 = 40.0;
 /// How much wider the dark under-stroke of a route is than the route.
 const UNDER: f32 = 1.8;
-/// Closed roads are recomputed this often, in game steps.
-const CLOSED_EVERY: u64 = 10;
 
 #[derive(Component)]
 pub struct HexMark;
@@ -48,8 +45,6 @@ pub struct HexMark;
 pub struct RoadNetMark;
 #[derive(Component)]
 pub struct OrderMark;
-#[derive(Component)]
-pub struct ClosedMark;
 /// The assigned team hexes, highlighted in steady yellow.
 #[derive(Component)]
 pub struct TeamMark;
@@ -78,12 +73,11 @@ pub struct MarkAssets {
     team_route: Vec<Handle<FlatMaterial>>,
     team_hex: Vec<Handle<FlatMaterial>>,
     team_key: u64,
-    /// What the hex grid, the orders and the closed roads were built for.
+    /// What the hex grid and the orders were built for.
     hex_key: Option<String>,
     /// The team, time and tutorial hex the usable hexes were built for.
     targets_key: Option<(usize, i64, Option<rocca::Axial>)>,
     order_key: u64,
-    closed_key: u64,
 }
 
 /// One colour per team (sRGB), the same on its badge, cone, zone and road.
@@ -102,7 +96,7 @@ pub fn team_rgb(t: usize) -> [f32; 3] {
 }
 
 /// The colours of the signs (sRGB). Each means one thing: the evacuation's
-/// is green (the escape-route sign), the closed roads red, the hex the
+/// is green (the escape-route sign), the refused hex red, the hex the
 /// tutorial wants amber; a team's own signs wear its colour.
 pub const ROUTE: [f32; 3] = [0.0, 0.85, 1.0];
 pub const EVAC: [f32; 3] = [0.25, 1.0, 0.2];
@@ -128,7 +122,6 @@ pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>
         hex_key: None,
         targets_key: None,
         order_key: u64::MAX,
-        closed_key: u64::MAX,
     });
 }
 
@@ -463,39 +456,11 @@ pub fn bob_zone(time: Res<Time<Real>>, mut marks: Query<&mut Transform, With<Zon
     }
 }
 
-/// The roads the fire has closed, red.
-pub fn update_closed(
-    mut commands: Commands,
-    sim: Res<Sim>,
-    kiosk: Res<Kiosk>,
-    mut assets: ResMut<MarkAssets>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    old: Query<Entity, With<ClosedMark>>,
-) {
-    let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
-    let key = if playing { sim.generation / CLOSED_EVERY } else { u64::MAX - 1 };
-    if key == assets.closed_key {
-        return;
-    }
-    assets.closed_key = key;
-    for e in &old {
-        commands.entity(e).despawn();
-    }
-    if !playing {
-        return;
-    }
-    let parts: Vec<Mesh> = sim.closed_roads().into_iter().map(|(a, b)| path_mesh(&sim.scn, &[a, b], CLOSED_M, None)).collect();
-    if !parts.is_empty() {
-        spawn(&mut commands, &mut meshes, merge(parts), &assets.closed, ClosedMark);
-    }
-}
-
 pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut assets: ResMut<MarkAssets>) {
     if !restarted.is_empty() {
         restarted.clear();
         assets.hex_key = None;
         assets.order_key = u64::MAX;
-        assets.closed_key = u64::MAX;
         assets.team_key = u64::MAX;
     }
 }
