@@ -263,16 +263,6 @@ pub fn camera(
         orbit.yaw += padview.look.x * 1.6 * dt;
         orbit.pitch += padview.look.y * 0.9 * dt;
     }
-    if kiosk.freecam && kiosk.phase == Phase::Intro && !focus.keyboard {
-        let dt = time.delta_seconds().min(0.1);
-        let k = |c| input.keys.pressed(c) as i32 as f32;
-        let go = Vec2::new(k(KeyCode::KeyD) - k(KeyCode::KeyA), k(KeyCode::KeyS) - k(KeyCode::KeyW));
-        if go != Vec2::ZERO {
-            pan(&mut orbit, go * 700.0 * dt * if shift { 3.0 } else { 1.0 }, height);
-            kiosk.follow = false;
-        }
-        orbit.yaw += (k(KeyCode::KeyQ) - k(KeyCode::KeyE)) * 1.2 * dt;
-    }
     if drag.right || (drag.left && shift) {
         orbit.yaw -= delta.x * 0.005;
         orbit.pitch -= delta.y * 0.004;

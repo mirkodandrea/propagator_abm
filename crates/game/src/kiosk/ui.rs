@@ -1409,7 +1409,7 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
             ui.horizontal(|ui| {
                 ui.checkbox(&mut k.frozen, "Ferma il mondo");
                 ui.add_enabled(k.phase == Phase::Intro, egui::Checkbox::new(&mut k.freecam, "Freecam (demo)"))
-                    .on_hover_text("Telecamera libera sulla demo: mouse per muovere, WASD per spostarsi, Q/E per ruotare");
+                    .on_hover_text("Telecamera libera sulla demo: stessi controlli del gioco (trascina per spostare, tasto destro o Maiusc per ruotare, rotella per lo zoom)");
                 if button(ui, "Vista iniziale") {
                     k.reset_view = true;
                 }
