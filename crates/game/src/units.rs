@@ -59,26 +59,26 @@ pub struct UnitView {
 #[derive(Component)]
 pub struct OrderMarker;
 
-/// One drop of a fire engine's jet.
+/// The arc of water one fire engine throws: a single ribbon mesh, rewritten
+/// every frame by `animate_spray`, that sweeps across the cells being wetted.
 #[derive(Component)]
-pub struct Droplet {
+pub struct Jet {
     unit: usize,
-    jet: usize,
-    k: usize,
 }
 
-/// Jets an engine throws at once (one per cell it is wetting), and drops per jet.
+/// Cells an engine's jet sweeps across, and the segments an arc is cut into.
 const JETS: usize = 4;
-const DROPS: usize = 12;
+/// Seconds the jet rests on one cell, and takes to turn to the next.
+const DWELL_S: f32 = 1.6;
+const TURN_S: f32 = 0.9;
+const ARC_SEGMENTS: usize = 24;
 /// Height of the nozzle above the ground, and of the arc's crown over the chord, metres.
 const NOZZLE_M: f32 = 9.0;
 const ARC_BASE_M: f32 = 8.0;
 const ARC_PER_M: f32 = 0.18;
-/// Drop size in flight and when it bursts on the fuel, metres.
-const DROP_M: f32 = 2.6;
-const SPLASH_M: f32 = 9.0;
-/// Seconds a drop takes from nozzle to fuel.
-const FLIGHT_S: f32 = 0.9;
+/// Width of the stream at the nozzle and where it lands, metres.
+const STREAM_NOZZLE_M: f32 = 1.4;
+const STREAM_END_M: f32 = 3.6;
 
 /// The cut-line overlay (nothing is drawn on the wetted ground any more).
 #[derive(Component)]
@@ -212,28 +212,28 @@ pub fn setup(
     }
     info!("suppression layer: {} unit symbols", sim.crews.units.len());
 
-    // The jets: a pool of droplets per engine, moved every frame by `animate_spray`.
-    let drop_mesh = meshes.add(Sphere::new(1.0));
-    let drop_mat = materials.add(retro::material(StandardMaterial {
-        base_color: Color::LinearRgba(LinearRgba::new(0.55, 1.3, 2.6, 0.75)),
+    // The jets: one arc per engine, moved every frame by `animate_spray`.
+    let arc_mat = materials.add(retro::material(StandardMaterial {
+        base_color: Color::LinearRgba(LinearRgba::new(0.55, 1.3, 2.6, 0.6)),
         unlit: true,
         alpha_mode: AlphaMode::Blend,
+        double_sided: true,
+        cull_mode: None,
         ..default()
     }, vr));
     for u in sim.crews.units.iter().filter(|u| u.kind == UnitKind::Engine) {
-        for jet in 0..JETS {
-            for k in 0..DROPS {
-                commands.spawn((
-                    MaterialMeshBundle::<RetroMaterial> {
-                        mesh: drop_mesh.clone(),
-                        material: drop_mat.clone(),
-                        visibility: Visibility::Hidden,
-                        ..default()
-                    },
-                    Droplet { unit: u.id, jet, k },
-                ));
-            }
-        }
+        // Never an empty mesh: the prepass panics on one. A flat arc is valid, and replaced on the first frame.
+        let flat: Vec<(Vec3, f32)> = (0..=ARC_SEGMENTS).map(|_| (Vec3::ZERO, 0.0)).collect();
+        commands.spawn((
+            MaterialMeshBundle::<RetroMaterial> {
+                mesh: meshes.add(arc_mesh(&flat)),
+                material: arc_mat.clone(),
+                visibility: Visibility::Hidden,
+                ..default()
+            },
+            bevy::render::view::NoFrustumCulling,
+            Jet { unit: u.id },
+        ));
     }
 
     let order_ring = hdr_blue(&mut materials, vr, 0.95);
@@ -773,19 +773,58 @@ fn lerp(a: Pos, b: Pos, t: f32) -> Pos {
     }
 }
 
-/// The engines' water: a jet of drops from each working engine to the cells it
-/// has just wetted, hottest first (the same order the model wets them in), with
-/// a burst of spray where it lands.
+/// A ribbon along `points` (position, width): two quads crossed, one lying
+/// flat and one upright, so the stream reads as a body of water from any side.
+fn arc_mesh(points: &[(Vec3, f32)]) -> Mesh {
+    let mut positions: Vec<[f32; 3]> = Vec::new();
+    let mut normals: Vec<[f32; 3]> = Vec::new();
+    let mut uvs: Vec<[f32; 2]> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+    let n = points.len();
+    for (i, &(p, w)) in points.iter().enumerate() {
+        let a = points[i.saturating_sub(1)].0;
+        let b = points[(i + 1).min(n - 1)].0;
+        let dir = (b - a).normalize_or_zero();
+        let side = dir.cross(Vec3::Y).normalize_or_zero();
+        let up = side.cross(dir).normalize_or_zero();
+        let v = i as f32 / (n - 1) as f32;
+        for off in [side, -side, up, -up] {
+            positions.push((p + off * w * 0.5).to_array());
+            normals.push(Vec3::Y.to_array());
+            uvs.push([0.0, v]);
+        }
+    }
+    for i in 0..n as u32 - 1 {
+        let (a, b) = (i * 4, (i + 1) * 4);
+        // flat quad: side/-side; upright quad: up/-up
+        indices.extend([a, b, a + 1, a + 1, b, b + 1]);
+        indices.extend([a + 2, b + 2, a + 3, a + 3, b + 2, b + 3]);
+    }
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+/// The engines' water: an arc from each working engine to the cells it has
+/// just wetted, hottest first (the same order the model wets them in), with a
+/// slow sweep from one cell to the next.
 pub fn animate_spray(
     sim: Res<Sim>,
     time: Res<Time>,
     assets: Res<UnitAssets>,
-    mut drops: Query<(&Droplet, &mut Transform, &mut Visibility)>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut arcs: Query<(&Jet, &Handle<Mesh>, &mut Visibility)>,
 ) {
     let now = time.elapsed_seconds();
     let w = sim.scn.world;
     let reach = rocca::game::ENGINE_RANGE_M * 1.5;
-    // The targets of each engine, computed once per frame and not per drop.
+    // The targets of each engine, computed once per frame and not per jet.
     let mut jets: std::collections::HashMap<usize, Vec<Pos>> = Default::default();
     for u in sim.crews.units.iter().filter(|u| u.kind == UnitKind::Engine) {
         if u.state != UnitState::Working || u.aboard || !matches!(u.task, Task::Attack { .. }) {
@@ -801,31 +840,48 @@ pub fn animate_spray(
         near.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
         jets.insert(u.id, near.into_iter().take(JETS).map(|(_, p)| p).collect());
     }
-    for (d, mut tf, mut vis) in &mut drops {
-        let target = jets.get(&d.unit).and_then(|j| j.get(d.jet));
-        let (Some(&to), Some(u)) = (target, sim.crews.units.get(d.unit)) else {
+    // Where the jet of an engine points now: rests on a cell, then turns to the next.
+    let aim = |unit: usize| {
+        let list = jets.get(&unit)?;
+        if list.is_empty() {
+            return None;
+        }
+        let period = DWELL_S + TURN_S;
+        let k = now / period + unit as f32 * 0.31;
+        let (i, r) = (k.floor() as usize, (k.fract() * period - DWELL_S).max(0.0) / TURN_S);
+        let (a, b) = (list[i % list.len()], list[(i + 1) % list.len()]);
+        let e = r * r * (3.0 - 2.0 * r);
+        let to = Pos { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e };
+        Some((to, sim.crews.units.get(unit)?))
+    };
+    for (j, handle, mut vis) in &mut arcs {
+        let Some((to, u)) = aim(j.unit) else {
             if *vis != Visibility::Hidden {
                 *vis = Visibility::Hidden;
             }
             continue;
         };
-        let phase = (now / FLIGHT_S + d.k as f32 / DROPS as f32 + d.jet as f32 * 0.37).fract();
         let from_y = sim.scn.terrain.height_at(u.pos) + NOZZLE_M;
         let to_y = sim.scn.terrain.height_at(to) + RING_LIFT_M;
         let len = (to.x - u.pos.x).hypot(to.y - u.pos.y);
-        // A little scatter so the jet is a stream rather than a string of beads.
-        let wob = ((d.k * 7 + d.jet * 13) as f32).sin();
-        let t = phase.min(1.0);
-        let p = Pos {
-            x: u.pos.x + (to.x - u.pos.x) * t + wob * 1.5 * (t * (1.0 - t)),
-            y: u.pos.y + (to.y - u.pos.y) * t + wob * 1.5 * (t * (1.0 - t)),
-        };
         let crown = ARC_BASE_M + ARC_PER_M * len;
-        let y = from_y + (to_y - from_y) * t + crown * 4.0 * t * (1.0 - t);
-        tf.translation = frame::to_bevy(p, y);
-        // Bursts into mist on landing: grows and thins over the last tenth.
-        let burst = ((phase - 0.9) / 0.1).clamp(0.0, 1.0);
-        tf.scale = Vec3::splat(DROP_M + (SPLASH_M - DROP_M) * burst);
+        let points: Vec<(Vec3, f32)> = (0..=ARC_SEGMENTS)
+            .map(|i| {
+                let t = i as f32 / ARC_SEGMENTS as f32;
+                let p = Pos {
+                    x: u.pos.x + (to.x - u.pos.x) * t,
+                    y: u.pos.y + (to.y - u.pos.y) * t,
+                };
+                let y = from_y + (to_y - from_y) * t + crown * 4.0 * t * (1.0 - t);
+                // Ripples run down the stream so it reads as flowing water.
+                let ripple = 1.0 + 0.18 * (t * 22.0 - now * 9.0).sin();
+                let width = (STREAM_NOZZLE_M + (STREAM_END_M - STREAM_NOZZLE_M) * t) * ripple;
+                (frame::to_bevy(p, y), width)
+            })
+            .collect();
+        if let Some(m) = meshes.get_mut(handle) {
+            *m = arc_mesh(&points);
+        }
         if *vis != Visibility::Inherited {
             *vis = Visibility::Inherited;
         }
