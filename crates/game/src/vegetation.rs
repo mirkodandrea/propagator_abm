@@ -994,8 +994,8 @@ pub fn burn(
                     }
                 }
             }
-            paint(&mut colors[plant.vert_start as usize..plant.vert_end as usize], s, t0);
-            paint(&mut low_colors[plant.low_start as usize..plant.low_end as usize], s, t0);
+            paint(&mut colors[plant.vert_start as usize..plant.vert_end as usize], s, t0, plant.remains.is_some());
+            paint(&mut low_colors[plant.low_start as usize..plant.low_end as usize], s, t0, plant.remains.is_some());
         }
 
         if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
@@ -1074,15 +1074,20 @@ const LEAF_OFFSET: f32 = 1.0e5;
 /// The same for the vertices of a plant's burnt remains, which dissolve in
 /// while it burns (`-(1 + REMAINS_OFFSET + t0)`).
 const REMAINS_OFFSET: f32 = 2.0e5;
+/// Added to a standing vertex whose plant has remains to dissolve into.
+const SWAP_OFFSET: f32 = 4.0e5;
 
 /// Recolour one plant's vertices for its fire state.
-fn paint(colors: &mut [[f32; 4]], state: u8, t0: f32) {
+fn paint(colors: &mut [[f32; 4]], state: u8, t0: f32, has_remains: bool) {
     if state == CellFire::Burning as u8 {
         // Alight: colours stay as generated (the shader chars and lights
         // them); only the alpha flags the burn and carries its start.
         for c in colors {
             let leaf = if c[3] > 0.5 { LEAF_OFFSET } else { 0.0 };
-            c[3] = -(1.0 + leaf + t0.max(0.0));
+            // a plant with burnt remains is swapped for them in the shader,
+            // crown and remains cutting the same dissolve from either side
+            let swapped = if has_remains { SWAP_OFFSET } else { 0.0 };
+            c[3] = -(1.0 + swapped + leaf + t0.max(0.0));
         }
     } else {
         // Charcoal, keeping a trace of the original tint so a burnt

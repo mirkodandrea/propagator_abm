@@ -214,6 +214,7 @@ fn foliage_albedo(base: vec4<f32>, p: vec3<f32>, normal: vec3<f32>, alive: f32) 
 // charred remains, which the last stage already looks like.
 const LEAF_OFFSET: f32 = 1.0e5;
 const REMAINS_OFFSET: f32 = 2.0e5;
+const SWAP_OFFSET: f32 = 4.0e5;
 
 struct Burnt {
     rgb: vec3<f32>,
@@ -467,25 +468,43 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         let px_m = max(length(dpdx(p)), length(dpdy(p)));
         let burning = a < -0.5;
         let b = -a;
-        let remains = burning && b > REMAINS_OFFSET * 0.75;
-        let leaf = burning && !remains && b > LEAF_OFFSET * 0.5;
+        // decode: a standing vertex of a plant that has remains carries
+        // SWAP_OFFSET on top of the leaf flag and the ignition time
+        let swap = burning && b >= SWAP_OFFSET * 0.9;
+        let b2 = b - select(0.0, SWAP_OFFSET, swap);
+        let remains = burning && b2 > REMAINS_OFFSET * 0.75;
+        let leaf = burning && !remains && b2 > LEAF_OFFSET * 0.5;
         let alive = select(clamp(a, 0.0, 1.0), select(0.0, 1.0, leaf), burning);
         pbr_input.material.base_color = foliage_albedo(pbr_input.material.base_color, p, in.world_normal, alive);
         if burning {
-            let t0 = b - 1.0 - select(select(0.0, LEAF_OFFSET, leaf), REMAINS_OFFSET, remains);
+            let t0 = b2 - 1.0 - select(select(0.0, LEAF_OFFSET, leaf), REMAINS_OFFSET, remains);
             let prog = clamp((tactical.y - t0) / max(tactical.z, 1.0), 0.0, 1.0);
             let near = 1.0 - smoothstep(1.0, 3.5, px_m);
-            if remains {
-                // The burnt model dissolving in over the burning one, with a
-                // glowing edge where it arrives. Far away the dissolve would
-                // only shimmer: it switches on half way instead.
+            if remains || swap {
+                // Crown and burnt remains share one dissolve: the crown stays
+                // where the field is above the fade, the remains below it,
+                // so there is never a moment of both, nor of neither. Far
+                // away the dissolve would only shimmer: it flips half way.
                 let fade = smoothstep(0.10, 0.90, prog);
                 let h = smoothstep(0.25, 0.75, value_noise(p.xz * 3.1 + vec2<f32>(p.y * 2.3, 17.0)));
-                if (near > 0.3 && h > fade) || (near <= 0.3 && prog < 0.5) {
+                if near > 0.3 {
+                    // strict on both sides: at 0 only the crown, at 1 only the remains
+                    let done = fade > 0.999;
+                    if (remains && h >= fade && !done) || (swap && (h < fade || done)) {
+                        discard;
+                    }
+                } else if (remains && prog < 0.5) || (swap && prog >= 0.5) {
                     discard;
                 }
-                let rim = (1.0 - smoothstep(0.0, 0.10, fade - h)) * (1.0 - fade);
+                // The edge of the dissolve glows on both sides.
+                let rim = (1.0 - smoothstep(0.0, 0.10, abs(fade - h))) * (1.0 - smoothstep(0.85, 1.0, fade));
                 burn_glow = vec3<f32>(2.4, 0.55, 0.06) * rim * (0.7 + 0.6 * value_noise(p.xz * 2.4 + vec2<f32>(t * 5.0, p.y)));
+                if swap {
+                    // scorching browns the crown; it never goes grey, it goes away
+                    let scorch = smoothstep(0.0, 0.7, prog);
+                    let c = pbr_input.material.base_color.rgb;
+                    pbr_input.material.base_color = vec4<f32>(mix(c, c * vec3<f32>(0.78, 0.50, 0.26), scorch), pbr_input.material.base_color.a);
+                }
             } else {
             let r = burn_plant(pbr_input.material.base_color.rgb, p, prog, t);
             // Close up, an eaten leaf is a hole; far away holes would only

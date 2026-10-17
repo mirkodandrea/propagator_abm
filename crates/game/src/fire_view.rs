@@ -99,7 +99,7 @@ const GLOWING_S: f32 = 1100.0;
 /// Caps, all of them per-frame geometry budgets rather than physical limits.
 const MAX_FLAME_CELLS: usize = if cfg!(target_arch = "wasm32") { 600 } else { 3_500 };
 const MAX_SMOKE: usize = if cfg!(target_arch = "wasm32") { 100 } else { 800 };
-const MAX_EMBERS: usize = if cfg!(target_arch = "wasm32") { 80 } else { 700 };
+const MAX_EMBERS: usize = if cfg!(target_arch = "wasm32") { 60 } else { 525 };
 
 /// Shape of the firebrand's flight, mirroring `compute_spotting` in
 /// `propagator-core/src/kernel.rs` — the median landing distance is linear in
@@ -820,7 +820,7 @@ pub fn update_flames(
                 flare: false,
             });
         }
-        if view.embers.len() < MAX_EMBERS && hash01(view.seed ^ (i as u64 * 7) ^ (t * 90.0) as u64) < dt * 5.0 {
+        if view.embers.len() < MAX_EMBERS && hash01(view.seed ^ (i as u64 * 7) ^ (t * 90.0) as u64) < dt * 3.75 {
             view.seed = view.seed.wrapping_mul(6364136223846793005).wrapping_add(1);
             let phase = hash01(view.seed);
             let a = phase * std::f32::consts::TAU;
@@ -1010,7 +1010,7 @@ fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
     // does not get 20 000 plumes, it gets a full sky.
     let smoke_budget =
         ((active.len() as f32 * dt * 1.2) as usize).min(MAX_SMOKE.saturating_sub(view.smoke.len()));
-    let ember_budget = ((active.len() as f32 * dt * 0.5) as usize)
+    let ember_budget = ((active.len() as f32 * dt * 0.375) as usize)
         .min(MAX_EMBERS.saturating_sub(view.embers.len()));
 
     for i in 0..smoke_budget + ember_budget {
