@@ -361,10 +361,6 @@ pub fn camera(
                     orbit.yaw = yaw;
                     orbit.pitch = scene_pitch;
                     orbit.distance = d * shot_zoom();
-                    if mobile_web {
-                        (orbit.focus, orbit.distance) = mobile_opening(camera, &sim, home, d);
-                        orbit.yaw = 0.0;
-                    }
                 }
             }
         }
@@ -381,17 +377,18 @@ pub fn camera(
             kiosk.shot = None;
         }
     }
-    // Behind the name screen: a director, not a follower. A shot lasts
-    // `SHOT_S`; its subject is picked when it begins, from what the fire is
-    // doing then, and the camera glides to it slowly.
-    if mobile_web && kiosk.phase == Phase::Intro && !kiosk.frozen {
+    // leaving the opening on a phone: back to the top-down framing
+    if mobile_web && kiosk.phase != Phase::Intro && orbit.pitch > NADIR_PITCH + 0.01 {
         if let Some((_, d)) = *home_view {
             (orbit.focus, orbit.distance) = mobile_opening(camera, &sim, home, d);
             orbit.pitch = NADIR_PITCH;
             orbit.yaw = 0.0;
         }
     }
-    if !mobile_web && kiosk.phase == Phase::Intro && !kiosk.frozen && !kiosk.freecam {
+    // Behind the name screen: a director, not a follower. A shot lasts
+    // `SHOT_S`; its subject is picked when it begins, from what the fire is
+    // doing then, and the camera glides to it slowly.
+    if kiosk.phase == Phase::Intro && !kiosk.frozen && !kiosk.freecam {
         if let Some((yaw0, d)) = *home_view {
             let n = super::demo_shot(kiosk.demo_t);
             let sites = scenic_sites(&sim);
@@ -473,7 +470,7 @@ pub fn camera(
             orbit.pitch += (pitch - orbit.pitch) * a;
         }
     }
-    if mobile_web || kiosk.phase != Phase::Intro || kiosk.frozen || kiosk.freecam {
+    if kiosk.phase != Phase::Intro || kiosk.frozen || kiosk.freecam {
         kiosk.cut = None;
         kiosk.fade = 0.0;
     }
@@ -508,8 +505,8 @@ pub fn camera(
 
     orbit.yaw = orbit.yaw.clamp(-MAX_YAW, MAX_YAW);
     let freecam = kiosk.freecam && kiosk.phase == Phase::Intro;
-    let max_pitch = if kiosk.phase == Phase::Intro && !kiosk.frozen && !mobile_web && !freecam { INTRO_MAX_PITCH } else { MAX_PITCH };
-    orbit.pitch = orbit.pitch.clamp(if mobile_web { NADIR_PITCH } else { MIN_PITCH }, max_pitch);
+    let max_pitch = if kiosk.phase == Phase::Intro && !kiosk.frozen && !freecam { INTRO_MAX_PITCH } else { MAX_PITCH };
+    orbit.pitch = orbit.pitch.clamp(if mobile_web && kiosk.phase != Phase::Intro { NADIR_PITCH } else { MIN_PITCH }, max_pitch);
     orbit.distance = orbit.distance.clamp(MIN_DIST * shot_zoom().min(1.0), MAX_DIST);
     let off = Vec2::new(orbit.focus.x - home.x, orbit.focus.z - home.z);
     let reach = if freecam { SCENIC_RADIUS_M } else { PAN_RADIUS_M };
