@@ -32,6 +32,7 @@ mod playtest;
 mod quality;
 mod quality_live;
 mod flat;
+mod tape;
 mod retro;
 mod rings;
 mod ground_mask;
@@ -105,6 +106,7 @@ fn main() -> anyhow::Result<()> {
     .add_plugins(fire_shader::FireShaderPlugin)
     .add_plugins(retro::RetroShaderPlugin)
     .add_plugins(flat::FlatPlugin)
+    .add_plugins(tape::TapePlugin)
     // sun, sky and ambient light from the game's clock; the sea and its wind; the boats
     .add_plugins((sky::SkyPlugin, sea::SeaPlugin, boats::BoatsPlugin, landmarks::LandmarksPlugin))
     .init_state::<AppState>()
@@ -264,6 +266,7 @@ fn kiosk_systems(app: &mut App) {
                 units::animate_spray,
                 kiosk::marks::update_hexes,
                 kiosk::marks::update_orders,
+                kiosk::marks::update_closed,
                 kiosk::marks::update_teams,
                 kiosk::marks::bob_zone,
                 kiosk::pins::update,

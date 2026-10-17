@@ -17,6 +17,7 @@ use super::{Kiosk, Phase, Selection};
 use crate::flat::FlatMaterial;
 use crate::rings::{path_mesh, path_mesh_at, RING_LIFT_M};
 use crate::sim::Sim;
+use crate::tape::TapeMaterial;
 
 /// Widths on the map, metres.
 const HEX_LINE_M: f32 = 12.0;
@@ -34,7 +35,12 @@ const ROAD_M: f32 = 9.0;
 /// own bumps do not cut them into dashes.
 const HEX_PULL_M: f32 = 60.0;
 const ROUTE_M: f32 = 12.0;
+/// As wide as the road drawn under it (`roads::DRIVABLE_HALF_W`), a little above it.
+const CLOSED_M: f32 = 9.6;
+const CLOSED_LIFT_M: f32 = 0.8;
 const DASH_M: f32 = 40.0;
+/// Closed roads are recomputed this often, in game steps.
+const CLOSED_EVERY: u64 = 10;
 /// How much wider the dark under-stroke of a route is than the route.
 const UNDER: f32 = 1.8;
 
@@ -45,6 +51,9 @@ pub struct HexMark;
 pub struct RoadNetMark;
 #[derive(Component)]
 pub struct OrderMark;
+/// A road stretch the fire has closed, junction to junction: hazard tape laid on it (`tape.rs`).
+#[derive(Component)]
+pub struct ClosedMark;
 /// The assigned team hexes, highlighted in steady yellow.
 #[derive(Component)]
 pub struct TeamMark;
@@ -67,6 +76,9 @@ pub struct MarkAssets {
     route: Handle<FlatMaterial>,
     evac: Handle<FlatMaterial>,
     closed: Handle<FlatMaterial>,
+    tape: Handle<TapeMaterial>,
+    tape_open: Handle<TapeMaterial>,
+    closed_key: u64,
     active: Handle<FlatMaterial>,
     /// Per team: zone line, the road it drives and its hex outline.
     team_zone: Vec<Handle<FlatMaterial>>,
@@ -103,7 +115,7 @@ pub const EVAC: [f32; 3] = [0.25, 1.0, 0.2];
 const CLOSED: [f32; 3] = [1.0, 0.12, 0.08];
 const WANT: [f32; 3] = [1.0, 0.72, 0.0];
 
-pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>) {
+pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>, mut tapes: ResMut<Assets<TapeMaterial>>) {
     commands.insert_resource(MarkAssets {
         hex: materials.add(FlatMaterial::with_alpha([1.0, 1.0, 1.0], 0.55).pulled(HEX_PULL_M)),
         road: materials.add(FlatMaterial::with_alpha([1.0, 0.93, 0.62], 0.5)),
@@ -118,6 +130,9 @@ pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>
         team_zone: TEAM_COLOURS.iter().map(|&c| materials.add(FlatMaterial::new(c).pulled(HEX_PULL_M + 3.0))).collect(),
         team_route: TEAM_COLOURS.iter().map(|&c| materials.add(FlatMaterial::new(c).pulled(3.0))).collect(),
         team_hex: TEAM_COLOURS.iter().map(|&c| materials.add(FlatMaterial::new(c).pulled(HEX_PULL_M + 5.0))).collect(),
+        tape: tapes.add(TapeMaterial::closed()),
+        tape_open: tapes.add(TapeMaterial::open_part()),
+        closed_key: u64::MAX,
         team_key: u64::MAX,
         hex_key: None,
         targets_key: None,
@@ -128,8 +143,12 @@ pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>
 /// Several meshes as one draw.
 fn merge(parts: Vec<Mesh>) -> Mesh {
     let (mut pos, mut idx): (Vec<[f32; 3]>, Vec<u32>) = (vec![], vec![]);
+    let mut uv: Vec<[f32; 2]> = vec![];
     for m in parts {
         let base = pos.len() as u32;
+        if let Some(VertexAttributeValues::Float32x2(u)) = m.attribute(Mesh::ATTRIBUTE_UV_0) {
+            uv.extend_from_slice(u);
+        }
         if let Some(VertexAttributeValues::Float32x3(p)) = m.attribute(Mesh::ATTRIBUTE_POSITION) {
             pos.extend_from_slice(p);
         }
@@ -141,7 +160,7 @@ fn merge(parts: Vec<Mesh>) -> Mesh {
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n]);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32, 0.0]; n]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uv);
     mesh.insert_indices(Indices::U32(idx));
     mesh
 }
@@ -456,11 +475,58 @@ pub fn bob_zone(time: Res<Time<Real>>, mut marks: Query<&mut Transform, With<Zon
     }
 }
 
+/// The roads the fire has closed: hazard tape, animated by its shader.
+pub fn update_closed(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    kiosk: Res<Kiosk>,
+    mut assets: ResMut<MarkAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    old: Query<Entity, With<ClosedMark>>,
+) {
+    let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
+    let key = if playing { sim.generation / CLOSED_EVERY } else { u64::MAX - 1 };
+    if key == assets.closed_key {
+        return;
+    }
+    assets.closed_key = key;
+    for e in &old {
+        commands.entity(e).despawn();
+    }
+    if !playing {
+        return;
+    }
+    // each stretch in runs: the closed pieces in full tape, the rest dashed
+    let (mut shut, mut open): (Vec<Mesh>, Vec<Mesh>) = (vec![], vec![]);
+    for st in sim.closed_stretches() {
+        let mut from = 0;
+        for i in 1..=st.blocked.len() {
+            if i == st.blocked.len() || st.blocked[i] != st.blocked[from] {
+                let mesh = path_mesh_at(&sim.scn, &st.line[from..=i], CLOSED_M, None, CLOSED_LIFT_M);
+                if st.blocked[from] { shut.push(mesh) } else { open.push(mesh) }
+                from = i;
+            }
+        }
+    }
+    for (parts, mat) in [(shut, &assets.tape), (open, &assets.tape_open)] {
+        if !parts.is_empty() {
+            commands.spawn((
+                MaterialMeshBundle::<TapeMaterial> { mesh: meshes.add(merge(parts)), material: mat.clone(), ..default() },
+                ClosedMark,
+                bevy::pbr::NotShadowCaster,
+                bevy::pbr::NotShadowReceiver,
+                bevy::render::view::NoFrustumCulling,
+            ));
+        }
+    }
+}
+
 pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut assets: ResMut<MarkAssets>) {
     if !restarted.is_empty() {
         restarted.clear();
         assets.hex_key = None;
         assets.order_key = u64::MAX;
+        assets.closed_key = u64::MAX;
         assets.team_key = u64::MAX;
     }
 }

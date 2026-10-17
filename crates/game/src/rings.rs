@@ -200,8 +200,10 @@ pub(crate) fn path_mesh_at(scn: &Scenario, pts: &[Pos], width_m: f32, dash_m: Op
     };
     let half = width_m * 0.5;
     let mut positions: Vec<[f32; 3]> = Vec::with_capacity(n * 2);
+    // u = metres along the line, v = 0 / 1 across (for materials that use it)
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(n * 2);
     for i in 0..n {
-        let (c, _) = at[i];
+        let (c, along_i) = at[i];
         let t_in = if i > 0 { unit(at[i - 1].0, c) } else { unit(c, at[(i + 1).min(n - 1)].0) };
         let t_out = if i + 1 < n { unit(c, at[i + 1].0) } else { t_in };
         let (n_in, n_out) = ((-t_in.1, t_in.0), (-t_out.1, t_out.0));
@@ -216,6 +218,7 @@ pub(crate) fn path_mesh_at(scn: &Scenario, pts: &[Pos], width_m: f32, dash_m: Op
         for side in [-1.0f32, 1.0] {
             let q = Pos { x: c.x + ox * side, y: c.y + oy * side };
             positions.push([q.x, scn.terrain.height_at(q) + lift_m, -q.y]);
+            uvs.push([along_i, (side + 1.0) * 0.5]);
         }
     }
     // the ground's own bumps and steps would make the line zigzag in a low
@@ -241,7 +244,7 @@ pub(crate) fn path_mesh_at(scn: &Scenario, pts: &[Pos], width_m: f32, dash_m: Op
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n]);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32, 0.0]; n]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh.insert_indices(Indices::U32(indices));
     mesh
 }

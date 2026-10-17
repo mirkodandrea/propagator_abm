@@ -352,6 +352,7 @@ pub fn hide_marks(
                 With<super::marks::HexMark>,
                 With<super::marks::RoadNetMark>,
                 With<super::marks::OrderMark>,
+                With<super::marks::ClosedMark>,
                 With<super::marks::TeamMark>,
                 With<super::pins::Pin>,
             )>,

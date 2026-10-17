@@ -229,6 +229,13 @@ impl Outcome {
     }
 }
 
+/// A road stretch, junction to junction, with a piece the fire has closed.
+pub struct ClosedStretch {
+    pub line: Vec<Pos>,
+    /// For each piece of `line` (`line.len() - 1`): closed now.
+    pub blocked: Vec<bool>,
+}
+
 pub struct Game {
     pub scn: Scenario,
     pub fire: FireSim,
@@ -611,6 +618,78 @@ impl Game {
                 if threat.at(mid).max(threat.at(b)) >= IMPASSABLE {
                     out.push((a, b));
                 }
+            }
+        }
+        out
+    }
+
+    /// The roads the fire has closed, as whole stretches from junction to
+    /// junction (a dead end counts as a junction): a stretch with any closed
+    /// piece is returned whole, as one polyline, with the pieces that are
+    /// closed marked: vehicles still drive the rest of it.
+    pub fn closed_stretches(&self) -> Vec<ClosedStretch> {
+        use std::collections::HashSet;
+        let threat = self.fire.threat();
+        let key = |a: u32, b: u32| (a.min(b), a.max(b));
+        let closed: HashSet<(u32, u32)> = {
+            let mut c = HashSet::new();
+            for (i, &a) in self.net.nodes.iter().enumerate() {
+                for e in self.net.neighbours(i as u32) {
+                    if !e.drivable || (e.to as usize) < i {
+                        continue;
+                    }
+                    let b = self.net.pos(e.to);
+                    let mid = Pos { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+                    if threat.at(mid).max(threat.at(b)) >= IMPASSABLE {
+                        c.insert(key(i as u32, e.to));
+                    }
+                }
+            }
+            c
+        };
+        if closed.is_empty() {
+            return vec![];
+        }
+        let degree = |n: u32| self.net.neighbours(n).iter().filter(|e| e.drivable).count();
+        let mut seen: HashSet<(u32, u32)> = HashSet::new();
+        let mut out = vec![];
+        // walk each stretch from a junction, until the next one
+        let mut walk = |start: u32, first: u32, seen: &mut HashSet<(u32, u32)>| {
+            let mut path = vec![start];
+            let (mut prev, mut cur) = (start, first);
+            let mut any = false;
+            loop {
+                seen.insert(key(prev, cur));
+                any |= closed.contains(&key(prev, cur));
+                path.push(cur);
+                if degree(cur) != 2 || cur == start {
+                    break;
+                }
+                let Some(next) = self.net.neighbours(cur).iter().find(|e| e.drivable && e.to != prev).map(|e| e.to) else { break };
+                if seen.contains(&key(cur, next)) {
+                    break;
+                }
+                (prev, cur) = (cur, next);
+            }
+            any.then(|| ClosedStretch {
+                blocked: path.windows(2).map(|w| closed.contains(&key(w[0], w[1]))).collect(),
+                line: path.into_iter().map(|n| self.net.pos(n)).collect(),
+            })
+        };
+        for i in 0..self.net.nodes.len() as u32 {
+            if degree(i) == 2 {
+                continue;
+            }
+            for e in self.net.neighbours(i) {
+                if e.drivable && !seen.contains(&key(i, e.to)) {
+                    out.extend(walk(i, e.to, &mut seen));
+                }
+            }
+        }
+        // a closed loop with no junction on it: leave its pieces as they are
+        for &(a, b) in &closed {
+            if !seen.contains(&(a, b)) {
+                out.push(ClosedStretch { line: vec![self.net.pos(a), self.net.pos(b)], blocked: vec![true] });
             }
         }
         out
