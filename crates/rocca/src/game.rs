@@ -648,22 +648,51 @@ impl Game {
     /// The roads the fire has closed, as whole stretches from junction to
     /// junction (a dead end counts as a junction): a stretch with any closed
     /// piece is returned whole, as one polyline, with the pieces that are
-    /// closed marked: vehicles still drive the rest of it.
+    /// closed marked: those the fire has cut, and those joining two nodes no
+    /// vehicle from a station can reach any more (a free junction in between
+    /// keeps a piece open). Vehicles still drive the rest of it.
     pub fn closed_stretches(&self) -> Vec<ClosedStretch> {
         use std::collections::HashSet;
         let threat = self.fire.threat();
         let key = |a: u32, b: u32| (a.min(b), a.max(b));
+        let hot = |a: u32, b: u32| {
+            let (pa, pb) = (self.net.pos(a), self.net.pos(b));
+            threat.at(Pos { x: (pa.x + pb.x) * 0.5, y: (pa.y + pb.y) * 0.5 }).max(threat.at(pb)) >= IMPASSABLE
+        };
+        // what a vehicle from a station can still reach, over the roads that are not hot
+        let n = self.net.nodes.len();
+        let mut reach = vec![false; n];
+        let mut stack: Vec<u32> = vec![];
+        for st in &self.territory.stations {
+            if let Some(r) = self.net.nearest(Pos::from(st.pos), true) {
+                if !reach[r as usize] {
+                    reach[r as usize] = true;
+                    stack.push(r);
+                }
+            }
+        }
+        let roots = stack.clone();
+        while let Some(i) = stack.pop() {
+            for e in self.net.neighbours(i) {
+                if e.drivable && !reach[e.to as usize] && !hot(i, e.to) {
+                    reach[e.to as usize] = true;
+                    stack.push(e.to);
+                }
+            }
+        }
+        // closed: a piece the fire has cut, or one that joins two nodes no
+        // vehicle can get to (on the network the stations are on)
+        let main: HashSet<u32> = roots.iter().map(|&r| self.net.component(r, true)).collect();
         let closed: HashSet<(u32, u32)> = {
             let mut c = HashSet::new();
-            for (i, &a) in self.net.nodes.iter().enumerate() {
-                for e in self.net.neighbours(i as u32) {
-                    if !e.drivable || (e.to as usize) < i {
+            for i in 0..n as u32 {
+                for e in self.net.neighbours(i) {
+                    if !e.drivable || e.to < i {
                         continue;
                     }
-                    let b = self.net.pos(e.to);
-                    let mid = Pos { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
-                    if threat.at(mid).max(threat.at(b)) >= IMPASSABLE {
-                        c.insert(key(i as u32, e.to));
+                    let cut = !reach[i as usize] && !reach[e.to as usize] && main.contains(&self.net.component(i, true));
+                    if cut || hot(i, e.to) {
+                        c.insert(key(i, e.to));
                     }
                 }
             }
@@ -693,10 +722,8 @@ impl Game {
                 }
                 (prev, cur) = (cur, next);
             }
-            any.then(|| ClosedStretch {
-                blocked: path.windows(2).map(|w| closed.contains(&key(w[0], w[1]))).collect(),
-                line: path.into_iter().map(|n| self.net.pos(n)).collect(),
-            })
+            let blocked: Vec<bool> = path.windows(2).map(|w| closed.contains(&key(w[0], w[1]))).collect();
+            any.then(|| ClosedStretch { blocked, line: path.into_iter().map(|n| self.net.pos(n)).collect() })
         };
         for i in 0..self.net.nodes.len() as u32 {
             if degree(i) == 2 {
