@@ -78,9 +78,9 @@ impl Script {
             let team = &game.teams[t];
             let from = game.territory.stations[team.station].name.rsplit(" - ").next().unwrap_or_default().to_string();
             let how = if i == 0 {
-                "Ogni squadra ha il suo **colore**. **Trascina il cono** sull'esagono indicato, oppure **clicca la squadra** e poi l'esagono: vedi strada e tempo prima di decidere. **Esc** annulla."
+                "Ogni squadra ha il suo **colore**. **Trascina l'icona** sull'esagono indicato, oppure **clicca la squadra** e poi l'esagono: vedi strada e tempo prima di decidere. **Esc** annulla."
             } else {
-                "Anche stavolta: trascina il cono sull'esagono indicato, o cliccalo e poi clicca l'esagono."
+                "Anche stavolta: trascina l'icona sull'esagono indicato, o cliccala e poi clicca l'esagono."
             };
             steps.push(Step {
                 text: format!("La {} parte da __{from}__ ({} persone). {how}", team.name, team.crew),

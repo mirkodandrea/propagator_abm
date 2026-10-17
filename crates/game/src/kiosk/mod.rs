@@ -604,4 +604,23 @@ mod scenario_selection_tests {
         assert_eq!(k.territory.game, "medium");
         assert_eq!(k.tutorial_case(), "tutorial");
     }
+
+    #[test]
+    fn demo_orders_get_the_teams_moving() {
+        let data = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let territory = Territory::load(&data).unwrap();
+        let mut sim = Sim::new(&data, &territory.game, 2).unwrap();
+        let mut k = Kiosk::new(territory, data);
+        sim.opening_pause();
+        k.demo_t = 3.0;
+        k.demo_order_at = 2.0;
+        for _ in 0..40 { sim.speed = 300.0; sim.tick(0.1).unwrap(); }
+        demo_orders(&mut k, &mut sim);
+        eprintln!("paused={} t={} log={:?}", sim.paused(), sim.time_s(), sim.log.iter().map(|l| l.text.clone()).collect::<Vec<_>>());
+        let before: Vec<_> = sim.teams.iter().map(|t| sim.crews.units[t.unit].pos).collect();
+        for _ in 0..200 { sim.speed = 300.0; sim.tick(0.1).unwrap(); }
+        let after: Vec<_> = sim.teams.iter().map(|t| sim.crews.units[t.unit].pos).collect();
+        eprintln!("{before:?}\n{after:?}");
+        assert!(before != after);
+    }
 }

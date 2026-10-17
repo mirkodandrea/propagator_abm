@@ -406,6 +406,14 @@ fn auto_pause(k: &mut Kiosk, sim: &mut Sim) {
     }
 }
 
+/// In the game the world runs again as soon as an order is given (user,
+/// 2026-10-17). The tutorial keeps its own «Riprendi» step.
+fn resume_after_order(k: &Kiosk, sim: &mut Sim) {
+    if k.phase == Phase::Gioco && sim.paused() {
+        sim.resume();
+    }
+}
+
 fn select_team(k: &mut Kiosk, sim: &mut Sim, t: usize) {
     if !k.allows(Expect::Select(t)) {
         k.notify(tutorial_hint(k));
@@ -457,7 +465,7 @@ fn give_move(k: &mut Kiosk, sim: &mut Sim, t: usize, at: rocca::Axial) {
     preview_move(k, sim, t, at);
     let result = match k.move_plan.clone() {
         Some(Ok(_)) if !k.allows(Expect::Move(t, at)) => Err(tutorial_hint(k)),
-        Some(Ok(_)) => sim.move_team(t, at).map(|_| ()),
+        Some(Ok(_)) => sim.move_team(t, at).map(|_| resume_after_order(k, sim)),
         Some(Err(e)) => Err(e),
         None => Ok(()),
     };
@@ -690,7 +698,6 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         let unit = &sim.crews.units[sim.teams[t].unit];
         let lost = unit.state == abm::suppression::UnitState::Lost;
         let withdrawing = unit.state == abm::suppression::UnitState::Withdrawing;
-        let engine_at = unit.pos;
         let multi = ctx.input(|i| i.multi_touch().is_some_and(|m| m.num_touches > 1));
         let canceled = ctx.input(|i| i.raw.events.iter().any(|e| matches!(e, egui::Event::Touch { phase: egui::TouchPhase::Cancel, .. })));
         // in danger the badge blinks red; the team then withdraws on its own (`Game::team_in_danger`)
@@ -709,18 +716,6 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         // Keep the active handle alive outside the map until release/cancel;
         // otherwise egui never delivers drag_stopped and the cone stays stuck.
         if compact(ctx) && !drop_rect(ctx, k).intersects(flag) && !k.dragging.is_some_and(|(active, _)| active == t) { continue; }
-        // the danger on the map: a pulsing red ring around the engine itself
-        if alarm {
-            if let Some(e) = screen(cam, sim, engine_at, 20.0) {
-                let phase = ctx.input(|i| (i.time * 1.5).fract()) as f32;
-                let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new(("pericolo", t))));
-                p.circle_stroke(e, 18.0 + 26.0 * phase, egui::Stroke::new(4.0, RED.gamma_multiply(1.0 - phase * 0.7)));
-                p.circle_stroke(e, 14.0, egui::Stroke::new(3.0, RED));
-                if (e - flag.center()).length() > 40.0 {
-                    p.line_segment([flag.center(), e], egui::Stroke::new(2.5, RED));
-                }
-            }
-        }
         let inner = egui::Area::new(egui::Id::new(("bandiera", t))).fixed_pos(flag.min).constrain(false).order(egui::Order::Middle).show(ctx, |ui| {
             let (rect, resp) = ui.allocate_exact_size(flag.size(), egui::Sense::click_and_drag());
             let p = ui.painter();
@@ -970,6 +965,7 @@ fn confirm_bubble(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Came
                     match sim.evacuate(d) {
                         Ok(_) => {
                             k.done(Expect::Evacuate(d));
+                            resume_after_order(k, sim);
                             close = true;
                         }
                         Err(e) => k.notify(e),

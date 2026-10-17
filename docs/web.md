@@ -25,9 +25,9 @@ L'interfaccia compatta si attiva sotto 1000 px di larghezza o 600 px di altezza:
 - apertura, giorno 2, finale e menu scorrono se non entrano nello schermo;
 - il nome usa un campo HTML con tastiera del telefono;
 - un dito sposta la mappa, due dita fanno zoom, rotazione e spostamento;
-- in pausa si trascina un cono, oppure si tocca la squadra e poi l'esagono;
+- in pausa si trascina il badge della squadra, oppure si tocca la squadra e poi l'esagono;
 - durante il trascinamento si vedono percorso, tempo o motivo del rifiuto;
-  tenendo il cono vicino al bordo della mappa, la vista scorre in quella
+  tenendo il badge vicino al bordo della mappa, la vista scorre in quella
   direzione, più rapidamente avvicinandosi al bordo;
   rilasciare su un pannello annulla l'ordine; una gesture annullata o con due
   dita non invia ordini;
@@ -100,7 +100,7 @@ un limite di regressione di 320 MiB. Vegetazione: circa 10.900 piante e 180.000
 triangoli nel profilo web. PNG controllati per tutorial, evacuazione, partita,
 finale e telefono piccolo.
 
-Il test copre anche rilascio sul pannello e `touchCancel`: il cono torna al suo
+Il test copre anche rilascio sul pannello e `touchCancel`: il badge torna al suo
 posto e il gesto successivo funziona. La versione di bevy_egui usata lasciava
 premuto il suo pulsante mouse virtuale dopo `touchCancel`; l'adattatore web lo
 rilascia esplicitamente senza trasformare l'interruzione in un ordine.

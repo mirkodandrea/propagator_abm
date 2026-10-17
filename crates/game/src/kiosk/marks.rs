@@ -398,14 +398,6 @@ pub fn update_orders(
             spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &p.path, ROUTE_M * 1.5, None), mat, OrderMark);
         }
     }
-    // the teams' roads, each in its colour
-    for t in 0..sim.teams.len() {
-        let r = sim.team_route(t);
-        if r.len() >= 2 {
-            spawn(&mut commands, &mut meshes, path_mesh_at(&sim.scn, &r, ROUTE_M * UNDER, None, RING_LIFT_M - 2.0), &assets.under, OrderMark);
-            spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &r, ROUTE_M, None), &assets.team_route[t % TEAM_COLOURS.len()], OrderMark);
-        }
-    }
     // the evacuation: under the pointer or chosen (dashed), and in course
     let hover = kiosk.evac_hover.as_ref().and_then(|(_, _, p)| p.as_ref().ok());
     let dashed = kiosk.evac_plan.as_ref().and_then(|p| p.as_ref().ok()).into_iter().chain(hover).map(|p| (&p.path.points, Some(DASH_M)));

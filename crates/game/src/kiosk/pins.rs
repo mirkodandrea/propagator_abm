@@ -1,13 +1,13 @@
-//! Where each team is assigned: a semi-transparent cone, point down,
-//! floating and bobbing over the road point of its hex (over its station
-//! before the first order). The cone is the order itself: in pause the
+//! Where each team is assigned: a flat semi-transparent ring on the ground
+//! at the road point of its hex (at its station before the first order),
+//! with the egui badge floating over it. The badge is the order itself: in pause the
 //! player drags it to another hex and lets it go there (user, 2026-10-14: no
-//! «Conferma»). The vehicles drive on their own; the cone says only where
+//! «Conferma»). The vehicles drive on their own; the badge says only where
 //! they are sent.
 //!
-//! The cones keep about the same size on screen at any zoom: [`scale`] grows
-//! with the distance from the camera. The egui handle that is dragged sits on
-//! the cone (`ui::team_flags`), so the camera does not pan under it.
+//! The marks keep about the same size on screen at any zoom: [`scale`] grows
+//! with the distance from the camera. The egui handle that is dragged is the
+//! badge (`ui::team_flags`), so the camera does not pan under it.
 
 use bevy::prelude::*;
 use scenario::Pos;
@@ -82,7 +82,7 @@ pub struct PinAssets {
     teams: Vec<Handle<RetroMaterial>>,
 }
 
-/// See-through and bright: the cones must read on any ground without hiding it.
+/// See-through and bright: the rings must read on any ground without hiding it.
 fn glass(c: Color32) -> RetroMaterial {
     let [r, g, b, _] = c.to_array();
     let l = Color::srgb_u8(r, g, b).to_linear();
@@ -108,7 +108,7 @@ pub fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mater
     });
 }
 
-/// One cone per team, placed every frame from the game and the drag.
+/// One ring per team, placed every frame from the game and the drag.
 pub fn update(
     mut commands: Commands,
     sim: Res<Sim>,
@@ -149,7 +149,6 @@ pub fn update(
             continue;
         };
         *vis = Visibility::Inherited;
-        // the ground ring stays put; the cone floats over it, bobbing
         let ground = crate::frame::to_bevy(p, sim.scn.terrain.height_at(p) + crate::rings::RING_LIFT_M);
         *tf = Transform::from_translation(ground).with_scale(Vec3::splat(s));
     }

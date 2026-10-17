@@ -2,9 +2,9 @@
 //! plays: there the pad keeps its own controls, see `mario.rs`).
 //!
 //! The left stick moves a cursor, A is the left button (hold and move to drag
-//! a cone), B is Esc. The right stick pans the map, the triggers zoom, the
+//! a team badge), B is Esc. The right stick pans the map, the triggers zoom, the
 //! bumpers turn it. The cursor is written as ordinary window and mouse events
-//! before the input systems run, so egui, the map click and the cone drag
+//! before the input systems run, so egui, the map click and the badge drag
 //! see no difference from a real mouse.
 
 use bevy::input::keyboard::{Key, KeyboardInput};
