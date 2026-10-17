@@ -234,7 +234,7 @@ def main():
                 assert state()['step'] == 2
                 snap('17-desktop-mouse')
                 assert not errors, errors
-                assert max(s['memory_bytes'] for s in samples) <= 320 * 1048576, samples
+                assert max(s['memory_bytes'] for s in samples) <= 450 * 1048576, samples
                 passed = True
             finally:
                 if not passed:

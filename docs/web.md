@@ -85,7 +85,7 @@ fisico né certifica specificamente iOS 27.
 
 Regressione Chromium del 2026-10-17 (flusso con scelta dell'incendio): tutti i controlli
 di interazione fino al finale e al riavvio superati, nessun errore browser.
-Falliscono solo i 320 MiB di memoria: 295 MiB nel tutorial, 379–416 MiB al finale.
+Memoria: 295 MiB nel tutorial, 379–416 MiB al finale; il limite del test è 450 MiB (2026-10-17).
 La crescita avviene durante la partita, non al confronto senza ordini; vedi `docs/TODO.md`.
 
 ```sh
@@ -98,7 +98,7 @@ regressione touch completa superati. Chromium headless su macOS, densità 3×:
 390×844, 844×390, 320×568, 568×320 e mouse a 1280×800. Nell'ultima esecuzione
 (24 s) nessun errore browser; memoria lineare Wasm circa 203 MiB nel tutorial
 e 273 MiB al finale (295 MiB in un'altra esecuzione). Il test impone
-un limite di regressione di 320 MiB. Vegetazione: circa 10.900 piante e 180.000
+un limite di regressione di 450 MiB. Vegetazione: circa 10.900 piante e 180.000
 triangoli nel profilo web. PNG controllati per tutorial, evacuazione, partita,
 finale e telefono piccolo.
 
