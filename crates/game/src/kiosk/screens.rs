@@ -71,16 +71,16 @@ pub fn title(ctx: &egui::Context, k: &Kiosk, sim: &Sim, logo: Option<&Logo>) -> 
     egui::Area::new(egui::Id::new("titolo_fondo")).fixed_pos(screen.min).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
         let p = ui.painter();
         p.rect_filled(screen, 0.0, Color32::from_black_alpha(70));
-        // darker toward the bottom, where the words are, so the middle of the
-        // screen keeps the fire: one mesh whose vertex opacity rises
-        // smoothly, so the band has no edge and no seams
-        let (h, n) = (560.0f32.min(screen.height()), 32);
+        // two darker bands, where the title and the button are, and clear
+        // between them, so the middle of the screen keeps the fire: one mesh
+        // whose vertex opacity follows two bells, so there is no edge or seam
+        let (h, n) = (800.0f32.min(screen.height()), 64);
         let mut mesh = egui::Mesh::default();
         for i in 0..=n {
             let t = i as f32 / n as f32;
-            let ramp = (std::f32::consts::FRAC_PI_2 * t).sin().powi(2);
-            let y = screen.bottom() - h + h * t;
-            let c = Color32::from_black_alpha((190.0 * ramp) as u8);
+            let bell = (std::f32::consts::TAU * t).sin().powi(2);
+            let y = screen.center().y - h / 2.0 + h * t;
+            let c = Color32::from_black_alpha((170.0 * bell) as u8);
             mesh.colored_vertex(egui::pos2(screen.left(), y), c);
             mesh.colored_vertex(egui::pos2(screen.right(), y), c);
             if i > 0 {
@@ -91,18 +91,22 @@ pub fn title(ctx: &egui::Context, k: &Kiosk, sim: &Sim, logo: Option<&Logo>) -> 
         }
         p.add(egui::Shape::mesh(mesh));
     });
-    egui::Area::new(egui::Id::new("titolo")).anchor(Align2::LEFT_BOTTOM, [56.0, -84.0]).order(egui::Order::Foreground).show(ctx, |ui| {
-        // low on the left: the middle of the screen is the fire's
-        ui.set_width(screen.width().min(620.0));
-        ui.vertical(|ui| {
+    // the title above the middle, the button below it: the fire shows between
+    let off = (screen.height() * 0.2).clamp(120.0, 220.0);
+    egui::Area::new(egui::Id::new("titolo")).anchor(Align2::CENTER_CENTER, [0.0, -off]).order(egui::Order::Foreground).show(ctx, |ui| {
+        ui.set_width(screen.width().min(900.0));
+        ui.vertical_centered(|ui| {
             if let Some(l) = logo {
-                ui.add(egui::Image::new(egui::load::SizedTexture::new(l.0, egui::vec2(48.0, 60.0))));
-                ui.add_space(4.0);
+                ui.add(egui::Image::new(egui::load::SizedTexture::new(l.0, egui::vec2(77.0, 96.0))));
+                ui.add_space(6.0);
             }
-            ui.label(RichText::new(super::TITLE).size(64.0).strong().color(Color32::WHITE));
-            ui.label(RichText::new("Aiutaci a gestire un incendio.").size(24.0).color(AMBER));
-            ui.add_space(22.0);
-            let b = egui::Button::new(RichText::new("Gioca").size(38.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(16.0).min_size(egui::vec2(300.0, 80.0));
+            ui.label(RichText::new(super::TITLE).size(84.0).strong().color(Color32::WHITE));
+            ui.label(RichText::new("Aiutaci a gestire un incendio.").size(26.0).color(AMBER));
+        });
+    });
+    egui::Area::new(egui::Id::new("titolo_gioca")).anchor(Align2::CENTER_CENTER, [0.0, off]).order(egui::Order::Foreground).show(ctx, |ui| {
+        ui.vertical_centered(|ui| {
+            let b = egui::Button::new(RichText::new("Gioca").size(44.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(16.0).min_size(egui::vec2(360.0, 96.0));
             let r = ui.add(b);
             crate::playtest::control("Gioca", &r, true);
             play = super::icons::pointing(r).clicked();
