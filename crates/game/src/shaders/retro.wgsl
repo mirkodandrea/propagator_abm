@@ -75,9 +75,53 @@ fn tuft_layer(wp: vec2<f32>, size: f32, occupancy: f32, r_min: f32, r_max: f32, 
     return best;
 }
 
+// Limestone strata colour from the exact height of the pixel: pale and ochre
+// beds with a thin grey-iron seam, dipping with noise. Drawn per pixel because
+// the same bands per vertex (5 m grid, 14 m beds) alias into vertical streaks
+// on a steep face.
+fn limestone(p: vec3<f32>) -> vec3<f32> {
+    let pale = vec3<f32>(0.64, 0.60, 0.52);
+    let ochre = vec3<f32>(0.62, 0.46, 0.29);
+    let grey = vec3<f32>(0.50, 0.49, 0.46);
+    let dip = value_noise(p.xz / 160.0 + 5.0) * 26.0 + value_noise(p.xz / 38.0 + 9.0) * 5.0;
+    let t = fract((p.y + dip) / 14.0);
+    var c = pale;
+    c = mix(c, ochre, smoothstep(0.30, 0.40, t) - smoothstep(0.62, 0.72, t));
+    c = mix(c, grey, smoothstep(0.88, 0.94, t) - smoothstep(0.96, 1.0, t));
+    return c;
+}
+
+// Rock-face strata: the bed coordinate (a bed is ~1.8 m) and the horizontal
+// tangent of the face, shared by the albedo and the normal.
+fn rock_bed(p: vec3<f32>, nrm: vec3<f32>) -> vec3<f32> {
+    let nh = normalize(nrm.xz + vec2<f32>(1.0e-4));
+    let along = dot(p.xz, vec2<f32>(-nh.y, nh.x));
+    let yy = p.y + value_noise(vec2<f32>(along * 0.04, p.y * 0.05) + 3.0) * 7.0;
+    let bed = value_noise(vec2<f32>(along * 0.10, yy * 0.8));
+    return vec3<f32>(along, yy, yy * 0.55 + bed * 0.7);
+}
+
+// Fluting of a bedded face: each bed shelves outward and overhangs a little,
+// so the sun finds a ledge and a shadow line in every one. Added to the world
+// normal of the terrain on steep ground; fades with pixel size.
+fn rock_bump(p: vec3<f32>, nrm: vec3<f32>) -> vec3<f32> {
+    let steep = (1.0 - smoothstep(0.72, 0.90, nrm.y));
+    let mpp = max(length(dpdx(p)), length(dpdy(p)));
+    let fine = 1.0 - smoothstep(1.2, 4.0, mpp);
+    if steep < 0.01 || fine < 0.01 {
+        return vec3<f32>(0.0);
+    }
+    let b = rock_bed(p, nrm);
+    let f = fract(b.z);
+    let nh = normalize(nrm.xz + vec2<f32>(1.0e-4));
+    let shelf = (smoothstep(0.0, 0.7, f) - smoothstep(0.7, 1.0, f)) - 0.5;
+    let flute = value_noise(vec2<f32>(b.x * 0.9, b.y * 0.3)) - 0.5;
+    return vec3<f32>(nh.x * flute * 0.35, shelf * 0.7, nh.y * flute * 0.35) * steep * fine;
+}
+
 // Terrain only (`enabled.w` = 1): the road network, paving, waterline and
 // meadow, drawn over the ground colour from the distance-field mask.
-fn terrain_albedo(base: vec4<f32>, p: vec3<f32>, mask_s: vec4<f32>, meadow: f32) -> vec4<f32> {
+fn terrain_albedo(base: vec4<f32>, p: vec3<f32>, mask_s: vec4<f32>, meadow: f32, nrm: vec3<f32>) -> vec4<f32> {
     let mask_d = (mask_s.rg * 2.0 - 1.0) * RANGE_M;
     let metres_per_px = max(length(dpdx(p.xz)), length(dpdy(p.xz)));
     // A road never gets thinner than about a pixel and a half, so the
@@ -136,6 +180,37 @@ fn terrain_albedo(base: vec4<f32>, p: vec3<f32>, mask_s: vec4<f32>, meadow: f32)
         rgb = mix(rgb, bed, wet);
     } else {
         rgb = rgb * mix(1.0, 0.80, smoothstep(-3.5, 0.0, sd));
+    }
+
+
+    // Rock faces: bedded limestone. Wavy bedding seams, ashlar-like joints
+    // and tonal beds drawn in the pixel (the 5 m vertex grid cannot hold
+    // them), a wet dark spray band at the foot and a bleached salt line just
+    // above it. Everything fades to the vertex colour once a pixel spans
+    // more than ~3 m, so the far cliffs never shimmer.
+    let steep = (1.0 - smoothstep(0.72, 0.90, nrm.y));
+    if steep > 0.01 && wet < 0.5 {
+        let from_sea = clamp(-sd, 0.0, 127.0);
+        let rock_k = steep * mix(0.45, 1.0, 1.0 - smoothstep(30.0, 120.0, from_sea)) * (1.0 - wet);
+        let fine = 1.0 - smoothstep(1.0, 3.5, metres_per_px);
+        let rb = rock_bed(p, nrm);
+        let along = rb.x;
+        let yy = rb.y;
+        let u = rb.z;
+        let bed = value_noise(vec2<f32>(along * 0.10, yy * 0.8));
+        let seam = smoothstep(0.86, 1.0, abs(fract(u) - 0.5) * 2.0);
+        let joint_off = hash21(vec2<f32>(floor(u), 3.0));
+        let joint = smoothstep(0.93, 1.0, abs(fract(along * 0.45 + joint_off) - 0.5) * 2.0)
+            * (1.0 - smoothstep(0.0, 1.0, abs(fract(u) - 0.5) * 2.0));
+        let tone = 0.80 + 0.34 * bed + 0.10 * (value_noise(vec2<f32>(along * 0.7, yy * 0.25)) - 0.5);
+        var rock = mix(rgb, limestone(p) * (0.94 + 0.12 * value_noise(p.xz * 0.5)), 0.85) * tone * (1.0 - fine * (0.42 * seam + 0.24 * joint));
+        // spray: dark and wet at the foot, salt-bleached above it
+        let edge_n = value_noise(p.xz * 0.35) - 0.5;
+        let spray = 1.0 - smoothstep(0.6, 2.8, p.y + edge_n * 1.6);
+        let salt = smoothstep(2.0, 3.2, p.y + edge_n * 1.2) * (1.0 - smoothstep(3.6, 5.4, p.y + edge_n * 1.2));
+        rock = mix(rock, rock * vec3<f32>(0.46, 0.47, 0.50), spray * 0.8);
+        rock = mix(rock, vec3<f32>(0.92, 0.91, 0.86), salt * 0.30);
+        rgb = mix(rgb, rock, rock_k);
     }
 
     // Paved ground: town squares and yards, as running-bond stones. The
@@ -443,7 +518,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let mask_s = textureSample(road_tex, road_samp, mask_uv);
     let meadow = textureSample(grass_tex, grass_samp, mask_uv).r;
     if retro.enabled.w > 0.5 && retro.enabled.w < 1.5 {
-        pbr_input.material.base_color = terrain_albedo(pbr_input.material.base_color, p, mask_s, meadow);
+        pbr_input.material.base_color = terrain_albedo(pbr_input.material.base_color, p, mask_s, meadow, normalize(in.world_normal));
+        pbr_input.N = normalize(pbr_input.N + rock_bump(p, normalize(in.world_normal)));
     }
 
     if retro.enabled.w > 2.5 {

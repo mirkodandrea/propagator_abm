@@ -47,6 +47,11 @@ fn hash01(x: u64) -> f32 {
     (h >> 40) as f32 / (1u32 << 24) as f32
 }
 
+fn smoothstep01(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
 /// One rock to draw: model, ground point, height of its base, scale, yaw.
 struct Rock {
     model: &'static str,
@@ -172,7 +177,24 @@ fn tile_mesh(rocks: &[&Rock]) -> Mesh {
         for ((p, n), c) in m.positions.iter().zip(&m.normals).zip(&m.colors) {
             pos.push((origin + rot * (Vec3::from(*p) * r.scale)).to_array());
             nor.push((rot * Vec3::from(*n)).to_array());
-            col.push([c[0], c[1], c[2], 1.0]);
+            // Wet at the foot: dark and cool where the spray reaches, bleaching
+            // to the model's own limestone higher up. Sunken blocks and reefs
+            // (base at or under the water) are wet all the way to the top.
+            let height = (p[1] * r.scale).max(0.0);
+            let dry = if r.base < 0.5 { smoothstep01((height + 0.9 + r.base) / 1.8) } else { smoothstep01(height / 1.4) };
+            let wet = [0.26, 0.27, 0.28];
+            let k = 0.35 + 0.65 * dry;
+            let mut c = *c;
+            if r.model == "sea_stack" && c[0] > 0.5 {
+                // beds of ochre and pale with a grey seam, by height
+                let t = (p[1] * r.scale / 3.6 + 0.3 * (p[0] * 0.9 + p[2] * 0.4).sin()).rem_euclid(1.0);
+                let ochre = smoothstep01((t - 0.30) / 0.1) - smoothstep01((t - 0.62) / 0.1);
+                let seam = smoothstep01((t - 0.88) / 0.06) - smoothstep01((t - 0.96) / 0.04);
+                for (i, (o, g)) in [(0.62, 0.50), (0.46, 0.49), (0.29, 0.46)].into_iter().enumerate() {
+                    c[i] = c[i] * 0.86 * (1.0 - ochre) + o * ochre + (g - c[i] * 0.86) * seam * 0.6;
+                }
+            }
+            col.push([c[0] * k + wet[0] * (1.0 - k) * 0.5, c[1] * k + wet[1] * (1.0 - k) * 0.5, c[2] * k + wet[2] * (1.0 - k) * 0.5, 1.0]);
         }
         idx.extend(m.indices.iter().map(|i| start + i));
     }

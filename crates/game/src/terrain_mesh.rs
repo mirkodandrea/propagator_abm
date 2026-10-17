@@ -148,10 +148,11 @@ pub(crate) fn cliff_elev(scn: &Scenario, shore: &ShoreField, p: Pos, elev: f32) 
     let dip = noise(p.x / 160.0, p.y / 160.0, 0x5A) * 26.0 + noise(p.x / 38.0, p.y / 38.0, 0x5B) * 5.0;
     let u = (elev + dip) / 14.0;
     let stair = u.floor() + smooth((u.fract() - 0.25) / 0.5);
-    let ledge = (stair - u) * 14.0 * 0.30;
+    let ledge = (stair - u) * 14.0 * 0.07;
     // crags: ridged noise, so the face has arêtes and gullies, not bumps
-    let ridge = 1.0 - (2.0 * noise(p.x / 9.0, p.y / 9.0, 0x81) - 1.0).abs();
-    let crag = (ridge - 0.5) * 2.2 + (noise(p.x / 23.0, p.y / 23.0, 0x82) - 0.5) * 3.0;
+    // broad, rounded: the 5 m grid turns anything sharper into sawteeth
+    let ridge = noise(p.x / 30.0, p.y / 30.0, 0x81);
+    let crag = (ridge - 0.5) * 0.6 + (noise(p.x / 70.0, p.y / 70.0, 0x82) - 0.5) * 2.4;
     let d = k * (ledge + crag);
     // never carve below the foot of the face
     elev + d.max(-(elev - 1.0) * 0.8)
@@ -193,7 +194,7 @@ fn coast_rock(elev: f32, p: Pos) -> [f32; 3] {
     } else {
         mix3(IRON, PALE, smooth((t - 0.96) / 0.04))
     };
-    let streak = 0.86 + 0.28 * noise(p.x / 4.0, p.y / 30.0, 0x5C);
+    let streak = 0.94 + 0.12 * noise(p.x / 4.0, p.y / 30.0, 0x5C);
     let grain = 0.94 + 0.12 * noise(p.x / 7.0, p.y / 7.0, 0x5D);
     let lit = [band[0] * streak * grain, band[1] * streak * grain, band[2] * streak * grain];
     mix3(lit, WET, (1.0 - elev / 3.5).clamp(0.0, 1.0) * 0.65)

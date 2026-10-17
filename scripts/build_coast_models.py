@@ -107,14 +107,52 @@ def scree():
              [GREY, PALE, OCHRE, GREY, IRON, PALE][i], 20 + i, yaw=rng.random() * 6.28)
 
 
+def column(base, height, radius, lean, color, seed, rings=16, segs=14, crown=.55):
+    """A tapering rock column: rings of noisy radius, leaning, with a ragged
+    flat-ish crown. Z up from `base` (metres), flat-bottomed at z=base."""
+    import math
+    rng = random.Random(seed)
+    bm = bmesh.new()
+    grid = []
+    phase = [rng.random() * 6.28 for _ in range(3)]
+    for i in range(rings + 1):
+        t = i / rings
+        # fat at the foot, waisted, then a blunt crown
+        prof = (1 - t) ** .55 * (1 + .18 * math.sin(t * 7 + phase[0])) * (1 - .35 * t * t)
+        r = radius * max(prof, crown * .12)
+        z = base + height * t
+        cx, cy = lean[0] * t ** 1.4 * height, lean[1] * t ** 1.4 * height
+        ring = []
+        for k in range(segs):
+            a = k / segs * 6.2832
+            n = 1 + .20 * (rng.random() - .5) + .10 * math.sin(a * 3 + phase[1] + t * 5) + .06 * math.sin(a * 5 + phase[2])
+            rz = z + (rng.random() - .5) * height * .02 * (i == rings)
+            ring.append(bm.verts.new((cx + math.cos(a) * r * n * 1.0, cy + math.sin(a) * r * n * .86, rz)))
+        grid.append(ring)
+    for i in range(rings):
+        for k in range(segs):
+            k2 = (k + 1) % segs
+            bm.faces.new((grid[i][k], grid[i][k2], grid[i + 1][k2], grid[i + 1][k]))
+    top = bm.verts.new((grid[-1][0].co.x * 0 + lean[0] * height, lean[1] * height, base + height * 1.02))
+    for k in range(segs):
+        bm.faces.new((grid[-1][k], grid[-1][(k + 1) % segs], top))
+    bm.faces.new(list(reversed(grid[0])))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new("col")
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new("col", me)
+    bpy.context.scene.collection.objects.link(o)
+    link(o, color)
+    return o
+
+
 def sea_stack():
-    """A faraglione: a tall block of strata, wet at the foot, salt-white where
-    the spray dries, a ragged crown."""
-    blob((0, 0, -.5), (4.2, 3.6, 1.6), WET, 30, rough=.18)
-    blob((0, 0, 0), (3.2, 2.8, 5.0), PALE, 31, rough=.16)
-    blob((.2, -.1, 4.2), (2.6, 2.3, 4.6), OCHRE, 32, rough=.18)
-    blob((-.1, .1, 8.0), (2.0, 1.8, 4.0), PALE, 33, rough=.2)
-    blob((-.3, 0, 11.2), (1.1, 1.0, 1.8), GREY, 34, rough=.25)
+    """A faraglione: one tapering column of pale limestone with a lesser spire
+    against it and a wet foot. Strata are tinted at placement by height."""
+    blob((0, 0, -.5), (4.0, 3.4, 1.2), WET, 30, rough=.12)
+    column(-.6, 12.5, 3.0, (.05, .02), PALE, 31)
+    column(-.6, 6.5, 1.6, (-.06, .03), PALE, 32, rings=10, segs=10).location = (2.6, 1.0, 0)
 
 
 def reef():
