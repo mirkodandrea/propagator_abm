@@ -243,6 +243,46 @@ def main():
                 browser.close()
     finally:
         server.shutdown()
-        (args.output / 'report.json').write_text(json.dumps({'browser': args.browser, 'smoke': args.smoke, 'passed': passed, 'seconds': time.monotonic()-started, 'errors': errors, 'samples': samples, 'actions': actions}, ensure_ascii=False, indent=2))
+        report = {'browser': args.browser, 'smoke': args.smoke, 'passed': passed, 'seconds': time.monotonic()-started, 'errors': errors, 'samples': samples, 'actions': actions}
+        (args.output / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
+        write_report(args.output, report)
+        print('Report:', args.output / 'report.html')
+
+def write_report(out, report):
+    """One self-contained report.html: the run's summary and every screenshot, in order."""
+    import base64, html
+    esc = html.escape
+    cards = []
+    for n in report['samples']:
+        png, js = out / f"{n['name']}.png", out / f"{n['name']}.json"
+        if not png.exists(): continue
+        img = base64.b64encode(png.read_bytes()).decode()
+        st = json.loads(js.read_text()) if js.exists() else {}
+        controls = ', '.join(f"{esc(c['label'])}{'' if c['enabled'] else ' (off)'}" for c in st.get('controls', []))
+        cam = st.get('camera', {})
+        rows = [('fase', st.get('phase')), ('passo', st.get('step')), ('atteso', st.get('expect')),
+                ('memoria', f"{n['memory_bytes'] / 1048576:.0f} MiB"), ('schermo', cam.get('pixels')),
+                ('distanza camera', cam.get('distance'))]
+        facts = ''.join(f"<tr><th>{k}</th><td>{esc(str(v))}</td></tr>" for k, v in rows if v is not None)
+        bad = ' bad' if n['name'] == 'failure' else ''
+        cards.append(f"<figure class='card{bad}' id='{esc(n['name'])}'><a href='#{esc(n['name'])}'><img src='data:image/png;base64,{img}' alt='{esc(n['name'])}'></a>"
+                     f"<figcaption><b>{esc(n['name'])}</b><table>{facts}</table><details><summary>controlli</summary>{controls}</details></figcaption></figure>")
+    peak = max((n['memory_bytes'] for n in report['samples']), default=0) / 1048576
+    status = 'SUPERATO' if report['passed'] else 'FALLITO'
+    errors = ''.join(f"<li>{esc(e)}</li>" for e in report['errors']) or '<li>nessuno</li>'
+    toc = ' · '.join(f"<a href='#{esc(n['name'])}'>{esc(n['name'])}</a>" for n in report['samples'] if (out / f"{n['name']}.png").exists())
+    doc = f"""<!doctype html><html lang='it'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Playtest mobile</title><style>
+body{{font:14px system-ui;margin:0;padding:16px;background:#14171c;color:#e8e8e8}}
+h1{{margin:0 0 8px}} .ok{{color:#6fdc8c}} .ko{{color:#ff7a7a}} a{{color:#8ab4ff}}
+.grid{{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;margin-top:16px}}
+.card{{margin:0;background:#1e232b;border:1px solid #333;border-radius:10px;padding:10px;max-width:min(100%,860px)}}
+.card.bad{{border-color:#ff7a7a}} img{{max-width:100%;height:auto;border-radius:6px;display:block}}
+th{{text-align:left;color:#9aa;padding-right:10px;font-weight:normal}} table{{margin:6px 0}} summary{{cursor:pointer;color:#9aa}}
+</style><h1>Playtest mobile <span class='{'ok' if report['passed'] else 'ko'}'>{status}</span></h1>
+<p>Browser: {esc(report['browser'])}{' (smoke)' if report['smoke'] else ''} · {report['seconds']:.0f} s · picco memoria Wasm {peak:.0f} MiB · {len(report['samples'])} immagini</p>
+<p>Errori del browser:</p><ul>{errors}</ul><p>{toc}</p><div class='grid'>{''.join(cards)}</div></html>"""
+    (out / 'report.html').write_text(doc)
+
 
 if __name__ == '__main__': main()

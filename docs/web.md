@@ -118,7 +118,7 @@ Il test usa eventi touch, viewport 390×844 e 844×390 a densità 3×, poi 320×
 Controlla anche il mouse a 1280×800.
 Controlla nome con tastiera HTML, tutorial, selezione con due tocchi, drag-and-drop,
 evacuazione, zoom, orientamento, finale e riavvio. Salva PNG, osservazioni e
-`report.json` in `out/playtest/mobile`. La memoria registrata è la capacità della
+`report.json` in `out/playtest/mobile`, più **`report.html`**: un file solo, con tutte le immagini incorporate nell'ordine del test, fase, passo e memoria di ciascuna, e l'esito (da aprire nel browser per ispezionare). La memoria registrata è la capacità della
 memoria lineare Wasm, non la RAM totale del browser/GPU. L'emulazione desktop
 non sostituisce una prova su Safari iOS e Chrome Android su dispositivi reali.
 
