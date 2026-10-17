@@ -106,3 +106,19 @@ fn the_group_chat_tells_only_what_helps_to_decide() {
     let same = |a: &rocca::ChatMsg, b: &rocca::ChatMsg| a.who == b.who && a.kind == b.kind && a.text == b.text;
     assert!(!g.chat.windows(2).any(|w| same(&w[0], &w[1])), "no line twice in a row");
 }
+
+#[test]
+fn the_forecast_arrival_time_agrees_with_its_zones() {
+    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+    let mut g = Game::new(&data, "medium", 1).unwrap();
+    g.run_until(40 * 60).unwrap();
+    g.pause().unwrap();
+    let f = g.forecast().unwrap();
+    assert_eq!(f.eta_s.len(), f.rows * f.cols);
+    for h in 0..rocca::forecast::HORIZONS {
+        for i in 0..f.eta_s.len() {
+            assert_eq!(f.likely(h, i), f.eta_s[i] <= rocca::forecast::HORIZONS_S[h] as f32, "cell {i}, horizon {h}");
+        }
+    }
+    assert!(f.eta_s.iter().any(|t| t.is_finite() && *t > 0.0));
+}

@@ -175,7 +175,7 @@ pub fn update(
                 }
                 commands.spawn((
                     MaterialMeshBundle::<crate::forecast_zone::ZoneMaterial> {
-                        mesh: meshes.add(crate::forecast_zone::grid_mesh(&sim.scn, &all)),
+                        mesh: meshes.add(crate::forecast_zone::grid_mesh(&sim.scn, &all, &f.eta_s)),
                         material: materials.add(crate::forecast_zone::ZoneMaterial::new(LINES)),
                         ..default()
                     },

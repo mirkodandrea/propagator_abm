@@ -7,7 +7,7 @@
 
 #import bevy_pbr::{
     mesh_functions,
-    mesh_view_bindings::view,
+    mesh_view_bindings::{view, globals},
     view_transformations::position_world_to_clip,
 }
 
@@ -25,11 +25,13 @@ struct Vertex {
     @builtin(instance_index) instance_index: u32,
     @location(0) position: vec3<f32>,
     @location(2) uv: vec2<f32>,
+    @location(3) eta: vec2<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) dist: vec2<f32>,
+    @location(1) eta: f32,
 };
 
 @vertex
@@ -42,22 +44,38 @@ fn vertex(v: Vertex) -> VertexOutput {
     var out: VertexOutput;
     out.clip_position = position_world_to_clip(w);
     out.dist = v.uv;
+    out.eta = v.eta.x;
     return out;
 }
 
+// The fill breathes: a wave of opacity runs along the fire's spread, on the
+// wall clock (the world is stopped in the pause, which is when the forecast
+// has to catch the eye). Its phase is the forecast's arrival time (minutes
+// after issue, the median of the members), so the crests travel where the
+// fire is expected to go, spaced by how fast: tight where it is slow.
+// `hz`: waves per second; `PERIOD_MIN`: minutes of arrival between crests.
+const PERIOD_MIN: f32 = 10.0;
+const WAVE_DEPTH: f32 = 0.45;
+const WAVE_HZ: f32 = 0.5;
+fn breath(eta: f32) -> f32 {
+    let phase = 6.2831853 * (globals.time * WAVE_HZ - eta / PERIOD_MIN);
+    return 1.0 + WAVE_DEPTH * sin(phase);
+}
+
 // One zone: its fill, and the line along its contour (premultiplied).
-fn layer(d: f32, colour: vec4<f32>) -> vec4<f32> {
+fn layer(d: f32, colour: vec4<f32>, wave: f32) -> vec4<f32> {
     let fw = max(fwidth(d), 1e-3);
     let inside = smoothstep(-0.75, 0.75, d / fw);
     let line = (1.0 - smoothstep(0.6, 1.6, abs(d) / fw)) * zone.line.x;
-    let a = max(inside * colour.a, line);
+    let a = max(inside * colour.a * wave, line);
     return vec4<f32>(colour.rgb * a, a);
 }
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    let far = layer(in.dist.y, zone.far);
-    let near = layer(in.dist.x, zone.near);
+    let wave = breath(in.eta);
+    let far = layer(in.dist.y, zone.far, wave);
+    let near = layer(in.dist.x, zone.near, wave);
     // +1 h over +3 h, premultiplied
     let c = near + far * (1.0 - near.a);
     if c.a < 0.003 {

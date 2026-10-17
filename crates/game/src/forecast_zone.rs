@@ -123,8 +123,9 @@ fn signed_distance(loops: &[Vec<Pos>], p: Pos) -> f32 {
 }
 
 /// A grid over the whole world, draped on the terrain, with the distances to
-/// each horizon's lines in the first texture coordinates.
-pub fn grid_mesh(scn: &Scenario, lines: &[Vec<Vec<Pos>>; HORIZONS]) -> Mesh {
+/// each horizon's lines in the first texture coordinates and the arrival time
+/// (minutes after issue) in the second's x.
+pub fn grid_mesh(scn: &Scenario, lines: &[Vec<Vec<Pos>>; HORIZONS], eta_s: &[f32]) -> Mesh {
     let (w, h) = (scn.world.width_m, scn.world.height_m);
     let (nx, ny) = ((w / GRID_M).ceil() as usize, (h / GRID_M).ceil() as usize);
     // where a line is near at all
@@ -139,11 +140,30 @@ pub fn grid_mesh(scn: &Scenario, lines: &[Vec<Vec<Pos>>; HORIZONS]) -> Mesh {
         }
         any.then_some((lo, hi))
     });
+    // the forecast's arrival time at a point, minutes after issue, bilinear
+    // between the fire cells' centres; what never burns counts as the last horizon
+    let world = scn.world;
+    let last = rocca::forecast::HORIZONS_S[HORIZONS - 1] as f32;
+    let cell = |r: i64, c: i64| {
+        let (r, c) = (r.clamp(0, world.fire_rows as i64 - 1), c.clamp(0, world.fire_cols as i64 - 1));
+        eta_s.get(r as usize * world.fire_cols + c as usize).map_or(last, |t| t.min(last))
+    };
+    let eta_min = |p: Pos| {
+        let (fc, fr) = (p.x / world.cellsize - 0.5, (world.height_m - p.y) / world.cellsize - 0.5);
+        let (c0, r0) = (fc.floor(), fr.floor());
+        let (tc, tr) = (fc - c0, fr - r0);
+        let (c0, r0) = (c0 as i64, r0 as i64);
+        let top = cell(r0, c0) * (1.0 - tc) + cell(r0, c0 + 1) * tc;
+        let bottom = cell(r0 + 1, c0) * (1.0 - tc) + cell(r0 + 1, c0 + 1) * tc;
+        (top * (1.0 - tr) + bottom * tr) / 60.0
+    };
+    let mut etas: Vec<[f32; 2]> = Vec::new();
     let mut positions = Vec::with_capacity((nx + 1) * (ny + 1));
     let mut dists = Vec::with_capacity(positions.capacity());
     for j in 0..=ny {
         for i in 0..=nx {
             let p = Pos { x: (i as f32 * GRID_M).min(w), y: (j as f32 * GRID_M).min(h) };
+            etas.push([eta_min(p), 0.0]);
             positions.push([p.x, scn.terrain.height_at(p) + LIFT_M, -p.y]);
             let d: [f32; HORIZONS] = std::array::from_fn(|k| match boxes[k] {
                 Some((lo, hi)) if p.x > lo.x - REACH_M && p.x < hi.x + REACH_M && p.y > lo.y - REACH_M && p.y < hi.y + REACH_M => {
@@ -171,6 +191,7 @@ pub fn grid_mesh(scn: &Scenario, lines: &[Vec<Vec<Pos>>; HORIZONS]) -> Mesh {
     m.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     m.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     m.insert_attribute(Mesh::ATTRIBUTE_UV_0, dists);
+    m.insert_attribute(Mesh::ATTRIBUTE_UV_1, etas);
     m.insert_indices(Indices::U32(indices));
     m
 }

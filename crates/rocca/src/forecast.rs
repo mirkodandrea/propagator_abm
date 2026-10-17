@@ -55,6 +55,11 @@ pub struct Forecast {
     pub cols: usize,
     /// `[+1 h, +3 h]`, row-major on the fire grid (row 0 north), 0-1.
     pub prob: [Vec<f32>; HORIZONS],
+    /// Per fire cell, the second after issue by which half the members have
+    /// burnt it (the median arrival; 0 where it burns already), infinite
+    /// where that is not within the last horizon. `eta_s <= HORIZONS_S[h]`
+    /// is exactly [`Forecast::likely`] for `h`.
+    pub eta_s: Vec<f32>,
 }
 
 impl Forecast {
@@ -78,6 +83,9 @@ pub struct Job {
     members: Vec<Member>,
     done: usize,
     counts: [Vec<u16>; HORIZONS],
+    /// Each finished member's arrival times, seconds after the snapshot
+    /// (`i32::MAX`: not burnt).
+    arrivals: Vec<Vec<i32>>,
 }
 
 /// splitmix64: a few good bits from a seed, no dependency.
@@ -142,7 +150,7 @@ impl Game {
             })
             .collect();
         let n = snapshot.rows * snapshot.cols;
-        Ok(Job { epoch, snapshot, members, done: 0, counts: std::array::from_fn(|_| vec![0; n]) })
+        Ok(Job { epoch, snapshot, members, done: 0, counts: std::array::from_fn(|_| vec![0; n]), arrivals: vec![] })
     }
 
     /// The forecast due now, computed here (headless; the kiosk runs
@@ -172,6 +180,7 @@ impl Job {
 
     fn add(&mut self, arrival: &[i32]) {
         let t0 = self.snapshot.time_s;
+        self.arrivals.push(arrival.iter().map(|&t| if t == i32::MIN { i32::MAX } else { (t as i64 - t0).clamp(0, i32::MAX as i64) as i32 }).collect());
         for (h, &dt) in HORIZONS_S.iter().enumerate() {
             let until = (t0 + dt) as i32;
             for (c, &t) in self.counts[h].iter_mut().zip(arrival) {
@@ -218,7 +227,25 @@ impl Job {
     pub fn finish(self) -> Forecast {
         let n = self.done.max(1) as f32;
         let p = |c: Vec<u16>| c.into_iter().map(|c| c as f32 / n).collect();
+        // the first cell-wise `ceil(LIKELY * n)` arrivals decide: the median
+        let k = ((LIKELY * self.done as f32).ceil() as usize).clamp(1, self.done.max(1)) - 1;
+        let cells = self.counts[0].len();
+        let mut at = Vec::with_capacity(self.done);
+        let eta_s = (0..cells)
+            .map(|i| {
+                at.clear();
+                at.extend(self.arrivals.iter().map(|a| a[i]));
+                match at.len() {
+                    0 => f32::INFINITY,
+                    _ => {
+                        let t = *at.select_nth_unstable(k).1;
+                        if t as i64 <= LAST_S { t as f32 } else { f32::INFINITY }
+                    }
+                }
+            })
+            .collect();
         Forecast {
+            eta_s,
             epoch: self.epoch,
             issued_s: self.snapshot.time_s,
             members: self.done,
