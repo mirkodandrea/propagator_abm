@@ -56,17 +56,8 @@ fn volunteer(ui: &mut egui::Ui, faces: Option<&Portraits>, mood: Mood, size: f32
 /// only the name and «Gioca». True when «Gioca» was pressed.
 pub fn title(ctx: &egui::Context, k: &Kiosk, sim: &Sim, logo: Option<&Logo>) -> bool {
     let screen = ctx.screen_rect();
-    if super::ui::compact(ctx) {
-        let mut play = false;
-        compact_page(ctx, "titolo_mobile", |ui| {
-            ui.heading(super::TITLE);
-            ui.label("Aiutaci a gestire un incendio.");
-            ui.add_space(12.0);
-            play = action(ui, "Gioca");
-            ui.label("Trascina la mappa con un dito. Usa due dita per zoom e rotazione.");
-        });
-        return play;
-    }
+    // phones get the same screen, scaled down to the width
+    let sc = (screen.width() / 1000.0).clamp(0.4, 1.0).min((screen.height() / 560.0).max(0.4));
     let mut play = false;
     egui::Area::new(egui::Id::new("titolo_fondo")).fixed_pos(screen.min).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
         let p = ui.painter();
@@ -92,28 +83,28 @@ pub fn title(ctx: &egui::Context, k: &Kiosk, sim: &Sim, logo: Option<&Logo>) -> 
         p.add(egui::Shape::mesh(mesh));
     });
     // the title above the middle, the button below it: the fire shows between
-    let off = (screen.height() * 0.2).clamp(120.0, 220.0);
+    let off = (screen.height() * 0.2).clamp(120.0 * sc, 220.0);
     egui::Area::new(egui::Id::new("titolo")).anchor(Align2::CENTER_CENTER, [0.0, -off]).order(egui::Order::Foreground).show(ctx, |ui| {
-        ui.set_width(screen.width().min(900.0));
+        ui.set_width((screen.width() - 24.0).min(900.0));
         ui.vertical_centered(|ui| {
             if let Some(l) = logo {
-                ui.add(egui::Image::new(egui::load::SizedTexture::new(l.0, egui::vec2(77.0, 96.0))));
+                ui.add(egui::Image::new(egui::load::SizedTexture::new(l.0, egui::vec2(77.0 * sc, 96.0 * sc))));
                 ui.add_space(6.0);
             }
-            ui.label(RichText::new(super::TITLE).size(84.0).strong().color(Color32::WHITE));
-            ui.label(RichText::new("Aiutaci a gestire un incendio.").size(26.0).color(AMBER));
+            ui.label(RichText::new(super::TITLE).size(84.0 * sc).strong().color(Color32::WHITE));
+            ui.label(RichText::new("Aiutaci a gestire un incendio.").size(26.0 * sc.max(0.6)).color(AMBER));
         });
     });
     egui::Area::new(egui::Id::new("titolo_gioca")).anchor(Align2::CENTER_CENTER, [0.0, off]).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.vertical_centered(|ui| {
-            let b = egui::Button::new(RichText::new("Gioca").size(44.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(16.0).min_size(egui::vec2(360.0, 96.0));
+            let b = egui::Button::new(RichText::new("Gioca").size(44.0 * sc.max(0.7)).strong().color(Color32::BLACK)).fill(AMBER).rounding(16.0).min_size(egui::vec2(360.0 * sc.max(0.7), 96.0 * sc.max(0.6)));
             let r = ui.add(b);
             crate::playtest::control("Gioca", &r, true);
             play = super::icons::pointing(r).clicked();
         });
     });
     egui::Area::new(egui::Id::new("titolo_nota")).anchor(Align2::RIGHT_BOTTOM, [-18.0, -14.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
-        ui.label(RichText::new(format!("Simulazione dimostrativa · {} · versione {}", k.territory.levels.iter().find(|l| l.case == sim.case.name).map_or(sim.case.name.as_str(), |l| l.name.as_str()), super::BUILD)).size(14.0).color(GREY.gamma_multiply(0.75)));
+        ui.label(RichText::new(format!("Simulazione dimostrativa · {} · versione {}", k.territory.levels.iter().find(|l| l.case == sim.case.name).map_or(sim.case.name.as_str(), |l| l.name.as_str()), super::BUILD)).size(14.0 * sc.max(0.7)).color(GREY.gamma_multiply(0.75)));
     });
     ctx.request_repaint();
     play

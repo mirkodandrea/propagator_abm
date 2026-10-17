@@ -22,6 +22,7 @@ L'interfaccia compatta si attiva sotto 1000 px di larghezza o 600 px di altezza:
 
 - vista iniziale dall'alto (nadirale), nord in alto e zoom ampio sull'incendio;
 - verticale: istruzioni in basso; orizzontale: tutorial a destra, mappa a sinistra;
+- la schermata del titolo è quella del desktop (logo, titolo, sottotitolo, «Gioca»), in scala sulla larghezza;
 - apertura, giorno 2, finale e menu scorrono se non entrano nello schermo;
 - il nome usa un campo HTML con tastiera del telefono;
 - un dito sposta la mappa, due dita fanno zoom, rotazione e spostamento;
