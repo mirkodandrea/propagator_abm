@@ -14,6 +14,7 @@ ground. The rocca's gate faces +X, a boat's bow points +X.
 """
 import bpy
 import json
+import os
 import math
 from pathlib import Path
 from mathutils import Vector, Matrix
@@ -179,7 +180,7 @@ RNG = random.Random(11)
 IVY_P = .22
 CREN_P = 1.0
 HALF = 31.0          # the curtain wall's half width: `LANDMARKS["rocca"]["wall_half_m"]` in island.py
-WALL_H, WALL_T = 11.0, 3.0
+WALL_H, WALL_T = 11.0, 4.2
 
 
 def prism(verts, faces, color, centre):
@@ -393,15 +394,16 @@ def torrione(c, r, ctrl, scarp=8.0, windows=(), moss=True):
     """A round tower broken high and low round its circle: where the wall has
     gone you see the hollow inside (dark inner face) and the stub of its stair."""
     x, y = c
+    ctrl = [ctrl[int(k * len(ctrl) / 12) % len(ctrl)] * RNG.uniform(.8, 1.08) for k in range(12)]
     n = len(ctrl)
-    cyl((x, y, 0), r * 1.25, scarp, STONE_D, 14, top=r * 1.03)
-    cyl((x, y, 0), r * .9, min(ctrl) * .8, DARK, 14)                  # the hollow inside shows dark
+    cyl((x, y, 0), r * 1.32, scarp * 1.4, STONE_D, 14, top=r * 1.12)
+    cyl((x, y, 0), r * .66, min(ctrl) * .8, DARK, 14)                  # the hollow inside shows dark
     for i in range(n):
         tm = 2 * math.pi * (i + .5) / n
         l = 2 * r * math.sin(math.pi / n) * 1.06
         h = ctrl[i]
         heights = [max(1.5, h + RNG.uniform(-1.0, .8)) for _ in range(4)]
-        rough_block(x + math.cos(tm) * r, y + math.sin(tm) * r, l, 2.5, heights, tm + math.pi / 2, STONE)
+        rough_block(x + math.cos(tm) * r, y + math.sin(tm) * r, l, 4.4, heights, tm + math.pi / 2, STONE)
         if h < 6:
             rubble(x + math.cos(tm) * (r + 3.2), y + math.sin(tm) * (r + 3.2), 3.0, 3, big=2.2)
         if RNG.random() < .55 and h > 4:
@@ -457,15 +459,15 @@ def rocca():
     rubble(HALF + 5, HALF + 5, 9, 16, big=3.0)
     # --- the mastio: a square keep, broken stepwise, empty window holes, no floors left
     kx, ky, ks = -10.0, 3.0, 8.2
-    ruined_wall((kx - ks, ky - ks), (kx + ks, ky - ks), [30, 30, 28, 23, 17, 9, 6], 2.6, scarp=False, window=True)
-    ruined_wall((kx + ks, ky - ks), (kx + ks, ky + ks), [6, 5, 12, 20, 16, 9], 2.6, scarp=False, window=True)
-    ruined_wall((kx + ks, ky + ks), (kx - ks, ky + ks), [9, 18, 27, 31, 30, 29, 27], 2.6, scarp=False, window=True)
-    ruined_wall((kx - ks, ky + ks), (kx - ks, ky - ks), [27, 30, 31, 29, 30, 30], 2.6, scarp=False, window=True)
+    ruined_wall((kx - ks, ky - ks), (kx + ks, ky - ks), [30, 30, 28, 23, 17, 9, 6], 3.8, scarp=False, window=True)
+    ruined_wall((kx + ks, ky - ks), (kx + ks, ky + ks), [6, 5, 12, 20, 16, 9], 3.8, scarp=False, window=True)
+    ruined_wall((kx + ks, ky + ks), (kx - ks, ky + ks), [9, 18, 27, 31, 30, 29, 27], 3.8, scarp=False, window=True)
+    ruined_wall((kx - ks, ky + ks), (kx - ks, ky - ks), [27, 30, 31, 29, 30, 30], 3.8, scarp=False, window=True)
     frustum(kx, ky, 0, 4.2, (2 * ks + 7.0, 2 * ks + 7.0), (2 * ks + 1.4, 2 * ks + 1.4), 0.0, CRAG_D)
     rubble(kx + ks + 4, ky - 3, 8.5, 16, big=3.2)                      # what fell from its broken south-east corner
     scrub(kx, ky, 3.0, 3.5)                                             # the keep's floor is a thicket
     # --- the palazzo: one blind façade standing, windows empty, nothing behind it
-    ruined_wall((-27.0, 22.0), (-7.0, 22.0), [10.5, 11.0, 9.0, 6.0, 3.0, 2.2], 2.2, scarp=False, crenel=False, window=True)
+    ruined_wall((-27.0, 22.0), (-7.0, 22.0), [10.5, 11.0, 9.0, 6.0, 3.0, 2.2], 3.2, scarp=False, crenel=False, window=True)
     # --- the arcade, two arches left and no beam above
     ax, ay = 14.0, -17.0
     for i in range(3):
@@ -511,7 +513,7 @@ def peak_radius(t):
     """Where the rock meets the ground, by bearing from the summit: wide and gentle on the
     east (the way up), short and sheer on the west (the cliff side), fractal throughout."""
     west = .5 - .5 * math.cos(t)
-    return (58.0 + 18.0 * _PEAK_EDGE(t)) * (1 - .2 * west)
+    return (68.0 + 14.0 * _PEAK_EDGE(t)) * (1 - .17 * west)
 
 
 def ground_h(x, y):
@@ -544,9 +546,31 @@ def conform_to_peak():
         zs = [v.co.z for v in me.vertices]
         zmin, zmax = min(zs), max(zs)
         grounded = zmin < .05 and zmax - zmin > 3.0
+        on_ground = zmin < 1.0
+        if grounded:
+            # the foot goes down to the lowest rock anywhere under the object (sampled over
+            # its footprint), so a step in the ledges can never leave the base in the air
+            foot = [v.co for v in me.vertices if v.co.z - zmin < .05]
+            x0, x1 = min(c.x for c in foot), max(c.x for c in foot)
+            y0, y1 = min(c.y for c in foot), max(c.y for c in foot)
+            low = min(max(ground_h(x0 + (x1 - x0) * i / 4, y0 + (y1 - y0) * j / 4), -1.0) for i in range(5) for j in range(5))
+        extent = max(max(v.co.x for v in me.vertices) - min(v.co.x for v in me.vertices), max(v.co.y for v in me.vertices) - min(v.co.y for v in me.vertices))
+        rigid = grounded and extent >= 9.0          # a tower, the bastion, a scarp: moved whole, not sheared
         for v in me.vertices:
-            v.co.z += ground_h(v.co.x, v.co.y) - (1.8 if grounded and v.co.z - zmin < .05 else 0.0) + (.15 if not grounded else 0.0)
+            if rigid:
+                v.co.z += low - 1.8
+            elif grounded and v.co.z - zmin < .05:
+                v.co.z += low - 1.8
+            else:
+                v.co.z += max(ground_h(v.co.x, v.co.y), -1.0) + (.15 if not grounded else 0.0)
         me.update()
+        if os.environ.get("DIAG"):
+            me.calc_loop_triangles()
+            gap = [max(0.0, (sum(me.vertices[i].co.z for i in t.vertices) / 3) - ground_h(*[sum(me.vertices[i].co[k] for i in t.vertices) / 3 for k in (0, 1)]))
+                   for t in me.loop_triangles if t.normal.z < -.5]
+            if on_ground and gap and min(gap) > .8:
+                c = o.matrix_world.translation
+                print("FLOATING", round(min(gap), 1), o.name, [round(min(v.co[k] for v in me.vertices)) for k in (0, 1, 2)], [round(max(v.co[k] for v in me.vertices)) for k in (0, 1, 2)])
 
 
 def crag_mound():

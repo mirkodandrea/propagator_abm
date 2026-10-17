@@ -121,7 +121,8 @@ KIOSK_WINDOWED=1 KIOSK_SIZE=1600x1000 KIOSK_SCALE=1 KIOSK_SNAP=<cartella> KIOSK_
   - `team=<n>`, con `hex=<x>:<y>` per l'anteprima dello spostamento;
   - `select=<borgo>`: l'anteprima dell'evacuazione;
   - `at`: `home`, `fire`, `district:<nome>`, `team:<n>` oppure `x:y`;
-  - `dist`, `yaw`, `pitch`: l'inquadratura.
+  - `dist`, `yaw`, `pitch`: l'inquadratura;
+  - `ui=0`, `marks=0`, `iso=0`: spengono interfaccia, segni sulla mappa e isocrone. **Per gli snapshot di un elemento della scena vanno sempre messi.**
 - Il mondo resta fermo allo scatto. Il tempo va solo avanti: un `t` minore del precedente rifà la partita da capo.
 - **Dopo un avvio con `KIOSK_SNAP` guardare sempre l'immagine** (Read).
 

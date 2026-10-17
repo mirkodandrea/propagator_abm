@@ -454,9 +454,12 @@ fn rock_albedo(base: vec4<f32>, p: vec3<f32>, nrm: vec3<f32>) -> vec4<f32> {
     let joint = smoothstep(0.93, 1.0, abs(fract(along * 0.45 + joint_off) - 0.5) * 2.0)
         * (1.0 - smoothstep(0.0, 1.0, abs(fract(u) - 0.5) * 2.0));
     let tone = 0.80 + 0.34 * bed + 0.10 * (value_noise(vec2<f32>(along * 0.7, yy * 0.25)) - 0.5);
-    let tint = base.rgb / max(dot(base.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.05) * 0.5 + vec3<f32>(0.5);
-    var rock = limestone(p) * (0.94 + 0.12 * value_noise(p.xz * 0.5)) * tone * (1.0 - fine * (0.42 * seam + 0.24 * joint));
-    rock = rock * mix(vec3<f32>(1.0), tint, 0.35) * (0.62 + 0.55 * dot(base.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)));
+    // the baked colour sets the brightness (warm grey, darker than the terrain's pale
+    // faces and the ochre masonry); the limestone beds only modulate it, relative to
+    // their mean, so the bands line up with the mountain's without its glare
+    let beds = limestone(p) / vec3<f32>(0.59, 0.54, 0.45);
+    var rock = base.rgb * 1.55 * mix(vec3<f32>(1.0), beds, 0.85) * (0.94 + 0.12 * value_noise(p.xz * 0.5)) * tone
+             * (1.0 - fine * (0.42 * seam + 0.24 * joint)) * vec3<f32>(1.0, 0.95, 0.88);
     // a little lichen and dust on the upward faces
     let lichen = smoothstep(0.55, 0.8, value_noise(p.xz * 0.6 + 11.0)) * smoothstep(0.5, 0.9, n.y);
     rock = mix(rock, rock * vec3<f32>(0.82, 0.93, 0.62), lichen * 0.45);
