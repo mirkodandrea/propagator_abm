@@ -158,7 +158,7 @@
     }
   ],
   "evacuation": {
-    "per_min": 20.0,
+    "per_min": 6.0,
     "prep_min": 5.0,
     "refuges": [
       {"district": "Castelvento", "name": "il pianoro a nord-ovest", "pos": [3265, 6249]},

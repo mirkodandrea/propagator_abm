@@ -55,7 +55,7 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
 - **Un borgo alla volta.** Il successivo si può evacuare quando l'ultima famiglia del borgo precedente è partita.
 - **Passando sopra il borgo** il gioco mostra già il **percorso** (tratteggiato) verso l'area sicura più vicina fuori dal borgo e il **tempo**: fino all'arrivo dell'ultima famiglia all'area sicura, cioè preparazione (5 min), partenze e viaggio. Si mostrano solo persone e minuti, senza le parti né la destinazione (2026-10-14, semplificazione). Poi si clicca il borgo e si preme «Evacua» nel riquadro.
 - **Aree di raccolta scelte a mano** (2026-10-14): ogni borgo (tranne Le Ghiande) ha la sua, facile da raggiungere e fuori dal bosco del valico (`evacuation.refuges` in `game.json`, elenco in `02-TERRITORIO.md`). Se la strada è chiusa dal fuoco, o il borgo non ne ha una, vale l'area sicura automatica più vicina. Senza l'elenco il meccanismo è inerte.
-- **Limite rigido:** al massimo **20 persone al minuto** escono dal borgo (`evacuation.per_min`). Le famiglie più vicine al punto di partenza partono per prime. In auto si viaggia a 8 m/s.
+- **Limite rigido:** al massimo **6 persone al minuto** escono dal borgo (`evacuation.per_min`). Le famiglie più vicine al punto di partenza partono per prime. In auto si viaggia a 8 m/s.
 - **Strade chiuse dal fuoco:** sono segnate in rosso sulla mappa. Ogni minuto il percorso viene ricontrollato.
   - Se il fuoco taglia la strada, si cerca un altro percorso.
   - Se non ce n'è nessuno, l'evacuazione si **interrompe** e chi è ancora a casa passa in **autoprotezione**.
