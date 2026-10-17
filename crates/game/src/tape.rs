@@ -11,7 +11,8 @@ const TAPE_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x7A3E_51C2_0B
 #[derive(Asset, AsBindGroup, TypePath, Clone)]
 pub struct TapeMaterial {
     /// x = 1: the soft variant, a thin dashed line for the part of a closed
-    /// stretch that vehicles can still drive.
+    /// stretch that vehicles can still drive. y: saturation gain of the
+    /// tactical view (`tactical.rs`), 0 = as drawn.
     #[uniform(0)]
     pub mode: Vec4,
 }

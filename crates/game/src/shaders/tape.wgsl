@@ -31,6 +31,12 @@ fn vertex(v: Vertex) -> VertexOutput {
 
 @group(2) @binding(0) var<uniform> mode: vec4<f32>;
 
+// Tactical view: saturation gain in mode.y, 0 = the colour as given.
+fn sat(c: vec3<f32>) -> vec3<f32> {
+    let luma = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    return clamp(mix(vec3<f32>(luma), c, 1.0 + mode.y), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 const WIDTH_M: f32 = 9.6;
 const PERIOD_M: f32 = 16.0;
 
@@ -42,7 +48,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         if abs(in.uv.y - 0.5) > 0.12 || fract(in.uv.x / 14.0) > 0.55 {
             discard;
         }
-        return vec4<f32>(0.55, 0.02, 0.01, 1.0);
+        return vec4<f32>(sat(vec3<f32>(0.55, 0.02, 0.01)), 1.0);
     }
     let across = (in.uv.y - 0.5) * WIDTH_M;
     // diagonal bands, drifting along the road
@@ -54,5 +60,5 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     col = mix(col, vec3<f32>(0.03, 0.0, 0.0), edge);
     // slow pulse, rolling along the road
     col *= 0.88 + 0.12 * sin(t * 2.4 - in.uv.x * 0.02);
-    return vec4<f32>(col, 1.0);
+    return vec4<f32>(sat(col), 1.0);
 }

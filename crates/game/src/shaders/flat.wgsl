@@ -12,7 +12,8 @@
 
 struct Flat {
     color: vec4<f32>,
-    // x: pull as a fraction of the distance, y: at least, z: at most (metres)
+    // x: pull as a fraction of the distance, y: at least, z: at most (metres),
+    // w: saturation gain (tactical view), 0 = the colour as given
     pull: vec4<f32>,
 };
 @group(2) @binding(0) var<uniform> flat: Flat;
@@ -40,5 +41,7 @@ fn vertex(v: Vertex) -> VertexOutput {
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    return flat.color;
+    let luma = dot(flat.color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let rgb = clamp(mix(vec3<f32>(luma), flat.color.rgb, 1.0 + flat.pull.w), vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(rgb, flat.color.a);
 }

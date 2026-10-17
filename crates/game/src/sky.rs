@@ -119,7 +119,7 @@ pub struct Sun;
 pub struct SkyDome;
 
 #[derive(Resource)]
-pub(crate) struct SkyHandle(Handle<SkyMaterial>);
+pub(crate) struct SkyHandle(pub(crate) Handle<SkyMaterial>);
 
 #[derive(Clone, Copy, Default, ShaderType)]
 pub struct SkyUniform {

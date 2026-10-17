@@ -45,6 +45,15 @@ impl FlatMaterial {
         }
     }
 
+    pub fn saturation(&self) -> f32 {
+        self.uniform.pull.w
+    }
+
+    /// Saturation gain of the tactical view (`tactical.rs`): 0 = as given.
+    pub fn set_saturation(&mut self, gain: f32) {
+        self.uniform.pull.w = gain;
+    }
+
     /// Pulled a little less (or more) toward the camera than the default:
     /// an under-stroke sits behind its line.
     pub fn pulled(mut self, extra_m: f32) -> Self {

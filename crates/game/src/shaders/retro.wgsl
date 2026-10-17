@@ -417,15 +417,6 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         pbr_input.material.base_color = foliage_albedo(pbr_input.material.base_color, p, in.world_normal, alive);
     }
 
-    // Tactical view: terrain and foliage recede toward a flat, slightly
-    // darker grey so houses, units and the interface carry the colour.
-    if retro.enabled.w > 0.5 && retro.enabled.w < 2.5 {
-        let rgb = pbr_input.material.base_color.rgb;
-        let luma = dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
-        let flat_rgb = vec3<f32>(luma) * 0.92;
-        pbr_input.material.base_color = vec4<f32>(mix(rgb, flat_rgb, tactical.x), pbr_input.material.base_color.a);
-    }
-
     // A small additive lift is much more visible than changing emissive on an
     // unlit StandardMaterial, and it remains a single coherent GPU pass.
     pbr_input.material.base_color = vec4<f32>(
@@ -450,5 +441,13 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         out.color.a,
     );
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
+    // Tactical view: terrain and foliage recede toward grey so houses, units
+    // and the interface carry the colour. After the fog, whose blue would
+    // otherwise keep the far ground tinted.
+    if retro.enabled.w > 0.5 && retro.enabled.w < 2.5 {
+        let luma = dot(out.color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+        // x < 0 pushes the colour away from grey (more saturated)
+        out.color = vec4<f32>(max(mix(out.color.rgb, vec3<f32>(luma) * 0.9, tactical.x), vec3<f32>(0.0)), out.color.a);
+    }
     return out;
 }

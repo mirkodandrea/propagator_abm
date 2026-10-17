@@ -214,7 +214,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Foam and sun glitter cover the transmitted view rather than fading out.
     let coverage = clamp(max(foam * 0.85, spec * 1.5), 0.0, 1.0);
     let opacity = mix(1.0 - transmission, 1.0, coverage);
-    let sea_luma = dot(col, vec3<f32>(0.2126, 0.7152, 0.0722));
-    col = mix(col, vec3<f32>(sea_luma) * 0.92, water.tactical.x);
-    return apply_scene_fog(vec4<f32>(col, opacity), in.world_position.xyz);
+    // Tactical view: grey sea, after the fog (its blue is most of what the
+    // far sea shows).
+    let fogged = apply_scene_fog(vec4<f32>(col, opacity), in.world_position.xyz);
+    let sea_luma = dot(fogged.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    return vec4<f32>(max(mix(fogged.rgb, vec3<f32>(sea_luma) * 0.9, water.tactical.x), vec3<f32>(0.0)), fogged.a);
 }
