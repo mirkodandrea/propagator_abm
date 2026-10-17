@@ -22,6 +22,10 @@ use crate::sim::Sim;
 const MIN_PITCH: f32 = -1.30;
 const MAX_PITCH: f32 = -0.55;
 const MAX_YAW: f32 = 1.75;
+/// The opening's shots look from low, almost level: the miniature seen as
+/// from a helicopter (the player's own camera stops at `MAX_PITCH`).
+const INTRO_MAX_PITCH: f32 = -0.14;
+const INTRO_WIDE_PITCH: f32 = -0.42;
 const MIN_DIST: f32 = 90.0;
 const MAX_DIST: f32 = 12000.0;
 const PAN_RADIUS_M: f32 = 2500.0;
@@ -387,16 +391,16 @@ pub fn camera(
             let on = |p: Pos| crate::frame::to_bevy(p, sim.scn.terrain.height_at(p));
             let front = fire_extent(&sim);
             let wide = |front: Option<(Vec2, f32)>| match front {
-                Some((mid, span)) => (Vec3::new(mid.x, orbit.focus.y, mid.y), (span * 2.8).clamp(d * 0.5, d), scene_pitch, 0.0),
-                None => (home, d, scene_pitch, 0.0),
+                Some((mid, span)) => (Vec3::new(mid.x, orbit.focus.y, mid.y), (span * 2.2).clamp(d * 0.4, d * 0.8), INTRO_WIDE_PITCH, 0.0),
+                None => (home, d * 0.8, INTRO_WIDE_PITCH, 0.0),
             };
             let (goal, dist, pitch, sway) = match kiosk.demo_pick.1 {
                 Subject::Front => match front {
-                    Some((mid, _)) => (Vec3::new(mid.x, orbit.focus.y, mid.y), d * 0.32, -0.62, 0.6),
+                    Some((mid, _)) => (Vec3::new(mid.x, orbit.focus.y, mid.y), d * 0.2, -0.30, 0.9),
                     None => wide(front),
                 },
-                Subject::District(i) if i < sim.districts.len() => (on(sim.districts[i].centre), d * 0.26, -0.55, -0.5),
-                Subject::Crew(i) if i < sim.crews.units.len() => (on(sim.crews.units[i].pos), d * 0.17, -0.5, 0.7),
+                Subject::District(i) if i < sim.districts.len() => (on(sim.districts[i].centre), d * 0.15, -0.24, -0.8),
+                Subject::Crew(i) if i < sim.crews.units.len() => (on(sim.crews.units[i].pos), d * 0.1, -0.20, 1.0),
                 _ => wide(front),
             };
             let off = Vec2::new(goal.x - home.x, goal.z - home.z).clamp_length_max(PAN_RADIUS_M);
@@ -413,8 +417,11 @@ pub fn camera(
             orbit.distance += (*gd - orbit.distance) * a;
             // a slow drift of the heading around the shot's own, so the
             // picture is never still
-            let yaw = yaw0 + sway * 0.5 + 0.2 * (kiosk.demo_t * 0.08).sin();
+            // like a helicopter circling: the heading keeps turning, slowly,
+            // around the shot's own, and the pitch breathes a little
+            let yaw = yaw0 + sway * 0.5 + 0.5 * (kiosk.demo_t * 0.12).sin();
             orbit.yaw += (yaw - orbit.yaw) * (1.0 - (-0.35 * dt).exp());
+            let pitch = pitch + 0.03 * (kiosk.demo_t * 0.23).sin();
             orbit.pitch += (pitch - orbit.pitch) * a;
         }
     }
@@ -448,7 +455,8 @@ pub fn camera(
     }
 
     orbit.yaw = orbit.yaw.clamp(-MAX_YAW, MAX_YAW);
-    orbit.pitch = orbit.pitch.clamp(if mobile_web { NADIR_PITCH } else { MIN_PITCH }, MAX_PITCH);
+    let max_pitch = if kiosk.phase == Phase::Intro && !kiosk.frozen && !mobile_web { INTRO_MAX_PITCH } else { MAX_PITCH };
+    orbit.pitch = orbit.pitch.clamp(if mobile_web { NADIR_PITCH } else { MIN_PITCH }, max_pitch);
     orbit.distance = orbit.distance.clamp(MIN_DIST * shot_zoom().min(1.0), MAX_DIST);
     let off = Vec2::new(orbit.focus.x - home.x, orbit.focus.z - home.z);
     if off.length() > PAN_RADIUS_M {
@@ -490,7 +498,7 @@ pub fn camera(
         let dt = time.delta_seconds().min(0.1);
         let k = 1.0 - (-1.0 * dt).exp();
         let (mean, top) = area(crate::frame::to_world(tf.translation), 400.0);
-        let want = mean.max(top - 40.0) + 60.0;
+        let want = mean.max(top - 40.0) + 45.0;
         let (sf, sg) = smooth_h.unwrap_or((orbit.focus.y, want));
         let sg = if sg == 0.0 { want } else { sg };
         let sg = sg + (want - sg) * k;
