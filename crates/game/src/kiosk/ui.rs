@@ -165,8 +165,15 @@ pub fn draw(
                 k.clear_selection();
             }
             map_badges(ctx, k, &mut sim, cam);
-            pad_orders(k, &mut sim, cam, &pad, pads.iter().next().is_some(), ctx);
-            if pads.iter().next().is_none() {
+            if ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO) {
+                k.pad_aim = false;
+            }
+            if pad.active() || pad.team != 0 || pad.district != 0 || pad.confirm || pad.evacuate {
+                k.pad_aim = true;
+            }
+            let pad_aim = k.pad_aim && pads.iter().next().is_some();
+            pad_orders(k, &mut sim, cam, &pad, pad_aim, ctx);
+            if !pad_aim {
                 hover_move(ctx, k, &sim, cam);
             }
             map_click(k, &mut sim, ctx.input(|i| i.has_touch_screen()));

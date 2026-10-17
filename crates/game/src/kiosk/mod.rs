@@ -116,6 +116,8 @@ pub struct Kiosk {
     pub dragging: Option<(usize, Pos)>,
     /// Camera pan direction while a dragged flag is held at a map edge.
     pub drag_pan: Vec2,
+    /// The pad moved last, not the mouse: the aim is the centre of the screen.
+    pub pad_aim: bool,
     /// `Sim::generation` the previews were computed at.
     plans_at: u64,
     /// A short message (refused order, event) and its age in real seconds.
@@ -193,6 +195,7 @@ impl Kiosk {
             evac_hover: None,
             dragging: None,
             drag_pan: Vec2::ZERO,
+            pad_aim: false,
             plans_at: 0,
             notice: None,
             log_seen: 0,
