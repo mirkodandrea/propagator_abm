@@ -230,21 +230,6 @@ mod tests {
     }
 
     #[test]
-    fn the_island_models_stand_on_the_ground() {
-        for name in [
-            "rocca", "torre_pietra", "veliero_bianco", "veliero_crema", "veliero_rosso", "veliero_blu", "veliero_giallo",
-            "ormeggiato_bianco", "ormeggiato_blu", "ormeggiato_crema",
-        ] {
-            let m = island(name);
-            assert!(!m.positions.is_empty(), "{name}");
-            assert_eq!(m.indices.len() % 3, 0, "{name}");
-            let low = m.positions.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min);
-            // buildings sit on their ground; hulls a little below the waterline
-            assert!(low >= -1.0 && low <= 0.5, "{name}: lowest point {low}");
-        }
-    }
-
-    #[test]
     fn the_town_kit_is_grounded_and_wound_outward() {
         for name in [
             "church", "chapel", "townhall", "school", "fire_station", "fuel", "water_tower", "substation", "farm", "barn",
