@@ -34,13 +34,13 @@ use crate::retro::RetroMaterial;
 /// Half-widths in metres, by road role. Generous: at command altitude a real
 /// 3 m lane is under a pixel, and the network has to stay legible while zoomed
 /// out. Same map-symbol exaggeration as `people::FIGURE_SCALE`.
-const DRIVABLE_HALF_W: f32 = 4.8;
-const TRACK_HALF_W: f32 = 1.6;
+pub const DRIVABLE_HALF_W: f32 = 4.8;
+pub const TRACK_HALF_W: f32 = 1.6;
 
 /// How much wider the casing is than the surface it sits under. A dark edge is
 /// what separates a road from bare limestone soil of a similar tone — without
 /// it the network reads as a smudge from anywhere above a few hundred metres.
-const CASING_M: f32 = 2.2;
+pub const CASING_M: f32 = 2.2;
 
 /// Resampling interval along a polyline. Below the 5 m render posting there is
 /// no more terrain detail to follow, so this is as fine as it needs to be.

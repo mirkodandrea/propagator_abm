@@ -419,9 +419,40 @@ fn on_natural_cover(scn: &Scenario, species: Species, p: Pos) -> bool {
         Species::Shrub => 1.5,
         Species::Grass => 0.0,
     };
-    [(0.0, 0.0), (reach, 0.0), (-reach, 0.0), (0.0, reach), (0.0, -reach)]
+    if !([(0.0, 0.0), (reach, 0.0), (-reach, 0.0), (0.0, reach), (0.0, -reach)]
         .into_iter()
-        .all(|(dx, dy)| cover.is_natural(Pos { x: p.x + dx, y: p.y + dy }))
+        .all(|(dx, dy)| cover.is_natural(Pos { x: p.x + dx, y: p.y + dy })))
+    {
+        return false;
+    }
+    // The cover raster paints a road a lane wide; `roads.rs` draws the ribbon
+    // and its casing far wider, and a shrub crown reaches several metres. Keep
+    // the whole plant clear of the drawn ribbon.
+    let crown = match species {
+        Species::Shrub => 5.0,
+        Species::Conifer | Species::Broadleaf => 2.0,
+        Species::Grass => return true,
+    };
+    let drawn = |q: Pos| match cover.at(q) {
+        CoverClass::Road => crate::roads::DRIVABLE_HALF_W + crate::roads::CASING_M,
+        CoverClass::Track => crate::roads::TRACK_HALF_W + crate::roads::CASING_M,
+        _ => 0.0,
+    };
+    let max_r = crate::roads::DRIVABLE_HALF_W + crate::roads::CASING_M + crown;
+    let mut r = 2.0;
+    while r <= max_r {
+        for i in 0..12 {
+            let a = i as f32 * std::f32::consts::TAU / 12.0;
+            let half = drawn(Pos { x: p.x + r * a.cos(), y: p.y + r * a.sin() });
+            // a road cell at distance r means the ribbon centre is within
+            // about r + a cell; the plant must sit beyond half + crown of it
+            if half > 0.0 && r < half + crown {
+                return false;
+            }
+        }
+        r += 2.0;
+    }
+    true
 }
 
 /// Share of the plants kept near a road or track: the wood thins out
