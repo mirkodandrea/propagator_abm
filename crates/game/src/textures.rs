@@ -65,18 +65,23 @@ pub fn flame_tongue() -> Image {
     let noise = Noise(0x51A3_7C11);
     let mut pixels = Vec::with_capacity((SIZE * SIZE * 4) as usize);
     for y in 0..SIZE {
-        // v = 0 at the tip, 1 at the base
-        let v = 1.0 - y as f32 / (SIZE - 1) as f32;
+        // Image row 0 is the top of the quad (uv.y = 0): v = 0 at the tip,
+        // 1 at the base.
+        let v = y as f32 / (SIZE - 1) as f32;
         for x in 0..SIZE {
             let u = x as f32 / (SIZE - 1) as f32 * 2.0 - 1.0;
             // The tongue narrows with height, and the noise wobbles the edge.
-            let width = (0.35 + 0.65 * v).max(0.08);
+            // The geometry already tapers the ribbon; the texture only softens it.
+            let width = 0.92;
             let edge = (1.0 - (u.abs() / width).powf(1.6)).clamp(0.0, 1.0);
             let turbulence = 0.55 + 0.9 * noise.fbm(u * 3.0 + 8.0, v * 5.0);
             // Fade the very base too, so a tongue never shows a cut-off line
             // where it meets the ground.
             let foot = (v * 6.0).clamp(0.0, 1.0);
-            let a = (edge * turbulence * foot * (0.35 + 0.75 * v)).clamp(0.0, 1.0);
+            // The tip dissolves to nothing before the quad's top edge, so the
+            // flame never ends in a straight cut.
+            let tip = (v / 0.35).clamp(0.0, 1.0);
+            let a = (edge * turbulence * foot * tip * (0.5 + 0.6 * v)).clamp(0.0, 1.0);
             // Hotter (whiter) toward the base and the core of the tongue.
             let heat = (a * (0.4 + 0.6 * v)).clamp(0.0, 1.0);
             pixels.extend_from_slice(&[

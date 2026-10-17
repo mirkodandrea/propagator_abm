@@ -576,6 +576,9 @@ fn ramp(t: f32, stops: &[(f32, [f32; 3])]) -> [f32; 3] {
     stops[stops.len() - 1].1
 }
 
+/// Rows per flame tongue ribbon.
+const TONGUE_SEGMENTS: usize = 7;
+
 #[derive(Default)]
 struct QuadBuilder {
     positions: Vec<[f32; 3]>,
@@ -612,6 +615,55 @@ impl QuadBuilder {
         }
         self.indices
             .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    /// A flame tongue: a ribbon of `TONGUE_SEGMENTS` rows from foot to tip.
+    /// It tapers to a point and its spine travels on two travelling waves
+    /// whose amplitude grows toward the tip, so the tongue snakes and licks
+    /// instead of bobbing. `foot` is the centre of the base; `h` the height.
+    #[allow(clippy::too_many_arguments)]
+    fn tongue(
+        &mut self,
+        foot: Vec3,
+        right: Vec3,
+        h: f32,
+        half_w: f32,
+        t: f32,
+        phase: f32,
+        bottom: [f32; 4],
+        top: [f32; 4],
+    ) {
+        let base = self.positions.len() as u32;
+        for j in 0..=TONGUE_SEGMENTS {
+            let s = j as f32 / TONGUE_SEGMENTS as f32; // 0 foot -> 1 tip
+            let s2 = s * s;
+            // Two waves running upward at different speeds: the second makes
+            // the motion non-periodic to the eye.
+            let w1 = (t * 7.0 - s * 4.5 + phase).sin();
+            let w2 = (t * 11.3 - s * 7.0 + phase * 1.7).sin();
+            let lateral = h * (0.30 * s2 * w1 + 0.12 * s2 * s * w2);
+            // The tip droops a little as it whips.
+            let drop = h * 0.06 * s2 * s * (w1 * w2).abs();
+            let width = half_w * (1.0 - s).powf(0.85) * (1.0 + 0.18 * (t * 9.0 + phase + s * 3.0).sin());
+            let centre = foot + Vec3::Y * (h * s - drop) + right * lateral;
+            let color = [
+                bottom[0] + (top[0] - bottom[0]) * s,
+                bottom[1] + (top[1] - bottom[1]) * s,
+                bottom[2] + (top[2] - bottom[2]) * s,
+                1.0,
+            ];
+            // uv.y: 1 at the foot, 0 at the tip (what the shader expects).
+            for (side, u) in [(-1.0f32, 0.0f32), (1.0, 1.0)] {
+                self.positions.push((centre + right * width * side).into());
+                self.normals.push([0.0, 1.0, 0.0]);
+                self.colors.push(color);
+                self.uvs.push([u, 1.0 - s]);
+            }
+        }
+        for j in 0..TONGUE_SEGMENTS as u32 {
+            let a = base + j * 2;
+            self.indices.extend_from_slice(&[a, a + 1, a + 3, a, a + 3, a + 2]);
+        }
     }
 
     fn finish(self) -> Mesh {
@@ -710,11 +762,14 @@ pub fn update_flames(
             // Additive light competing with a daylit hillside: the multiplier
             // has to be well above 1 or the flame is a pale smudge.
             let heat = (local / 2000.0).clamp(0.55, 2.2) * (0.6 + 0.4 * flaming);
-            flames.billboard(
-                Vec3::new(p.x, ground + h_m * 0.5, -p.y) + right * sway,
-                right * half_w,
-                up * h_m * 0.5,
-                0.55,
+            let _ = sway;
+            flames.tongue(
+                Vec3::new(p.x, ground, -p.y),
+                right,
+                h_m,
+                half_w,
+                t,
+                phase,
                 [3.6 * heat, 1.55 * heat, 0.28 * heat, 1.0],
                 [2.0 * heat, 0.50 * heat, 0.07 * heat, 1.0],
             );
@@ -739,11 +794,14 @@ pub fn update_flames(
             let half_w = h_m * 0.38;
             let off = Vec3::new((h - 0.5) * 16.0, 0.0, (hash01(i as u64 * 31 + k) - 0.5) * 16.0);
             let sway = (t * 3.2 + phase).sin() * h_m * 0.18;
-            flames.billboard(
-                Vec3::new(pos.x, ground + h_m * 0.5, -pos.y) + off + right * sway,
-                right * half_w,
-                up * h_m * 0.5,
-                0.45,
+            let _ = sway;
+            flames.tongue(
+                Vec3::new(pos.x, ground, -pos.y) + off,
+                right,
+                h_m,
+                half_w,
+                t,
+                phase,
                 [5.0 * intensity, 2.0 * intensity, 0.35 * intensity, 1.0],
                 [2.6 * intensity, 0.6 * intensity, 0.08 * intensity, 1.0],
             );

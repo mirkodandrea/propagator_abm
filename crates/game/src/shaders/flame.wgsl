@@ -60,9 +60,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Fire rises: noise scrolls upward fast, and the sideways warp grows
     // toward the tip so the flame licks and curls instead of standing still.
-    let rise = vec2<f32>(uv.x * 4.0 + seed, uv.y * 3.5 + t * 2.6);
+    let rise = vec2<f32>(uv.x * 4.0 + seed, uv.y * 3.5 + t * 3.4);
     let warp = fbm2(rise) - 0.5;
-    uv.x += warp * (0.22 - 0.12 * foot);
+    // Lean: the tip streams sideways on a slow wave, the foot stays put, so
+    // the tongue bends and whips instead of bobbing up and down.
+    let lean = (value_noise(vec2<f32>(t * 1.7 + seed * 5.0, 3.0)) - 0.5) * 0.9;
+    uv.x += warp * (0.12 + 0.38 * (1.0 - foot)) + lean * (1.0 - foot) * (1.0 - foot);
     uv.y += (value_noise(vec2<f32>(uv.x * 6.0 - seed, uv.y * 5.0 + t * 4.5)) - 0.5) * 0.06;
 
     let tex = textureSample(base_texture, base_sampler, uv);
@@ -70,7 +73,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Erode the silhouette with rising noise: tongues break into flickering
     // wisps toward the tip, but the foot stays solid.
     let erode = fbm2(vec2<f32>(uv.x * 7.0 + seed * 2.0, uv.y * 6.0 + t * 3.8));
-    let body = tex.a * smoothstep(0.0, 0.55, tex.a * 1.6 + (erode - 0.5) * (0.9 - 0.5 * foot));
+    // Hard guarantee that nothing is drawn at the quad's top edge.
+    let tipfade = smoothstep(0.0, 0.22, uv.y) * smoothstep(0.0, 0.06, uv.x) * smoothstep(1.0, 0.94, uv.x);
+    let body = tipfade * tex.a * smoothstep(0.0, 0.55, tex.a * 1.6 + (erode - 0.5) * (0.9 - 0.5 * foot));
 
     // Heat: hot at the foot and core, cooling toward the tip and edges.
     let flicker = 0.85 + 0.30 * value_noise(vec2<f32>(t * 9.0 + seed * 7.0, seed * 3.0));
