@@ -194,7 +194,11 @@ pub struct MovePlan {
     pub hex: Hex,
     /// The road it would drive, from where it is.
     pub path: Vec<Pos>,
+    /// From the order to the engine's arrival: the people on foot walking
+    /// back aboard ([`Self::regroup_min`]), then the drive.
     pub minutes: f32,
+    /// Of `minutes`, the wait for the last person to get back to the engine.
+    pub regroup_min: f32,
 }
 
 /// Facts per district at the end (or now).
@@ -437,7 +441,25 @@ impl Game {
         let path: Vec<Pos> = std::iter::once(u.pos).chain(std::iter::once(self.net.pos(from))).chain(nodes.iter().map(|&n| self.net.pos(n))).collect();
         let way: Vec<_> = std::iter::once(from).chain(nodes.iter().copied()).collect();
         let secs = abm::drive::route_time_s(&self.net, u.pos, Some(u.heading), None, &way, abm::suppression::vehicle(u.kind));
-        Ok(MovePlan { team: t, hex, path, minutes: secs / 60.0 })
+        let regroup_min = self.regroup_s(t) / 60.0;
+        Ok(MovePlan { team: t, hex, path, minutes: regroup_min + secs / 60.0, regroup_min })
+    }
+
+    /// Seconds before the last person of team `t` still on foot is back
+    /// aboard: the engine leaves only then (see [`Self::dispatch`]).
+    fn regroup_s(&self, t: usize) -> f32 {
+        let team = &self.teams[t];
+        let engine = self.crews.units[team.unit].pos;
+        team.crew_units
+            .iter()
+            .map(|&c| &self.crews.units[c])
+            .filter(|u| u.state != UnitState::Lost && !u.aboard)
+            .map(|u| {
+                let slope = self.scn.terrain.slope_deg_at(u.pos);
+                let walk = abm::suppression::CREW_WALK_SPEED * (1.0 - slope / 45.0).clamp(0.35, 1.0);
+                dist(u.pos, engine) / walk
+            })
+            .fold(0.0, f32::max)
     }
 
     /// The hexes team `t` can be sent to now: those [`Self::plan_move`]
