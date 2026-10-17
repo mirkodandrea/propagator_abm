@@ -868,26 +868,50 @@ fn compact_tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted
     let landscape = rect.width() > rect.height();
     let anchor = if landscape { Align2::RIGHT_TOP } else { Align2::CENTER_BOTTOM };
     let offset = if landscape { [-8.0, 8.0] } else { [0.0, -58.0] };
+    let text = text.replace("**", "").replace("__", "").replace("In basso a destra", "In alto").replace(" Esc annulla.", "").replace("clicca", "tocca").replace("cliccando", "toccando").replace("cliccala", "toccala").replace("Trascina la squadra", "Tocca la squadra e poi la destinazione, oppure trascina la squadra");
+    let steps = k.script.as_ref().map_or(0, |s| s.steps.len());
+    let progress = (k.step + 1) as f32 / steps.max(1) as f32;
     egui::Area::new(egui::Id::new("tutorial_mobile")).anchor(anchor, offset).order(egui::Order::Foreground).show(ctx, |ui| {
         panel_mobile().show(ui, |ui| {
             ui.set_width(if landscape { k.side_w - 40.0 } else { (rect.width() - 40.0).min(600.0) });
-            egui::ScrollArea::vertical().max_height(if landscape { (rect.height() - 180.0).max(42.0) } else { (rect.height() * 0.20).clamp(42.0, 120.0) }).show(ui, |ui| {
-                ui.label(RichText::new(text.replace("**", "").replace("__", "").replace("In basso a destra", "In alto").replace(" Esc annulla.", "").replace("clicca", "tocca").replace("cliccando", "toccando").replace("cliccala", "toccala").replace("Trascina la squadra", "Tocca la squadra e poi la destinazione, oppure trascina la squadra")).size(if landscape { 18.0 } else { 17.0 }));
-            });
-            let steps = k.script.as_ref().map_or(0, |s| s.steps.len());
-            ui.add(egui::ProgressBar::new((k.step + 1) as f32 / steps.max(1) as f32).desired_height(4.0));
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                // «Avanti» takes the room left: the easiest thing to hit
-                let r = ui.add(secondary("Salta").min_size(egui::vec2(60.0, 44.0)));
-                crate::playtest::control("Salta il tutorial", &r, true);
-                skip = r.clicked();
-                if expect == Expect::Next {
-                    let r = ui.add_sized([ui.available_width(), 44.0], primary("Avanti"));
-                    crate::playtest::control("Avanti", &r, true);
-                    if r.clicked() { k.done(Expect::Next); }
-                }
-            });
+            let buttons = |ui: &mut egui::Ui, skip: &mut bool, k: &mut Kiosk| {
+                ui.horizontal(|ui| {
+                    // «Avanti» takes the room left: the easiest thing to hit
+                    let r = ui.add(secondary("Salta").min_size(egui::vec2(60.0, 44.0)));
+                    crate::playtest::control("Salta il tutorial", &r, true);
+                    *skip = r.clicked();
+                    if expect == Expect::Next {
+                        let r = ui.add_sized([ui.available_width(), 44.0], primary("Avanti"));
+                        crate::playtest::control("Avanti", &r, true);
+                        if r.clicked() { k.done(Expect::Next); }
+                    }
+                });
+            };
+            if landscape {
+                // A column the height of the screen: where we are on top, the
+                // text filling the middle, the buttons pinned under it.
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("TUTORIAL").size(13.0).strong().color(AMBER));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(RichText::new(format!("{}/{}", k.step + 1, steps)).size(13.0).color(GREY));
+                    });
+                });
+                ui.add(egui::ProgressBar::new(progress).desired_height(4.0));
+                ui.add_space(6.0);
+                let text_h = (rect.height() - 16.0 - 24.0 - 38.0 - 56.0).max(60.0);
+                egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(text_h).min_scrolled_height(text_h).show(ui, |ui| {
+                    ui.add(egui::Label::new(RichText::new(&text).size(19.0).color(Color32::WHITE)).wrap());
+                });
+                ui.add_space(6.0);
+                buttons(ui, &mut skip, k);
+            } else {
+                egui::ScrollArea::vertical().max_height((rect.height() * 0.20).clamp(42.0, 120.0)).show(ui, |ui| {
+                    ui.label(RichText::new(&text).size(17.0));
+                });
+                ui.add(egui::ProgressBar::new(progress).desired_height(4.0));
+                ui.add_space(4.0);
+                buttons(ui, &mut skip, k);
+            }
         });
     });
     if skip { start_game(k, sim, restarted); }

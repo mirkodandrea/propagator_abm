@@ -181,7 +181,7 @@ pub fn draw(
                 super::chat::show(ctx, &sim, faces.as_deref(), k.notice.is_some());
             }
             if compact(ctx) {
-                egui::Area::new(egui::Id::new("map_tools")).anchor(Align2::RIGHT_BOTTOM, [-8.0, -8.0]).order(egui::Order::Foreground).show(ctx, |ui| {
+                egui::Area::new(egui::Id::new("map_tools")).anchor(Align2::RIGHT_BOTTOM, [-8.0 - k.side_w, -8.0]).order(egui::Order::Foreground).show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         for (label, zoom) in [("−", -1.0), ("+", 1.0)] {
                             let r = ui.add(secondary(label).min_size(egui::vec2(44.0, 44.0)));
