@@ -205,6 +205,54 @@ fn foliage_albedo(base: vec4<f32>, p: vec3<f32>, normal: vec3<f32>, alive: f32) 
 }
 
 
+// Burning vegetation (`vegetation.rs`, `paint`): a burning vertex keeps its
+// colour and carries its ignition time in a negative alpha. Here the plant is
+// eaten against the simulated clock (`tactical.y`, flaming time in
+// `tactical.z`): scorch, then a glowing front that crawls through the crown
+// in patches, red embers veining the char, leaves falling away to a black
+// skeleton. `prog` is 0 at ignition and 1 when the plant is replaced by its
+// charred remains, which the last stage already looks like.
+const LEAF_OFFSET: f32 = 1.0e5;
+const REMAINS_OFFSET: f32 = 2.0e5;
+
+struct Burnt {
+    rgb: vec3<f32>,
+    glow: vec3<f32>,
+    // 1 where the leaf has been eaten away
+    gone: f32,
+    hole: f32,
+};
+
+fn burn_plant(base: vec3<f32>, p: vec3<f32>, prog: f32, t: f32) -> Burnt {
+    // Where the fire takes hold first is a property of the place, so patches
+    // of one crown light up at different moments and the front crawls.
+    let n = 0.55 * value_noise(p.xz * 0.8 + vec2<f32>(p.y * 0.5, 3.0))
+          + 0.45 * value_noise(p.xz * 2.7 + vec2<f32>(-p.y * 1.9, 7.0));
+    let l = prog * 1.6 - n * 0.9;
+
+    let scorch = smoothstep(-0.35, 0.0, l);
+    let hot = smoothstep(0.0, 0.07, l) * (1.0 - smoothstep(0.10, 0.36, l));
+    let smoulder = smoothstep(0.08, 0.20, l) * (1.0 - smoothstep(0.30, 0.70, l));
+    let charred = smoothstep(0.12, 0.40, l);
+    let gone = smoothstep(0.34, 0.62, l);
+
+    let flick = 0.70 + 0.55 * value_noise(p.xz * 2.4 + vec2<f32>(t * 5.0, t * 7.3 + p.y));
+    // Embers show in veins and flecks of the char, not as a flat wash.
+    let vein = smoothstep(0.50, 0.72, value_noise(p.xz * 3.6 + vec2<f32>(p.y * 2.7, 11.0)));
+    let speck = smoothstep(0.78, 0.95, value_noise(p.xz * 9.0 + vec2<f32>(t * 0.6, p.y * 5.0)));
+
+    var rgb = mix(base, base * vec3<f32>(0.80, 0.55, 0.30), scorch * 0.65);
+    let ash = vec3<f32>(0.030, 0.026, 0.024) * (0.7 + 0.8 * value_noise(p.xz * 1.7 + p.y));
+    rgb = mix(rgb, ash, charred);
+
+    let hot_col = mix(vec3<f32>(3.6, 2.1, 0.45), vec3<f32>(2.5, 0.60, 0.07), smoothstep(0.0, 0.22, l));
+    let ember_col = vec3<f32>(1.5, 0.20, 0.02);
+    // Fades out as the plant approaches its charred remains.
+    let late = 1.0 - smoothstep(0.80, 1.0, prog);
+    let glow = (hot * hot_col * flick + smoulder * ember_col * (0.25 + 0.9 * vein + 1.2 * speck) * flick) * late;
+    return Burnt(rgb, glow, gone, value_noise(p.xz * 3.1 + vec2<f32>(p.y * 2.3, 17.0)));
+}
+
 // Object-space position in metres: the world offset from the mesh origin
 // projected on its (orthogonal) axes. For merged meshes with an identity
 // transform (all the town) it is simply the world position.
@@ -376,6 +424,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // material suppress it entirely for dense background geometry.
     let silhouette_edge = smoothstep(0.02, 0.42, 1.0 - facing);
     let facet_edge = clamp(length(fwidth(normalize(in.world_normal))) * 8.0, 0.0, 1.0);
+    var burn_glow = vec3<f32>(0.0);
     var burn_gate = 1.0;
 #ifdef VERTEX_COLORS
     // Vegetation writes charcoal colours after it burns. Use that existing
@@ -408,13 +457,47 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     } else if retro.enabled.w > 1.5 {
         // Which vertices are living foliage is decided where the mesh is
         // built: vertex alpha is 1 on leaves, 0 on wood, rock, grass and
-        // anything burning or burnt (`vegetation.rs`).
+        // anything burnt (`vegetation.rs`). Below -0.5 the vertex is burning
+        // and the alpha holds its ignition time.
 #ifdef VERTEX_COLORS
-        let alive = in.color.a;
+        let a = in.color.a;
 #else
-        let alive = 0.0;
+        let a = 0.0;
 #endif
+        let px_m = max(length(dpdx(p)), length(dpdy(p)));
+        let burning = a < -0.5;
+        let b = -a;
+        let remains = burning && b > REMAINS_OFFSET * 0.75;
+        let leaf = burning && !remains && b > LEAF_OFFSET * 0.5;
+        let alive = select(clamp(a, 0.0, 1.0), select(0.0, 1.0, leaf), burning);
         pbr_input.material.base_color = foliage_albedo(pbr_input.material.base_color, p, in.world_normal, alive);
+        if burning {
+            let t0 = b - 1.0 - select(select(0.0, LEAF_OFFSET, leaf), REMAINS_OFFSET, remains);
+            let prog = clamp((tactical.y - t0) / max(tactical.z, 1.0), 0.0, 1.0);
+            let near = 1.0 - smoothstep(1.0, 3.5, px_m);
+            if remains {
+                // The burnt model dissolving in over the burning one, with a
+                // glowing edge where it arrives. Far away the dissolve would
+                // only shimmer: it switches on half way instead.
+                let fade = smoothstep(0.10, 0.90, prog);
+                let h = smoothstep(0.25, 0.75, value_noise(p.xz * 3.1 + vec2<f32>(p.y * 2.3, 17.0)));
+                if (near > 0.3 && h > fade) || (near <= 0.3 && prog < 0.5) {
+                    discard;
+                }
+                let rim = (1.0 - smoothstep(0.0, 0.10, fade - h)) * (1.0 - fade);
+                burn_glow = vec3<f32>(2.4, 0.55, 0.06) * rim * (0.7 + 0.6 * value_noise(p.xz * 2.4 + vec2<f32>(t * 5.0, p.y)));
+            } else {
+            let r = burn_plant(pbr_input.material.base_color.rgb, p, prog, t);
+            // Close up, an eaten leaf is a hole; far away holes would only
+            // shimmer, so the same share just darkens the crown.
+            if leaf && near > 0.3 && r.hole < r.gone {
+                discard;
+            }
+            let dim = 1.0 - 0.55 * r.gone * (1.0 - near);
+            pbr_input.material.base_color = vec4<f32>(r.rgb * dim, pbr_input.material.base_color.a);
+            burn_glow = r.glow;
+            }
+        }
     }
 
     // A small additive lift is much more visible than changing emissive on an
@@ -440,6 +523,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         out.color.rgb + vec3<f32>(0.0, edge_pulse * 0.65, edge_pulse),
         out.color.a,
     );
+    // Fire is light, not a lit surface: added after lighting so a burning
+    // crown glows on its shaded side too (and in the bloom pass).
+    out.color = vec4<f32>(out.color.rgb + burn_glow, out.color.a);
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
     // Tactical view: terrain and foliage recede toward grey so houses, units
     // and the interface carry the colour. After the fog, whose blue would

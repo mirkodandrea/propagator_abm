@@ -207,6 +207,8 @@ struct CharMesh {
     hidden: Vec<[f32; 3]>,
     /// Each plant's vertex range.
     ranges: Vec<(u32, u32)>,
+    /// Vertex colours as built (alpha 0): what a burnt plant shows.
+    colors: Vec<[f32; 4]>,
 }
 
 struct Chunk {
@@ -933,7 +935,7 @@ pub fn burn(
         if !dirty {
             continue;
         }
-        if chunk.char.is_none() && wanted.iter().any(|&s| s == CellFire::Burnt as u8) {
+        if chunk.char.is_none() && wanted.iter().any(|&s| s == CellFire::Burnt as u8 || s == CellFire::Burning as u8) {
             chunk.char = Some(build_char_layer(&mut commands, &mut meshes, &material, &*chunk));
         }
 
@@ -943,6 +945,7 @@ pub fn burn(
         let mut low_positions = chunk.low_pos_base.clone();
         chunk.touched = false;
         let mut char_positions = chunk.char.as_ref().map(|l| (l.near.hidden.clone(), l.far.hidden.clone()));
+        let mut char_colors = chunk.char.as_ref().map(|l| (l.near.colors.clone(), l.far.colors.clone()));
         for (i, ((plant, drawn), s)) in chunk.plants.iter().zip(&mut chunk.drawn).zip(wanted).enumerate() {
             *drawn = s;
             if s == CellFire::Unburnt as u8 {
@@ -975,11 +978,24 @@ pub fn burn(
                 }
                 continue;
             }
-            // scaled by local intensity, so a grass flare and a crowning
-            // conifer do not glow identically
-            let k = (field.intensity(plant.pos) / 4000.0).clamp(0.2, 1.0);
-            paint(&mut colors[plant.vert_start as usize..plant.vert_end as usize], s, k);
-            paint(&mut low_colors[plant.low_start as usize..plant.low_end as usize], s, k);
+            // the shader consumes a burning plant over time from its ignition
+            let t0 = field.arrival(plant.pos).map_or(0.0, |a| a + plant.lag_s);
+            // ...and dissolves its burnt remains in as the crown goes: they
+            // stand from the moment of ignition, flagged with the same clock
+            if plant.remains.is_some() && s == CellFire::Burning as u8 {
+                if let (Some((np, fp)), Some((nc, fc)), Some(layer)) = (&mut char_positions, &mut char_colors, &chunk.char) {
+                    for (out, cols, m) in [(np, nc, &layer.near), (fp, fc, &layer.far)] {
+                        let (a, b) = m.ranges[i];
+                        let (a, b) = (a as usize, b as usize);
+                        out[a..b].copy_from_slice(&m.shown[a..b]);
+                        for c in &mut cols[a..b] {
+                            c[3] = -(1.0 + REMAINS_OFFSET + t0.max(0.0));
+                        }
+                    }
+                }
+            }
+            paint(&mut colors[plant.vert_start as usize..plant.vert_end as usize], s, t0);
+            paint(&mut low_colors[plant.low_start as usize..plant.low_end as usize], s, t0);
         }
 
         if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
@@ -990,10 +1006,11 @@ pub fn burn(
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, low_colors);
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, low_positions);
         }
-        if let (Some((near, far)), Some(layer)) = (char_positions, &chunk.char) {
-            for (positions, m) in [(near, &layer.near), (far, &layer.far)] {
+        if let (Some((near, far)), Some((near_c, far_c)), Some(layer)) = (char_positions, char_colors, &chunk.char) {
+            for ((positions, colors), m) in [((near, near_c), &layer.near), ((far, far_c), &layer.far)] {
                 if let Some(mesh) = meshes.get_mut(&m.mesh) {
                     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+                    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
                 }
             }
         }
@@ -1017,6 +1034,7 @@ fn build_char_layer(
             }
             ranges.push((start, builder.positions.len() as u32));
         }
+        let colors = builder.colors.clone();
         let shown = builder.positions.clone();
         let mut hidden = shown.clone();
         for &(a, b) in &ranges {
@@ -1038,7 +1056,7 @@ fn build_char_layer(
                 ..default()
             })
             .id();
-        CharMesh { mesh, entity, shown, hidden, ranges }
+        CharMesh { mesh, entity, shown, hidden, ranges, colors }
     };
     CharLayer { near: make(false), far: make(true) }
 }
@@ -1046,12 +1064,25 @@ fn build_char_layer(
 /// Real seconds between two redraws of the burning plants (see [`burn`]).
 const BURN_REDRAW_S: f32 = 0.15;
 
+/// Vertex alpha of a burning vertex holds its ignition time: `-(1 + t0)` for
+/// wood, rock and grass, `-(1 + LEAF_OFFSET + t0)` for leaves (a plain 1.0
+/// would be lost in the sign). The foliage shader (`retro.wgsl`, `burning`)
+/// reads it back and consumes the plant against the simulated clock
+/// (`tactical.y`, see [`fire_clock`]), so the plant need not be rewritten
+/// while it burns.
+const LEAF_OFFSET: f32 = 1.0e5;
+/// The same for the vertices of a plant's burnt remains, which dissolve in
+/// while it burns (`-(1 + REMAINS_OFFSET + t0)`).
+const REMAINS_OFFSET: f32 = 2.0e5;
+
 /// Recolour one plant's vertices for its fire state.
-fn paint(colors: &mut [[f32; 4]], state: u8, k: f32) {
+fn paint(colors: &mut [[f32; 4]], state: u8, t0: f32) {
     if state == CellFire::Burning as u8 {
-        // Alight: pushed above 1.0 so the bloom pass catches it.
+        // Alight: colours stay as generated (the shader chars and lights
+        // them); only the alpha flags the burn and carries its start.
         for c in colors {
-            *c = [1.0 + 2.2 * k, 0.42 + 0.25 * k, 0.06, 0.0];
+            let leaf = if c[3] > 0.5 { LEAF_OFFSET } else { 0.0 };
+            c[3] = -(1.0 + leaf + t0.max(0.0));
         }
     } else {
         // Charcoal, keeping a trace of the original tint so a burnt
@@ -1064,6 +1095,22 @@ fn paint(colors: &mut [[f32; 4]], state: u8, k: f32) {
                 0.0,
             ];
         }
+    }
+}
+
+/// Hand the simulated clock to the foliage shader (`tactical.y`, with the
+/// flaming time in `tactical.z`): a burning plant is consumed as a function
+/// of it, so the fire keeps eating the canopy between mesh rewrites and
+/// stands still while the world is paused.
+pub fn fire_clock(sim: Res<Sim>, veg: Res<Vegetation>, mut materials: ResMut<Assets<RetroMaterial>>) {
+    let now = sim.time_s() as f32;
+    let Some(m) = materials.get(&veg.material) else { return };
+    if m.extension.tactical.y == now && m.extension.tactical.z == PLANT_FLAMING_S {
+        return;
+    }
+    if let Some(m) = materials.get_mut(&veg.material) {
+        m.extension.tactical.y = now;
+        m.extension.tactical.z = PLANT_FLAMING_S;
     }
 }
 

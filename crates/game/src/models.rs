@@ -111,6 +111,15 @@ pub fn island(name: &str) -> &'static Kit {
         .unwrap_or_else(|| panic!("island kit has no `{name}`"))
 }
 
+/// The coast's rocks (`scripts/build_coast_models.py`). Same layout as the town kit.
+pub fn coast(name: &str) -> &'static Kit {
+    static COAST: OnceLock<HashMap<String, Kit>> = OnceLock::new();
+    COAST
+        .get_or_init(|| parse_kit(include_str!("../../../assets/models/coast.json"), "coast kit"))
+        .get(name)
+        .unwrap_or_else(|| panic!("coast kit has no `{name}`"))
+}
+
 /// An island model as a mesh.
 pub fn island_mesh(name: &str) -> Mesh {
     let m = island(name);

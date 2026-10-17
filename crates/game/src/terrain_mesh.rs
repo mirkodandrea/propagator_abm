@@ -52,7 +52,7 @@ const SUBMERGED_M: f32 = 0.03;
 
 /// Distance, metres, from each fire cell to the nearest water cell: what the
 /// coast's materials key off, since a vertex does not know where the sea is.
-struct ShoreField {
+pub(crate) struct ShoreField {
     cols: usize,
     rows: usize,
     cell: f32,
@@ -61,7 +61,7 @@ struct ShoreField {
 }
 
 impl ShoreField {
-    fn new(scn: &Scenario) -> Self {
+    pub(crate) fn new(scn: &Scenario) -> Self {
         let w = &scn.world;
         let (cols, rows) = (w.fire_cols, w.fire_rows);
         let mut d = vec![f32::INFINITY; cols * rows];
@@ -108,7 +108,7 @@ impl ShoreField {
     }
 
     /// Bilinear between cell centres.
-    fn at(&self, p: Pos) -> f32 {
+    pub(crate) fn at(&self, p: Pos) -> f32 {
         let fx = (p.x / self.cell - 0.5).clamp(0.0, (self.cols - 1) as f32);
         let fy = ((self.height_m - p.y) / self.cell - 0.5).clamp(0.0, (self.rows - 1) as f32);
         let (x0, y0) = (fx.floor() as usize, fy.floor() as usize);
@@ -125,6 +125,40 @@ fn smooth(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
     x * x * (3.0 - 2.0 * x)
 }
+
+/// Sea cliffs, which a 5 m heightfield only knows as a smooth ramp: on steep
+/// coastal faces the ground is displaced into strata ledges (the same bands
+/// [`coast_rock`] paints, so the colour steps and the geometry steps agree)
+/// and ridged crags, up to a few metres. Zero on the flat, on the beach, at
+/// the foot (below 1.5 m the waterline is untouched) and beyond ~300 m from
+/// the sea, so roads, houses and the water mesh meet the same ground as
+/// before. A function of position only: chunk edges stay seamless.
+pub(crate) fn cliff_elev(scn: &Scenario, shore: &ShoreField, p: Pos, elev: f32) -> f32 {
+    if elev < 1.5 || shore.at(p) > COAST_REACH_M {
+        return elev;
+    }
+    let slope_cos = scn.terrain.normal_at(p)[1];
+    let steep = smooth((0.93 - slope_cos) / 0.12);
+    let near = 1.0 - smooth((shore.at(p) - 60.0) / (COAST_REACH_M - 60.0));
+    let k = steep * near * smooth((elev - 1.5) / 3.0);
+    if k <= 0.0 {
+        return elev;
+    }
+    // ledges: a staircase in the same strata as `coast_rock`
+    let dip = noise(p.x / 160.0, p.y / 160.0, 0x5A) * 26.0 + noise(p.x / 38.0, p.y / 38.0, 0x5B) * 5.0;
+    let u = (elev + dip) / 14.0;
+    let stair = u.floor() + smooth((u.fract() - 0.25) / 0.5);
+    let ledge = (stair - u) * 14.0 * 0.30;
+    // crags: ridged noise, so the face has arêtes and gullies, not bumps
+    let ridge = 1.0 - (2.0 * noise(p.x / 9.0, p.y / 9.0, 0x81) - 1.0).abs();
+    let crag = (ridge - 0.5) * 2.2 + (noise(p.x / 23.0, p.y / 23.0, 0x82) - 0.5) * 3.0;
+    let d = k * (ledge + crag);
+    // never carve below the foot of the face
+    elev + d.max(-(elev - 1.0) * 0.8)
+}
+
+/// How far from the sea the cliffs are shaped, metres.
+const COAST_REACH_M: f32 = 320.0;
 
 fn mix3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
     [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
@@ -386,7 +420,9 @@ pub fn build(
                     // row 0 is the north edge; world +y is north
                     let gy = t.height_m - (r0 + r) as f32 * posting;
                     let p = Pos { x: gx, y: gy };
-                    let elev = t.elev[(r0 + r) * STRIDE * t.cols + (c0 + c) * STRIDE];
+                    let raw = t.elev[(r0 + r) * STRIDE * t.cols + (c0 + c) * STRIDE];
+                    let shore_d = shore.at(p);
+                    let elev = cliff_elev(scn, &shore, p, raw);
 
                     positions.push([gx, elev, -gy]);
                     // Deliberately the plain heightfield normal, not a
@@ -396,10 +432,21 @@ pub fn build(
                     // it produces exactly the blotchy close-range
                     // self-shadowing this comment is here to stop someone
                     // reintroducing (it shipped once, briefly).
-                    let n = t.normal_at(p);
+                    let n = if shore_d > COAST_REACH_M {
+                        t.normal_at(p)
+                    } else {
+                        // the same formula as `normal_at`, over the shaped ground
+                        let d = posting;
+                        let h = |q: Pos| cliff_elev(scn, &shore, q, t.height_at(q));
+                        let (hl, hr) = (h(Pos { x: p.x - d, ..p }), h(Pos { x: p.x + d, ..p }));
+                        let (hd, hu) = (h(Pos { y: p.y - d, ..p }), h(Pos { y: p.y + d, ..p }));
+                        let (nx, ny, nz) = (hl - hr, 2.0 * d, hd - hu);
+                        let len = (nx * nx + ny * ny + nz * nz).sqrt();
+                        [nx / len, ny / len, nz / len]
+                    };
                     normals.push([n[0], n[1], -n[2]]);
 
-                    let col = ground_color(scn, &mask, elev, n[1], p, shore.at(p));
+                    let col = ground_color(scn, &mask, elev, n[1], p, shore_d);
                     let col = Color::srgb(col[0], col[1], col[2]).to_linear();
                     colors.push([col.red, col.green, col.blue, 1.0]);
                     uvs.push([c as f32 / cn as f32, r as f32 / rn as f32]);
@@ -460,4 +507,37 @@ pub fn build(
 pub fn cell_ground(scn: &Scenario, c: Cell) -> (Pos, f32) {
     let p = scn.world.centre_of(c);
     (p, scn.terrain.height_at(p))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The cliffs are shaped only where they should be: a few metres at most,
+    /// nothing at the waterline, a minority of the vertices.
+    #[test]
+    fn cliffs_are_shaped_gently_and_only_on_the_coast() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let Ok(scn) = Scenario::load(&dir) else { return };
+        let shore = ShoreField::new(&scn);
+        let t = &scn.terrain;
+        let (mut shaped, mut total, mut worst) = (0usize, 0usize, 0.0f32);
+        for r in (0..t.rows).step_by(3) {
+            for c in (0..t.cols).step_by(3) {
+                let p = Pos { x: c as f32 * t.posting, y: t.height_m - r as f32 * t.posting };
+                let e = t.elev[r * t.cols + c];
+                let d = cliff_elev(&scn, &shore, p, e) - e;
+                total += 1;
+                if d != 0.0 {
+                    shaped += 1;
+                    worst = worst.max(d.abs());
+                    assert!(e >= 1.5, "{e} m shaped at {p:?}");
+                    assert!(shore.at(p) <= COAST_REACH_M);
+                }
+            }
+        }
+        eprintln!("cliffs: {shaped}/{total} vertices shaped, worst {worst:.2} m");
+        assert!(worst < 5.0, "{worst}");
+        assert!(shaped * 6 < total, "{shaped}/{total}");
+    }
 }

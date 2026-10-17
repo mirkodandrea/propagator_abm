@@ -179,7 +179,7 @@ pub fn setup(
     // and the fragment shader domain-warps the texture lookup so the flame
     // edge roils instead of sitting still.
     let flame_mat = fire_materials.add(FireMaterial { texture: flame_tex, mode: Vec4::X });
-    let spark_mat = fire_materials.add(FireMaterial { texture: spark_tex, mode: Vec4::ZERO });
+    let spark_mat = fire_materials.add(FireMaterial { texture: spark_tex, mode: Vec4::new(2.0, 0.0, 0.0, 0.0) });
     // Smoke occludes: alpha blending, and unlit so a plume does not flicker
     // as it crosses the terrain's shadow line.
     let smoke_mat = materials.add(StandardMaterial {
@@ -829,7 +829,7 @@ pub fn update_flames(
                 vel: Vec3::new(a.cos() * 6.0, 14.0 + 10.0 * phase, a.sin() * 6.0),
                 age: 0.0,
                 life: 3.0 + 2.0 * phase,
-                size: 1.8 + phase * 1.8,
+                size: 0.8 + phase * 0.8,
                 phase,
                 flare: false,
             });
@@ -862,24 +862,42 @@ pub fn update_flames(
         );
     }
 
+    // Embers are plain round particles (`flame.wgsl`, mode 2). Colour
+    // channels carry no colour: r = age share,
+    // g = per-ember phase, b = gain (negative for the landing flash).
+    let eye = cam.translation;
     let mut sparks = QuadBuilder::default();
     for ember in &view.embers {
         let k = (ember.age / ember.life).clamp(0.0, 1.0);
+        // never smaller than ~2 px, or a far ember shimmers in and out
+        let min_size = eye.distance(ember.pos) * 0.0017;
         if ember.flare {
             // A quick, bright pop where a firebrand has just landed on
             // unburnt fuel — sharp attack, quick decay, not a fade like an
             // ordinary ember: this is a spot-ignition risk lighting up, not
             // embers cooling.
             let pulse = (1.0 - k).powf(0.5) * (1.0 - (k * 3.0 - 1.0).max(0.0));
-            let size = ember.size * (1.0 + 1.5 * (1.0 - k));
-            let c = [4.0 * pulse, 2.2 * pulse, 0.9 * pulse, 1.0];
+            let size = (ember.size * (1.0 + 1.5 * (1.0 - k))).max(min_size);
+            let c = [k, ember.phase, -pulse, 1.0];
             sparks.billboard(ember.pos, right * size, up * size, 1.0, c, c);
             continue;
         }
-        let fade = 1.0 - k;
-        let size = ember.size * (0.6 + 0.6 * fade);
-        let c = [2.6 * fade, 0.65 * fade, 0.10 * fade, 1.0];
-        sparks.billboard(ember.pos, right * size, up * size, 1.0, c, c);
+        let size = (ember.size * (1.0 - 0.35 * k)).max(min_size);
+        let gain = 0.9 + 0.5 * ember.phase;
+        let c = [k, ember.phase, gain, 1.0];
+        // An oval: a little longer along the direction of travel, seen from
+        // the camera. The shader draws the round-edged shape inside it.
+        let to_eye = (eye - ember.pos).normalize_or_zero();
+        let speed = ember.vel.length();
+        let dir = if speed > 0.5 { ember.vel / speed } else { Vec3::Y };
+        let mut across = dir.cross(to_eye).normalize_or_zero();
+        let mut along = across.cross(to_eye).normalize_or_zero();
+        if across == Vec3::ZERO || along == Vec3::ZERO {
+            across = right;
+            along = up;
+        }
+        let stretch = 1.0 + (0.04 * speed).min(0.7);
+        sparks.billboard(ember.pos, across * size, along * size * stretch, 1.0, c, c);
     }
 
     meshes.insert(&view.flames, flames.finish());
@@ -925,7 +943,15 @@ fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
         // spotting distance in the modelled travel time (see the spawn
         // site), and damping it away early would strand it short.
         ember.vel.y -= 9.0 * dt;
-        ember.pos += ember.vel * dt;
+        // Tumbling in the plume's eddies: a zero-mean flutter on top of the
+        // ballistic path, so the landing point is unchanged but no ember
+        // flies on rails.
+        let flutter = Vec3::new(
+            noise(ember.pos.x * 0.07, ember.age * 1.7 + ember.phase * 9.0, 11) - 0.5,
+            noise(ember.pos.y * 0.07, ember.age * 2.3 + ember.phase * 5.0, 12) - 0.5,
+            noise(ember.pos.z * 0.07, ember.age * 1.7 + ember.phase * 7.0, 13) - 0.5,
+        ) * 7.0;
+        ember.pos += (ember.vel + flutter) * dt;
     }
     // A firebrand that reaches ground level on unburnt, burnable fuel is
     // exactly what the core's own spotting model is throwing ahead of the
@@ -1065,7 +1091,7 @@ fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
                 vel: launch_dir * (distance / travel_time) + Vec3::Y * v_y0,
                 age: 0.0,
                 life: travel_time,
-                size: 1.6 + phase * 1.6,
+                size: 0.7 + phase * 0.9,
                 phase,
                 flare: false,
             });

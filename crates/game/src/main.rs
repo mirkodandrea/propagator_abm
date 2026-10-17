@@ -16,6 +16,7 @@ pub enum AppState {
 mod boats;
 mod buildings;
 mod camera;
+mod coast;
 mod field;
 mod fire_shader;
 mod fire_view;
@@ -112,7 +113,7 @@ fn main() -> anyhow::Result<()> {
     .add_plugins(tape::TapePlugin)
     .add_plugins(tactical::TacticalPlugin)
     // sun, sky and ambient light from the game's clock; the sea and its wind; the boats
-    .add_plugins((sky::SkyPlugin, sea::SeaPlugin, boats::BoatsPlugin, landmarks::LandmarksPlugin))
+    .add_plugins((sky::SkyPlugin, sea::SeaPlugin, boats::BoatsPlugin, landmarks::LandmarksPlugin, coast::CoastPlugin))
     .init_state::<AppState>()
     .init_resource::<kiosk::snap::SnapView>()
     .init_resource::<kiosk::snap::SnapHide>()
@@ -259,7 +260,7 @@ fn kiosk_systems(app: &mut App) {
             (
                 fire_view::update_overlay,
                 fire_view::update_flames,
-                (vegetation::burn, vegetation::lod),
+                (vegetation::burn, vegetation::lod, vegetation::fire_clock),
                 buildings::damage,
                 units::update_units,
                 units::animate_units,

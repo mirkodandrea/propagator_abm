@@ -39,9 +39,59 @@ fn flame_ramp(h: f32) -> vec3<f32> {
     return mix(mix(mix(c0, c1, a), c2, b), c3, c);
 }
 
+// Glowing ember temperature, h = 1 just thrown ... 0 spent: white-yellow,
+// orange, dull red, then a dark cinder.
+fn ember_ramp(h: f32) -> vec3<f32> {
+    let spent = vec3<f32>(0.22, 0.025, 0.0);
+    let red = vec3<f32>(1.5, 0.20, 0.02);
+    let orange = vec3<f32>(3.0, 1.05, 0.12);
+    let white = vec3<f32>(4.2, 2.9, 1.3);
+    let a = smoothstep(0.0, 0.30, h);
+    let b = smoothstep(0.30, 0.65, h);
+    let c = smoothstep(0.65, 1.0, h);
+    return mix(mix(mix(spent, red, a), orange, b), white, c);
+}
+
+// An ember or a landing flash (`fire_view::update_flames`): an oval quad
+// (uv 0..1) with the round shape drawn per pixel. Vertex colour:
+// r = share of its flight, g = phase, b = gain (negative: a landing flash).
+fn ember(in: VertexOutput, t: f32) -> vec4<f32> {
+    let k = clamp(in.color.r, 0.0, 1.0);
+    let ph = in.color.g;
+    let flash = in.color.b < 0.0;
+    let gain = abs(in.color.b);
+    let x = in.uv.x * 2.0 - 1.0;
+    let y = in.uv.y * 2.0 - 1.0;
+
+    if flash {
+        let f2 = (1.0 - clamp(x * x + y * y, 0.0, 1.0));
+        let f4 = f2 * f2;
+        return vec4<f32>(vec3<f32>(4.0, 2.2, 0.9) * gain * (f4 * f4 + 0.25 * f4), 0.0);
+    }
+
+    // A round glowing dot, drawn per pixel: a bright core, a soft body and a
+    // halo, all exactly zero before the quad's edge so no square shows.
+    let r = clamp(length(vec2<f32>(x, y)), 0.0, 1.0);
+    let body = 1.0 - smoothstep(0.45, 0.95, r);
+    let core = 1.0 - smoothstep(0.0, 0.40, r);
+    let shape = 0.9 * body + 1.2 * core * core + 0.25 * (1.0 - r) * (1.0 - r);
+
+    // It cools over its flight and flickers as it tumbles.
+    let heat = 1.0 - pow(k, 0.7);
+    let flick = 0.6 + 0.4 * sin(t * (13.0 + ph * 23.0) + ph * 50.0);
+    let life = smoothstep(1.0, 0.78, k);
+    let col = ember_ramp(heat) * shape * gain * flick * life;
+    // Alpha 0: Bevy's Add is premultiplied (src + dst * (1 - alpha)), so any
+    // alpha would darken what is behind the dot into a dark rim.
+    return vec4<f32>(col, 0.0);
+}
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let t = globals.time;
+    if mode.x > 1.5 {
+        return ember(in, t);
+    }
     if mode.x < 0.5 {
         let s0 = in.world_position.x * 0.13 + in.world_position.z * 0.071;
         let tx = textureSample(base_texture, base_sampler, in.uv);
