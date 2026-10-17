@@ -55,7 +55,7 @@ pub const ENGINE_PARK_FLAME_M: f32 = 80.0;
 pub const REFILL_S: f32 = 12.0 * 60.0;
 /// How far from its hex's road point a team's people on foot go to work: the hexes
 /// around its own (user, 2026-10-15; was 400 m with hexes of 500 m).
-pub const CREW_RANGE_M: f32 = crate::hex::TEAM_REACH_HEXES as f32 * crate::hex::HEX_M;
+pub const CREW_RANGE_M: f32 = crate::hex::TEAM_AREA_M;
 /// How far from the nearest flame the team's line is cut, metres.
 pub const CREW_LINE_OFFSET_M: f32 = 100.0;
 /// Spacing of the points that trace the curve, metres.
@@ -1020,7 +1020,7 @@ impl Game {
             let mut best: Option<(f32, f32, Pos)> = None;
             for (i, &p) in self.net.nodes.iter().enumerate() {
                 let n = i as network::NodeId;
-                if !self.net.is_drivable_node(n) || Axial::of(p).distance(at) > crate::hex::TEAM_REACH_HEXES || self.net.component(n, true) != comp || !world.contains(p) {
+                if !self.net.is_drivable_node(n) || dist(p, at.centre()) > CREW_RANGE_M || self.net.component(n, true) != comp || !world.contains(p) {
                     continue;
                 }
                 let nearest = active.iter().map(|f| dist(*f, p)).fold(f32::INFINITY, f32::min);

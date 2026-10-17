@@ -26,4 +26,4 @@ pub use case::{Case, Territory};
 pub use chat::{ChatMsg, Kind, Voice};
 pub use evac::{EvacPlan, State};
 pub use game::{ClosedStretch, DistrictOutcome, Game, LogEntry, MovePlan, Outcome, Team, Tuning, TEAM_DANGER_M, TEAM_FIRE_CRIT_M, REFILL_S, RUN_X, STEP_S};
-pub use hex::{Axial, Hex, HexGrid, HEX_M, TEAM_REACH_HEXES};
+pub use hex::{Axial, Hex, HexGrid, HEX_M, TEAM_AREA_M};

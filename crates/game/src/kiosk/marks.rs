@@ -20,10 +20,13 @@ use crate::sim::Sim;
 use crate::tape::TapeMaterial;
 
 /// Widths on the map, metres.
-const HEX_LINE_M: f32 = 12.0;
+const HEX_LINE_M: f32 = 5.0;
 /// The dark under-stroke of the hex lines, wider, a little lower.
 const HEX_UNDER_M: f32 = 24.0;
 const HEX_PICK_M: f32 = 16.0;
+/// Radius of the circle that marks a place, and the larger one for the tutorial's.
+const DOT_R_M: f32 = 28.0;
+const WANT_R_M: f32 = 45.0;
 /// The covered zone's boundary line.
 const ZONE_LINE_M: f32 = 6.0;
 /// The zone line bobs up and down by this much, metres, once per period.
@@ -117,7 +120,7 @@ const WANT: [f32; 3] = [1.0, 0.72, 0.0];
 
 pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>, mut tapes: ResMut<Assets<TapeMaterial>>) {
     commands.insert_resource(MarkAssets {
-        hex: materials.add(FlatMaterial::with_alpha([1.0, 1.0, 1.0], 0.55).pulled(HEX_PULL_M)),
+        hex: materials.add(FlatMaterial::with_alpha([1.0, 1.0, 1.0], 0.22).pulled(HEX_PULL_M)),
         road: materials.add(FlatMaterial::with_alpha([1.0, 0.93, 0.62], 0.5)),
         under: materials.add(FlatMaterial::new([0.02, 0.03, 0.05]).pulled(HEX_PULL_M - 3.0)),
         pick: materials.add(FlatMaterial::new([1.0, 1.0, 1.0]).pulled(HEX_PULL_M + 4.0)),
@@ -165,12 +168,6 @@ fn merge(parts: Vec<Mesh>) -> Mesh {
     mesh
 }
 
-/// The hexes within the team's reach of `at` (its own not included).
-fn reach(at: rocca::Axial) -> impl Iterator<Item = rocca::Axial> {
-    let n = rocca::TEAM_REACH_HEXES;
-    (-n..=n).flat_map(move |dq| (-n..=n).map(move |dr| rocca::Axial { q: at.q + dq, r: at.r + dr })).filter(move |h| (1..=n).contains(&h.distance(at)))
-}
-
 /// The hex a selected team is placed on, or being placed on.
 fn area_hex(kiosk: &Kiosk, sim: &Sim) -> Option<rocca::Axial> {
     let Selection::Team(t) = kiosk.selection else { return None };
@@ -182,52 +179,28 @@ fn outline(at: rocca::Axial) -> Vec<Pos> {
     c.iter().chain(std::iter::once(&c[0])).copied().collect()
 }
 
-/// The outer boundary of a set of hexes as closed paths: the edges that
-/// belong to one hex of the set only, chained end to end.
-fn boundary(hexes: &[rocca::Axial]) -> Vec<Vec<Pos>> {
-    use std::collections::HashMap;
-    let key = |p: Pos| ((p.x * 0.5).round() as i64, (p.y * 0.5).round() as i64);
-    let mut edges: HashMap<((i64, i64), (i64, i64)), (Pos, Pos, u8)> = HashMap::new();
-    for h in hexes {
-        let c = h.corners();
-        for i in 0..6 {
-            let (a, b) = (c[i], c[(i + 1) % 6]);
-            let k = if key(a) <= key(b) { (key(a), key(b)) } else { (key(b), key(a)) };
-            edges.entry(k).or_insert((a, b, 0)).2 += 1;
-        }
-    }
-    // from each boundary point, the boundary edges that start or end there
-    let mut at: HashMap<(i64, i64), Vec<(Pos, Pos)>> = HashMap::new();
-    for (a, b, _) in edges.into_values().filter(|e| e.2 == 1) {
-        at.entry(key(a)).or_default().push((a, b));
-        at.entry(key(b)).or_default().push((b, a));
-    }
-    let mut loops = vec![];
-    while let Some(&start) = at.keys().next() {
-        let mut path: Vec<Pos> = vec![];
-        let mut here = start;
-        loop {
-            let Some(out) = at.get_mut(&here) else { break };
-            let Some((a, b)) = out.pop() else { break };
-            // the edge is used: take it off the other end too
-            if let Some(back) = at.get_mut(&key(b)) {
-                back.retain(|&(x, y)| !(key(x) == key(b) && key(y) == key(a)));
-            }
-            if path.is_empty() {
-                path.push(a);
-            }
-            path.push(b);
-            here = key(b);
-            if here == start {
-                break;
-            }
-        }
-        at.retain(|_, v| !v.is_empty());
-        if path.len() > 2 {
-            loops.push(path);
-        }
-    }
-    loops
+/// A small circle: where a team is, goes or is asked to go.
+fn dot(c: Pos, r: f32) -> Vec<Pos> {
+    (0..=32).map(|i| {
+        let a = i as f32 / 32.0 * std::f32::consts::TAU;
+        Pos { x: c.x + r * a.cos(), y: c.y + r * a.sin() }
+    }).collect()
+}
+
+/// Where the team would stand for hex `at`: its road point, else the centre.
+fn spot(sim: &Sim, at: rocca::Axial) -> Pos {
+    sim.hexes.get(at).map_or(at.centre(), |h| h.target)
+}
+
+/// A team's area of intervention, drawn as a circle around its hex rather
+/// than as the union of hexes (user, 2026-10-17).
+fn area_circle(at: rocca::Axial) -> Vec<Pos> {
+    let c = at.centre();
+    let r = rocca::TEAM_AREA_M;
+    (0..=96).map(|i| {
+        let a = i as f32 / 96.0 * std::f32::consts::TAU;
+        Pos { x: c.x + r * a.cos(), y: c.y + r * a.sin() }
+    }).collect()
 }
 
 fn spawn<M: Component>(commands: &mut Commands, meshes: &mut Assets<Mesh>, mesh: Mesh, mat: &Handle<FlatMaterial>, tag: M) -> Entity {
@@ -240,12 +213,12 @@ fn spawn<M: Component>(commands: &mut Commands, meshes: &mut Assets<Mesh>, mesh:
     )).id()
 }
 
-/// The hex grid is not drawn during play (user, 2026-10-15). While a team's
-/// move is being chosen (in pause, the team taken or dragged) the drivable
-/// roads show over the canopy, and the hexes the team can actually be sent to
-/// ([`rocca::Game::move_targets`], the rule of the order itself; in the
-/// tutorial only the one the step asks). The roads are built once, then shown
-/// or hidden; the hexes are rebuilt for each team and pause.
+/// While a team's move is being chosen (in pause, the team taken or dragged)
+/// the drivable roads show over the canopy, and the hexes the team can
+/// actually be sent to ([`rocca::Game::move_targets`], the rule of the order
+/// itself; in the tutorial only the one the step asks), very faint (user,
+/// 2026-10-17): the grid is the fine one of the orders. The roads are built
+/// once, then shown or hidden; the hexes are rebuilt for each team and pause.
 pub fn update_hexes(
     mut commands: Commands,
     sim: Res<Sim>,
@@ -366,7 +339,7 @@ pub fn update_orders(
     }
     // the hex the tutorial asks for
     if let Some(Expect::Move(_, at)) = kiosk.expect() {
-        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(at), HEX_PICK_M, None), &assets.want, OrderMark);
+        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &dot(spot(&sim, at), WANT_R_M), HEX_PICK_M * 1.4, None), &assets.want, OrderMark);
     }
     let chosen = match kiosk.selection {
         Selection::Team(t) => Some(t),
@@ -374,7 +347,7 @@ pub fn update_orders(
     };
     // the area the team works around its hex, lit up in its colour
     if let Some(at) = area_hex(&kiosk, &sim).filter(|_| !matches!(kiosk.move_plan, Some(Err(_)))) {
-        let rings = reach(at).map(|h| path_mesh(&sim.scn, &outline(h), HEX_PICK_M * 0.6, None)).collect();
+        let rings = vec![path_mesh(&sim.scn, &area_circle(at), HEX_PICK_M * 0.6, None)];
         let mat = chosen.map_or(&assets.area, |t| &assets.team_hex[t % TEAM_COLOURS.len()]);
         spawn(&mut commands, &mut meshes, merge(rings), mat, OrderMark);
     }
@@ -382,13 +355,13 @@ pub fn update_orders(
     if let (Some(_), Selection::Team(t)) = (kiosk.move_hex, kiosk.selection) {
         let u = &sim.crews.units[sim.teams[t].unit];
         let from = sim.teams[t].hex.unwrap_or_else(|| rocca::Axial::of(u.pos));
-        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(from), HEX_PICK_M, None), &assets.pick, OrderMark);
+        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &dot(spot(&sim, from), DOT_R_M), HEX_PICK_M, None), &assets.pick, OrderMark);
     }
     if let Some(at) = kiosk.move_hex {
         // a hex the team cannot go to is red, not white
         let refused = matches!(kiosk.move_plan, Some(Err(_)));
         let mat = if refused { &assets.closed } else { chosen.map_or(&assets.pick, |t| &assets.team_hex[t % TEAM_COLOURS.len()]) };
-        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &outline(at), HEX_PICK_M * 1.4, None), mat, OrderMark);
+        spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &dot(spot(&sim, at), DOT_R_M), HEX_PICK_M * 1.4, None), mat, OrderMark);
     }
     // the road the chosen team would drive: solid, wide, in its colour
     if let Some(Ok(p)) = &kiosk.move_plan {
@@ -420,11 +393,7 @@ pub fn update_teams(
     let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
     let zones: Vec<(usize, Vec<rocca::Axial>)> = if playing {
         sim.teams.iter().enumerate().filter_map(|(t, team)| {
-            let h = team.hex?;
-            let mut z = vec![h];
-            z.extend(reach(h));
-            z.sort_unstable();
-            Some((t, z))
+            Some((t, vec![team.hex?]))
         }).collect()
     } else {
         vec![]
@@ -444,7 +413,7 @@ pub fn update_teams(
         commands.entity(e).despawn();
     }
     for (t, z) in &zones {
-        let loops = boundary(z);
+        let loops = vec![area_circle(z[0])];
         if loops.is_empty() {
             continue;
         }

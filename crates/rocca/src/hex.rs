@@ -7,11 +7,13 @@ use abm::network::{NodeId, RoadNetwork};
 use scenario::{Pos, Scenario};
 
 /// Distance between the centres of two neighbouring hexes (across the flats),
-/// metres. User, 2026-10-15: 150 m (was 300 m).
-pub const HEX_M: f32 = 150.0;
+/// metres. The grid is only the internal resolution of the orders; the player
+/// sees a point and a circle. User, 2026-10-17: 75 m (was 150 m, 300 m before).
+pub const HEX_M: f32 = 75.0;
 
-/// How many hexes around its own a team works (user, 2026-10-15).
-pub const TEAM_REACH_HEXES: i32 = 2;
+/// Radius of the circle around its hex where a team works, metres (the 2
+/// hexes of 150 m of 2026-10-15, now a true circle).
+pub const TEAM_AREA_M: f32 = 300.0;
 
 /// Centre to corner, metres.
 pub fn radius_m() -> f32 {

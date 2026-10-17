@@ -161,7 +161,7 @@ pub fn draw(
             }
             map_badges(ctx, k, &mut sim, cam);
             hover_move(ctx, k, &sim, cam);
-            map_click(k, &mut sim);
+            map_click(k, &mut sim, ctx.input(|i| i.has_touch_screen()));
             if k.phase == Phase::Gioco {
                 offscreen_alerts(ctx, k, &sim, cam);
             }
@@ -477,7 +477,10 @@ fn give_move(k: &mut Kiosk, sim: &mut Sim, t: usize, at: rocca::Axial) {
 }
 
 /// A click on the map with a team selected: the team goes to the hex under it.
-fn map_click(k: &mut Kiosk, sim: &mut Sim) {
+/// On a touch screen there is no pointer to hover with, so the first tap only
+/// previews (circle, road, minutes) and a second tap on the same place gives
+/// the order; a tap elsewhere moves the preview (2026-10-17).
+fn map_click(k: &mut Kiosk, sim: &mut Sim, touch: bool) {
     let Some(p) = k.click else { return };
     if let Selection::Team(t) = k.selection {
         if sim.paused() {
@@ -485,6 +488,8 @@ fn map_click(k: &mut Kiosk, sim: &mut Sim) {
             // a click where the team already is takes the choice back
             if sim.teams[t].hex == Some(at) {
                 k.clear_selection();
+            } else if touch && k.move_hex != Some(at) {
+                preview_move(k, sim, t, at);
             } else {
                 give_move(k, sim, t, at);
             }
@@ -505,6 +510,9 @@ fn hover_move(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, &Glo
     }
 }
 
+/// How far from a usable spot a click is still pulled to it, metres.
+const SNAP_M: f32 = 150.0;
+
 /// A point not on a usable hex is pulled to the road point of the nearest
 /// hex the team can be sent to, if that is within one hex (user, 2026-10-16).
 fn snap_to_target(sim: &Sim, t: usize, g: Pos) -> Pos {
@@ -513,7 +521,7 @@ fn snap_to_target(sim: &Sim, t: usize, g: Pos) -> Pos {
         return g;
     }
     let near = targets.iter().filter_map(|&a| sim.hexes.get(a)).map(|h| (rocca::hex::dist(h.at.centre(), g), h.target))
-        .filter(|(d, _)| *d <= rocca::hex::HEX_M).min_by(|a, b| a.0.total_cmp(&b.0));
+        .filter(|(d, _)| *d <= SNAP_M).min_by(|a, b| a.0.total_cmp(&b.0));
     near.map_or(g, |(_, p)| p)
 }
 

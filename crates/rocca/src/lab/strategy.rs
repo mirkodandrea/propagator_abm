@@ -12,7 +12,10 @@ use scenario::Pos;
 
 use crate::district::{self, dist};
 use crate::game::{Game, PROTECT_M};
-use crate::hex::{Axial, HEX_M};
+use crate::hex::Axial;
+
+/// The 150 m hex of the earlier grid: the spacing the strategies were tuned with.
+const HEX_M: f32 = 150.0;
 
 /// The shape of the fire now, from the burning front only.
 #[derive(Debug, Clone, Copy)]
