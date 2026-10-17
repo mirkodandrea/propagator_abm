@@ -22,6 +22,7 @@ mod fire_shader;
 mod fire_view;
 mod forecast_view;
 mod forecast_zone;
+mod reach_zone;
 mod frame;
 mod kiosk;
 mod landmarks;
@@ -110,6 +111,8 @@ fn main() -> anyhow::Result<()> {
     .add_plugins(retro::RetroShaderPlugin)
     .add_plugins(flat::FlatPlugin)
     .add_plugins(forecast_zone::ZonePlugin)
+    .add_plugins(reach_zone::ReachPlugin)
+    .add_plugins(reach_zone::RoutePlugin)
     .add_plugins(tape::TapePlugin)
     .add_plugins(tactical::TacticalPlugin)
     // sun, sky and ambient light from the game's clock; the sea and its wind; the boats

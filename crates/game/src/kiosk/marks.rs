@@ -15,6 +15,7 @@ use scenario::Pos;
 
 use super::{Kiosk, Phase, Selection};
 use crate::flat::FlatMaterial;
+use crate::reach_zone::{band_mesh, route_mesh, sparse_mesh, ReachMaterial, RouteMaterial};
 use crate::rings::{path_mesh, path_mesh_at, RING_LIFT_M};
 use crate::sim::Sim;
 use crate::tape::TapeMaterial;
@@ -69,9 +70,12 @@ pub struct ZoneBob;
 
 #[derive(Resource)]
 pub struct MarkAssets {
-    hex: Handle<FlatMaterial>,
+    /// The band where a team can be placed (pixel shader).
+    reach: Handle<ReachMaterial>,
+    /// The route a team would drive (pixel shader), per team colour.
+    team_line: Vec<Handle<RouteMaterial>>,
     /// The drivable roads, while a move is chosen.
-    road: Handle<FlatMaterial>,
+    road: Handle<RouteMaterial>,
     /// Dark, under the hexes and the routes.
     under: Handle<FlatMaterial>,
     pick: Handle<FlatMaterial>,
@@ -120,10 +124,11 @@ pub const EVAC: [f32; 3] = [0.25, 1.0, 0.2];
 const CLOSED: [f32; 3] = [1.0, 0.12, 0.08];
 const WANT: [f32; 3] = [1.0, 0.72, 0.0];
 
-pub fn setup(mut commands: Commands, mut materials: ResMut<Assets<FlatMaterial>>, mut tapes: ResMut<Assets<TapeMaterial>>) {
+pub fn setup(mut commands: Commands, mut lines: ResMut<Assets<RouteMaterial>>, mut reaches: ResMut<Assets<ReachMaterial>>, mut materials: ResMut<Assets<FlatMaterial>>, mut tapes: ResMut<Assets<TapeMaterial>>) {
     commands.insert_resource(MarkAssets {
-        hex: materials.add(FlatMaterial::with_alpha([1.0, 1.0, 1.0], 0.22).pulled(HEX_PULL_M)),
-        road: materials.add(FlatMaterial::with_alpha([1.0, 0.93, 0.62], 0.5)),
+        team_line: TEAM_COLOURS.iter().map(|&c| lines.add(RouteMaterial::new(c, ROUTE_M * 0.75, ROUTE_M * 1.35))).collect(),
+        reach: reaches.add(ReachMaterial::new([1.0, 1.0, 1.0], 0.22, BUFFER_M / 2.0)),
+        road: lines.add(RouteMaterial::plain([1.0, 0.93, 0.62], ROAD_M * 0.5, ROAD_M * 0.9, 0.75)),
         under: materials.add(FlatMaterial::new([0.02, 0.03, 0.05]).pulled(HEX_PULL_M - 3.0)),
         pick: materials.add(FlatMaterial::new([1.0, 1.0, 1.0]).pulled(HEX_PULL_M + 4.0)),
         want: materials.add(FlatMaterial::new(WANT).pulled(HEX_PULL_M + 4.0)),
@@ -233,26 +238,26 @@ pub fn update_hexes(
         assets.targets_key = None;
         let net = &sim.net;
         let main = sim.hexes.hexes.first().map(|h| net.component(h.node, true));
-        let (mut lines, mut under) = (vec![], vec![]);
+        let mut segments = vec![];
         for n in 0..net.len() {
             let id = n as abm::network::NodeId;
             if Some(net.component(id, true)) != main {
                 continue;
             }
             for e in net.neighbours(id) {
-                if !e.drivable || (e.to as usize) < n {
-                    continue;
+                if e.drivable && (e.to as usize) > n {
+                    segments.push(([net.pos(id), net.pos(e.to)], 0.0));
                 }
-                let seg = [net.pos(id), net.pos(e.to)];
-                under.push(path_mesh_at(&sim.scn, &seg, ROAD_M * UNDER, None, RING_LIFT_M - 2.0));
-                lines.push(path_mesh(&sim.scn, &seg, ROAD_M, None));
             }
         }
-        for (parts, mat) in [(under, assets.under.clone()), (lines, assets.road.clone())] {
-            if !parts.is_empty() {
-                let e = spawn(&mut commands, &mut meshes, merge(parts), &mat, RoadNetMark);
-                commands.entity(e).insert(Visibility::Hidden);
-            }
+        if let Some(mesh) = sparse_mesh(&sim.scn, &segments, ROAD_M * 0.9 + 6.0, 5.0) {
+            commands.spawn((
+                MaterialMeshBundle::<RouteMaterial> { mesh: meshes.add(mesh), material: assets.road.clone(), visibility: Visibility::Hidden, ..default() },
+                RoadNetMark,
+                bevy::pbr::NotShadowCaster,
+                bevy::pbr::NotShadowReceiver,
+                bevy::render::view::NoFrustumCulling,
+            ));
         }
         return;
     }
@@ -289,7 +294,7 @@ pub fn update_hexes(
     let Some(team) = sim.teams.get(t) else { return };
     let Some(from) = sim.net.nearest(sim.crews.units[team.unit].pos, true) else { return };
     let seen = abm::network::reachable_from(&sim.net, from, sim.fire.threat(), true);
-    let mut parts = vec![];
+    let mut segments = vec![];
     for n in 0..sim.net.len() {
         let id = n as abm::network::NodeId;
         if !seen[n] {
@@ -297,12 +302,18 @@ pub fn update_hexes(
         }
         for e in sim.net.neighbours(id) {
             if e.drivable && (e.to as usize) > n && seen[e.to as usize] {
-                parts.push(path_mesh(&sim.scn, &[sim.net.pos(id), sim.net.pos(e.to)], BUFFER_M, None));
+                segments.push([sim.net.pos(id), sim.net.pos(e.to)]);
             }
         }
     }
-    if !parts.is_empty() {
-        spawn(&mut commands, &mut meshes, merge(parts), &assets.hex, HexMark);
+    if let Some(mesh) = band_mesh(&sim.scn, &segments, BUFFER_M) {
+        commands.spawn((
+            MaterialMeshBundle::<ReachMaterial> { mesh: meshes.add(mesh), material: assets.reach.clone(), ..default() },
+            HexMark,
+            bevy::pbr::NotShadowCaster,
+            bevy::pbr::NotShadowReceiver,
+            bevy::render::view::NoFrustumCulling,
+        ));
     }
 }
 
@@ -378,12 +389,16 @@ pub fn update_orders(
         let mat = if refused { &assets.closed } else { chosen.map_or(&assets.pick, |t| &assets.team_hex[t % TEAM_COLOURS.len()]) };
         spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &dot(spot(&sim, at), DOT_R_M), HEX_PICK_M * 1.4, None), mat, OrderMark);
     }
-    // the road the chosen team would drive: solid, wide, in its colour
-    if let Some(Ok(p)) = &kiosk.move_plan {
-        if p.path.len() >= 2 {
-            let mat = chosen.map_or(&assets.pick, |t| &assets.team_route[t % TEAM_COLOURS.len()]);
-            spawn(&mut commands, &mut meshes, path_mesh_at(&sim.scn, &p.path, ROUTE_M * 1.5 * UNDER, None, RING_LIFT_M - 2.0), &assets.under, OrderMark);
-            spawn(&mut commands, &mut meshes, path_mesh(&sim.scn, &p.path, ROUTE_M * 1.5, None), mat, OrderMark);
+    // the road the chosen team would drive: a shader line in its colour
+    if let (Some(Ok(p)), Some(t)) = (&kiosk.move_plan, chosen) {
+        if let Some(mesh) = route_mesh(&sim.scn, &p.path, ROUTE_M * 1.35 + 6.0) {
+            commands.spawn((
+                MaterialMeshBundle::<RouteMaterial> { mesh: meshes.add(mesh), material: assets.team_line[t % TEAM_COLOURS.len()].clone(), ..default() },
+                OrderMark,
+                bevy::pbr::NotShadowCaster,
+                bevy::pbr::NotShadowReceiver,
+                bevy::render::view::NoFrustumCulling,
+            ));
         }
     }
     // the evacuation: under the pointer or chosen (dashed), and in course
