@@ -30,6 +30,10 @@ pub struct RetroExtension {
     #[texture(104)]
     #[sampler(105)]
     pub grass_map: Option<Handle<Image>>,
+    /// Tactical view (`tactical.rs`): x = how far the colours are drawn
+    /// toward grey, 0..1. Only terrain and foliage read it.
+    #[uniform(106)]
+    pub tactical: Vec4,
 }
 
 /// Per-material strength of the training-simulation finish.

@@ -184,6 +184,8 @@ pub struct WaterUniform {
     pub shallow_color: Vec4,
     /// World metres to ground-mask coordinates (`ground_mask::RoadMask::rect`).
     pub mask_rect: Vec4,
+    /// x: tactical desaturation (`tactical.rs`).
+    pub tactical: Vec4,
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
@@ -283,6 +285,7 @@ fn spawn_sea(
             deep_color: Vec4::new(0.02, 0.09, 0.20, 1.0),
             shallow_color: Vec4::new(0.09, 0.42, 0.40, 1.0),
             mask_rect: Vec4::new(1.0 / scn.world.width_m, 1.0 / scn.world.height_m, 0.0, 0.0),
+            tactical: Vec4::ZERO,
         },
         shore: Some(crate::ground_mask::ROAD_MASK),
     });

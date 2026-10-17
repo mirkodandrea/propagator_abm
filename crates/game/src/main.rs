@@ -32,6 +32,7 @@ mod playtest;
 mod quality;
 mod quality_live;
 mod flat;
+mod tactical;
 mod tape;
 mod retro;
 mod rings;
@@ -107,6 +108,7 @@ fn main() -> anyhow::Result<()> {
     .add_plugins(retro::RetroShaderPlugin)
     .add_plugins(flat::FlatPlugin)
     .add_plugins(tape::TapePlugin)
+    .add_plugins(tactical::TacticalPlugin)
     // sun, sky and ambient light from the game's clock; the sea and its wind; the boats
     .add_plugins((sky::SkyPlugin, sea::SeaPlugin, boats::BoatsPlugin, landmarks::LandmarksPlugin))
     .init_state::<AppState>()

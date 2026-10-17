@@ -27,6 +27,8 @@ struct WaterUniform {
     shallow_color: vec4<f32>,
     // xy: world metres to ground-mask coordinates.
     mask_rect: vec4<f32>,
+    // x: tactical desaturation, 0 (full colour) to 1.
+    tactical: vec4<f32>,
 };
 @group(2) @binding(0) var<uniform> water: WaterUniform;
 // The ground mask; its alpha is the signed distance to the waterline, 1 m a
@@ -212,5 +214,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Foam and sun glitter cover the transmitted view rather than fading out.
     let coverage = clamp(max(foam * 0.85, spec * 1.5), 0.0, 1.0);
     let opacity = mix(1.0 - transmission, 1.0, coverage);
+    let sea_luma = dot(col, vec3<f32>(0.2126, 0.7152, 0.0722));
+    col = mix(col, vec3<f32>(sea_luma) * 0.92, water.tactical.x);
     return apply_scene_fog(vec4<f32>(col, opacity), in.world_position.xyz);
 }

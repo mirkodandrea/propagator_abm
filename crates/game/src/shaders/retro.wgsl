@@ -23,6 +23,8 @@ struct RetroUniform {
 @group(2) @binding(103) var<uniform> mask_rect: vec4<f32>;
 @group(2) @binding(104) var grass_tex: texture_2d<f32>;
 @group(2) @binding(105) var grass_samp: sampler;
+// x: tactical desaturation, 0 (full colour) to 1; see `tactical.rs`.
+@group(2) @binding(106) var<uniform> tactical: vec4<f32>;
 
 // Road mask encoding and ribbon geometry: keep in step with `ground_mask.rs`.
 const RANGE_M: f32 = 12.0;
@@ -413,6 +415,15 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         let alive = 0.0;
 #endif
         pbr_input.material.base_color = foliage_albedo(pbr_input.material.base_color, p, in.world_normal, alive);
+    }
+
+    // Tactical view: terrain and foliage recede toward a flat, slightly
+    // darker grey so houses, units and the interface carry the colour.
+    if retro.enabled.w > 0.5 && retro.enabled.w < 2.5 {
+        let rgb = pbr_input.material.base_color.rgb;
+        let luma = dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+        let flat_rgb = vec3<f32>(luma) * 0.92;
+        pbr_input.material.base_color = vec4<f32>(mix(rgb, flat_rgb, tactical.x), pbr_input.material.base_color.a);
     }
 
     // A small additive lift is much more visible than changing emissive on an
