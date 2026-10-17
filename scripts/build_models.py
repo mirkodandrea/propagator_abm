@@ -132,58 +132,55 @@ def vehicle(truck=False):
         box('Headlamp',(side*w*.35,front-.025,.99 if truck else .82),(w*.20,.04,.20),light,.025)
         box('Tail lamp',(side*w*.37,l/2+.015,.91 if truck else .75),(.20,.035,.22),red)
 
+def blob(name, pos, size, material, seed, jitter=.16, flat=.55):
+    """A lumpy crown: a 12-vertex icosphere, each vertex pushed in or out and
+    the underside flattened. The pixel shader supplies the leaf texture, so the
+    silhouette is all the geometry has to carry."""
+    o = ico(name, pos, size, material)
+    k = seed * 7.31
+    for v in o.data.vertices:
+        r = 1 + jitter * math.sin(k + v.co.x * 5.1 + v.co.y * 3.7 + v.co.z * 4.3 + seed)
+        v.co = v.co * r
+        if v.co.z < 0:
+            v.co.z *= flat
+    return o
+
 def plant(kind):
     if kind == 'bush':
-        # Macchia: a low, dense, rounded clump wider than tall, no stem, so it
-        # never reads as a small tree from the overview.
-        ico('Macchia core',(0,0,.42),(.72,.68,.46),leaf2)
-        for i in range(4):
-            a=i*1.57+.4
-            ico('Macchia lobe',(math.cos(a)*.48,math.sin(a)*.44,.30+(i%2)*.06),(.46,.42,.34),leaf if i%2 else leaf2)
+        # Macchia: a low, dense, rounded clump wider than tall, no stem.
+        blob('Macchia core',(0,0,.34),(.78,.72,.40),leaf2,1)
+        blob('Macchia lobe',(.42,.22,.24),(.48,.44,.30),leaf,2)
+        blob('Macchia lobe',(-.36,-.30,.22),(.46,.42,.28),leaf,3)
         return
     if kind == 'cypress':
-        rod('Cypress trunk', (0,0,0), (0,0,.75), .025, wood, 5, top=.012)
-        rod('Cypress lower crown', (0,0,.20), (.015,0,.83), .15, leaf, 7, top=.07)
-        rod('Cypress spire', (.015,0,.60), (.035,.015,1.12), .11, leaf2, 7, top=0)
+        rod('Cypress lower crown', (0,0,.04), (.015,0,.80), .15, leaf, 5, top=.08)
+        rod('Cypress spire', (.015,0,.60), (.035,.015,1.12), .11, leaf2, 5, top=0)
         return
     if kind == 'olive':
-        rod('Gnarled olive trunk', (0,0,0), (.06,0,.43), .065, wood, 5, top=.033)
-        for i in range(4):
-            a=i*2.4
-            end=(math.cos(a)*.26,math.sin(a)*.22,.60+(i%2)*.08)
-            rod('Olive bough',(.06,0,.25),end,.022,wood,4,top=.009)
-            ico('Silver olive crown',end,(.30,.27,.23),leaf if i%2 else leaf2)
+        rod('Gnarled olive trunk', (0,0,0), (.06,0,.46), .07, wood, 4, top=.035)
+        blob('Silver olive crown',(.06,0,.62),(.40,.36,.25),leaf2,4)
+        blob('Silver olive crown',(.28,.10,.52),(.26,.24,.19),leaf,5)
+        blob('Silver olive crown',(-.20,-.12,.56),(.26,.24,.20),leaf,6)
         return
     if kind == 'pine':
         # Maritime pine: a tall, bare, slightly leaning trunk and a flat,
-        # irregular umbrella of separate needle pads high up.
-        rod('Leaning pine trunk',(0,0,0),(.07,.02,.80),.038,wood,6,top=.02)
-        rod('Pine fork',(.05,.015,.62),(-.13,.09,.84),.016,wood,4,top=.008)
-        for pos,size,m in [((.08,.02,.86),(.34,.30,.09),leaf),
-                           ((.25,.10,.80),(.20,.17,.07),leaf2),
-                           ((-.13,.10,.90),(.22,.19,.07),leaf2),
-                           ((.04,-.18,.93),(.17,.15,.06),leaf)]:
-            ico('Umbrella pine pad',pos,size,m)
+        # irregular umbrella of needle pads high up.
+        rod('Leaning pine trunk',(0,0,0),(.07,.02,.82),.038,wood,4,top=.02)
+        blob('Umbrella pine pad',(.08,.02,.88),(.36,.32,.09),leaf,7,.12,.3)
+        blob('Umbrella pine pad',(.26,.10,.80),(.20,.17,.07),leaf2,8,.12,.3)
+        blob('Umbrella pine pad',(-.15,.08,.92),(.22,.19,.07),leaf2,9,.12,.3)
         return
     if kind == 'chestnut':
         # Chestnut: a short, stout trunk under a big, round, lobed crown.
-        rod('Stout chestnut trunk',(0,0,0),(0,0,.34),.075,wood,6,top=.05)
-        for i in range(3):
-            a=i*2.1
-            rod('Chestnut bough',(0,0,.28),(math.cos(a)*.22,math.sin(a)*.22,.50),.03,wood,4,top=.012)
-        ico('Chestnut crown',(0,0,.66),(.44,.42,.32),leaf2)
-        for i in range(4):
-            a=i*1.571+.3
-            ico('Chestnut lobe',(math.cos(a)*.34,math.sin(a)*.32,.58+(i%2)*.14),(.29,.28,.24),leaf if i%2 else leaf2)
+        rod('Stout chestnut trunk',(0,0,0),(0,0,.40),.08,wood,4,top=.05)
+        blob('Chestnut crown',(0,0,.66),(.46,.44,.34),leaf2,10)
+        blob('Chestnut lobe',(.30,.16,.56),(.30,.28,.24),leaf,11)
+        blob('Chestnut lobe',(-.28,-.18,.60),(.30,.28,.25),leaf,12)
         return
-    rod('Tapered trunk',(0,0,0),(.025,0,.69),.055,wood,5,top=.019)
-    for i in range(3):
-        a=i*2.4
-        end=(math.cos(a)*.23,math.sin(a)*.23,.73)
-        rod('Branch',(0,0,.38),end,.017,wood,4,top=.007)
-    for i in range(5):
-        a=i*2.4
-        ico('Oak crown',(math.cos(a)*.21,math.sin(a)*.21,.64+(i%2)*.16),(.32,.30,.28),leaf if i%2 else leaf2)
+    rod('Tapered trunk',(0,0,0),(.025,0,.69),.055,wood,4,top=.019)
+    blob('Oak crown',(.02,0,.70),(.40,.38,.30),leaf2,13)
+    blob('Oak crown',(.26,.14,.58),(.28,.26,.22),leaf,14)
+    blob('Oak crown',(-.24,-.14,.62),(.28,.26,.23),leaf,15)
 
 builders = {'pedestrian':lambda:person(), 'firefighter':lambda:person(True), 'car':lambda:vehicle(), 'fire_engine':lambda:vehicle(True), 'pine':lambda:plant('pine'), 'oak':lambda:plant('oak'), 'chestnut':lambda:plant('chestnut'), 'bush':lambda:plant('bush'), 'olive':lambda:plant('olive'), 'cypress':lambda:plant('cypress')}
 baked={}
@@ -201,6 +198,8 @@ for name, build in builders.items():
         # Operational status multiplies these neutral values in the game.
         if name in ('pedestrian','firefighter','fire_engine'):
             v=max(color[:3]); color=(v,v,v,1)
+        zs=[v.co.z for v in mesh.vertices]; z0=min(zs); z1=max(zs)
+        crown = name in ('pine','oak','chestnut','bush','olive','cypress') and material!=wood
         normal_matrix=o.matrix_world.to_3x3().inverted().transposed()
         for tri in mesh.loop_triangles:
             for vi in tri.vertices:
@@ -208,7 +207,13 @@ for name, build in builders.items():
                 n=(normal_matrix @ tri.normal).normalized()
                 positions.append([round(p.x,6),round(p.z,6),round(-p.y,6)])
                 normals.append([round(n.x,6),round(n.z,6),round(-n.y,6)])
-                colors.append([round(v,5) for v in color])
+                if crown:
+                    # darker underneath, lit on top
+                    t=(mesh.vertices[vi].co.z-z0)/max(z1-z0,1e-6)
+                    c=[*(ch*(.78+.40*t) for ch in color[:3]),1]
+                else:
+                    c=color
+                colors.append([round(v,5) for v in c])
                 wood_flags.append(material==wood)
                 indices.append(len(indices))
         o.to_mesh_clear()

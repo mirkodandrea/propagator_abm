@@ -173,9 +173,6 @@ struct Plant {
     /// The same plant in the distant proxy mesh.
     low_start: u32,
     low_end: u32,
-    /// Its undersides in the close-range mesh (see [`CLOSE_M`]).
-    under_start: u32,
-    under_end: u32,
     /// What its burnt remains are made of, if it has any (grass leaves none).
     remains: Option<Remains>,
 }
@@ -218,14 +215,8 @@ struct Chunk {
     low_mesh: Handle<Mesh>,
     full: Entity,
     low: Entity,
-    /// The faces `full` leaves out because they look down (see
-    /// [`crate::models::split_plant`]), shown only within [`CLOSE_M`]. `None`
-    /// for a chunk without trees.
-    under: Option<(Handle<Mesh>, Entity)>,
     /// Which of the two is on show.
     near: bool,
-    /// Whether the undersides are on show.
-    close: bool,
     /// World-space bounds (Bevy frame) of the plants, for the LOD distance.
     bounds: (Vec3, Vec3),
     /// Fire cells the chunk covers, `(row0, row1, col0, col1)`, end exclusive.
@@ -236,12 +227,10 @@ struct Chunk {
     /// Colours as generated, before any fire damage.
     base: Vec<[f32; 4]>,
     low_base: Vec<[f32; 4]>,
-    under_base: Vec<[f32; 4]>,
     /// Vertex positions as generated, so a plant hidden on cleared ground
     /// (see [`CLEARED`]) can be brought back when the game restarts.
     pos_base: Vec<[f32; 3]>,
     low_pos_base: Vec<[f32; 3]>,
-    under_pos_base: Vec<[f32; 3]>,
     /// Fire state each plant was last drawn with, so a chunk is rebuilt only
     /// when something in it actually changed.
     drawn: Vec<u8>,
@@ -331,7 +320,6 @@ pub fn spawn(
                     for _ in 0..n {
                         let start = builder.full.positions.len() as u32;
                         let low_start = builder.low.positions.len() as u32;
-                        let under_start = builder.under.positions.len() as u32;
                         let remains_before = builder.remains.len();
                         let Some(pos) = scatter_plant(scn, cell, species, &mut rng, &mut builder)
                         else {
@@ -344,8 +332,6 @@ pub fn spawn(
                             vert_end: builder.full.positions.len() as u32,
                             low_start,
                             low_end: builder.low.positions.len() as u32,
-                            under_start,
-                            under_end: builder.under.positions.len() as u32,
                             remains: builder.remains.get(remains_before).cloned(),
                         });
                     }
@@ -365,22 +351,11 @@ pub fn spawn(
             );
             let base = builder.full.colors.clone();
             let low_base = builder.low.colors.clone();
-            let under_base = builder.under.colors.clone();
             let drawn = vec![CellFire::Unburnt as u8; plants.len()];
             let pos_base = builder.full.positions.clone();
             let low_pos_base = builder.low.positions.clone();
-            let under_pos_base = builder.under.positions.clone();
             let mesh = meshes.add(builder.full.finish());
             let low_mesh = meshes.add(builder.low.finish());
-            let under = (!builder.under.positions.is_empty()).then(|| {
-                let mesh = meshes.add(builder.under.finish());
-                let entity = commands.spawn(MaterialMeshBundle::<RetroMaterial> {
-                    mesh: mesh.clone(),
-                    material: material.clone(),
-                    ..default()
-                }).id();
-                (mesh, entity)
-            });
 
             // Vegetation is visual only: Mario can run through trunks and
             // canopies, and the follow camera is not clipped by the forest.
@@ -401,9 +376,7 @@ pub fn spawn(
                 low_mesh,
                 full,
                 low,
-                under,
                 near: true,
-                close: true,
                 bounds,
                 cells: (
                     cy * CHUNK_CELLS,
@@ -415,10 +388,8 @@ pub fn spawn(
                 char: None,
                 base,
                 low_base,
-                under_base,
                 pos_base,
                 low_pos_base,
-                under_pos_base,
                 drawn,
                 touched: false,
             });
@@ -607,8 +578,6 @@ fn grass(out: &mut Lods, base: Vec3, scale: f32, yaw: f32, foliage: [f32; 3], rn
 struct Lods {
     full: Builder,
     low: Builder,
-    /// Only the faces the full models leave out, see [`CLOSE_M`].
-    under: Builder,
     /// One entry per plant drawn from an archetype, in order.
     remains: Vec<Remains>,
 }
@@ -616,7 +585,7 @@ struct Lods {
 impl Lods {
     fn model(&mut self, name: &'static str, base: Vec3, scale: Vec3, yaw: f32,
         foliage: [f32; 3], wood: [f32; 3]) {
-        // Do not allocate the detailed tree or its hidden undersides on web.
+        // Do not allocate the detailed tree on web.
         // Merely hiding that mesh with LOD still retained all its CPU/GPU data.
         if cfg!(target_arch = "wasm32") {
             self.full.proxy(name, base, scale, yaw, foliage, wood);
@@ -624,9 +593,7 @@ impl Lods {
             return;
         }
         self.remains.push(Remains { name, base, scale, yaw });
-        let (up, down) = crate::models::split_plant(name);
-        self.full.model(up, base, scale, yaw, foliage, wood);
-        self.under.model(down, base, scale, yaw, foliage, wood);
+        self.full.model(crate::models::model(name), base, scale, yaw, foliage, wood);
         self.low.proxy(name, base, scale, yaw, foliage, wood);
     }
 }
@@ -972,10 +939,8 @@ pub fn burn(
 
         let mut colors = chunk.base.clone();
         let mut low_colors = chunk.low_base.clone();
-        let mut under_colors = chunk.under_base.clone();
         let mut positions = chunk.pos_base.clone();
         let mut low_positions = chunk.low_pos_base.clone();
-        let mut under_positions = chunk.under_pos_base.clone();
         chunk.touched = false;
         let mut char_positions = chunk.char.as_ref().map(|l| (l.near.hidden.clone(), l.far.hidden.clone()));
         for (i, ((plant, drawn), s)) in chunk.plants.iter().zip(&mut chunk.drawn).zip(wanted).enumerate() {
@@ -993,7 +958,6 @@ pub fn burn(
                 for (pos, range) in [
                     (&mut positions, plant.vert_start..plant.vert_end),
                     (&mut low_positions, plant.low_start..plant.low_end),
-                    (&mut under_positions, plant.under_start..plant.under_end),
                 ] {
                     let (a, b) = (range.start as usize, range.end as usize);
                     if a < b {
@@ -1016,7 +980,6 @@ pub fn burn(
             let k = (field.intensity(plant.pos) / 4000.0).clamp(0.2, 1.0);
             paint(&mut colors[plant.vert_start as usize..plant.vert_end as usize], s, k);
             paint(&mut low_colors[plant.low_start as usize..plant.low_end as usize], s, k);
-            paint(&mut under_colors[plant.under_start as usize..plant.under_end as usize], s, k);
         }
 
         if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
@@ -1026,10 +989,6 @@ pub fn burn(
         if let Some(mesh) = meshes.get_mut(&chunk.low_mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, low_colors);
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, low_positions);
-        }
-        if let Some(mesh) = chunk.under.as_ref().and_then(|(m, _)| meshes.get_mut(m)) {
-            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, under_colors);
-            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, under_positions);
         }
         if let (Some((near, far)), Some(layer)) = (char_positions, &chunk.char) {
             for (positions, m) in [(near, &layer.near), (far, &layer.far)] {
@@ -1108,11 +1067,6 @@ fn paint(colors: &mut [[f32; 4]], state: u8, k: f32) {
     }
 }
 
-/// Within this distance, and with the eye low enough over them, a chunk also
-/// draws the undersides of its crowns: the kiosk camera never sees them, but
-/// Mario's, close to the ground, does.
-const CLOSE_M: f32 = 250.0;
-
 /// Show each chunk's full models near the camera and its proxies beyond
 /// [`Vegetation::lod_m`], with a 10 % band so a chunk on the edge does not
 /// flicker while the camera drifts.
@@ -1137,17 +1091,6 @@ pub fn lod(
         let (lo, hi) = chunk.bounds;
         let d = eye.distance(eye.clamp(lo, hi));
         let near = if chunk.near { d < lod_m * 1.1 } else { d < lod_m };
-        // Seen from above a crown's underside is back-facing: a face tilted
-        // 53° below the horizon (the shallowest of them, normal y = -0.6)
-        // shows only to an eye lower than 53° over it, tan 53° ≈ 1.33. The
-        // eye is measured against the chunk's nearest point, so a hillside
-        // chunk (tall bounds) errs on the side of drawing.
-        let q = eye.clamp(lo, hi);
-        let (rise, run) = (eye.y - q.y, Vec2::new(eye.x - q.x, eye.z - q.z).length());
-        let tan_max = if chunk.close { 1.5 } else { 1.2 };
-        let low_angle = rise <= run * tan_max;
-        let in_range = if chunk.close { d < CLOSE_M * 1.1 } else { d < CLOSE_M };
-        let close = in_range && low_angle;
         if near != chunk.near {
             chunk.near = near;
             let (near_char, far_char) = match &chunk.char {
@@ -1157,14 +1100,6 @@ pub fn lod(
             for (e, on) in [(Some(chunk.full), near), (Some(chunk.low), !near), (near_char, near), (far_char, !near)] {
                 if let Some(Ok(mut v)) = e.map(|e| visibility.get_mut(e)) {
                     *v = if on { Visibility::Inherited } else { Visibility::Hidden };
-                }
-            }
-        }
-        if close != chunk.close {
-            chunk.close = close;
-            if let Some((_, e)) = &chunk.under {
-                if let Ok(mut v) = visibility.get_mut(*e) {
-                    *v = if close { Visibility::Inherited } else { Visibility::Hidden };
                 }
             }
         }
@@ -1229,7 +1164,7 @@ mod tests {
         }
     }
 
-    /// The distant proxies must stay a fraction of the models they stand in
+    /// The distant proxies must stay under half of the models they stand in
     /// for, and face outward: `Builder::finish` averages face normals, and an
     /// inward crown would be lit from the wrong side.
     #[test]
@@ -1239,7 +1174,7 @@ mod tests {
             b.proxy(name, Vec3::ZERO, Vec3::splat(10.0), 0.7, [0.3, 0.4, 0.2], [0.4, 0.2, 0.1]);
             let model = crate::models::model(name).indices.len() / 3;
             let tris = b.indices.len() / 3;
-            assert!(tris * 3 <= model, "{name}: {tris} proxy triangles for {model}");
+            assert!(tris * 2 <= model, "{name}: {tris} proxy triangles for {model}");
 
             let mesh = b.finish();
             let Some(bevy::render::mesh::VertexAttributeValues::Float32x3(pos)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) else { panic!() };

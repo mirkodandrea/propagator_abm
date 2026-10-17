@@ -18,55 +18,6 @@ pub struct Model {
 /// The archetypes scattered as vegetation, by the thousand.
 const PLANTS: [&str; 6] = ["pine", "oak", "chestnut", "bush", "olive", "cypress"];
 
-impl Model {
-    /// The faces whose indices `tris` lists, with only the vertices they use.
-    fn subset(&self, tris: &[[u32; 3]]) -> Model {
-        let mut remap = vec![u32::MAX; self.positions.len()];
-        let mut out = Model { positions: vec![], normals: vec![], colors: vec![], indices: vec![], wood: vec![] };
-        for tri in tris {
-            for &i in tri {
-                let i = i as usize;
-                if remap[i] == u32::MAX {
-                    remap[i] = out.positions.len() as u32;
-                    out.positions.push(self.positions[i]);
-                    out.normals.push(self.normals[i]);
-                    out.colors.push(self.colors[i]);
-                    out.wood.push(self.wood[i]);
-                }
-                out.indices.push(remap[i]);
-            }
-        }
-        out
-    }
-}
-
-/// A plant archetype split in two: `.0` without its steeply downward-facing
-/// faces (the lower half of each crown icosphere), `.1` only those faces.
-///
-/// From the shallowest pitch the kiosk camera allows (-0.55 rad) a face is
-/// visible only if its normal is above -sin 0.55 ≈ -0.52, so the undersides
-/// can't be seen from there; yet each costs vertex work in every pass, shadow
-/// cascades included. Mario's camera does look up at them, so near chunks draw
-/// both parts and distant ones only the first.
-pub fn split_plant(name: &str) -> &'static (Model, Model) {
-    static SPLIT: OnceLock<HashMap<&'static str, (Model, Model)>> = OnceLock::new();
-    &SPLIT.get_or_init(|| {
-        const MIN_NY: f32 = -0.6;
-        PLANTS
-            .into_iter()
-            .map(|name| {
-                let m = model(name);
-                let (mut up, mut down) = (vec![], vec![]);
-                for t in m.indices.chunks_exact(3) {
-                    let ny = t.iter().map(|&i| m.normals[i as usize][1]).sum::<f32>() / 3.0;
-                    (if ny < MIN_NY { &mut down } else { &mut up }).push([t[0], t[1], t[2]]);
-                }
-                (name, (m.subset(&up), m.subset(&down)))
-            })
-            .collect()
-    })[name]
-}
-
 pub fn model(name: &str) -> &'static Model {
     static MODELS: OnceLock<HashMap<String, Model>> = OnceLock::new();
     &MODELS.get_or_init(|| {
