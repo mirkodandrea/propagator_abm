@@ -17,7 +17,8 @@ struct Route {
     // x: core half width, y: outline half width (metres), z: flow speed (m/s), w: flow period (m)
     line: vec4<f32>,
     pull: vec4<f32>,
-    // x: overall opacity; y: strength of the flow (0 = a plain line)
+    // x: overall opacity; y: strength of the flow (0 = a plain line);
+    // z: dash period in metres (0 = unbroken), the dashes march along the route
     look: vec4<f32>,
 };
 @group(2) @binding(0) var<uniform> route: Route;
@@ -59,7 +60,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let lit = route.color.rgb * (1.0 - 0.3 * amt + 0.3 * amt * flow) + vec3<f32>(0.25 * amt * pow(flow, 4.0));
     let under = vec3<f32>(0.02, 0.03, 0.05);
     let rgb = mix(under, clamp(lit, vec3<f32>(0.0), vec3<f32>(1.0)), core);
-    let a = max(outer * 0.85, core) * route.look.x;
+    var dash = 1.0;
+    if route.look.z > 0.0 {
+        let q = fract((in.uv.y - globals.time * route.line.z) / route.look.z);
+        dash = smoothstep(0.0, 0.04, q) * (1.0 - smoothstep(0.56, 0.60, q));
+    }
+    let a = max(outer * 0.85, core) * route.look.x * dash;
     if a < 0.003 {
         discard;
     }

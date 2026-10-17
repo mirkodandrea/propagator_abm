@@ -175,6 +175,15 @@ impl RouteMaterial {
     }
 }
 
+impl RouteMaterial {
+    /// A plain line broken into dashes `period_m` long that march along it.
+    pub fn dashed(rgb: [f32; 3], core_m: f32, outline_m: f32, opacity: f32, period_m: f32) -> Self {
+        let mut m = Self::plain(rgb, core_m, outline_m, opacity);
+        m.uniform.look.z = period_m;
+        m
+    }
+}
+
 impl Material for RouteMaterial {
     fn vertex_shader() -> ShaderRef {
         ROUTE_SHADER_HANDLE.into()

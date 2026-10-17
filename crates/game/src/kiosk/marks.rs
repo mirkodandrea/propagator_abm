@@ -127,7 +127,7 @@ const WANT: [f32; 3] = [1.0, 0.72, 0.0];
 
 pub fn setup(mut commands: Commands, mut lines: ResMut<Assets<RouteMaterial>>, mut reaches: ResMut<Assets<ReachMaterial>>, mut materials: ResMut<Assets<FlatMaterial>>, mut tapes: ResMut<Assets<TapeMaterial>>) {
     commands.insert_resource(MarkAssets {
-        team_line: TEAM_COLOURS.iter().map(|&c| lines.add(RouteMaterial::new(c, ROUTE_M * 0.75, ROUTE_M * 1.35))).collect(),
+        team_line: TEAM_COLOURS.iter().map(|&c| lines.add(RouteMaterial::dashed(c, ROUTE_M * 1.0, ROUTE_M * 1.8, 0.95, 60.0))).collect(),
         reach: reaches.add(ReachMaterial::new([1.0, 1.0, 1.0], 0.22, BUFFER_M / 2.0)),
         road: lines.add(RouteMaterial::plain([1.0, 0.93, 0.62], ROAD_M * 0.5, ROAD_M * 0.9, 0.75)),
         under: materials.add(FlatMaterial::new([0.02, 0.03, 0.05]).pulled(HEX_PULL_M - 3.0)),
@@ -136,7 +136,7 @@ pub fn setup(mut commands: Commands, mut lines: ResMut<Assets<RouteMaterial>>, m
         area: materials.add(FlatMaterial::new(ROUTE).pulled(HEX_PULL_M + 2.0)),
         route: materials.add(FlatMaterial::new(ROUTE)),
         evac_line: lines.add(RouteMaterial::new(EVAC, ROUTE_M * 1.0, ROUTE_M * 1.8)),
-        evac_plan: lines.add(RouteMaterial::plain(EVAC, ROUTE_M * 1.0, ROUTE_M * 1.8, 0.92)),
+        evac_plan: lines.add(RouteMaterial::dashed(EVAC, ROUTE_M * 1.0, ROUTE_M * 1.8, 0.95, 60.0)),
         closed: materials.add(FlatMaterial::new(CLOSED).pulled(1.0)),
         active: materials.add(FlatMaterial::new([1.0, 0.9, 0.0]).pulled(HEX_PULL_M + 6.0)),
         team_zone: TEAM_COLOURS.iter().map(|&c| materials.add(FlatMaterial::new(c).pulled(HEX_PULL_M + 3.0))).collect(),
@@ -393,7 +393,7 @@ pub fn update_orders(
     }
     // the road the chosen team would drive: a shader line in its colour
     if let (Some(Ok(p)), Some(t)) = (&kiosk.move_plan, chosen) {
-        if let Some(mesh) = route_mesh(&sim.scn, &p.path, ROUTE_M * 1.35 + 6.0) {
+        if let Some(mesh) = route_mesh(&sim.scn, &p.path, ROUTE_M * 1.8 + 6.0) {
             commands.spawn((
                 MaterialMeshBundle::<RouteMaterial> { mesh: meshes.add(mesh), material: assets.team_line[t % TEAM_COLOURS.len()].clone(), ..default() },
                 OrderMark,
