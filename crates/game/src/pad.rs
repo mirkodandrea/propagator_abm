@@ -6,7 +6,7 @@
 //! The d-pad chooses the team (left/right) and the district (up/down). With
 //! a team chosen in the pause the aim is the
 //! centre of the screen, moved with the camera, and A sends the team there;
-//! with a district chosen X evacuates it. Y stops and starts the world, B is
+//! with a district chosen A (or X) evacuates it. Y stops and starts the world, B is
 //! Esc. These are only recorded in [`PadView`]; `kiosk::ui` turns them into
 //! the same calls the mouse makes.
 //!

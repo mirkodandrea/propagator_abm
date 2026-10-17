@@ -505,7 +505,7 @@ fn give_move(k: &mut Kiosk, sim: &mut Sim, t: usize, at: rocca::Axial) {
 /// d-pad left/right chooses a team and up/down a district, Y stops or starts
 /// the world, RB shows the island. With a team
 /// chosen the aim is the centre of the screen, moved with the camera, and A
-/// sends the team there; with a district chosen X evacuates it.
+/// sends the team there; with a district chosen A (or X) evacuates it.
 fn pad_orders(k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform), pad: &crate::pad::PadView, connected: bool, ctx: &egui::Context) {
     if pad.pause && k.phase == Phase::Gioco {
         if sim.paused() {
@@ -559,7 +559,7 @@ fn pad_orders(k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform), pa
                 give_move(k, sim, t, at);
             }
         }
-        Selection::District(d) if pad.evacuate => {
+        Selection::District(d) if pad.evacuate || pad.confirm => {
             if k.evac_plan.as_ref().is_some_and(|p| p.is_ok()) && k.allows(Expect::Evacuate(d)) {
                 match sim.evacuate(d) {
                     Ok(_) => {
@@ -585,7 +585,7 @@ fn pad_help(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
             ("◀ ▶", Color32::WHITE, "altra squadra"),
             ("▲ ▼", Color32::WHITE, "scegli il borgo"),
         ],
-        Selection::District(_) => &[("X", BLUE, "evacua"), ("B", RED, "annulla"), ("▲ ▼", Color32::WHITE, "altro borgo"), ("◀ ▶", Color32::WHITE, "scegli la squadra")],
+        Selection::District(_) => &[("A", BLUE, "evacua"), ("B", RED, "annulla"), ("▲ ▼", Color32::WHITE, "altro borgo"), ("◀ ▶", Color32::WHITE, "scegli la squadra")],
         _ if matches!(k.phase, Phase::Tutorial | Phase::Gioco) => &[
             ("◀ ▶", Color32::WHITE, "scegli la squadra"),
             ("▲ ▼", Color32::WHITE, "scegli il borgo"),
