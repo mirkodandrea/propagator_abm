@@ -16,13 +16,8 @@ use bevy_egui::{egui, EguiContexts};
 use rocca::forecast::{Epoch, Forecast, Job, HORIZONS};
 use scenario::{Pos, World};
 
-use crate::flat::FlatMaterial;
 use crate::sim::{Sim, SimRestarted};
 
-/// Ribbon width of an isochrone, metres.
-const LINE_M: f32 = 12.0;
-/// The dark under-stroke, wider.
-const UNDER_M: f32 = 20.0;
 /// Contours shorter than this (a lone spot fire's cell) are not drawn.
 const MIN_LOOP_M: f32 = 160.0;
 /// Gaussian smoothing of the isochrones along their length, and the spacing
@@ -60,7 +55,6 @@ pub struct ForecastView {
     /// The forecast on the map, and per horizon the points a label may
     /// stand on, leading edge (down the wind) first.
     shown: Option<(Forecast, [Vec<Pos>; HORIZONS])>,
-    materials: Option<[Handle<FlatMaterial>; HORIZONS + 1]>,
 }
 
 pub struct ForecastPlugin;
@@ -126,7 +120,7 @@ pub fn update(
     kiosk: Res<crate::kiosk::Kiosk>,
     mut restarted: EventReader<SimRestarted>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<FlatMaterial>>,
+    mut materials: ResMut<Assets<crate::forecast_zone::ZoneMaterial>>,
     mut marks: Query<(Entity, &mut Visibility), With<ForecastMark>>,
 ) {
     let clear = |view: &mut ForecastView, commands: &mut Commands, marks: &Query<(Entity, &mut Visibility), With<ForecastMark>>| {
@@ -164,14 +158,6 @@ pub fn update(
             Poll::Done(Err(e)) => warn!("previsione: {e}"),
             Poll::Done(Ok(f)) if generation == view.generation && f.issued_s <= sim.time_s() => {
                 clear(&mut view, &mut commands, &marks);
-                let mats = view
-                    .materials
-                    .get_or_insert_with(|| {
-                        let mut m = LINES.map(|c| materials.add(FlatMaterial::new(c)));
-                        let under = materials.add(FlatMaterial::new([0.03, 0.02, 0.06]).pulled(-12.0));
-                        [m[0].clone(), std::mem::take(&mut m[1]), under]
-                    })
-                    .clone();
                 let world = sim.scn.world;
                 // the labels go on the leading edge: the furthest point down
                 // the wind the forecast is about (the announced one, if any)
@@ -179,25 +165,25 @@ pub fn update(
                 let to = (w.wind_dir_deg as f32 + 180.0).to_radians();
                 let mut at: [Vec<Pos>; HORIZONS] = Default::default();
                 let masks = masks(&f);
+                let mut all: [Vec<Vec<Pos>>; HORIZONS] = Default::default();
                 for h in 0..HORIZONS {
                     let lines = isochrone(&masks[h], f.rows, f.cols, &world);
                     let ahead = |p: &Pos| p.x * to.sin() + p.y * to.cos();
                     at[h] = lines.iter().flatten().step_by(4).copied().collect();
                     at[h].sort_by(|a, b| ahead(b).total_cmp(&ahead(a)));
-                    // the outer lines sit a little lower than the inner ones
-                    let lift = crate::rings::RING_LIFT_M + 2.0 - 2.0 * h as f32;
-                    for pts in &lines {
-                        for (w, dl, m) in [(UNDER_M, -2.0, &mats[HORIZONS]), (LINE_M, 0.0, &mats[h])] {
-                            let mesh = crate::rings::path_mesh_at(&sim.scn, pts, w, None, lift + dl);
-                            commands.spawn((
-                                MaterialMeshBundle::<FlatMaterial> { mesh: meshes.add(mesh), material: m.clone(), ..default() },
-                                NotShadowCaster,
-                                NotShadowReceiver,
-                                ForecastMark,
-                            ));
-                        }
-                    }
+                    all[h] = lines;
                 }
+                commands.spawn((
+                    MaterialMeshBundle::<crate::forecast_zone::ZoneMaterial> {
+                        mesh: meshes.add(crate::forecast_zone::grid_mesh(&sim.scn, &all)),
+                        material: materials.add(crate::forecast_zone::ZoneMaterial::new(LINES)),
+                        ..default()
+                    },
+                    bevy::render::view::NoFrustumCulling,
+                    NotShadowCaster,
+                    NotShadowReceiver,
+                    ForecastMark,
+                ));
                 view.shown = Some((f, at));
             }
             Poll::Done(Ok(_)) => {}
