@@ -127,6 +127,7 @@ pub fn draw(
         k.side_w = 0.0;
     } else {
     match k.phase {
+        Phase::Intro if k.freecam => k.side_w = 0.0,
         Phase::Intro => {
             k.side_w = 0.0;
             if !compact(ctx) { banner(ctx, qr.as_deref()); }
@@ -207,6 +208,12 @@ pub fn draw(
     }
     pad_mode.game = matches!(k.phase, Phase::Tutorial | Phase::Gioco);
     focus.pointer = ctx.is_pointer_over_area();
+    focus.keyboard = ctx.wants_keyboard_input();
+    if k.fade > 0.0 && k.phase == Phase::Intro {
+        let a = (k.fade.clamp(0.0, 1.0) * 255.0) as u8;
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("cut_fade")))
+            .rect_filled(ctx.screen_rect(), 0.0, Color32::from_black_alpha(a));
+    }
     k.click = None;
 }
 
@@ -1401,6 +1408,8 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
             });
             ui.horizontal(|ui| {
                 ui.checkbox(&mut k.frozen, "Ferma il mondo");
+                ui.add_enabled(k.phase == Phase::Intro, egui::Checkbox::new(&mut k.freecam, "Freecam (demo)"))
+                    .on_hover_text("Telecamera libera sulla demo: mouse per muovere, WASD per spostarsi, Q/E per ruotare");
                 if button(ui, "Vista iniziale") {
                     k.reset_view = true;
                 }

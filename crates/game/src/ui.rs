@@ -6,4 +6,6 @@ use bevy::prelude::*;
 #[derive(Resource, Default)]
 pub struct UiFocus {
     pub pointer: bool,
+    /// A text field has the keyboard.
+    pub keyboard: bool,
 }

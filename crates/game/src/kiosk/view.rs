@@ -29,6 +29,14 @@ const INTRO_WIDE_PITCH: f32 = -0.42;
 const MIN_DIST: f32 = 90.0;
 const MAX_DIST: f32 = 12000.0;
 const PAN_RADIUS_M: f32 = 2500.0;
+const SCENIC_RADIUS_M: f32 = 6000.0;
+/// The least the eye keeps above the relief, and above what lies between it
+/// and what it looks at.
+const EYE_CLEARANCE_M: f32 = 45.0;
+/// A change of shot that moves the focus farther than this is a cut.
+const CUT_M: f32 = 1500.0;
+const CUT_OUT_S: f32 = 0.5;
+const CUT_IN_S: f32 = 0.7;
 /// A press that moved less than this (logical px) is a click.
 const CLICK_PX: f32 = 6.0;
 // A tiny offset from vertical keeps look_at's up vector well-defined.
@@ -255,6 +263,16 @@ pub fn camera(
         orbit.yaw += padview.look.x * 1.6 * dt;
         orbit.pitch += padview.look.y * 0.9 * dt;
     }
+    if kiosk.freecam && kiosk.phase == Phase::Intro && !focus.keyboard {
+        let dt = time.delta_seconds().min(0.1);
+        let k = |c| input.keys.pressed(c) as i32 as f32;
+        let go = Vec2::new(k(KeyCode::KeyD) - k(KeyCode::KeyA), k(KeyCode::KeyS) - k(KeyCode::KeyW));
+        if go != Vec2::ZERO {
+            pan(&mut orbit, go * 700.0 * dt * if shift { 3.0 } else { 1.0 }, height);
+            kiosk.follow = false;
+        }
+        orbit.yaw += (k(KeyCode::KeyQ) - k(KeyCode::KeyE)) * 1.2 * dt;
+    }
     if drag.right || (drag.left && shift) {
         orbit.yaw -= delta.x * 0.005;
         orbit.pitch -= delta.y * 0.004;
@@ -383,11 +401,13 @@ pub fn camera(
             orbit.yaw = 0.0;
         }
     }
-    if !mobile_web && kiosk.phase == Phase::Intro && !kiosk.frozen {
+    if !mobile_web && kiosk.phase == Phase::Intro && !kiosk.frozen && !kiosk.freecam {
         if let Some((yaw0, d)) = *home_view {
             let n = super::demo_shot(kiosk.demo_t);
+            let sites = scenic_sites(&sim);
             if kiosk.demo_pick.0 != n {
-                kiosk.demo_pick = (n, pick_shot(&sim, n, kiosk.demo_pick.1));
+                let pick = pick_shot(&sim, sites, n, kiosk.demo_pick.1);
+                kiosk.demo_pick = (n, pick);
             }
             let on = |p: Pos| crate::frame::to_bevy(p, sim.scn.terrain.height_at(p));
             let front = fire_extent(&sim);
@@ -402,20 +422,57 @@ pub fn camera(
                 },
                 Subject::District(i) if i < sim.districts.len() => (on(sim.districts[i].centre), d * 0.15, -0.24, -0.8),
                 Subject::Crew(i) if i < sim.crews.units.len() => (on(sim.crews.units[i].pos), d * 0.1, -0.20, 1.0),
+                Subject::Scenic(i) if i < sites.len() => {
+                    let s = &sites[i];
+                    let g = on(s.at);
+                    (Vec3::new(g.x, g.y + s.lift, g.z), d * s.dist, s.pitch, s.sway)
+                }
                 _ => wide(front),
             };
-            let off = Vec2::new(goal.x - home.x, goal.z - home.z).clamp_length_max(PAN_RADIUS_M);
+            // the scenic places lie beyond the usual pan: out at sea, on the headlands
+            let reach = if matches!(kiosk.demo_pick.1, Subject::Scenic(_)) { SCENIC_RADIUS_M } else { PAN_RADIUS_M };
+            let off = Vec2::new(goal.x - home.x, goal.z - home.z).clamp_length_max(reach);
             let goal = Vec3::new(home.x + off.x, goal.y, home.z + off.y);
             // the goal itself is smoothed (a crew moves in jumps), then the
             // camera eases to it: two slow stages, no sudden move
             let dt = time.delta_seconds().min(0.1);
             let (g, gd) = tracked.get_or_insert((Vec2::new(goal.x, goal.z), dist));
+            // a new subject far from where the camera is (or much nearer or
+            // wider) is a cut, not a flight: fade out, jump, fade in
+            if kiosk.demo_pick.1 != kiosk.cut_subject {
+                kiosk.cut_subject = kiosk.demo_pick.1;
+                let far = Vec2::new(goal.x - orbit.focus.x, goal.z - orbit.focus.z).length() > CUT_M || !(0.4..2.5).contains(&(dist / orbit.distance));
+                if far && kiosk.cut.is_none() && kiosk.demo_t > 1.0 {
+                    kiosk.cut = Some((0.0, false));
+                }
+            }
+            let mut hold = false;
+            if let Some((t, jumped)) = kiosk.cut {
+                let t = t + dt;
+                hold = t < CUT_OUT_S;
+                let jump = !jumped && !hold;
+                if jump {
+                    *g = Vec2::new(goal.x, goal.z);
+                    *gd = dist;
+                    orbit.focus = Vec3::new(goal.x, goal.y, goal.z);
+                    orbit.distance = dist;
+                    orbit.yaw = yaw0 + sway * 0.5;
+                    orbit.pitch = pitch;
+                }
+                kiosk.fade = if hold { t / CUT_OUT_S } else { 1.0 - (t - CUT_OUT_S) / CUT_IN_S };
+                kiosk.cut = (t < CUT_OUT_S + CUT_IN_S).then_some((t, jumped || jump));
+                if kiosk.cut.is_none() {
+                    kiosk.fade = 0.0;
+                }
+            }
             let s = 1.0 - (-0.9 * dt).exp();
-            *g += (Vec2::new(goal.x, goal.z) - *g) * s;
-            *gd += (dist - *gd) * s;
             let a = 1.0 - (-0.5 * dt).exp();
-            orbit.focus = orbit.focus.lerp(Vec3::new(g.x, goal.y, g.y), a);
-            orbit.distance += (*gd - orbit.distance) * a;
+            if !hold {
+                *g += (Vec2::new(goal.x, goal.z) - *g) * s;
+                *gd += (dist - *gd) * s;
+                orbit.focus = orbit.focus.lerp(Vec3::new(g.x, goal.y, g.y), a);
+                orbit.distance += (*gd - orbit.distance) * a;
+            }
             // a slow drift of the heading around the shot's own, so the
             // picture is never still
             // like a helicopter circling: the heading keeps turning, slowly,
@@ -425,6 +482,10 @@ pub fn camera(
             let pitch = pitch + 0.03 * (kiosk.demo_t * 0.23).sin();
             orbit.pitch += (pitch - orbit.pitch) * a;
         }
+    }
+    if mobile_web || kiosk.phase != Phase::Intro || kiosk.frozen || kiosk.freecam {
+        kiosk.cut = None;
+        kiosk.fade = 0.0;
     }
     // the fire runs: follow it, slowly
     if kiosk.follow && kiosk.shot.is_none() && matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco) {
@@ -456,12 +517,14 @@ pub fn camera(
     }
 
     orbit.yaw = orbit.yaw.clamp(-MAX_YAW, MAX_YAW);
-    let max_pitch = if kiosk.phase == Phase::Intro && !kiosk.frozen && !mobile_web { INTRO_MAX_PITCH } else { MAX_PITCH };
+    let freecam = kiosk.freecam && kiosk.phase == Phase::Intro;
+    let max_pitch = if kiosk.phase == Phase::Intro && !kiosk.frozen && !mobile_web && !freecam { INTRO_MAX_PITCH } else { MAX_PITCH };
     orbit.pitch = orbit.pitch.clamp(if mobile_web { NADIR_PITCH } else { MIN_PITCH }, max_pitch);
     orbit.distance = orbit.distance.clamp(MIN_DIST * shot_zoom().min(1.0), MAX_DIST);
     let off = Vec2::new(orbit.focus.x - home.x, orbit.focus.z - home.z);
-    if off.length() > PAN_RADIUS_M {
-        let c = off.normalize() * PAN_RADIUS_M;
+    let reach = if freecam { SCENIC_RADIUS_M } else { PAN_RADIUS_M };
+    if off.length() > reach {
+        let c = off.normalize() * reach;
         orbit.focus.x = home.x + c.x;
         orbit.focus.z = home.z + c.y;
     }
@@ -481,35 +544,39 @@ pub fn camera(
         }
         (sum / 9.0, top)
     };
-    let intro = kiosk.phase == Phase::Intro && !kiosk.frozen;
-    if intro {
-        let dt = time.delta_seconds().min(0.1);
-        let k = 1.0 - (-1.5 * dt).exp();
-        let (fy, _) = area(crate::frame::to_world(orbit.focus), 300.0);
-        let (sf, sg) = *smooth_h.get_or_insert((fy, 0.0));
-        let sf = sf + (fy - sf) * k;
-        *smooth_h = Some((sf, sg));
-        orbit.focus.y = sf;
+    // the focus rides the broad shape of the ground (a ring average, eased),
+    // never the wiggle of every ridge
+    let dt = time.delta_seconds().min(0.1);
+    let (fy, _) = area(crate::frame::to_world(orbit.focus), 300.0);
+    let (sf, sg) = *smooth_h.get_or_insert((fy, 0.0));
+    let sf = if kiosk.phase == Phase::Intro && !kiosk.frozen && !freecam {
+        sf + (fy - sf) * (1.0 - (-1.0 * dt).exp())
     } else {
-        orbit.focus.y = terrain.height_at(crate::frame::to_world(orbit.focus));
-    }
+        terrain.height_at(crate::frame::to_world(orbit.focus))
+    };
+    orbit.focus.y = sf;
     let dir = Vec3::new(orbit.yaw.sin() * orbit.pitch.cos(), -orbit.pitch.sin(), orbit.yaw.cos() * orbit.pitch.cos());
     tf.translation = orbit.focus + dir * orbit.distance;
-    if intro {
-        let dt = time.delta_seconds().min(0.1);
-        let k = 1.0 - (-1.0 * dt).exp();
-        let (mean, top) = area(crate::frame::to_world(tf.translation), 400.0);
-        let want = mean.max(top - 40.0) + 45.0;
-        let (sf, sg) = smooth_h.unwrap_or((orbit.focus.y, want));
-        let sg = if sg == 0.0 { want } else { sg };
-        let sg = sg + (want - sg) * k;
-        *smooth_h = Some((sf, sg));
-        tf.translation.y = tf.translation.y.max(sg);
-        orbit.focus.y = sf;
-    } else {
-        let ground = terrain.height_at(crate::frame::to_world(tf.translation));
-        tf.translation.y = tf.translation.y.max(ground + 25.0);
+    // How high the eye has to be so that it, and the sight line down to the
+    // focus, clear the relief by `EYE_CLEARANCE_M`: the ground is read along
+    // the line and around its points, and the need is eased, rising fast and
+    // falling slowly, so a ridge passing under the camera lifts it smoothly.
+    let eye = tf.translation;
+    let mut need = f32::MIN;
+    for i in 1..=16 {
+        let t = i as f32 / 16.0;
+        let p = orbit.focus.lerp(eye, t);
+        let (mean, top) = area(crate::frame::to_world(p), 120.0 + 200.0 * t);
+        let ground = mean.max(top - 20.0);
+        // the line is at `focus.y + t * (eye.y - focus.y)` there
+        let clearance = EYE_CLEARANCE_M * t.max(0.3);
+        need = need.max(orbit.focus.y + (ground + clearance - orbit.focus.y) / t);
     }
+    let sg = if sg == 0.0 || !need.is_finite() { need } else { sg };
+    let rate = if need > sg { 5.0 } else { 0.8 };
+    let sg = sg + (need - sg) * (1.0 - (-rate * dt).exp());
+    *smooth_h = Some((sf, sg));
+    tf.translation.y = tf.translation.y.max(sg);
     tf.look_at(orbit.focus, Vec3::Y);
     if let Some(dof) = dof.as_mut() {
         dof.focal_distance = tf.translation.distance(orbit.focus);
@@ -540,11 +607,54 @@ pub(super) fn fire_extent(sim: &Sim) -> Option<(Vec2, f32)> {
     Some(((lo + hi) * 0.5, (hi - lo).max_element().max(400.0)))
 }
 
+/// A scenic place the opening's camera flies over.
+pub(super) struct Site {
+    at: Pos,
+    /// Metres above the ground (a sea stack's top, the tower's roof).
+    lift: f32,
+    /// Camera distance, as a share of the home view's.
+    dist: f32,
+    pitch: f32,
+    sway: f32,
+}
+
+/// The island's sights from `island.json`: sea stacks, the headland tower,
+/// the rocca on the summit, the port. None for a territory without them.
+fn scenic_sites(sim: &Sim) -> &'static [Site] {
+    static S: std::sync::OnceLock<Vec<Site>> = std::sync::OnceLock::new();
+    S.get_or_init(|| {
+        let path = sim.data.join("scenarios").join(sim.scn.id.as_str()).join("island.json");
+        let Some(j) = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) else {
+            return Vec::new();
+        };
+        let pos = |v: &serde_json::Value| Some(Pos { x: v[0].as_f64()? as f32, y: v[1].as_f64()? as f32 });
+        let mut out = Vec::new();
+        for (i, st) in j["stacks"].as_array().into_iter().flatten().enumerate() {
+            if let Some(at) = pos(&st["pos"]) {
+                let lift = st["height_m"].as_f64().unwrap_or(20.0) as f32 * 0.5;
+                out.push(Site { at, lift, dist: 0.07, pitch: -0.10, sway: if i % 2 == 0 { 0.9 } else { -0.9 } });
+            }
+        }
+        if let Some(at) = pos(&j["landmarks"]["torre"]["pos"]) {
+            out.push(Site { at, lift: 20.0, dist: 0.08, pitch: -0.18, sway: -0.7 });
+        }
+        if let Some(at) = pos(&j["landmarks"]["rocca"]["pos"]) {
+            out.push(Site { at, lift: 30.0, dist: 0.10, pitch: -0.22, sway: 0.8 });
+        }
+        if let Some(at) = pos(&j["port"]["tip"]) {
+            out.push(Site { at, lift: 0.0, dist: 0.10, pitch: -0.20, sway: 0.6 });
+        }
+        out
+    })
+}
+
 /// What the opening screen's shot `n` looks at: the whole front first, then,
 /// in turn, the town the fire is nearest to, a crew working close to it and
 /// the front close; a subject that is not there is skipped, and the one just
-/// shown is not shown again.
-fn pick_shot(sim: &Sim, n: usize, last: Subject) -> Subject {
+/// shown is not shown again. Every `SIGHT_EVERY`th shot is instead a sight of
+/// the island (a sea stack, the tower, the rocca, the port), the one that is
+/// farthest from the fire among those not shown lately.
+fn pick_shot(sim: &Sim, sites: &[Site], n: usize, last: Subject) -> Subject {
     let cells = sim.fire.active_cells();
     if cells.is_empty() {
         return Subject::Wide;
@@ -552,6 +662,15 @@ fn pick_shot(sim: &Sim, n: usize, last: Subject) -> Subject {
     let step = (cells.len() / 300).max(1);
     let fire: Vec<Pos> = cells.iter().step_by(step).map(|&c| sim.scn.world.centre_of(c)).collect();
     let gap = |p: Pos| fire.iter().map(|f| (f.x - p.x).hypot(f.y - p.y)).fold(f32::MAX, f32::min);
+    if n % SIGHT_EVERY == SIGHT_EVERY - 1 && !sites.is_empty() {
+        // the sights in turn, so each comes round; the tour starts with one far from the fire
+        let mut far: Vec<(usize, f32)> = sites.iter().enumerate().map(|(i, s)| (i, gap(s.at))).collect();
+        far.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let i = far[(n / SIGHT_EVERY) % far.len()].0;
+        if Subject::Scenic(i) != last {
+            return Subject::Scenic(i);
+        }
+    }
     // towns by how near the fire is, within what the eye can take in
     let mut towns: Vec<(usize, f32)> = sim.districts.iter().enumerate().map(|(i, d)| (i, gap(d.centre))).filter(|t| t.1 < 3000.0).collect();
     towns.sort_by(|a, b| a.1.total_cmp(&b.1));
@@ -573,6 +692,9 @@ fn pick_shot(sim: &Sim, n: usize, last: Subject) -> Subject {
     }
     Subject::Wide
 }
+
+/// One shot in this many is a sight of the island.
+const SIGHT_EVERY: usize = 5;
 
 fn shot_zoom() -> f32 {
     static Z: std::sync::OnceLock<f32> = std::sync::OnceLock::new();

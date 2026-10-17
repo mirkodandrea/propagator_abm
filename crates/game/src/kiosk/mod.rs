@@ -146,8 +146,18 @@ pub struct Kiosk {
     pub demo_pick: (usize, Subject),
     /// When ([`Kiosk::demo_t`]) the scripted orders under the opening are next given.
     demo_order_at: f32,
+    /// A cut in progress between two distant shots: seconds since it began
+    /// and whether the camera has already jumped. Fade to black, jump, fade in.
+    pub(super) cut: Option<(f32, bool)>,
+    /// The subject the camera is set on (a change of it may start a cut).
+    pub(super) cut_subject: Subject,
+    /// Black over the picture, 0..1 (drawn by `ui`).
+    pub fade: f32,
     /// The operator menu (F2).
     pub operator: bool,
+    /// Operator's free camera over the opening's fire: no director, the
+    /// fire keeps running, the view is the visitor's own.
+    pub freecam: bool,
     /// «Ferma il mondo» (operator).
     pub frozen: bool,
     pub error: Option<String>,
@@ -163,6 +173,9 @@ impl Kiosk {
             demo_speed: 0.0,
             demo_pick: (usize::MAX, Subject::Wide),
             demo_order_at: 2.0,
+            cut: None,
+            cut_subject: Subject::Wide,
+            fade: 0.0,
             selected_case: territory.game.clone(),
             territory,
             data,
@@ -192,6 +205,7 @@ impl Kiosk {
             reset_view: false,
             zoom_steps: 0.0,
             operator: false,
+            freecam: false,
             frozen: false,
             error: None,
         }
@@ -309,6 +323,9 @@ pub enum Subject {
     District(usize),
     /// A ground crew working near the fire.
     Crew(usize),
+    /// A sight of the island, now and then between the fire's shots
+    /// (`view::scenic_sites`).
+    Scenic(usize),
 }
 
 impl Subject {
@@ -317,6 +334,7 @@ impl Subject {
     fn pace(self) -> f32 {
         match self {
             Subject::Wide => 1.5,
+            Subject::Scenic(_) => 1.0,
             Subject::Front | Subject::District(_) => 0.8,
             Subject::Crew(_) => 0.4,
         }
@@ -337,6 +355,7 @@ fn demo_restart(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRes
     }
     restarted.send(SimRestarted);
     k.demo_pick = (usize::MAX, Subject::Wide);
+    k.cut = Some((0.0, false));
     k.demo_order_at = k.demo_t + 2.0;
 }
 
