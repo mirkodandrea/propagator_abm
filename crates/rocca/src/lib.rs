@@ -15,6 +15,8 @@ pub mod evac;
 pub mod forecast;
 pub mod game;
 pub mod hex;
+// The laboratory writes files and links directories: native only, not in the browser build.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod lab;
 pub mod score;
 pub mod tutorial;
