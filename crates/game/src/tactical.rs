@@ -13,6 +13,7 @@ use bevy::prelude::*;
 
 use crate::kiosk::{Kiosk, Phase};
 use crate::flat::FlatMaterial;
+use crate::forecast_zone::ZoneMaterial;
 use crate::retro::RetroMaterial;
 use crate::sea::WaterMaterial;
 use crate::sim::Sim;
@@ -75,6 +76,7 @@ fn apply(
     mut retro: ResMut<Assets<RetroMaterial>>,
     mut water: ResMut<Assets<WaterMaterial>>,
     mut flats: ResMut<Assets<FlatMaterial>>,
+    mut zones: ResMut<Assets<ZoneMaterial>>,
     mut tapes: ResMut<Assets<TapeMaterial>>,
 ) {
     if let (Some(kiosk), Some(sim)) = (kiosk, sim) {
@@ -98,12 +100,18 @@ fn apply(
             m.extension.tactical.x = amount;
         }
     }
-    // The game's own signs (hexes, routes, tape) gain
+    // The game's own signs (hexes, routes, forecast zones, tape) gain
     // saturation in the pause, so they stand out from the greyed scenery.
     let gain = tactical.eased() * if tactical.max > 0.0 { SIGN_GAIN } else { 0.0 };
     let stale: Vec<_> = flats.iter().filter(|(_, m)| m.saturation() != gain).map(|(id, _)| id).collect();
     for id in stale {
         if let Some(m) = flats.get_mut(id) {
+            m.set_saturation(gain);
+        }
+    }
+    let stale: Vec<_> = zones.iter().filter(|(_, m)| m.saturation() != gain).map(|(id, _)| id).collect();
+    for id in stale {
+        if let Some(m) = zones.get_mut(id) {
             m.set_saturation(gain);
         }
     }
