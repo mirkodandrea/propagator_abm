@@ -219,15 +219,15 @@ fn spawn_coast(
         return;
     }
     let rocks = scatter(&sim.scn);
-    let material = materials.add(retro::material_with_style(
+    let material = materials.add(retro::finished_material(
         StandardMaterial {
             base_color: Color::WHITE,
             perceptual_roughness: 0.95,
             reflectance: 0.04,
             ..default()
         },
-        false,
         retro::RetroStyle::BACKGROUND,
+        retro::Finish::Rock,
     ));
     let mut tiles: HashMap<(i32, i32), Vec<&Rock>> = HashMap::new();
     for r in &rocks {

@@ -41,7 +41,14 @@ fn spawn_landmarks(
         double_sided: true,
         ..default()
     }, retro::RetroStyle::STRUCTURE, retro::Finish::Stone));
-    for (key, model) in [("rocca", "rocca"), ("torre", "torre_pietra")] {
+    // the bedrock under the rocca is drawn like the mountain's rock, not as masonry
+    let rock = materials.add(retro::finished_material(StandardMaterial {
+        base_color: Color::WHITE,
+        perceptual_roughness: 0.95,
+        reflectance: 0.04,
+        ..default()
+    }, retro::RetroStyle::BACKGROUND, retro::Finish::Rock));
+    for (key, model, rock_model) in [("rocca", "rocca", Some("rocca_roccia")), ("torre", "torre_pietra", None)] {
         let l = &island["landmarks"][key];
         let (Some(x), Some(y), Some(ground)) = (l["pos"][0].as_f64(), l["pos"][1].as_f64(), l["ground_m"].as_f64()) else { continue };
         let scale = l["scale"].as_f64().unwrap_or(1.0) as f32;
@@ -52,13 +59,16 @@ fn spawn_landmarks(
         let ground = ground as f32 - 0.3;
         let at = crate::frame::to_bevy(Pos { x: x as f32, y: y as f32 }, ground);
         info!("landmark {key}: {model} at ({x:.0}, {y:.0}), ground {ground:.1} m, scale {scale}, yaw {:.0} deg", yaw.to_degrees());
-        commands.spawn((MaterialMeshBundle::<RetroMaterial> {
-            mesh: meshes.add(models::island_mesh(model)),
-            material: material.clone(),
-            transform: Transform { translation: at, rotation: Quat::from_rotation_y(yaw), scale: Vec3::splat(scale) },
-            ..default()
-        },
-            crate::terrain_mesh::PauseSolid,
-        ));
+        let transform = Transform { translation: at, rotation: Quat::from_rotation_y(yaw), scale: Vec3::splat(scale) };
+        for (name, material) in std::iter::once((model, material.clone())).chain(rock_model.map(|m| (m, rock.clone()))) {
+            commands.spawn((MaterialMeshBundle::<RetroMaterial> {
+                mesh: meshes.add(models::island_mesh(name)),
+                material,
+                transform,
+                ..default()
+            },
+                crate::terrain_mesh::PauseSolid,
+            ));
+        }
     }
 }

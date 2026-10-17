@@ -137,6 +137,9 @@ pub enum Finish {
     Stone = 4,
     /// Boats: planking, deck boards, sail panels.
     Boat = 5,
+    /// Bare limestone off the terrain (the rocca's crag, the coast's boulders):
+    /// the terrain's own beds, cut from world height.
+    Rock = 6,
 }
 
 /// A structure material with a procedural surface finish.

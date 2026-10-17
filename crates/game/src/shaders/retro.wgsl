@@ -434,6 +434,35 @@ fn stone_albedo(base: vec4<f32>, lp: vec3<f32>, normal: vec3<f32>, p: vec3<f32>)
     return vec4<f32>(rgb, base.a);
 }
 
+// Bare rock (`enabled.w` = 6): the island's own limestone on meshes that are not
+// terrain (the crag under the rocca, the coast's boulders). Same beds as the
+// terrain's rock faces and, because they are cut from the pixel's world height,
+// the same bands at the same altitudes: the crag reads as the mountain's
+// bedrock coming through, not as a separate object. The vertex colour only
+// tints (so shaded and sunlit blocks still differ).
+fn rock_albedo(base: vec4<f32>, p: vec3<f32>, nrm: vec3<f32>) -> vec4<f32> {
+    let n = normalize(nrm);
+    let mpp = max(length(dpdx(p)), length(dpdy(p)));
+    let fine = 1.0 - smoothstep(1.0, 3.5, mpp);
+    let rb = rock_bed(p, n);
+    let along = rb.x;
+    let yy = rb.y;
+    let u = rb.z;
+    let bed = value_noise(vec2<f32>(along * 0.10, yy * 0.8));
+    let seam = smoothstep(0.86, 1.0, abs(fract(u) - 0.5) * 2.0);
+    let joint_off = hash21(vec2<f32>(floor(u), 3.0));
+    let joint = smoothstep(0.93, 1.0, abs(fract(along * 0.45 + joint_off) - 0.5) * 2.0)
+        * (1.0 - smoothstep(0.0, 1.0, abs(fract(u) - 0.5) * 2.0));
+    let tone = 0.80 + 0.34 * bed + 0.10 * (value_noise(vec2<f32>(along * 0.7, yy * 0.25)) - 0.5);
+    let tint = base.rgb / max(dot(base.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.05) * 0.5 + vec3<f32>(0.5);
+    var rock = limestone(p) * (0.94 + 0.12 * value_noise(p.xz * 0.5)) * tone * (1.0 - fine * (0.42 * seam + 0.24 * joint));
+    rock = rock * mix(vec3<f32>(1.0), tint, 0.35) * (0.62 + 0.55 * dot(base.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)));
+    // a little lichen and dust on the upward faces
+    let lichen = smoothstep(0.55, 0.8, value_noise(p.xz * 0.6 + 11.0)) * smoothstep(0.5, 0.9, n.y);
+    rock = mix(rock, rock * vec3<f32>(0.82, 0.93, 0.62), lichen * 0.45);
+    return vec4<f32>(rock, base.a);
+}
+
 // Boats (`enabled.w` = 5): planked hulls, panelled sails. Told apart by
 // the baked colour: pale and neutral is cloth, anything else is timber or paint.
 fn boat_albedo(base: vec4<f32>, lp: vec3<f32>, normal: vec3<f32>, p: vec3<f32>) -> vec4<f32> {
@@ -528,8 +557,11 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
             pbr_input.material.base_color = town_albedo(pbr_input.material.base_color, p, in.world_normal);
         } else if retro.enabled.w < 4.5 {
             pbr_input.material.base_color = stone_albedo(pbr_input.material.base_color, lp, in.world_normal, p);
-        } else {
+        } else if retro.enabled.w < 5.5 {
             pbr_input.material.base_color = boat_albedo(pbr_input.material.base_color, lp, in.world_normal, p);
+        } else {
+            pbr_input.material.base_color = rock_albedo(pbr_input.material.base_color, p, in.world_normal);
+            pbr_input.N = normalize(pbr_input.N + rock_bump(p, normalize(in.world_normal)));
         }
     } else if retro.enabled.w > 1.5 {
         // Which vertices are living foliage is decided where the mesh is

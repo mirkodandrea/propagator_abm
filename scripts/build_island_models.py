@@ -74,6 +74,7 @@ DECK = (.78, .68, .50)
 METAL = (.66, .68, .70)
 
 current = None
+ROCK = False      # while True, new objects are bedrock: baked apart as `<name>_roccia`, drawn with the terrain's rock shader
 
 
 def link(o, color):
@@ -82,6 +83,7 @@ def link(o, color):
     current.objects.link(o)
     o.data.materials.clear()
     o.data.materials.append(mat(color))
+    o["rock"] = ROCK
     return o
 
 
@@ -170,10 +172,12 @@ def slit(pos, yaw, w=.5, h=2.0, depth=.5):
 
 
 # =========================================================================================
-#  the rocca: an Italian hill fortress, ruined
+#  the rocca: an abandoned hill fortress on a crag: broken towers, fallen walls, scrub
 # =========================================================================================
 import random
 RNG = random.Random(11)
+IVY_P = .22
+CREN_P = 1.0
 HALF = 31.0          # the curtain wall's half width: `LANDMARKS["rocca"]["wall_half_m"]` in island.py
 WALL_H, WALL_T = 11.0, 3.0
 
@@ -205,7 +209,8 @@ def frustum(cx, cy, z0, z1, bottom, top, yaw, color):
     return prism(verts, faces, color, (cx, cy, (z0 + z1) / 2))
 
 
-def ghibelline(cx, cy, z, yaw, w=2.0, t=1.1, h=2.4, color=STONE_L):
+def ghibelline(cx, cy, z, yaw, w=2.0, t=1.1, h=2.4, color=None):
+    color = color or STONE_L
     """A swallow-tail merlon: the Ghibelline battlement."""
     c, s_ = math.cos(yaw), math.sin(yaw)
     prof = [(-w / 2, 0), (w / 2, 0), (w / 2, h), (0, h * .58), (-w / 2, h)]
@@ -219,7 +224,8 @@ def ghibelline(cx, cy, z, yaw, w=2.0, t=1.1, h=2.4, color=STONE_L):
     return prism(verts, faces, color, (cx, cy, z + h / 2))
 
 
-def rubble(cx, cy, radius, count, color=STONE_M, big=2.0):
+def rubble(cx, cy, radius, count, color=None, big=2.0):
+    color = color or STONE_M
     for _ in range(count):
         a, r = RNG.uniform(0, 2 * math.pi), radius * math.sqrt(RNG.random())
         sz = RNG.uniform(.6, big)
@@ -247,7 +253,8 @@ def arch_window(pos, yaw, w=1.5, h=2.6):
     link(o, DARK)
 
 
-def ruined_wall(a, b, ctrl, T, color=STONE, scarp=True, crenel=True, step=5.0, window=False):
+def ruined_wall(a, b, ctrl, T, color=None, scarp=True, crenel=True, step=5.0, window=False):
+    color = color or STONE
     """A wall from a to b, standing to the heights in `ctrl` (interpolated along
     its length): broken, with a talus at the foot, swallow-tail merlons where it
     is whole, rubble where it has fallen, ivy on what is left."""
@@ -277,14 +284,14 @@ def ruined_wall(a, b, ctrl, T, color=STONE, scarp=True, crenel=True, step=5.0, w
         low = min(h0, h1)
         if scarp and low > 3.0:
             frustum(mid.x, mid.y, 0, min(low * .4, 4.0), (l + .1, T + 2.6), (l + .1, T), yaw, STONE_D)
-        if crenel and h0 >= .93 * top_ref and h1 >= .93 * top_ref:
+        if crenel and h0 >= .93 * top_ref and h1 >= .93 * top_ref and RNG.random() < CREN_P:
             for k in (.28, .72):
                 q = p0 + (p1 - p0) * k + nrm * (T / 2 - .55)
                 ghibelline(q.x, q.y, (h0 + h1) / 2 + .1, yaw)
         if low < .5 * top_ref:
             rubble(mid.x + nrm.x * 2.0, mid.y + nrm.y * 2.0, 3.2, 4)
             rubble(mid.x - nrm.x * 2.2, mid.y - nrm.y * 2.2, 2.6, 2)
-        if RNG.random() < .22 and low > 3:
+        if RNG.random() < IVY_P and low > 3:
             ivy(mid.x + nrm.x * (T / 2), mid.y + nrm.y * (T / 2), low * RNG.uniform(.5, .95))
         if window and low > 7.0 and i % 2 == 1:
             arch_window((mid.x + nrm.x * (T / 2 + .1), mid.y + nrm.y * (T / 2 + .1), 4.4), yaw + math.pi / 2, 1.4, 2.8)
@@ -311,81 +318,318 @@ def broken_round_tower(c, r, ctrl, scarp=7.0):
         slit((x + math.cos(k) * r * 1.0, y + math.sin(k) * r * 1.0, 8.5), k, .6, 2.4, .6)
 
 
+# weathered, grey-ochre limestone: the rocca is a ruin on a crag, nobody lives there
+CRAG = (.50, .47, .42)
+CRAG_D = (.34, .32, .29)
+CRAG_L = (.62, .58, .50)
+MOSS = (.30, .42, .20)
+GRASS = (.42, .50, .24)
+DEAD = (.30, .25, .20)
+
+
+def crag_rock(cx, cy, z0, r, h, color, sides=7, strata=3, lean=0.0):
+    """A faceted outcrop of limestone: stacked strata, each a little narrower and
+    offset from the one below, with ragged corners, so it reads as a ledged cliff."""
+    global ROCK
+    was, ROCK = ROCK, True
+    z = z0
+    ox, oy = 0.0, 0.0
+    rr = r
+    for k in range(strata):
+        sh = h / strata * RNG.uniform(.8, 1.2)
+        ph = RNG.uniform(0, 6.28)
+        low = [(cx + ox + math.cos(ph + 2 * math.pi * i / sides) * rr * RNG.uniform(.78, 1.12),
+                cy + oy + math.sin(ph + 2 * math.pi * i / sides) * rr * RNG.uniform(.78, 1.12), z) for i in range(sides)]
+        rr *= RNG.uniform(.68, .86)
+        ox += lean * RNG.uniform(.3, 1.0) + RNG.uniform(-.4, .4) * r * .2
+        oy += RNG.uniform(-.4, .4) * r * .2
+        high = [(cx + ox + math.cos(ph + 2 * math.pi * i / sides) * rr * RNG.uniform(.8, 1.1),
+                 cy + oy + math.sin(ph + 2 * math.pi * i / sides) * rr * RNG.uniform(.8, 1.1), z + sh * RNG.uniform(.85, 1.15)) for i in range(sides)]
+        verts = low + high
+        faces = [tuple(range(sides)), tuple(range(2 * sides - 1, sides - 1, -1))]
+        faces += [(i, (i + 1) % sides, sides + (i + 1) % sides, sides + i) for i in range(sides)]
+        surface(verts, faces, color if k % 2 == 0 else RNG.choice((CRAG_D, CRAG_L)), centre=(cx + ox, cy + oy, z + sh / 2))
+        z += sh * .95
+    ROCK = was
+    return z
+
+
+def scrub(x, y, z, r=1.3):
+    """Wild scrub growing in the stonework: where it grows, nobody weeds."""
+    for _ in range(3):
+        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=1, location=(x + RNG.uniform(-r, r), y + RNG.uniform(-r, r), z + r * .35))
+        o = bpy.context.object
+        o.scale = (r * RNG.uniform(.6, 1.0), r * RNG.uniform(.6, 1.0), r * RNG.uniform(.45, .8))
+        apply(o, rot=False)
+        link(o, RNG.choice((IVY, IVY_D, GRASS, MOSS)))
+
+
+def dead_tree(x, y, z, h=7.0):
+    """A bare, bent trunk with a few snapped limbs, in the courtyard."""
+    top = (x + RNG.uniform(-.8, .8), y + RNG.uniform(-.8, .8), z + h)
+    rod((x, y, z), top, .32, DEAD, 5)
+    for k in range(4):
+        t = k * 1.7 + RNG.uniform(0, .6)
+        s = z + h * (.45 + .12 * k)
+        base = (x + (top[0] - x) * (s - z) / h, y + (top[1] - y) * (s - z) / h, s)
+        rod(base, (base[0] + math.cos(t) * 2.4, base[1] + math.sin(t) * 2.4, s + RNG.uniform(.8, 2.0)), .13, DEAD, 4)
+
+
+def fallen_drum(x, y, r, length, yaw, tilt=.0):
+    """A length of tower shaft that came down and lies on its side."""
+    bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=r, depth=length, location=(x, y, r * .85))
+    o = bpy.context.object
+    o.rotation_euler = (math.pi / 2 + tilt, 0, yaw)
+    apply(o, rot=True, scale=False)
+    link(o, CRAG)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=r * .62, depth=length * 1.02, location=(x, y, r * .85))
+    o = bpy.context.object
+    o.rotation_euler = (math.pi / 2 + tilt, 0, yaw)
+    apply(o, rot=True, scale=False)
+    link(o, DARK)
+
+
+def torrione(c, r, ctrl, scarp=8.0, windows=(), moss=True):
+    """A round tower broken high and low round its circle: where the wall has
+    gone you see the hollow inside (dark inner face) and the stub of its stair."""
+    x, y = c
+    n = len(ctrl)
+    cyl((x, y, 0), r * 1.25, scarp, STONE_D, 14, top=r * 1.03)
+    cyl((x, y, 0), r * .9, min(ctrl) * .8, DARK, 14)                  # the hollow inside shows dark
+    for i in range(n):
+        tm = 2 * math.pi * (i + .5) / n
+        l = 2 * r * math.sin(math.pi / n) * 1.06
+        h = ctrl[i]
+        heights = [max(1.5, h + RNG.uniform(-1.0, .8)) for _ in range(4)]
+        rough_block(x + math.cos(tm) * r, y + math.sin(tm) * r, l, 2.5, heights, tm + math.pi / 2, STONE)
+        if h < 6:
+            rubble(x + math.cos(tm) * (r + 3.2), y + math.sin(tm) * (r + 3.2), 3.0, 3, big=2.2)
+        if RNG.random() < .55 and h > 4:
+            ivy(x + math.cos(tm) * (r + 1.1), y + math.sin(tm) * (r + 1.1), h * RNG.uniform(.35, .85), 1.7)
+    for k in windows:                                                  # empty openings: you see the sky through them
+        slit((x + math.cos(k) * r * 1.0, y + math.sin(k) * r * 1.0, 10.5), k, .9, 3.0, .8)
+    if moss:
+        scrub(x, y, min(ctrl) * .62, r * .5)
+
+
 def rocca():
-    gate_w = 7.0
+    global ROCK, _PEAK_EDGE, STONE, STONE_L, STONE_M, STONE_D, TUFA, IVY_P, CREN_P
+    saved = (STONE, STONE_L, STONE_M, STONE_D, TUFA, IVY_P, CREN_P)
+    _PEAK_EDGE = fractal_edge(RNG)
+    STONE, STONE_L, STONE_M, STONE_D, TUFA = (.68, .60, .47), (.78, .70, .55), (.56, .49, .39), (.45, .39, .32), (.44, .42, .38)
+    IVY_P, CREN_P = .5, .55
     T = WALL_T
-    # --- the curtain: each side broken in its own way (east is the gate side)
-    ruined_wall((-HALF, -HALF), (-HALF, HALF), [11, 11, 10.6, 9.5, 8.8, 10.4, 11, 11], T)          # west: nearly whole
-    ruined_wall((-HALF, HALF), (HALF, HALF), [10.5, 9.2, 7.0, 3.6, 2.2, 2.6, 5.0, 8.4, 10.0, 11], T)  # north: a great breach
-    ruined_wall((-HALF, -HALF), (HALF, -HALF), [11, 11, 10.2, 8.0, 5.0, 2.8, 2.0, 4.6, 9.0, 11], T)   # south: another
-    ruined_wall((HALF, -HALF), (HALF, -gate_w / 2), [11, 10.0, 7.5, 9.5, 11], T)
-    ruined_wall((HALF, gate_w / 2), (HALF, HALF), [11, 11, 6.0, 3.4, 4.2], T)
-    # --- the round-arched gate: voussoirs round the opening, a dark passage, jambs
+    gate_w = 7.0
+    # --- the curtain, mostly fallen; only a few reaches stand
+    ruined_wall((-HALF, -HALF), (-HALF, HALF), [12, 11.6, 10.4, 8.0, 6.0, 8.5, 11.5, 12], T)                    # west: the best-preserved reach
+    ruined_wall((-HALF, HALF), (HALF, HALF), [11, 9.0, 6.0, 3.6, 2.6, 3.4, 6.0, 9.0, 11, 11.5], T)                # north: a vast breach
+    ruined_wall((-HALF, -HALF), (HALF, -HALF), [12, 11, 8.5, 5.0, 2.4, 3.0, 6.5, 10.0, 11.5, 11.5], T)             # south: collapsed
+    ruined_wall((HALF, -HALF), (HALF, -gate_w / 2), [11, 9.5, 6.0, 8.0, 10.6], T)
+    ruined_wall((HALF, gate_w / 2), (HALF, HALF), [11, 9.0, 5.0, 3.0, 3.6], T)
+    # --- the gate: half the arch has fallen, the passage is choked with its stones
     R = gate_w / 2
     for k in range(11):
+        if k > 6:                                                        # the arch's other half has fallen
+            continue
         t = math.pi * (k + .5) / 11
-        box((HALF + .1, -math.cos(t) * (R + .5), 4.6 + math.sin(t) * (R + .5)), (T + .4, 1.2, 1.7), STONE_L if k % 2 else STONE, -math.pi / 2 + t + math.pi / 2 * 0 + 0.0)
-    for sg in (-1, 1):
-        box((HALF + .1, sg * (R + .5), 2.3), (T + .4, 1.2, 4.6), STONE_L)
+        box((HALF + .1, -math.cos(t) * (R + .5), 4.6 + math.sin(t) * (R + .5)), (T + .4, 1.2, 1.7), CRAG_L if k % 2 else CRAG, -math.pi / 2 + t + math.pi / 2 * 0 + 0.0)
+    box((HALF + .1, -(R + .5), 2.3), (T + .4, 1.2, 4.6), CRAG_L)
+    box((HALF + .1, R + .5, 1.3), (T + .4, 1.2, 2.6), CRAG_L)          # the other jamb is a stump
     box((HALF - .2, 0, 3.2), (T * .8, gate_w - .4, 6.4), DARK)
-    cyl((HALF - .3, 0, 0), 0.1, .1, DARK)
-    # the piece of wall left over the arch, and one of the flanking towers
-    rough_block(HALF, 0, T, gate_w + 3.4, [10.8, 10.0, 11.4, 10.6], 0.0, STONE, z0=7.6)
-    broken_round_tower((HALF + .4, -gate_w / 2 - 5.5), 5.6, [17, 15, 11, 8, 12, 16, 18, 18], 5.0)
-    # --- the corners: a half tower, a whole one, a stump, a pentagonal bastion on a scarp
-    broken_round_tower((-HALF, -HALF), 6.8, [20, 19, 15, 9, 6, 8, 14, 19], 7.0)
-    broken_round_tower((-HALF, HALF), 6.8, [21, 21, 20, 19, 19, 20, 21, 21], 7.0)
-    broken_round_tower((HALF, HALF), 6.6, [5.5, 4.0, 3.0, 2.2, 3.4, 4.8, 6.0, 5.4], 4.0)
-    rubble(HALF + 3, HALF + 3, 6, 10, big=2.8)
-    cyl((HALF, -HALF, 0), 9.2, 5.5, STONE_D, 5, top=7.0)                                           # the bastion, on a scarp
-    cyl((HALF, -HALF, 5.4), 7.0, 5.0, STONE, 5, top=6.6)
-    for k in range(5):
+    rubble(HALF + 1.5, 1.6, 3.4, 9, big=2.4)                             # the fallen voussoirs block the way
+    rubble(HALF + 5.0, -1.0, 3.0, 6, big=1.6)
+    scrub(HALF + 1.0, -1.0, 1.0, 1.4)
+    # --- the torrioni: five towers, no two alike, all of them broken
+    torrione((-HALF, -HALF), 7.2, [23, 22, 16, 8, 5, 7, 16, 22], 7.5, windows=(.6, 3.6))            # SW: a split drum, one side gone to the foundations
+    torrione((-HALF, HALF), 6.8, [27, 26, 24, 19, 21, 25, 27, 27], 8.0, windows=(1.0, 2.6, 5.0))   # NW: the tallest, nearly whole, roofless
+    torrione((HALF, HALF), 6.6, [4.0, 3.0, 2.0, 1.5, 2.4, 3.6, 4.4, 4.0], 4.0, moss=False)          # NE: reduced to a stump
+    torrione((HALF + .4, -gate_w / 2 - 6.0), 5.6, [16, 12, 6, 4, 9, 15, 17, 17], 5.5, windows=(2.0,))  # the gate's flanking tower
+    # the SE bastion: a pentagon without its crown, its east face sheared off
+    cyl((HALF, -HALF, 0), 9.4, 5.5, CRAG_D, 5, top=7.2)
+    cyl((HALF, -HALF, 5.4), 7.0, 3.0, CRAG, 5, top=6.8)
+    for k in (0, 1, 4):
         t = 2 * math.pi * (k + .5) / 5 + math.pi / 10
-        ghibelline(HALF + math.cos(t) * 6.2, -HALF + math.sin(t) * 6.2, 10.4, t + math.pi / 2, w=2.4, h=2.4)
-    # --- the mastio: a square keep, whole on two sides, stepped down on the others
+        ghibelline(HALF + math.cos(t) * 6.2, -HALF + math.sin(t) * 6.2, 8.2, t + math.pi / 2, w=2.4, h=2.2)
+    # a tower that fell: its shaft lies in pieces down the slope, outside the NE corner
+    fallen_drum(HALF + 6, HALF + 6, 3.2, 7.5, .5)
+    fallen_drum(HALF + 11, HALF + 1, 3.0, 6.0, 1.4, .1)
+    fallen_drum(HALF - 4, HALF + 12, 2.6, 5.0, -.4)
+    rubble(HALF + 5, HALF + 5, 9, 16, big=3.0)
+    # --- the mastio: a square keep, broken stepwise, empty window holes, no floors left
     kx, ky, ks = -10.0, 3.0, 8.2
-    ruined_wall((kx - ks, ky - ks), (kx + ks, ky - ks), [31, 31, 31, 26, 22, 18, 16], 2.6, scarp=False, window=True)
-    ruined_wall((kx + ks, ky - ks), (kx + ks, ky + ks), [16, 13, 21, 27, 24, 17], 2.6, scarp=False, window=True)
-    ruined_wall((kx + ks, ky + ks), (kx - ks, ky + ks), [17, 24, 29, 31, 31, 30, 29], 2.6, scarp=False, window=True)
-    ruined_wall((kx - ks, ky + ks), (kx - ks, ky - ks), [29, 31, 31, 30, 31, 31], 2.6, scarp=False, window=True)
-    frustum(kx, ky, 0, 4.2, (2 * ks + 7.0, 2 * ks + 7.0), (2 * ks + 1.4, 2 * ks + 1.4), 0.0, STONE_D)
-    for z in (11.0, 19.0, 26.0):                                                                   # the stubs of the floor beams
-        for k in range(4):
-            box((kx - ks - .6, ky - 5 + k * 3.4, z), (1.7, .4, .45), WOOD_D)
-    rubble(kx + ks + 4, ky + 2, 7.5, 12, big=3.0)
-    # --- the palazzo's façade left standing against the north wall, three arched windows
-    ruined_wall((-27.0, 22.0), (-7.0, 22.0), [10.5, 11.0, 10.5, 8.5, 5.0, 3.0], 2.2, scarp=False, crenel=False, window=True)
-    # --- an arcade (loggia) of three arches, still standing
+    ruined_wall((kx - ks, ky - ks), (kx + ks, ky - ks), [30, 30, 28, 23, 17, 9, 6], 2.6, scarp=False, window=True)
+    ruined_wall((kx + ks, ky - ks), (kx + ks, ky + ks), [6, 5, 12, 20, 16, 9], 2.6, scarp=False, window=True)
+    ruined_wall((kx + ks, ky + ks), (kx - ks, ky + ks), [9, 18, 27, 31, 30, 29, 27], 2.6, scarp=False, window=True)
+    ruined_wall((kx - ks, ky + ks), (kx - ks, ky - ks), [27, 30, 31, 29, 30, 30], 2.6, scarp=False, window=True)
+    frustum(kx, ky, 0, 4.2, (2 * ks + 7.0, 2 * ks + 7.0), (2 * ks + 1.4, 2 * ks + 1.4), 0.0, CRAG_D)
+    rubble(kx + ks + 4, ky - 3, 8.5, 16, big=3.2)                      # what fell from its broken south-east corner
+    scrub(kx, ky, 3.0, 3.5)                                             # the keep's floor is a thicket
+    # --- the palazzo: one blind façade standing, windows empty, nothing behind it
+    ruined_wall((-27.0, 22.0), (-7.0, 22.0), [10.5, 11.0, 9.0, 6.0, 3.0, 2.2], 2.2, scarp=False, crenel=False, window=True)
+    # --- the arcade, two arches left and no beam above
     ax, ay = 14.0, -17.0
-    for i in range(4):
-        cyl((ax + i * 6.0, ay, 0), .95, 7.2, STONE_L, 10)
-        box((ax + i * 6.0, ay, 7.5), (2.4, 2.2, .7), STONE_L)
     for i in range(3):
+        cyl((ax + i * 6.0, ay, 0), .95, 7.2 if i != 2 else 3.6, CRAG_L, 10)
+    for i in range(1):
         for k in range(7):
             t = math.pi * (k + .5) / 7
-            box((ax + i * 6.0 + 3.0 - math.cos(t) * 2.6, ay, 7.2 + math.sin(t) * 2.6), (1.0, 1.9, 1.3), STONE if k % 2 else STONE_L, -t + math.pi / 2)
-    rough_block(ax + 9.0, ay, 18.0, 1.8, [9.8, 10.4, 10.4, 9.6], 0.0, STONE, z0=9.8 - .001)
-    # --- a well, column stumps, loose stones
-    cyl((8.0, 10.0, 0), 1.9, 1.3, STONE_M, 12)
-    cyl((8.0, 10.0, 1.3), 1.4, .2, DARK, 12)
-    for (x, y, h) in ((-2.0, -14.0, 1.6), (3.0, -4.0, 2.4), (-4.0, 14.0, 1.0)):
-        cyl((x, y, 0), .9, h, STONE_L, 10)
-    rubble(0, 0, 18, 22, big=1.6)
-    # --- a cap of rock round the outside, so the walls stand on a crag
-    for k in range(22):
-        t = 2 * math.pi * k / 22 + RNG.uniform(-.1, .1)
-        r = HALF * 1.34 + RNG.uniform(-1.5, 3.0)
-        sz = RNG.uniform(3.0, 6.0)
-        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=1, location=(math.cos(t) * r, math.sin(t) * r, sz * .15))
-        o = bpy.context.object
-        o.scale = (sz * 1.3, sz, sz * .6)
-        o.rotation_euler = (0, 0, RNG.uniform(0, 3.14))
-        apply(o, rot=True)
-        link(o, RNG.choice((STONE_D, TUFA, STONE_M)))
-    # the courtyard floor
-    cyl((0, 0, 0), HALF * 1.38, .3, TUFA, 4)
-    current.objects[-1].rotation_euler = (0, 0, math.pi / 4)
-    apply(current.objects[-1])
+            box((ax + i * 6.0 + 3.0 - math.cos(t) * 2.6, ay, 7.2 + math.sin(t) * 2.6), (1.0, 1.9, 1.3), CRAG if k % 2 else CRAG_L, -t + math.pi / 2)
+    rubble(ax + 10, ay - 1, 3.5, 6, big=1.8)
+    # --- the well, covered by scrub; column stumps; a dead tree; grass in the yard
+    cyl((8.0, 10.0, 0), 1.9, 1.0, CRAG, 12)
+    cyl((8.0, 10.0, 1.0), 1.3, .15, DARK, 12)
+    scrub(8.0, 10.0, 1.0, 1.5)
+    for (x, y, h) in ((-2.0, -14.0, 1.2), (3.0, -4.0, 2.0), (-4.0, 14.0, .8)):
+        cyl((x, y, 0), .9, h, CRAG_L, 10)
+    dead_tree(-18.0, -10.0, 0.0, 7.5)
+    dead_tree(16.0, 12.0, 0.0, 5.0)
+    rubble(0, 0, 20, 30, big=1.8)
+    for _ in range(14):                                                # tufts of grass and scrub all over the floor
+        a, rr = RNG.uniform(0, 6.28), RNG.uniform(3, 27)
+        scrub(math.cos(a) * rr, math.sin(a) * rr, 0, RNG.uniform(.9, 1.8))
+    # --- everything above stands on the crag: lift it onto a stepped mass of rock
+    conform_to_peak()
+    crag_mound()
+    STONE, STONE_L, STONE_M, STONE_D, TUFA, IVY_P, CREN_P = saved
+
+
+def fractal_edge(seed_rng, octaves=6, base_f=2, gain=.55):
+    """A closed 1-D fractal profile r(theta) in [0, 1]: sines of doubling frequency
+    and halving amplitude, so the outline wanders at every scale (bays, headlands,
+    notches, teeth) instead of being a circle."""
+    parts = [(base_f * 2 ** k + seed_rng.choice((0, 1)), gain ** k, seed_rng.uniform(0, 6.28)) for k in range(octaves)]
+    total = sum(a for _, a, _ in parts)
+    return lambda t: .5 + .5 * sum(a * math.sin(f * t + ph) for f, a, ph in parts) / total
+
+
+PEAK = (-8.0, 0.0)        # the summit: under the keep, in the west half
+ZP = 30.0                 # its height over the foot of the walls
+_PEAK_EDGE = None
+
+
+def peak_radius(t):
+    """Where the rock meets the ground, by bearing from the summit: wide and gentle on the
+    east (the way up), short and sheer on the west (the cliff side), fractal throughout."""
+    west = .5 - .5 * math.cos(t)
+    return (58.0 + 18.0 * _PEAK_EDGE(t)) * (1 - .2 * west)
+
+
+def ground_h(x, y):
+    """Height of the crag at (x, y): a summit with a convex shoulder, wandering
+    ridges, stepped in beds of ~3.5 m (a bedded limestone peak), falling below
+    ground level past its foot so the rim is always buried in the mountain."""
+    dx, dy = x - PEAK[0], y - PEAK[1]
+    s = math.hypot(dx, dy) / peak_radius(math.atan2(dy, dx))
+    bump = 1.6 * math.sin(.11 * x + 1.0) * math.sin(.13 * y + 2.0) + 1.0 * math.sin(.27 * x + .6 * y) + .6 * math.sin(.6 * x - .5 * y + 1.0)
+    if s >= 1.0:
+        return max(-26.0, -(s - 1.0) * 150.0)
+    h = ZP * (1 - s ** 2.2) + bump * (1 - s) * 2.2
+    if h > 0:
+        t = h / 3.5
+        h = (math.floor(t) + (lambda f: f * f * (3 - 2 * f))(min(1, max(0, (t - math.floor(t) - .3) / .4)))) * 3.5
+    return h
+
+
+def conform_to_peak():
+    """The masonry was authored on level ground at z = 0. Bake each object into world
+    space and lift every vertex by the crag's height beneath it, so walls, towers and
+    keep climb the slope; whatever stands on the ground (taller than 3 m) is also sunk
+    3 m into the rock, so a wall's foot never hangs in the air over a step."""
+    for o in list(current.objects):
+        if o.get("rock"):
+            continue
+        me = o.data
+        me.transform(o.matrix_world)
+        o.matrix_world = Matrix.Identity(4)
+        zs = [v.co.z for v in me.vertices]
+        zmin, zmax = min(zs), max(zs)
+        grounded = zmin < .05 and zmax - zmin > 3.0
+        for v in me.vertices:
+            v.co.z += ground_h(v.co.x, v.co.y) - (1.8 if grounded and v.co.z - zmin < .05 else 0.0) + (.15 if not grounded else 0.0)
+        me.update()
+
+
+def crag_mound():
+    """The peak itself: a heightfield of ground_h (3 m cells), coloured by slope (pale on the
+    bedded tops, grey on the faces, dark on the sheer), a rock stair that is just its
+    east shoulder, ledge blocks and spires on the cliff side, and boulders in families (a
+    big one, its children, scree) round the foot."""
+    global ROCK
+    ROCK = True
+    step, ext = 3.0, 90.0
+    n = int(2 * ext / step) + 1
+    pts = {}
+
+    def vid(i, j):
+        if (i, j) not in pts:
+            # a jittered grid: no two triangles alike, so the faces do not read as a lattice
+            h1, h2 = math.sin(i * 12.9898 + j * 78.233) * 43758.5453, math.sin(i * 39.346 + j * 11.135) * 24634.6345
+            x = -ext + i * step + ((h1 - math.floor(h1)) - .5) * step * .75
+            y = -ext + j * step + ((h2 - math.floor(h2)) - .5) * step * .75
+            pts[(i, j)] = (x, y, ground_h(x, y))
+        return pts[(i, j)]
+    tris = {0: [], 1: [], 2: []}
+    order = []
+    index = {}
+
+    def vi(i, j):
+        if (i, j) not in index:
+            index[(i, j)] = len(order)
+            order.append(vid(i, j))
+        return index[(i, j)]
+    for i in range(n - 1):
+        for j in range(n - 1):
+            quad = [(i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1)]
+            zs = [vid(*q)[2] for q in quad]
+            if max(zs) < -22.0:
+                continue
+            for tri in ((quad[0], quad[1], quad[2]), (quad[0], quad[2], quad[3])):
+                a, b, c = (Vector(vid(*q)) for q in tri)
+                nz = (b - a).cross(c - a).normalized().z
+                cls = 2 if nz > .86 else (1 if nz > .55 else 0)
+                tris[cls].append([vi(*q) for q in tri])
+    for cls, colour in ((0, CRAG_D), (1, CRAG), (2, (.52, .49, .42))):
+        if tris[cls]:
+            surface(order, tris[cls], colour)
+
+    def at(x, y):
+        return ground_h(x, y)
+    # ledge blocks and spires, thick on the cliff side (west), few on the gentle east
+    for _ in range(90):
+        t = RNG.uniform(0, 6.28)
+        west = .5 - .5 * math.cos(t)
+        if RNG.random() > .25 + .75 * west:
+            continue
+        sv = RNG.uniform(.55, 1.0)
+        d = peak_radius(t) * sv
+        x, y = PEAK[0] + math.cos(t) * d, PEAK[1] + math.sin(t) * d
+        if abs(x) < 47 and abs(y) < 47 and sv < .8:                     # the castle's own ground: leave it
+            continue
+        crag_rock(x, y, at(x, y) - 2.2, RNG.uniform(2.6, 5.5), RNG.uniform(4, 9) * (.6 + west), RNG.choice((CRAG, CRAG_D, CRAG_L)), RNG.choice((6, 7, 8)), 2, lean=-math.cos(t) * .5)
+    for i in range(8):
+        t = math.pi * (.55 + 1.05 * i / 7) + RNG.uniform(-.12, .12)
+        d = peak_radius(t) * RNG.uniform(.7, .88)
+        x, y = PEAK[0] + math.cos(t) * d, PEAK[1] + math.sin(t) * d
+        if abs(x) < 47 and abs(y) < 47:
+            continue
+        crag_rock(x, y, at(x, y) - 2.5, RNG.uniform(2.4, 3.8), RNG.uniform(8, 14), RNG.choice((CRAG, CRAG_L)), 6, 3, lean=-math.cos(t) * .8)
+
+    def family(x, y, r, depth):
+        crag_rock(x, y, at(x, y) - r * .6, r, r * RNG.uniform(.7, 1.6), RNG.choice((CRAG, CRAG_D, CRAG_L)), RNG.choice((6, 7, 8)), 2 if r > 2 else 1, lean=RNG.uniform(-.4, .4))
+        if depth == 0 or r < 1.0:
+            return
+        for _ in range(RNG.choice((2, 3, 4))):
+            a = RNG.uniform(0, 6.28)
+            d = r * RNG.uniform(1.1, 2.2)
+            family(x + math.cos(a) * d, y + math.sin(a) * d, r * RNG.uniform(.35, .55), depth - 1)
+    for i in range(34):
+        t = 2 * math.pi * (i + RNG.random()) / 34
+        west = .5 - .5 * math.cos(t)
+        if RNG.random() > .35 + .65 * west:
+            continue
+        d = peak_radius(t) * RNG.uniform(.88, 1.12)
+        family(PEAK[0] + math.cos(t) * d, PEAK[1] + math.sin(t) * d, RNG.uniform(2.6, 5.5) * (.6 + .6 * west), 2)
+    ROCK = False
 
 
 # =========================================================================================
@@ -549,9 +793,10 @@ for name, (build, footprint) in BUILDERS.items():
     bpy.context.scene.collection.children.link(current)
     build()
     bpy.context.view_layer.update()
-    positions, normals, colors, indices = [], [], [], []
+    parts = {False: ([], [], [], []), True: ([], [], [], [])}
     deps = bpy.context.evaluated_depsgraph_get()
     for o in current.objects:
+        positions, normals, colors, indices = parts[bool(o.get("rock"))]
         eo = o.evaluated_get(deps)
         mesh = eo.to_mesh()
         mesh.calc_loop_triangles()
@@ -569,9 +814,13 @@ for name, (build, footprint) in BUILDERS.items():
                 colors.append([round(c, 4) for c in color[:3]])
                 indices.append(len(indices))
         eo.to_mesh_clear()
-    baked[name] = dict(positions=positions, normals=normals, colors=colors, indices=indices,
-                       footprint=list(footprint) if footprint else None)
-    print(f"{name}: {len(indices) // 3} triangles")
+    for is_rock, (positions, normals, colors, indices) in parts.items():
+        if is_rock and not indices:
+            continue
+        key = name + "_roccia" if is_rock else name
+        baked[key] = dict(positions=positions, normals=normals, colors=colors, indices=indices,
+                          footprint=None if is_rock or not footprint else list(footprint))
+        print(f"{key}: {len(indices) // 3} triangles")
 
 (OUT / "island.json").write_text(json.dumps(baked, separators=(",", ":")) + "\n")
 
@@ -602,4 +851,18 @@ scene.render.engine = "BLENDER_EEVEE" if "BLENDER_EEVEE" in [e.identifier for e 
 scene.render.resolution_x, scene.render.resolution_y = 2200, 1100
 scene.render.filepath = str(OUT / "island_preview.png")
 bpy.ops.render.render(write_still=True)
+
+# a 3/4 close-up of the rocca alone
+for name in layout:
+    if name != "rocca":
+        for o in bpy.data.collections[name].objects:
+            o.hide_render = True
+cam.data.type = "PERSP"
+cam.data.lens = 35
+scene.render.resolution_x, scene.render.resolution_y = 1600, 1000
+for tag, (dx, dy, dz) in {"": (-120, -190, 110), "_gate": (140, -10, 50), "_west": (-125, 70, 38)}.items():
+    cam.location = (40 + dx, dy, dz)
+    cam.rotation_euler = (Vector((40, 0, 18)) - cam.location).to_track_quat("-Z", "Y").to_euler()
+    scene.render.filepath = str(OUT / f"rocca_preview{tag}.png")
+    bpy.ops.render.render(write_still=True)
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT / "island_assets.blend"))

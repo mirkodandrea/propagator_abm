@@ -1418,7 +1418,7 @@ fn rocca_start(sim: &Sim) -> Option<(Vec3, f32)> {
     let scale = rocca["scale"].as_f64().unwrap_or(1.) as f32;
     // The authored gate faces +X. Start outside its jambs, looking inward.
     let outward = Quat::from_rotation_y(yaw) * Vec3::X;
-    let p = centre + outward * ((half + 20.) * scale);
+    let p = centre + outward * ((half + 44.) * scale);
     let ground = sim.scn.terrain.height_at(crate::frame::to_world(p));
     Some((p.with_y(ground), outward.x.atan2(outward.z)))
 }
