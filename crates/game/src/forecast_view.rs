@@ -222,8 +222,9 @@ pub fn labels(
     kiosk: Res<crate::kiosk::Kiosk>,
     cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::OrbitCamera>>,
     snap_hide: Res<crate::kiosk::snap::SnapHide>,
+    mario: Res<crate::mario::Playground>,
 ) {
-    if snap_hide.iso {
+    if snap_hide.iso || mario.active {
         return;
     }
     let Some((_, at)) = &view.shown else { return };

@@ -342,6 +342,7 @@ pub fn hold(view: Res<SnapView>, sim: Res<Sim>, mut cam: Query<(&mut OrbitCamera
 /// Runs after the marks are updated: hides what the state leaves out.
 pub fn hide_marks(
     hide: Res<SnapHide>,
+    mario: Res<crate::mario::Playground>,
     mut iso: Query<&mut Visibility, With<crate::forecast_view::ForecastMark>>,
     mut marks: Query<
         &mut Visibility,
@@ -358,7 +359,9 @@ pub fn hide_marks(
         ),
     >,
 ) {
-    if !active() {
+    // Mario has the whole map: no isochrones, hexes, cones or other marks
+    let hide = if mario.active { SnapHide { iso: true, marks: true, ui: hide.ui } } else { *hide };
+    if !active() && !mario.active {
         return;
     }
     if hide.iso {
