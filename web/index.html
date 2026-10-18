@@ -358,6 +358,7 @@
       async function start() {
         if (started) return;
         started = true;
+        if (!window.roccaPlaytest) window.roccaSkipTitle = true; // the game's own title screen would ask «Gioca» twice
         document.body.classList.add('playing');
         intro.classList.add('leaving');
         setTimeout(() => intro.remove(), 400);
