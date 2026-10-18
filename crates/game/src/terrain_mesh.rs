@@ -219,6 +219,46 @@ fn coast_sand(elev: f32, p: Pos) -> [f32; 3] {
 
 const PAVING: [f32; 3] = [0.84, 0.81, 0.74];
 const GARDEN: [f32; 3] = [0.50, 0.66, 0.36];
+/// Cleared ground away from any house (the service areas, verges): mown dry
+/// grass, not the lawn green of a garden.
+const MEADOW: [f32; 3] = [0.73, 0.69, 0.42];
+
+/// 0..1: how close the nearest house or yard is to fire cell `c`
+/// (1 within 20 m, fading out by 60 m). Gardens stay green round the houses;
+/// the rest of a cleared patch reads as meadow. Computed once per scenario.
+fn built_nearby(scn: &Scenario, c: Cell) -> f32 {
+    static NEAR: std::sync::OnceLock<Vec<f32>> = std::sync::OnceLock::new();
+    let w = &scn.world;
+    let near = NEAR.get_or_init(|| {
+        let Some(cv) = &scn.cover else { return Vec::new() };
+        let (rows, cols) = (w.fire_rows, w.fire_cols);
+        // Built cells of the 5 m cover, then the distance to the nearest in
+        // fire cells (chessboard, 3 cells reach), by a short sweep.
+        let built: Vec<bool> = (0..rows * cols)
+            .map(|i| {
+                let (r, col) = (i / cols, i % cols);
+                let (x0, y0) = (col as f32 * w.cellsize, w.height_m - (r as f32 + 1.0) * w.cellsize);
+                (0..4).any(|a| (0..4).any(|b| matches!(cv.at(Pos { x: x0 + (a as f32 + 0.5) * 5.0, y: y0 + (b as f32 + 0.5) * 5.0 }), CoverClass::Building | CoverClass::Yard)))
+            })
+            .collect();
+        (0..rows * cols)
+            .map(|i| {
+                let (r, col) = ((i / cols) as isize, (i % cols) as isize);
+                let mut best = 4.0f32;
+                for dr in -3..=3isize {
+                    for dc in -3..=3isize {
+                        let (rr, cc) = (r + dr, col + dc);
+                        if rr >= 0 && cc >= 0 && (rr as usize) < rows && (cc as usize) < cols && built[rr as usize * cols + cc as usize] {
+                            best = best.min(dr.abs().max(dc.abs()) as f32);
+                        }
+                    }
+                }
+                (1.0 - (best - 1.0) / 2.0).clamp(0.0, 1.0)
+            })
+            .collect()
+    });
+    near.get(c.row * w.fire_cols + c.col).copied().unwrap_or(1.0)
+}
 
 /// What the 5 m cover says is built at `p`, as a colour and a weight in 0..1:
 /// the share of the four cover cells round `p` that are not natural ground.
@@ -232,7 +272,8 @@ fn built_tint(cover: &Cover, p: Pos) -> ([f32; 3], f32) {
             // Tracks are drawn as ribbons too; beneath and beside them, bare
             // compacted earth.
             CoverClass::Track => [0.66, 0.58, 0.44],
-            CoverClass::Irrigated => [0.46, 0.68, 0.32],
+            // Farmland is a mesh of parcels over the ground (`fields.rs`).
+            CoverClass::Irrigated => continue,
             CoverClass::Water => [0.20, 0.36, 0.44],
             // Paving is drawn per pixel by the terrain shader (`ground_mask`).
             CoverClass::Road | CoverClass::Building | CoverClass::Yard => continue,
@@ -278,7 +319,7 @@ fn cover_tint(scn: &Scenario, p: Pos) -> [f32; 3] {
             // Non-burnable fire cell. With 5 m cover, what is actually built
             // is painted by `built_tint`; the rest of the cell is the yards
             // and verges round the houses.
-            _ if scn.cover.is_some() => GARDEN,
+            _ if scn.cover.is_some() => mix3(MEADOW, GARDEN, built_nearby(scn, c)),
             // Built-up ground: pale paving rather than bare earth.
             _ => PAVING,
         }

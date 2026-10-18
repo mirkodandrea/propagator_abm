@@ -11,6 +11,8 @@
 //! Open spaces are draped vertex by vertex on `Terrain::height_at`, never laid
 //! flat (finding 12: a flat plane on a slope is half buried and half floating).
 
+use std::f32::consts::{FRAC_PI_2, PI};
+
 use scenario::{Building, Pos, Scenario};
 
 use super::{hash01, Builder, TOY_HEIGHT, TOY_SCALE};
@@ -40,74 +42,124 @@ pub(super) fn emit(scn: &Scenario, b: &Building, out: &mut Builder) -> bool {
     let c = Pos { x: (min.x + max.x) * 0.5, y: (min.y + max.y) * 0.5 };
     let (w, d) = (max.x - min.x, max.y - min.y);
     if MODELLED.contains(&kind) {
+        // Scaled and turned to the footprint's own frame, not its bounding box.
+        let f = Frame::of(b);
         let m = kit(kind);
-        let [fw, fd] = m.footprint.unwrap_or([w, d]);
-        let (sx, sz) = (w * TOY_SCALE / fw, d * TOY_SCALE / fd);
+        let [fw, fd] = m.footprint.unwrap_or([f.lu, f.lv]);
+        let (sx, sz) = (f.lu * TOY_SCALE / fw, f.lv * TOY_SCALE / fd);
         let sy = (sx * sz).sqrt() * TOY_HEIGHT / TOY_SCALE;
-        let ground = lowest(scn, c, w * TOY_SCALE, d * TOY_SCALE) - 0.4;
+        let mut low = f32::MAX;
+        for a in [-0.5f32, 0.0, 0.5] {
+            for b in [-0.5f32, 0.0, 0.5] {
+                low = low.min(ground_at(scn, f.at([a * f.lu * TOY_SCALE, b * f.lv * TOY_SCALE])));
+            }
+        }
         // A plinth of paving so the model sits on its own lot, not on scrub.
-        drape(scn, out, c, w * TOY_SCALE + 6.0, d * TOY_SCALE + 6.0, [0.80, 0.77, 0.70], 0.25);
-        place(out, m, c, ground, [sx, sy, sz], 0.0, None);
+        f.drape(scn, out, [0.0, 0.0], f.lu * TOY_SCALE + 6.0, f.lv * TOY_SCALE + 6.0, [0.80, 0.77, 0.70], 0.0);
+        place(out, m, f.c, low - 0.4, [sx, sy, sz], f.yaw, None);
         return true;
     }
     let h = |salt: u64| hash01(b.id as u64, salt);
+    // Open spaces are laid out in the footprint's own frame: the OSM rings are
+    // rotated rectangles, and their axis-aligned box is much larger.
+    let f = Frame::of(b);
     match kind {
         "plaza" => {
-            drape(scn, out, c, w, d, [0.88, 0.84, 0.76], 0.3);
-            drape(scn, out, c, w * 0.55, d * 0.55, [0.80, 0.74, 0.64], 0.35);
-            put(scn, out, "fountain", c, 1.6, 0.0, None);
-            for (dx, dy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
-                let p = Pos { x: c.x + dx * w * 0.38, y: c.y + dy * d * 0.36 };
-                put(scn, out, "street_tree", p, 1.6, h(7) * 6.0, None);
-                put(scn, out, "bench", Pos { x: c.x + dx * w * 0.2, y: c.y + dy * d * 0.3 }, 1.8, if dy < 0.0 { 0.0 } else { std::f32::consts::PI }, None);
-                put(scn, out, "streetlight", Pos { x: c.x + dx * w * 0.47, y: c.y + dy * d * 0.12 }, 1.4, 0.0, None);
+            f.drape(scn, out, [0.0, 0.0], f.lu, f.lv, [0.80, 0.76, 0.68], 0.5);
+            f.drape(scn, out, [0.0, 0.0], f.lu - 6.0, f.lv - 6.0, [0.88, 0.84, 0.76], 0.56);
+            f.drape(scn, out, [0.0, 0.0], f.lu * 0.5, f.lv * 0.5, [0.80, 0.74, 0.64], 0.62);
+            f.put(scn, out, "fountain", [0.0, 0.0], 1.6, 0.0, None);
+            for (sa, sb) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+                f.put(scn, out, "street_tree", [sa * f.lu * 0.4, sb * f.lv * 0.38], 1.6, h(7) * 6.0, None);
+                f.put(scn, out, "bench", [sa * f.lu * 0.2, sb * f.lv * 0.3], 1.8, if sb > 0.0 { 0.0 } else { PI }, None);
+                f.put(scn, out, "streetlight", [sa * f.lu * 0.46, sb * f.lv * 0.12], 1.4, 0.0, None);
             }
         }
         "pitch" => {
-            drape(scn, out, c, w + 8.0, d + 8.0, [0.62, 0.58, 0.52], 0.3);
-            drape(scn, out, c, w, d, [0.36, 0.67, 0.33], 0.35);
+            let grass = [[0.34, 0.64, 0.31], [0.38, 0.70, 0.35]];
             let line = [0.97, 0.97, 0.95];
-            drape(scn, out, Pos { x: c.x, y: c.y - d * 0.5 }, w, 1.2, line, 0.4);
-            drape(scn, out, Pos { x: c.x, y: c.y + d * 0.5 }, w, 1.2, line, 0.4);
-            drape(scn, out, Pos { x: c.x - w * 0.5, y: c.y }, 1.2, d, line, 0.4);
-            drape(scn, out, Pos { x: c.x + w * 0.5, y: c.y }, 1.2, d, line, 0.4);
-            drape(scn, out, c, 1.2, d, line, 0.4);
-            drape(scn, out, c, d * 0.22, d * 0.22, line, 0.38);
-            drape(scn, out, c, d * 0.22 - 2.4, d * 0.22 - 2.4, [0.36, 0.67, 0.33], 0.39);
+            // Paved surround, then the turf in mown bands across the length.
+            f.drape(scn, out, [0.0, 0.0], f.lu + 8.0, f.lv + 8.0, [0.62, 0.58, 0.52], 0.5);
+            let (pl, pw) = (f.lu - 4.0, f.lv - 4.0);
+            let bands = 8;
+            for i in 0..bands {
+                let a = -pl * 0.5 + (i as f32 + 0.5) * pl / bands as f32;
+                f.drape(scn, out, [a, 0.0], pl / bands as f32, pw, grass[i % 2], 0.58);
+            }
+            let (l, w) = (pl - 3.0, pw - 3.0);
+            let t = 0.5;
             for s in [-1.0f32, 1.0] {
-                put(scn, out, "goal", Pos { x: c.x + s * (w * 0.5 - 0.5), y: c.y }, 1.8, s * std::f32::consts::FRAC_PI_2, None);
+                f.drape(scn, out, [0.0, s * w * 0.5], l, t, line, 0.66);
+                f.drape(scn, out, [s * l * 0.5, 0.0], t, w, line, 0.66);
+                // Penalty box and goal area at each end.
+                let (bl, bw) = (l * 0.16, w * 0.6);
+                f.drape(scn, out, [s * (l * 0.5 - bl * 0.5), 0.0], bl, t, line, 0.66);
+                f.drape(scn, out, [s * (l * 0.5 - bl), 0.0], t, bw, line, 0.66);
+                f.drape(scn, out, [s * (l * 0.5 - bl * 0.5), bw * 0.5], bl, t, line, 0.66);
+                f.drape(scn, out, [s * (l * 0.5 - bl * 0.5), -bw * 0.5], bl, t, line, 0.66);
+                f.put(scn, out, "goal", [s * (l * 0.5 + 0.2), 0.0], 1.8, s * FRAC_PI_2, None);
+            }
+            f.drape(scn, out, [0.0, 0.0], t, w, line, 0.66);
+            f.ring(scn, out, [0.0, 0.0], w * 0.14, t, line, 0.67);
+            f.put(scn, out, "bench", [-l * 0.2, -(f.lv * 0.5 + 2.2)], 1.8, PI, None);
+            f.put(scn, out, "bench", [l * 0.2, -(f.lv * 0.5 + 2.2)], 1.8, PI, None);
+            for (sa, sb) in [(-1.0, -1.0), (1.0, 1.0)] {
+                f.put(scn, out, "streetlight", [sa * (f.lu * 0.5 + 1.5), sb * (f.lv * 0.5 + 1.5)], 1.4, 0.0, None);
             }
         }
         "parking" => {
             // Magnified like every other building (`TOY_SCALE`), and bayed to
             // the toy car: the lot is the size of the cars that park in it.
-            let (w, d) = (w * TOY_SCALE, d * TOY_SCALE);
-            drape(scn, out, c, w, d, [0.36, 0.37, 0.39], 0.3);
+            let (lu, lv) = (f.lu * TOY_SCALE, f.lv * TOY_SCALE);
+            f.drape(scn, out, [0.0, 0.0], lu + 2.0, lv + 2.0, [0.60, 0.60, 0.58], 0.5);
+            f.drape(scn, out, [0.0, 0.0], lu, lv, [0.36, 0.37, 0.39], 0.56);
             let bay_width = 3.25 * crate::visual_scale::CAR;
-            let bays = ((w / bay_width) as i32).max(1);
+            let bays = ((lu / bay_width) as i32).max(1);
+            let step = lu / bays as f32;
             for row in [-1.0f32, 1.0] {
+                for i in 0..=bays {
+                    let a = -lu * 0.5 + i as f32 * step;
+                    f.drape(scn, out, [a, row * lv * 0.27], 0.5, lv * 0.42, [0.95, 0.95, 0.92], 0.62);
+                }
                 for i in 0..bays {
-                    let x = c.x - w * 0.5 + (i as f32 + 0.5) * w / bays as f32;
-                    let y = c.y + row * d * 0.25;
-                    drape(scn, out, Pos { x: x - w / bays as f32 * 0.5, y }, 0.5, d * 0.45, [0.95, 0.95, 0.92], 0.34);
+                    let a = -lu * 0.5 + (i as f32 + 0.5) * step;
                     if hash01(b.id as u64 + i as u64 * 31 + (row > 0.0) as u64 * 7, 0x51) < 0.7 {
                         let car = ["car_hatch", "car_sedan", "car_suv", "car_van"][(hash01(b.id as u64 + i as u64, 0x52) * 4.0) as usize % 4];
                         let paint = PAINT[(hash01(b.id as u64 + i as u64 * 3 + row as u64, 0x53) * 7.0) as usize % 7];
-                        put(scn, out, car, Pos { x, y }, crate::visual_scale::CAR, if row < 0.0 { 0.0 } else { std::f32::consts::PI }, Some(paint));
+                        f.put(scn, out, car, [a, row * lv * 0.27], crate::visual_scale::CAR, if row > 0.0 { 0.0 } else { PI }, Some(paint));
                     }
                 }
+            }
+            // Kerb along the aisle and a couple of lamps.
+            f.drape(scn, out, [0.0, 0.0], lu, 0.8, [0.90, 0.88, 0.40], 0.62);
+            for s in [-1.0f32, 1.0] {
+                f.put(scn, out, "streetlight", [s * lu * 0.5, 0.0], 1.4, 0.0, None);
             }
         }
         "assembly" => {
             // The Protezione Civile assembly area: a cleared ground with its
             // green sign and the blue tents, the thing the visitor should
-            // recognise next time they see one.
-            drape(scn, out, c, w, d, [0.70, 0.84, 0.62], 0.3);
-            drape(scn, out, c, w - 6.0, d - 6.0, [0.80, 0.86, 0.74], 0.32);
-            put(scn, out, "assembly_sign", Pos { x: c.x, y: c.y - d * 0.5 - 4.0 }, 3.2, 0.0, None);
-            for i in 0..4 {
-                let x = c.x - w * 0.3 + i as f32 * w * 0.2;
-                put(scn, out, "pc_tent", Pos { x, y: c.y + d * 0.1 }, 2.2, 0.0, None);
+            // recognise next time they see one. Inset from the footprint so the
+            // lane that borders it stays clear.
+            let (lu, lv) = (f.lu - 14.0, f.lv - 14.0);
+            f.drape(scn, out, [0.0, 0.0], lu + 2.0, lv + 2.0, [0.47, 0.70, 0.44], 0.5);
+            f.drape(scn, out, [0.0, 0.0], lu, lv, [0.78, 0.86, 0.70], 0.56);
+            f.drape(scn, out, [0.0, 0.0], lu - 6.0, lv - 6.0, [0.84, 0.89, 0.77], 0.6);
+            // A painted green border, like the sign.
+            for s in [-1.0f32, 1.0] {
+                f.drape(scn, out, [0.0, s * (lv * 0.5 - 1.5)], lu - 3.0, 1.0, [0.22, 0.55, 0.30], 0.64);
+                f.drape(scn, out, [s * (lu * 0.5 - 1.5), 0.0], 1.0, lv - 3.0, [0.22, 0.55, 0.30], 0.64);
+            }
+            f.put(scn, out, "assembly_sign", [0.0, lv * 0.5 + 1.5], 3.2, 0.0, None);
+            let n = ((lu * 0.8 / 22.0) as i32).max(2);
+            for row in [-1.0f32, 1.0] {
+                for i in 0..n {
+                    let a = -lu * 0.4 + (i as f32 + 0.5) * lu * 0.8 / n as f32;
+                    f.put(scn, out, "pc_tent", [a, row * lv * 0.22], 2.2, 0.0, None);
+                }
+            }
+            for s in [-1.0f32, 1.0] {
+                f.put(scn, out, "bench", [s * lu * 0.15, 0.0], 1.8, 0.0, None);
             }
         }
         "lido" => {
@@ -160,28 +212,116 @@ pub(super) fn emit(scn: &Scenario, b: &Building, out: &mut Builder) -> bool {
             }
         }
         "cemetery" => {
-            drape(scn, out, c, w, d, [0.74, 0.76, 0.62], 0.3);
-            let ring = [
-                Pos { x: c.x - w * 0.5, y: c.y - d * 0.5 },
-                Pos { x: c.x + w * 0.5, y: c.y - d * 0.5 },
-                Pos { x: c.x + w * 0.5, y: c.y + d * 0.5 },
-                Pos { x: c.x - w * 0.5, y: c.y + d * 0.5 },
-            ];
+            f.drape(scn, out, [0.0, 0.0], f.lu, f.lv, [0.50, 0.68, 0.42], 0.5);
+            // Gravel path down the middle, graves in rows either side.
+            f.drape(scn, out, [0.0, 0.0], f.lu - 4.0, 2.4, [0.86, 0.83, 0.74], 0.56);
+            let wall_c = [0.90, 0.88, 0.82];
+            let ring = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]].map(|[a, b]| f.at([a * f.lu, b * f.lv]));
             for i in 0..4 {
-                let (a, e) = (ring[i], ring[(i + 1) % 4]);
-                wall(scn, out, a, e, 2.6, 0.8, [0.90, 0.88, 0.82]);
+                wall(scn, out, ring[i], ring[(i + 1) % 4], 2.6, 0.8, wall_c);
             }
-            for i in 0..5 {
-                for s in [-1.0f32, 1.0] {
-                    let p = Pos { x: c.x - w * 0.4 + i as f32 * w * 0.2, y: c.y + s * d * 0.32 };
-                    put(scn, out, "cypress", p, 1.8, 0.0, None);
+            for s in [-1.0f32, 1.0] {
+                for i in 0..5 {
+                    f.put(scn, out, "cypress", [-f.lu * 0.4 + i as f32 * f.lu * 0.2, s * f.lv * 0.4], 1.1, 0.0, None);
+                }
+                for i in 0..6 {
+                    for j in 0..2 {
+                        let at = [-f.lu * 0.4 + 1.5 + i as f32 * f.lu * 0.11, s * (f.lv * 0.12 + j as f32 * f.lv * 0.12 + 2.0)];
+                        f.stone(scn, out, at, [0.62, 0.62, 0.60]);
+                    }
                 }
             }
-            put(scn, out, "chapel", Pos { x: c.x, y: c.y + d * 0.15 }, 0.75, 0.0, None);
+            f.put(scn, out, "chapel", [f.lu * 0.36, 0.0], 0.75, 0.0, None);
         }
         _ => return false,
     }
     true
+}
+
+/// Extra lift on every draped layer: the terrain mesh is finer than the 4 m posting
+/// and pokes through a thinner skin on bumps.
+const POKE: f32 = 0.7;
+
+/// A footprint's own frame: centre `c`, unit axis `u` along the long side (east
+/// of north-south), `v` across it, half-free sizes `lu` x `lv` in metres. A
+/// local `[a, b]` is the world point `c + a*u + b*v`; a kit model turned by
+/// `yaw` (plus `self.yaw`) has its local x along `u` and its local z along `v`.
+struct Frame {
+    c: Pos,
+    u: [f32; 2],
+    v: [f32; 2],
+    lu: f32,
+    lv: f32,
+    yaw: f32,
+}
+
+impl Frame {
+    fn of(b: &Building) -> Frame {
+        let r = &b.ring;
+        let edge = |i: usize| [r[(i + 1) % r.len()][0] - r[i][0], r[(i + 1) % r.len()][1] - r[i][1]];
+        let (e0, e1) = (edge(0), edge(1));
+        let len = |e: [f32; 2]| (e[0] * e[0] + e[1] * e[1]).sqrt();
+        let (long, short) = if len(e0) >= len(e1) { (e0, e1) } else { (e1, e0) };
+        let (ll, sl) = (len(long), len(short));
+        let mut u = [long[0] / ll, long[1] / ll];
+        if u[0] < 0.0 {
+            u = [-u[0], -u[1]];
+        }
+        let n = r.len() as f32;
+        let c = Pos { x: r.iter().map(|p| p[0]).sum::<f32>() / n, y: r.iter().map(|p| p[1]).sum::<f32>() / n };
+        Frame { c, u, v: [u[1], -u[0]], lu: ll, lv: sl, yaw: u[1].atan2(u[0]) }
+    }
+
+    fn at(&self, [a, b]: [f32; 2]) -> Pos {
+        Pos { x: self.c.x + a * self.u[0] + b * self.v[0], y: self.c.y + a * self.u[1] + b * self.v[1] }
+    }
+
+    /// A rectangle `w` x `d` (along `u`, `v`) centred at local `at`, draped on
+    /// the terrain `lift` metres above it, 4 m posting. Layers stacked on one
+    /// spot differ by at least 0.04 m; below ~0.45 the terrain mesh pokes through.
+    fn drape(&self, scn: &Scenario, out: &mut Builder, at: [f32; 2], w: f32, d: f32, color: [f32; 3], lift: f32) {
+        let nx = ((w / 4.0).ceil() as usize).max(1);
+        let ny = ((d / 4.0).ceil() as usize).max(1);
+        let pt = |i: usize, j: usize| {
+            let p = self.at([at[0] - w * 0.5 + w * i as f32 / nx as f32, at[1] - d * 0.5 + d * j as f32 / ny as f32]);
+            [p.x, ground_at(scn, p).max(0.0) + lift + POKE, -p.y]
+        };
+        for i in 0..nx {
+            for j in 0..ny {
+                let (a, b, c, d) = (pt(i, j), pt(i + 1, j), pt(i + 1, j + 1), pt(i, j + 1));
+                // Face up whichever way the frame is handed.
+                let up = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+                if up < 0.0 { out.quad(a, d, c, b, color) } else { out.quad(a, b, c, d, color) }
+            }
+        }
+    }
+
+    /// A thin ring of radius `r` and line width `t`, draped as short segments.
+    fn ring(&self, scn: &Scenario, out: &mut Builder, at: [f32; 2], r: f32, t: f32, color: [f32; 3], lift: f32) {
+        let n = 24;
+        for k in 0..n {
+            let ang = (k as f32 + 0.5) / n as f32 * 2.0 * PI;
+            let p = [at[0] + r * ang.cos(), at[1] + r * ang.sin()];
+            let seg = 2.0 * PI * r / n as f32 + 0.2;
+            // A short strip turned to the tangent, in a throwaway frame.
+            let to_world = |l: [f32; 2]| [l[0] * self.u[0] + l[1] * self.v[0], l[0] * self.u[1] + l[1] * self.v[1]];
+            let local = Frame { c: self.at(p), u: to_world([-ang.sin(), ang.cos()]), v: to_world([ang.cos(), ang.sin()]), lu: seg, lv: t, yaw: 0.0 };
+            local.drape(scn, out, [0.0, 0.0], seg, t, color, lift);
+        }
+    }
+
+    /// A kit prop at local `at`, turned `yaw` about the frame.
+    fn put(&self, scn: &Scenario, out: &mut Builder, name: &str, at: [f32; 2], scale: f32, yaw: f32, paint: Option<[f32; 3]>) {
+        put(scn, out, name, self.at(at), scale, self.yaw + yaw, paint);
+    }
+
+    /// A small headstone.
+    fn stone(&self, scn: &Scenario, out: &mut Builder, at: [f32; 2], color: [f32; 3]) {
+        let ring: Vec<Pos> = [[-0.8, -0.35], [0.8, -0.35], [0.8, 0.35], [-0.8, 0.35]].iter().map(|[a, b]| self.at([at[0] + a, at[1] + b])).collect();
+        let ring = if super::signed_area(&ring) < 0.0 { ring.into_iter().rev().collect() } else { ring };
+        let g = ground_at(scn, self.at(at)).max(0.0);
+        out.prism(&ring, g + 0.3, g + 1.5, color, [color[0] * 0.92, color[1] * 0.92, color[2] * 0.92]);
+    }
 }
 
 fn bbox(b: &Building) -> (Pos, Pos) {

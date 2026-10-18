@@ -18,6 +18,7 @@ mod buildings;
 mod camera;
 mod coast;
 mod field;
+mod fields;
 mod fire_shader;
 mod fire_view;
 mod forecast_view;
@@ -177,6 +178,7 @@ fn setup_scene(
     mut images: ResMut<Assets<Image>>,
 ) {
     terrain_mesh::build(&sim.scn, &mut commands, &mut meshes, &mut materials, &mut images);
+    fields::build(&sim.scn, &mut commands, &mut meshes, &mut materials);
     // Roads are drawn by the terrain shader from `ground_mask`; `roads::build`
     // (ribbon meshes) is no longer called.
 

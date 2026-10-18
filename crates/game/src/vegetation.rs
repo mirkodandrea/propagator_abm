@@ -407,10 +407,52 @@ pub fn spawn(
     commands.insert_resource(Vegetation { chunks, material, lod_m: gfx.lod_m, drawn_at: None, drawn_cleared: 0 });
 }
 
+/// Whether `p` is within `margin` metres of a pitch, car park, assembly area,
+/// cemetery or square: they are dressed by `town_kit` and the cover raster
+/// does not know them, so scrub and trees would grow through the paving.
+fn in_open_space(scn: &Scenario, p: Pos, margin: f32) -> bool {
+    // Centre, long axis, half sizes, and a bounding radius to reject cheaply.
+    static SPACES: std::sync::OnceLock<Vec<([f32; 2], [f32; 2], [f32; 2], f32)>> = std::sync::OnceLock::new();
+    let spaces = SPACES.get_or_init(|| {
+        scn.vectors.buildings
+            .iter()
+            .filter(|b| matches!(b.kind.as_deref(), Some("pitch" | "parking" | "assembly" | "cemetery" | "plaza")) && b.ring.len() >= 3)
+            .map(|b| {
+                let n = b.ring.len() as f32;
+                let c = [b.ring.iter().map(|v| v[0]).sum::<f32>() / n, b.ring.iter().map(|v| v[1]).sum::<f32>() / n];
+                let e = [b.ring[1][0] - b.ring[0][0], b.ring[1][1] - b.ring[0][1]];
+                let l = (e[0] * e[0] + e[1] * e[1]).sqrt().max(1e-3);
+                let u = [e[0] / l, e[1] / l];
+                let v = [-u[1], u[0]];
+                let (mut hu, mut hv) = (0.0f32, 0.0f32);
+                for q in &b.ring {
+                    hu = hu.max(((q[0] - c[0]) * u[0] + (q[1] - c[1]) * u[1]).abs());
+                    hv = hv.max(((q[0] - c[0]) * v[0] + (q[1] - c[1]) * v[1]).abs());
+                }
+                // A car park is drawn `BUILDING_FOOTPRINT` times its footprint.
+                let k = if b.kind.as_deref() == Some("parking") { crate::visual_scale::BUILDING_FOOTPRINT } else { 1.0 };
+                (c, u, [hu * k, hv * k], (hu * hu + hv * hv).sqrt() * k + margin)
+            })
+            .collect()
+    });
+    spaces.iter().any(|&(c, u, h, r)| {
+        let (dx, dy) = (p.x - c[0], p.y - c[1]);
+        if dx * dx + dy * dy > r * r {
+            return false;
+        }
+        let a = (dx * u[0] + dy * u[1]).abs();
+        let b = (-dx * u[1] + dy * u[0]).abs();
+        a < h[0] + margin && b < h[1] + margin
+    })
+}
+
 /// Whether the 5 m land cover leaves room for this plant at `p`: nothing grows
 /// on roads, tracks, buildings, yards or irrigated plots, and a tree keeps its
 /// crown clear of them too. Without cover the fuel cell alone decides.
 fn on_natural_cover(scn: &Scenario, species: Species, p: Pos) -> bool {
+    if in_open_space(scn, p, 4.0) {
+        return false;
+    }
     let Some(cover) = &scn.cover else {
         return true;
     };
