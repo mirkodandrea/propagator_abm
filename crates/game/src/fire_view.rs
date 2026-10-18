@@ -749,13 +749,32 @@ pub fn update_flames(
                 y: centre.y + (h2 - 0.5) * 2.0 * half,
             };
             let ground = scn.terrain.height_at(p);
+            let fuel = scn.fuel_at(*cell);
 
             let phase = h * 30.0 + k as f32 * 2.3;
             let flicker = 0.62 + 0.38 * (t * 5.5 + phase).sin() * (t * 2.3 + phase).cos();
             // Local intensity, not the cell's: the interpolated field varies
             // across the cell, so tongues differ within one cell too.
             let local = field.intensity(p).max(fli * 0.4);
-            let h_m = flame_m * flicker * (0.6 + 0.4 * (local / fli.max(1.0)).min(1.5));
+            let mut lift = 0.0;
+            let mut h_m = flame_m * flicker * (0.6 + 0.4 * (local / fli.max(1.0)).min(1.5));
+            // Crowning, drawn only: now and then a tongue over tall trees
+            // climbs into the canopy and roars well above the surface fire.
+            // Each tongue has its own slow cycle, so flare-ups come and go
+            // at random; conifers (tall pines) flare higher than broadleaves.
+            let crown_h = match fuel {
+                10..=12 => 2.6,
+                4..=6 => 1.9,
+                _ => 1.0,
+            };
+            if crown_h > 1.0 && flaming > 0.3 {
+                let cyc = (t * 0.11 + h * 13.0 + h2 * 5.0).fract();
+                let env = if cyc < 0.22 { (std::f32::consts::PI * cyc / 0.22).sin() } else { 0.0 };
+                h_m *= 1.0 + (crown_h - 1.0) * env * flaming;
+                // The tongue stands on the crown, not on the trunk's foot:
+                // the shader already burns the foliage there (`burn_plant`).
+                lift = env * flaming * if fuel >= 10 { 12.0 } else { 7.0 };
+            }
             let half_w = (h_m * 0.38).min(scn.world.cellsize * 1.3);
             let sway = (t * 2.6 + phase).sin() * h_m * 0.16;
 
@@ -764,7 +783,7 @@ pub fn update_flames(
             let heat = (local / 2000.0).clamp(0.55, 2.2) * (0.6 + 0.4 * flaming);
             let _ = sway;
             flames.tongue(
-                Vec3::new(p.x, ground, -p.y),
+                Vec3::new(p.x, ground + lift, -p.y),
                 right,
                 h_m,
                 half_w,
