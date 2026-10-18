@@ -646,6 +646,22 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
                 burn_glow = r.glow;
             }
         }
+        // Bark: wood is the brown (or charred, near-black) vertices that are
+        // not leaves. Vertical, irregular ridges and fissures from the world
+        // position, so every trunk and bough gets its own grain with no UVs
+        // or texture; the fine layer fades with distance.
+        let wc = pbr_input.material.base_color.rgb;
+        let woody = !leaf && alive < 0.5 && wc.r >= wc.g && wc.g >= wc.b && max(wc.r, wc.g) < 0.55;
+        if woody {
+            let mid_b = 1.0 - smoothstep(2.0, 7.0, px_m);
+            let fine_b = 1.0 - smoothstep(0.6, 2.5, px_m);
+            let across = p.x * 5.0 + p.z * 3.7;
+            let ridge = value_noise(vec2<f32>(across, p.y * 0.9));
+            let grain = value_noise(vec2<f32>(across * 2.7 + 3.0, p.y * 3.2));
+            let fissure = 1.0 - smoothstep(0.22, 0.46, ridge);
+            let tone = (ridge - 0.5) * 1.1 * mid_b + (grain - 0.5) * 0.7 * fine_b - fissure * 0.6 * mid_b;
+            pbr_input.material.base_color = vec4<f32>(wc * (1.0 + tone), pbr_input.material.base_color.a);
+        }
     }
 
     // A small additive lift is much more visible than changing emissive on an

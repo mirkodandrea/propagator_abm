@@ -1322,7 +1322,7 @@ const DEBRIS_OFFSET: f32 = 4.0e5;
 /// so a burnt conifer stand still reads differently from burnt grass. It
 /// continues the colour the shader ends a burning plant on.
 fn charcoal(c: [f32; 4]) -> [f32; 4] {
-    [0.034 + c[0] * 0.05, 0.030 + c[1] * 0.04, 0.028 + c[2] * 0.04, 0.0]
+    [0.022 + c[0] * 0.03, 0.019 + c[1] * 0.025, 0.017 + c[2] * 0.025, 0.0]
 }
 
 /// Recolour one plant's vertices for its fire state.
