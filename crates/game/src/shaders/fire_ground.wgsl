@@ -12,6 +12,7 @@
 #import bevy_pbr::forward_io::VertexOutput
 #import bevy_pbr::mesh_view_bindings::globals
 #import rocca::noise::{hash21, value_noise}
+#import rocca::scene_light::{scene_shade, apply_scene_fog}
 
 @group(2) @binding(0) var road_tex: texture_2d<f32>;
 @group(2) @binding(1) var road_samp: sampler;
@@ -92,10 +93,47 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let wpc = in.world_position.xz;
     let cold = 1.0 - w;
     if cold > 0.0 && col.a > 0.0 {
-        let n2 = 0.6 * value_noise(wpc * 0.45) + 0.4 * value_noise(wpc * 1.7 + 5.3);
-        let ragged = smoothstep(0.10, 0.60, col.a + (n2 - 0.5) * 0.7);
-        let grain = 0.80 + 0.40 * (0.5 * n2 + 0.5 * value_noise(wpc * 5.0));
-        col = vec4<f32>(col.rgb * mix(1.0, grain, cold), mix(col.a, col.a * ragged, cold));
+        // Fractal border: a domain-warped fbm (large lobes down to ~1 m
+        // fingers) moves the coverage threshold, so the burn edge is a
+        // self-similar coastline with peninsulas and unburned islands
+        // instead of a smooth blob. The push is strongest where coverage
+        // is low or middling (the border band) and fades inside the scar.
+        let warp = vec2<f32>(value_noise(wpc * 0.06 + 7.1), value_noise(wpc * 0.06 + 23.9)) - 0.5;
+        let fr = fbm(wpc * 0.13 + warp * 3.2);
+        let fine = value_noise(wpc * 1.9 + 5.3);
+        let n2 = 0.75 * fr + 0.25 * fine;
+        let band = 1.0 - smoothstep(0.35, 0.95, col.a);
+        let m = col.a + (n2 - 0.5) * (0.55 + 0.85 * band);
+        let ragged = smoothstep(0.22, 0.34, m);
+        // Scorched fringe: browned, half-burnt vegetation just inside the
+        // border, darkening to ash towards the interior.
+        let fringe = smoothstep(0.22, 0.30, m) * (1.0 - smoothstep(0.30, 0.62, m));
+        let scorch = mix(vec3<f32>(1.0), vec3<f32>(1.9, 1.15, 0.55), fringe * 0.7);
+        // Burnt ground as a material, not a flat tint: the CPU colour is a
+        // near-neutral dark; here it is pushed between warm brown soil,
+        // cool grey ash and near-black charcoal by noise at three scales,
+        // then broken up by fine grit and hairline cracks.
+        let big = fbm(wpc * 0.035 + 31.0);
+        let mid = fbm(wpc * 0.16 + warp * 1.5 + 9.0);
+        let grit = value_noise(wpc * 4.3) * 0.6 + value_noise(wpc * 11.0 + 2.0) * 0.4;
+        let lum = dot(col.rgb, vec3<f32>(0.33, 0.45, 0.22));
+        let brown = vec3<f32>(1.35, 0.95, 0.68);
+        let grey = vec3<f32>(0.95, 1.0, 1.08);
+        let hue = smoothstep(0.30, 0.70, big * 0.65 + mid * 0.35);
+        var tone = mix(brown, grey, hue);
+        // Ash drifts: pale grey patches, charcoal pockets, both patchy.
+        let ash = smoothstep(0.58, 0.82, mid) * (1.0 - fringe);
+        let coal = smoothstep(0.62, 0.20, mid * 0.7 + grit * 0.3);
+        var base = vec3<f32>(lum) * tone * (0.9 + 0.7 * (mid - 0.5));
+        base = mix(base, vec3<f32>(0.30, 0.285, 0.27) * (0.8 + 0.4 * grit), ash * 0.65);
+        base = mix(base, base * 0.35, coal * 0.6);
+        // Hairline cracks and pits: dark ridges where two noise fields cross.
+        let cr = abs(value_noise(wpc * 0.9 + warp * 6.0) - 0.5);
+        let crack = 1.0 - smoothstep(0.0, 0.035, cr);
+        base *= 1.0 - 0.45 * crack;
+        // Matte, gritty finish: high-frequency speckle, no uniform sheen.
+        base *= 0.82 + 0.36 * grit;
+        col = vec4<f32>(mix(col.rgb, base, cold) * scorch, mix(col.a, col.a * ragged, cold));
     }
     let road_d = (textureSample(road_tex, road_samp, vec2<f32>(wpc.x, -wpc.y) * mask_rect.xy).rg * 2.0 - 1.0) * RANGE_M;
     let mpp = max(length(dpdx(wpc)), length(dpdy(wpc)));
@@ -105,5 +143,23 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         1.0 - smoothstep(max(0.0, 0.8 * mpp - 1.6) - aa, max(0.0, 0.8 * mpp - 1.6) + aa, road_d.y),
     );
     col.a = col.a * (1.0 - 0.72 * on_road * cold);
+
+    // Scene light on the cold scar, so it shades and shadows like the ground
+    // under it: the facet normal of the lattice, roughened by a bump of the
+    // grit noise so the ash catches the sun grain by grain. The glowing part
+    // is a light source and is left as it is. Fog applies to both.
+    let facet = cross(dpdx(in.world_position.xyz), dpdy(in.world_position.xyz));
+    var nrm = normalize(facet);
+    if nrm.y < 0.0 {
+        nrm = -nrm;
+    }
+    let e = 0.35;
+    let h0 = value_noise(wpc * 1.3) + 0.5 * value_noise(wpc * 3.1);
+    let hx = value_noise((wpc + vec2<f32>(e, 0.0)) * 1.3) + 0.5 * value_noise((wpc + vec2<f32>(e, 0.0)) * 3.1);
+    let hz = value_noise((wpc + vec2<f32>(0.0, e)) * 1.3) + 0.5 * value_noise((wpc + vec2<f32>(0.0, e)) * 3.1);
+    nrm = normalize(nrm + vec3<f32>(h0 - hx, 0.0, h0 - hz) * 0.9);
+    let shade = scene_shade(in.world_position.xyz, nrm, in.position);
+    let lit_rgb = mix(col.rgb, col.rgb * shade * 0.55, cold);
+    col = vec4<f32>(apply_scene_fog(vec4<f32>(lit_rgb, col.a), in.world_position.xyz).rgb, col.a);
     return col;
 }

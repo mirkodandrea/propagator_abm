@@ -1,12 +1,14 @@
 // Closed roads: hazard tape. Diagonal red/white stripes crawl along the road
 // (u = metres along, v = 0..1 across), dark edge lines, a slow pulse. Same
-// lies on the road, depth-tested like the ground.
+// lies on the road, depth-tested like the ground. Shaded by the sun and
+// hazed by the fog like the terrain it lies on (`rocca::scene_light`).
 
 #import bevy_pbr::{
     mesh_functions,
     mesh_view_bindings::globals,
     view_transformations::position_world_to_clip,
 }
+#import rocca::scene_light::{scene_shade, apply_scene_fog}
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
@@ -17,6 +19,7 @@ struct Vertex {
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) uv: vec2<f32>,
+    @location(1) world: vec3<f32>,
 };
 
 @vertex
@@ -26,6 +29,7 @@ fn vertex(v: Vertex) -> VertexOutput {
     var out: VertexOutput;
     out.clip_position = position_world_to_clip(w);
     out.uv = v.uv;
+    out.world = w;
     return out;
 }
 
@@ -42,6 +46,19 @@ const PERIOD_M: f32 = 16.0;
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+    // The ribbon follows the ground, so its facet normal is the ground's.
+    // Derivatives first: `tape_color` may discard.
+    var n = normalize(cross(dpdx(in.world), dpdy(in.world)));
+    if n.y < 0.0 {
+        n = -n;
+    }
+    let out = tape_color(in);
+    // Tape is bright and must stay legible: the sun only modulates it.
+    let shade = clamp(scene_shade(in.world, n, in.clip_position) * 0.55, vec3<f32>(0.55), vec3<f32>(1.0));
+    return vec4<f32>(apply_scene_fog(vec4<f32>(out.rgb * shade, out.a), in.world).rgb, out.a);
+}
+
+fn tape_color(in: VertexOutput) -> vec4<f32> {
     let t = globals.time;
     if mode.x > 0.5 {
         // the part of the stretch still open to vehicles: a thin dashed line
