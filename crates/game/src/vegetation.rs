@@ -446,11 +446,63 @@ fn in_open_space(scn: &Scenario, p: Pos, margin: f32) -> bool {
     })
 }
 
+/// Distance from `p` to the nearest drawn road or track, less its half width
+/// and casing: negative or zero means `p` is under the ribbon. Uses the real
+/// polylines (`roads.rs` draws those), not the 5 m cover raster, which misses
+/// narrow ways and cuts corners.
+fn clearance_to_roads(scn: &Scenario, p: Pos) -> f32 {
+    const BIN_M: f32 = 40.0;
+    type Seg = ([f32; 2], [f32; 2], f32);
+    static INDEX: std::sync::OnceLock<std::collections::HashMap<(i32, i32), Vec<Seg>>> = std::sync::OnceLock::new();
+    let index = INDEX.get_or_init(|| {
+        let mut m: std::collections::HashMap<(i32, i32), Vec<Seg>> = std::collections::HashMap::new();
+        for road in &scn.vectors.roads {
+            let half = if road.drivable {
+                crate::roads::DRIVABLE_HALF_W
+            } else if road.track {
+                crate::roads::TRACK_HALF_W
+            } else {
+                continue;
+            } + crate::roads::CASING_M;
+            for w in road.line.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                let (x0, x1) = (a[0].min(b[0]) - 12.0, a[0].max(b[0]) + 12.0);
+                let (y0, y1) = (a[1].min(b[1]) - 12.0, a[1].max(b[1]) + 12.0);
+                for bx in (x0 / BIN_M).floor() as i32..=(x1 / BIN_M).floor() as i32 {
+                    for by in (y0 / BIN_M).floor() as i32..=(y1 / BIN_M).floor() as i32 {
+                        m.entry((bx, by)).or_default().push((a, b, half));
+                    }
+                }
+            }
+        }
+        m
+    });
+    let key = ((p.x / BIN_M).floor() as i32, (p.y / BIN_M).floor() as i32);
+    let mut best = f32::MAX;
+    for &(a, b, half) in index.get(&key).into_iter().flatten() {
+        let (ex, ey) = (b[0] - a[0], b[1] - a[1]);
+        let l2 = (ex * ex + ey * ey).max(1e-6);
+        let t = (((p.x - a[0]) * ex + (p.y - a[1]) * ey) / l2).clamp(0.0, 1.0);
+        let (dx, dy) = (p.x - (a[0] + t * ex), p.y - (a[1] + t * ey));
+        best = best.min((dx * dx + dy * dy).sqrt() - half);
+    }
+    best
+}
+
 /// Whether the 5 m land cover leaves room for this plant at `p`: nothing grows
 /// on roads, tracks, buildings, yards or irrigated plots, and a tree keeps its
 /// crown clear of them too. Without cover the fuel cell alone decides.
 fn on_natural_cover(scn: &Scenario, species: Species, p: Pos) -> bool {
     if in_open_space(scn, p, 4.0) {
+        return false;
+    }
+    // Keep the whole plant clear of the drawn ribbon; grass only the ribbon.
+    let crown = match species {
+        Species::Shrub => 5.0,
+        Species::Conifer | Species::Broadleaf => 6.0,
+        Species::Grass => 0.5,
+    };
+    if clearance_to_roads(scn, p) < crown {
         return false;
     }
     let Some(cover) = &scn.cover else {
