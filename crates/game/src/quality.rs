@@ -12,6 +12,12 @@
 //! as authored). `KIOSK_GFX` then overrides single knobs, for tuning on the
 //! kiosk machine: `KIOSK_GFX=-dof,-bloom,msaa=1,cascades=2,shadow=1500,veg=0.3,lod=800`.
 //!
+//! Extra switches for A/B tests of the GPU cost (defaults leave the look as it
+//! is in every preset): `-terrain_shadows` stops the terrain casting shadows
+//! (it still receives them; applies live), `terrain_stride=2|4` draws the native
+//! terrain at every 2nd/4th sample (applies from the next launch), e.g.
+//! `KIOSK_FPS=1 KIOSK_GFX=-terrain_shadows,terrain_stride=2`.
+//!
 //! The operator bar (F2) also picks the preset, live and saved in
 //! `~/.rocca_ventosa/grafica.txt` (`KIOSK_QUALITY` still wins). Everything
 //! changes at once except the share of plants planted, which is drawn when
@@ -38,6 +44,11 @@ pub struct Graphics {
     /// Distance from the camera (metres) beyond which plants are drawn as
     /// proxies of a couple of dozen faces (see `vegetation`).
     pub lod_m: f32,
+    /// The terrain casts shadows (it always receives them).
+    pub terrain_shadows: bool,
+    /// Terrain samples per render-mesh vertex (1 = every sample). Read when the
+    /// scene is built: applies from the next launch.
+    pub terrain_stride: usize,
 }
 
 impl Graphics {
@@ -52,6 +63,8 @@ impl Graphics {
         shadow_map: 2048,
         vegetation: if cfg!(target_arch = "wasm32") { 0.12 } else { 0.5 },
         lod_m: 1400.0,
+        terrain_shadows: true,
+        terrain_stride: 1,
     };
     pub const MEDIA: Graphics = Graphics {
         dof: false,
@@ -77,7 +90,7 @@ impl Graphics {
     /// Browser budget, also on desktop: no post-processing or shadow passes.
     pub const WEB: Graphics = Graphics {
         shadows: false, shadow_map: 256, cascades: 1,
-        vegetation: 0.025, lod_m: 0.0,
+        vegetation: 0.025, lod_m: 0.0, terrain_stride: 4,
         ..Graphics::BASSA
     };
 
@@ -112,6 +125,8 @@ impl Graphics {
                 ("dof", _) => self.dof = on,
                 ("bloom", _) => self.bloom = on,
                 ("shadows", _) => self.shadows = on,
+                ("terrain_shadows", _) => self.terrain_shadows = on,
+                ("terrain_stride", Some(n)) => self.terrain_stride = (n as usize).clamp(1, 8),
                 ("lod", Some(m)) => self.lod_m = m.max(0.0),
                 ("msaa", Some(n)) => self.msaa = if n >= 4.0 { 4 } else { 1 },
                 ("msaa", None) => self.msaa = if on { 4 } else { 1 },
@@ -126,8 +141,11 @@ impl Graphics {
 
     /// The preset this is, if it is one (the operator bar's selection).
     pub fn level(&self) -> Option<&'static str> {
-        // the plant density applies only at launch, so it is not compared
-        let same = |p: &Graphics| Graphics { vegetation: self.vegetation, ..*p } == *self;
+        // the plant density and the terrain stride apply only at launch, so
+        // they are not compared
+        let same = |p: &Graphics| {
+            Graphics { vegetation: self.vegetation, terrain_stride: self.terrain_stride, ..*p } == *self
+        };
         [("alta", &Graphics::ALTA), ("media", &Graphics::MEDIA), ("bassa", &Graphics::BASSA)]
             .into_iter()
             .find(|(_, p)| same(p))
@@ -170,4 +188,29 @@ pub fn save(level: &str) -> Result<(), String> {
 pub fn save(level: &str) -> Result<(), String> {
     let s = web_sys::window().and_then(|w| w.local_storage().ok().flatten()).ok_or("grafica: il browser non salva dati")?;
     s.set_item("rocca_ventosa_grafica", level).map_err(|_| "grafica: salvataggio non riuscito".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_switches_parse_and_presets_keep_the_look() {
+        for p in [Graphics::ALTA, Graphics::MEDIA, Graphics::BASSA] {
+            assert!(p.terrain_shadows);
+            assert_eq!(p.terrain_stride, 1);
+        }
+        assert_eq!(Graphics::WEB.terrain_stride, 4);
+        let mut g = Graphics::ALTA;
+        g.apply("-terrain_shadows,terrain_stride=2");
+        assert!(!g.terrain_shadows);
+        assert_eq!(g.terrain_stride, 2);
+        assert_eq!(g.level(), None);
+        g.terrain_shadows = true;
+        assert_eq!(g.level(), Some("alta")); // stride is launch-only
+        g.apply("terrain_stride=0");
+        assert_eq!(g.terrain_stride, 1);
+        g.apply("+terrain_shadows");
+        assert!(g.terrain_shadows);
+    }
 }

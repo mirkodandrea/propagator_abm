@@ -116,6 +116,8 @@ pub struct Buildings {
     /// and the click-select pipeline: both need to go from "which house" to
     /// "which few thousand vertices" without a linear scan.
     by_household: HashMap<u32, (usize, usize)>,
+    /// Sim generation `damage` last ran for (`u64::MAX` = none, after a restart).
+    damage_gen: u64,
 }
 
 pub fn spawn(
@@ -231,6 +233,7 @@ pub fn spawn(
     commands.insert_resource(Buildings {
         chunks,
         by_household,
+        damage_gen: u64::MAX,
     });
 }
 
@@ -791,6 +794,7 @@ pub fn reset(
         return;
     }
     restarted.clear();
+    buildings.damage_gen = u64::MAX;
     for chunk in &mut buildings.chunks {
         for s in &mut chunk.structures {
             s.alight_at_s = f32::INFINITY;
@@ -859,9 +863,12 @@ pub fn damage(
     mut buildings: ResMut<Buildings>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    if !sim.is_changed() {
+    // The sim is flagged changed every frame (kiosk systems take it mutably);
+    // the buildings only change when it has stepped.
+    if buildings.damage_gen == sim.generation {
         return;
     }
+    buildings.damage_gen = sim.generation;
     let now = sim.time_s() as f32;
     let fields = sim.fire.exposure().fields();
     let warm: Vec<bool> = fields.iter().map(|f| f.radiant + f.ember > 0.05).collect();

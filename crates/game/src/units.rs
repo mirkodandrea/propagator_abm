@@ -97,7 +97,9 @@ pub struct UnitAssets {
     work_gen: u64,
     /// Wet cells seen at the last scan (so a cell is announced once, when it
     /// first gets wet) and the ones on show now, with the simulated time they appeared.
-    wet_seen: std::collections::HashSet<usize>,
+    wet_seen: Vec<usize>,
+    /// Scratch for the next scan (swapped with `wet_seen`, so no allocation).
+    wet_next: Vec<usize>,
     wet_shown: Vec<(usize, f32)>,
     /// What the overlay was last built from, to rebuild only on a change.
     wet_built: usize,
@@ -259,7 +261,8 @@ pub fn setup(
         // over the hillside rather than an indication of where the water went.
         orders_gen: u64::MAX,
         work_gen: u64::MAX,
-        wet_seen: Default::default(),
+        wet_seen: Vec::new(),
+        wet_next: Vec::new(),
         wet_shown: Vec::new(),
         wet_built: 0,
     });
@@ -290,6 +293,7 @@ pub fn reset(
     assets.orders_gen = u64::MAX;
     assets.work_gen = u64::MAX;
     assets.wet_seen.clear();
+    assets.wet_next.clear();
     assets.wet_shown.clear();
     assets.wet_built = 0;
 }
@@ -580,16 +584,23 @@ pub fn update_work_overlay(sim: Res<Sim>, mut assets: ResMut<UnitAssets>) {
     let scan = assets.work_gen != gen;
     if scan {
         let moist = sim.fire.added_moisture();
-        let mut seen = std::collections::HashSet::new();
-        for (i, flag) in sim.fire.cleared().iter().enumerate() {
-            if !*flag && moist[i] >= WET_SHOW_PTS {
-                seen.insert(i);
-                if !assets.wet_seen.contains(&i) {
-                    assets.wet_shown.push((i, now));
+        // Both lists are ascending in cell index, so "seen last time" is a
+        // merge pointer instead of a hash lookup.
+        let UnitAssets { wet_seen, wet_next, wet_shown, .. } = &mut *assets;
+        wet_next.clear();
+        let mut k = 0;
+        for (i, (flag, m)) in sim.fire.cleared().iter().zip(moist).enumerate() {
+            if !*flag && *m >= WET_SHOW_PTS {
+                wet_next.push(i);
+                while k < wet_seen.len() && wet_seen[k] < i {
+                    k += 1;
+                }
+                if wet_seen.get(k) != Some(&i) {
+                    wet_shown.push((i, now));
                 }
             }
         }
-        assets.wet_seen = seen;
+        std::mem::swap(wet_seen, wet_next);
     }
     assets.work_gen = gen;
     assets.wet_shown.retain(|(_, t0)| now - *t0 < WET_SHOW_S);

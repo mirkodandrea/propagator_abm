@@ -27,10 +27,6 @@ use crate::retro::RetroMaterial;
 
 /// Samples per chunk edge. 128 keeps each chunk at ~16 k vertices.
 const CHUNK: usize = 128;
-/// Terrain samples per mesh vertex: every sample natively; in the browser
-/// every fourth (20 m), which WebGL can draw. The data (and so the agents and
-/// every height lookup) stay at full resolution.
-const STRIDE: usize = if cfg!(target_arch = "wasm32") { 4 } else { 1 };
 
 #[derive(Component)]
 pub struct TerrainChunk;
@@ -416,7 +412,13 @@ pub fn build(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<RetroMaterial>,
     images: &mut Assets<Image>,
+    gfx: &crate::quality::Graphics,
 ) {
+    // Terrain samples per mesh vertex (`Graphics::terrain_stride`): every
+    // sample natively; in the browser every fourth (20 m), which WebGL can
+    // draw. The data (and so the agents and every height lookup) stay at full
+    // resolution.
+    let stride = gfx.terrain_stride.max(1);
     let t = &scn.terrain;
     let mask = crate::ground_mask::build(scn);
     images.insert(&crate::ground_mask::GRASS_MAP, crate::ground_mask::grass_map(scn));
@@ -433,8 +435,8 @@ pub fn build(
     }, { images.insert(&crate::ground_mask::ROAD_MASK, mask.image); crate::ground_mask::ROAD_MASK }, mask.rect));
     let mask = mask.sea;
 
-    // the mesh's own grid: every STRIDE-th sample
-    let (cols, rows, posting) = ((t.cols - 1) / STRIDE + 1, (t.rows - 1) / STRIDE + 1, t.posting * STRIDE as f32);
+    // the mesh's own grid: every `stride`-th sample
+    let (cols, rows, posting) = ((t.cols - 1) / stride + 1, (t.rows - 1) / stride + 1, t.posting * stride as f32);
     let chunks_x = (cols - 1).div_ceil(CHUNK);
     let chunks_y = (rows - 1).div_ceil(CHUNK);
     let (mut count, mut submerged) = (0, 0);
@@ -462,7 +464,7 @@ pub fn build(
                     // row 0 is the north edge; world +y is north
                     let gy = t.height_m - (r0 + r) as f32 * posting;
                     let p = Pos { x: gx, y: gy };
-                    let raw = t.elev[(r0 + r) * STRIDE * t.cols + (c0 + c) * STRIDE];
+                    let raw = t.elev[((r0 + r) * stride).min(t.rows - 1) * t.cols + ((c0 + c) * stride).min(t.cols - 1)];
                     let shore_d = shore.at(p);
                     let elev = cliff_elev(scn, &shore, p, raw);
 
@@ -522,7 +524,7 @@ pub fn build(
             mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
             mesh.insert_indices(Indices::U32(indices));
 
-            commands.spawn((
+            let mut chunk = commands.spawn((
                 MaterialMeshBundle::<RetroMaterial> {
                     mesh: meshes.add(mesh),
                     material: material.clone(),
@@ -533,6 +535,9 @@ pub fn build(
                 TerrainChunk,
                 PauseSolid,
             ));
+            if !gfx.terrain_shadows {
+                chunk.insert(bevy::pbr::NotShadowCaster);
+            }
             count += 1;
         }
     }

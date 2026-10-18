@@ -177,7 +177,7 @@ fn setup_scene(
     mut materials: ResMut<Assets<retro::RetroMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    terrain_mesh::build(&sim.scn, &mut commands, &mut meshes, &mut materials, &mut images);
+    terrain_mesh::build(&sim.scn, &mut commands, &mut meshes, &mut materials, &mut images, &gfx);
     fields::build(&sim.scn, &mut commands, &mut meshes, &mut materials);
     // Roads are drawn by the terrain shader from `ground_mask`; `roads::build`
     // (ribbon meshes) is no longer called.

@@ -19,6 +19,7 @@ pub fn apply_live(
         &crate::camera::OrbitCamera,
     )>,
     veg: Option<ResMut<crate::vegetation::Vegetation>>,
+    terrain: Query<(Entity, Has<bevy::pbr::NotShadowCaster>), With<crate::terrain_mesh::TerrainChunk>>,
 ) {
     use bevy::core_pipeline::{bloom::BloomSettings, dof::*, prepass::DepthPrepass};
     *msaa = gfx.msaa();
@@ -58,6 +59,14 @@ pub fn apply_live(
                 ));
             }
             (false, true) => { cam.remove::<(DepthPrepass, DepthOfFieldSettings)>(); }
+            _ => {}
+        }
+    }
+    // the terrain's shadow casting (its stride needs a restart, like the plant density)
+    for (e, no_cast) in &terrain {
+        match (gfx.terrain_shadows, no_cast) {
+            (false, false) => { commands.entity(e).insert(bevy::pbr::NotShadowCaster); }
+            (true, true) => { commands.entity(e).remove::<bevy::pbr::NotShadowCaster>(); }
             _ => {}
         }
     }
