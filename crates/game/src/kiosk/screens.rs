@@ -55,15 +55,6 @@ fn volunteer(ui: &mut egui::Ui, faces: Option<&Portraits>, mood: Mood, size: f32
 /// The title screen: the fire plays behind it with the roaming camera, here
 /// only the name and «Gioca». True when «Gioca» was pressed.
 pub fn title(ctx: &egui::Context, k: &Kiosk, sim: &Sim, logo: Option<&Logo>) -> bool {
-    // the web intro page already had its «Gioca»: go straight to the opening, once
-    #[cfg(target_arch = "wasm32")]
-    {
-        let window = web_sys::window().unwrap();
-        if js_sys::Reflect::get(&window, &"roccaSkipTitle".into()).ok().and_then(|v| v.as_bool()) == Some(true) {
-            let _ = js_sys::Reflect::delete_property(&window, &"roccaSkipTitle".into());
-            return true;
-        }
-    }
     let screen = ctx.screen_rect();
     // phones get the same screen, scaled down to the width
     let sc = (screen.width() / 1000.0).clamp(0.4, 1.0).min((screen.height() / 560.0).max(0.4));
