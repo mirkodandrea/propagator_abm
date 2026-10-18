@@ -236,8 +236,10 @@ struct Chunk {
     /// Fire state each plant was last drawn with, so a chunk is rebuilt only
     /// when something in it actually changed.
     drawn: Vec<u8>,
-    /// Whether any plant is drawn other than unburnt.
-    touched: bool,
+    /// How many plants are drawn other than unburnt, and how many burnt (a
+    /// burnt plant is final, until a restart).
+    lit: usize,
+    burnt: usize,
 }
 
 #[derive(Resource)]
@@ -393,7 +395,8 @@ pub fn spawn(
                 pos_base,
                 low_pos_base,
                 drawn,
-                touched: false,
+                lit: 0,
+                burnt: 0,
             });
         }
     }
@@ -1036,108 +1039,192 @@ pub fn burn(
 
     let material = veg.material.clone();
     for chunk in &mut veg.chunks {
-        if !chunk.touched && !reached(chunk.cells) && !any_cleared(chunk.cells) {
+        // every plant burnt: nothing here can change until a restart
+        if chunk.burnt == chunk.plants.len() && !restarted {
             continue;
         }
-        let mut wanted = Vec::with_capacity(chunk.plants.len());
-        let mut dirty = false;
-        for (plant, &drawn) in chunk.plants.iter().zip(&chunk.drawn) {
-            let mut s = plant_state(&field, plant, now);
-            if s == CellFire::Unburnt as u8 {
-                // Thinned, not razed: the closer the plant is to the middle of
-                // the cut, the likelier it is gone, decided by its own fixed
-                // random number, so the same plants fall on every redraw and a
-                // few survive inside the line. The edge is sharp (a narrow
-                // ramp around the half-way point).
-                let inside = ((field.cleared_fraction(plant.pos) - 0.45) / 0.15).clamp(0.0, 1.0);
-                if plant.lag_s / 45.0 < CLEARED_SHARE * inside {
-                    s = CLEARED;
-                }
-            }
-            dirty |= s != drawn;
-            wanted.push(s);
-        }
-        if !dirty {
+        if chunk.lit == 0 && !reached(chunk.cells) && !any_cleared(chunk.cells) {
             continue;
         }
-        if chunk.char.is_none() && wanted.iter().any(|&s| s == CellFire::Burnt as u8 || s == CellFire::Burning as u8) {
+        let (r0, r1, c0, c1) = chunk.cells;
+        let scan_cleared = line_cells > 0 && any_cleared((r0.saturating_sub(1), (r1 + 1).min(rows), c0.saturating_sub(1), (c1 + 1).min(cols)));
+        let redraw = plan_redraw(&chunk.plants, &mut chunk.drawn, &mut chunk.lit, &mut chunk.burnt, &field, now, scan_cleared, restarted);
+        if redraw.is_empty() {
+            continue;
+        }
+        if chunk.char.is_none() && redraw.iter().any(|&(_, s)| s == CellFire::Burnt as u8 || s == CellFire::Burning as u8) {
             chunk.char = Some(build_char_layer(&mut commands, &mut meshes, &material, &*chunk));
         }
 
-        let mut colors = chunk.base.clone();
-        let mut low_colors = chunk.low_base.clone();
-        let mut positions = chunk.pos_base.clone();
-        let mut low_positions = chunk.low_pos_base.clone();
-        chunk.touched = false;
-        let mut char_positions = chunk.char.as_ref().map(|l| (l.near.hidden.clone(), l.far.hidden.clone()));
-        let mut char_colors = chunk.char.as_ref().map(|l| (l.near.colors.clone(), l.far.colors.clone()));
-        for (i, ((plant, drawn), s)) in chunk.plants.iter().zip(&mut chunk.drawn).zip(wanted).enumerate() {
-            *drawn = s;
-            if s == CellFire::Unburnt as u8 {
-                continue;
-            }
-            chunk.touched = true;
-            // a burnt plant with remains is replaced by them, near the camera
-            // and far from it
-            let replaced = s == CellFire::Burnt as u8 && plant.remains.is_some();
-            if s == CLEARED || replaced {
-                // collapse every vertex of the plant onto its first one:
-                // degenerate triangles draw nothing
-                for (pos, range) in [
-                    (&mut positions, plant.vert_start..plant.vert_end),
-                    (&mut low_positions, plant.low_start..plant.low_end),
-                ] {
-                    let (a, b) = (range.start as usize, range.end as usize);
-                    if a < b {
-                        let first = pos[a];
-                        pos[a..b].fill(first);
-                    }
+        // Only the plants in `redraw` are rewritten, in place, in the
+        // attributes the mesh already holds (taken out and put back, so no
+        // buffer is copied).
+        let t0s: Vec<f32> = redraw.iter().map(|&(i, _)| ignition(&field, &chunk.plants[i])).collect();
+        for (handle, base, pos_base, low) in [
+            (&chunk.mesh, &chunk.base, &chunk.pos_base, false),
+            (&chunk.low_mesh, &chunk.low_base, &chunk.low_pos_base, true),
+        ] {
+            edit_mesh(&mut meshes, handle, |pos, col| {
+                for (&(i, s), &t0) in redraw.iter().zip(&t0s) {
+                    let p = &chunk.plants[i];
+                    let range = if low { (p.low_start as usize, p.low_end as usize) } else { (p.vert_start as usize, p.vert_end as usize) };
+                    draw_standing(pos, col, pos_base, base, range, s, t0, p);
                 }
-                if replaced {
-                    if let (Some((near, far)), Some(layer)) = (&mut char_positions, &chunk.char) {
-                        for (out, m) in [(near, &layer.near), (far, &layer.far)] {
+            });
+        }
+        if let Some(layer) = &chunk.char {
+            for m in [&layer.near, &layer.far] {
+                edit_mesh(&mut meshes, &m.mesh, |pos, col| {
+                    for (&(i, s), &t0) in redraw.iter().zip(&t0s) {
+                        if chunk.plants[i].remains.is_some() {
                             let (a, b) = m.ranges[i];
-                            out[a as usize..b as usize].copy_from_slice(&m.shown[a as usize..b as usize]);
+                            draw_char(pos, col, m, (a as usize, b as usize), s, t0);
                         }
                     }
-                }
+                });
+            }
+        }
+    }
+}
+
+/// Run `f` on a mesh's position and colour attributes, in place. The
+/// attributes are moved out and back rather than cloned.
+fn edit_mesh(meshes: &mut Assets<Mesh>, handle: &Handle<Mesh>, f: impl FnOnce(&mut [[f32; 3]], &mut [[f32; 4]])) {
+    use bevy::render::mesh::VertexAttributeValues::{Float32x3, Float32x4};
+    let Some(mesh) = meshes.get_mut(handle) else { return };
+    let (Some(Float32x3(mut pos)), Some(Float32x4(mut col))) =
+        (mesh.remove_attribute(Mesh::ATTRIBUTE_POSITION), mesh.remove_attribute(Mesh::ATTRIBUTE_COLOR))
+    else {
+        warn!("vegetation: a chunk mesh lost its position or colour attribute");
+        return;
+    };
+    f(&mut pos, &mut col);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, col);
+}
+
+/// Seconds of simulated time at which a plant catches (its own lag included).
+fn ignition(field: &FireField, plant: &Plant) -> f32 {
+    field.arrival(plant.pos).map_or(0.0, |a| a + plant.lag_s)
+}
+
+/// State a plant should be drawn in: the fire's, or [`CLEARED`] if a crew has
+/// thinned the ground under it (`scan_cleared`: some cleared cell is near).
+fn wanted_state(field: &FireField, plant: &Plant, now: f32, scan_cleared: bool) -> u8 {
+    let mut s = plant_state(field, plant, now);
+    if s == CellFire::Unburnt as u8 && scan_cleared {
+        // Thinned, not razed: the closer the plant is to the middle of
+        // the cut, the likelier it is gone, decided by its own fixed
+        // random number, so the same plants fall on every redraw and a
+        // few survive inside the line. The edge is sharp (a narrow
+        // ramp around the half-way point).
+        let inside = ((field.cleared_fraction(plant.pos) - 0.45) / 0.15).clamp(0.0, 1.0);
+        if plant.lag_s / 45.0 < CLEARED_SHARE * inside {
+            s = CLEARED;
+        }
+    }
+    s
+}
+
+/// Which plants of a chunk to rewrite, with their new state; `drawn`, `lit`
+/// (plants not unburnt) and `burnt` are updated. A burnt plant is final and
+/// not even looked at (except on a restart, which brings everything back).
+/// Nothing is returned if no plant changed state; otherwise the changed ones
+/// come with every plant still burning, whose ignition time (the shader's
+/// clock) is read again from the front as it has moved since.
+#[allow(clippy::too_many_arguments)]
+fn plan_redraw(
+    plants: &[Plant],
+    drawn: &mut [u8],
+    lit: &mut usize,
+    burnt: &mut usize,
+    field: &FireField,
+    now: f32,
+    scan_cleared: bool,
+    restarted: bool,
+) -> Vec<(usize, u8)> {
+    const BURNT: u8 = CellFire::Burnt as u8;
+    const BURNING: u8 = CellFire::Burning as u8;
+    const UNBURNT: u8 = CellFire::Unburnt as u8;
+    let mut out = Vec::new();
+    for (i, plant) in plants.iter().enumerate() {
+        if drawn[i] == BURNT && !restarted {
+            continue;
+        }
+        let s = wanted_state(field, plant, now, scan_cleared);
+        if s != drawn[i] {
+            *lit = *lit + usize::from(s != UNBURNT) - usize::from(drawn[i] != UNBURNT);
+            *burnt = *burnt + usize::from(s == BURNT) - usize::from(drawn[i] == BURNT);
+            drawn[i] = s;
+            out.push((i, s));
+        }
+    }
+    if out.is_empty() {
+        return out;
+    }
+    let changed = out.len();
+    let mut next = 0;
+    for (i, &d) in drawn.iter().enumerate() {
+        if d == BURNING {
+            while next < changed && out[next].0 < i {
+                next += 1;
+            }
+            if next < changed && out[next].0 == i {
                 continue;
             }
-            // the shader consumes a burning plant over time from its ignition
-            let t0 = field.arrival(plant.pos).map_or(0.0, |a| a + plant.lag_s);
-            // ...and dissolves its burnt remains in as the crown goes: they
-            // stand from the moment of ignition, flagged with the same clock
-            if plant.remains.is_some() && s == CellFire::Burning as u8 {
-                if let (Some((np, fp)), Some((nc, fc)), Some(layer)) = (&mut char_positions, &mut char_colors, &chunk.char) {
-                    for (out, cols, m) in [(np, nc, &layer.near), (fp, fc, &layer.far)] {
-                        let (a, b) = m.ranges[i];
-                        let (a, b) = (a as usize, b as usize);
-                        out[a..b].copy_from_slice(&m.shown[a..b]);
-                        for c in &mut cols[a..b] {
-                            c[3] = -(1.0 + REMAINS_OFFSET + t0.max(0.0));
-                        }
-                    }
-                }
-            }
-            paint(&mut colors[plant.vert_start as usize..plant.vert_end as usize], s, t0, plant.remains.is_some());
-            paint(&mut low_colors[plant.low_start as usize..plant.low_end as usize], s, t0, plant.remains.is_some());
+            out.push((i, BURNING));
         }
+    }
+    out
+}
 
-        if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
-            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
-            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+/// Redraw one plant's vertices `range` for fire state `s`: back to the
+/// generated shape and colour, then the damage. Reads only `*_base`, so it
+/// gives the same result whatever the plant showed before.
+#[allow(clippy::too_many_arguments)]
+fn draw_standing(
+    pos: &mut [[f32; 3]],
+    col: &mut [[f32; 4]],
+    pos_base: &[[f32; 3]],
+    col_base: &[[f32; 4]],
+    (a, b): (usize, usize),
+    s: u8,
+    t0: f32,
+    plant: &Plant,
+) {
+    pos[a..b].copy_from_slice(&pos_base[a..b]);
+    col[a..b].copy_from_slice(&col_base[a..b]);
+    if s == CellFire::Unburnt as u8 {
+        return;
+    }
+    // a burnt plant with remains is replaced by them, near the camera
+    // and far from it
+    let replaced = s == CellFire::Burnt as u8 && plant.remains.is_some();
+    if s == CLEARED || replaced {
+        // collapse every vertex of the plant onto its first one:
+        // degenerate triangles draw nothing
+        if a < b {
+            let first = pos_base[a];
+            pos[a..b].fill(first);
         }
-        if let Some(mesh) = meshes.get_mut(&chunk.low_mesh) {
-            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, low_colors);
-            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, low_positions);
-        }
-        if let (Some((near, far)), Some((near_c, far_c)), Some(layer)) = (char_positions, char_colors, &chunk.char) {
-            for ((positions, colors), m) in [((near, near_c), &layer.near), ((far, far_c), &layer.far)] {
-                if let Some(mesh) = meshes.get_mut(&m.mesh) {
-                    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-                    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
-                }
-            }
+        return;
+    }
+    // the shader consumes a burning plant over time from its ignition
+    paint(&mut col[a..b], s, t0, plant.remains.is_some());
+}
+
+/// The same for the plant's burnt remains: hidden until it burns, standing
+/// from the moment of ignition (flagged with the same clock, so they dissolve
+/// in as the crown goes) and for good once it is burnt.
+fn draw_char(pos: &mut [[f32; 3]], col: &mut [[f32; 4]], m: &CharMesh, (a, b): (usize, usize), s: u8, t0: f32) {
+    pos[a..b].copy_from_slice(&m.hidden[a..b]);
+    col[a..b].copy_from_slice(&m.colors[a..b]);
+    if s == CellFire::Burnt as u8 {
+        pos[a..b].copy_from_slice(&m.shown[a..b]);
+    } else if s == CellFire::Burning as u8 {
+        pos[a..b].copy_from_slice(&m.shown[a..b]);
+        for c in &mut col[a..b] {
+            c[3] = -(1.0 + REMAINS_OFFSET + t0.max(0.0));
         }
     }
 }
@@ -1365,5 +1452,159 @@ mod tests {
                 assert!(out.dot(Vec3::from(*n)) > 0.0, "{name}: normal {n:?} at {p:?} points in");
             }
         }
+    }
+
+    /// The incremental redraw (only changed plants and those still burning, in
+    /// place, burnt plants skipped) draws exactly what the old whole-chunk
+    /// rebuild drew, after every redraw of a real `medium` fire, and after a
+    /// restart.
+    #[test]
+    fn the_incremental_redraw_equals_the_full_rebuild() {
+        use std::time::{Duration, Instant};
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let mut sim = Sim::new(&data, "medium", 2).unwrap();
+        let w = sim.scn.world;
+        let mut rng = Rng::seeded(7);
+        let (mut plants, mut base, mut low_base, mut pos_base, mut low_pos_base) = (vec![], vec![], vec![], vec![], vec![]);
+        let (mut shown, mut hidden, mut cbase, mut ranges) = (vec![], vec![], vec![], vec![]);
+        let mut y = 5.0;
+        while y < w.height_m {
+            let mut x = 5.0;
+            while x < w.width_m {
+                let (vs, ls, cs) = (base.len() as u32, low_base.len() as u32, shown.len() as u32);
+                let remains = (rng.unit() < 0.6).then(|| Remains { name: "pine", base: Vec3::ZERO, scale: Vec3::ONE, yaw: 0.0 });
+                for k in 0..4 {
+                    let q = [x + k as f32, rng.unit(), y];
+                    pos_base.push(q);
+                    base.push([rng.unit(), rng.unit(), rng.unit(), if rng.unit() < 0.5 { 1.0 } else { 0.0 }]);
+                }
+                for k in 0..2 {
+                    low_pos_base.push([x + k as f32, rng.unit(), y]);
+                    low_base.push([rng.unit(), rng.unit(), rng.unit(), 0.0]);
+                }
+                if remains.is_some() {
+                    for k in 0..3 {
+                        shown.push([x + 0.5 * k as f32, 1.0 + rng.unit(), y]);
+                        cbase.push([rng.unit(), rng.unit(), rng.unit(), 0.0]);
+                    }
+                    let first = shown[cs as usize];
+                    hidden.extend(std::iter::repeat(first).take(3));
+                }
+                ranges.push((cs, shown.len() as u32));
+                plants.push(Plant {
+                    pos: Pos { x, y },
+                    lag_s: rng.unit() * 45.0,
+                    vert_start: vs,
+                    vert_end: vs + 4,
+                    low_start: ls,
+                    low_end: ls + 2,
+                    remains,
+                });
+                x += 37.0;
+            }
+            y += 37.0;
+        }
+        let m = |shown: &Vec<[f32; 3]>, hidden: &Vec<[f32; 3]>| CharMesh {
+            mesh: Handle::default(),
+            entity: Entity::PLACEHOLDER,
+            shown: shown.clone(),
+            hidden: hidden.clone(),
+            ranges: ranges.clone(),
+            colors: cbase.clone(),
+        };
+        let cm = m(&shown, &hidden);
+        // incremental state
+        let n = plants.len();
+        let (mut drawn, mut lit, mut burnt) = (vec![0u8; n], 0usize, 0usize);
+        let (mut pos, mut col, mut lpos, mut lcol) = (pos_base.clone(), base.clone(), low_pos_base.clone(), low_base.clone());
+        let (mut cpos, mut ccol) = (hidden.clone(), cbase.clone());
+        // reference state
+        let mut st = (vec![0u8; n], Duration::ZERO, Duration::ZERO, 0usize);
+        let check = |sim: &Sim, restarted: bool, st: &mut (Vec<u8>, Duration, Duration, usize), drawn: &mut Vec<u8>, lit: &mut usize, burnt: &mut usize,
+                         bufs: &mut (Vec<[f32; 3]>, Vec<[f32; 4]>, Vec<[f32; 3]>, Vec<[f32; 4]>, Vec<[f32; 3]>, Vec<[f32; 4]>)| {
+            let now = sim.time_s() as f32;
+            let field = FireField {
+                state: sim.fire.state(),
+                arrival: sim.fire.arrival_times(),
+                intensity: sim.fire.intensity(),
+                cleared: sim.fire.cleared(),
+                world: sim.scn.world,
+            };
+            let scan_cleared = sim.fire.line_cells > 0;
+            // old: every plant, then rebuild all if any changed
+            let t = Instant::now();
+            // (the one deliberate change: a burnt plant stays burnt. The old
+            // code let the interpolated arrival drift later as neighbours
+            // caught, and a handful of burnt plants flared up again.)
+            let mut wanted: Vec<u8> = plants.iter().map(|p| wanted_state(&field, p, now, scan_cleared)).collect();
+            if !restarted {
+                for (w, &d) in wanted.iter_mut().zip(&st.0) {
+                    if d == CellFire::Burnt as u8 {
+                        *w = d;
+                    }
+                }
+            }
+            let dirty = wanted != st.0;
+            let mut r = (pos_base.clone(), base.clone(), low_pos_base.clone(), low_base.clone(), hidden.clone(), cbase.clone());
+            if dirty {
+                for (i, p) in plants.iter().enumerate() {
+                    let t0 = ignition(&field, p);
+                    let s = wanted[i];
+                    draw_standing(&mut r.0, &mut r.1, &pos_base, &base, (p.vert_start as usize, p.vert_end as usize), s, t0, p);
+                    draw_standing(&mut r.2, &mut r.3, &low_pos_base, &low_base, (p.low_start as usize, p.low_end as usize), s, t0, p);
+                    if p.remains.is_some() {
+                        let (a, b) = ranges[i];
+                        draw_char(&mut r.4, &mut r.5, &cm, (a as usize, b as usize), s, t0);
+                    }
+                }
+                st.0 = wanted;
+            }
+            st.1 += t.elapsed();
+            // new
+            let t = Instant::now();
+            let redraw = plan_redraw(&plants, drawn, lit, burnt, &field, now, scan_cleared, restarted);
+            for &(i, s) in &redraw {
+                let p = &plants[i];
+                let t0 = ignition(&field, p);
+                draw_standing(&mut bufs.0, &mut bufs.1, &pos_base, &base, (p.vert_start as usize, p.vert_end as usize), s, t0, p);
+                draw_standing(&mut bufs.2, &mut bufs.3, &low_pos_base, &low_base, (p.low_start as usize, p.low_end as usize), s, t0, p);
+                if p.remains.is_some() {
+                    let (a, b) = ranges[i];
+                    draw_char(&mut bufs.4, &mut bufs.5, &cm, (a as usize, b as usize), s, t0);
+                }
+            }
+            st.2 += t.elapsed();
+            if dirty {
+                st.3 += 1;
+            }
+            let bad: Vec<_> = (0..plants.len()).filter(|&i| st.0[i] != drawn[i]).take(5).map(|i| (i, st.0[i], drawn[i])).collect();
+            assert!(bad.is_empty(), "state mismatches (i, ref, new) at {now}: {bad:?}");
+            assert_eq!(&r.0, &bufs.0, "positions at {now}");
+            assert_eq!(&r.1, &bufs.1, "colours at {now}");
+            assert_eq!(&r.2, &bufs.2, "low positions at {now}");
+            assert_eq!(&r.3, &bufs.3, "low colours at {now}");
+            assert_eq!(&r.4, &bufs.4, "char positions at {now}");
+            assert_eq!(&r.5, &bufs.5, "char colours at {now}");
+            assert_eq!(*drawn, st.0);
+            assert_eq!(*lit, drawn.iter().filter(|&&d| d != 0).count());
+            assert_eq!(*burnt, drawn.iter().filter(|&&d| d == CellFire::Burnt as u8).count());
+        };
+        let mut bufs = (pos, col, lpos, lcol, cpos, ccol);
+        for _ in 0..40 {
+            for _ in 0..(300.0 / rocca::STEP_S as f32).max(1.0) as usize {
+                if sim.is_over() { break; }
+                sim.game.step().unwrap();
+            }
+            check(&sim, false, &mut st, &mut drawn, &mut lit, &mut burnt, &mut bufs);
+        }
+        let (redraws, t_old, t_new) = (st.3, st.1, st.2);
+        assert!(burnt > 0 && redraws > 3, "the fire never burnt anything: {burnt} {redraws}");
+        eprintln!("redraws {redraws}, burnt {burnt}/{n}, old {t_old:?}, new {t_new:?}");
+        // restart: a fresh game brings everything back to the generated shape
+        let fresh = Sim::new(&data, "medium", 2).unwrap();
+        st.0 = drawn.clone();
+        check(&fresh, true, &mut st, &mut drawn, &mut lit, &mut burnt, &mut bufs);
+        // (the fresh game has its ignition patch, so a few plants are alight)
+        assert!(burnt < 100 && lit < 200, "{lit} {burnt}");
     }
 }
