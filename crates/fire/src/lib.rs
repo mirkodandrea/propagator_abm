@@ -408,6 +408,7 @@ impl FireSim {
             if self.ignited_at[i] == i32::MIN {
                 self.ignited_at[i] = arrival[i];
                 self.state[i] = CellFire::Burning;
+                self.threat.mark_burnt(i);
             }
             if now - self.ignited_at[i] >= BURNOUT_S {
                 self.state[i] = CellFire::Burnt;

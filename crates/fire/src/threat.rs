@@ -55,6 +55,15 @@ pub struct ThreatField {
     /// Cells touched by the last update, so clearing costs the front rather
     /// than the grid.
     dirty: Vec<u32>,
+    /// Cells that have left `Unburnt` (reported by the owner through
+    /// [`ThreatField::mark_burnt`]); they hold the burnt floor.
+    burnt: Vec<u32>,
+    /// Distance in metres by offset, `(2*tab_span+1)^2`, row-major in `dr`.
+    dist_tab: Vec<f32>,
+    /// Cosine to the wind by offset, valid for `dot_wind`.
+    dot_tab: Vec<f32>,
+    dot_wind: [u32; 2],
+    tab_span: i64,
 }
 
 impl ThreatField {
@@ -65,6 +74,53 @@ impl ThreatField {
             peak_fli: vec![0.0; n],
             world,
             dirty: Vec::new(),
+            burnt: Vec::new(),
+            dist_tab: Vec::new(),
+            dot_tab: Vec::new(),
+            dot_wind: [0, 0],
+            tab_span: -1,
+        }
+    }
+
+    /// Record that a cell is no longer `Unburnt`; it keeps the burnt floor
+    /// from the next update on. Call once per cell.
+    pub fn mark_burnt(&mut self, i: usize) {
+        self.burnt.push(i as u32);
+    }
+
+    /// Make the offset tables cover `span` cells, same arithmetic as the
+    /// direct computation.
+    fn ensure_tables(&mut self, span: i64, wind: [f32; 2]) {
+        let cellsize = self.world.cellsize;
+        let wbits = [wind[0].to_bits(), wind[1].to_bits()];
+        let rebuild = span > self.tab_span;
+        if rebuild {
+            self.tab_span = span;
+            let w = (2 * span + 1) as usize;
+            self.dist_tab = vec![0.0; w * w];
+            for dr in -span..=span {
+                for dc in -span..=span {
+                    let ex = dc as f32 * cellsize;
+                    let ny = -dr as f32 * cellsize;
+                    self.dist_tab[(dr + span) as usize * w + (dc + span) as usize] =
+                        (ex * ex + ny * ny).sqrt();
+                }
+            }
+        }
+        if rebuild || wbits != self.dot_wind || self.dot_tab.is_empty() {
+            self.dot_wind = wbits;
+            let span = self.tab_span;
+            let w = (2 * span + 1) as usize;
+            self.dot_tab = vec![0.0; w * w];
+            for dr in -span..=span {
+                for dc in -span..=span {
+                    let ex = dc as f32 * cellsize;
+                    let ny = -dr as f32 * cellsize;
+                    let k = (dr + span) as usize * w + (dc + span) as usize;
+                    let d = self.dist_tab[k];
+                    self.dot_tab[k] = (ex * wind[0] + ny * wind[1]) / d;
+                }
+            }
         }
     }
 
@@ -115,7 +171,7 @@ impl ThreatField {
     /// Rebuild from the current front.
     pub fn update(
         &mut self,
-        state: &[CellFire],
+        _state: &[CellFire],
         active: &[Cell],
         intensity: &[f32],
         weather: Weather,
@@ -137,6 +193,22 @@ impl ThreatField {
         let wind = [toward.sin(), toward.cos()];
         let wind_kmh = weather.wind_speed_kmh as f32;
 
+        // Largest reach any cell can have, to size the tables once.
+        let mut max_span = 0i64;
+        for cell in active {
+            let fli = intensity[cell.row * cols + cell.col];
+            if fli <= 0.0 {
+                continue;
+            }
+            let r_rad = radiant_range_m(fli);
+            let r_emb = ((flame_length_m(fli) * 12.0) * (1.0 + wind_kmh / 30.0))
+                .min(EMBER_CAP_M);
+            max_span = max_span.max((r_rad.max(r_emb) / cellsize).ceil() as i64);
+        }
+        self.ensure_tables(max_span, wind);
+        let tspan = self.tab_span;
+        let tw = (2 * tspan + 1) as usize;
+
         for cell in active {
             let idx = cell.row * cols + cell.col;
             let fli = intensity[idx];
@@ -151,20 +223,21 @@ impl ThreatField {
             let reach = r_rad.max(r_emb);
             let span = (reach / cellsize).ceil() as i64;
 
-            for dr in -span..=span {
-                for dc in -span..=span {
-                    let (r, c) = (cell.row as i64 + dr, cell.col as i64 + dc);
-                    if r < 0 || c < 0 || r >= rows as i64 || c >= cols as i64 {
-                        continue;
-                    }
-                    // dr is southward, so the northward offset is -dr.
-                    let ex = dc as f32 * cellsize;
-                    let ny = -dr as f32 * cellsize;
-                    let d = (ex * ex + ny * ny).sqrt();
+            let (cr, cc) = (cell.row as i64, cell.col as i64);
+            let dr_lo = (-span).max(-cr);
+            let dr_hi = span.min(rows as i64 - 1 - cr);
+            let dc_lo = (-span).max(-cc);
+            let dc_hi = span.min(cols as i64 - 1 - cc);
+            for dr in dr_lo..=dr_hi {
+                let trow = (dr + tspan) as usize * tw;
+                let grow = ((cr + dr) * cols as i64) as usize;
+                for dc in dc_lo..=dc_hi {
+                    let t = trow + (dc + tspan) as usize;
+                    let d = self.dist_tab[t];
                     if d > reach {
                         continue;
                     }
-                    let i = (r * cols as i64 + c) as usize;
+                    let i = grow + (cc + dc) as usize;
 
                     let mut v = 0.0f32;
                     if d <= r_rad {
@@ -175,7 +248,7 @@ impl ThreatField {
                         v = v.max(near * near * 1.4);
                     }
                     if d <= r_emb && d > 1.0 {
-                        let dot = (ex * wind[0] + ny * wind[1]) / d;
+                        let dot = self.dot_tab[t];
                         if dot > 0.0 {
                             v = v.max(dot.powi(2) * (1.0 - d / r_emb) * 0.5);
                         }
@@ -205,8 +278,9 @@ impl ThreatField {
             }
             self.danger[i] = 1.0;
         }
-        for (i, s) in state.iter().enumerate() {
-            if *s != CellFire::Unburnt && self.danger[i] < 0.25 {
+        for &i in &self.burnt {
+            let i = i as usize;
+            if self.danger[i] < 0.25 {
                 if self.danger[i] == 0.0 {
                     self.dirty.push(i as u32);
                 }

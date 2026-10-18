@@ -224,14 +224,24 @@ impl StructureExposure {
             let bx = (p.x / self.bucket_size) as isize;
             let by = (p.y / self.bucket_size) as isize;
 
-            for dy in -span..=span {
-                for dx in -span..=span {
-                    let (nx, ny) = (bx + dx, by + dy);
-                    if nx < 0
-                        || ny < 0
-                        || nx as usize >= self.bcols
-                        || ny as usize >= self.brows
-                    {
+            let bs = self.bucket_size;
+            let reach_m = reach + 2.0;
+            let reach2 = reach_m * reach_m;
+            let y_lo = (by - span).max(0);
+            let y_hi = (by + span).min(self.brows as isize - 1);
+            let x_lo = (bx - span).max(0);
+            let x_hi = (bx + span).min(self.bcols as isize - 1);
+            for ny in y_lo..=y_hi {
+                // Distance from the cell to this bucket row's rectangle.
+                let ry0 = ny as f32 * bs;
+                let gy = (ry0 - p.y).max(p.y - (ry0 + bs)).max(0.0);
+                if gy * gy > reach2 {
+                    continue;
+                }
+                for nx in x_lo..=x_hi {
+                    let rx0 = nx as f32 * bs;
+                    let gx = (rx0 - p.x).max(p.x - (rx0 + bs)).max(0.0);
+                    if gx * gx + gy * gy > reach2 {
                         continue;
                     }
                     for &hi in &self.buckets[ny as usize * self.bcols + nx as usize] {
