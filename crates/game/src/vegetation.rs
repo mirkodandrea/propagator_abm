@@ -187,7 +187,7 @@ struct Remains {
     yaw: f32,
 }
 
-/// The burnt models of a chunk's plants (`scripts/build_burnt_models.py`),
+/// What fire adds to a chunk's plants (`scripts/build_vegetation_models.py`),
 /// built when the fire first burns a plant of the chunk, so the forest the
 /// fire never reaches does not pay for them. Every plant's remains are there
 /// from then on, collapsed to a point until the plant is burnt, the way a
@@ -713,8 +713,11 @@ struct Lods {
 }
 
 impl Lods {
-    fn model(&mut self, name: &'static str, base: Vec3, scale: Vec3, yaw: f32,
+    /// `species` is pine, chestnut, bush or olive; which of its varieties this
+    /// plant is follows from its yaw, so it is the same on every run.
+    fn model(&mut self, species: &'static str, base: Vec3, scale: Vec3, yaw: f32,
         foliage: [f32; 3], wood: [f32; 3]) {
+        let name = crate::models::pick_variety(species, yaw / std::f32::consts::TAU);
         // Do not allocate the detailed tree on web.
         // Merely hiding that mesh with LOD still retained all its CPU/GPU data.
         if cfg!(target_arch = "wasm32") {
@@ -723,7 +726,7 @@ impl Lods {
             return;
         }
         self.remains.push(Remains { name, base, scale, yaw });
-        self.full.model(crate::models::model(name), base, scale, yaw, foliage, wood);
+        self.full.model(crate::models::live(name), base, scale, yaw, foliage, wood);
         self.low.proxy(name, base, scale, yaw, foliage, wood);
     }
 }
@@ -744,8 +747,9 @@ fn proxy(name: &str) -> &'static Proxy {
     &PROXIES.get_or_init(|| {
         ["pine", "chestnut", "bush", "olive"]
             .into_iter()
+            .flat_map(|species| crate::models::variety_names(species).iter().copied())
             .map(|name| {
-                let m = crate::models::model(name);
+                let m = crate::models::live(name);
                 let leaves = || (0..m.positions.len()).filter(|&i| !m.wood[i]);
                 let (lo, hi) = leaves().fold(
                     (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)),
@@ -798,18 +802,20 @@ impl Builder {
         self.indices.extend(model.indices.iter().map(|i| start + i));
     }
 
-    /// The burnt remains of a plant (see [`CharLayer`]), in absolute colours.
+    /// What fire adds to a plant (see [`CharLayer`]), in absolute colours: its
+    /// twig skeleton and the debris at its foot. Debris vertices carry alpha 1
+    /// (the shader shows them last, see `draw_char`).
     fn remains(&mut self, r: &Remains, low: bool) {
-        // which of the three variants, and how dark: fixed by the plant's own
-        // random yaw, so the same plants have the same remains on every run
+        // how dark: fixed by the plant's own random yaw, so the same plants
+        // have the same remains on every run
         let u = r.yaw / std::f32::consts::TAU;
-        let variant = if u < 0.4 { "a" } else if u < 0.75 { "b" } else { "c" };
         let shade = 0.85 + 0.3 * (u * 97.0).fract();
-        let kit = crate::models::burnt(&format!("{}_{variant}{}", r.name, if low { "_low" } else { "" }));
+        let v = crate::models::variety(r.name);
+        let kit = if low { &v.low } else { &v.remains };
         let start = self.positions.len() as u32;
         let rotation = Quat::from_rotation_y(r.yaw);
-        for (p, c) in kit.positions.iter().zip(&kit.colors) {
-            self.vertex(r.base + rotation * (Vec3::from(*p) * r.scale), mul(*c, shade));
+        for ((p, c), &debris) in kit.positions.iter().zip(&kit.colors).zip(&kit.debris) {
+            self.vertex_a(r.base + rotation * (Vec3::from(*p) * r.scale), mul(*c, shade), leaf(debris));
         }
         self.indices.extend(kit.indices.iter().map(|i| start + i));
     }
@@ -1197,10 +1203,7 @@ fn draw_standing(
     if s == CellFire::Unburnt as u8 {
         return;
     }
-    // a burnt plant with remains is replaced by them, near the camera
-    // and far from it
-    let replaced = s == CellFire::Burnt as u8 && plant.remains.is_some();
-    if s == CLEARED || replaced {
+    if s == CLEARED {
         // collapse every vertex of the plant onto its first one:
         // degenerate triangles draw nothing
         if a < b {
@@ -1209,22 +1212,47 @@ fn draw_standing(
         }
         return;
     }
+    if s == CellFire::Burnt as u8 && plant.remains.is_some() {
+        // The crown is gone (the shader has eaten it by now); the trunk and
+        // boughs stay, charred, under the twig skeleton of the remains.
+        // Leaves are the vertices with alpha 1.
+        if a < b {
+            let first = pos_base[a];
+            for i in a..b {
+                if col_base[i][3] > 0.5 {
+                    pos[i] = first;
+                } else {
+                    col[i] = charcoal(col_base[i]);
+                }
+            }
+        }
+        return;
+    }
     // the shader consumes a burning plant over time from its ignition
-    paint(&mut col[a..b], s, t0, plant.remains.is_some());
+    paint(&mut col[a..b], s, t0);
 }
 
-/// The same for the plant's burnt remains: hidden until it burns, standing
-/// from the moment of ignition (flagged with the same clock, so they dissolve
-/// in as the crown goes) and for good once it is burnt.
+/// The same for the plant's remains: hidden until it ignites, then standing
+/// (flagged with the same clock, so the shader shows each twig where the
+/// leaves around it have been eaten, and the debris last) and for good once
+/// it is burnt. Debris is the vertices built with alpha 1.
 fn draw_char(pos: &mut [[f32; 3]], col: &mut [[f32; 4]], m: &CharMesh, (a, b): (usize, usize), s: u8, t0: f32) {
     pos[a..b].copy_from_slice(&m.hidden[a..b]);
     col[a..b].copy_from_slice(&m.colors[a..b]);
-    if s == CellFire::Burnt as u8 {
-        pos[a..b].copy_from_slice(&m.shown[a..b]);
-    } else if s == CellFire::Burning as u8 {
+    let burning = s == CellFire::Burning as u8;
+    if s == CellFire::Burnt as u8 || burning {
         pos[a..b].copy_from_slice(&m.shown[a..b]);
         for c in &mut col[a..b] {
-            c[3] = -(1.0 + REMAINS_OFFSET + t0.max(0.0));
+            let debris = c[3] > 0.5;
+            // ash is soot: the model's pale grey reads as a platform under the trees
+            if debris {
+                *c = [c[0] * 0.2, c[1] * 0.17, c[2] * 0.15, c[3]];
+            }
+            c[3] = if burning {
+                -(1.0 + REMAINS_OFFSET + if debris { DEBRIS_OFFSET } else { 0.0 } + t0.max(0.0))
+            } else {
+                0.0
+            };
         }
     }
 }
@@ -1284,33 +1312,31 @@ const BURN_REDRAW_S: f32 = 0.15;
 /// while it burns.
 const LEAF_OFFSET: f32 = 1.0e5;
 /// The same for the vertices of a plant's burnt remains, which dissolve in
-/// while it burns (`-(1 + REMAINS_OFFSET + t0)`).
+/// while it burns (`-(1 + REMAINS_OFFSET [+ DEBRIS_OFFSET] + t0)`).
 const REMAINS_OFFSET: f32 = 2.0e5;
-/// Added to a standing vertex whose plant has remains to dissolve into.
-const SWAP_OFFSET: f32 = 4.0e5;
+/// Added to a vertex of the remains that is debris on the ground (ash, fallen
+/// wood), which shows last.
+const DEBRIS_OFFSET: f32 = 4.0e5;
+
+/// What a burnt vertex shows: charcoal, keeping a trace of the original tint
+/// so a burnt conifer stand still reads differently from burnt grass. It
+/// continues the colour the shader ends a burning plant on.
+fn charcoal(c: [f32; 4]) -> [f32; 4] {
+    [0.034 + c[0] * 0.05, 0.030 + c[1] * 0.04, 0.028 + c[2] * 0.04, 0.0]
+}
 
 /// Recolour one plant's vertices for its fire state.
-fn paint(colors: &mut [[f32; 4]], state: u8, t0: f32, has_remains: bool) {
+fn paint(colors: &mut [[f32; 4]], state: u8, t0: f32) {
     if state == CellFire::Burning as u8 {
         // Alight: colours stay as generated (the shader chars and lights
         // them); only the alpha flags the burn and carries its start.
         for c in colors {
             let leaf = if c[3] > 0.5 { LEAF_OFFSET } else { 0.0 };
-            // a plant with burnt remains is swapped for them in the shader,
-            // crown and remains cutting the same dissolve from either side
-            let swapped = if has_remains { SWAP_OFFSET } else { 0.0 };
-            c[3] = -(1.0 + swapped + leaf + t0.max(0.0));
+            c[3] = -(1.0 + leaf + t0.max(0.0));
         }
     } else {
-        // Charcoal, keeping a trace of the original tint so a burnt
-        // conifer stand still reads differently from burnt grass.
         for c in colors {
-            *c = [
-                0.07 + c[0] * 0.10,
-                0.06 + c[1] * 0.08,
-                0.06 + c[2] * 0.08,
-                0.0,
-            ];
+            *c = charcoal(*c);
         }
     }
 }
@@ -1412,18 +1438,21 @@ impl Rng {
 mod tests {
     use super::*;
 
-    /// Every plant has three burnt variants, picked from its yaw; each must
-    /// build in range of the index buffer and stay inside the live plant's box.
+    /// What fire adds to every variety must build in range of the index
+    /// buffer, mark its debris, and stay inside the live plant's box.
     #[test]
-    fn burnt_remains_build_for_every_variant() {
-        for name in ["pine", "chestnut", "bush", "olive"] {
-            for (yaw, low) in [0.3_f32, 3.0, 5.5].into_iter().flat_map(|y| [(y, false), (y, true)]) {
-                let mut b = Builder::default();
-                let scale = Vec3::new(10.0, 12.0, 10.0);
-                b.remains(&Remains { name, base: Vec3::new(5.0, 2.0, 5.0), scale, yaw }, low);
-                assert!(!b.indices.is_empty(), "{name} {yaw}");
-                assert!(b.indices.iter().all(|&i| (i as usize) < b.positions.len()), "{name} {yaw}");
-                assert!(b.positions.iter().all(|p| p[1] >= 1.0 && p[1] <= 2.0 + 12.0 * 1.1), "{name} {yaw}");
+    fn burnt_remains_build_for_every_variety() {
+        for species in ["pine", "chestnut", "bush", "olive"] {
+            for &name in crate::models::variety_names(species) {
+                for (yaw, low) in [0.3_f32, 3.0, 5.5].into_iter().flat_map(|y| [(y, false), (y, true)]) {
+                    let mut b = Builder::default();
+                    let scale = Vec3::new(10.0, 12.0, 10.0);
+                    b.remains(&Remains { name, base: Vec3::new(5.0, 2.0, 5.0), scale, yaw }, low);
+                    assert!(!b.indices.is_empty(), "{name} {yaw}");
+                    assert!(b.indices.iter().all(|&i| (i as usize) < b.positions.len()), "{name} {yaw}");
+                    assert!(b.positions.iter().all(|p| p[1] >= 1.9 && p[1] <= 2.0 + 12.0 * 1.1), "{name} {yaw}");
+                    assert!(b.colors.iter().any(|c| c[3] < 0.5), "{name}: skeleton");
+                }
             }
         }
     }
@@ -1433,10 +1462,10 @@ mod tests {
     /// inward crown would be lit from the wrong side.
     #[test]
     fn proxies_are_cheap_and_face_out() {
-        for name in ["pine", "chestnut", "bush", "olive"] {
+        for name in ["pine", "chestnut", "bush", "olive"].into_iter().flat_map(|s| crate::models::variety_names(s).iter().copied()) {
             let mut b = Builder::default();
             b.proxy(name, Vec3::ZERO, Vec3::splat(10.0), 0.7, [0.3, 0.4, 0.2], [0.4, 0.2, 0.1]);
-            let model = crate::models::model(name).indices.len() / 3;
+            let model = crate::models::live(name).indices.len() / 3;
             let tris = b.indices.len() / 3;
             assert!(tris * 2 <= model, "{name}: {tris} proxy triangles for {model}");
 

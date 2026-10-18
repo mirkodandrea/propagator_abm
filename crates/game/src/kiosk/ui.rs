@@ -1335,6 +1335,47 @@ fn evac_timer(ui: &mut egui::Ui, sim: &Sim, d: usize) {
     }
 }
 
+/// Frames per second, top left, in the demo (the intro loop) only. Desktop only:
+/// the browser has no such counter, and the kiosk's own FPS log stays under `KIOSK_FPS`.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn fps(
+    mut contexts: EguiContexts,
+    kiosk: Res<Kiosk>,
+    mario: Res<crate::mario::Playground>,
+    time: Res<Time<Real>>,
+    // (mean frame time in s, shown FPS, s since the shown value changed)
+    mut filter: Local<(f32, f32, f32)>,
+) {
+    if kiosk.phase != Phase::Intro || mario.active {
+        return;
+    }
+    // Low-pass the frame time (about 1.5 s), not the FPS: a hitch then weighs
+    // what it costs. The label is rewritten twice a second so it can be read.
+    let dt = time.delta_seconds().min(0.5);
+    if dt <= 0.0 {
+        return;
+    }
+    let (mean, shown, since) = &mut *filter;
+    *mean = if *mean == 0.0 { dt } else { *mean + (dt - *mean) * (1.0 - (-dt / 1.5).exp()) };
+    *since += dt;
+    if *shown == 0.0 || *since >= 0.5 {
+        *shown = 1.0 / *mean;
+        *since = 0.0;
+    }
+    let fps = *shown;
+    let ctx = contexts.ctx_mut();
+    egui::Area::new(egui::Id::new("fps")).anchor(Align2::LEFT_TOP, [10.0, 10.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
+        egui::Frame::none()
+            .fill(Color32::from_black_alpha(230))
+            .stroke(egui::Stroke::new(1.5, Color32::from_gray(140)))
+            .rounding(6.0)
+            .inner_margin(egui::Margin::symmetric(10.0, 4.0))
+            .show(ui, |ui| {
+                ui.label(RichText::new(format!("{fps:.0} FPS")).size(18.0).strong().monospace().color(Color32::WHITE));
+            });
+    });
+}
+
 fn notice(ctx: &egui::Context, k: &Kiosk) {
     if k.dragging.is_some() { return; }
     let Some((text, _)) = &k.notice else { return };

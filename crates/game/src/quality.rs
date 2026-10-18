@@ -20,7 +20,8 @@
 //!
 //! The operator bar (F2) also picks the preset, live and saved in
 //! `~/.rocca_ventosa/grafica.txt` (`KIOSK_QUALITY` still wins). Everything
-//! changes at once except the share of plants planted, which is drawn when
+//! changes at once except the share of plants planted and the radius of the
+//! near ground cover (`cover=<m>`, `-cover`), which are drawn when
 //! the scene is built: it applies from the next launch.
 
 use bevy::prelude::*;
@@ -49,6 +50,10 @@ pub struct Graphics {
     /// Terrain samples per render-mesh vertex (1 = every sample). Read when the
     /// scene is built: applies from the next launch.
     pub terrain_stride: usize,
+    /// Radius (metres) of the grass layer drawn around the camera by the GPU;
+    /// shrubs reach 4x as far (see `near_cover`); 0 = none. Read when the
+    /// scene is built.
+    pub cover_m: f32,
 }
 
 impl Graphics {
@@ -65,6 +70,7 @@ impl Graphics {
         lod_m: 1400.0,
         terrain_shadows: true,
         terrain_stride: 1,
+        cover_m: if cfg!(target_arch = "wasm32") { 0.0 } else { 45.0 },
     };
     pub const MEDIA: Graphics = Graphics {
         dof: false,
@@ -73,6 +79,7 @@ impl Graphics {
         shadow_distance: 2500.0,
         vegetation: if cfg!(target_arch = "wasm32") { 0.12 } else { 0.35 },
         lod_m: 1000.0,
+        cover_m: if cfg!(target_arch = "wasm32") { 0.0 } else { 35.0 },
         ..Graphics::ALTA
     };
     pub const BASSA: Graphics = Graphics {
@@ -84,13 +91,14 @@ impl Graphics {
         shadow_map: 1024,
         vegetation: if cfg!(target_arch = "wasm32") { 0.08 } else { 0.2 },
         lod_m: 600.0,
+        cover_m: if cfg!(target_arch = "wasm32") { 0.0 } else { 22.0 },
         ..Graphics::ALTA
     };
 
     /// Browser budget, also on desktop: no post-processing or shadow passes.
     pub const WEB: Graphics = Graphics {
         shadows: false, shadow_map: 256, cascades: 1,
-        vegetation: 0.025, lod_m: 0.0, terrain_stride: 4,
+        vegetation: 0.025, lod_m: 0.0, terrain_stride: 4, cover_m: 0.0,
         ..Graphics::BASSA
     };
 
@@ -134,6 +142,8 @@ impl Graphics {
                 ("shadow", Some(m)) => self.shadow_distance = m.max(100.0),
                 ("shadow_map", Some(n)) => self.shadow_map = (n as usize).clamp(256, 4096),
                 ("veg", Some(v)) => self.vegetation = v.max(0.0),
+                ("cover", Some(m)) => self.cover_m = m.max(0.0),
+                ("cover", None) => self.cover_m = if on { Graphics::ALTA.cover_m } else { 0.0 },
                 _ => warn!("KIOSK_GFX: «{item}» non riconosciuto"),
             }
         }
@@ -144,7 +154,7 @@ impl Graphics {
         // the plant density and the terrain stride apply only at launch, so
         // they are not compared
         let same = |p: &Graphics| {
-            Graphics { vegetation: self.vegetation, terrain_stride: self.terrain_stride, ..*p } == *self
+            Graphics { vegetation: self.vegetation, terrain_stride: self.terrain_stride, cover_m: self.cover_m, ..*p } == *self
         };
         [("alta", &Graphics::ALTA), ("media", &Graphics::MEDIA), ("bassa", &Graphics::BASSA)]
             .into_iter()

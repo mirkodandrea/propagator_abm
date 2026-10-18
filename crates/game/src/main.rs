@@ -49,6 +49,7 @@ mod sim;
 mod terrain_mesh;
 mod textures;
 mod ui;
+mod near_cover;
 mod units;
 mod vegetation;
 mod visual_scale;
@@ -110,6 +111,7 @@ fn main() -> anyhow::Result<()> {
     .add_plugins(shader_lib::ShaderLibPlugin)
     .add_plugins(fire_shader::FireShaderPlugin)
     .add_plugins(retro::RetroShaderPlugin)
+    .add_plugins(near_cover::NearCoverPlugin)
     .add_plugins(flat::FlatPlugin)
     .add_plugins(forecast_zone::ZonePlugin)
     .add_plugins(reach_zone::ReachPlugin)
@@ -133,6 +135,7 @@ fn main() -> anyhow::Result<()> {
             setup_scene,
             fire_view::setup,
             vegetation::spawn,
+            near_cover::spawn,
             buildings::spawn,
             overlays::setup,
             units::setup,
@@ -146,9 +149,12 @@ fn main() -> anyhow::Result<()> {
     #[cfg(not(target_arch = "wasm32"))]
     window_state::install(&mut app);
 
+    // The FPS counter in the demo reads these diagnostics; KIOSK_FPS also logs them.
+    #[cfg(not(target_arch = "wasm32"))]
+    app.add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin);
+    #[cfg(not(target_arch = "wasm32"))]
     if std::env::var("KIOSK_FPS").is_ok() {
-        app.add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
-            .add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::filtered(vec![bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS]));
+        app.add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::filtered(vec![bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS]));
     }
     #[cfg(target_arch = "wasm32")]
     app.add_systems(PreUpdate, (
@@ -247,6 +253,9 @@ fn teardown_scene(
 
 /// The kiosk's schedule.
 fn kiosk_systems(app: &mut App) {
+    #[cfg(not(target_arch = "wasm32"))]
+    app.add_systems(Update, kiosk::ui::fps.after(kiosk::ui::draw).run_if(in_state(AppState::Playing)));
+    app.add_systems(Update, near_cover::update.run_if(in_state(AppState::Playing)));
     app.add_systems(
         Update,
         (

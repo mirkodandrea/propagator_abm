@@ -9,7 +9,7 @@
     pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT,
     forward_io::{VertexOutput, FragmentOutput},
 }
-#import bevy_pbr::mesh_view_bindings::globals
+#import bevy_pbr::mesh_view_bindings::{globals, view}
 #import bevy_pbr::mesh_functions::get_world_from_local
 #import rocca::noise::{hash21, value_noise}
 
@@ -142,13 +142,16 @@ fn terrain_albedo(base: vec4<f32>, p: vec3<f32>, mask_s: vec4<f32>, meadow: f32,
         let cover = smoothstep(0.35, 0.65, meadow + (value_noise(wp * 0.35) - 0.5) * 0.45);
         let clump = smoothstep(0.20, 0.70, value_noise(wp * 0.045 + 7.0) * 0.7 + value_noise(wp * 0.17) * 0.3);
         let fine = 1.0 - smoothstep(1.2, 4.0, metres_per_px);
+        // Within the radius of the real blades (`near_cover.rs`, radius in
+        // mask_rect.w, 0 = none) the painted tufts give way to them.
+        let blades_k = select(1.0, smoothstep(0.5 * mask_rect.w, 0.9 * mask_rect.w, distance(p, view.world_position.xyz)), mask_rect.w > 0.5);
         var big = vec4<f32>(0.0, 0.5, 0.0, 0.0);
         var small = vec4<f32>(0.0, 0.5, 0.0, 0.0);
         if fine > 0.02 {
-            big = tuft_layer(wp, 5.0, 0.25 + 0.75 * cover * (0.35 + 0.65 * clump), 0.28, 0.50, 0.0);
+            big = tuft_layer(wp, 5.0, (0.25 + 0.75 * cover * (0.35 + 0.65 * clump)) * blades_k, 0.28, 0.50, 0.0);
             // The small tufts only show up close.
             if fine > 0.5 {
-                small = tuft_layer(wp, 2.2, 0.55 * cover * clump, 0.22, 0.40, 40.0);
+                small = tuft_layer(wp, 2.2, 0.55 * cover * clump * blades_k, 0.22, 0.40, 40.0);
             }
         }
         // Dark brown-olive tussocks, lit on the sun side and lighter at the tips.
@@ -284,12 +287,15 @@ fn foliage_albedo(base: vec4<f32>, p: vec3<f32>, normal: vec3<f32>, alive: f32) 
 // colour and carries its ignition time in a negative alpha. Here the plant is
 // eaten against the simulated clock (`tactical.y`, flaming time in
 // `tactical.z`): scorch, then a glowing front that crawls through the crown
-// in patches, red embers veining the char, leaves falling away to a black
-// skeleton. `prog` is 0 at ignition and 1 when the plant is replaced by its
-// charred remains, which the last stage already looks like.
+// in patches, red embers veining the char, leaves falling away. The trunk and
+// boughs are the plant's own wood and char in place; what the fire adds (the
+// twig skeleton inside the crown, `remains`, and the ash and fallen wood at
+// its foot, `debris`) is shown where the front has passed, so the leaves open
+// onto it and nothing is ever swapped. `prog` is 0 at ignition and 1 when the
+// crown is gone.
 const LEAF_OFFSET: f32 = 1.0e5;
 const REMAINS_OFFSET: f32 = 2.0e5;
-const SWAP_OFFSET: f32 = 4.0e5;
+const DEBRIS_OFFSET: f32 = 4.0e5;
 
 struct Burnt {
     rgb: vec3<f32>,
@@ -299,18 +305,25 @@ struct Burnt {
     hole: f32,
 };
 
+// How far the front has got at a point: below 0 not yet, above 0.3 the leaves
+// there are mostly gone. Where the fire takes hold first is a property of the
+// place, so patches of one crown light up at different moments and the front
+// crawls. The skeleton uses the same field to show up where leaves go.
+fn burn_front(p: vec3<f32>, prog: f32) -> f32 {
+    let n = 0.45 * value_noise(p.xz * 0.8 + vec2<f32>(p.y * 0.5, 3.0))
+          + 0.55 * value_noise(p.xz * 2.7 + vec2<f32>(-p.y * 1.9, 7.0));
+    return prog * 1.6 - n * 0.9;
+}
+
 fn burn_plant(base: vec3<f32>, p: vec3<f32>, prog: f32, t: f32) -> Burnt {
-    // Where the fire takes hold first is a property of the place, so patches
-    // of one crown light up at different moments and the front crawls.
-    let n = 0.55 * value_noise(p.xz * 0.8 + vec2<f32>(p.y * 0.5, 3.0))
-          + 0.45 * value_noise(p.xz * 2.7 + vec2<f32>(-p.y * 1.9, 7.0));
-    let l = prog * 1.6 - n * 0.9;
+    let l = burn_front(p, prog);
 
     let scorch = smoothstep(-0.35, 0.0, l);
     let hot = smoothstep(0.0, 0.07, l) * (1.0 - smoothstep(0.10, 0.36, l));
     let smoulder = smoothstep(0.08, 0.20, l) * (1.0 - smoothstep(0.30, 0.70, l));
-    let charred = smoothstep(0.12, 0.40, l);
-    let gone = smoothstep(0.34, 0.62, l);
+    // Charred leaves do not hang around as a black crown: they go soon after.
+    let charred = smoothstep(0.10, 0.30, l);
+    let gone = smoothstep(0.20, 0.48, l);
 
     let flick = 0.70 + 0.55 * value_noise(p.xz * 2.4 + vec2<f32>(t * 5.0, t * 7.3 + p.y));
     // Embers show in veins and flecks of the char, not as a flat wash.
@@ -318,7 +331,8 @@ fn burn_plant(base: vec3<f32>, p: vec3<f32>, prog: f32, t: f32) -> Burnt {
     let speck = smoothstep(0.78, 0.95, value_noise(p.xz * 9.0 + vec2<f32>(t * 0.6, p.y * 5.0)));
 
     var rgb = mix(base, base * vec3<f32>(0.80, 0.55, 0.30), scorch * 0.65);
-    let ash = vec3<f32>(0.030, 0.026, 0.024) * (0.7 + 0.8 * value_noise(p.xz * 1.7 + p.y));
+    // warm soot, not neutral grey
+    let ash = vec3<f32>(0.040, 0.027, 0.020) * (0.7 + 0.8 * value_noise(p.xz * 1.7 + p.y));
     rgb = mix(rgb, ash, charred);
 
     let hot_col = mix(vec3<f32>(3.6, 2.1, 0.45), vec3<f32>(2.5, 0.60, 0.07), smoothstep(0.0, 0.22, l));
@@ -579,53 +593,57 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         let px_m = max(length(dpdx(p)), length(dpdy(p)));
         let burning = a < -0.5;
         let b = -a;
-        // decode: a standing vertex of a plant that has remains carries
-        // SWAP_OFFSET on top of the leaf flag and the ignition time
-        let swap = burning && b >= SWAP_OFFSET * 0.9;
-        let b2 = b - select(0.0, SWAP_OFFSET, swap);
-        let remains = burning && b2 > REMAINS_OFFSET * 0.75;
-        let leaf = burning && !remains && b2 > LEAF_OFFSET * 0.5;
+        // decode: debris carries DEBRIS_OFFSET and remains REMAINS_OFFSET on
+        // top of the ignition time; a standing leaf carries LEAF_OFFSET
+        let debris = burning && b >= DEBRIS_OFFSET * 0.9;
+        let b1 = b - select(0.0, DEBRIS_OFFSET, debris);
+        let remains = burning && b1 > REMAINS_OFFSET * 0.75;
+        let leaf = burning && !remains && b1 > LEAF_OFFSET * 0.5;
         let alive = select(clamp(a, 0.0, 1.0), select(0.0, 1.0, leaf), burning);
         pbr_input.material.base_color = foliage_albedo(pbr_input.material.base_color, p, in.world_normal, alive);
         if burning {
-            let t0 = b2 - 1.0 - select(select(0.0, LEAF_OFFSET, leaf), REMAINS_OFFSET, remains);
+            let t0 = b1 - 1.0 - select(select(0.0, LEAF_OFFSET, leaf), REMAINS_OFFSET, remains);
             let prog = clamp((tactical.y - t0) / max(tactical.z, 1.0), 0.0, 1.0);
-            let near = 1.0 - smoothstep(1.0, 3.5, px_m);
-            if remains || swap {
-                // Crown and burnt remains share one dissolve: the crown stays
-                // where the field is above the fade, the remains below it,
-                // so there is never a moment of both, nor of neither. Far
-                // away the dissolve would only shimmer: it flips half way.
-                let fade = smoothstep(0.10, 0.90, prog);
-                let h = smoothstep(0.25, 0.75, value_noise(p.xz * 3.1 + vec2<f32>(p.y * 2.3, 17.0)));
-                if near > 0.3 {
-                    // strict on both sides: at 0 only the crown, at 1 only the remains
-                    let done = fade > 0.999;
-                    if (remains && h >= fade && !done) || (swap && (h < fade || done)) {
+            // Holes are cut at every distance, in cells about a pixel wide,
+            // so the crown thins out instead of darkening to grey.
+            let cell = max(0.3, px_m * 1.5);
+            let coarse = hash21(floor(p.xz / cell) + vec2<f32>(floor(p.y / cell) * 37.0, 5.0));
+            let fine_h = value_noise(p.xz * 3.1 + vec2<f32>(p.y * 2.3, 17.0));
+            let hole_n = mix(coarse, fine_h, 1.0 - smoothstep(1.0, 3.5, px_m));
+            if remains {
+                // What the fire adds: it is there from the start, hidden in
+                // the crown, and shows where the front has eaten the leaves.
+                let l = burn_front(p, prog);
+                if debris {
+                    // ash and fallen wood last, patchily
+                    if prog + (hole_n - 0.5) * 0.4 < 0.70 {
                         discard;
                     }
-                } else if (remains && prog < 0.5) || (swap && prog >= 0.5) {
-                    discard;
-                }
-                // The edge of the dissolve glows on both sides.
-                let rim = (1.0 - smoothstep(0.0, 0.10, abs(fade - h))) * (1.0 - smoothstep(0.85, 1.0, fade));
-                burn_glow = vec3<f32>(2.4, 0.55, 0.06) * rim * (0.7 + 0.6 * value_noise(p.xz * 2.4 + vec2<f32>(t * 5.0, p.y)));
-                if swap {
-                    // scorching browns the crown; it never goes grey, it goes away
-                    let scorch = smoothstep(0.0, 0.7, prog);
-                    let c = pbr_input.material.base_color.rgb;
-                    pbr_input.material.base_color = vec4<f32>(mix(c, c * vec3<f32>(0.78, 0.50, 0.26), scorch), pbr_input.material.base_color.a);
+                    // ash is soot, in patches: a pale solid disc reads as a
+                    // grey platform under the trees
+                    let drift = value_noise(p.xz * 0.7 + vec2<f32>(5.0, 9.0));
+                    if drift < 0.45 {
+                        discard;
+                    }
+                    pbr_input.material.base_color = vec4<f32>(
+                        pbr_input.material.base_color.rgb * vec3<f32>(0.20, 0.17, 0.15),
+                        pbr_input.material.base_color.a);
+                } else {
+                    if l < 0.26 {
+                        discard;
+                    }
+                    // a faint ember still in the twigs the front has just left
+                    let ember = smoothstep(0.26, 0.40, l) * (1.0 - smoothstep(0.40, 0.95, l));
+                    burn_glow = vec3<f32>(1.5, 0.20, 0.02) * ember * 0.5
+                        * (0.4 + 0.8 * value_noise(p.xz * 3.6 + vec2<f32>(t * 2.0, p.y * 2.7)));
                 }
             } else {
-            let r = burn_plant(pbr_input.material.base_color.rgb, p, prog, t);
-            // Close up, an eaten leaf is a hole; far away holes would only
-            // shimmer, so the same share just darkens the crown.
-            if leaf && near > 0.3 && r.hole < r.gone {
-                discard;
-            }
-            let dim = 1.0 - 0.55 * r.gone * (1.0 - near);
-            pbr_input.material.base_color = vec4<f32>(r.rgb * dim, pbr_input.material.base_color.a);
-            burn_glow = r.glow;
+                let r = burn_plant(pbr_input.material.base_color.rgb, p, prog, t);
+                if leaf && hole_n < r.gone {
+                    discard;
+                }
+                pbr_input.material.base_color = vec4<f32>(r.rgb, pbr_input.material.base_color.a);
+                burn_glow = r.glow;
             }
         }
     }

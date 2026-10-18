@@ -74,6 +74,7 @@ fn apply(
     sim: Option<Res<Sim>>,
     mut tactical: ResMut<Tactical>,
     mut retro: ResMut<Assets<RetroMaterial>>,
+    mut cover: ResMut<Assets<crate::near_cover::NearCoverMaterial>>,
     mut water: ResMut<Assets<WaterMaterial>>,
     mut flats: ResMut<Assets<FlatMaterial>>,
     mut zones: ResMut<Assets<ZoneMaterial>>,
@@ -98,6 +99,12 @@ fn apply(
     for id in stale {
         if let Some(m) = retro.get_mut(id) {
             m.extension.tactical.x = amount;
+        }
+    }
+    let stale: Vec<_> = cover.iter().filter(|(_, m)| m.extension.tactical() != amount).map(|(id, _)| id).collect();
+    for id in stale {
+        if let Some(m) = cover.get_mut(id) {
+            m.extension.set_tactical(amount);
         }
     }
     // The game's own signs (hexes, routes, forecast zones, tape) gain

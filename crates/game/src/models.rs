@@ -132,15 +132,82 @@ pub fn island_mesh(name: &str) -> Mesh {
     mesh
 }
 
-/// A burnt plant of `scripts/build_burnt_models.py`: `<species>_<a|b|c>` with
-/// species pine, chestnut, bush or olive, in the model space of the live plant
-/// of the same name (so the same scale vector fits). Colours are absolute sRGB.
-pub fn burnt(name: &str) -> &'static Kit {
-    static BURNT: OnceLock<HashMap<String, Kit>> = OnceLock::new();
-    BURNT
-        .get_or_init(|| parse_kit(include_str!("../../../assets/models/burnt.json"), "burnt vegetation"))
+/// What fire adds to a plant of [`Variety`]: the skeleton of fine twigs inside
+/// its crown and the debris on the ground (`debris` flags the latter). The
+/// trunk and boughs are the live plant's own, charred in place by the shader.
+/// Colours are absolute sRGB.
+pub struct Piece {
+    pub positions: Vec<[f32; 3]>,
+    pub normals: Vec<[f32; 3]>,
+    pub colors: Vec<[f32; 3]>,
+    pub indices: Vec<u32>,
+    pub debris: Vec<bool>,
+}
+
+/// One variety of a plant (`scripts/build_vegetation_models.py`): the live
+/// model, what the fire adds near the camera, and the same far away.
+pub struct Variety {
+    pub live: Model,
+    pub remains: Piece,
+    pub low: Piece,
+}
+
+/// The varieties of each species, in the order of the bake. All of one
+/// species share a silhouette family: the fuel is read from the silhouette.
+pub fn variety_names(species: &str) -> &'static [&'static str] {
+    match species {
+        "pine" => &["pine_1", "pine_2", "pine_3", "pine_4"],
+        "chestnut" => &["chestnut_1", "chestnut_2", "chestnut_3", "chestnut_4"],
+        "bush" => &["bush_1", "bush_2", "bush_3", "bush_4"],
+        "olive" => &["olive_1", "olive_2", "olive_3"],
+        _ => panic!("no varieties of `{species}`"),
+    }
+}
+
+/// Which variety a plant is, from a number in `[0, 1)` (its yaw, so the same
+/// plants are the same variety on every run).
+pub fn pick_variety(species: &str, u: f32) -> &'static str {
+    let names = variety_names(species);
+    names[((u * 7919.0).fract() * names.len() as f32) as usize % names.len()]
+}
+
+pub fn variety(name: &str) -> &'static Variety {
+    static VARIETIES: OnceLock<HashMap<String, Variety>> = OnceLock::new();
+    VARIETIES
+        .get_or_init(|| {
+            let value: serde_json::Value =
+                serde_json::from_str(include_str!("../../../assets/models/vegetation.json")).expect("valid vegetation bake");
+            let piece = |v: &serde_json::Value| Piece {
+                positions: serde_json::from_value(v["positions"].clone()).unwrap(),
+                normals: serde_json::from_value(v["normals"].clone()).unwrap(),
+                colors: serde_json::from_value(v["colors"].clone()).unwrap(),
+                indices: serde_json::from_value(v["indices"].clone()).unwrap(),
+                debris: serde_json::from_value(v["debris"].clone()).unwrap(),
+            };
+            value
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(name, v)| {
+                    let l = &v["live"];
+                    let live = Model {
+                        positions: serde_json::from_value(l["positions"].clone()).unwrap(),
+                        normals: serde_json::from_value(l["normals"].clone()).unwrap(),
+                        colors: serde_json::from_value(l["colors"].clone()).unwrap(),
+                        indices: serde_json::from_value(l["indices"].clone()).unwrap(),
+                        wood: serde_json::from_value(l["wood"].clone()).unwrap(),
+                    };
+                    (name.clone(), Variety { live, remains: piece(&v["remains"]), low: piece(&v["low"]) })
+                })
+                .collect()
+        })
         .get(name)
-        .unwrap_or_else(|| panic!("burnt vegetation has no `{name}`"))
+        .unwrap_or_else(|| panic!("vegetation has no variety `{name}`"))
+}
+
+/// The live model of a plant: a variety, or one of the single models.
+pub fn live(name: &str) -> &'static Model {
+    if name.contains('_') { &variety(name).live } else { model(name) }
 }
 
 fn units() -> &'static HashMap<String, Kit> {
@@ -220,20 +287,28 @@ mod tests {
         }
     }
 
+    /// Every variety is a valid pair of live plant and fire additions, within
+    /// the vertex budget (the additions are drawn for every plant of a chunk
+    /// the fire has touched, burnt or not), starting on the ground and not
+    /// taller than the live plant.
     #[test]
-    fn the_burnt_plants_stand_on_the_ground_within_budget() {
+    fn the_vegetation_varieties_are_within_budget() {
         for species in ["pine", "chestnut", "bush", "olive"] {
-            let live_h = model(species).positions.iter().map(|p| p[1]).fold(0.0, f32::max);
-            for k in ["a", "b", "c", "a_low", "b_low", "c_low"] {
-                let m = burnt(&format!("{species}_{k}"));
-                assert!(!m.indices.is_empty() && m.indices.len() % 3 == 0, "{species}_{k}");
-                assert!(m.positions.iter().flatten().all(|v| v.is_finite()), "{species}_{k}");
-                let low = m.positions.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min);
-                let high = m.positions.iter().map(|p| p[1]).fold(0.0, f32::max);
-                assert!((-0.05..=0.1).contains(&low), "{species}_{k}: base {low}");
-                assert!(high <= live_h * 1.1, "{species}_{k}: taller than the live plant");
-                let budget = if k.ends_with("low") { 60 } else { 200 };
-                assert!(m.indices.len() / 3 <= budget, "{species}_{k}: {} triangles", m.indices.len() / 3);
+            assert!(variety_names(species).len() >= 3, "{species}: varieties");
+            for name in variety_names(species) {
+                let v = variety(name);
+                let hi = v.live.positions.iter().map(|p| p[1]).fold(f32::MIN, f32::max);
+                assert!(v.live.indices.len() / 3 <= 120, "{name}: {} live triangles", v.live.indices.len() / 3);
+                assert!(v.live.positions.len() <= 80, "{name}: {} live vertices", v.live.positions.len());
+                for (piece, tris, verts) in [(&v.remains, 120, 160), (&v.low, 16, 20)] {
+                    assert!(!piece.indices.is_empty() && piece.indices.len() % 3 == 0, "{name}");
+                    assert!(piece.indices.iter().all(|&i| (i as usize) < piece.positions.len()), "{name}");
+                    assert!(piece.positions.iter().flatten().all(|c| c.is_finite()), "{name}");
+                    assert!(piece.indices.len() / 3 <= tris && piece.positions.len() <= verts, "{name}: remains too heavy");
+                    assert_eq!(piece.debris.len(), piece.positions.len(), "{name}");
+                    let (plo, phi) = piece.positions.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| (lo.min(p[1]), hi.max(p[1])));
+                    assert!(plo >= -0.05 && phi <= hi + 0.05, "{name}: additions outside the live plant ({plo}..{phi}, plant up to {hi})");
+                }
             }
         }
     }

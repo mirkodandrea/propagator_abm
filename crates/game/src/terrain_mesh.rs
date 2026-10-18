@@ -222,7 +222,7 @@ const MEADOW: [f32; 3] = [0.73, 0.69, 0.42];
 /// 0..1: how close the nearest house or yard is to fire cell `c`
 /// (1 within 20 m, fading out by 60 m). Gardens stay green round the houses;
 /// the rest of a cleared patch reads as meadow. Computed once per scenario.
-fn built_nearby(scn: &Scenario, c: Cell) -> f32 {
+pub(crate) fn built_nearby(scn: &Scenario, c: Cell) -> f32 {
     static NEAR: std::sync::OnceLock<Vec<f32>> = std::sync::OnceLock::new();
     let w = &scn.world;
     let near = NEAR.get_or_init(|| {
@@ -420,7 +420,9 @@ pub fn build(
     // resolution.
     let stride = gfx.terrain_stride.max(1);
     let t = &scn.terrain;
-    let mask = crate::ground_mask::build(scn);
+    let mut mask = crate::ground_mask::build(scn);
+    // the radius within which the near ground cover replaces the painted tufts
+    mask.rect.w = gfx.cover_m;
     images.insert(&crate::ground_mask::GRASS_MAP, crate::ground_mask::grass_map(scn));
     let material = materials.add(retro::terrain_material(StandardMaterial {
         base_color: Color::WHITE,
