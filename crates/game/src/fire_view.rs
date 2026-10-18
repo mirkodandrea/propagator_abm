@@ -131,6 +131,26 @@ pub struct FireView {
     smoke: Vec<Particle>,
     embers: Vec<Particle>,
     seed: u64,
+    /// Flame tongues of the fire front, rebuilt only when the sim moves.
+    tongues: Vec<CachedTongue>,
+    tongues_key: (u64, u32),
+    /// Vertex count of the last flame mesh, to size the next allocation.
+    last_flame_verts: usize,
+}
+
+/// Everything about a front tongue that does not depend on the frame's clock
+/// or camera: terrain height, hashes, intensities.
+struct CachedTongue {
+    foot: Vec3,
+    flame_m: f32,
+    ratio: f32,
+    phase: f32,
+    heat: f32,
+    flaming: f32,
+    /// Crown flare-up: height factor (1 = none), cycle offset, lift at peak.
+    crown_h: f32,
+    crown_cyc: f32,
+    crown_lift: f32,
 }
 
 /// A drifting particle: smoke puff or ember, which differ only in how they are
@@ -245,6 +265,9 @@ pub fn setup(
         smoke: Vec::new(),
         embers: Vec::new(),
         seed: 0x5EED_1E55,
+        tongues: Vec::new(),
+        tongues_key: (u64::MAX, 0),
+        last_flame_verts: 0,
     });
 }
 
@@ -296,6 +319,34 @@ pub fn update_overlay(
     view.last_layer = layer;
     view.since_overlay = 0.0;
 
+    let now = sim.time_s() as f32;
+    match overlay_lattice(&sim, layer, now) {
+        Some(o) => {
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::default(),
+            );
+            let n = o.positions.len();
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, o.positions);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 1.0, 0.0]; n]);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, o.colors);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.5, 0.5]; n]);
+            mesh.insert_indices(Indices::U32(o.indices));
+            meshes.insert(&view.overlay, mesh);
+        }
+        None => meshes.insert(&view.overlay, empty_mesh()),
+    }
+}
+
+/// Overlay geometry on a shared vertex lattice: only the vertices used by a
+/// quad with some coverage are kept, and the indices refer to them.
+struct OverlayData {
+    positions: Vec<[f32; 3]>,
+    colors: Vec<[f32; 4]>,
+    indices: Vec<u32>,
+}
+
+fn overlay_lattice(sim: &Sim, layer: FireLayer, now: f32) -> Option<OverlayData> {
     let scn = &sim.scn;
     let w = scn.world;
     let hazard = sim.fire.hazard().as_slice();
@@ -309,10 +360,7 @@ pub fn update_overlay(
 
     // Work over the touched region only: the overlay is a lattice, but it is a
     // lattice over the fire, not over Liguria.
-    let Some((r0, r1, c0, c1)) = touched_bounds(&sim, hazard, layer) else {
-        meshes.insert(&view.overlay, empty_mesh());
-        return;
-    };
+    let (r0, r1, c0, c1) = touched_bounds(sim, hazard, layer)?;
     let span = (r1 - r0).max(c1 - c0);
     let subdiv = if span > OVERLAY_SUBDIV_MAX_SPAN {
         1
@@ -323,10 +371,7 @@ pub fn update_overlay(
 
     let nx = (c1 - c0) * subdiv + 1;
     let ny = (r1 - r0) * subdiv + 1;
-    let now = sim.time_s() as f32;
 
-    let mut mesh = QuadBuilder::default();
-    // Vertex lattice first, then only the quads that carry any coverage.
     let mut colors: Vec<[f32; 4]> = Vec::with_capacity(nx * ny);
     let mut positions: Vec<[f32; 3]> = Vec::with_capacity(nx * ny);
 
@@ -346,6 +391,13 @@ pub fn update_overlay(
         }
     }
 
+    // Keep the quads with any coverage; remap the lattice vertices they use.
+    let mut remap = vec![u32::MAX; nx * ny];
+    let mut out = OverlayData {
+        positions: Vec::new(),
+        colors: Vec::new(),
+        indices: Vec::new(),
+    };
     for iy in 0..ny.saturating_sub(1) {
         for ix in 0..nx.saturating_sub(1) {
             let quad = [
@@ -357,19 +409,20 @@ pub fn update_overlay(
             if quad.iter().all(|&i| colors[i][3] < 0.02) {
                 continue;
             }
-            let base = mesh.positions.len() as u32;
-            for i in quad {
-                mesh.positions.push(positions[i]);
-                mesh.normals.push([0.0, 1.0, 0.0]);
-                mesh.colors.push(colors[i]);
-                mesh.uvs.push([0.5, 0.5]);
+            let mut q = [0u32; 4];
+            for (slot, &i) in q.iter_mut().zip(quad.iter()) {
+                if remap[i] == u32::MAX {
+                    remap[i] = out.positions.len() as u32;
+                    out.positions.push(positions[i]);
+                    out.colors.push(colors[i]);
+                }
+                *slot = remap[i];
             }
-            mesh.indices
-                .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            out.indices
+                .extend_from_slice(&[q[0], q[1], q[2], q[0], q[2], q[3]]);
         }
     }
-
-    meshes.insert(&view.overlay, mesh.finish());
+    Some(out)
 }
 
 /// Row/col bounds of everything the overlay might draw, padded by one cell so
@@ -589,6 +642,16 @@ struct QuadBuilder {
 }
 
 impl QuadBuilder {
+    fn with_capacity(verts: usize) -> Self {
+        QuadBuilder {
+            positions: Vec::with_capacity(verts),
+            normals: Vec::with_capacity(verts),
+            colors: Vec::with_capacity(verts),
+            uvs: Vec::with_capacity(verts),
+            indices: Vec::with_capacity(verts / 16 * 42),
+        }
+    }
+
     /// A textured billboard. `right`/`up` are world-space half-extents;
     /// `taper` narrows the top edge, which is what gives a flame tongue its
     /// shape independently of the texture.
@@ -715,84 +778,104 @@ pub fn update_flames(
         world: scn.world,
     };
 
-    let active = sim.fire.active_cells();
-    let stride = (active.len() / MAX_FLAME_CELLS).max(1);
-    let mut flames = QuadBuilder::default();
-
-    for cell in active.iter().step_by(stride) {
-        let fli = sim.fire.cell_intensity(*cell);
-        let arrival = sim.fire.arrival_time(*cell).unwrap_or(now as i32) as f32;
-        // The flaming band: only cells the front has just crossed carry flame.
-        let flaming = (1.0 - (now - arrival) / FLAMING_S).clamp(0.0, 1.0);
-        if flaming < 0.05 {
-            continue;
-        }
-
-        // Byram flame length, with a floor: a metre-high creeping flame is
-        // physically right and visually nothing, and the player still has to
-        // be able to see where the fire is.
-        // Toy scale, like the houses (`buildings::TOY_SCALE`): from the play
-        // camera a true-height flame is a few pixels and the fire read as a
-        // dark smudge; the front has to be the brightest thing on the table.
-        let flame_m = (flame_length_m(fli) * 3.4).clamp(22.0, 110.0) * (0.45 + 0.55 * flaming);
-        // A hot cell carries several tongues, a creeping one carries a single
-        // flicker. Sub-cell placement is what stops them lining up on a grid.
-        let tongues = (1.0 + (fli / 450.0).min(6.0) * flaming).round() as usize;
-        let centre = scn.world.centre_of(*cell);
-        let half = scn.world.cellsize * 0.5;
-
-        for k in 0..tongues {
-            let h = hash01(cell.row as u64 * 7919 + cell.col as u64 * 104_729 + k as u64 * 31);
-            let h2 = hash01(cell.row as u64 * 104_729 + cell.col as u64 * 7919 + k as u64 * 97);
-            let p = Pos {
-                x: centre.x + (h - 0.5) * 2.0 * half,
-                y: centre.y + (h2 - 0.5) * 2.0 * half,
-            };
-            let ground = scn.terrain.height_at(p);
-            let fuel = scn.fuel_at(*cell);
-
-            let phase = h * 30.0 + k as f32 * 2.3;
-            let flicker = 0.62 + 0.38 * (t * 5.5 + phase).sin() * (t * 2.3 + phase).cos();
-            // Local intensity, not the cell's: the interpolated field varies
-            // across the cell, so tongues differ within one cell too.
-            let local = field.intensity(p).max(fli * 0.4);
-            let mut lift = 0.0;
-            let mut h_m = flame_m * flicker * (0.6 + 0.4 * (local / fli.max(1.0)).min(1.5));
-            // Crowning, drawn only: now and then a tongue over tall trees
-            // climbs into the canopy and roars well above the surface fire.
-            // Each tongue has its own slow cycle, so flare-ups come and go
-            // at random; conifers (tall pines) flare higher than broadleaves.
-            let crown_h = match fuel {
-                10..=12 => 2.6,
-                4..=6 => 1.9,
-                _ => 1.0,
-            };
-            if crown_h > 1.0 && flaming > 0.3 {
-                let cyc = (t * 0.11 + h * 13.0 + h2 * 5.0).fract();
-                let env = if cyc < 0.22 { (std::f32::consts::PI * cyc / 0.22).sin() } else { 0.0 };
-                h_m *= 1.0 + (crown_h - 1.0) * env * flaming;
-                // The tongue stands on the crown, not on the trunk's foot:
-                // the shader already burns the foliage there (`burn_plant`).
-                lift = env * flaming * if fuel >= 10 { 12.0 } else { 7.0 };
+    // The tongue list depends on the fire state only; the sim moves in whole
+    // steps, so rebuild it on a new generation (or sim time), not every frame.
+    let key = (sim.generation, now.to_bits());
+    if view.tongues_key != key {
+        view.tongues_key = key;
+        let mut tongues = std::mem::take(&mut view.tongues);
+        tongues.clear();
+        let active = sim.fire.active_cells();
+        let stride = (active.len() / MAX_FLAME_CELLS).max(1);
+        for cell in active.iter().step_by(stride) {
+            let fli = sim.fire.cell_intensity(*cell);
+            let arrival = sim.fire.arrival_time(*cell).unwrap_or(now as i32) as f32;
+            // The flaming band: only cells the front has just crossed carry flame.
+            let flaming = (1.0 - (now - arrival) / FLAMING_S).clamp(0.0, 1.0);
+            if flaming < 0.05 {
+                continue;
             }
-            let half_w = (h_m * 0.38).min(scn.world.cellsize * 1.3);
-            let sway = (t * 2.6 + phase).sin() * h_m * 0.16;
 
-            // Additive light competing with a daylit hillside: the multiplier
-            // has to be well above 1 or the flame is a pale smudge.
-            let heat = (local / 2000.0).clamp(0.55, 2.2) * (0.6 + 0.4 * flaming);
-            let _ = sway;
-            flames.tongue(
-                Vec3::new(p.x, ground + lift, -p.y),
-                right,
-                h_m,
-                half_w,
-                t,
-                phase,
-                [3.6 * heat, 1.55 * heat, 0.28 * heat, 1.0],
-                [2.0 * heat, 0.50 * heat, 0.07 * heat, 1.0],
-            );
+            // Byram flame length, with a floor: a metre-high creeping flame is
+            // physically right and visually nothing, and the player still has to
+            // be able to see where the fire is.
+            // Toy scale, like the houses (`buildings::TOY_SCALE`): from the play
+            // camera a true-height flame is a few pixels and the fire read as a
+            // dark smudge; the front has to be the brightest thing on the table.
+            let flame_m = (flame_length_m(fli) * 3.4).clamp(22.0, 110.0) * (0.45 + 0.55 * flaming);
+            // A hot cell carries several tongues, a creeping one carries a single
+            // flicker. Sub-cell placement is what stops them lining up on a grid.
+            let n = (1.0 + (fli / 450.0).min(6.0) * flaming).round() as usize;
+            let centre = scn.world.centre_of(*cell);
+            let half = scn.world.cellsize * 0.5;
+
+            for k in 0..n {
+                let h = hash01(cell.row as u64 * 7919 + cell.col as u64 * 104_729 + k as u64 * 31);
+                let h2 = hash01(cell.row as u64 * 104_729 + cell.col as u64 * 7919 + k as u64 * 97);
+                let p = Pos {
+                    x: centre.x + (h - 0.5) * 2.0 * half,
+                    y: centre.y + (h2 - 0.5) * 2.0 * half,
+                };
+                let ground = scn.terrain.height_at(p);
+                let fuel = scn.fuel_at(*cell);
+                let phase = h * 30.0 + k as f32 * 2.3;
+                // Local intensity, not the cell's: the interpolated field varies
+                // across the cell, so tongues differ within one cell too.
+                let local = field.intensity(p).max(fli * 0.4);
+                // Additive light competing with a daylit hillside: the multiplier
+                // has to be well above 1 or the flame is a pale smudge.
+                let heat = (local / 2000.0).clamp(0.55, 2.2) * (0.6 + 0.4 * flaming);
+                tongues.push(CachedTongue {
+                    foot: Vec3::new(p.x, ground, -p.y),
+                    flame_m,
+                    ratio: 0.6 + 0.4 * (local / fli.max(1.0)).min(1.5),
+                    phase,
+                    heat,
+                    flaming,
+                    // Conifers (tall pines) flare higher than broadleaves.
+                    crown_h: match fuel {
+                        10..=12 => 2.6,
+                        4..=6 => 1.9,
+                        _ => 1.0,
+                    },
+                    crown_cyc: h * 13.0 + h2 * 5.0,
+                    crown_lift: if fuel >= 10 { 12.0 } else { 7.0 },
+                });
+            }
         }
+        view.tongues = tongues;
+    }
+
+    let mut flames = QuadBuilder::with_capacity(view.last_flame_verts);
+    let max_half_w = scn.world.cellsize * 1.3;
+    for c in &view.tongues {
+        let flicker = 0.62 + 0.38 * (t * 5.5 + c.phase).sin() * (t * 2.3 + c.phase).cos();
+        let mut h_m = c.flame_m * flicker * c.ratio;
+        let mut lift = 0.0;
+        // Crowning, drawn only: now and then a tongue over tall trees
+        // climbs into the canopy and roars well above the surface fire.
+        // Each tongue has its own slow cycle, so flare-ups come and go
+        // at random.
+        if c.crown_h > 1.0 && c.flaming > 0.3 {
+            let cyc = (t * 0.11 + c.crown_cyc).fract();
+            let env = if cyc < 0.22 { (std::f32::consts::PI * cyc / 0.22).sin() } else { 0.0 };
+            h_m *= 1.0 + (c.crown_h - 1.0) * env * c.flaming;
+            // The tongue stands on the crown, not on the trunk's foot:
+            // the shader already burns the foliage there (`burn_plant`).
+            lift = env * c.flaming * c.crown_lift;
+        }
+        let half_w = (h_m * 0.38).min(max_half_w);
+        let heat = c.heat;
+        flames.tongue(
+            c.foot + Vec3::Y * lift,
+            right,
+            h_m,
+            half_w,
+            t,
+            c.phase,
+            [3.6 * heat, 1.55 * heat, 0.28 * heat, 1.0],
+            [2.0 * heat, 0.50 * heat, 0.07 * heat, 1.0],
+        );
     }
 
     step_particles(&mut view, &sim, dt, now);
@@ -919,6 +1002,7 @@ pub fn update_flames(
         sparks.billboard(ember.pos, across * size, along * size * stretch, 1.0, c, c);
     }
 
+    view.last_flame_verts = flames.positions.len();
     meshes.insert(&view.flames, flames.finish());
     meshes.insert(&view.smoke_mesh, smoke.finish());
     meshes.insert(&view.sparks, sparks.finish());
@@ -1126,4 +1210,117 @@ fn hash01(x: u64) -> f32 {
     h = h.wrapping_mul(0xBF58_476D_1CE4_E5B9);
     h ^= h >> 32;
     (h >> 40) as f32 / (1u32 << 24) as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    /// The previous overlay builder: four private vertices per kept quad.
+    fn legacy(sim: &Sim, layer: FireLayer, now: f32) -> Option<QuadBuilder> {
+        let scn = &sim.scn;
+        let w = scn.world;
+        let hazard = sim.fire.hazard().as_slice();
+        let field = FireField {
+            state: sim.fire.state(),
+            arrival: sim.fire.arrival_times(),
+            intensity: sim.fire.intensity(),
+            cleared: sim.fire.cleared(),
+            world: w,
+        };
+        let (r0, r1, c0, c1) = touched_bounds(sim, hazard, layer)?;
+        let span = (r1 - r0).max(c1 - c0);
+        let subdiv = if span > OVERLAY_SUBDIV_MAX_SPAN { 1 } else { OVERLAY_SUBDIV };
+        let step = w.cellsize / subdiv as f32;
+        let nx = (c1 - c0) * subdiv + 1;
+        let ny = (r1 - r0) * subdiv + 1;
+        let mut mesh = QuadBuilder::default();
+        let mut colors = Vec::with_capacity(nx * ny);
+        let mut positions = Vec::with_capacity(nx * ny);
+        for iy in 0..ny {
+            for ix in 0..nx {
+                let p = Pos {
+                    x: (c0 * subdiv + ix) as f32 * step,
+                    y: w.height_m - (r0 * subdiv + iy) as f32 * step,
+                };
+                let color = sample_color(layer, &field, hazard, field.warp(p), now);
+                let lift = 0.5 + 1.2 * color[3].min(1.0) * f32::from(color[0] > 1.0);
+                positions.push([p.x, scn.terrain.height_at(p) + lift, -p.y]);
+                colors.push(color);
+            }
+        }
+        for iy in 0..ny.saturating_sub(1) {
+            for ix in 0..nx.saturating_sub(1) {
+                let quad = [iy * nx + ix, iy * nx + ix + 1, (iy + 1) * nx + ix + 1, (iy + 1) * nx + ix];
+                if quad.iter().all(|&i| colors[i][3] < 0.02) {
+                    continue;
+                }
+                let base = mesh.positions.len() as u32;
+                for i in quad {
+                    mesh.positions.push(positions[i]);
+                    mesh.normals.push([0.0, 1.0, 0.0]);
+                    mesh.colors.push(colors[i]);
+                    mesh.uvs.push([0.5, 0.5]);
+                }
+                mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            }
+        }
+        Some(mesh)
+    }
+
+    #[test]
+    fn shared_lattice_draws_the_same_triangles() {
+        let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let mut sim = Sim::new(&data, "medium", 2).unwrap();
+        let mut next = 30 * 60;
+        while !sim.is_over() && sim.time_s() < 240 * 60 {
+            sim.game.step().unwrap();
+            if sim.time_s() >= next {
+                next += 30 * 60;
+                check(&sim);
+            }
+        }
+        check(&sim);
+    }
+
+    fn check(sim: &Sim) {
+        let now = sim.time_s() as f32;
+        for layer in FireLayer::ALL {
+            let t0 = std::time::Instant::now();
+            let old = legacy(sim, layer, now);
+            let t_old = t0.elapsed();
+            let t1 = std::time::Instant::now();
+            let new = overlay_lattice(sim, layer, now);
+            let t_new = t1.elapsed();
+            let (Some(old), Some(new)) = (old, new) else {
+                assert!(old_none_matches(layer, sim));
+                continue;
+            };
+            assert_eq!(old.indices.len(), new.indices.len());
+            for (a, b) in old.indices.chunks(3).zip(new.indices.chunks(3)) {
+                for (&i, &j) in a.iter().zip(b) {
+                    assert_eq!(old.positions[i as usize], new.positions[j as usize]);
+                    assert_eq!(old.colors[i as usize], new.colors[j as usize]);
+                }
+            }
+            if layer == FireLayer::Flames {
+                eprintln!(
+                    "T+{:>3} min {:?}: old {} verts {:.1} ms | new {} verts {:.1} ms | {} tris",
+                    sim.time_s() / 60,
+                    layer,
+                    old.positions.len(),
+                    t_old.as_secs_f64() * 1e3,
+                    new.positions.len(),
+                    t_new.as_secs_f64() * 1e3,
+                    new.indices.len() / 3
+                );
+            }
+        }
+    }
+
+    fn old_none_matches(layer: FireLayer, sim: &Sim) -> bool {
+        let hazard = sim.fire.hazard().as_slice();
+        touched_bounds(sim, hazard, layer).is_none()
+    }
 }
