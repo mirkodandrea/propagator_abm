@@ -408,7 +408,8 @@ fn pause_dial(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     crate::playtest::control(if paused { "Riprendi" } else { "Pausa" }, &resp, enabled);
-    if resp.clicked() {
+    let space = enabled && !ui.ctx().wants_keyboard_input() && ui.ctx().input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space));
+    if resp.clicked() || space {
         if paused {
             sim.resume();
             k.clear_selection();

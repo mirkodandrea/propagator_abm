@@ -2,6 +2,10 @@
 
 La stessa partita del kiosk, nel browser, per farla provare a chi non è al chiosco. Stesso motore (`rocca::Game`) e stessi dati, compilati dentro il `.wasm` (`crates/datafs`).
 
+## Pagina introduttiva (2026-10-18)
+
+`web/index.html` mostra prima una pagina HTML+CSS nello stile di cimafoundation.org (hero con immagini pittoriche da `assets/references/graphics`, un riquadro «Dal gioco», come si gioca, crediti). `game.js` e il `.wasm` si scaricano solo quando si preme «Gioca» (`import()` dinamico in `start()`); con `?playtest=1` si salta l'intro. Immagini in `web/img/`, copiate da `build_web.sh`. Provata solo come pagina statica (desktop e 390 px), non con la build wasm.
+
 ## Telefono e budget grafico (2026-10-15)
 
 La versione web usa un profilo leggero anche sui computer: terreno a 20 m,
