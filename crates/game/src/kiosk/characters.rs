@@ -65,10 +65,6 @@ impl Portraits {
 #[derive(Resource)]
 pub struct Logo(pub egui::TextureId);
 
-/// The QR code of the browser version, for the «Provami» banner.
-#[derive(Resource)]
-pub struct Qr(pub egui::TextureId);
-
 /// The scenario screen's icons (`tools/factory/scenario_icons.py`), by case.
 #[derive(Resource)]
 pub struct ScenarioIcons(pub Vec<(&'static str, egui::TextureId)>);
@@ -128,9 +124,6 @@ pub fn load_portraits(mut commands: Commands, mut images: ResMut<Assets<Image>>,
     let logo = include_bytes!("../../../../assets/brand/cima_logo_white.png");
     if let Some(t) = texture(logo, &mut images, &mut contexts) {
         commands.insert_resource(Logo(t));
-    }
-    if let Some(t) = texture(include_bytes!("../../../../assets/brand/qr_provami.png"), &mut images, &mut contexts) {
-        commands.insert_resource(Qr(t));
     }
 }
 

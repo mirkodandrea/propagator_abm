@@ -18,7 +18,7 @@ use bevy_egui::EguiContexts;
 use rocca::tutorial::Expect;
 use scenario::Pos;
 
-use super::characters::{Logo, Portraits, Qr, ScenarioIcons};
+use super::characters::{Logo, Portraits, ScenarioIcons};
 use super::{board, new_visit, screens, start_game, Kiosk, Phase, Selection};
 use crate::sim::{Sim, SimRestarted};
 
@@ -117,7 +117,6 @@ pub fn draw(
     mut gfx: ResMut<crate::quality::Graphics>,
     faces: Option<Res<Portraits>>,
     logo: Option<Res<Logo>>,
-    qr: Option<Res<Qr>>,
     scenario_icons: Option<Res<ScenarioIcons>>,
     mario: Res<crate::mario::Playground>,
     pad: Res<crate::pad::PadView>,
@@ -160,7 +159,7 @@ pub fn draw(
         Phase::Intro if k.freecam => k.side_w = 0.0,
         Phase::Intro => {
             k.side_w = 0.0;
-            if !compact(ctx) { banner(ctx, qr.as_deref()); }
+            if cfg!(target_arch = "wasm32") && !compact(ctx) { banner(ctx); }
             if k.title {
                 if screens::title(ctx, k, &sim, logo.as_deref()) {
                     k.title = false;
@@ -176,7 +175,7 @@ pub fn draw(
         Phase::Fine => {
             k.side_w = 0.0;
             if cfg!(target_arch = "wasm32") && !compact(ctx) {
-                banner(ctx, None);
+                banner(ctx);
             }
             screens::end(ctx, k, &mut sim, &mut restarted, faces.as_deref());
         }
@@ -184,7 +183,6 @@ pub fn draw(
             let r = ctx.screen_rect();
             k.side_w = if compact(ctx) && r.width() > r.height() && k.phase == Phase::Tutorial { (r.width() * 0.37).clamp(220.0, 316.0) } else { 0.0 };
             top_bar(ctx, k, &mut sim, cam);
-            if cfg!(not(target_arch = "wasm32")) && !compact(ctx) { banner(ctx, qr.as_deref()); }
             // Esc takes back a choice first (and is then used up: in the tutorial it would also skip)
             if !ctx.wants_keyboard_input() && k.selection != Selection::None && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
                 k.clear_selection();
@@ -255,26 +253,16 @@ pub(super) fn feedback_url() -> String {
     format!("https://docs.google.com/forms/d/e/1FAIpQLSfHWmJHJwLLzqLmjomK-HA3YikUQfw4wz5L9cSjqpgS4i1ipw/viewform?usp=pp_url&entry.2126742218={}", super::BUILD)
 }
 
-/// The banner at the top right. In the kiosk, «Provami!» with the QR code of
-/// the browser version, on every screen but the end: a passer-by may look at
-/// the screen while someone is playing. In the browser, which is already the
-/// thing the QR points to, a button to the feedback form, on the title, the
-/// opening and the end.
-fn banner(ctx: &egui::Context, qr: Option<&Qr>) {
+/// The banner at the top right, in the browser: a button to the feedback form,
+/// on the title, the opening and the end.
+fn banner(ctx: &egui::Context) {
     egui::Area::new(egui::Id::new("provami")).anchor(Align2::RIGHT_TOP, [-14.0, 14.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         card(AMBER).inner_margin(10.0).show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                if cfg!(target_arch = "wasm32") {
-                    ui.label(RichText::new("Dicci cosa ne pensi").size(20.0).strong().color(AMBER));
-                    ui.add_space(4.0);
-                    if ui.add(primary("Dai un feedback")).clicked() {
-                        ctx.open_url(egui::OpenUrl::new_tab(feedback_url()));
-                    }
-                } else if let Some(qr) = qr {
-                    ui.label(RichText::new("Provami!").size(26.0).strong().color(AMBER));
-                    ui.label(RichText::new("Gioca dal tuo computer").size(15.0).color(GREY));
-                    ui.add_space(4.0);
-                    ui.add(egui::Image::new(egui::load::SizedTexture::new(qr.0, egui::vec2(150.0, 150.0))));
+                ui.label(RichText::new("Dicci cosa ne pensi").size(20.0).strong().color(AMBER));
+                ui.add_space(4.0);
+                if ui.add(primary("Dai un feedback")).clicked() {
+                    ctx.open_url(egui::OpenUrl::new_tab(feedback_url()));
                 }
             });
         });
