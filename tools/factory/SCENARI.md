@@ -65,7 +65,7 @@ richieste e protetti dal fingerprint del runner.
 I tre profili mostrati all’utente sono stati approvati e aggiunti a
 `data/scenarios/rocca_ventosa/game.json`: il menu operatore F2 li propone insieme
 ad «Attuale (predefinito)». `game` resta `medium`; la selezione si applica alla
-prossima nuova visita o con «Vai al giorno 2». La demo in esecuzione non è stata
+prossima nuova visita o con «Vai alla partita». La demo in esecuzione non è stata
 riavviata. Le fragilità del test di ritardo restano quelle sopra documentate.
 
 ## Ricerca di combinazioni giocabili

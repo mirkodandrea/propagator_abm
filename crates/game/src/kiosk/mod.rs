@@ -6,7 +6,7 @@
 //!
 //! Flow: **Intro** (name, «Inizia») → **Tutorial** (day 1: a scripted small
 //! fire, one prompted step at a time; the world stands still while a step
-//! waits for the player) → **Giorno2** (one screen: a new day, a new fire) →
+//! waits for the player) → **Scenario** (which fire) →
 //! **Gioco** (×120, opens in pause; the pause stops the world, orders only
 //! in pause) → **Fine** (stars
 //! against the same fire with no orders, the day's board). A new visit starts
@@ -55,10 +55,8 @@ pub fn window_mode() -> WindowMode {
 pub enum Phase {
     /// The player's name and «Inizia»; the tutorial's fire is on the map, still.
     Intro,
-    /// Day 1, the scripted tutorial.
+    /// The scripted tutorial.
     Tutorial,
-    /// Between the tutorial and the game: «Giorno 2».
-    Giorno2,
     /// After «Inizia»: which fire to fight, and how hard.
     Scenario,
     /// The played game.
@@ -453,12 +451,12 @@ pub fn start_tutorial(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<
     k.enter(Phase::Tutorial);
 }
 
-/// «Inizia» and «Giorno 2» lead here: the player picks the fire and the level.
+/// «Inizia» and the end of the tutorial lead here: the player picks the fire and the level.
 pub fn choose_scenario(k: &mut Kiosk) {
     k.enter(Phase::Scenario);
 }
 
-/// Day 2: the played fire, with its no-orders twin started beside it.
+/// The played fire, with its no-orders twin started beside it.
 pub fn start_game(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
     let case = k.selected_case.clone();
     if let Err(e) = sim.restart(&case, k.seed) {
@@ -476,6 +474,12 @@ pub fn start_game(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimR
     k.enter(Phase::Gioco);
 }
 
+
+/// «Riprova»: the fire just played, same seed, from the start.
+pub fn retry(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+    k.selected_case = sim.case.name.clone();
+    start_game(k, sim, restarted);
+}
 
 /// The clock and the previews. Runs before the view systems.
 pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: EventWriter<SimRestarted>, mut baseline_job: Local<Option<rocca::Game>>, mario: Res<crate::mario::Playground>) {
@@ -558,7 +562,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
         k.log_seen = sim.log.len();
     }
     match k.phase {
-        Phase::Tutorial if k.expect() == Some(Expect::Over) && (sim.is_over() || sim.game.evacuation_finished()) => k.enter(Phase::Giorno2),
+        Phase::Tutorial if k.expect() == Some(Expect::Over) && (sim.is_over() || sim.game.evacuation_finished()) => k.enter(Phase::Scenario),
         Phase::Gioco if sim.is_over() => {
             k.enter(Phase::Fine);
         }

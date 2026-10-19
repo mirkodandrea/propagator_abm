@@ -69,6 +69,36 @@ pub(super) fn card(tint: Color32) -> egui::Frame {
     egui::Frame::none().fill(PANEL).stroke(egui::Stroke::new(1.5, tint.gamma_multiply(0.8))).rounding(14.0).inner_margin(18.0)
 }
 
+/// Expanding rings that repeat for as long as the step waits: on the team to
+/// drag and on the place to drop it. The map marks alone were hard to find.
+fn tutorial_pulse(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTransform), placed: &Placed) {
+    let Some(Expect::Move(t, at)) = k.expect() else { return };
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new("tutorial_pulse")));
+    let time = ctx.input(|i| i.time) as f32;
+    let mut ring = |centre: egui::Pos2, base: f32| {
+        // three rings a third of a period apart, each growing and fading out
+        for i in 0..3 {
+            let phase = (time * 0.8 + i as f32 / 3.0).fract();
+            let radius = base * (0.5 + 2.5 * phase);
+            let a = 0.3 + 0.7 * (1.0 - phase);
+            painter.circle_stroke(centre, radius, egui::Stroke::new(10.0, Color32::from_black_alpha((190.0 * a) as u8)));
+            painter.circle_stroke(centre, radius, egui::Stroke::new(6.0, AMBER.gamma_multiply(a)));
+        }
+        painter.circle_filled(centre, base * 0.35, AMBER.gamma_multiply(0.55 + 0.35 * (time * 5.0).sin().abs()));
+    };
+    let spot = sim.hexes.get(at).map_or(at.centre(), |h| h.target);
+    if let Some(p) = screen(cam, sim, spot, 20.0) {
+        ring(p, 26.0);
+    }
+    // the team's badge: where to start the drag
+    if k.selection != Selection::Team(t) && k.dragging.is_none() {
+        if let Some(Some(p)) = placed.team.get(t) {
+            ring(*p, 26.0);
+        }
+    }
+    ctx.request_repaint();
+}
+
 /// World point to screen point, `lift_m` above the ground.
 pub(super) fn screen(cam: (&Camera, &GlobalTransform), sim: &Sim, p: Pos, lift_m: f32) -> Option<egui::Pos2> {
     let v = crate::frame::to_bevy(p, sim.scn.terrain.height_at(p) + lift_m);
@@ -138,11 +168,6 @@ pub fn draw(
             } else {
                 screens::intro(ctx, k, &mut sim, &mut restarted, logo.as_deref(), faces.as_deref());
             }
-        }
-        Phase::Giorno2 => {
-            k.side_w = 0.0;
-            if cfg!(not(target_arch = "wasm32")) && !compact(ctx) { banner(ctx, qr.as_deref()); }
-            screens::day_two(ctx, k, &mut sim, &mut restarted, faces.as_deref());
         }
         Phase::Scenario => {
             k.side_w = 0.0;
@@ -270,8 +295,7 @@ fn top_bar(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &Gl
                 ui.add_space(10.0);
                 ui.vertical(|ui| {
                     ui.set_min_width(300.0);
-                    let day = if k.phase == Phase::Tutorial { "Giorno 1" } else { "Giorno 2" };
-                    ui.label(RichText::new(format!("{day} · {}", clock(sim.time_s()))).size(34.0).strong().color(Color32::WHITE));
+                                        ui.label(RichText::new(clock(sim.time_s())).size(34.0).strong().color(Color32::WHITE));
                     // the scenario's progress: elapsed time as a bar, with the end hour
                     let frac = (sim.time_s() as f32 / sim.case.duration_s().max(1) as f32).clamp(0.0, 1.0);
                     ui.add_space(6.0);
@@ -473,7 +497,7 @@ fn select_district(k: &mut Kiosk, sim: &mut Sim, d: usize) {
 
 fn tutorial_hint(k: &Kiosk) -> String {
     match k.expect() {
-        Some(Expect::Select(_)) | Some(Expect::Move(..)) => "Segui l'istruzione: la squadra e l'esagono indicati.".into(),
+        Some(Expect::Select(_)) | Some(Expect::Move(..)) => "Segui l'istruzione: la squadra e la destinazione indicate.".into(),
         Some(Expect::Evacuate(_)) => "Segui l'istruzione: il borgo indicato.".into(),
         _ => "Segui l'istruzione in basso.".into(),
     }
@@ -487,7 +511,7 @@ fn preview_move(k: &mut Kiosk, sim: &Sim, t: usize, at: rocca::Axial) {
     }
     k.move_hex = Some(at);
     k.move_plan = Some(match k.expect() {
-        Some(Expect::Move(_, want)) if at != want => Err("usa l'esagono evidenziato".into()),
+        Some(Expect::Move(_, want)) if at != want => Err("usa la destinazione evidenziata".into()),
         _ => sim.plan_move(t, at),
     });
 }
@@ -587,7 +611,7 @@ fn pad_orders(k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform), pa
 fn pad_help(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
     let rows: &[(&str, Color32, &str)] = match k.selection {
         Selection::Team(_) if sim.paused() => &[
-            ("Stick sx", Color32::WHITE, "porta il mirino sull'esagono"),
+            ("Stick sx", Color32::WHITE, "porta il mirino sul punto"),
             ("A", GREEN, "manda la squadra"),
             ("B", RED, "annulla"),
             ("◀ ▶", Color32::WHITE, "altra squadra"),
@@ -846,6 +870,9 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         }
     }
     team_flags(ctx, k, sim, cam, &placed);
+    if k.phase == Phase::Tutorial {
+        tutorial_pulse(ctx, k, sim, cam, &placed);
+    }
     confirm_bubble(ctx, k, sim, cam);
 }
 
@@ -1436,12 +1463,12 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
             if let Some(level) = k.territory.levels.iter().find(|l| l.case == k.selected_case) {
                 ui.add(egui::Label::new(RichText::new(&level.about).color(GREY)).wrap());
             }
-            ui.label(RichText::new("Si applica con Nuova visita o Vai al giorno 2.").small().color(GREY));
+            ui.label(RichText::new("Si applica con Nuova visita o Vai alla partita.").small().color(GREY));
             ui.horizontal_wrapped(|ui| {
                 if button(ui, "Nuova visita") {
                     new_visit(k, sim, restarted);
                 }
-                if button(ui, "Vai al giorno 2") {
+                if button(ui, "Vai alla partita") {
                     start_game(k, sim, restarted);
                 }
             });
@@ -1498,8 +1525,7 @@ fn compact_top(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera,
             ui.horizontal(|ui| {
                 pause_dial(ui, k, sim);
                 ui.vertical(|ui| {
-                    let day = if k.phase == Phase::Tutorial { 1 } else { 2 };
-                    ui.label(RichText::new(format!("Giorno {day} · {}", clock(sim.time_s()))).size(20.0).strong());
+                    ui.label(RichText::new(clock(sim.time_s())).size(20.0).strong());
                     let w = sim.weather();
                     ui.horizontal(|ui| {
                         wind_arrow(ui, cam, w.wind_dir_deg, 22.0, Color32::WHITE);
@@ -1511,7 +1537,7 @@ fn compact_top(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera,
             });
             if sim.paused() {
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(if matches!(k.selection, Selection::Team(_)) { "Tocca un esagono" } else { "Pausa" }).strong().color(GREEN));
+                    ui.label(RichText::new(if matches!(k.selection, Selection::Team(_)) { "Tocca la destinazione" } else { "Pausa" }).strong().color(GREEN));
                     for (color, label) in crate::forecast_view::LINE_COLOURS.into_iter().zip(["1 h", "3 h"]) {
                         let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
                         ui.painter().line_segment([r.left_center(), r.right_center()], egui::Stroke::new(3.0, color));

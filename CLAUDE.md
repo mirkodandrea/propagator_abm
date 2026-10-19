@@ -16,9 +16,8 @@ I documenti dicono **cosa** costruire; il codice mostra **come**. Se non coincid
 
 Nuovo progetto dal 2026-10-14. È uno strategico in tempo reale per un chiosco presidiato alla *Settimana della Protezione Civile*, per studenti delle superiori: italiano, mouse o trackpad, nessun audio necessario. Un incendio simulato minaccia i borghi di un'isola.
 
-- **Giorno 1:** tutorial scriptato e guidato.
-- **Giorno 2:** un nuovo incendio, giocato.
-- Il tempo scorre a ×300. La **pausa** (il mondo si ferma, senza limite di tempo né attesa per la successiva) è la richiesta della previsione all'esperto, ed è l'unico momento per dare ordini: trascinare le icone (badge) delle squadre (autobotte con 3 persone) sugli esagoni di 500 m ed evacuare un borgo alla volta. Il giorno 2 parte in pausa.
+- **Tutorial** scriptato e guidato, poi la **partita**: un incendio da affrontare.
+- Il tempo scorre a ×300. La **pausa** (il mondo si ferma, senza limite di tempo né attesa per la successiva) è la richiesta della previsione all'esperto, ed è l'unico momento per dare ordini: trascinare le icone (badge) delle squadre (autobotte con 3 persone) sugli esagoni di 500 m ed evacuare un borgo alla volta. La partita parte in pausa.
 - Alla fine: stelle e classifica del giorno.
 
 Dettagli in `docs/01-GIOCO.md`.
@@ -112,7 +111,7 @@ KIOSK_WINDOWED=1 KIOSK_SIZE=1600x1000 KIOSK_SCALE=1 KIOSK_SNAP=<cartella> KIOSK_
 
 - Gli stati sono separati da `;`, i campi da `,`. Chiavi:
   - `name`;
-  - `phase`: `intro`, `tutorial`, `giorno2`, `gioco` (predefinita), `fine`;
+  - `phase`: `intro`, `tutorial`, `gioco` (predefinita), `fine`;
   - `step`: il passo del tutorial;
   - `t`: minuti simulati;
   - `pause=1`;

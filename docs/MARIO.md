@@ -1,6 +1,6 @@
 # Mario (solo build nativa)
 
-**Ricollegato il 2026-10-16.** Si apre con **Ctrl+Maiusc+M** (combinazione nascosta; il tasto Start del pad non lo apre più dal 2026-10-17) solo a mondo fermo: nel titolo o nella pausa del giorno 2 (non nel tutorial). Mentre Mario è attivo il mondo parte fermo e il pannello permette 0x, 1x, 5x, 10x, 30x, 60x (la pausa del gioco non scade), la UI del chiosco è nascosta e la camera della mappa è sospesa. Dei vecchi attori restano solo le squadre (collisione e saluto con F / L3); persone e auto non esistono più. Non provato a schermo (solo test e build).
+**Ricollegato il 2026-10-16.** Si apre con **Ctrl+Maiusc+M** (combinazione nascosta; il tasto Start del pad non lo apre più dal 2026-10-17) solo a mondo fermo: nel titolo o nella pausa della partita (non nel tutorial). Mentre Mario è attivo il mondo parte fermo e il pannello permette 0x, 1x, 5x, 10x, 30x, 60x (la pausa del gioco non scade), la UI del chiosco è nascosta e la camera della mappa è sospesa. Dei vecchi attori restano solo le squadre (collisione e saluto con F / L3); persone e auto non esistono più. Non provato a schermo (solo test e build).
 
 Durante la pausa, **Ctrl+Maiusc+M** apre Mario.
 Parte davanti all'ingresso della rocca, usando posizione, orientamento e scala

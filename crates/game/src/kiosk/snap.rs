@@ -6,7 +6,7 @@
 //! | key      | meaning                                                              |
 //! |----------|----------------------------------------------------------------------|
 //! | `name`   | file name without `.png` (default `snap<N>`)                         |
-//! | `phase`  | `title`, `intro`, `tutorial`, `giorno2`, `gioco` (default), `fine`             |
+//! | `phase`  | `title`, `intro`, `tutorial`, `gioco` (default), `fine`             |
 //! | `step`   | the tutorial's step on show (with `phase=tutorial`)                   |
 //! | `t`      | simulated minutes since the start, run headless (default 0)          |
 //! | `pause`  | `1`: in pause (the expert's forecast on the map)                     |
@@ -142,7 +142,6 @@ fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<S
     let phase = match st.phase.as_str() {
         "intro" | "title" => Phase::Intro,
         "tutorial" => Phase::Tutorial,
-        "giorno2" => Phase::Giorno2,
         "scenario" => Phase::Scenario,
         "fine" => Phase::Fine,
         _ => Phase::Gioco,

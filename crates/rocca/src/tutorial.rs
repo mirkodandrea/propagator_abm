@@ -59,7 +59,7 @@ impl Script {
         let d = game.district_index(&tu.evacuate)?;
         let name = game.districts[d].name.clone();
         let mut steps = vec![
-            Step { text: format!("Giorno 1. Un incendio è partito vicino a __{name}__. Il tempo è **fermo**: ora puoi dare gli ordini."), expect: Expect::Next },
+            Step { text: format!("Un incendio è partito vicino a __{name}__. Il tempo è **fermo**: ora puoi dare gli ordini."), expect: Expect::Next },
             Step {
                 text: "Le linee rosse mostrano dove il fuoco può arrivare **tra 1 e 3 ore**, se nessuno interviene. In basso a destra vedi le __condizioni__: il vento e l'umidità.".into(),
                 expect: Expect::Next,
@@ -78,9 +78,9 @@ impl Script {
             let team = &game.teams[t];
             let from = game.territory.stations[team.station].name.rsplit(" - ").next().unwrap_or_default().to_string();
             let how = if i == 0 {
-                "Ogni squadra ha il suo **colore**. **Trascina l'icona** sull'esagono indicato, oppure **clicca la squadra** e poi l'esagono: vedi strada e tempo prima di decidere. **Esc** annulla."
+                "Ogni squadra ha il suo **colore**. **Trascina l'icona** sulla destinazione indicata, oppure **clicca la squadra** e poi la destinazione: vedi strada e tempo prima di decidere. **Esc** annulla."
             } else {
-                "Anche stavolta: trascina l'icona sull'esagono indicato, o cliccala e poi clicca l'esagono."
+                "Anche stavolta: trascina l'icona sulla destinazione indicata, o cliccala e poi clicca la destinazione."
             };
             steps.push(Step {
                 text: format!("La {} parte da __{from}__ ({} persone). {how}", team.name, team.crew),

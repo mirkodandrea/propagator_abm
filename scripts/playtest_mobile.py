@@ -196,8 +196,6 @@ def main():
                 for _ in range(40):
                     if state()['phase'] != 'Tutorial': break
                     advance(120)
-                assert state()['phase'] == 'Giorno2', state()
-                snap('08-day-two'); tap('Inizia giorno 2'); frames(10)
                 assert state()['phase'] == 'Scenario', state()
                 snap('08b-scenario'); tap('Parti'); frames(40)
                 rotate(390, 844); snap('09-game-portrait')

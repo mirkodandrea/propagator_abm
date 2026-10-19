@@ -81,7 +81,7 @@ fn apply(
     mut tapes: ResMut<Assets<TapeMaterial>>,
 ) {
     if let (Some(kiosk), Some(sim)) = (kiosk, sim) {
-        let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Giorno2 | Phase::Gioco);
+        let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
         let want = if playing && sim.paused() { 1.0 } else { 0.0 };
         // a screenshot of a state has no time to ease in
         let step = if std::env::var_os("KIOSK_SNAP").is_some() { 1.0 } else { time.delta_seconds() / EASE_S };
