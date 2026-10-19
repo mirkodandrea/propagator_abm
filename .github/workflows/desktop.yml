@@ -73,6 +73,9 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -84,9 +87,16 @@ jobs:
         run: |
           if [ "${{ github.ref_type }}" = tag ]; then
             gh release create "${{ github.ref_name }}" dist/*.zip --title "Isola di Roccavento ${{ github.ref_name }}" \
-              --notes "Versioni per Windows, macOS e Linux." --latest
+              --generate-notes --latest
             exit 0
           fi
+          {
+            echo "Versioni per computer, aggiornate a ogni push (commit \`$(git rev-parse --short=8 HEAD)\`)."
+            echo
+            echo "## Novità recenti"
+            git log -n 15 --no-merges --pretty='- %s'
+          } > notes.md
           gh release view download >/dev/null 2>&1 || gh release create download --prerelease \
-            --title "Scarica il gioco" --notes "Versioni per computer, aggiornate a ogni push."
+            --title "Scarica il gioco" --notes-file notes.md
+          gh release edit download --notes-file notes.md
           gh release upload download dist/*.zip --clobber
