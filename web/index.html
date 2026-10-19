@@ -49,23 +49,18 @@
       #play:hover, .play:hover { background: #ffd070; transform: translateY(-2px); }
       #play:focus-visible, .play:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
       #play svg, .play svg { width: 20px; height: 20px; }
-      .cta small { color: #b4cde6; font-size: 14px; max-width: 16em; line-height: 1.4; }
       .shot { position: relative; }
       .shot img { display: block; width: 100%; height: auto; border-radius: 18px; box-shadow: 0 30px 70px #0008, 0 0 0 1px #ffffff22; }
       .shot .inset { position: absolute; left: -28px; bottom: -34px; width: 44%; margin: 0; padding: 6px; border-radius: 16px; background: #fff; box-shadow: 0 18px 44px #0009; }
       .shot .inset img { border-radius: 11px; box-shadow: none; }
       .inset figcaption { display: flex; align-items: center; gap: 8px; padding: 7px 6px 2px; color: var(--ink); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
       .inset i { width: 9px; height: 9px; border-radius: 50%; background: #e8472b; box-shadow: 0 0 0 4px #e8472b33; }
-      .facts { background: var(--navy); color: #fff; }
-      .facts .wrap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; padding: 28px 0; }
-      .facts b { display: block; font-size: 26px; font-weight: 800; color: #ffc24b; }
-      .facts span { font-size: 14px; color: #b4cde6; }
-      section.block { padding: 88px 0; }
+      section.block { padding: 64px 0; }
       section.block.alt { background: var(--paper); }
       .kicker { color: var(--blue); font-size: 13px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
       section h2 { margin-top: 10px; max-width: 18em; font-size: clamp(28px, 3.4vw, 42px); line-height: 1.15; font-weight: 800; letter-spacing: -.01em; color: var(--navy); }
       section .sub { margin-top: 16px; max-width: 40em; color: #44566b; }
-      .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 48px; }
+      .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
       .card { overflow: hidden; border-radius: 18px; background: #fff; box-shadow: 0 2px 4px #06264a10, 0 18px 40px #06264a14; }
       .card img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; }
       .card div { padding: 24px 26px 30px; }
@@ -89,8 +84,7 @@
         .hero .wrap, .split { grid-template-columns: 1fr; gap: 36px; }
         .shot .inset { left: 10px; bottom: -22px; width: 48%; }
         .hero { padding-bottom: 80px; }
-        .facts .wrap { grid-template-columns: 1fr 1fr; }
-        .cards { grid-template-columns: 1fr; }
+          .cards { grid-template-columns: 1fr; }
         section.block { padding: 60px 0; }
         .brand span { display: none; }
       }
@@ -116,13 +110,12 @@
           <div>
             <span class="eyebrow">Gioco di protezione civile</span>
             <h1>Isola di <em>Roccavento</em></h1>
-            <p class="lead">Un incendio minaccia i borghi dell’isola. Hai poche ore, una previsione e tre squadre di vigili del fuoco: decidi dove mandarle e chi evacuare.</p>
+            <p class="lead">È una mattina di vento. Su una collina dell’isola si alza il fumo, e sotto ci sono cinque borghi. Il fuoco non aspetta nessuno: tocca a te decidere dove mandare i vigili del fuoco e chi mettere in salvo.</p>
             <div class="cta">
               <button id="play" class="play" type="button">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5v17l14-8.5z" fill="currentColor"/></svg>
                 Gioca
               </button>
-              <small>Si gioca nel browser, con mouse o dito. Circa 15 minuti.</small>
             </div>
           </div>
           <div class="shot">
@@ -132,55 +125,35 @@
         </div>
       </section>
 
-      <div class="facts">
-        <div class="wrap">
-          <div><b>2 giorni</b><span>un tutorial guidato e un incendio da gestire</span></div>
-          <div><b>5 borghi</b><span>da proteggere o evacuare in tempo</span></div>
-          <div><b>3 squadre</b><span>autobotti con tre persone ciascuna</span></div>
-          <div><b>×300</b><span>il tempo scorre veloce, tu decidi in pausa</span></div>
-        </div>
-      </div>
-
       <section class="block">
         <div class="wrap">
-          <div class="kicker">Come si gioca</div>
-          <h2>Tre mosse per salvare l’isola</h2>
-          <p class="sub">Il fuoco si propaga come nella realtà, con vento, vegetazione e pendenza. Tu hai il ruolo di chi, in protezione civile, deve scegliere sotto pressione.</p>
           <div class="cards">
             <article class="card">
               <img src="./img/scena-borgo.jpg" alt="Un borgo dell’isola con il fuoco che scende dalla collina" loading="lazy" width="1400" height="875">
-              <div><span class="n">1</span><h3>Impara dal tutorial</h3><p>Il primo giorno una volontaria ti guida: conosci le squadre, leggi la mappa e capisci quanto tempo resta.</p></div>
+              <div><span class="n">1</span><h3>Leggi l’incendio</h3><p>Vento, vegetazione e pendenza decidono dove va il fuoco. Tu devi anticiparlo.</p></div>
             </article>
             <article class="card">
               <img src="./img/tattica-isola.jpg" alt="La mappa tattica con il fronte del fuoco e la previsione tra un’ora e tra tre" loading="lazy" width="1208" height="755">
-              <div><span class="n">2</span><h3>Chiedi la previsione</h3><p>Fermi il tempo e chiedi all’esperto dove arriverà il fuoco: le linee mostrano il fronte tra un’ora e tra tre.</p></div>
+              <div><span class="n">2</span><h3>Scegli dove intervenire</h3><p>Le squadre sono poche e non puoi essere dappertutto. Ogni scelta lascia scoperto qualcosa.</p></div>
             </article>
             <article class="card">
               <img src="./img/tattica-evacua.jpg" alt="La scheda di un borgo con il pulsante Evacua e le strade chiuse dal fuoco" loading="lazy" width="1208" height="755">
-              <div><span class="n">3</span><h3>Dai gli ordini</h3><p>Trascina le squadre dove servono e decidi quale borgo evacuare. Alla fine ricevi le stelle e la classifica.</p></div>
+              <div><span class="n">3</span><h3>Metti in salvo i borghi</h3><p>Evacuare troppo presto o troppo tardi ha un costo. Alla fine scopri quanto hai salvato.</p></div>
             </article>
           </div>
         </div>
       </section>
 
       <section class="block alt">
-        <div class="wrap split">
-          <div>
-            <div class="kicker">Dalla ricerca al gioco</div>
-            <h2>Una simulazione vera, a misura di studente</h2>
-            <p class="sub">Dietro la mappa c’è lo stesso modello di propagazione degli incendi usato nella ricerca. Il gioco lo trasforma in un’esperienza per capire perché le scelte di protezione civile non sono mai semplici.</p>
-            <ul>
-              <li>Nessuna strategia semplice vince sempre: evacuare tutti o correre sull’innesco non basta.</li>
-              <li>Ogni partita è diversa: vento, umidità e punto di innesco cambiano.</li>
-            </ul>
-          </div>
-          <img src="./img/scena-fronte.jpg" alt="Il fronte del fuoco e gli alberi bruciati su un versante dell’isola" loading="lazy" width="1400" height="875">
+        <div class="wrap">
+          <div class="kicker">Dalla ricerca al gioco</div>
+          <p class="sub">Sotto la mappa gira un vero modello di propagazione degli incendi, usato nella ricerca. Qui diventa un gioco per capire una cosa semplice e difficile: in protezione civile bisogna decidere subito, senza sapere tutto.</p>
         </div>
       </section>
 
       <section class="block bottom" style="background-image: linear-gradient(160deg, #06264aee, #0a5aa8bb), url(./img/scena-cicatrice.jpg); background-size: cover; background-position: center;">
         <div class="wrap">
-          <h2>Pronto a metterti alla prova?</h2>
+          <h2>Il fuoco sta arrivando. Cosa fai?</h2>
           <button id="play-bottom" class="play" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5v17l14-8.5z" fill="currentColor"/></svg>
             Gioca
