@@ -50,7 +50,7 @@ jobs:
           out="Isola-di-Roccavento-${{ matrix.name }}"
           mkdir "$out"
           cp "target/release/${{ matrix.exe }}" "$out/"
-          cp -R data assets "$out/"
+          cp -RL data assets "$out/"
           case "${{ matrix.name }}" in
             windows) printf '@echo off\r\ncd /d "%%~dp0"\r\nstart "" game.exe\r\n' > "$out/${{ matrix.launcher }}" ;;
             *) printf '#!/bin/sh\ncd "$(dirname "$0")"\nexec ./game\n' > "$out/${{ matrix.launcher }}"
