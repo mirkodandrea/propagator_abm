@@ -1,15 +1,14 @@
 //! Reading the game's data files: from disk natively, and in the browser from
-//! the copy of `data/` compiled into the binary (`build.rs`), because there is
-//! no filesystem there. Paths are the same in both: `data/...`.
+//! `globalThis.roccaData`, an object that maps `data/...` paths to `Uint8Array`s
+//! which the page downloads (and caches) before the wasm starts. The data is not
+//! compiled into the binary, so a new build does not make anyone download it
+//! again. Paths are the same in both: `data/...`.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
-mod embedded {
-    include!(concat!(env!("OUT_DIR"), "/embedded.rs"));
-}
-
-/// `./data/x/../y` as `data/y`, with forward slashes: the embedded key.
+/// `./data/x/../y` as `data/y`, with forward slashes: the key in `roccaData`.
+#[cfg(any(target_arch = "wasm32", test))]
 fn key(p: &Path) -> String {
     let mut parts: Vec<String> = vec![];
     for c in p.components() {
@@ -24,26 +23,45 @@ fn key(p: &Path) -> String {
     parts.join("/")
 }
 
-fn embedded(p: &Path) -> Option<&'static [u8]> {
-    let k = key(p);
-    embedded::FILES.iter().find(|(f, _)| *f == k).map(|(_, b)| *b)
-}
-
+#[cfg(target_arch = "wasm32")]
 fn not_found(p: &Path) -> io::Error {
     io::Error::new(io::ErrorKind::NotFound, format!("{} not found", p.display()))
 }
 
-/// Whether data files are compiled in (the browser build).
+#[cfg(target_arch = "wasm32")]
+mod store {
+    use js_sys::{Object, Reflect, Uint8Array};
+    use wasm_bindgen::JsCast;
+
+    fn files() -> Option<Object> {
+        Reflect::get(&js_sys::global(), &"roccaData".into()).ok()?.dyn_into().ok()
+    }
+
+    pub fn get(key: &str) -> Option<Vec<u8>> {
+        let value = Reflect::get(&files()?.into(), &key.into()).ok()?;
+        value.dyn_into::<Uint8Array>().ok().map(|a| a.to_vec())
+    }
+
+    pub fn keys() -> Vec<String> {
+        files().map(|f| Object::keys(&f).iter().filter_map(|k| k.as_string()).collect()).unwrap_or_default()
+    }
+}
+
+/// Whether the data comes from the page instead of the disk (the browser build).
 pub fn is_embedded() -> bool {
-    !embedded::FILES.is_empty()
+    cfg!(target_arch = "wasm32")
 }
 
 pub fn read(p: impl AsRef<Path>) -> io::Result<Vec<u8>> {
     let p = p.as_ref();
-    if is_embedded() {
-        return embedded(p).map(|b| b.to_vec()).ok_or_else(|| not_found(p));
+    #[cfg(target_arch = "wasm32")]
+    {
+        store::get(&key(p)).ok_or_else(|| not_found(p))
     }
-    std::fs::read(p)
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::fs::read(p)
+    }
 }
 
 pub fn read_to_string(p: impl AsRef<Path>) -> io::Result<String> {
@@ -52,25 +70,29 @@ pub fn read_to_string(p: impl AsRef<Path>) -> io::Result<String> {
 
 pub fn is_dir(p: impl AsRef<Path>) -> bool {
     let p = p.as_ref();
-    if is_embedded() {
+    #[cfg(target_arch = "wasm32")]
+    {
         let k = key(p) + "/";
-        return embedded::FILES.iter().any(|(f, _)| f.starts_with(&k));
+        store::keys().iter().any(|f| f.starts_with(&k))
     }
+    #[cfg(not(target_arch = "wasm32"))]
     p.is_dir()
 }
 
 /// The files directly inside `dir`, sorted.
 pub fn files_in(dir: impl AsRef<Path>) -> io::Result<Vec<PathBuf>> {
     let dir = dir.as_ref();
-    let mut out: Vec<PathBuf> = if is_embedded() {
+    #[cfg(target_arch = "wasm32")]
+    let mut out: Vec<PathBuf> = {
         let k = key(dir) + "/";
-        embedded::FILES
+        store::keys()
             .iter()
-            .filter_map(|(f, _)| f.strip_prefix(&k).filter(|rest| !rest.contains('/')).map(|rest| dir.join(rest)))
+            .filter_map(|f| f.strip_prefix(&k).filter(|rest| !rest.contains('/')).map(|rest| dir.join(rest)))
             .collect()
-    } else {
-        std::fs::read_dir(dir)?.filter_map(|e| e.ok()).filter(|e| e.path().is_file()).map(|e| e.path()).collect()
     };
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut out: Vec<PathBuf> =
+        std::fs::read_dir(dir)?.filter_map(|e| e.ok()).filter(|e| e.path().is_file()).map(|e| e.path()).collect();
     out.sort();
     Ok(out)
 }

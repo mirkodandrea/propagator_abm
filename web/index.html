@@ -195,46 +195,72 @@
       const fill = document.querySelector('#fill');
       const status = document.querySelector('#status');
 
-      // Download the wasm ourselves to show how much has arrived, then hand
-      // it to init as a streaming Response. The size is not shown: the
-      // Content-Length is the compressed one, the chunks are not.
-      async function download(url) {
-        // The URL carries the build hash (build_web.sh), so a cached copy is
-        // valid for as long as the URL is the same. Phone browsers evict or
+      // Graphics profile: low on phones and tablets (a coarse primary pointer),
+      // medium on a computer. `?q=bassa|media` forces one, for testing. The game
+      // reads it from `window.roccaProfile` when it starts.
+      window.roccaProfile = (() => {
+        const forced = new URLSearchParams(location.search).get('q');
+        if (forced === 'bassa' || forced === 'media') return forced;
+        const phone = navigator.userAgentData?.mobile === true || matchMedia('(pointer: coarse)').matches;
+        return phone ? 'bassa' : 'media';
+      })();
+
+      // Download a file ourselves to show how much has arrived. The size shown
+      // is of what travels (the data is gzipped by build_web.sh; the wasm is
+      // compressed by the server), summed over every download in progress.
+      let loadedBytes = 0;
+      async function download(url, cacheName, prune) {
+        // The URL carries a hash of the content (build_web.sh), so a cached copy
+        // is valid for as long as the URL is the same. Phone browsers evict or
         // revalidate big HTTP-cache entries, hence Cache Storage; any failure
-        // there falls back to the plain download.
+        // there falls back to the plain download. `prune` drops the copies
+        // under other URLs (the previous build).
         const versioned = url.includes('?v=');
         let store = null;
         let response = null;
         if (versioned && window.caches) {
           try {
-            store = await caches.open('rocca-wasm');
+            store = await caches.open(cacheName);
             response = await store.match(url);
-            for (const key of await store.keys()) if (key.url !== new URL(url, location.href).href) await store.delete(key);
+            if (prune) for (const key of await store.keys()) if (key.url !== new URL(url, location.href).href) await store.delete(key);
           } catch (e) { store = null; }
         }
-        if (response) {
-          status.textContent = 'Avvio della simulazione…';
-          return response;
-        }
+        if (response) return response;
         response = await fetch(url);
         if (!response.ok) throw new Error(`${url}: ${response.status}`);
         if (store) store.put(url, response.clone()).catch(() => {});
         if (!response.body) return response;
-        let loaded = 0;
         const counted = response.body.pipeThrough(new TransformStream({
           transform(chunk, controller) {
-            loaded += chunk.length;
-            status.textContent = `Scaricati ${(loaded / 1e6).toFixed(1)} MB`;
+            loadedBytes += chunk.length;
+            status.textContent = `Scaricati ${(loadedBytes / 1e6).toFixed(1)} MB`;
             controller.enqueue(chunk);
-          },
-          flush() {
-            status.textContent = 'Avvio della simulazione…';
           },
         }));
         return new Response(counted, { headers: response.headers });
       }
 
+      // The game's data files (the territory): gzipped, cached one by one under a
+      // hashed URL, handed to the wasm as `window.roccaData` (path -> bytes).
+      async function loadData() {
+        const listed = await fetch('./data/manifest.json', { cache: 'no-cache' });
+        if (!listed.ok) throw new Error(`data/manifest.json: ${listed.status}`);
+        const manifest = await listed.json();
+        if (window.caches) {
+          try {
+            const store = await caches.open('rocca-data');
+            const keep = new Set(manifest.map(f => new URL(f.url, location.href).href));
+            for (const key of await store.keys()) if (!keep.has(key.url)) await store.delete(key);
+          } catch (e) { /* the cache is an optimisation */ }
+        }
+        const files = {};
+        await Promise.all(manifest.map(async file => {
+          const gz = await download(file.url, 'rocca-data', false);
+          const plain = gz.body.pipeThrough(new DecompressionStream('gzip'));
+          files[file.path] = new Uint8Array(await new Response(plain).arrayBuffer());
+        }));
+        window.roccaData = files;
+      }
 
       // Easter egg: the Super Mario 64 ROM is not shipped. The visitor picks
       // or drops their own file once; it is kept in this browser (IndexedDB)
@@ -334,7 +360,12 @@
         intro.classList.add('leaving');
         setTimeout(() => intro.remove(), 400);
         const { default: init } = await import('./game.js');
-        init({ module_or_path: download('./game_bg.wasm') }).then(() => { loading.remove(); focusCanvas(); })
+        // The code and the data download side by side; the wasm starts when both are in.
+        Promise.all([WebAssembly.compileStreaming(download('./game_bg.wasm', 'rocca-wasm', true)), loadData()])
+          .then(([module]) => {
+            status.textContent = 'Avvio della simulazione…';
+            return init({ module_or_path: module });
+          }).then(() => { loading.remove(); focusCanvas(); })
           .catch(error => {
             if (String(error).includes(winitControlFlow)) {
               loading.remove();

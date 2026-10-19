@@ -102,10 +102,21 @@ impl Graphics {
         ..Graphics::BASSA
     };
 
+    /// Browser on a computer: the same as `WEB` plus sun shadows (two cascades)
+    /// and a finer terrain and a few more plants. Still no HDR, DoF, bloom or MSAA.
+    pub const WEB_MEDIA: Graphics = Graphics {
+        shadows: true, shadow_map: 1024, cascades: 2, shadow_distance: 1800.0,
+        vegetation: 0.05, terrain_stride: 2,
+        ..Graphics::WEB
+    };
+
     /// The preset from `KIOSK_QUALITY`, then the `KIOSK_GFX` overrides, then
     /// the old `KIOSK_VEG_DENSITY` (which still wins for the vegetation).
+    /// In the browser the page decides (`window.roccaProfile`, see `web/index.html`).
     pub fn from_env() -> Graphics {
-        if cfg!(target_arch = "wasm32") { return Graphics::WEB; }
+        if cfg!(target_arch = "wasm32") {
+            return if web_profile().as_deref() == Some("media") { Graphics::WEB_MEDIA } else { Graphics::WEB };
+        }
         let name = std::env::var("KIOSK_QUALITY").ok().or_else(saved);
         let mut g = match name.as_deref() {
             Some("bassa" | "low") => Graphics::BASSA,
@@ -179,6 +190,17 @@ fn saved() -> Option<String> {
     std::fs::read_to_string(saved_path()).ok().map(|s| s.trim().to_string())
 }
 
+/// `bassa` or `media`, as the page decided from the device (or from `?q=`).
+#[cfg(target_arch = "wasm32")]
+fn web_profile() -> Option<String> {
+    js_sys::Reflect::get(&js_sys::global(), &"roccaProfile".into()).ok()?.as_string()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn web_profile() -> Option<String> {
+    None
+}
+
 #[cfg(target_arch = "wasm32")]
 fn saved() -> Option<String> {
     web_sys::window()?.local_storage().ok()??.get_item("rocca_ventosa_grafica").ok()?
@@ -211,6 +233,8 @@ mod tests {
             assert_eq!(p.terrain_stride, 1);
         }
         assert_eq!(Graphics::WEB.terrain_stride, 4);
+        assert!(Graphics::WEB_MEDIA.shadows && !Graphics::WEB.shadows);
+        assert!(Graphics::WEB_MEDIA.terrain_stride < Graphics::WEB.terrain_stride);
         let mut g = Graphics::ALTA;
         g.apply("-terrain_shadows,terrain_stride=2");
         assert!(!g.terrain_shadows);

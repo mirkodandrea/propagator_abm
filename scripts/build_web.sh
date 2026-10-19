@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The browser build: a static site in target/web/ with the data compiled into the
-# wasm (crates/datafs). Serve it with any static server, or GitHub Pages.
+# The browser build: a static site in target/web/. The game's data is not in the
+# wasm: it is gzipped next to it (target/web/data/, listed in manifest.json with
+# a content hash in each URL), so a new build of the code does not make anyone
+# download the data again (see crates/datafs and web/index.html).
+# Serve it with any static server, or GitHub Pages.
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
@@ -21,8 +24,33 @@ wasm-bindgen --target web --no-typescript --out-dir target/web --out-name game \
 # A version in the URLs, so a browser that has the previous build cached
 # fetches the new one (python's server and GitHub Pages both let it cache).
 v="$(shasum target/web/game_bg.wasm | cut -c1-12)"
-sed -e "s#'./game.js'#'./game.js?v=$v'#" -e "s#download('./game_bg.wasm')#download('./game_bg.wasm?v=$v')#" web/index.html > target/web/index.html
+sed -e "s#'./game.js'#'./game.js?v=$v'#" -e "s#'./game_bg.wasm'#'./game_bg.wasm?v=$v'#" web/index.html > target/web/index.html
 cp -R web/img target/web/img
+# What the game loads: the one scenario, the behaviours, the fuels.
+python3 -I - "$root" target/web <<'PY'
+import gzip, hashlib, json, os, sys
+
+root, out = sys.argv[1], sys.argv[2]
+files = []
+for sub in ("data/scenarios/rocca_ventosa", "data/behaviours"):
+    for d, _, names in os.walk(os.path.join(root, sub)):
+        for n in names:
+            files.append(os.path.relpath(os.path.join(d, n), root).replace(os.sep, "/"))
+files.append("data/fuels_eu12.json")
+manifest = []
+for path in sorted(f for f in files if not f.endswith("params.json")):
+    raw = open(os.path.join(root, path), "rb").read()
+    gz = gzip.compress(raw, 9, mtime=0)
+    dest = os.path.join(out, path + ".gz")
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    open(dest, "wb").write(gz)
+    h = hashlib.sha256(gz).hexdigest()[:12]
+    manifest.append({"path": path, "url": f"./{path}.gz?v={h}", "bytes": len(gz)})
+json.dump(manifest, open(os.path.join(out, "data", "manifest.json"), "w"), indent=0)
+print("data: %d files, %.1f MB gzipped (of %.1f MB)" % (
+    len(manifest), sum(m["bytes"] for m in manifest) / 1e6,
+    sum(os.path.getsize(os.path.join(root, m["path"])) for m in manifest) / 1e6))
+PY
 if command -v wasm-opt >/dev/null; then
   wasm-opt -Os --strip-debug -o target/web/game.opt.wasm target/web/game_bg.wasm
   mv target/web/game.opt.wasm target/web/game_bg.wasm

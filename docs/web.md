@@ -1,10 +1,16 @@
 # Versione per browser
 
-La stessa partita del kiosk, nel browser, per farla provare a chi non è al chiosco. Stesso motore (`rocca::Game`) e stessi dati, compilati dentro il `.wasm` (`crates/datafs`).
+La stessa partita del kiosk, nel browser, per farla provare a chi non è al chiosco. Stesso motore (`rocca::Game`) e stessi dati, scaricati a parte dal `.wasm` (vedi «Dati separati dal codice»; `crates/datafs`).
 
 ## Pagina introduttiva (2026-10-18)
 
 `web/index.html` mostra prima una pagina HTML+CSS nello stile di cimafoundation.org (hero con una scena di incendio e un riquadro «Dal gioco», tre card, un paragrafo sulla ricerca, chiusura, crediti). Testi brevi e narrativi, senza meccaniche, durata o numeri (2026-10-19, richiesta dell'utente). `game.js` e il `.wasm` si scaricano solo quando si preme «Gioca» (`import()` dinamico in `start()`); con `?playtest=1` si salta l'intro. Dopo «Gioca» compare la schermata del titolo del gioco, con il suo «Gioca» (decisione dell'utente, 2026-10-18: non va saltata). Immagini in `web/img/`, copiate da `build_web.sh`: screenshot veri del chiosco (2026-10-18, `KIOSK_SNAP`, 1600×1000): `tattica-*` con la UI tattica (ritagliati senza banner QR e chat, `t=45/90/120`, seme del menu), `scena-*` (`borgo`, `cicatrice`) e `hero` senza interfaccia (`ui=0,marks=0,iso=0`, `KIOSK_GFX=-dof KIOSK_TACTICAL=0 KIOSK_BOOST=0`, `t=80/140/165/170`). Provata solo come pagina statica (desktop e 390 px), non con la build wasm.
+
+## Dati separati dal codice e profilo grafico (2026-10-19)
+
+**Dati.** I file del territorio (`data/scenarios/rocca_ventosa`, `data/behaviours`, `fuels_eu12.json`) non sono più nel `.wasm`. `build_web.sh` li comprime in gzip in `target/web/data/` e scrive `data/manifest.json` (percorso, URL con hash del contenuto, byte). La pagina scarica in parallelo il `.wasm` (compilato in streaming) e i file, li decomprime con `DecompressionStream`, li mette in `window.roccaData` e solo allora avvia il gioco; `datafs` li legge di lì (`crates/datafs`). Ogni file sta in Cache Storage (`rocca-data`) con l'URL con hash: una nuova build del codice non fa riscaricare i dati, e viceversa. Dati: 27 file, 4,5 MB gzip (15,9 MB grezzi). Serve un browser con `DecompressionStream` (Chrome 80, Safari 16.4, Firefox 113); senza, il gioco non parte. I dati restano in memoria JS dopo l'avvio (circa 16 MB), perché il riavvio li rilegge.
+
+**Profilo.** La pagina sceglie `window.roccaProfile` e `quality::Graphics::from_env` lo legge: **`bassa`** (`Graphics::WEB`, il profilo di sotto) su telefoni e tablet (puntatore primario grossolano, `(pointer: coarse)`, o `userAgentData.mobile`); **`media`** (`Graphics::WEB_MEDIA`) su computer: come `WEB` più ombre del sole (2 cascate, 1024), terreno a passo 2 e vegetazione 0,05. `?q=bassa` o `?q=media` forzano il profilo, per le prove. I tetti del fuoco, il mare e la risoluzione del suolo restano uguali nei due profili. Verificato in Chrome su desktop con entrambi i valori di `?q=` (parte, grafica a vista); **non misurati gli FPS** e non provato su un telefono vero.
 
 ## Telefono e budget grafico (2026-10-15)
 
