@@ -38,8 +38,17 @@ const COVER_MAP: Handle<Image> = Handle::weak_from_u128(0x71D2_0E5C_9B84_4A36_8C
 /// this scale; the cell is smaller than the tuft's spread so tufts overlap.
 const TUFT_CELL_M: f32 = 0.45;
 const BLADES: u32 = 8;
-/// Beyond this height above the ground nothing of the layer can be seen.
-const HIDE_ABOVE_RADII: f32 = 1.6;
+/// The layer is nested lattices by distance from the EYE (not from the point
+/// looked at): ring `k` draws the tufts whose straight-line distance to the
+/// camera lies in `BANDS_M[k-1]..BANDS_M[k]`, with cells as coarse as that
+/// distance allows for the vertex budget. What is nearer the camera is drawn
+/// finer wherever it is on screen; beyond the last band the painted tufts of
+/// the terrain shader are all there is. A ring the camera is too high to reach
+/// is not drawn at all.
+pub const BANDS_M: [f32; RINGS] = [50.0, 140.0, 400.0];
+const RINGS: usize = 3;
+/// Blades never grow taller than this many times their size at scale 1.
+const MAX_HEIGHT_SCALE: f32 = 2.4;
 /// Real seconds between rewrites of the fire channel of the cover map.
 const FIRE_REFRESH_S: f32 = 0.25;
 
@@ -49,7 +58,7 @@ struct Params {
     focus: Vec4,
     /// Grass lattice side in cells, terrain height_m, terrain posting, tactical amount.
     lattice: Vec4,
-    /// Simulated seconds.
+    /// Simulated seconds, layer scale.
     fire: Vec4,
     /// 1 / world width, 1 / world height.
     rect: Vec4,
@@ -107,8 +116,10 @@ impl Plugin for NearCoverPlugin {
 
 #[derive(Resource)]
 pub struct NearCover {
-    material: Handle<NearCoverMaterial>,
-    entity: Entity,
+    /// One per ring, innermost first.
+    materials: Vec<Handle<NearCoverMaterial>>,
+    /// One per ring, like `materials`.
+    rings: Vec<Entity>,
     /// What the fire channel was last written for: simulated seconds and the
     /// sim's generation (a restart changes the generation, not only the time).
     written: Option<(i64, u64)>,
@@ -200,8 +211,10 @@ pub fn spawn(
     });
     images.insert(&COVER_MAP, cover);
 
-    let n_tuft = (2.0 * gfx.cover_m / TUFT_CELL_M).ceil() as usize;
-    let material = materials.add(NearCoverMaterial {
+    // cells per ring side: `cover_m` is the inner ring's radius at scale 1 for a
+    // single lattice; rings are cheaper, so fewer cells each
+    let n_tuft = (1.3 * gfx.cover_m / TUFT_CELL_M).ceil() as usize;
+    let make = || NearCoverMaterial {
         base: StandardMaterial {
             base_color: Color::WHITE,
             perceptual_roughness: 0.95,
@@ -213,24 +226,27 @@ pub fn spawn(
         },
         extension: NearCoverExtension {
             params: Params {
-                focus: Vec4::new(0.0, 0.0, gfx.cover_m, TUFT_CELL_M),
+                focus: Vec4::new(0.0, 0.0, 1.0, TUFT_CELL_M),
                 lattice: Vec4::new(n_tuft as f32, t.height_m, t.posting, 0.0),
-                fire: Vec4::ZERO,
+                fire: Vec4::new(0.0, 1.0, 0.0, 0.0),
                 rect: Vec4::new(1.0 / w.width_m, 1.0 / w.height_m, 0.0, 0.0),
             },
-            height,
+            height: height.clone(),
             cover: COVER_MAP,
             road_mask: crate::ground_mask::ROAD_MASK,
         },
-    });
+    };
+    let ring_materials: Vec<_> = (0..RINGS).map(|_| materials.add(make())).collect();
 
-    let root = commands
+    let mut ring_entities = Vec::new();
+    let _root = commands
         .spawn((SpatialBundle::default(), Name::new("near_cover")))
         .with_children(|p| {
-            for mesh in [tuft_mesh(n_tuft)] {
-                p.spawn((
+            let mesh = meshes.add(tuft_mesh(n_tuft));
+            for material in &ring_materials {
+                let id = p.spawn((
                     MaterialMeshBundle {
-                        mesh: meshes.add(mesh),
+                        mesh: mesh.clone(),
                         material: material.clone(),
                         ..default()
                     },
@@ -239,12 +255,13 @@ pub fn spawn(
                     // camera
                     Aabb::from_min_max(Vec3::splat(-1.0e6), Vec3::splat(1.0e6)),
                     NotShadowCaster,
-                ));
+                )).id();
+                ring_entities.push(id);
             }
         })
         .id();
-    info!("near_cover: spawned, lattice {n_tuft}, radius {} m", gfx.cover_m);
-    commands.insert_resource(NearCover { material, entity: root, written: None, since_write_s: 0.0 });
+    info!("near_cover: spawned, {RINGS} rings of {n_tuft} cells");
+    commands.insert_resource(NearCover { materials: ring_materials, rings: ring_entities, written: None, since_write_s: 0.0 });
 }
 
 /// Every blade of the lattice: `n * n` cells of `per` blades, each `verts` vertices.
@@ -341,25 +358,30 @@ pub fn update(
 
     let Some(cam) = camera.iter().next() else { return };
     let (eye, fwd) = (cam.translation(), cam.forward());
-    let radius = gfx.cover_m;
     let ground = sim.scn.terrain.height_at(scenario::Pos { x: eye.x, y: -eye.z });
-    let visible = gfx.cover_m > 0.0 && eye.y - ground < radius * HIDE_ABOVE_RADII;
-    if let Ok(mut v) = visibility.get_mut(state.entity) {
-        *v = if visible { Visibility::Inherited } else { Visibility::Hidden };
-    }
-    if !visible {
-        return;
-    }
-
-    // Centre the lattice ahead of the eye, so the radius is spent where the
-    // camera looks.
-    let ahead = Vec2::new(fwd.x, -fwd.z).normalize_or_zero() * radius * 0.35;
-    let focus = Vec2::new(eye.x, -eye.z) + ahead;
-    if let Some(m) = materials.get_mut(&state.material) {
-        let p = &mut m.extension.params;
-        p.focus.x = focus.x;
-        p.focus.y = focus.y;
-        p.focus.z = radius;
-        p.fire.x = sim.time_s() as f32;
+    let height = (eye.y - ground).max(0.0);
+    let eye_xz = Vec2::new(eye.x, -eye.z);
+    let ahead = Vec2::new(fwd.x, -fwd.z).normalize_or_zero();
+    let n = ((1.3 * gfx.cover_m / TUFT_CELL_M).ceil()).max(1.0);
+    let mut lo = 0.0;
+    for (k, &hi) in BANDS_M.iter().enumerate() {
+        // a ring nothing of which is within its band's reach is not drawn
+        let reach = gfx.cover_m > 0.0 && height < hi;
+        if let Ok(mut v) = visibility.get_mut(state.rings[k]) {
+            *v = if reach { Visibility::Inherited } else { Visibility::Hidden };
+        }
+        if reach {
+            // the square lattice reaches 1.25 x `hi` around its centre, and the
+            // centre sits a quarter of `hi` ahead of the eye: the disc of radius
+            // `hi` around the eye is inside it, with the room spent in front
+            let cell = 2.5 * hi / n;
+            let centre = eye_xz + ahead * 0.25 * hi;
+            if let Some(m) = materials.get_mut(&state.materials[k]) {
+                let p = &mut m.extension.params;
+                p.focus = Vec4::new(centre.x, centre.y, 0.5 * n * cell, cell);
+                p.fire = Vec4::new(sim.time_s() as f32, cell / TUFT_CELL_M, lo, hi);
+            }
+        }
+        lo = hi;
     }
 }

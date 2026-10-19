@@ -142,9 +142,7 @@ fn terrain_albedo(base: vec4<f32>, p: vec3<f32>, mask_s: vec4<f32>, meadow: f32,
         let cover = smoothstep(0.35, 0.65, meadow + (value_noise(wp * 0.35) - 0.5) * 0.45);
         let clump = smoothstep(0.20, 0.70, value_noise(wp * 0.045 + 7.0) * 0.7 + value_noise(wp * 0.17) * 0.3);
         let fine = 1.0 - smoothstep(1.2, 4.0, metres_per_px);
-        // Within the radius of the real blades (`near_cover.rs`, radius in
-        // mask_rect.w, 0 = none) the painted tufts give way to them.
-        let blades_k = select(1.0, smoothstep(0.5 * mask_rect.w, 0.9 * mask_rect.w, distance(p, view.world_position.xyz)), mask_rect.w > 0.5);
+        let blades_k = 1.0;
         var big = vec4<f32>(0.0, 0.5, 0.0, 0.0);
         var small = vec4<f32>(0.0, 0.5, 0.0, 0.0);
         if fine > 0.02 {
@@ -165,6 +163,24 @@ fn terrain_albedo(base: vec4<f32>, p: vec3<f32>, mask_s: vec4<f32>, meadow: f32,
         }
         let far = rgb * (1.0 - 0.14 * cover * (0.5 + 0.5 * clump));
         rgb = mix(rgb, mix(far, near, fine), cover);
+
+        // Where the real blades (`near_cover.rs`) are not drawn, beyond the
+        // distance from the eye in mask_rect.w (0 = no blades anywhere, grain
+        // everywhere), the meadow keeps some contrast: a light and dark grain
+        // with a wavelength of a few pixels, so it holds still as the camera
+        // moves, in two octaves, tinted dry and green. It fades in over the
+        // stretch where the blades fade out and away again on the overview,
+        // where it would only be noise.
+        let d_eye = distance(p, view.world_position.xyz);
+        let past_blades = select(1.0, smoothstep(0.6 * mask_rect.w, mask_rect.w, d_eye), mask_rect.w > 0.5);
+        let grain_k = cover * past_blades * (1.0 - smoothstep(20.0, 60.0, metres_per_px));
+        if grain_k > 0.01 {
+            let wl = max(3.0 * metres_per_px, 1.0);
+            let g = (value_noise(wp / wl) - 0.5) * 0.8 + (value_noise(wp / (wl * 3.1) + 9.0) - 0.5) * 1.0;
+            let dry = smoothstep(-0.15, 0.25, g);
+            let tint = mix(vec3<f32>(0.84, 0.97, 0.80), vec3<f32>(1.08, 1.02, 0.84), dry);
+            rgb = rgb * mix(vec3<f32>(1.0), tint * (1.0 + 0.30 * g), grain_k);
+        }
     }
 
     // Waterline: signed distance, positive in the sea. The seabed under

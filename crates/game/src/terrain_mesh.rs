@@ -421,8 +421,9 @@ pub fn build(
     let stride = gfx.terrain_stride.max(1);
     let t = &scn.terrain;
     let mut mask = crate::ground_mask::build(scn);
-    // the radius within which the near ground cover replaces the painted tufts
-    mask.rect.w = gfx.cover_m;
+    // beyond this distance from the eye there are no real blades: the terrain
+    // shader adds a grain there so the meadow keeps its contrast (0 = no blades)
+    mask.rect.w = if gfx.cover_m > 0.0 { crate::near_cover::BANDS_M[crate::near_cover::BANDS_M.len() - 1] } else { 0.0 };
     images.insert(&crate::ground_mask::GRASS_MAP, crate::ground_mask::grass_map(scn));
     let material = materials.add(retro::terrain_material(StandardMaterial {
         base_color: Color::WHITE,

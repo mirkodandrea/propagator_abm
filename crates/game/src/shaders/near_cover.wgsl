@@ -28,7 +28,7 @@ struct Params {
     focus: vec4<f32>,
     // lattice side in cells, world height of the terrain texture, terrain posting, tactical amount
     lattice: vec4<f32>,
-    // x = simulated seconds
+    // x = simulated seconds, y = scale of this ring, z, w = this ring's band of distance from the eye (z = 0: nothing nearer)
     fire: vec4<f32>,
     // 1 / world width, 1 / world height, spare, spare (road mask coordinates)
     rect: vec4<f32>,
@@ -96,9 +96,7 @@ fn vertex(v: Vertex) -> VertexOutput {
     let rb = rnd3(wc, 11u + k * 7u);
 
     let tuft = (vec2<f32>(wc) + r.xy) * cell;
-    let cam = vec2<f32>(view.world_position.x, -view.world_position.z);
-    let d_cam = distance(tuft, cam);
-    let radius = params.focus.z;
+    let scale = params.fire.y;
 
     // Cover under this tuft: R tuft density, B palette, A fire.
     // the 20 m cover cells are sampled at a noise-warped point, so the edge of
@@ -114,13 +112,24 @@ fn vertex(v: Vertex) -> VertexOutput {
 
     // Density as a share of cells that grow anything, thinned with distance
     // (blades also widen with distance, so the cover keeps its mass).
+    let h0 = ground_h(tuft.x, -tuft.y);
+    let d_eye = distance(vec3<f32>(tuft.x, h0, -tuft.y), view.world_position.xyz);
     let patch_n = value_noise(tuft * 0.09 + 3.0);
     let fine_n = value_noise(tuft * 0.6);
     var dens = cv.r;
     dens = dens * (0.8 + 0.5 * patch_n) * (0.85 + 0.3 * fine_n);
     let keep = f32(r.z < dens) * sea_ok * road_ok;
-    let far = 1.0 - smoothstep(0.72, 1.0, d_cam / radius);
-    let thin = f32(rb.z < far);
+    // This ring's band of distance from the eye. Each ring fades out over the
+    // last stretch below its upper edge as the next fades in, by dithering, so
+    // the density stays even.
+    let lo = params.fire.z;
+    let hi = params.fire.w;
+    let fade_out = 1.0 - smoothstep(0.6 * hi, hi, d_eye);
+    let fade_in = select(smoothstep(0.6 * lo, lo, d_eye), 1.0, lo <= 0.0);
+    // not a coin toss per blade: a blade shrinks to nothing as its ring gives
+    // way, each at its own moment (`rb.z`), so nothing pops as the camera moves
+    let grow = clamp((fade_out * fade_in - 0.4 * rb.z) / 0.6, 0.0, 1.0);
+    let thin = f32(grow > 0.01);
 
     // Fire: 0 untouched, ~0.5 burning, 1 burnt, 0.78 cleared to bare ground.
     let burnt = smoothstep(0.9, 1.0, cv.a);
@@ -129,7 +138,6 @@ fn vertex(v: Vertex) -> VertexOutput {
     let alive = keep * thin * (1.0 - cleared);
 
     // Ground and slope.
-    let h0 = ground_h(tuft.x, -tuft.y);
     let hx = ground_h(tuft.x + 5.0, -tuft.y) - h0;
     let hz = ground_h(tuft.x, -tuft.y - 5.0) - h0;
     let slope = length(vec2<f32>(hx, hz)) * 0.2;
@@ -147,18 +155,21 @@ fn vertex(v: Vertex) -> VertexOutput {
         // A tuft is a handful of blades fanning out from one point.
         let ang = rb.x * 6.2831 + f32(k) * 1.2566;
         let lean = 0.25 + 0.55 * rb.y;
-        let h_tuft = mix(0.40, 0.95, patch_n) * (0.6 + 0.8 * r.z);
+        let h_tuft = mix(0.40, 0.95, patch_n) * (0.6 + 0.8 * r.z) * 1.3 * min(pow(scale, 0.6), 2.4);
         var h = h_tuft * (0.55 + 0.6 * rb.z);
         // blades of burnt ground are a few centimetres of stubble
-        h = mix(h, 0.05, burnt) * mix(1.0, 0.7, scorch);
+        h = mix(h, 0.05, burnt) * mix(1.0, 0.7, scorch) * grow;
         // wide enough to be a pixel from where the camera is
-        let w = 0.05 * (1.0 + d_cam * 0.03) * (1.0 - 0.8 * t);
+        // a width that depends on the ring only: one that followed the distance to
+        // the eye would swell and shrink as the camera moves
+        let w = 0.06 * scale * (1.0 - 0.7 * t) * grow;
         let dir = vec2<f32>(cos(ang), sin(ang));
         let tang = vec2<f32>(-dir.y, dir.x);
-        let root = tuft + dir * (0.04 + 0.32 * rb.y);
+        // the blades fan out over the cell, which grows with the ring
+        let root = tuft + dir * (0.04 + 0.32 * rb.y) * scale;
         // bend: the tip leans out and sways in the gust
         let bend = t * t * lean * h;
-        let wind = vec2<f32>(0.7, 0.4) * sin(globals.time * 1.7 + sway_ph + t * 1.3) * (0.05 + 0.12 * gust) * t * t * h * 3.0;
+        let wind = vec2<f32>(0.7, 0.4) * sin(globals.time * 1.7 + sway_ph + t * 1.3) * (0.05 + 0.12 * gust) * t * t * h * 3.0 / sqrt(scale);
         let xz = root + dir * bend + tang * side * w + wind;
         let y = ground_h(xz.x, -xz.y) + t * h * (1.0 - 0.18 * t * lean) - 0.03;
         wpos = vec3<f32>(xz.x, y, -xz.y);
@@ -188,7 +199,7 @@ fn vertex(v: Vertex) -> VertexOutput {
     // 2/3 macchia, 1 pine), tuned in `near_cover.rs`; dry/green by patch.
     let pal = cv.b;
     var green = vec3<f32>(0.26, 0.31, 0.10);
-    var dry = vec3<f32>(0.50, 0.40, 0.17);
+    var dry = vec3<f32>(0.44, 0.35, 0.15);
     if pal > 0.17 && pal < 0.5 {
         green = vec3<f32>(0.10, 0.28, 0.05);
         dry = vec3<f32>(0.30, 0.33, 0.09);
@@ -197,7 +208,7 @@ fn vertex(v: Vertex) -> VertexOutput {
         dry = vec3<f32>(0.28, 0.30, 0.09);
     } else if pal >= 0.83 {
         green = vec3<f32>(0.07, 0.17, 0.09);
-        dry = vec3<f32>(0.30, 0.20, 0.09);
+        dry = vec3<f32>(0.24, 0.17, 0.08);
     }
     var col = mix(green, dry, clamp(0.35 + 0.75 * patch_n - 0.35 * tone + 0.2 * (fine_n - 0.5), 0.0, 1.0));
     col = col * shade;
