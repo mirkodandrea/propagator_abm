@@ -37,7 +37,7 @@ const COVER_MAP: Handle<Image> = Handle::weak_from_u128(0x71D2_0E5C_9B84_4A36_8C
 /// blades fanning out of one point, which is the unit a meadow is made of at
 /// this scale; the cell is smaller than the tuft's spread so tufts overlap.
 const TUFT_CELL_M: f32 = 0.45;
-const BLADES: u32 = 8;
+const BLADES: u32 = 12;
 /// The layer is nested lattices by distance from the EYE (not from the point
 /// looked at): ring `k` draws the tufts whose straight-line distance to the
 /// camera lies in `BANDS_M[k-1]..BANDS_M[k]`, with cells as coarse as that
