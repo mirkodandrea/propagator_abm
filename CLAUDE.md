@@ -14,7 +14,7 @@ I documenti dicono **cosa** costruire; il codice mostra **come**. Se non coincid
 
 ## Il gioco in breve
 
-Nuovo progetto dal 2026-10-14. È uno strategico in tempo reale per un chiosco presidiato alla *Settimana della Protezione Civile*, per studenti delle superiori: italiano, mouse o trackpad, nessun audio necessario. Un incendio simulato minaccia i borghi di un'isola.
+Nuovo progetto dal 2026-10-14. È uno strategico in tempo reale per chiunque apra la pagina web o scarichi la versione desktop (dal 2026-10-19 non è più un chiosco presidiato): italiano, mouse, trackpad o touch, nessun audio necessario. Un incendio simulato minaccia i borghi di un'isola.
 
 - **Tutorial** scriptato e guidato, poi la **partita**: un incendio da affrontare.
 - Il tempo scorre a ×300. La **pausa** (il mondo si ferma, senza limite di tempo né attesa per la successiva) è la richiesta della previsione all'esperto, ed è l'unico momento per dare ordini: trascinare le icone (badge) delle squadre (autobotte con 3 persone) sugli esagoni di 500 m ed evacuare un borgo alla volta. La partita parte in pausa.
@@ -24,7 +24,7 @@ Dettagli in `docs/01-GIOCO.md`.
 
 ## Architettura
 
-**Una sola autorità di simulazione e gameplay: `rocca::Game`**, condivisa da runner headless, test e chiosco. Nella grafica non vanno fisica, punteggio o logica.
+**Una sola autorità di simulazione e gameplay: `rocca::Game`**, condivisa da runner headless, test e gioco. Nella grafica non vanno fisica, punteggio o logica.
 
 | Crate | Contenuto |
 |---|---|
@@ -34,7 +34,7 @@ Dettagli in `docs/01-GIOCO.md`.
 | `abm` | Rete stradale (`network`), guida (`drive`), squadre e spegnimento (`suppression`), aree sicure (`refuge`). Il modello IBM delle persone (`Abm`) è ancora qui, ma il gioco non lo usa più: da togliere. |
 | `behavior` | Grafi di comportamento delle squadre (`data/behaviours`). |
 | `rocca` | Il gioco: `game` (pausa, ordini, passo), `hex`, `evac`, `tutorial`, `forecast`, `score`, `district`, `case`. CLI `rocca`, esempio `tutorial_cerca`, test. |
-| `game` | Il chiosco Bevy: `sim.rs` (orologio attorno a `Game`), `kiosk/` (flusso, `ui`, `marks` sulla mappa, camera e clic in `view`, `snap`), rendering del diorama, `forecast_view`. Gamepad come mouse virtuale (`pad.rs`, spento mentre Mario è attivo). Mario (`mario.rs`, Ctrl+Maiusc+M a mondo fermo). |
+| `game` | Il gioco Bevy (la cartella e le variabili si chiamano ancora `kiosk`/`KIOSK_*`): `sim.rs` (orologio attorno a `Game`), `kiosk/` (flusso, `ui`, `marks` sulla mappa, camera e clic in `view`, `snap`), rendering del diorama, `forecast_view`. Gamepad come mouse virtuale (`pad.rs`, spento mentre Mario è attivo). Mario (`mario.rs`, Ctrl+Maiusc+M a mondo fermo). |
 | `datafs`, `libsm64-native` | Accesso ai dati (anche dal web); Mario. |
 
 Dati: `data/scenarios/rocca_ventosa/`, con territorio e `game.json`: stazioni, squadre, regole dell'evacuazione, tutorial, incendi (`tutorial` e la partita `medium`). Python per il territorio: script autonomi in `tools/factory/`.
@@ -42,7 +42,7 @@ Dati: `data/scenarios/rocca_ventosa/`, con territorio e `game.json`: stazioni, s
 ## Come si lavora
 
 - **Fasi, una alla volta** (`docs/03-VERIFICHE.md`). Ogni fase si chiude con un checkpoint umano: la fase successiva non parte senza conferma. Le richieste puntuali dell'utente si fanno subito, ma non fanno avanzare la fase da sole.
-- Prima di cambiare **regole, bilanciamento o territorio**: prova headless e tabella, poi decide l'utente. Una meccanica nuova va accesa nel chiosco solo dopo la sua conferma, e va detto esplicitamente quando resta spenta.
+- Prima di cambiare **regole, bilanciamento o territorio**: prova headless e tabella, poi decide l'utente. Una meccanica nuova va accesa nel gioco solo dopo la sua conferma, e va detto esplicitamente quando resta spenta.
 - Il bilanciamento si giudica con un criterio: **nessuna strategia semplice deve dominare** («tutte le squadre sull'innesco subito», «evacua tutto»). Le prove usano gli stessi semi (1–3).
 - **Resoconti all'utente in italiano**, al massimo una pagina: realizzato, evidenza (comando e tabella o immagine), non risolto, una proposta.
 - **`docs/TODO.md`** va aggiornata nello **stesso commit** del lavoro: fase corrente e prossimo checkpoint in cima, aperti, decisioni con data. Le voci chiuse si cancellano: la storia è in git.
@@ -64,11 +64,11 @@ cargo build --release -p rocca --examples          # prove headless (docs/03-VER
 cargo test --release -p rocca
 TRACCIA=1 target/release/rocca tutorial
 target/release/rocca medium --squadra "20:0=5590;4400" --evacua "20:Le Terrazze"
-cargo run -p game --release                        # il chiosco
+cargo run -p game --release                        # il gioco (desktop)
 scripts/build_web.sh                               # versione browser (docs/web.md)
 ```
 
-Variabili utili del chiosco:
+Variabili utili del gioco (prefisso storico `KIOSK_`):
 
 - `KIOSK_WINDOWED=1 KIOSK_SIZE=1600x1000 KIOSK_SCALE=1`: finestra e dimensioni.
 - `KIOSK_QUALITY=alta|media|bassa`, `KIOSK_GFX`: livello grafico.
@@ -98,8 +98,7 @@ MPLCONFIGDIR=/tmp/rocca-mpl .venv/bin/python tools/factory/scenario_images.py
 Output: `results/scenario-impacts/focused/images/01_valico.png`,
 `02_rotazione_est.png` e `03_quattro_borghi.png`. Per ricreare gli input della
 ricerca, vedere [`tools/factory/SCENARI.md`](tools/factory/SCENARI.md).
-**Durante l’evento non rubare mai il focus alla demo:** per queste immagini usare
-solo la procedura headless qui sopra, senza avviare o riavviare il chiosco.
+**Non rubare il focus all'utente:** per queste immagini usare solo la procedura headless qui sopra. La finestra del gioco (`KIOSK_SNAP`, `cargo run -p game`) si avvia solo se l'utente chiede screenshot in quel messaggio.
 
 ### Screenshot di stati arbitrari (`KIOSK_SNAP`)
 

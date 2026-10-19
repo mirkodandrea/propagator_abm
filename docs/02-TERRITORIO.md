@@ -22,7 +22,7 @@ Un solo territorio sintetico e plausibile, riusato con diversi inneschi e venti:
 
 - La **rocca** è in cima, con un anello non combustibile di 130 m.
 - Le **aree sicure** dell'evacuazione si ricavano dai dati (`abm::refuge`: nodi stradali con poco combustibile intorno, raggiungibili in auto). Per ogni borgo si sceglie la più vicina su strada, a più di 400 m dalle sue case.
-- **Valico** (2026-10-13): una fascia di macchia alta (classe 9, con faville), circa 117 ha, lungo la Strada del Passo. Va da Le Terrazze, passa la sella e arriva alla macchia sopra Pian dei Grilli. Serve perché il fuoco possa arrivare anche ai borghi a ovest: prima nessun incendio colpiva case sia a est sia a ovest. Il fuoco passa a ovest quando il vento gira da nord-est dentro il passo. Larghezza variabile (in media 320 m), bordo frastagliato di macchia media (classe 8) e qualche isola del bosco vecchio, perché nel chiosco non sembri una striscia dipinta; il nucleo lungo la strada è sempre continuo.
+- **Valico** (2026-10-13): una fascia di macchia alta (classe 9, con faville), circa 117 ha, lungo la Strada del Passo. Va da Le Terrazze, passa la sella e arriva alla macchia sopra Pian dei Grilli. Serve perché il fuoco possa arrivare anche ai borghi a ovest: prima nessun incendio colpiva case sia a est sia a ovest. Il fuoco passa a ovest quando il vento gira da nord-est dentro il passo. Larghezza variabile (in media 320 m), bordo frastagliato di macchia media (classe 8) e qualche isola del bosco vecchio, perché nel gioco non sembri una striscia dipinta; il nucleo lungo la strada è sempre continuo.
 - **Costa est** (2026-10-13): a nord del porto una baia sabbiosa, un piccolo promontorio e l'angolo nord-est in diagonale, al posto della costa dritta a 300 m dal bordo della finestra; anche il breve tratto dritto a sud del porto è rifatto. Solo terra diventata mare: porto, strade, case e inneschi non cambiano.
 - **Strade secondarie** (2026-10-15, richiesta dell'utente: vie alternative che facilitino gli interventi; `tools/factory/strade.py`, scrive in `osm.json` le vie con id ≥ 200): sulla piana est, dove sono gli incendi, la *Variante Nord di Castelvento* (2,0 km, alternativa alla SP 12), la *Strada del Piano* (1,8 km, da Le Terrazze a San Rocco a sud dell'innesco), la *Strada dei Campi* (0,6 km, Fornaci–Le Terrazze) e la *Strada di San Rocco al Mare* (2,2 km, fino alla Costiera). **Incroci** (2026-10-15): dove una via nuova attraversa una strada carrabile lo script mette un vertice comune (`abm::network` unisce le vie solo lì; prima 9 incroci erano «ponti» senza svolta), e una via finisce dove incontra per la prima volta la strada di arrivo (la San Rocco al Mare correva 1,5 km accanto alla Costiera). **Promontorio** (2026-10-15, richiesta dell'utente: il fronte più veloce va attaccabile entro la prima ora): la *Strada della Sella* (2,2 km, 13 %, Costiera–San Rocco sulla sella a 246 m), la *Strada dei Tornanti* (1,5 km, 16 %, dalla Sella alla piana a sud dell'innesco del `medium`) e la *Strada di Mezzacosta* (1,8 km, 13 %, dalla Strada del Piano ai tornanti alti della Strada del Passo, sulla linea della testa del `medium` a 30–90 min). Instradate con tornanti (16 direzioni di passo, solo queste tre). A ovest di x 5800 la cresta non si passa sotto il 20 % e i 5 km (versante sud al 40–50 %). **Non sono tagliafuoco:** `fuel.i32` non è toccato, il fuoco le attraversa; il pericolo sulle strade viene da `fire::threat`. Collegamenti attraverso il massiccio (Le Ghiande, Pian dei Grilli) non esistono con pendenze da camion (provato fino al 20 %). Con la SP 12 aperta i tempi di arrivo delle squadre e di evacuazione non cambiano (Castelvento 37 min, San Rocco 23, Fornaci 22, Le Terrazze 12); da provare con la SP 12 chiusa dal fuoco.
 - **Umidità del combustibile:** 5 % in tutti gli incendi (`moisture_pct` del caso, sovrascrivibile; il 7 % di gioco è stato ripristinato a 5 % dall'utente, 2026-10-15). Uniforme. La leva vera è il vento.
@@ -37,7 +37,7 @@ Il vento è indicato con la direzione **da cui** soffia. Gli inneschi sono in me
 |---|---|---|---|---|---|
 | Tutorial | `tutorial` | (3792, 3295), sotto Le Ghiande | da 135°, 20 km/h | 150 min | Seme 1. Senza ordini: 90 ha, 17 case colpite, 45 persone colte. Con il copione: 6 ha, nessuna persona colta. Trovato con `examples/tutorial_cerca.rs`. |
 | Partita | `medium` | (5590, 4370) | da 119°, 36 km/h, umidità 5 %; gira a 50° (36 km/h) al minuto 45 | 300 min, segnalato al minuto 30 (`start_min`) | Seme 1. Senza ordini (ha, case, persone): seme 1 512, 28, 172; seme 2 361, 38, 185; seme 3 506, 35, 190 (35 km/h: 467, 28, 137 / 384, 33, 195 / 386, 33, 257). |
-| (riserva) | `easy`, `expert` | come prima | | 180 min | Non usati dal chiosco. |
+| (riserva) | `easy`, `expert` | come prima | | 180 min | Non usati dal gioco. |
 
 ## Ricerca di nuovi scenari (2026-10-16)
 
@@ -45,7 +45,7 @@ Priorità dell'utente: **varietà degli impatti**, oltre a una sfida giocabile.
 Cambiare vento e innesco senza cambiare i borghi colpiti non basta. La suite
 `tools/factory/scenarios.py` misura per borgo persone, case e tempi del primo impatto
 senza ordini; confronta quattro politiche sui semi 1–3, conferma sui semi 4–5 e
-prova primi ordini ritardati di 10 min. Il chiosco continua a girare: solo prove
+prova primi ordini ritardati di 10 min. Il gioco continua a girare: solo prove
 headless, nessuna finestra o intervento sul focus.
 
 65 combinazioni esplorative, poi 9 prove mirate sui nuclei sparsi, per 557 run
@@ -84,8 +84,8 @@ sola giocabilità restano separate in `results/scenario-playable/`.
 
 - La vecchia pipeline di generazione è stata **cancellata** (2026-10-13, resta nella storia git): il territorio non si rigenera da zero.
 - Si modificano **direttamente i file pubblicati** (`fuel.i32`, `game.json`, `population.json`, `osm.json`), con uno script ripetibile quando serve. Per esempio `tools/factory/valico.py` ridisegna il valico in `fuel.i32` partendo dal combustibile precedente (dalla storia git) e dà sempre lo stesso file; `tools/factory/costa_est.py` ha tagliato la costa est (`render_terrain.f32`, `dem.f64`, `fuel.i32`, `cover.u8`) e, rieseguito, non trova più nulla da tagliare. Entrambi sono autonomi (numpy, scipy).
-- **Per provare una variante:** creare `data/scenarios/<id>/` con link simbolici a `rocca_ventosa` più i soli file cambiati, poi selezionarla con `ROCCA_SCENARIO=<id>` (`scenario::id()`). Vale per la CLI, i test e il chiosco. Niente copie dei dati (richiesta dell'utente). Esempio: `rocca_banco`, il banco di prova dello spegnimento.
-- La vegetazione disegnata nel chiosco si legge da `fuel.i32` (`vegetation.rs`), non da `cover.u8`.
+- **Per provare una variante:** creare `data/scenarios/<id>/` con link simbolici a `rocca_ventosa` più i soli file cambiati, poi selezionarla con `ROCCA_SCENARIO=<id>` (`scenario::id()`). Vale per la CLI, i test e il gioco. Niente copie dei dati (richiesta dell'utente). Esempio: `rocca_banco`, il banco di prova dello spegnimento.
+- La vegetazione disegnata nel gioco si legge da `fuel.i32` (`vegetation.rs`), non da `cover.u8`.
 - Dopo ogni modifica del territorio si **rifanno le prove** di `03-VERIFICHE.md`.
 
 ## Cosa rende buono il territorio

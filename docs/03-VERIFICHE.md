@@ -6,11 +6,11 @@ Le fasi vanno fatte **una alla volta**: ognuna finisce con un **checkpoint umano
 
 | Fase | Cosa | Si chiude con | Checkpoint |
 |---|---|---|---|
-| **1. Prima passata** | Motore nuovo (`rocca`: pausa, esagoni, squadre, evacuazione semplificata, tutorial, stelle), chiosco adattato, documenti riscritti. | Prove headless del tutorial e della partita, screenshot degli stati principali. | L'utente rivede e dice le modifiche. |
+| **1. Prima passata** | Motore nuovo (`rocca`: pausa, esagoni, squadre, evacuazione semplificata, tutorial, stelle), gioco adattato, documenti riscritti. | Prove headless del tutorial e della partita, screenshot degli stati principali. | L'utente rivede e dice le modifiche. |
 | **2. Bilanciamento** | Apertura della partita (oggi le squadre all'innesco al minuto 0 la risolvono), limite dell'evacuazione, raggio di protezione, soglie delle stelle. | Tabella: strategie semplici × semi 1–3 (vedi sotto). | L'utente sceglie i valori. |
 | **3. UX e grafica** | Leggibilità di esagoni, percorsi e strade chiuse; icone delle squadre; trascinare la squadra sull'esagono; famiglie in strada visibili; Mario. | Screenshot `KIOSK_SNAP` di tutti gli stati, playtest con `scripts/playtest.py`. | L'utente decide le correzioni. |
 | **4. Comunicazione** | Testi, personaggi, debriefing: da riscrivere a posteriori (richiesta dell'utente). | Proposta di testi. | L'utente approva. |
-| **5. Pronto per il chiosco** | Macchina reale: FPS, stabilità (molte partite di fila), offline, web o nativo. | Lista di controllo firmata. | Ultimo checkpoint. |
+| **5. Pronto per la pubblicazione** | Macchina reale: FPS, stabilità (molte partite di fila), offline, web o nativo. | Lista di controllo firmata. | Ultimo checkpoint. |
 
 **Consegna di ogni fase:** al massimo una pagina in italiano, in quattro sezioni:
 

@@ -1,11 +1,11 @@
 # Isola di Roccavento
 
-Gioco strategico in tempo reale sugli incendi boschivi, per il chiosco della *Settimana della Protezione Civile*: studenti delle superiori, italiano, mouse o trackpad, offline.
+Gioco strategico in tempo reale sugli incendi boschivi, per chiunque apra la pagina web o scarichi la versione desktop: italiano, mouse, trackpad o touch.
 
 Un incendio simulato con PROPAGATOR minaccia i borghi di un'isola immaginaria. Dopo una prova guidata, il giocatore affronta un nuovo incendio. Il tempo scorre veloce. Con la **pausa** chiede la previsione all'esperto, sposta le squadre sugli esagoni ed evacua i borghi, uno alla volta. Alla fine riceve le stelle (persone, case, ettari) contro lo stesso incendio senza ordini, e c'è la classifica del giorno.
 
 ```
-cargo run -p game --release                       # il chiosco
+cargo run -p game --release                       # il gioco (desktop)
 bash scripts/run_game.sh                         # finestra: F5 ricompila e riavvia
 cargo test --release -p rocca                     # test del motore
 TRACCIA=1 cargo run --release -p rocca -- tutorial  # il tutorial, headless
@@ -23,7 +23,7 @@ Le **immagini comparative degli scenari** si generano con
 con terreno, strade, innesco, vento, arrivi del fuoco e impatti sui borghi, alla
 stessa scala e con seme 2. I dati vengono dalla simulazione senza ordini,
 esportata da `crates/rocca/examples/scenario_maps.rs`. Tutto avviene senza aprire
-finestre, riavviare il chiosco o sottrargli il focus. Comandi, dati necessari e
+finestre, riavviare il gioco o sottrarre il focus all'utente. Comandi, dati necessari e
 cartella di uscita nella [guida della suite](tools/factory/SCENARI.md#immagini-comparative-senza-aprire-il-kiosk).
 
 - Regole: [`docs/01-GIOCO.md`](docs/01-GIOCO.md).

@@ -4,7 +4,7 @@ Regole **in vigore** dal 2026-10-14 (nuovo progetto). Prevalgono sul codice: se 
 
 ## In una frase
 
-Uno strategico in tempo reale, sul modello di StarCraft, per il chiosco della *Settimana della Protezione Civile* (studenti delle superiori). Un incendio simulato minaccia i borghi di un'isola. Il giocatore **mette in pausa** per chiedere la previsione all'esperto, poi **sposta le squadre** su una griglia esagonale e **evacua i borghi**, uno alla volta. La simulazione decide gli esiti. Poche parole: la comunicazione (personaggi, messaggi, debriefing) si riscrive in un secondo momento.
+Uno strategico in tempo reale, sul modello di StarCraft, per chiunque apra la pagina web o scarichi la versione desktop (dal 2026-10-19 non è più un chiosco presidiato). Un incendio simulato minaccia i borghi di un'isola. Il giocatore **mette in pausa** per chiedere la previsione all'esperto, poi **sposta le squadre** su una griglia esagonale e **evacua i borghi**, uno alla volta. La simulazione decide gli esiti. Poche parole: la comunicazione (personaggi, messaggi, debriefing) si riscrive in un secondo momento.
 
 **Obiettivo educativo:** incertezza, tempi, risorse limitate, adattarsi. Non è un addestramento e non insegna procedure operative.
 
@@ -40,7 +40,7 @@ Uno strategico in tempo reale, sul modello di StarCraft, per il chiosco della *S
 - **Fuori dalla vista:** un borgo che perde case, o una squadra in pericolo, compaiono come **freccia sul bordo** dello schermo (icona, nome, colore giallo/rosso); un clic porta la camera lì (`ui::offscreen_alerts`).
 - **Borghi:** da lontano i borghi tranquilli sono solo un anello con una casa (il nome al passaggio del mouse); il cartellino è blu se intatto, giallo o rosso se colpito, **verde con «evacuato»** a evacuazione finita.
 - **Chat:** solo ciò che serve a decidere: squadra che si ritira o è persa, prime case e una casa su tre colpite in un borgo, evacuazione interrotta o completata, vento che gira; 4 righe (`chat::Kind`).
-- **Aree e posti (2026-10-17):** la griglia degli ordini è fitta (esagoni di 75 m, `HEX_M`) e l'area d'intervento di una squadra è un **cerchio di 300 m** (`TEAM_AREA_M`) attorno al suo punto, non un insieme di esagoni. Il chiosco disegna il cerchio nel colore della squadra, un cerchietto dove andrà (rosso se rifiutato) e, molto tenue, una fascia lungo le strade raggiungibili (gli esagoni restano solo la regola interna). Sul **touch** (niente passaggio del mouse) il primo tocco mostra l'anteprima, il secondo sullo stesso punto dà l'ordine.
+- **Aree e posti (2026-10-17):** la griglia degli ordini è fitta (esagoni di 75 m, `HEX_M`) e l'area d'intervento di una squadra è un **cerchio di 300 m** (`TEAM_AREA_M`) attorno al suo punto, non un insieme di esagoni. Il gioco disegna il cerchio nel colore della squadra, un cerchietto dove andrà (rosso se rifiutato) e, molto tenue, una fascia lungo le strade raggiungibili (gli esagoni restano solo la regola interna). Sul **touch** (niente passaggio del mouse) il primo tocco mostra l'anteprima, il secondo sullo stesso punto dà l'ordine.
 - Arrivata, la squadra **attacca il fuoco come può** (2026-10-14), con il modello di spegnimento conservato (`abm::suppression`):
   - l'**autobotte** aumenta l'umidità del combustibile entro **100 m** da dove sta (acqua, manichetta). Durante l'intervento si sposta **sulle strade degli esagoni di competenza** (il suo e quelli intorno) verso il combustibile minacciato, senza avvicinarsi a meno di 80 m dalle fiamme (2026-10-15, richiesta dell'utente);
   - l'**autobotte va solo su strade carrabili**; le persone viaggiano a bordo, scendono dove si ferma e vanno **a piedi in linea retta** (1,1 m/s, rallentate dalla pendenza) al lavoro. Sono unità **separate**: si dispongono a ventaglio di 60 m (`CREW_SPREAD_M`) intorno al punto stradale e ognuna taglia la propria linea. A un nuovo ordine chi è a piedi torna all'autobotte, che parte quando sono tutti a bordo (2026-10-15, richiesta dell'utente);
@@ -112,7 +112,7 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
   Funziona offline e senza audio, in italiano.
 - **Operatore** (F2 o «Menu»): selettore scenario (Attuale, Attraversamento del valico, Pressione su quattro borghi, Rotazione da est), nuova visita, vai alla partita, seme 1–3 (predefinito 2, utente 2026-10-15), «Ferma il mondo», vista iniziale, livello grafico, azzera la classifica.
   Il selettore operatore si applica con «Nuova visita» o «Vai alla partita», senza interrompere la partita alla sola selezione. La scelta resta per le visite successive nella stessa sessione; al riavvio torna `medium`, lo scenario attuale predefinito. Tutorial invariato. Classifiche e confronto senza ordini usano il caso effettivamente giocato, anche se l’operatore ha già selezionato il successivo.
-- **Chiosco presidiato:** nessun reset per inattività.
+- **Nessun reset per inattività** (non c'è più un chiosco presidiato, 2026-10-19).
 - **Mario** (easter egg, `docs/MARIO.md`): **scollegato** dal 2026-10-14. Usava le persone dell'IBM e i vecchi stati del chiosco. Da decidere se ricollegarlo.
 
 ## 7. Fuori dal gioco (per ora)

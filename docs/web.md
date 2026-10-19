@@ -1,10 +1,10 @@
 # Versione per browser
 
-La stessa partita del kiosk, nel browser, per farla provare a chi non è al chiosco. Stesso motore (`rocca::Game`) e stessi dati, scaricati a parte dal `.wasm` (vedi «Dati separati dal codice»; `crates/datafs`).
+La stessa partita della versione desktop, nel browser, per chi non la scarica. Stesso motore (`rocca::Game`) e stessi dati, scaricati a parte dal `.wasm` (vedi «Dati separati dal codice»; `crates/datafs`).
 
 ## Pagina introduttiva (2026-10-18)
 
-`web/index.html` mostra prima una pagina HTML+CSS nello stile di cimafoundation.org (hero con una scena di incendio e un riquadro «Dal gioco», tre card, un paragrafo sulla ricerca, chiusura, crediti). Testi brevi e narrativi, senza meccaniche, durata o numeri (2026-10-19, richiesta dell'utente). `game.js` e il `.wasm` si scaricano solo quando si preme «Gioca» (`import()` dinamico in `start()`); con `?playtest=1` si salta l'intro. Dopo «Gioca» compare la schermata del titolo del gioco, con il suo «Gioca» (decisione dell'utente, 2026-10-18: non va saltata). Immagini in `web/img/`, copiate da `build_web.sh`: screenshot veri del chiosco (2026-10-18, `KIOSK_SNAP`, 1600×1000): `tattica-*` con la UI tattica (ritagliati senza banner e chat, `t=45/90/120`, seme del menu), `scena-*` (`borgo`, `cicatrice`) e `hero` senza interfaccia (`ui=0,marks=0,iso=0`, `KIOSK_GFX=-dof KIOSK_TACTICAL=0 KIOSK_BOOST=0`, `t=80/140/165/170`). Provata solo come pagina statica (desktop e 390 px), non con la build wasm.
+`web/index.html` mostra prima una pagina HTML+CSS nello stile di cimafoundation.org (hero con una scena di incendio e un riquadro «Dal gioco», tre card, un paragrafo sulla ricerca, chiusura, crediti). Testi brevi e narrativi, senza meccaniche, durata o numeri (2026-10-19, richiesta dell'utente). `game.js` e il `.wasm` si scaricano solo quando si preme «Gioca» (`import()` dinamico in `start()`); con `?playtest=1` si salta l'intro. Dopo «Gioca» compare la schermata del titolo del gioco, con il suo «Gioca» (decisione dell'utente, 2026-10-18: non va saltata). Immagini in `web/img/`, copiate da `build_web.sh`: screenshot veri del gioco (2026-10-18, `KIOSK_SNAP`, 1600×1000): `tattica-*` con la UI tattica (ritagliati senza banner e chat, `t=45/90/120`, seme del menu), `scena-*` (`borgo`, `cicatrice`) e `hero` senza interfaccia (`ui=0,marks=0,iso=0`, `KIOSK_GFX=-dof KIOSK_TACTICAL=0 KIOSK_BOOST=0`, `t=80/140/165/170`). Provata solo come pagina statica (desktop e 390 px), non con la build wasm.
 
 ## Dati separati dal codice e profilo grafico (2026-10-19)
 
@@ -26,7 +26,7 @@ l'immagine resti negli asset per mantenere la texture registrata.
 Il fuoco conserva al massimo 600 celle con fiamme,
 100 particelle di fumo e 80 braci, con lo strato a terra a 20 m.
 Sono semplificazioni visive: dati del territorio, simulazione, ordini e punteggio
-restano quelli del chiosco. Il menu web non permette di riattivare effetti pesanti.
+restano quelli della versione desktop. Il menu web non permette di riattivare effetti pesanti.
 
 L'interfaccia compatta si attiva sotto 1000 px di larghezza o 600 px di altezza:
 
@@ -141,7 +141,7 @@ e va aggiornata; per il flusso attuale usare `playtest_mobile.py`.
 
 Il browser headless rende la stessa UI egui e lo stesso diorama, senza finestre
 sul desktop e senza prendere il focus. Il runner usa un profilo effimero: la
-classifica dei test resta nel browser del test, non in quella del chiosco.
+classifica dei test resta nel browser del test, non in quella della versione desktop.
 
 ```sh
 uv pip install --python .venv/bin/python -r scripts/requirements-playtest.txt
