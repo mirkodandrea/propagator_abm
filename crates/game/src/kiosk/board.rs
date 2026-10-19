@@ -58,15 +58,44 @@ pub fn save(b: &Board) -> Result<(), String> {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn now() -> (String, u64) {
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    // the kiosk's own time zone, not UTC: the day ends at the local midnight
-    let t = secs as libc::time_t;
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    let day = if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
-        String::new()
-    } else {
-        format!("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday)
+    // the machine's own time zone, not UTC: the day ends at the local midnight
+    let day = match local_ymd(secs) {
+        Some((y, m, d)) => format!("{y:04}-{m:02}-{d:02}"),
+        None => String::new(),
     };
     (day, secs)
+}
+
+#[cfg(all(unix, not(target_arch = "wasm32")))]
+fn local_ymd(secs: u64) -> Option<(i32, i32, i32)> {
+    let t = secs as libc::time_t;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
+        return None;
+    }
+    Some((tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday))
+}
+
+#[cfg(windows)]
+fn local_ymd(secs: u64) -> Option<(i32, i32, i32)> {
+    #[repr(C)]
+    #[derive(Default)]
+    struct Tm {
+        sec: i32,
+        min: i32,
+        hour: i32,
+        mday: i32,
+        mon: i32,
+        year: i32,
+        wday: i32,
+        yday: i32,
+        isdst: i32,
+    }
+    extern "C" {
+        fn localtime_s(tm: *mut Tm, t: *const i64) -> i32;
+    }
+    let (t, mut tm) = (secs as i64, Tm::default());
+    (unsafe { localtime_s(&mut tm, &t) } == 0).then_some((tm.year + 1900, tm.mon + 1, tm.mday))
 }
 
 #[cfg(target_arch = "wasm32")]

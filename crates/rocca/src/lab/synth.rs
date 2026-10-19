@@ -277,6 +277,29 @@ pub struct Built {
     pub homes: usize,
 }
 
+/// A symlink where there are any, a copy elsewhere (Windows).
+fn link_or_copy(from: &Path, to: &Path) -> Result<()> {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(from, to)?;
+    #[cfg(not(unix))]
+    {
+        fn copy(from: &Path, to: &Path) -> Result<()> {
+            if from.is_dir() {
+                fs::create_dir_all(to)?;
+                for e in fs::read_dir(from)? {
+                    let e = e?;
+                    copy(&e.path(), &to.join(e.file_name()))?;
+                }
+            } else {
+                fs::copy(from, to)?;
+            }
+            Ok(())
+        }
+        copy(from, to)?;
+    }
+    Ok(())
+}
+
 /// Write the spec as `<out>/data/<name>/`; `repo_data` is the game's `data/`
 /// (behaviour library and fuel table are linked from there).
 pub fn build(spec: &SynthSpec, out: &Path, repo_data: &Path) -> Result<Built> {
@@ -287,7 +310,7 @@ pub fn build(spec: &SynthSpec, out: &Path, repo_data: &Path) -> Result<Built> {
     for item in ["behaviours", "fuels_eu12.json"] {
         let link = data.join(item);
         if !link.exists() {
-            std::os::unix::fs::symlink(repo.join(item), &link)?;
+            link_or_copy(&repo.join(item), &link)?;
         }
     }
     let n = spec.cells;
