@@ -242,6 +242,8 @@
 
       // The game's data files (the territory): gzipped, cached one by one under a
       // hashed URL, handed to the wasm as `window.roccaData` (path -> bytes).
+      // The browser inflates them when it can; if not, they stay gzipped
+      // (`roccaDataGzip`) and the wasm inflates them (crates/datafs).
       async function loadData() {
         const listed = await fetch('./data/manifest.json', { cache: 'no-cache' });
         if (!listed.ok) throw new Error(`data/manifest.json: ${listed.status}`);
@@ -254,10 +256,12 @@
           } catch (e) { /* the cache is an optimisation */ }
         }
         const files = {};
+        const native = typeof DecompressionStream === 'function';
+        window.roccaDataGzip = !native;
         await Promise.all(manifest.map(async file => {
           const gz = await download(file.url, 'rocca-data', false);
-          const plain = gz.body.pipeThrough(new DecompressionStream('gzip'));
-          files[file.path] = new Uint8Array(await new Response(plain).arrayBuffer());
+          const bytes = native ? gz.body.pipeThrough(new DecompressionStream('gzip')) : gz.body;
+          files[file.path] = new Uint8Array(await new Response(bytes).arrayBuffer());
         }));
         window.roccaData = files;
       }

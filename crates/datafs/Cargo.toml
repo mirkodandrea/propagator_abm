@@ -7,3 +7,4 @@ license.workspace = true
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3"
 wasm-bindgen = "0.2"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

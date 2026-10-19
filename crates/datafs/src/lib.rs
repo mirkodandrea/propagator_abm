@@ -1,6 +1,8 @@
 //! Reading the game's data files: from disk natively, and in the browser from
 //! `globalThis.roccaData`, an object that maps `data/...` paths to `Uint8Array`s
-//! which the page downloads (and caches) before the wasm starts. The data is not
+//! which the page downloads (and caches) before the wasm starts. The browser
+//! inflates them itself when it can; when `globalThis.roccaDataGzip` is true the
+//! bytes are still gzipped and are inflated here, on each read. The data is not
 //! compiled into the binary, so a new build does not make anyone download it
 //! again. Paths are the same in both: `data/...`.
 
@@ -31,6 +33,7 @@ fn not_found(p: &Path) -> io::Error {
 #[cfg(target_arch = "wasm32")]
 mod store {
     use js_sys::{Object, Reflect, Uint8Array};
+    use std::io::Read;
     use wasm_bindgen::JsCast;
 
     fn files() -> Option<Object> {
@@ -39,7 +42,14 @@ mod store {
 
     pub fn get(key: &str) -> Option<Vec<u8>> {
         let value = Reflect::get(&files()?.into(), &key.into()).ok()?;
-        value.dyn_into::<Uint8Array>().ok().map(|a| a.to_vec())
+        let bytes = value.dyn_into::<Uint8Array>().ok()?.to_vec();
+        let gzipped = Reflect::get(&js_sys::global(), &"roccaDataGzip".into()).ok()?.is_truthy();
+        if !gzipped {
+            return Some(bytes);
+        }
+        let mut plain = Vec::new();
+        flate2::read::GzDecoder::new(bytes.as_slice()).read_to_end(&mut plain).ok()?;
+        Some(plain)
     }
 
     pub fn keys() -> Vec<String> {
