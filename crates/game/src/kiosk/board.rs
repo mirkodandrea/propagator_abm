@@ -92,10 +92,10 @@ fn local_ymd(secs: u64) -> Option<(i32, i32, i32)> {
         isdst: i32,
     }
     extern "C" {
-        fn localtime_s(tm: *mut Tm, t: *const i64) -> i32;
+        fn _localtime64_s(tm: *mut Tm, t: *const i64) -> i32;
     }
     let (t, mut tm) = (secs as i64, Tm::default());
-    (unsafe { localtime_s(&mut tm, &t) } == 0).then_some((tm.year + 1900, tm.mon + 1, tm.mday))
+    (unsafe { _localtime64_s(&mut tm, &t) } == 0).then_some((tm.year + 1900, tm.mon + 1, tm.mday))
 }
 
 #[cfg(target_arch = "wasm32")]
