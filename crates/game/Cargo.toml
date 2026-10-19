@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 description = "The wildfire kiosk demo: Bevy front end"
 
+[features]
+# Mario (docs/MARIO.md) needs libsm64, a C build: the desktop CI builds leave it out.
+default = ["mario"]
+mario = ["dep:libsm64-native"]
+
 [dependencies]
 scenario.workspace = true
 rocca.workspace = true
@@ -13,7 +18,7 @@ abm.workspace = true
 behavior.workspace = true
 anyhow.workspace = true
 datafs.workspace = true
-libsm64-native = { path = "../libsm64-native" }
+libsm64-native = { path = "../libsm64-native", optional = true }
 serde_json.workspace = true
 bevy = { version = "0.14", default-features = true }
 bevy_egui = { version = "0.28", default-features = false, features = ["open_url", "default_fonts", "render"] }

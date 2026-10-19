@@ -27,6 +27,10 @@ mod reach_zone;
 mod frame;
 mod kiosk;
 mod landmarks;
+#[cfg(feature = "mario")]
+mod mario;
+#[cfg(not(feature = "mario"))]
+#[path = "mario_off.rs"]
 mod mario;
 mod models;
 mod overlays;
