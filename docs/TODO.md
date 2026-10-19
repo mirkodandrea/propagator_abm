@@ -123,6 +123,8 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
 8. [ ] **Playtest:** aggiornare `scripts/playtest.py` al nuovo flusso, poi partite con persone che non conoscono il progetto.
 9. [ ] **Versione web:** prova su Safari iOS e Chrome Android reali (rotazione, trascinamento, memoria su una partita completa); regressione automatica con `scripts/playtest_mobile.py`. Il confronto finale ora avanza a piccoli blocchi. Interazioni Chromium tutte passate (2026-10-17); la memoria Wasm al finale (379–416 MiB) (limite del test ora 450 MiB, passa): causa e decisione nella decisione del 2026-10-17 «web mobile, ripresa».
 10. [ ] **Comunicazione** (fase 4): testi, personaggi e debriefing da riscrivere a posteriori.
+11. [ ] **Rinominare il chiosco** (da fare dopo, 2026-10-19): non c'è più un chiosco, ma restano i nomi `crates/game/src/kiosk/`, le variabili `KIOSK_*` (`KIOSK_SNAP`, `KIOSK_FPS`, `KIOSK_GFX`, `KIOSK_QUALITY`, `KIOSK_SCORES`, `KIOSK_WINDOWED`, `KIOSK_SIZE`, `KIOSK_SCALE`, `KIOSK_TACTICAL`, `KIOSK_BOOST`) e `kiosk/snap.rs`. Proposta: `app/` e `ROCCA_*`, in un commit a parte, dopo aver controllato chi li usa (script in `scripts/`, CI, `docs/web.md`, `CLAUDE.md`, la memoria dell'agente) e senza rompere le altre sessioni sullo stesso checkout.
+12. [ ] **Rivedere i testi da evento:** «classifica del giorno» e «stelle» (`docs/01-GIOCO.md`, schermata finale), il menu operatore (F2) e la fase 5 «Pronto per la pubblicazione» (`docs/03-VERIFICHE.md`, contenuto ancora da chiosco: offline, macchina reale) vanno ripensati per un pubblico che apre la pagina.
 
 ## Test rotti noti
 
