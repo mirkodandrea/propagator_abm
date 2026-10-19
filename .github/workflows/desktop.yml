@@ -1,0 +1,92 @@
+name: Desktop builds
+
+on:
+  push:
+    branches: [main, settimana-protezione-civile, nuovo-gioco]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macos
+            exe: game
+            launcher: Gioca.command
+          - os: windows-latest
+            name: windows
+            exe: game.exe
+            launcher: Gioca.bat
+          - os: ubuntu-22.04
+            name: linux
+            exe: game
+            launcher: gioca.sh
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system libraries
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev
+      - run: cargo build --release -p game
+      - name: Bundle
+        run: |
+          out="Isola-di-Roccavento-${{ matrix.name }}"
+          mkdir "$out"
+          cp "target/release/${{ matrix.exe }}" "$out/"
+          cp -R data assets "$out/"
+          case "${{ matrix.name }}" in
+            windows) printf '@echo off\r\ncd /d "%%~dp0"\r\nstart "" game.exe\r\n' > "$out/${{ matrix.launcher }}" ;;
+            *) printf '#!/bin/sh\ncd "$(dirname "$0")"\nexec ./game\n' > "$out/${{ matrix.launcher }}"
+               chmod +x "$out/${{ matrix.launcher }}" "$out/game" ;;
+          esac
+          if [ "${{ matrix.name }}" = windows ]; then
+            7z a "$out.zip" "$out" >/dev/null
+          else
+            zip -qr "$out.zip" "$out"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: Isola-di-Roccavento-${{ matrix.name }}.zip
+          retention-days: 1  # only a hand-over to the release job
+
+  release:
+    # The download buttons on the web page point at this rolling release.
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish the rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ "${{ github.ref_type }}" = tag ]; then
+            gh release create "${{ github.ref_name }}" dist/*.zip --title "Isola di Roccavento ${{ github.ref_name }}" \
+              --notes "Versioni per Windows, macOS e Linux." --latest
+            exit 0
+          fi
+          gh release view download >/dev/null 2>&1 || gh release create download --prerelease \
+            --title "Scarica il gioco" --notes "Versioni per computer, aggiornate a ogni push."
+          gh release upload download dist/*.zip --clobber
