@@ -17,6 +17,7 @@ use bevy::{
     },
 };
 use bevy_egui::{egui, EguiContexts};
+use libsm64_native::Cue;
 use scenario::Pos;
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::{FRAC_PI_2, PI};
@@ -119,6 +120,7 @@ impl Play {
         }
         self.titles.push(title);
         mode.victory = true;
+        mode.cues.push(Cue::Solved);
         self.say(format!("Titolo: {title}!"));
     }
 }
@@ -419,6 +421,7 @@ fn update(
             commands.entity(e).despawn_recursive();
         }
         mode.victory = true;
+        mode.cues.push(Cue::Star);
         let (n, total) = (play.star_got.len(), play.stars.len());
         play.say(format!("Stella! {n} su {total}"));
         if n == total {
@@ -430,6 +433,7 @@ fn update(
         .map(|(i, _)| i).collect();
     for i in got {
         play.coin_got.insert(i);
+        mode.cues.push(Cue::Coin);
         if let Some(e) = play.entities.remove(&(Kind::Coin, i)) {
             commands.entity(e).despawn_recursive();
         }
@@ -442,6 +446,7 @@ fn update(
     let engaged = std::mem::take(&mut mode.engaged);
     let unit = mode.greeted_unit.take();
     if engaged {
+        mode.cues.push(Cue::Hello);
         let world = frame::to_world(pos);
         if let Some(id) = unit {
             let team = sim.teams.iter().position(|t| t.unit == id || t.crew_units.contains(&id));
@@ -490,6 +495,7 @@ fn update(
                 ));
             }
             play.flames += near.len() as u32;
+            mode.cues.push(Cue::FlameOut);
             if !play.flames_told {
                 play.flames_told = true;
                 play.say(FAKE_FIRE_NOTE);
@@ -505,6 +511,7 @@ fn update(
     let at_gate = |gate: Vec3| (gate.x - pos.x).hypot(gate.z - pos.z) < GATE_REACH && (gate.y - pos.y).abs() < 30.;
     if play.start != Vec3::ZERO && at_gate(play.start) {
         if play.race.is_none() {
+            mode.cues.push(Cue::Go);
             play.say("Via! Corri alla rocca.");
         }
         play.race = Some(0.);
@@ -515,8 +522,10 @@ fn update(
             if play.best.map_or(true, |b| t < b) {
                 play.best = Some(t);
                 save_record(t);
+                mode.cues.push(Cue::Record);
                 play.say(format!("Record! {}", clock(t)));
             } else {
+                mode.cues.push(Cue::Chime);
                 play.say(format!("Arrivato in {}", clock(t)));
             }
         } else {

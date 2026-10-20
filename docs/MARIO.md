@@ -91,4 +91,12 @@ record della corsa è su file (`~/.rocca_ventosa/mario_record.txt`, non scritto 
   conta, ma il fuoco vero non cambia (lo dice il pannello).
 - **Titoli** (stelle, monete, saluti tutti): compaiono nel pannello.
 
-Verifiche: `cargo test -p game --release mario`. Non provato a schermo.
+**Suoni** (2026-10-20): sono quelli della ROM, via `Engine::cue` (`Cue` in
+`libsm64-native`). Moneta: tintinnio; stella: suono della stella e fanfara di
+raccolta; saluto: «Yahoo!»; fiammella: sbuffo di fiamma spenta; via della corsa:
+sparo e «Here we go!»; arrivo: campanella; record: jingle del punteggio alto;
+titolo: jingle del rompicapo risolto. Il test della libreria verifica che ognuno
+produca audio vero sopra il silenzio. Non udito a orecchio.
+
+Verifiche: `cargo test -p game --release mario` e `cargo test -p libsm64-native`.
+Non provato a schermo.

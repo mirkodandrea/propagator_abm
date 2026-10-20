@@ -164,6 +164,8 @@ pub struct Playground {
     engaged: bool,
     greeted_unit: Option<usize>,
     victory: bool,
+    /// Sounds and jingles asked for by `play`, played on the next tick.
+    cues: Vec<libsm64_native::Cue>,
 }
 
 impl Default for Playground {
@@ -173,7 +175,7 @@ impl Default for Playground {
             confirm_position: false, cancel_position: false, error: None,
             health: 0, wing_cap: false, message: "", awaiting_rom: false,
             snapshot: false, snapshot_time: 0., pos: None, punched: false,
-            engaged: false, greeted_unit: None, victory: false }
+            engaged: false, greeted_unit: None, victory: false, cues: Vec::new() }
     }
 }
 
@@ -1161,6 +1163,7 @@ fn drive(
             crouch: u8::from(crouch),
         };
         let celebrate = std::mem::take(&mut mode.victory);
+        let mut cues = std::mem::take(&mut mode.cues);
         let boost = runtime.jump_latched;
         runtime.jump_latched = false;
         runtime.attack_latched = false;
@@ -1168,6 +1171,7 @@ fn drive(
         if boost && engine.boost_flight() { mode.message = "Boost!"; }
         engine.water_level(water_level);
         if celebrate { engine.victory_pose(); }
+        for cue in cues.drain(..) { engine.cue(cue); }
         engine.tick(&input);
         if let Some(start) = profile_start {
             eprintln!("mario collision: surfaces={} refresh_us={} tick_us={}",
