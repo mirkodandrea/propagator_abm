@@ -232,6 +232,9 @@ fn setup_scene(
         // colour and reach are set every frame by `sky::update_sky`
         bevy::pbr::FogSettings::default(),
     ));
+    if gfx.smaa {
+        camera.insert(bevy::core_pipeline::smaa::SmaaSettings::default());
+    }
     if gfx.bloom {
         camera.insert(BloomSettings { intensity: 0.20, ..BloomSettings::NATURAL });
     }

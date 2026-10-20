@@ -18,6 +18,10 @@
 //! terrain at every 2nd/4th sample (applies from the next launch), e.g.
 //! `KIOSK_FPS=1 KIOSK_GFX=-terrain_shadows,terrain_stride=2`.
 //!
+//! Antialiasing: `alta` MSAA 4×, `media` SMAA, `bassa` none; the operator bar
+//! chooses it apart too (saved in `~/.rocca_ventosa/antialiasing.txt`, dropped
+//! when a level is picked), `KIOSK_GFX=smaa,msaa=1` from the environment.
+//!
 //! The operator bar (F2) also picks the preset, live and saved in
 //! `~/.rocca_ventosa/grafica.txt` (`KIOSK_QUALITY` still wins). Everything
 //! changes at once except the share of plants planted and the radius of the
@@ -33,6 +37,8 @@ pub struct Graphics {
     pub bloom: bool,
     /// MSAA samples: 4 or 1 (off).
     pub msaa: u32,
+    /// SMAA, a post-process edge filter: the cheaper alternative to MSAA.
+    pub smaa: bool,
     /// Sun shadows at all.
     pub shadows: bool,
     /// Shadow cascades and how far they reach, in metres.
@@ -65,6 +71,7 @@ impl Graphics {
         dof: true,
         bloom: true,
         msaa: 4,
+        smaa: false,
         shadows: true,
         cascades: 4,
         shadow_distance: 4000.0,
@@ -77,7 +84,9 @@ impl Graphics {
     };
     pub const MEDIA: Graphics = Graphics {
         dof: false,
-        msaa: 4,
+        // SMAA instead of MSAA: almost free, edges nearly as clean (2026-10-20)
+        msaa: 1,
+        smaa: true,
         cascades: 3,
         shadow_distance: 2500.0,
         vegetation: if cfg!(target_arch = "wasm32") { 0.12 } else { 0.35 },
@@ -126,6 +135,10 @@ impl Graphics {
             Some("media" | "medium") => Graphics::MEDIA,
             _ => Graphics::ALTA,
         };
+        // the antialiasing chosen apart in the operator bar, over the preset's
+        if let Some(aa) = saved_aa() {
+            g.set_aa(&aa);
+        }
         if let Ok(spec) = std::env::var("KIOSK_GFX") {
             g.apply(&spec);
         }
@@ -146,6 +159,7 @@ impl Graphics {
             match (key, num) {
                 ("dof", _) => self.dof = on,
                 ("bloom", _) => self.bloom = on,
+                ("smaa", _) => self.smaa = on,
                 ("shadows", _) => self.shadows = on,
                 ("terrain_shadows", _) => self.terrain_shadows = on,
                 ("terrain_stride", Some(n)) => self.terrain_stride = (n as usize).clamp(1, 8),
@@ -165,15 +179,29 @@ impl Graphics {
 
     /// The preset this is, if it is one (the operator bar's selection).
     pub fn level(&self) -> Option<&'static str> {
-        // the plant density and the terrain stride apply only at launch, so
-        // they are not compared
+        // the plant density and the terrain stride apply only at launch, and
+        // the antialiasing is chosen apart, so they are not compared
         let same = |p: &Graphics| {
-            Graphics { vegetation: self.vegetation, terrain_stride: self.terrain_stride, cover_m: self.cover_m, ..*p } == *self
+            Graphics { vegetation: self.vegetation, terrain_stride: self.terrain_stride, cover_m: self.cover_m, msaa: self.msaa, smaa: self.smaa, ..*p } == *self
         };
         [("alta", &Graphics::ALTA), ("media", &Graphics::MEDIA), ("bassa", &Graphics::BASSA)]
             .into_iter()
             .find(|(_, p)| same(p))
             .map(|(n, _)| n)
+    }
+
+    /// The antialiasing: `msaa` (4 samples), `smaa` or `nessuno`.
+    pub fn aa(&self) -> &'static str {
+        if self.msaa >= 4 { "msaa" } else if self.smaa { "smaa" } else { "nessuno" }
+    }
+
+    pub fn set_aa(&mut self, aa: &str) {
+        match aa {
+            "msaa" => (self.msaa, self.smaa) = (4, false),
+            "smaa" => (self.msaa, self.smaa) = (1, true),
+            "nessuno" => (self.msaa, self.smaa) = (1, false),
+            _ => {}
+        }
     }
 
     pub fn msaa(&self) -> Msaa {
@@ -191,6 +219,38 @@ fn saved_path() -> std::path::PathBuf {
 #[cfg(not(target_arch = "wasm32"))]
 fn saved() -> Option<String> {
     std::fs::read_to_string(saved_path()).ok().map(|s| s.trim().to_string())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn aa_path() -> std::path::PathBuf {
+    saved_path().with_file_name("antialiasing.txt")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn saved_aa() -> Option<String> {
+    std::fs::read_to_string(aa_path()).ok().map(|s| s.trim().to_string())
+}
+
+/// Remember the antialiasing for the next launch.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn save_aa(aa: &str) -> Result<(), String> {
+    let p = aa_path();
+    if let Some(dir) = p.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("grafica: {e}"))?;
+    }
+    std::fs::write(&p, aa).map_err(|e| format!("grafica: {e}"))
+}
+
+/// Back to the level's own antialiasing.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn forget_aa() {
+    let _ = std::fs::remove_file(aa_path());
+}
+
+// WebGL2 has neither multisampled HDR targets nor a choice in the page.
+#[cfg(target_arch = "wasm32")]
+fn saved_aa() -> Option<String> {
+    None
 }
 
 /// `bassa` or `media`, as the page decided from the device (or from `?q=`).

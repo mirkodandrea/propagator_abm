@@ -339,21 +339,22 @@ pub fn drive(
         }
         let stat = |v: &mut Vec<f32>| {
             v.sort_by(f32::total_cmp);
-            if v.is_empty() { (0.0, 0.0) } else { (v.iter().sum::<f32>() / v.len() as f32, v[(v.len() * 95 / 100).min(v.len() - 1)]) }
+            if v.is_empty() { (0.0, 0.0, 0.0) } else { (v.iter().sum::<f32>() / v.len() as f32, v[(v.len() * 95 / 100).min(v.len() - 1)], v[v.len() - 1]) }
         };
         if let Some(c) = &costs {
-            let (cm, cp) = stat(&mut c.cpu.lock().unwrap());
-            let (gm, gp) = stat(&mut c.gpu_pass.lock().unwrap());
-            let (em, _) = stat(&mut c.encode.lock().unwrap());
-            let (rm, rp) = stat(&mut c.render.lock().unwrap());
-            eprintln!("bench: {:<14} gpu {gm:5.2} ms (p95 {gp:5.2})  render thread {rm:5.2} ms (p95 {rp:5.2}, graph {em:5.2})  main {cm:5.2} ms (p95 {cp:5.2})", st.name);
+            let (cm, cp, cx) = stat(&mut c.cpu.lock().unwrap());
+            let (gm, gp, gx) = stat(&mut c.gpu_pass.lock().unwrap());
+            let (em, _, _) = stat(&mut c.encode.lock().unwrap());
+            let (rm, rp, rx) = stat(&mut c.render.lock().unwrap());
+            eprintln!("bench: {:<14} gpu {gm:5.2} ms (p95 {gp:5.2}, max {gx:5.1})  render thread {rm:5.2} ms (p95 {rp:5.2}, max {rx:5.1}, graph {em:5.2})  main {cm:5.2} ms (p95 {cp:5.2}, max {cx:5.1})", st.name);
         }
         let mut f = std::mem::take(&mut p.frames);
         f.sort_by(f32::total_cmp);
         if !f.is_empty() {
             let mean = f.iter().sum::<f32>() / f.len() as f32;
             let p95 = f[(f.len() * 95 / 100).min(f.len() - 1)];
-            eprintln!("bench: {:<14} {:6.1} fps  mean {:5.2} ms  p95 {:5.2} ms  ({} frames)", st.name, 1.0 / mean, mean * 1e3, p95 * 1e3, f.len());
+            let long = f.iter().filter(|&&d| d > 0.025).count();
+            eprintln!("bench: {:<14} {:6.1} fps  mean {:5.2} ms  p95 {:5.2} ms  max {:5.1} ms  ({} frames, {long} over 25 ms)", st.name, 1.0 / mean, mean * 1e3, p95 * 1e3, f[f.len() - 1] * 1e3, f.len());
         }
     }
     if p.waited > SETTLE_S && ready {

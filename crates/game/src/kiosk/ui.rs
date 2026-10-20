@@ -1484,8 +1484,28 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
                 let now_level = gfx.level();
                 for (name, label, preset) in [("alta", "Alta", Graphics::ALTA), ("media", "Media", Graphics::MEDIA), ("bassa", "Bassa", Graphics::BASSA)] {
                     if ui.selectable_label(now_level == Some(name), label).clicked() && now_level != Some(name) {
+                        // a level brings its own antialiasing: the choice made apart is dropped
                         *gfx = Graphics { vegetation: gfx.vegetation, ..preset };
+                        #[cfg(not(target_arch = "wasm32"))]
+                        crate::quality::forget_aa();
                         if let Err(e) = crate::quality::save(name) {
+                            k.error = Some(e);
+                        }
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Antialiasing:");
+                let now = gfx.aa();
+                for (name, label, tip) in [
+                    ("msaa", "MSAA 4×", "Il più pulito sui bordi sottili; costa qualche ms a schermo grande"),
+                    ("smaa", "SMAA", "Filtro sui bordi dopo il disegno: quasi gratis, bordi quasi uguali"),
+                    ("nessuno", "Nessuno", "Bordi seghettati"),
+                ] {
+                    if ui.selectable_label(now == name, label).on_hover_text(tip).clicked() && now != name {
+                        gfx.set_aa(name);
+                        #[cfg(not(target_arch = "wasm32"))]
+                        if let Err(e) = crate::quality::save_aa(name) {
                             k.error = Some(e);
                         }
                     }

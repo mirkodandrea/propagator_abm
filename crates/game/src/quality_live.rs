@@ -16,6 +16,7 @@ pub fn apply_live(
         Entity,
         Has<bevy::core_pipeline::bloom::BloomSettings>,
         Has<bevy::core_pipeline::dof::DepthOfFieldSettings>,
+        Has<bevy::core_pipeline::smaa::SmaaSettings>,
         &crate::camera::OrbitCamera,
     )>,
     veg: Option<ResMut<crate::vegetation::Vegetation>>,
@@ -37,8 +38,13 @@ pub fn apply_live(
         }
         .build();
     }
-    for (e, has_bloom, has_dof, orbit) in &cameras {
+    for (e, has_bloom, has_dof, has_smaa, orbit) in &cameras {
         let mut cam = commands.entity(e);
+        match (gfx.smaa, has_smaa) {
+            (true, false) => { cam.insert(bevy::core_pipeline::smaa::SmaaSettings::default()); }
+            (false, true) => { cam.remove::<bevy::core_pipeline::smaa::SmaaSettings>(); }
+            _ => {}
+        }
         match (gfx.bloom, has_bloom) {
             (true, false) => { cam.insert(BloomSettings { intensity: 0.20, ..BloomSettings::NATURAL }); }
             (false, true) => { cam.remove::<BloomSettings>(); }
