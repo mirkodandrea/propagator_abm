@@ -34,6 +34,19 @@ pub struct RetroExtension {
     /// toward grey, 0..1. Only terrain and foliage read it.
     #[uniform(106)]
     pub tactical: Vec4,
+    /// Terrain only: the ground colour (sRGB), one texel per terrain sample,
+    /// and the surface normal (Bevy frame), so the look does not depend on the
+    /// mesh density (`terrain_mesh`). Unset elsewhere: Bevy binds a fallback.
+    #[texture(107)]
+    #[sampler(108)]
+    pub ground_colour: Option<Handle<Image>>,
+    #[texture(109)]
+    #[sampler(110)]
+    pub ground_normal: Option<Handle<Image>>,
+    /// World metres to those textures' uv: x, y = 1 / (posting * size),
+    /// z = half a texel in u, w = the north edge plus half a texel in v.
+    #[uniform(111)]
+    pub ground_rect: Vec4,
 }
 
 /// Per-material strength of the training-simulation finish.
@@ -119,12 +132,15 @@ pub fn material_with_style(
 
 /// The terrain's material: the retro finish plus the road mask the shader
 /// draws the road network from.
-pub fn terrain_material(base: StandardMaterial, mask: Handle<Image>, rect: Vec4) -> RetroMaterial {
+pub fn terrain_material(base: StandardMaterial, mask: Handle<Image>, rect: Vec4, colour: Handle<Image>, normal: Handle<Image>, ground_rect: Vec4) -> RetroMaterial {
     let mut m = material_with_style(base, false, RetroStyle::BACKGROUND);
     m.extension.enabled.w = 1.0;
     m.extension.road_mask = Some(mask);
     m.extension.mask_rect = rect;
     m.extension.grass_map = Some(crate::ground_mask::GRASS_MAP);
+    m.extension.ground_colour = Some(colour);
+    m.extension.ground_normal = Some(normal);
+    m.extension.ground_rect = ground_rect;
     m
 }
 

@@ -21,6 +21,10 @@
 //! | `marks`  | `0`: no team, order, hex, road or flag marks on the map              |
 //! | `ui`     | `0`: no interface at all (panels, labels, buttons)                   |
 //! | `mario`  | `1`: Mario beside the fire, turned to the camera (needs `pause=1`)   |
+//! | `live`   | `1`: the world keeps running (×300) instead of freezing at the shot  |
+//!
+//! `KIOSK_SNAP_BENCH=<s>` also measures each state before its picture: the
+//! frame times over `<s>` real seconds (vsync off), printed as `bench:` lines.
 //!
 //! The game is that of the phase (the tutorial's fire or the played one).
 //! Time only goes forward: a state with an earlier `t` or another phase's
@@ -71,6 +75,7 @@ struct State {
     pitch: Option<f32>,
     hide: SnapHide,
     mario: bool,
+    live: bool,
 }
 
 /// What the state on show leaves out of the picture.
@@ -118,6 +123,7 @@ fn parse(spec: &str) -> Vec<State> {
                     "marks" => st.hide.marks = v == "0",
                     "ui" => st.hide.ui = v == "0",
                     "mario" => st.mario = v == "1",
+                    "live" => st.live = v == "1",
                     other => eprintln!("snap: unknown key `{other}`"),
                 }
             }
@@ -138,6 +144,13 @@ pub struct Progress {
     waited: f32,
     goal: Option<(Vec3, Option<f32>, Option<f32>, Option<f32>)>,
     done_s: f32,
+    /// frame times (s) of the state on show, while benchmarking
+    frames: Vec<f32>,
+}
+
+/// `KIOSK_SNAP_BENCH`: the seconds each state is measured for.
+pub fn bench_s() -> Option<f32> {
+    std::env::var("KIOSK_SNAP_BENCH").ok()?.parse().ok()
 }
 
 /// Bring the game to the state.
@@ -194,7 +207,7 @@ fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<S
         k.script = rocca::tutorial::Script::of(sim);
         k.step = st.step;
     }
-    k.frozen = true;
+    k.frozen = !st.live;
     k.follow = false;
     if let Some(t) = st.team {
         k.selection = Selection::Team(t);
@@ -250,6 +263,7 @@ fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<S
 #[allow(clippy::too_many_arguments)]
 pub fn drive(
     time: Res<Time>,
+    real: Res<Time<Real>>,
     mut kiosk: ResMut<Kiosk>,
     mut sim: ResMut<Sim>,
     mut orbit: Query<&mut OrbitCamera>,
@@ -260,6 +274,7 @@ pub fn drive(
     mut view: ResMut<SnapView>,
     mut hide: ResMut<SnapHide>,
     mut mario: ResMut<crate::mario::Playground>,
+    costs: Option<Res<crate::bench::Costs>>,
     mut p: Local<Progress>,
 ) {
     let Ok(dir) = std::env::var("KIOSK_SNAP") else { return };
@@ -309,6 +324,38 @@ pub fn drive(
         *view = SnapView::default();
     }
     let ready = (st.phase != "fine" || kiosk.baseline().is_some()) && (!st.mario || mario.snapshot_ready());
+    if let Some(b) = bench_s().filter(|_| p.waited > SETTLE_S && ready) {
+        if p.frames.is_empty() {
+            if let Some(c) = &costs {
+                c.cpu.lock().unwrap().clear();
+                c.gpu_pass.lock().unwrap().clear();
+                c.encode.lock().unwrap().clear();
+                c.render.lock().unwrap().clear();
+            }
+        }
+        if p.waited < SETTLE_S + b {
+            p.frames.push(real.delta_seconds());
+            return;
+        }
+        let stat = |v: &mut Vec<f32>| {
+            v.sort_by(f32::total_cmp);
+            if v.is_empty() { (0.0, 0.0) } else { (v.iter().sum::<f32>() / v.len() as f32, v[(v.len() * 95 / 100).min(v.len() - 1)]) }
+        };
+        if let Some(c) = &costs {
+            let (cm, cp) = stat(&mut c.cpu.lock().unwrap());
+            let (gm, gp) = stat(&mut c.gpu_pass.lock().unwrap());
+            let (em, _) = stat(&mut c.encode.lock().unwrap());
+            let (rm, rp) = stat(&mut c.render.lock().unwrap());
+            eprintln!("bench: {:<14} gpu {gm:5.2} ms (p95 {gp:5.2})  render thread {rm:5.2} ms (p95 {rp:5.2}, graph {em:5.2})  main {cm:5.2} ms (p95 {cp:5.2})", st.name);
+        }
+        let mut f = std::mem::take(&mut p.frames);
+        f.sort_by(f32::total_cmp);
+        if !f.is_empty() {
+            let mean = f.iter().sum::<f32>() / f.len() as f32;
+            let p95 = f[(f.len() * 95 / 100).min(f.len() - 1)];
+            eprintln!("bench: {:<14} {:6.1} fps  mean {:5.2} ms  p95 {:5.2} ms  ({} frames)", st.name, 1.0 / mean, mean * 1e3, p95 * 1e3, f.len());
+        }
+    }
     if p.waited > SETTLE_S && ready {
         let _ = mgr.save_screenshot_to_disk(window, format!("{dir}/{}.png", st.name));
         eprintln!("snap: {} (t={} min, phase {})", st.name, st.t_min, st.phase);

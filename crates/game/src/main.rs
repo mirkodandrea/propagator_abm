@@ -13,6 +13,7 @@ pub enum AppState {
     Playing,
 }
 
+mod bench;
 mod boats;
 mod buildings;
 mod camera;
@@ -99,14 +100,15 @@ fn main() -> anyhow::Result<()> {
             },
             mode: kiosk::window_mode(),
             // KIOSK_SNAP renders to file: a hidden window, so it never takes the focus
-            visible: std::env::var("KIOSK_SNAP").is_err(),
+            // (KIOSK_SNAP_SHOW=1 shows it: macOS paces a hidden window at ~57 Hz)
+            visible: std::env::var("KIOSK_SNAP").is_err() || std::env::var("KIOSK_SNAP_SHOW").is_ok(),
             focused: std::env::var("KIOSK_SNAP").is_err(),
             // in the browser: the page's canvas, filling it
             canvas: Some("#rocca".into()),
             fit_canvas_to_parent: true,
             prevent_default_event_handling: true,
             // KIOSK_FPS measures the real frame cost, so it must not be vsync-capped.
-            present_mode: if std::env::var("KIOSK_FPS").is_ok() { bevy::window::PresentMode::AutoNoVsync } else { bevy::window::PresentMode::AutoVsync },
+            present_mode: if std::env::var("KIOSK_FPS").is_ok() || kiosk::snap::bench_s().is_some() { bevy::window::PresentMode::AutoNoVsync } else { bevy::window::PresentMode::AutoVsync },
             ..default()
         }),
         ..default()
@@ -170,6 +172,9 @@ fn main() -> anyhow::Result<()> {
         web_input::normalize.before(bevy::input::InputSystem).before(bevy_egui::EguiSet::ProcessInput),
         web_input::finish_canceled_touch.after(bevy_egui::EguiSet::ProcessInput).before(bevy_egui::EguiSet::BeginFrame),
     ));
+    if kiosk::snap::bench_s().is_some() {
+        app.add_plugins(bench::BenchPlugin);
+    }
     app.add_plugins(mario::MarioPlugin);
     app.add_plugins(pad::PadPlugin);
     kiosk_systems(&mut app);
@@ -210,7 +215,7 @@ fn setup_scene(
         }
         .into(),
         ..default()
-    }, sky::Sun));
+    }, sky::Sun, bevy::render::view::RenderLayers::from_layers(&[0, terrain_mesh::SHADOW_LAYER])));
 
     let (p, h) = terrain_mesh::cell_ground(&sim.scn, sim.scn.world.cell_of(sim.case.ignition()));
     let distance = 2600.0;

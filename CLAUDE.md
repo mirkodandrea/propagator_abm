@@ -123,6 +123,8 @@ KIOSK_WINDOWED=1 KIOSK_SIZE=1600x1000 KIOSK_SCALE=1 KIOSK_SNAP=<cartella> KIOSK_
   - `ui=0`, `marks=0`, `iso=0`: spengono interfaccia, segni sulla mappa e isocrone. **Per gli snapshot di un elemento della scena vanno sempre messi.**
 - Il mondo resta fermo allo scatto. Il tempo va solo avanti: un `t` minore del precedente rifà la partita da capo.
 - **Dopo un avvio con `KIOSK_SNAP` guardare sempre l'immagine** (Read).
+- Chiave `live=1`: il mondo continua a scorrere (per misurare anche i costi CPU del fuoco).
+- **FPS per stato:** `KIOSK_SNAP_BENCH=<s>` misura ogni stato per `<s>` secondi e stampa righe `bench:` (main, render thread, GPU, fps). La finestra nascosta è cadenzata a ~57 Hz e la GPU abbassa il clock, quindi alla dimensione reale i ms GPU non sono confrontabili: per un prima/dopo si usa `KIOSK_SIZE` a 4–8 volte i pixel (es. `3919x2449` con `KIOSK_SCALE=2`) finché il `mean` supera i 17,5 ms; lì è il costo vero. Dettagli in `crates/game/src/bench.rs`.
 
 ## Trappole note
 

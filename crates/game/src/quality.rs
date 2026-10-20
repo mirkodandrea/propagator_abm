@@ -47,8 +47,10 @@ pub struct Graphics {
     pub lod_m: f32,
     /// The terrain casts shadows (it always receives them).
     pub terrain_shadows: bool,
-    /// Terrain samples per render-mesh vertex (1 = every sample). Read when the
-    /// scene is built: applies from the next launch.
+    /// Terrain samples per render-mesh vertex of the finest level (1 = every
+    /// sample); the colour and normal textures have one texel per such vertex.
+    /// Below 4, chunks beyond `terrain_mesh::LOD1_M`/`LOD2_M` use 2x and 4x that
+    /// stride. Read when the scene is built: applies from the next launch.
     pub terrain_stride: usize,
     /// Radius (metres) of the grass layer drawn around the camera by the GPU;
     /// shrubs reach 4x as far (see `near_cover`); 0 = none. Read when the
@@ -57,7 +59,8 @@ pub struct Graphics {
 }
 
 impl Graphics {
-    /// As authored: what the M4 Pro this was tuned on draws at 35–45 FPS.
+    /// As authored. On the M4 Pro this was tuned on: about 45 FPS before the
+    /// terrain, vegetation and smoke LODs of 2026-10-20, ~6–10 ms of GPU after.
     pub const ALTA: Graphics = Graphics {
         dof: true,
         bloom: true,

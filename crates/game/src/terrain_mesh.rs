@@ -5,6 +5,16 @@
 //! is split into chunks instead, each its own entity, so the renderer can cull
 //! and the driver gets sensibly sized buffers.
 //!
+//! The ground colour and the normal are not vertex attributes but two
+//! textures, one texel per base sample (`retro.wgsl` reads them in the terrain
+//! branch), so the picture does not depend on how dense the mesh is. That
+//! lets every chunk be meshed at three levels (base stride x1, x2, x4: 32 k,
+//! 8 k and 2 k triangles) and drawn by distance with a [`VisibilityRange`]
+//! (abrupt: the retro fragment shader does not dither). Each level has a skirt
+//! to hide the cracks between chunks at different levels. A ranged entity is
+//! never a shadow caster, so the shadows come from one extra entity per chunk
+//! on [`SHADOW_LAYER`] (the sun's layer, not the camera's), sharing the x2 mesh.
+//!
 //! The terrain is **ground**, not vegetation. It used to be painted with the
 //! fuel raster's classes, which read as a camouflage patchwork however much
 //! the boundaries were warped — the underlying data is 20 m and no amount of
@@ -19,6 +29,9 @@
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::render::texture::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
+use bevy::render::view::{RenderLayers, VisibilityRange};
 use scenario::{Cell, Cover, CoverClass, Pos, Scenario};
 
 use crate::field::noise;
@@ -406,6 +419,141 @@ fn ground_color(scn: &Scenario, sea: &crate::ground_mask::SeaGrid, elev: f32, sl
 }
 
 
+/// Layer of the terrain's shadow casters: the sun sees it (it is on the sun's
+/// layers, see `main.rs`), the camera does not. A [`VisibilityRange`] entity is
+/// never queued as a shadow caster (the light's views are not in the range
+/// table), so the shadows come from one extra entity per chunk that shares the
+/// middle level's mesh.
+pub const SHADOW_LAYER: usize = 1;
+
+/// Distance from the camera, metres, to a chunk's centre beyond which the
+/// terrain is drawn with twice, and then four times, the base stride (the base
+/// is `Graphics::terrain_stride`). The chunk is 640 m wide, so its near edge is
+/// up to ~450 m closer than its centre. The switch is abrupt: the colour and
+/// the normal come from textures, so only the silhouette changes.
+pub const LOD1_M: f32 = 1100.0;
+pub const LOD2_M: f32 = 2600.0;
+
+/// Mesh strides per level, relative to the base stride.
+const LEVELS: [usize; 3] = [1, 2, 4];
+
+/// Skirt depth as a fraction of the level's posting: hides the cracks where
+/// neighbouring chunks are drawn at different strides.
+const SKIRT: f32 = 0.6;
+
+fn f16_bits(x: f32) -> u16 {
+    let b = x.to_bits();
+    let sign = ((b >> 16) & 0x8000) as u16;
+    let exp = ((b >> 23) & 0xff) as i32 - 127 + 15;
+    let mant = b & 0x7f_ffff;
+    if exp >= 31 {
+        sign | 0x7c00
+    } else if exp <= 0 {
+        if exp < -10 {
+            return sign;
+        }
+        let m = mant | 0x80_0000;
+        let shift = (14 - exp) as u32;
+        sign | ((m >> shift) + ((m >> (shift - 1)) & 1)) as u16
+    } else {
+        sign.wrapping_add(((exp as u32) << 10) as u16).wrapping_add(((mant >> 13) + ((mant >> 12) & 1)) as u16)
+    }
+}
+
+fn ground_texture(w: usize, h: usize, data: Vec<u8>, format: TextureFormat) -> Image {
+    let mut image = Image::new(
+        Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        data,
+        format,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        address_mode_u: ImageAddressMode::ClampToEdge,
+        address_mode_v: ImageAddressMode::ClampToEdge,
+        mag_filter: ImageFilterMode::Linear,
+        min_filter: ImageFilterMode::Linear,
+        ..default()
+    });
+    image
+}
+
+/// One chunk at one level: samples `c0..=c0+ncx` by `r0..=r0+ncy` of the base
+/// grid, every `f`-th, the last one always the chunk's edge; plus a skirt.
+#[allow(clippy::too_many_arguments)]
+fn level_mesh(
+    grid: &Grid,
+    (c0, r0): (usize, usize),
+    (ncx, ncy): (usize, usize),
+    f: usize,
+    origin: [f32; 2],
+    height_m: f32,
+) -> Mesh {
+    let xs: Vec<usize> = (0..=ncx.div_ceil(f)).map(|c| c0 + (c * f).min(ncx)).collect();
+    let ys: Vec<usize> = (0..=ncy.div_ceil(f)).map(|r| r0 + (r * f).min(ncy)).collect();
+    let (nvx, nvy) = (xs.len(), ys.len());
+    let mut positions = Vec::with_capacity(nvx * nvy + 2 * (nvx + nvy));
+    let mut normals = Vec::with_capacity(positions.capacity());
+    for &r in &ys {
+        for &c in &xs {
+            let i = r * grid.cols + c;
+            positions.push([c as f32 * grid.posting - origin[0], grid.elev[i], r as f32 * grid.posting - height_m - origin[1]]);
+            normals.push(grid.normal[i]);
+        }
+    }
+    let mut indices = Vec::with_capacity((nvx - 1) * (nvy - 1) * 6 + 12 * (nvx + nvy));
+    for r in 0..nvy - 1 {
+        for c in 0..nvx - 1 {
+            let i = (r * nvx + c) as u32;
+            let (right, down) = (i + 1, i + nvx as u32);
+            indices.extend_from_slice(&[i, down, right, right, down, down + 1]);
+        }
+    }
+    // skirt: a copy of each edge vertex, dropped; both windings, so it shows
+    // from whichever side the gap is seen
+    let depth = SKIRT * f as f32 * grid.posting;
+    let edges: [Vec<u32>; 4] = [
+        (0..nvx).map(|c| c as u32).collect(),
+        (0..nvx).map(|c| ((nvy - 1) * nvx + c) as u32).collect(),
+        (0..nvy).map(|r| (r * nvx) as u32).collect(),
+        (0..nvy).map(|r| (r * nvx + nvx - 1) as u32).collect(),
+    ];
+    for edge in edges {
+        let base = positions.len() as u32;
+        for &v in &edge {
+            let mut p = positions[v as usize];
+            p[1] -= depth;
+            let n = normals[v as usize];
+            positions.push(p);
+            normals.push(n);
+        }
+        for k in 0..edge.len() as u32 - 1 {
+            let (a, b, c, d) = (edge[k as usize], edge[k as usize + 1], base + k, base + k + 1);
+            indices.extend_from_slice(&[a, b, c, c, b, d, a, c, b, c, d, b]);
+        }
+    }
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        // Static geometry: release the CPU copy after GPU upload on
+        // native too. Height queries and Mario's floor use the terrain
+        // data directly, not this rendered mesh.
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+/// The shaped heightfield and its normals at the base stride.
+struct Grid {
+    cols: usize,
+    posting: f32,
+    elev: Vec<f32>,
+    /// In Bevy's frame (z flipped).
+    normal: Vec<[f32; 3]>,
+}
+
 pub fn build(
     scn: &Scenario,
     commands: &mut Commands,
@@ -414,10 +562,12 @@ pub fn build(
     images: &mut Assets<Image>,
     gfx: &crate::quality::Graphics,
 ) {
-    // Terrain samples per mesh vertex (`Graphics::terrain_stride`): every
+    // Terrain samples per base mesh vertex (`Graphics::terrain_stride`): every
     // sample natively; in the browser every fourth (20 m), which WebGL can
     // draw. The data (and so the agents and every height lookup) stay at full
-    // resolution.
+    // resolution. The colour and normal textures have one texel per base
+    // vertex; natively, chunks farther away are meshed at 2x and 4x that
+    // stride (`LOD1_M`, `LOD2_M`) and read the same textures.
     let stride = gfx.terrain_stride.max(1);
     let t = &scn.terrain;
     let mut mask = crate::ground_mask::build(scn);
@@ -425,6 +575,66 @@ pub fn build(
     // shader adds a grain there so the meadow keeps its contrast (0 = no blades)
     mask.rect.w = if gfx.cover_m > 0.0 { crate::near_cover::BANDS_M[crate::near_cover::BANDS_M.len() - 1] } else { 0.0 };
     images.insert(&crate::ground_mask::GRASS_MAP, crate::ground_mask::grass_map(scn));
+
+    // the base grid: every `stride`-th sample
+    let (cols, rows, posting) = ((t.cols - 1) / stride + 1, (t.rows - 1) / stride + 1, t.posting * stride as f32);
+    let shore = ShoreField::new(scn);
+    let sea = mask.sea;
+
+    // Per sample: shaped height, normal and ground colour. The colour and the
+    // normal go to textures, so the look does not depend on the mesh density.
+    let mut grid = Grid { cols, posting, elev: Vec::with_capacity(cols * rows), normal: Vec::with_capacity(cols * rows) };
+    let mut colour_px: Vec<u8> = Vec::with_capacity(cols * rows * 4);
+    let mut normal_px: Vec<u8> = Vec::with_capacity(cols * rows * 8);
+    for r in 0..rows {
+        for c in 0..cols {
+            let gx = c as f32 * posting;
+            // row 0 is the north edge; world +y is north
+            let gy = t.height_m - r as f32 * posting;
+            let p = Pos { x: gx, y: gy };
+            let raw = t.elev[(r * stride).min(t.rows - 1) * t.cols + (c * stride).min(t.cols - 1)];
+            let shore_d = shore.at(p);
+            let elev = cliff_elev(scn, &shore, p, raw);
+            // Deliberately the plain heightfield normal, not a
+            // noise-perturbed one: a jittered normal feeds
+            // straight into the directional light's shadow-map bias,
+            // and at a jitter scale finer than the shadow map texel
+            // it produces exactly the blotchy close-range
+            // self-shadowing this comment is here to stop someone
+            // reintroducing (it shipped once, briefly).
+            let n = if shore_d > COAST_REACH_M {
+                t.normal_at(p)
+            } else {
+                // the same formula as `normal_at`, over the shaped ground
+                let d = posting;
+                let h = |q: Pos| cliff_elev(scn, &shore, q, t.height_at(q));
+                let (hl, hr) = (h(Pos { x: p.x - d, ..p }), h(Pos { x: p.x + d, ..p }));
+                let (hd, hu) = (h(Pos { y: p.y - d, ..p }), h(Pos { y: p.y + d, ..p }));
+                let (nx, ny, nz) = (hl - hr, 2.0 * d, hd - hu);
+                let len = (nx * nx + ny * ny + nz * nz).sqrt();
+                [nx / len, ny / len, nz / len]
+            };
+            let n = [n[0], n[1], -n[2]];
+            grid.elev.push(elev);
+            grid.normal.push(n);
+            for v in [n[0], n[1], n[2], 0.0] {
+                normal_px.extend_from_slice(&f16_bits(v).to_le_bytes());
+            }
+            let col = ground_color(scn, &sea, elev, n[1], p, shore_d);
+            colour_px.extend(col.iter().map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8));
+            colour_px.push(255);
+        }
+    }
+    let colour_tex = images.add(ground_texture(cols, rows, colour_px, TextureFormat::Rgba8UnormSrgb));
+    let normal_tex = images.add(ground_texture(cols, rows, normal_px, TextureFormat::Rgba16Float));
+    // world metres to texel-centre uv (`terrain_uv` in the shader)
+    let tex_rect = Vec4::new(
+        1.0 / (posting * cols as f32),
+        1.0 / (posting * rows as f32),
+        0.5 / cols as f32,
+        t.height_m / (posting * rows as f32) + 0.5 / rows as f32,
+    );
+
     let material = materials.add(retro::terrain_material(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 1.0,
@@ -435,122 +645,81 @@ pub fn build(
         ..default()
     // The terrain is the backdrop, not a participating neon object: keep the
     // dev floor matte and opt it out of the animated edge treatment.
-    }, { images.insert(&crate::ground_mask::ROAD_MASK, mask.image); crate::ground_mask::ROAD_MASK }, mask.rect));
-    let mask = mask.sea;
+    }, { images.insert(&crate::ground_mask::ROAD_MASK, mask.image); crate::ground_mask::ROAD_MASK }, mask.rect, colour_tex, normal_tex, tex_rect));
 
-    // the mesh's own grid: every `stride`-th sample
-    let (cols, rows, posting) = ((t.cols - 1) / stride + 1, (t.rows - 1) / stride + 1, t.posting * stride as f32);
-    let chunks_x = (cols - 1).div_ceil(CHUNK);
-    let chunks_y = (rows - 1).div_ceil(CHUNK);
-    let (mut count, mut submerged) = (0, 0);
-    let shore = ShoreField::new(scn);
+    let levels: &[usize] = if stride >= 4 { &LEVELS[..1] } else { &LEVELS };
+    // distances at which each level hands over to the next
+    let cuts = [LOD1_M, LOD2_M];
+    let (chunks_x, chunks_y) = ((cols - 1).div_ceil(CHUNK), (rows - 1).div_ceil(CHUNK));
+    let (mut count, mut submerged, mut tris) = (0, 0, [0usize; 3]);
 
     for cy in 0..chunks_y {
         for cx in 0..chunks_x {
-            let c0 = cx * CHUNK;
-            let r0 = cy * CHUNK;
-            // +1 so neighbouring chunks share an edge and leave no seam
-            let cn = (CHUNK + 1).min(cols - c0);
-            let rn = (CHUNK + 1).min(rows - r0);
-            if cn < 2 || rn < 2 {
+            let (c0, r0) = (cx * CHUNK, cy * CHUNK);
+            // neighbouring chunks share an edge sample and leave no seam
+            let (ncx, ncy) = (CHUNK.min(cols - 1 - c0), CHUNK.min(rows - 1 - r0));
+            if ncx < 1 || ncy < 1 {
                 continue;
             }
-
-            let mut positions = Vec::with_capacity(cn * rn);
-            let mut normals = Vec::with_capacity(cn * rn);
-            let mut colors = Vec::with_capacity(cn * rn);
-            let mut uvs = Vec::with_capacity(cn * rn);
-
-            for r in 0..rn {
-                for c in 0..cn {
-                    let gx = (c0 + c) as f32 * posting;
-                    // row 0 is the north edge; world +y is north
-                    let gy = t.height_m - (r0 + r) as f32 * posting;
-                    let p = Pos { x: gx, y: gy };
-                    let raw = t.elev[((r0 + r) * stride).min(t.rows - 1) * t.cols + ((c0 + c) * stride).min(t.cols - 1)];
-                    let shore_d = shore.at(p);
-                    let elev = cliff_elev(scn, &shore, p, raw);
-
-                    positions.push([gx, elev, -gy]);
-                    // Deliberately the plain heightfield normal, not a
-                    // noise-perturbed one: a per-vertex jittered normal feeds
-                    // straight into the directional light's shadow-map bias,
-                    // and at a jitter scale finer than the shadow map texel
-                    // it produces exactly the blotchy close-range
-                    // self-shadowing this comment is here to stop someone
-                    // reintroducing (it shipped once, briefly).
-                    let n = if shore_d > COAST_REACH_M {
-                        t.normal_at(p)
-                    } else {
-                        // the same formula as `normal_at`, over the shaped ground
-                        let d = posting;
-                        let h = |q: Pos| cliff_elev(scn, &shore, q, t.height_at(q));
-                        let (hl, hr) = (h(Pos { x: p.x - d, ..p }), h(Pos { x: p.x + d, ..p }));
-                        let (hd, hu) = (h(Pos { y: p.y - d, ..p }), h(Pos { y: p.y + d, ..p }));
-                        let (nx, ny, nz) = (hl - hr, 2.0 * d, hd - hu);
-                        let len = (nx * nx + ny * ny + nz * nz).sqrt();
-                        [nx / len, ny / len, nz / len]
-                    };
-                    normals.push([n[0], n[1], -n[2]]);
-
-                    let col = ground_color(scn, &mask, elev, n[1], p, shore_d);
-                    let col = Color::srgb(col[0], col[1], col[2]).to_linear();
-                    colors.push([col.red, col.green, col.blue, 1.0]);
-                    uvs.push([c as f32 / cn as f32, r as f32 / rn as f32]);
-                }
-            }
-
-            let under = positions.iter().all(|p| p[1] < SUBMERGED_M);
+            // each level's entity sits at the chunk's centre: that is where
+            // its visibility range measures from
+            let origin = [(c0 as f32 + ncx as f32 * 0.5) * posting, (r0 as f32 + ncy as f32 * 0.5) * posting - t.height_m];
+            let centre = Vec3::new(origin[0], 0.0, origin[1]);
+            let under = (r0..=r0 + ncy).all(|r| (c0..=c0 + ncx).all(|c| grid.elev[r * cols + c] < SUBMERGED_M));
             submerged += usize::from(under);
-
-            let mut indices = Vec::with_capacity((cn - 1) * (rn - 1) * 6);
-            for r in 0..rn - 1 {
-                for c in 0..cn - 1 {
-                    let i = (r * cn + c) as u32;
-                    let right = i + 1;
-                    let down = i + cn as u32;
-                    let diag = down + 1;
-                    indices.extend_from_slice(&[i, down, right, right, down, diag]);
+            // a hidden chunk keeps only the finest level
+            let used = if under { &levels[..1] } else { levels };
+            for (k, &f) in used.iter().enumerate() {
+                let mesh = level_mesh(&grid, (c0, r0), (ncx, ncy), f, origin, t.height_m);
+                tris[k] += mesh.indices().map_or(0, |i| i.len() / 3);
+                let mesh = meshes.add(mesh);
+                let mut chunk = commands.spawn((
+                    MaterialMeshBundle::<RetroMaterial> {
+                        mesh: mesh.clone(),
+                        material: material.clone(),
+                        transform: Transform::from_translation(centre),
+                        // still spawned: Mario swims over it, and needs a floor
+                        visibility: if under { Visibility::Hidden } else { Visibility::Inherited },
+                        ..default()
+                    },
+                    TerrainChunk,
+                    PauseSolid,
+                ));
+                if used.len() > 1 {
+                    let near = if k == 0 { 0.0 } else { cuts[k - 1] };
+                    let far = cuts.get(k).copied().unwrap_or(1.0e9);
+                    chunk.insert((VisibilityRange::abrupt(near, far), bevy::pbr::NotShadowCaster));
+                } else if !gfx.terrain_shadows {
+                    chunk.insert(bevy::pbr::NotShadowCaster);
                 }
-            }
-
-            let mut mesh = Mesh::new(
-                PrimitiveTopology::TriangleList,
-                // Static geometry: release the CPU copy after GPU upload on
-                // native too. Height queries and Mario's floor use the terrain
-                // data directly, not this rendered mesh.
-                RenderAssetUsages::RENDER_WORLD,
-            );
-            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
-            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-            mesh.insert_indices(Indices::U32(indices));
-
-            let mut chunk = commands.spawn((
-                MaterialMeshBundle::<RetroMaterial> {
-                    mesh: meshes.add(mesh),
-                    material: material.clone(),
-                    // still spawned: Mario swims over it, and needs a floor
-                    visibility: if under { Visibility::Hidden } else { Visibility::Inherited },
-                    ..default()
-                },
-                TerrainChunk,
-                PauseSolid,
-            ));
-            if !gfx.terrain_shadows {
-                chunk.insert(bevy::pbr::NotShadowCaster);
+                // the shadows come from the middle level, on the sun's layer only
+                if used.len() > 1 && k == 1 {
+                    let mut shadow = commands.spawn((
+                        MaterialMeshBundle::<RetroMaterial> {
+                            mesh,
+                            material: material.clone(),
+                            transform: Transform::from_translation(centre),
+                            ..default()
+                        },
+                        TerrainChunk,
+                        RenderLayers::layer(SHADOW_LAYER),
+                    ));
+                    if !gfx.terrain_shadows {
+                        shadow.insert(bevy::pbr::NotShadowCaster);
+                    }
+                }
             }
             count += 1;
         }
     }
 
     info!(
-        "terrain: {count} chunks ({submerged} under the sea, not drawn), {:.2} M vertices @ {} m posting",
+        "terrain: {count} chunks ({submerged} under the sea, not drawn), {:.2} M samples @ {} m posting, levels {:?} x base stride {stride}, triangles per level {:?}",
         (t.rows * t.cols) as f32 / 1e6,
-        t.posting
+        t.posting,
+        &levels,
+        tris
     );
-
 }
 
 /// Centre of a fire cell, lifted onto the terrain.

@@ -33,6 +33,7 @@
 //! frame rate — draws every vegetation triangle once per pass, shadow
 //! cascades included. Both meshes burn together.
 
+use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
@@ -215,10 +216,21 @@ struct Chunk {
     /// Authored models and distant proxies (see the module doc).
     mesh: Handle<Mesh>,
     low_mesh: Handle<Mesh>,
+    /// Index list the proxies' mesh swaps with when the chunk crosses
+    /// [`FAR_TIER`]: the farthest tier's, or the nearer one's once swapped.
+    far_idx: Vec<u32>,
+    /// The proxies' mesh is on its farthest tier.
+    far: bool,
     full: Entity,
     low: Entity,
     /// Which of the two is on show.
     near: bool,
+    /// The full models cast the sun's shadow (within [`FULL_SHADOW_M`]); beyond
+    /// it `shadow` casts it for them.
+    full_casts: bool,
+    /// The proxies again, on the sun's layer only: the shadow of a full-model
+    /// chunk too far for its crowns to show in the shadow map.
+    shadow: Option<Entity>,
     /// World-space bounds (Bevy frame) of the plants, for the LOD distance.
     bounds: (Vec3, Vec3),
     /// Fire cells the chunk covers, `(row0, row1, col0, col1)`, end exclusive.
@@ -307,6 +319,7 @@ pub fn spawn(
     for cy in 0..chunks_y {
         for cx in 0..chunks_x {
             let mut builder = Lods::default();
+            builder.low.want_far = true;
             let mut plants = Vec::new();
 
             for r in cy * CHUNK_CELLS..((cy + 1) * CHUNK_CELLS).min(rows) {
@@ -359,7 +372,8 @@ pub fn spawn(
             let pos_base = builder.full.positions.clone();
             let low_pos_base = builder.low.positions.clone();
             let mesh = meshes.add(builder.full.finish());
-            let low_mesh = meshes.add(builder.low.finish());
+            let (low, far_idx) = builder.low.finish_with_far();
+            let low_mesh = meshes.add(low);
 
             // Vegetation is visual only: Mario can run through trunks and
             // canopies, and the follow camera is not clipped by the forest.
@@ -375,12 +389,28 @@ pub fn spawn(
                 visibility: Visibility::Hidden,
                 ..default()
             }).id();
+            // Same mesh handle as `low`: the burn edits reach it for free.
+            let shadow = gfx.shadows.then(|| {
+                commands.spawn((
+                    MaterialMeshBundle::<RetroMaterial> {
+                        mesh: low_mesh.clone(),
+                        material: material.clone(),
+                        visibility: Visibility::Hidden,
+                        ..default()
+                    },
+                    bevy::render::view::RenderLayers::layer(crate::terrain_mesh::SHADOW_LAYER),
+                )).id()
+            });
             chunks.push(Chunk {
                 mesh,
                 low_mesh,
+                far_idx,
+                far: false,
                 full,
                 low,
                 near: true,
+                full_casts: true,
+                shadow,
                 bounds,
                 cells: (
                     cy * CHUNK_CELLS,
@@ -786,9 +816,25 @@ struct Builder {
     normals: Vec<[f32; 3]>,
     colors: Vec<[f32; 4]>,
     indices: Vec<u32>,
+    /// The same triangles for the farthest tier (see [`FAR_TIER`]): only a
+    /// `want_far` builder keeps them, and only up to `far_synced` of
+    /// `indices` is mirrored in it.
+    want_far: bool,
+    far: Vec<u32>,
+    far_synced: usize,
 }
 
 impl Builder {
+    /// Copy what was added to `indices` since the last call into `far`
+    /// unchanged: the shapes that have no cheaper version.
+    fn sync_far(&mut self) {
+        if self.want_far {
+            self.far.extend_from_slice(&self.indices[self.far_synced..]);
+        }
+        self.far_synced = self.indices.len();
+    }
+
+
     fn model(&mut self, model: &crate::models::Model, base: Vec3, scale: Vec3, yaw: f32,
         foliage: [f32; 3], wood: [f32; 3]) {
         let start = self.positions.len() as u32;
@@ -827,6 +873,7 @@ impl Builder {
     fn proxy(&mut self, name: &str, base: Vec3, scale: Vec3, yaw: f32,
         foliage: [f32; 3], wood: [f32; 3]) {
         const SIDES: u32 = 6;
+        self.sync_far();
         let p = proxy(name);
         // a few percent darker: the authored crown shades itself in its lobes
         let foliage = mul(foliage, 0.95);
@@ -847,6 +894,12 @@ impl Builder {
                 let (b0, b1) = (start + 2 * i, start + 2 * ((i + 1) % 3));
                 self.indices.extend_from_slice(&[b0, b0 + 1, b1, b1, b0 + 1, b1 + 1]);
             }
+            if self.want_far {
+                // the trunk stays: it is what darkens the ground under a crown
+                let n = self.indices.len();
+                let trunk: Vec<u32> = self.indices[n - 18..].to_vec();
+                self.far.extend(trunk);
+            }
         }
 
         let y = |t: f32| lo.y + (hi.y - lo.y) * t;
@@ -860,6 +913,24 @@ impl Builder {
             }
         }
         let top = self.vertex_a(at(Vec3::new(centre.x, hi.y, centre.z)), mul(foliage, p.shade_high * 1.05), 1.0);
+        // The farthest tier is a bipyramid on a ring of its own (vertices the
+        // nearer tier never indexes), as wide as the crown is at its widest:
+        // the near rings are too far apart in height to drop either of them.
+        let far_ring = self.positions.len() as u32;
+        if self.want_far {
+            // a little lighter than the near rings: the far faces are flatter
+            // to the sun, and the crown would otherwise read darker
+            let shade = p.shade_high * 1.08;
+            for i in 0..SIDES {
+                let a = i as f32 * std::f32::consts::TAU / SIDES as f32;
+                let v = Vec3::new(centre.x + a.cos() * radius.x * 0.97, y(0.45), centre.z + a.sin() * radius.z * 0.97);
+                self.vertex_a(at(v), mul(foliage, shade), 1.0);
+            }
+            for i in 0..SIDES {
+                let (a, b) = (far_ring + i, far_ring + (i + 1) % SIDES);
+                self.far.extend_from_slice(&[bottom, a, b, a, top, b]);
+            }
+        }
         for i in 0..SIDES {
             let (a, b) = (ring + i, ring + (i + 1) % SIDES);
             let (c, d) = (a + SIDES, b + SIDES);
@@ -867,6 +938,7 @@ impl Builder {
             // averages point out of the crown
             self.indices.extend_from_slice(&[bottom, a, b, a, c, b, c, d, b, c, top, d]);
         }
+        self.far_synced = self.indices.len();
     }
 
     fn vertex(&mut self, p: Vec3, c: [f32; 3]) -> u32 {
@@ -949,7 +1021,14 @@ impl Builder {
     }
 
     /// Area-weighted vertex normals from the faces, then the mesh.
-    fn finish(mut self) -> Mesh {
+    fn finish(self) -> Mesh {
+        self.finish_with_far().0
+    }
+
+    /// The mesh and, for a `want_far` builder, the farthest tier's index list
+    /// over the same vertices.
+    fn finish_with_far(mut self) -> (Mesh, Vec<u32>) {
+        self.sync_far();
         for n in &mut self.normals {
             *n = [0.0, 0.0, 0.0];
         }
@@ -965,6 +1044,22 @@ impl Builder {
                 self.normals[i] = (Vec3::from(self.normals[i]) + face).into();
             }
         }
+        // vertices only the far tier uses take their normals from its faces
+        let near_only = self.normals.clone();
+        for tri in self.far.chunks_exact(3) {
+            let (a, b, c) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
+            let (pa, pb, pc) = (
+                Vec3::from(self.positions[a]),
+                Vec3::from(self.positions[b]),
+                Vec3::from(self.positions[c]),
+            );
+            let face = (pb - pa).cross(pc - pa);
+            for i in [a, b, c] {
+                if near_only[i] == [0.0, 0.0, 0.0] {
+                    self.normals[i] = (Vec3::from(self.normals[i]) + face).into();
+                }
+            }
+        }
         for n in &mut self.normals {
             *n = Vec3::from(*n).normalize_or_zero().into();
         }
@@ -977,7 +1072,7 @@ impl Builder {
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, self.colors);
         mesh.insert_indices(Indices::U32(self.indices));
-        mesh
+        (mesh, self.far)
     }
 }
 
@@ -1296,6 +1391,7 @@ fn build_char_layer(
                 ..default()
             })
             .id();
+        if on && !chunk.full_casts { commands.entity(entity).insert(NotShadowCaster); }
         CharMesh { mesh, entity, shown, hidden, ranges, colors }
     };
     CharLayer { near: make(false), far: make(true) }
@@ -1371,30 +1467,68 @@ impl Vegetation {
 }
 
 pub fn lod(
+    mut commands: Commands,
     mut veg: ResMut<Vegetation>,
     camera: Query<&Transform, (With<Camera3d>, Without<crate::camera::AuxiliaryCamera>)>,
     mut visibility: Query<&mut Visibility>,
+    mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let Ok(eye) = camera.get_single().map(|t: &Transform| t.translation) else { return };
     let lod_m = veg.lod_m;
-    for chunk in &mut veg.chunks {
+    let far_m = (lod_m * FAR_TIER).max(FAR_TIER_MIN_M);
+        for chunk in &mut veg.chunks {
         let (lo, hi) = chunk.bounds;
         let d = eye.distance(eye.clamp(lo, hi));
         let near = if chunk.near { d < lod_m * 1.1 } else { d < lod_m };
-        if near != chunk.near {
-            chunk.near = near;
-            let (near_char, far_char) = match &chunk.char {
-                Some(l) => (Some(l.near.entity), Some(l.far.entity)),
-                None => (None, None),
-            };
-            for (e, on) in [(Some(chunk.full), near), (Some(chunk.low), !near), (near_char, near), (far_char, !near)] {
-                if let Some(Ok(mut v)) = e.map(|e| visibility.get_mut(e)) {
-                    *v = if on { Visibility::Inherited } else { Visibility::Hidden };
-                }
+        // the proxies' own two tiers: the same vertices, fewer triangles
+        let far = !near && if chunk.far { d > far_m / 1.1 } else { d > far_m };
+        if far != chunk.far {
+            if let Some(Indices::U32(idx)) = meshes.get_mut(&chunk.low_mesh).and_then(|m| m.indices_mut()) {
+                std::mem::swap(idx, &mut chunk.far_idx);
+                chunk.far = far;
+            }
+        }
+        let full_casts = near && if chunk.full_casts { d < FULL_SHADOW_M * 1.1 } else { d < FULL_SHADOW_M };
+        if near == chunk.near && full_casts == chunk.full_casts {
+            continue;
+        }
+        let (near_char, far_char) = match &chunk.char {
+            Some(l) => (Some(l.near.entity), Some(l.far.entity)),
+            None => (None, None),
+        };
+        chunk.near = near;
+        chunk.full_casts = full_casts;
+        // the full models draw the shadow only close up; beyond that the
+        // proxies do, from the sun's layer
+        for e in [Some(chunk.full), near_char].into_iter().flatten() {
+            if full_casts { commands.entity(e).remove::<NotShadowCaster>(); }
+            else { commands.entity(e).insert(NotShadowCaster); }
+        }
+        for (e, on) in [
+            (Some(chunk.full), near),
+            (Some(chunk.low), !near),
+            (near_char, near),
+            (far_char, !near),
+            (chunk.shadow, near && !full_casts),
+        ] {
+            if let Some(Ok(mut v)) = e.map(|e| visibility.get_mut(e)) {
+                *v = if on { Visibility::Inherited } else { Visibility::Hidden };
             }
         }
     }
 }
+
+/// Within this distance the full models cast their own shadow; beyond it the
+/// proxies do. The sun's first cascade ends at 80 m and the second at about
+/// 300 m, where a texel is a hand's width: a crown's lobes are gone from the
+/// shadow map, and its outline is the proxy's.
+const FULL_SHADOW_M: f32 = 250.0;
+
+/// Beyond this many times [`Vegetation::lod_m`] (and at least
+/// [`FAR_TIER_MIN_M`]) the proxies drop to 12 triangles a crown and a
+/// three-sided trunk: a plant there is a few pixels.
+const FAR_TIER: f32 = 2.0;
+const FAR_TIER_MIN_M: f32 = 2000.0;
 
 /// Fire state of a single plant, from the interpolated front.
 fn plant_state(field: &FireField, plant: &Plant, now: f32) -> u8 {

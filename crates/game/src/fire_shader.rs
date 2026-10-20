@@ -19,6 +19,8 @@ use bevy::render::render_resource::{
 
 const FLAME_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(0x9F3D_2C61_88AA_11EE_A0B1_2233_4455_6677);
+const SMOKE_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u128(0x6C02_5D4F_93B1_47A8_8E2D_0F19_A3C7_B456);
 const GROUND_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(0x4B7E_119A_2CDD_44FF_9021_AABB_CCDD_EEFF);
 
@@ -52,6 +54,39 @@ impl Material for FireMaterial {
     ) -> Result<(), SpecializedMeshPipelineError> {
         // Billboards are built double-sided (see QuadBuilder) precisely so
         // they read from any camera angle.
+        descriptor.primitive.cull_mode = None;
+        Ok(())
+    }
+}
+
+/// Smoke puffs: unlit, alpha-blended, fogged by hand. See `shaders/smoke.wgsl`.
+#[derive(Asset, TypePath, AsBindGroup, Clone)]
+pub struct SmokeMaterial {
+    #[texture(0)]
+    #[sampler(1)]
+    pub texture: Handle<Image>,
+}
+
+impl Material for SmokeMaterial {
+    fn vertex_shader() -> ShaderRef {
+        SMOKE_SHADER_HANDLE.into()
+    }
+
+    fn fragment_shader() -> ShaderRef {
+        SMOKE_SHADER_HANDLE.into()
+    }
+
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Blend
+    }
+
+    fn specialize(
+        _pipeline: &MaterialPipeline<Self>,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // Built double-sided, like the other billboards.
         descriptor.primitive.cull_mode = None;
         Ok(())
     }
@@ -106,8 +141,10 @@ impl Plugin for FireShaderPlugin {
             "shaders/fire_ground.wgsl",
             Shader::from_wgsl
         );
+        load_internal_asset!(app, SMOKE_SHADER_HANDLE, "shaders/smoke.wgsl", Shader::from_wgsl);
         app.add_plugins((
             MaterialPlugin::<FireMaterial>::default(),
+            MaterialPlugin::<SmokeMaterial>::default(),
             MaterialPlugin::<FireGroundMaterial>::default(),
         ));
     }

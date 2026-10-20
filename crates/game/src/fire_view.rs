@@ -21,6 +21,8 @@
 //! what a cell can threaten.
 
 use bevy::prelude::*;
+use bevy::pbr::{FogFalloff, FogSettings};
+use bevy::render::camera::Exposure;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
 use fire::exposure::flame_length_m;
@@ -28,7 +30,7 @@ use fire::CellFire;
 use scenario::Pos;
 
 use crate::field::{noise, FireField};
-use crate::fire_shader::{FireGroundMaterial, FireMaterial};
+use crate::fire_shader::{FireGroundMaterial, FireMaterial, SmokeMaterial};
 use crate::sim::Sim;
 use crate::textures;
 
@@ -131,6 +133,9 @@ pub struct FireView {
     smoke: Vec<Particle>,
     embers: Vec<Particle>,
     seed: u64,
+    /// Fractions of a puff and of an ember owed from earlier frames, so the
+    /// spawn rate does not depend on the frame rate.
+    owed: (f32, f32),
     /// Flame tongues of the fire front, rebuilt only when the sim moves.
     tongues: Vec<CachedTongue>,
     tongues_key: (u64, u32),
@@ -172,7 +177,7 @@ struct Particle {
 pub fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut smoke_materials: ResMut<Assets<SmokeMaterial>>,
     mut fire_materials: ResMut<Assets<FireMaterial>>,
     mut ground_materials: ResMut<Assets<FireGroundMaterial>>,
     mut images: ResMut<Assets<Image>>,
@@ -202,15 +207,7 @@ pub fn setup(
     let spark_mat = fire_materials.add(FireMaterial { texture: spark_tex, mode: Vec4::new(2.0, 0.0, 0.0, 0.0) });
     // Smoke occludes: alpha blending, and unlit so a plume does not flicker
     // as it crosses the terrain's shadow line.
-    let smoke_mat = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        base_color_texture: Some(puff_tex),
-        unlit: true,
-        alpha_mode: AlphaMode::Blend,
-        double_sided: true,
-        cull_mode: None,
-        ..default()
-    });
+    let smoke_mat = smoke_materials.add(SmokeMaterial { texture: puff_tex });
 
     commands.spawn((
         MaterialMeshBundle {
@@ -243,7 +240,7 @@ pub fn setup(
         bevy::pbr::NotShadowCaster,
     ));
     commands.spawn((
-        PbrBundle {
+        MaterialMeshBundle {
             mesh: smoke_mesh.clone(),
             material: smoke_mat,
             ..default()
@@ -265,6 +262,7 @@ pub fn setup(
         smoke: Vec::new(),
         embers: Vec::new(),
         seed: 0x5EED_1E55,
+        owed: (0.0, 0.0),
         tongues: Vec::new(),
         tongues_key: (u64::MAX, 0),
         last_flame_verts: 0,
@@ -639,6 +637,9 @@ struct QuadBuilder {
     colors: Vec<[f32; 4]>,
     uvs: Vec<[f32; 2]>,
     indices: Vec<u32>,
+    /// Flames and embers read no normal (their shader never lights); only the
+    /// smoke uses the slot, for its fog.
+    no_normals: bool,
 }
 
 impl QuadBuilder {
@@ -649,6 +650,7 @@ impl QuadBuilder {
             colors: Vec::with_capacity(verts),
             uvs: Vec::with_capacity(verts),
             indices: Vec::with_capacity(verts / 16 * 42),
+            no_normals: true,
         }
     }
 
@@ -672,7 +674,9 @@ impl QuadBuilder {
             (centre - right * taper + up, top, [0.0, 0.0]),
         ] {
             self.positions.push(offset.into());
-            self.normals.push([0.0, 1.0, 0.0]);
+            if !self.no_normals {
+                self.normals.push([0.0, 1.0, 0.0]);
+            }
             self.colors.push(color);
             self.uvs.push(uv);
         }
@@ -718,7 +722,9 @@ impl QuadBuilder {
             // uv.y: 1 at the foot, 0 at the tip (what the shader expects).
             for (side, u) in [(-1.0f32, 0.0f32), (1.0, 1.0)] {
                 self.positions.push((centre + right * width * side).into());
-                self.normals.push([0.0, 1.0, 0.0]);
+                if !self.no_normals {
+                    self.normals.push([0.0, 1.0, 0.0]);
+                }
                 self.colors.push(color);
                 self.uvs.push([u, 1.0 - s]);
             }
@@ -735,7 +741,9 @@ impl QuadBuilder {
             RenderAssetUsages::default(),
         );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
+        if !self.no_normals {
+            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
+        }
         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, self.colors);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
         mesh.insert_indices(Indices::U32(self.indices));
@@ -752,6 +760,8 @@ pub fn update_flames(
     time: Res<Time>,
     camera: Query<&Transform, (With<Camera3d>, Without<crate::camera::AuxiliaryCamera>)>,
     buildings: Res<crate::buildings::Buildings>,
+    fog: Query<(&FogSettings, Option<&Exposure>), With<Camera3d>>,
+    suns: Query<(&GlobalTransform, &DirectionalLight)>,
     mut view: ResMut<FireView>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
@@ -938,7 +948,8 @@ pub fn update_flames(
         }
     }
 
-    let mut smoke = QuadBuilder::default();
+    let fogger = PuffFog::new(&fog, &suns, cam.translation);
+    let mut smoke = QuadBuilder { no_normals: false, ..default() };
     for puff in &view.smoke {
         let k = (puff.age / puff.life).clamp(0.0, 1.0);
         // Grows as it disperses, darkest and densest near the fire.
@@ -954,21 +965,25 @@ pub fn update_flames(
         let (s, c) = spin.sin_cos();
         let r = (right * c + up * s) * size;
         let u = (up * c - right * s) * size;
-        smoke.billboard(
-            puff.pos,
-            r,
-            u,
-            1.0,
-            [shade * 1.05, shade * 0.92, shade * 0.84, alpha],
-            [shade * 1.05, shade * 0.92, shade * 0.84, alpha],
-        );
+        let (gain, offset) = fogger.at(puff.pos);
+        let c = [
+            shade * 1.05 * gain.x,
+            shade * 0.92 * gain.y,
+            shade * 0.84 * gain.z,
+            alpha,
+        ];
+        smoke.billboard(puff.pos, r, u, 1.0, c, c);
+        // The normal slot carries the fog's additive part (`smoke.wgsl`).
+        for n in smoke.normals.iter_mut().rev().take(4) {
+            *n = offset.into();
+        }
     }
 
     // Embers are plain round particles (`flame.wgsl`, mode 2). Colour
     // channels carry no colour: r = age share,
     // g = per-ember phase, b = gain (negative for the landing flash).
     let eye = cam.translation;
-    let mut sparks = QuadBuilder::default();
+    let mut sparks = QuadBuilder { no_normals: true, ..default() };
     for ember in &view.embers {
         let k = (ember.age / ember.life).clamp(0.0, 1.0);
         // never smaller than ~2 px, or a far ember shimmers in and out
@@ -1006,6 +1021,74 @@ pub fn update_flames(
     meshes.insert(&view.flames, flames.finish());
     meshes.insert(&view.smoke_mesh, smoke.finish());
     meshes.insert(&view.sparks, sparks.finish());
+}
+
+
+/// The scene's distance fog as `colour * gain + offset`, evaluated on the CPU
+/// for one puff. `bevy_pbr::fog::atmospheric_fog` is affine in the colour it
+/// fogs, and across a puff the distance and view direction barely change, so
+/// one evaluation per puff replaces a per-pixel one (a light loop and a pow
+/// per fragment, about a fifth of the smoke's GPU time). Only the atmospheric
+/// falloff is mirrored, the one `sky.rs` and `tactical.rs` use; with any other
+/// the puffs go unfogged.
+struct PuffFog {
+    eye: Vec3,
+    /// (extinction, inscattering, base colour, light colour x alpha) when fog is on.
+    atmo: Option<(Vec3, Vec3, Vec4, Vec4, f32)>,
+    /// Direction to each directional light, and its colour x exposure.
+    lights: Vec<(Vec3, Vec3)>,
+}
+
+impl PuffFog {
+    fn new(
+        fog: &Query<(&FogSettings, Option<&Exposure>), With<Camera3d>>,
+        suns: &Query<(&GlobalTransform, &DirectionalLight)>,
+        eye: Vec3,
+    ) -> Self {
+        let mut out = PuffFog { eye, atmo: None, lights: Vec::new() };
+        let Ok((f, exposure)) = fog.get_single() else {
+            return out;
+        };
+        let FogFalloff::Atmospheric { extinction, inscattering } = f.falloff else {
+            return out;
+        };
+        let exposure = exposure.copied().unwrap_or_default().exposure();
+        let base = LinearRgba::from(f.color);
+        let dl = LinearRgba::from(f.directional_light_color);
+        out.atmo = Some((
+            extinction,
+            inscattering,
+            Vec4::new(base.red, base.green, base.blue, base.alpha),
+            Vec4::new(dl.red, dl.green, dl.blue, dl.alpha),
+            f.directional_light_exponent,
+        ));
+        for (t, l) in suns.iter() {
+            let c = LinearRgba::from(l.color) * l.illuminance * exposure;
+            out.lights.push((t.back().into(), Vec3::new(c.red, c.green, c.blue)));
+        }
+        out
+    }
+
+    /// (gain, offset) for a puff at `p`.
+    fn at(&self, p: Vec3) -> (Vec3, Vec3) {
+        let Some((be, bi, base, dl, exponent)) = self.atmo else {
+            return (Vec3::ONE, Vec3::ZERO);
+        };
+        let v = p - self.eye;
+        let d = v.length();
+        let dir = v / d.max(1e-3);
+        let mut fog = Vec3::new(base.x, base.y, base.z);
+        if dl.w > 0.0 {
+            let mut scatter = Vec3::ZERO;
+            for (to_light, colour) in &self.lights {
+                scatter += dir.dot(*to_light).max(0.0).powf(exponent) * *colour;
+            }
+            fog += scatter * Vec3::new(dl.x, dl.y, dl.z) * dl.w;
+        }
+        let ext = Vec3::ONE - Vec3::new((-d * be.x).exp(), (-d * be.y).exp(), (-d * be.z).exp());
+        let ins = Vec3::ONE - Vec3::new((-d * bi.x).exp(), (-d * bi.y).exp(), (-d * bi.z).exp());
+        (Vec3::ONE - ext * base.w, fog * ins * base.w)
+    }
 }
 
 /// Advance smoke and embers, and top both up from the active front.
@@ -1111,10 +1194,12 @@ fn step_particles(view: &mut FireView, sim: &Sim, dt: f32, now: f32) {
 
     // Spawn budgets scale with the front but are capped: a 20 000-cell fire
     // does not get 20 000 plumes, it gets a full sky.
-    let smoke_budget =
-        ((active.len() as f32 * dt * 1.2) as usize).min(MAX_SMOKE.saturating_sub(view.smoke.len()));
-    let ember_budget = ((active.len() as f32 * dt * 0.375) as usize)
-        .min(MAX_EMBERS.saturating_sub(view.embers.len()));
+    // Truncating `n * dt` per frame used to lose the fraction every frame,
+    // so the faster the renderer the thinner the smoke; it is carried over.
+    let (smoke_owed, ember_owed) = (view.owed.0 + active.len() as f32 * dt * 1.2, view.owed.1 + active.len() as f32 * dt * 0.375);
+    view.owed = (smoke_owed.fract(), ember_owed.fract());
+    let smoke_budget = (smoke_owed as usize).min(MAX_SMOKE.saturating_sub(view.smoke.len()));
+    let ember_budget = (ember_owed as usize).min(MAX_EMBERS.saturating_sub(view.embers.len()));
 
     for i in 0..smoke_budget + ember_budget {
         view.seed = view.seed.wrapping_mul(6364136223846793005).wrapping_add(1);
