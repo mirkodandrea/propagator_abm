@@ -3,7 +3,7 @@
 use bevy::asset::load_internal_asset;
 use bevy::pbr::{ExtendedMaterial, MaterialExtension};
 use bevy::prelude::*;
-use bevy::render::render_resource::{AsBindGroup, ShaderRef};
+use bevy::render::render_resource::{AsBindGroup, ShaderDefVal, ShaderRef};
 
 const RETRO_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(0x91A7_44D2_6B0E_4C71_AA90_2201_88C4_2F10);
@@ -37,14 +37,21 @@ pub struct RetroExtension {
     /// Terrain only: the ground colour (sRGB), one texel per terrain sample,
     /// and the surface normal (Bevy frame), so the look does not depend on the
     /// mesh density (`terrain_mesh`). Unset elsewhere: Bevy binds a fallback.
+    ///
+    /// Not in the browser: WebGL2 has 16 texture units per stage and these two
+    /// would be the 17th and 18th there. The terrain mesh carries the colour
+    /// and the normal per vertex instead (`terrain_mesh`).
+    #[cfg(not(target_arch = "wasm32"))]
     #[texture(107)]
     #[sampler(108)]
     pub ground_colour: Option<Handle<Image>>,
+    #[cfg(not(target_arch = "wasm32"))]
     #[texture(109)]
     #[sampler(110)]
     pub ground_normal: Option<Handle<Image>>,
     /// World metres to those textures' uv: x, y = 1 / (posting * size),
     /// z = half a texel in u, w = the north edge plus half a texel in v.
+    #[cfg(not(target_arch = "wasm32"))]
     #[uniform(111)]
     pub ground_rect: Vec4,
 }
@@ -91,6 +98,15 @@ impl MaterialExtension for RetroExtension {
     }
 }
 
+/// `GROUND_TEX`: the terrain reads its colour and normal from textures
+/// (native); without it, from the mesh's vertex colour and normal (browser).
+fn shader_defs() -> Vec<ShaderDefVal> {
+    #[cfg(not(target_arch = "wasm32"))]
+    return vec![ShaderDefVal::Bool("GROUND_TEX".into(), true)];
+    #[cfg(target_arch = "wasm32")]
+    return Vec::new();
+}
+
 pub struct RetroShaderPlugin;
 
 impl Plugin for RetroShaderPlugin {
@@ -99,7 +115,8 @@ impl Plugin for RetroShaderPlugin {
             app,
             RETRO_SHADER_HANDLE,
             "shaders/retro.wgsl",
-            Shader::from_wgsl
+            Shader::from_wgsl_with_defs,
+            shader_defs()
         );
         app.add_plugins(MaterialPlugin::<RetroMaterial>::default());
     }
@@ -133,14 +150,19 @@ pub fn material_with_style(
 /// The terrain's material: the retro finish plus the road mask the shader
 /// draws the road network from.
 pub fn terrain_material(base: StandardMaterial, mask: Handle<Image>, rect: Vec4, colour: Handle<Image>, normal: Handle<Image>, ground_rect: Vec4) -> RetroMaterial {
+    #[cfg(target_arch = "wasm32")]
+    let _ = (colour, normal, ground_rect);
     let mut m = material_with_style(base, false, RetroStyle::BACKGROUND);
     m.extension.enabled.w = 1.0;
     m.extension.road_mask = Some(mask);
     m.extension.mask_rect = rect;
     m.extension.grass_map = Some(crate::ground_mask::GRASS_MAP);
-    m.extension.ground_colour = Some(colour);
-    m.extension.ground_normal = Some(normal);
-    m.extension.ground_rect = ground_rect;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        m.extension.ground_colour = Some(colour);
+        m.extension.ground_normal = Some(normal);
+        m.extension.ground_rect = ground_rect;
+    }
     m
 }
 

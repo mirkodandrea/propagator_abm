@@ -26,11 +26,13 @@ struct RetroUniform {
 // x: tactical desaturation, 0 (full colour) to 1; see `tactical.rs`.
 @group(2) @binding(106) var<uniform> tactical: vec4<f32>;
 // Terrain only: ground colour and normal, one texel per terrain sample.
+#ifdef GROUND_TEX
 @group(2) @binding(107) var ground_col_tex: texture_2d<f32>;
 @group(2) @binding(108) var ground_col_samp: sampler;
 @group(2) @binding(109) var ground_nrm_tex: texture_2d<f32>;
 @group(2) @binding(110) var ground_nrm_samp: sampler;
 @group(2) @binding(111) var<uniform> ground_rect: vec4<f32>;
+#endif
 
 // Road mask encoding and ribbon geometry: keep in step with `ground_mask.rs`.
 const RANGE_M: f32 = 12.0;
@@ -586,6 +588,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let mask_s = textureSample(road_tex, road_samp, mask_uv);
     let meadow = textureSample(grass_tex, grass_samp, mask_uv).r;
     if retro.enabled.w > 0.5 && retro.enabled.w < 1.5 {
+#ifdef GROUND_TEX
         // colour and normal per sample from textures (texel centres on the
         // samples), not per vertex: the mesh may be coarser than the data
         let guv = vec2<f32>(p.x * ground_rect.x + ground_rect.z, p.z * ground_rect.y + ground_rect.w);
@@ -595,6 +598,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         pbr_input.material.base_color = pbr_input.material.base_color * vec4<f32>(g_col, 1.0);
         pbr_input.world_normal = g_nrm;
         pbr_input.N = g_nrm;
+#else
+        // browser: the vertex colour is already in base_color, the normal is the mesh's
+        let g_nrm = normalize(in.world_normal);
+#endif
         pbr_input.material.base_color = terrain_albedo(pbr_input.material.base_color, p, mask_s, meadow, g_nrm);
         pbr_input.N = normalize(pbr_input.N + rock_bump(p, g_nrm));
     }
