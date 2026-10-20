@@ -10,7 +10,7 @@ Leggere all'inizio di ogni sessione:
 3. **`docs/03-VERIFICHE.md`**: le **fasi** con i loro checkpoint e la batteria di prove.
 4. **`docs/TODO.md`**: la fase corrente, il lavoro aperto e le decisioni recenti.
 
-I documenti dicono **cosa** costruire; il codice mostra **come**. Se non coincidono, prevalgono i documenti: segnalare il conflitto. Ogni nuova regola o decisione dell'utente va scritta, con la data, nel documento giusto. Lo storico non si conserva nei documenti: sta nella storia git. Documenti di servizio: `docs/MARIO.md` (easter egg), `docs/web.md` (versione browser), `docs/factory/<tema>/` (prove sul territorio).
+I documenti dicono **cosa** costruire; il codice mostra **come**. Se non coincidono, prevalgono i documenti: segnalare il conflitto. Ogni nuova regola o decisione dell'utente va scritta, con la data, nel documento giusto. Lo storico non si conserva nei documenti: sta nella storia git. Documenti di servizio: `docs/MARIO.md` (easter egg), `docs/web.md` (versione browser), `docs/factory/<tema>/` (prove sul territorio). Metodi generici per serious game di protezione civile, riusabili in altri progetti: le skill in `.claude/skills/` (2026-10-20).
 
 ## Il gioco in breve
 
