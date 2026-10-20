@@ -30,7 +30,9 @@ SM64, massimo 120); a terra resta il salto. Ali e fisica del volo sono gestite d
 Con R / △ o «Scegli posizione sulla mappa» si apre una vista verticale dell’intera
 mappa e Mario resta fermo durante la scelta. Muovi il mouse o WASD / stick sinistro
 per spostare il mirino; frecce / stick destro spostano la vista. Rotella, Q/E e L1/R1
-regolano lo zoom. Un clic sulla mappa, Spazio / × o «Posiziona» conferma;
+regolano lo zoom. Lo zoom (rotella) avvicina verso il puntatore: il punto sotto il mouse resta sotto il mouse.
+Il puntatore sceglie anche i modelli: sopra la rocca o la torre (e i tetti) Mario si
+posiziona in cima, non a terra (2026-10-20, richiesta dell'utente). Un clic sulla mappa, Spazio / × o «Posiziona» conferma;
 Esc, ○, R / △ o «Annulla» torna a Mario senza spostarlo. Puoi scegliere qualsiasi
 punto, anche in mare; nei punti occupati si cerca terreno libero entro circa 21 m,
 altrimenti la selezione resta aperta. Dopo la conferma si torna alla camera di Mario.
