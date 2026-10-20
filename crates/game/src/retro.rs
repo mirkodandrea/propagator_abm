@@ -4,14 +4,61 @@ use bevy::asset::load_internal_asset;
 use bevy::pbr::{ExtendedMaterial, MaterialExtension};
 use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, ShaderDefVal, ShaderRef};
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::render::mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef};
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::render::render_resource::{RenderPipelineDescriptor, SpecializedMeshPipelineError, VertexFormat};
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::pbr::{MaterialExtensionKey, MaterialExtensionPipeline};
 
 const RETRO_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(0x91A7_44D2_6B0E_4C71_AA90_2201_88C4_2F10);
+
+/// Library, main-pass and prepass vertex shaders of the vegetation's fire state
+/// (`shaders/veg_*.wgsl`). Desktop only, see [`RetroExtension::plant_state`].
+#[cfg(not(target_arch = "wasm32"))]
+const VEG_STATE_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u128(0x91A7_44D2_6B0E_4C71_AA90_2201_88C4_2F11);
+#[cfg(not(target_arch = "wasm32"))]
+const VEG_VERTEX_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u128(0x91A7_44D2_6B0E_4C71_AA90_2201_88C4_2F12);
+#[cfg(not(target_arch = "wasm32"))]
+const VEG_PREPASS_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u128(0x91A7_44D2_6B0E_4C71_AA90_2201_88C4_2F13);
+
+/// Which plant of its chunk a vertex belongs to (bit 31: the burnt-remains
+/// layer), so the vertex stage finds the plant's fire state.
+#[cfg(not(target_arch = "wasm32"))]
+pub const ATTRIBUTE_PLANT: MeshVertexAttribute =
+    MeshVertexAttribute::new("Plant", 0x91A7_4402, VertexFormat::Uint32);
+/// Vertex input location of [`ATTRIBUTE_PLANT`] (`shaders/veg_*.wgsl`).
+#[cfg(not(target_arch = "wasm32"))]
+const PLANT_LOCATION: u32 = 14;
+
+/// What makes a material need its own pipeline.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RetroKey {
+    /// The vertex stage reads the vegetation's fire state.
+    plants: bool,
+}
+
+impl From<&RetroExtension> for RetroKey {
+    fn from(e: &RetroExtension) -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
+        return RetroKey { plants: e.plant_state.is_some() };
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = e;
+            RetroKey { plants: false }
+        }
+    }
+}
 
 /// Extension of StandardMaterial so vertex colours, alpha modes, culling and
 /// the existing PBR setup are retained. The effect stays entirely on the GPU
 /// and therefore also covers merged vegetation and building meshes.
 #[derive(Asset, AsBindGroup, TypePath, Clone, Default)]
+#[bind_group_data(RetroKey)]
 pub struct RetroExtension {
     // A bare f32 uniform is 4 bytes, which WebGL2 rejects (bindings must be a
     // multiple of 16 bytes there; desktop backends don't enforce it). Keep all
@@ -54,6 +101,15 @@ pub struct RetroExtension {
     #[cfg(not(target_arch = "wasm32"))]
     #[uniform(111)]
     pub ground_rect: Vec4,
+    /// Vegetation only: one texel per plant of the chunk (x = fire state,
+    /// y = ignition time), read in the vertex stage (`shaders/veg_state.wgsl`).
+    /// The plants burn by rewriting this small image, never their meshes.
+    ///
+    /// Not in the browser, for the texture units again (see above): there the
+    /// vegetation meshes are edited on the CPU (`vegetation::burn`).
+    #[cfg(not(target_arch = "wasm32"))]
+    #[texture(112, sample_type = "float", filterable = false)]
+    pub plant_state: Option<Handle<Image>>,
 }
 
 /// Per-material strength of the training-simulation finish.
@@ -96,6 +152,28 @@ impl MaterialExtension for RetroExtension {
     fn fragment_shader() -> ShaderRef {
         RETRO_SHADER_HANDLE.into()
     }
+
+    /// Vegetation takes its own vertex stages (main and depth/shadow pass),
+    /// which also read the per-plant vertex index; every other material keeps
+    /// Bevy's.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn specialize(
+        _pipeline: &MaterialExtensionPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        layout: &MeshVertexBufferLayoutRef,
+        key: MaterialExtensionKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        if !key.bind_group_data.plants {
+            return Ok(());
+        }
+        // (the base material has already renamed Bevy's "prepass_pipeline")
+        let prepass = descriptor.label.as_deref().is_some_and(|l| l.contains("prepass"));
+        descriptor.vertex.shader = if prepass { VEG_PREPASS_SHADER_HANDLE } else { VEG_VERTEX_SHADER_HANDLE };
+        // the attribute joins the mesh's one interleaved buffer
+        let plant = layout.0.get_layout(&[ATTRIBUTE_PLANT.at_shader_location(PLANT_LOCATION)])?;
+        descriptor.vertex.buffers[0].attributes.extend(plant.attributes);
+        Ok(())
+    }
 }
 
 /// `GROUND_TEX`: the terrain reads its colour and normal from textures
@@ -118,6 +196,12 @@ impl Plugin for RetroShaderPlugin {
             Shader::from_wgsl_with_defs,
             shader_defs()
         );
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            load_internal_asset!(app, VEG_STATE_SHADER_HANDLE, "shaders/veg_state.wgsl", Shader::from_wgsl);
+            load_internal_asset!(app, VEG_VERTEX_SHADER_HANDLE, "shaders/veg_vertex.wgsl", Shader::from_wgsl);
+            load_internal_asset!(app, VEG_PREPASS_SHADER_HANDLE, "shaders/veg_prepass.wgsl", Shader::from_wgsl);
+        }
         app.add_plugins(MaterialPlugin::<RetroMaterial>::default());
     }
 }

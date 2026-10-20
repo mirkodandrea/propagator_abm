@@ -22,9 +22,20 @@
 //! hundred draws for the entire landscape and still allow frustum culling.
 //!
 //! The plants respond to the fire: each one remembers which fire cell it
-//! stands in, and when that cell's state changes the chunk's colour attribute
-//! is rewritten — foliage flares, then goes to charcoal. Only chunks whose
-//! cells actually changed are touched, so the cost tracks the front.
+//! stands in, and when that cell's state changes the plant is redrawn —
+//! foliage flares, then goes to charcoal. Only chunks whose cells actually
+//! changed are touched, so the cost tracks the front.
+//!
+//! On the desktop the meshes are never modified for that: every vertex carries
+//! its plant's index (`retro::ATTRIBUTE_PLANT`), a small per-chunk image holds
+//! each plant's state and ignition time, and the vertex stage
+//! (`shaders/veg_state.wgsl`) collapses, recolours and flags the plant. A
+//! chunk is ~80 k triangles and Bevy clones and uploads a modified mesh whole:
+//! rewriting two or three of them every 0.15 s was a frame hitch of tens of
+//! milliseconds on both the main and the render thread. The browser has no
+//! texture unit to spare for the image (`retro::RetroExtension::plant_state`),
+//! and its plants are few: it keeps rewriting the meshes (`draw_standing`,
+//! `draw_char`, `paint`, which are also the reference for the shader).
 //!
 //! Every chunk is built twice: with the authored models, and with a proxy of
 //! a couple of dozen faces per plant (a faceted crown on a three-sided
@@ -37,6 +48,7 @@ use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use fire::CellFire;
 use scenario::{Cell, CoverClass, Pos, Scenario};
 
@@ -44,6 +56,13 @@ use crate::field::{noise, FireField};
 use crate::retro;
 use crate::retro::RetroMaterial;
 use crate::sim::Sim;
+
+/// Plants burn through a per-chunk state image and the vertex stage (see the
+/// module doc); without it the meshes are rewritten.
+const GPU: bool = cfg!(not(target_arch = "wasm32"));
+
+/// Width of a chunk's state image in texels (`ROW` in `veg_state.wgsl`).
+const STATE_ROW: usize = 256;
 
 /// Chunk edge in fire cells. 32 cells = 640 m, matching the terrain chunking,
 /// so a burning front dirties a similar number of both.
@@ -213,6 +232,11 @@ struct CharMesh {
 }
 
 struct Chunk {
+    /// The material of this chunk's meshes: its own on the GPU path (it holds
+    /// the state image), the shared one otherwise.
+    material: Handle<RetroMaterial>,
+    /// One texel per plant: fire state, ignition time (GPU path).
+    state: Option<Handle<Image>>,
     /// Authored models and distant proxies (see the module doc).
     mesh: Handle<Mesh>,
     low_mesh: Handle<Mesh>,
@@ -280,6 +304,7 @@ pub fn spawn(
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<RetroMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     gfx: Res<crate::quality::Graphics>,
 ) {
     let scn = &sim.scn;
@@ -366,13 +391,26 @@ pub fn spawn(
                 (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)),
                 |(lo, hi), p| (lo.min(Vec3::from(*p)), hi.max(Vec3::from(*p))),
             );
-            let base = builder.full.colors.clone();
-            let low_base = builder.low.colors.clone();
+            // the generated shapes, to redraw from: the CPU path only
+            let base = if GPU { Vec::new() } else { builder.full.colors.clone() };
+            let low_base = if GPU { Vec::new() } else { builder.low.colors.clone() };
             let drawn = vec![CellFire::Unburnt as u8; plants.len()];
-            let pos_base = builder.full.positions.clone();
-            let low_pos_base = builder.low.positions.clone();
-            let mesh = meshes.add(builder.full.finish());
-            let (low, far_idx) = builder.low.finish_with_far();
+            let pos_base = if GPU { Vec::new() } else { builder.full.positions.clone() };
+            let low_pos_base = if GPU { Vec::new() } else { builder.low.positions.clone() };
+            let (verts, low_verts) = (builder.full.positions.len(), builder.low.positions.len());
+            let mut full_mesh = builder.full.finish();
+            let (mut low, far_idx) = builder.low.finish_with_far();
+            let (state, material) = if GPU {
+                tag_plants(&mut full_mesh, verts, plants.iter().map(|p| (p.vert_start, p.vert_end)), 0);
+                tag_plants(&mut low, low_verts, plants.iter().map(|p| (p.low_start, p.low_end)), 0);
+                let image = images.add(state_image(plants.len()));
+                let mut m = materials.get(&material).unwrap().clone();
+                set_state(&mut m, image.clone());
+                (Some(image), materials.add(m))
+            } else {
+                (None, material.clone())
+            };
+            let mesh = meshes.add(full_mesh);
             let low_mesh = meshes.add(low);
 
             // Vegetation is visual only: Mario can run through trunks and
@@ -402,6 +440,8 @@ pub fn spawn(
                 )).id()
             });
             chunks.push(Chunk {
+                material: material.clone(),
+                state,
                 mesh,
                 low_mesh,
                 far_idx,
@@ -1101,6 +1141,8 @@ pub fn burn(
     time: Res<Time>,
     mut veg: ResMut<Vegetation>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut images: ResMut<Assets<Image>>,
+    mut materials: ResMut<Assets<RetroMaterial>>,
     mut restarted: EventReader<crate::sim::SimRestarted>,
     mut since: Local<f32>,
 ) {
@@ -1138,7 +1180,6 @@ pub fn burn(
         line_cells > 0 && (r0..r1).any(|r| cleared[r * cols + c0..r * cols + c1].iter().any(|&b| b))
     };
 
-    let material = veg.material.clone();
     for chunk in &mut veg.chunks {
         // every plant burnt: nothing here can change until a restart
         if chunk.burnt == chunk.plants.len() && !restarted {
@@ -1154,13 +1195,33 @@ pub fn burn(
             continue;
         }
         if chunk.char.is_none() && redraw.iter().any(|&(_, s)| s == CellFire::Burnt as u8 || s == CellFire::Burning as u8) {
-            chunk.char = Some(build_char_layer(&mut commands, &mut meshes, &material, &*chunk));
+            chunk.char = Some(build_char_layer(&mut commands, &mut meshes, &*chunk));
         }
 
-        // Only the plants in `redraw` are rewritten, in place, in the
-        // attributes the mesh already holds (taken out and put back, so no
-        // buffer is copied).
         let t0s: Vec<f32> = redraw.iter().map(|&(i, _)| ignition(&field, &chunk.plants[i])).collect();
+        if GPU {
+            // Only the plants in `redraw` change, in the chunk's state image
+            // (a few hundred kilobytes at most, against megabytes of mesh).
+            if let Some(image) = chunk.state.as_ref().and_then(|h| images.get_mut(h)) {
+                for (&(i, s), &t0) in redraw.iter().zip(&t0s) {
+                    let at = i * 8;
+                    image.data[at..at + 4].copy_from_slice(&gpu_mode(s, &chunk.plants[i]).to_le_bytes());
+                    image.data[at + 4..at + 8].copy_from_slice(&t0.to_le_bytes());
+                }
+            }
+            // A changed image is a new texture on the GPU: the material's bind
+            // group has to be made again to see it. The clock goes with it, so
+            // a plant that has just caught is not drawn at the old time.
+            if let Some(m) = materials.get_mut(&chunk.material) {
+                m.extension.tactical.y = now;
+                m.extension.tactical.z = PLANT_FLAMING_S;
+            }
+            continue;
+        }
+
+        // The browser: only the plants in `redraw` are rewritten, in place, in
+        // the attributes the mesh already holds (taken out and put back, so no
+        // buffer is copied).
         for (handle, base, pos_base, low) in [
             (&chunk.mesh, &chunk.base, &chunk.pos_base, false),
             (&chunk.low_mesh, &chunk.low_base, &chunk.low_pos_base, true),
@@ -1356,9 +1417,9 @@ fn draw_char(pos: &mut [[f32; 3]], col: &mut [[f32; 4]], m: &CharMesh, (a, b): (
 fn build_char_layer(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
-    material: &Handle<RetroMaterial>,
     chunk: &Chunk,
 ) -> CharLayer {
+    let material = &chunk.material;
     let mut make = |low: bool| {
         let mut builder = Builder::default();
         let mut ranges = Vec::with_capacity(chunk.plants.len());
@@ -1369,18 +1430,28 @@ fn build_char_layer(
             }
             ranges.push((start, builder.positions.len() as u32));
         }
-        let colors = builder.colors.clone();
-        let shown = builder.positions.clone();
-        let mut hidden = shown.clone();
-        for &(a, b) in &ranges {
-            if a < b {
-                let first = hidden[a as usize];
-                hidden[a as usize..b as usize].fill(first);
+        let verts = builder.positions.len();
+        let (mut colors, mut shown, mut hidden) = (Vec::new(), Vec::new(), Vec::new());
+        if !GPU {
+            colors = builder.colors.clone();
+            shown = builder.positions.clone();
+            hidden = shown.clone();
+            for &(a, b) in &ranges {
+                if a < b {
+                    let first = hidden[a as usize];
+                    hidden[a as usize..b as usize].fill(first);
+                }
             }
         }
         let mut mesh = builder.finish();
-        // the normals above are those of the standing remains
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, hidden.clone());
+        if GPU {
+            // standing where the plants stood, whole and for good: the state
+            // image shows it from the plant's ignition (`veg_state.wgsl`)
+            tag_plants(&mut mesh, verts, ranges.iter().copied(), CHAR_PLANT);
+        } else {
+            // the normals above are those of the standing remains
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, hidden.clone());
+        }
         let mesh = meshes.add(mesh);
         let on = chunk.near != low;
         let entity = commands
@@ -1441,15 +1512,77 @@ fn paint(colors: &mut [[f32; 4]], state: u8, t0: f32) {
 /// flaming time in `tactical.z`): a burning plant is consumed as a function
 /// of it, so the fire keeps eating the canopy between mesh rewrites and
 /// stands still while the world is paused.
+///
+/// On the GPU path every chunk has a material of its own, and only the chunks
+/// with a plant alight (or cleared) need the clock: a material written is a
+/// bind group made again, which two hundred chunks every frame would be.
 pub fn fire_clock(sim: Res<Sim>, veg: Res<Vegetation>, mut materials: ResMut<Assets<RetroMaterial>>) {
     let now = sim.time_s() as f32;
-    let Some(m) = materials.get(&veg.material) else { return };
-    if m.extension.tactical.y == now && m.extension.tactical.z == PLANT_FLAMING_S {
-        return;
+    let mut set = |handle: &Handle<RetroMaterial>| {
+        let Some(m) = materials.get(handle) else { return };
+        if m.extension.tactical.y == now && m.extension.tactical.z == PLANT_FLAMING_S {
+            return;
+        }
+        if let Some(m) = materials.get_mut(handle) {
+            m.extension.tactical.y = now;
+            m.extension.tactical.z = PLANT_FLAMING_S;
+        }
+    };
+    if GPU {
+        for chunk in veg.chunks.iter().filter(|c| c.lit > c.burnt) {
+            set(&chunk.material);
+        }
+    } else {
+        set(&veg.material);
     }
-    if let Some(m) = materials.get_mut(&veg.material) {
-        m.extension.tactical.y = now;
-        m.extension.tactical.z = PLANT_FLAMING_S;
+}
+
+/// `plants`' vertex ranges into the mesh's plant index attribute (the
+/// vertices outside every range read no plant). `flag` is [`CHAR_PLANT`] for
+/// the burnt-remains layer.
+#[cfg(not(target_arch = "wasm32"))]
+fn tag_plants(mesh: &mut Mesh, verts: usize, ranges: impl Iterator<Item = (u32, u32)>, flag: u32) {
+    let mut ids = vec![NO_PLANT; verts];
+    for (i, (a, b)) in ranges.enumerate() {
+        ids[a as usize..b as usize].fill(i as u32 | flag);
+    }
+    mesh.insert_attribute(retro::ATTRIBUTE_PLANT, ids);
+}
+#[cfg(target_arch = "wasm32")]
+fn tag_plants(_: &mut Mesh, _: usize, _: impl Iterator<Item = (u32, u32)>, _: u32) {}
+
+/// Vertex plant index flag of the burnt-remains layer, and of "no plant".
+const CHAR_PLANT: u32 = 0x8000_0000;
+const NO_PLANT: u32 = 0x7fff_ffff;
+
+/// A chunk's state image: one texel per plant, rows of [`STATE_ROW`], two
+/// floats each (fire state, ignition time), all zero = every plant unburnt.
+fn state_image(plants: usize) -> Image {
+    let rows = plants.div_ceil(STATE_ROW).max(1);
+    Image::new(
+        Extent3d { width: STATE_ROW as u32, height: rows as u32, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        vec![0; STATE_ROW * rows * 8],
+        TextureFormat::Rg32Float,
+        // the CPU copy stays: it is written to again and again
+        RenderAssetUsages::default(),
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn set_state(m: &mut RetroMaterial, image: Handle<Image>) {
+    m.extension.plant_state = Some(image);
+}
+#[cfg(target_arch = "wasm32")]
+fn set_state(_: &mut RetroMaterial, _: Handle<Image>) {}
+
+/// A plant's drawn state as the vertex stage reads it (`veg_state.wgsl`).
+fn gpu_mode(s: u8, plant: &Plant) -> f32 {
+    match s {
+        s if s == CellFire::Burning as u8 => 1.0,
+        s if s == CellFire::Burnt as u8 => if plant.remains.is_some() { 2.0 } else { 3.0 },
+        CLEARED => 4.0,
+        _ => 0.0,
     }
 }
 
