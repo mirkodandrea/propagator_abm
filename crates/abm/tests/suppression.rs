@@ -11,7 +11,8 @@
 //! actually spent water, and actually refused orders that cannot be carried out.
 
 use abm::suppression::{Suppression, Task, UnitKind, UnitState};
-use abm::Abm;
+use abm::network::RoadNetwork;
+use abm::traffic::Traffic;
 use fire::{FireSim, Weather};
 use scenario::{Pos, Scenario};
 
@@ -25,7 +26,8 @@ fn data_dir() -> std::path::PathBuf {
 struct World {
     scn: Scenario,
     fire: FireSim,
-    agents: Abm,
+    network: RoadNetwork,
+    traffic: Traffic,
     crews: Suppression,
     ignition: scenario::Cell,
     /// Unit vector the fire is heading along (world frame, +x east, +y north).
@@ -43,20 +45,21 @@ fn setup() -> World {
     let plan = fire::plan_ignition(&scn, weather.wind_dir_deg, 250.0);
     let mut fire = FireSim::new(&scn, weather, 42).unwrap();
     fire.ignite_patch(plan.centre, plan.radius_m, &scn).unwrap();
-    let agents = Abm::new(&scn, 42).unwrap();
+    let network = RoadNetwork::build(&scn);
+    let traffic = Traffic::new(&network);
+    let refuges = abm::refuge::choose(&scn, &network, 12);
     // Four of the six refuges on this territory are exits on the map edge, in
     // 80-100% burnable fuel (measured at 300 m): places to leave through, not
     // places to park an engine. Staging uses the two interior ones, which sit
     // in 0% and 5% burnable.
-    let bases: Vec<Pos> = agents
-        .refuges
+    let bases: Vec<Pos> = refuges
         .iter()
         .map(|r| r.pos)
         .filter(|p| abm::refuge::burnable_fraction(&scn, *p, 300.0) < 0.2)
         .collect();
     let crews = Suppression::new(&scn, &bases).unwrap();
     let a = (weather.wind_dir_deg + 180.0).to_radians() as f32;
-    World { scn, fire, agents, crews, ignition: plan.centre, toward: [a.sin(), a.cos()] }
+    World { scn, fire, network, traffic, crews, ignition: plan.centre, toward: [a.sin(), a.cos()] }
 }
 
 impl World {
@@ -65,7 +68,7 @@ impl World {
             self.fire.advance(dt).unwrap();
             let actions =
                 self.crews
-                    .step(dt as f32, &self.agents.network, &self.agents.traffic, &self.fire, &self.scn);
+                    .step(dt as f32, &self.network, &self.traffic, &self.fire, &self.scn);
             for a in actions {
                 self.fire.queue(a);
             }

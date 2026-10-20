@@ -13,7 +13,6 @@ data/scenarios/*/dem.tif
 .DS_Store
 *.pyc
 __pycache__/
-tools/mcp/.venv/
 
 # Local Python env and scratch output
 .venv/

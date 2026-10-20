@@ -31,7 +31,7 @@ Dettagli in `docs/01-GIOCO.md`.
 | `propagator-core` | Il nucleo PROPAGATOR (automa cellulare del fuoco, checkpoint). |
 | `fire` | `FireSim`, esposizione delle case (`exposure`), pericolo per chi è all'aperto (`threat`), ensemble per la previsione (`ensemble`). |
 | `scenario` | Lettura dei dati dello scenario; `scenario::id()` legge `ROCCA_SCENARIO`. |
-| `abm` | Rete stradale (`network`), guida (`drive`), squadre e spegnimento (`suppression`), aree sicure (`refuge`). Il modello IBM delle persone (`Abm`) è ancora qui, ma il gioco non lo usa più: da togliere. |
+| `abm` | Rete stradale (`network`), guida (`drive`), squadre e spegnimento (`suppression`), aree sicure (`refuge`). |
 | `behavior` | Grafi di comportamento delle squadre (`data/behaviours`). |
 | `rocca` | Il gioco: `game` (pausa, ordini, passo), `hex`, `evac`, `tutorial`, `forecast`, `score`, `district`, `case`. CLI `rocca`, esempio `tutorial_cerca`, test. |
 | `game` | Il gioco Bevy (la cartella e le variabili si chiamano ancora `kiosk`/`KIOSK_*`): `sim.rs` (orologio attorno a `Game`), `kiosk/` (flusso, `ui`, `marks` sulla mappa, camera e clic in `view`, `snap`), rendering del diorama, `forecast_view`. Gamepad come mouse virtuale (`pad.rs`, spento mentre Mario è attivo). Mario (`mario.rs`, Ctrl+Maiusc+M a mondo fermo). |

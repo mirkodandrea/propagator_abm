@@ -84,7 +84,7 @@ sola giocabilità restano separate in `results/scenario-playable/`.
 
 - La vecchia pipeline di generazione è stata **cancellata** (2026-10-13, resta nella storia git): il territorio non si rigenera da zero.
 - Si modificano **direttamente i file pubblicati** (`fuel.i32`, `game.json`, `population.json`, `osm.json`), con uno script ripetibile quando serve. Per esempio `tools/factory/valico.py` ridisegna il valico in `fuel.i32` partendo dal combustibile precedente (dalla storia git) e dà sempre lo stesso file; `tools/factory/costa_est.py` ha tagliato la costa est (`render_terrain.f32`, `dem.f64`, `fuel.i32`, `cover.u8`) e, rieseguito, non trova più nulla da tagliare. Entrambi sono autonomi (numpy, scipy).
-- **Per provare una variante:** creare `data/scenarios/<id>/` con link simbolici a `rocca_ventosa` più i soli file cambiati, poi selezionarla con `ROCCA_SCENARIO=<id>` (`scenario::id()`). Vale per la CLI, i test e il gioco. Niente copie dei dati (richiesta dell'utente). Esempio: `rocca_banco`, il banco di prova dello spegnimento.
+- **Per provare una variante:** creare `data/scenarios/<id>/` con link simbolici a `rocca_ventosa` più i soli file cambiati, poi selezionarla con `ROCCA_SCENARIO=<id>` (`scenario::id()`). Vale per la CLI, i test e il gioco. Niente copie dei dati (richiesta dell'utente).
 - La vegetazione disegnata nel gioco si legge da `fuel.i32` (`vegetation.rs`), non da `cover.u8`.
 - Dopo ogni modifica del territorio si **rifanno le prove** di `03-VERIFICHE.md`.
 

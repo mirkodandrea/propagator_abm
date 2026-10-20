@@ -10,7 +10,7 @@ the streets. This script re-lays them out on the rendered size:
 * it is pushed away from its neighbours and from the public buildings;
 * it moves as little as it can (at most `MAX_MOVE` m from where it was).
 
-A house must stand on ground with no fuel (`abm::bin::scenario_check`). Most
+A house must stand on ground with no fuel. Most
 villages stand on a small cleared patch, so a house that leaves it gets its
 cell cleared in `fuel.i32` (fuel 0), and nothing else in the grid changes.
 

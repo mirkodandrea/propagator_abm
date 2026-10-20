@@ -118,7 +118,6 @@ Va aggiornata a ogni iterazione, nello stesso commit del lavoro (vedi `CLAUDE.md
    - coni 3D trascinabili (senza conferma), pulsante di pausa rotondo, piano modificabile in pausa, percorso e tempo dell'evacuazione al passaggio del mouse, pausa che ferma il mondo: fatti il 2026-10-14 ma provati solo con `KIOSK_SNAP`. Il trascinamento vero e la pausa d'apertura vanno provati a mano;
    - `scripts/playtest.py` cerca ancora «Conferma» (punto 8).
 7. [ ] **Pulizia del codice:**
-   - togliere dal crate `abm` il modello IBM delle persone (`Abm`, traffico, comportamenti delle famiglie), tenendo `network`, `drive`, `suppression` e `refuge`;
    - ripulire gli avvisi di compilazione nel chiosco (`icons.rs`, `overlays.rs`).
 8. [ ] **Playtest:** aggiornare `scripts/playtest.py` al nuovo flusso, poi partite con persone che non conoscono il progetto.
 9. [ ] **Versione web:** prova su Safari iOS e Chrome Android reali (rotazione, trascinamento, memoria su una partita completa); regressione automatica con `scripts/playtest_mobile.py`. Il confronto finale ora avanza a piccoli blocchi. Interazioni Chromium tutte passate (2026-10-17); la memoria Wasm al finale (379–416 MiB) (limite del test ora 450 MiB, passa): causa e decisione nella decisione del 2026-10-17 «web mobile, ripresa».
