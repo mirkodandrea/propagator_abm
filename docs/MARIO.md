@@ -78,8 +78,10 @@ con Mario chiuso non fanno nulla. I progressi durano quanto il programma; solo i
 record della corsa è su file (`~/.rocca_ventosa/mario_record.txt`, non scritto se
 `KIOSK_SCORES` è impostata). Restano nascosti: niente nel tutorial.
 
-- **Stelle** (colonna gialla visibile da lontano): rocca, una più in alto per il
-  solo Wing Cap, torre, porto, una per borgo. Il pannello in alto a destra dà
+- **Stelle** (colonna gialla visibile da lontano): sul tetto della rocca (solo
+  Wing Cap; quota dalla mesh disegnata per scala), una più in alto vicino alla
+  rocca (solo Wing Cap), ai piedi della torre (fuori dal suo ingombro), porto,
+  una per borgo. Il pannello in alto a destra dà
   l'indizio della più vicina con distanza e direzione. Presa una stella, Mario
   fa la posa della vittoria.
 - **Monete** lungo le strade (una ogni ≥ 90 m, al massimo 180, mai in mare).

@@ -253,13 +253,24 @@ fn build(play: &mut Play, sim: &Sim) {
 
     let island = island(sim);
     let landmark = |key: &str| island.as_ref().and_then(|i| pos_of(&i["landmarks"][key]["pos"]));
+    // as drawn: model size times the scale in the data (the stars must not sit inside the walls)
+    let size = |key: &str, model: &str| {
+        let scale = island.as_ref().and_then(|i| i["landmarks"][key]["scale"].as_f64()).unwrap_or(1.) as f32;
+        let m = crate::models::island(model);
+        let top = m.positions.iter().map(|p| p[1]).fold(0., f32::max) * scale;
+        let reach = m.positions.iter().map(|p| p[0].abs().max(p[2].abs())).fold(0., f32::max) * scale;
+        (top, reach)
+    };
     if let Some(p) = landmark("rocca") {
-        play.stars.push(Star { at: at(p, 45.), hint: "Dove l’isola è più alta e il vento è più forte: la rocca. Serve un gran salto.".into() });
+        let (top, _) = size("rocca", "rocca");
+        play.stars.push(Star { at: at(p, top + 8.), hint: "Sul tetto della rocca, dove l’isola è più alta: serve il Wing Cap.".into() });
         let wind = Pos { x: p.x + 300., y: p.y };
         play.stars.push(Star { at: at(wind, 120.), hint: "Più in alto di ogni albero, vicino alla rocca: solo con il Wing Cap.".into() });
     }
     if let Some(p) = landmark("torre") {
-        play.stars.push(Star { at: at(p, 30.), hint: "Sul promontorio c’è una torre di pietra che guarda il mare.".into() });
+        let (_, reach) = size("torre", "torre_pietra");
+        let side = Pos { x: p.x + reach + 8., y: p.y };
+        play.stars.push(Star { at: at(side, 8.), hint: "Ai piedi della torre di pietra, sul promontorio che guarda il mare.".into() });
     }
     if let Some(p) = island.as_ref().and_then(|i| pos_of(&i["port"]["shore"])) {
         play.stars.push(Star { at: at(p, 9.), hint: "Dove attraccano le barche, all’inizio del molo.".into() });
@@ -623,6 +634,25 @@ mod tests {
         let m = star_mesh(6., 2.6, 0.9);
         let n = m.count_vertices();
         assert!(m.indices().unwrap().iter().all(|i| i < n));
+    }
+
+    #[test]
+    fn landmark_stars_stand_outside_the_models() {
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let sim = Sim::new(&data, "medium", 1).unwrap();
+        let mut play = Play::default();
+        build(&mut play, &sim);
+        let island = island(&sim).unwrap();
+        let tower = pos_of(&island["landmarks"]["torre"]["pos"]).unwrap();
+        let rocca = pos_of(&island["landmarks"]["rocca"]["pos"]).unwrap();
+        let tower_scale = island["landmarks"]["torre"]["scale"].as_f64().unwrap() as f32;
+        let rocca_scale = island["landmarks"]["rocca"]["scale"].as_f64().unwrap() as f32;
+        // the tower star is beyond the tower's footprint, the rocca star above its roof
+        let t = play.stars.iter().find(|s| s.hint.contains("torre")).unwrap();
+        let w = frame::to_world(t.at);
+        assert!((w.x - tower.x).hypot(w.y - tower.y) > 11.3 * tower_scale);
+        let r = play.stars.iter().find(|s| s.hint.contains("rocca")).unwrap();
+        assert!(r.at.y > sim.scn.terrain.height_at(rocca) + 61.6 * rocca_scale);
     }
 
     #[test]
