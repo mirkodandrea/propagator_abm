@@ -81,6 +81,8 @@ fn spawn_boats(
         base_color: Color::WHITE,
         perceptual_roughness: 0.55,
         reflectance: 0.2,
+        // turns the clear-coat path on: the painted hulls keep it (`boat_pbr`)
+        clearcoat: 1.0,
         cull_mode: None,
         double_sided: true,
         ..default()

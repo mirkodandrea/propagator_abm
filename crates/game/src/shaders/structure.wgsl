@@ -4,17 +4,122 @@
 // planks (`FINISH_TOWN`), dressed stone (`FINISH_STONE`), boats
 // (`FINISH_BOAT`), the island's limestone (`FINISH_ROCK`). Without a finish it
 // is StandardMaterial as Bevy draws it.
+//
+// Each part of a surface also gets its own PBR response (roughness,
+// reflectance, metal, clear coat, glow): a finish tells its parts apart from
+// the geometry and the colour, a baked model (the units) says per vertex what
+// it is made of, in the vertex colour's alpha (`Surface` in `structure.rs`).
 
 #import bevy_pbr::{
     pbr_functions::alpha_discard,
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
-    pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT,
+    pbr_types::{PbrInput, STANDARD_MATERIAL_FLAGS_UNLIT_BIT},
     forward_io::{VertexOutput, FragmentOutput},
 }
 #import bevy_pbr::mesh_functions::get_world_from_local
 #import rocca::noise::{hash21, value_noise}
 #import rocca::scenery::{limestone, rock_bed, rock_bump}
+
+// What a baked vertex is made of: as `materials::Surface` (and the bakes'
+// `SURFACES`). The alpha is id / 255; 1.0 (no id) leaves the material alone.
+const SURFACE_PAINT: u32 = 1u;
+const SURFACE_METAL: u32 = 2u;
+const SURFACE_RUBBER: u32 = 3u;
+const SURFACE_GLASS: u32 = 4u;
+const SURFACE_LAMP: u32 = 5u;
+const SURFACE_SKIN: u32 = 6u;
+const SURFACE_CLOTH: u32 = 7u;
+const SURFACE_REFLECTIVE: u32 = 8u;
+const SURFACE_LEATHER: u32 = 9u;
+const SURFACE_WOOD: u32 = 10u;
+const SURFACE_SHUTTER: u32 = 11u;
+
+fn surface_id(alpha: f32) -> u32 {
+    let id = u32(round(alpha * 255.0));
+    return select(0u, id, id < 32u);
+}
+
+// Sets the PBR response of a part, without a clear coat. `reflectance` is
+// Bevy's (0.5 = 4 % at normal incidence, the dielectric norm).
+fn set_pbr(pbr: ptr<function, PbrInput>, roughness: f32, metallic: f32, reflectance: f32) {
+    (*pbr).material.perceptual_roughness = roughness;
+    (*pbr).material.metallic = metallic;
+    (*pbr).material.reflectance = reflectance;
+    (*pbr).material.clearcoat = 0.0;
+}
+
+// A baked model's surfaces, with what makes a real one read at a distance:
+// lacquered paint with a clear coat, metal that mirrors the sky, dark glass,
+// lamps that glow, matte cloth, hi-vis strips that catch the light. `lp` is
+// the object-space position (metres, y up from the ground): road dust climbs
+// the lower part of a vehicle and the boots of a crew.
+fn apply_surface(pbr: ptr<function, PbrInput>, id: u32, lp: vec3<f32>, p: vec3<f32>) {
+    let c = (*pbr).material.base_color.rgb;
+    let px_m = max(length(dpdx(p)), length(dpdy(p)));
+    let fine = 1.0 - smoothstep(0.05, 0.4, px_m);
+    let dust = (1.0 - smoothstep(0.15, 0.9, lp.y)) * (0.55 + 0.45 * value_noise(lp.xz * 6.0 + lp.y * 3.0));
+    let dust_col = vec3<f32>(0.42, 0.36, 0.28);
+    var rgb = c;
+    switch id {
+        case SURFACE_PAINT: {
+            set_pbr(pbr, 0.30, 0.0, 0.5);
+            (*pbr).material.clearcoat = 1.0;
+            (*pbr).material.clearcoat_perceptual_roughness = 0.07;
+            rgb = mix(c, dust_col, dust * 0.45);
+            (*pbr).material.perceptual_roughness = mix(0.30, 0.8, dust);
+            (*pbr).material.clearcoat = 1.0 - dust;
+        }
+        case SURFACE_METAL: {
+            // brushed, a little uneven
+            set_pbr(pbr, 0.22 + 0.16 * value_noise(lp.xz * 9.0 + lp.y * 14.0) * fine, 1.0, 0.5);
+            rgb = mix(c, dust_col * 0.6, dust * 0.5);
+        }
+        case SURFACE_RUBBER: {
+            set_pbr(pbr, 0.88, 0.0, 0.3);
+            rgb = mix(c, dust_col * 0.5, dust * 0.6);
+        }
+        case SURFACE_GLASS: {
+            set_pbr(pbr, 0.04, 0.0, 0.8);
+        }
+        case SURFACE_LAMP: {
+            set_pbr(pbr, 0.15, 0.0, 0.5);
+            (*pbr).material.emissive = vec4<f32>(c * 6.0, 1.0);
+        }
+        case SURFACE_SKIN: {
+            set_pbr(pbr, 0.52, 0.0, 0.35);
+        }
+        case SURFACE_CLOTH: {
+            // a weave too fine to see, but not too fine to break the sheen
+            let weave = value_noise(lp.xz * 60.0 + lp.y * 45.0) - 0.5;
+            rgb = c * (1.0 + weave * 0.10 * fine);
+            rgb = mix(rgb, dust_col, dust * 0.35);
+            set_pbr(pbr, 0.93, 0.0, 0.25);
+        }
+        case SURFACE_REFLECTIVE: {
+            // retroreflective tape: bright toward any light, so it reads in shade
+            set_pbr(pbr, 0.35, 0.0, 0.9);
+            (*pbr).material.emissive = vec4<f32>(c * 0.35, 1.0);
+        }
+        case SURFACE_LEATHER: {
+            set_pbr(pbr, 0.62, 0.0, 0.4);
+            rgb = mix(c, dust_col, dust * 0.5);
+        }
+        case SURFACE_WOOD: {
+            set_pbr(pbr, 0.75, 0.0, 0.35);
+        }
+        case SURFACE_SHUTTER: {
+            // painted louvres: a lit slat, the shadow line under it
+            let f = fract(p.y / 0.13);
+            let slat = smoothstep(0.0, 0.3, f) * (1.0 - 0.6 * smoothstep(0.72, 1.0, f));
+            let near = 1.0 - smoothstep(0.04, 0.2, px_m);
+            rgb = c * mix(0.85, 0.5 + 0.7 * slat, near);
+            set_pbr(pbr, 0.5, 0.0, 0.45);
+        }
+        default: {}
+    }
+    (*pbr).material.base_color = vec4<f32>(rgb, (*pbr).material.base_color.a);
+}
 
 // Object-space position in metres: the world offset from the mesh origin
 // projected on its (orthogonal) axes. For merged meshes with an identity
@@ -191,22 +296,73 @@ fn boat_albedo(base: vec4<f32>, lp: vec3<f32>, normal: vec3<f32>, p: vec3<f32>) 
     return vec4<f32>(c * (1.0 + tone * gate), base.a);
 }
 
+// The town's parts as `town_albedo` tells them apart, given the baked colour
+// `c` and the face normal: tiles glazed enough to catch the sun, plaster and
+// gravel matte, planks between, window glass a mirror, lit windows a light.
+fn town_pbr(pbr: ptr<function, PbrInput>, c: vec3<f32>, normal: vec3<f32>) {
+    let n = normalize(normal);
+    let luma = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let wood = c.r > c.g && c.g > c.b && c.r < 0.6 && c.r - c.b > 0.12 && c.r - c.b < 0.3;
+    if max(c.r, max(c.g, c.b)) > 1.0 {
+        (*pbr).material.emissive = vec4<f32>(c * 0.8, 1.0);
+    } else if luma < 0.09 {
+        set_pbr(pbr, 0.06, 0.0, 0.8);
+    } else if wood {
+        set_pbr(pbr, 0.72, 0.0, 0.35);
+    } else if n.y > 0.35 && n.y < 0.93 {
+        set_pbr(pbr, 0.55, 0.0, 0.45);
+    } else if n.y > 0.35 {
+        set_pbr(pbr, 0.95, 0.0, 0.3);
+    } else {
+        set_pbr(pbr, 0.88, 0.0, 0.3);
+    }
+}
+
+// Boats: sails matte cloth, decks oiled teak, hulls glossy paint.
+fn boat_pbr(pbr: ptr<function, PbrInput>, c: vec3<f32>, normal: vec3<f32>) {
+    let n = normalize(normal);
+    let luma = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let sat = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+    let cloth = smoothstep(0.55, 0.75, luma) * (1.0 - smoothstep(0.12, 0.3, sat)) * (1.0 - smoothstep(0.55, 0.9, abs(n.y)));
+    if cloth > 0.5 && abs(n.y) < 0.8 {
+        set_pbr(pbr, 0.9, 0.0, 0.3);
+    } else if abs(n.y) > 0.6 {
+        set_pbr(pbr, 0.6, 0.0, 0.4);
+    } else {
+        set_pbr(pbr, 0.32, 0.0, 0.5);
+        (*pbr).material.clearcoat = 0.6;
+        (*pbr).material.clearcoat_perceptual_roughness = 0.12;
+    }
+}
+
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     var pbr = pbr_input_from_standard_material(in, is_front);
+#ifdef VERTEX_COLORS
+    let surface = surface_id(in.color.a);
+#else
+    let surface = 0u;
+#endif
     pbr.material.base_color = alpha_discard(pbr.material, pbr.material.base_color);
     let p = in.world_position.xyz;
     let c = pbr.material.base_color;
 #ifdef FINISH_TOWN
+    town_pbr(&pbr, c.rgb, in.world_normal);
     pbr.material.base_color = town_albedo(c, p, in.world_normal);
 #else ifdef FINISH_STONE
+    set_pbr(&pbr, 0.85, 0.0, 0.3);
     pbr.material.base_color = stone_albedo(c, local_metres(p, in.instance_index), in.world_normal, p);
 #else ifdef FINISH_BOAT
+    boat_pbr(&pbr, c.rgb, in.world_normal);
     pbr.material.base_color = boat_albedo(c, local_metres(p, in.instance_index), in.world_normal, p);
 #else ifdef FINISH_ROCK
+    set_pbr(&pbr, 0.9, 0.0, 0.3);
     pbr.material.base_color = rock_albedo(c, p, in.world_normal);
     pbr.N = normalize(pbr.N + rock_bump(p, normalize(in.world_normal)));
 #endif
+    if surface != 0u {
+        apply_surface(&pbr, surface, local_metres(p, in.instance_index), p);
+    }
 
     var out: FragmentOutput;
     if (pbr.material.flags & STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u {

@@ -20,10 +20,16 @@
 #import rocca::scenery::tactical_grey
 #import rocca::veg_state::foliage
 
-// Leaves are matte, not glassy: a near-zero reflectance is what stops a
-// sunlit canopy from picking up a specular sheen no real macchia has.
-const ROUGHNESS: f32 = 0.92;
-const REFLECTANCE: f32 = 0.04;
+// Leaves: matte with a faint waxy sheen (a full dielectric sheen on a
+// hundred thousand crowns turns the canopy to tinsel), and thin, so the sun
+// comes through them: a crown seen against the light glows green-gold.
+// Wood: rough bark, no sheen, opaque.
+const LEAF_ROUGHNESS: f32 = 0.78;
+const LEAF_REFLECTANCE: f32 = 0.18;
+const LEAF_TRANSMISSION: f32 = 0.38;
+const LEAF_THICKNESS: f32 = 0.08;
+const WOOD_ROUGHNESS: f32 = 0.9;
+const WOOD_REFLECTANCE: f32 = 0.08;
 
 // Breaks the flat vertex colour into
 // leaf clumps and a fine speckle, plus a warm sunlit / cool shaded lean.
@@ -134,9 +140,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     pbr.world_position = in.world_position;
     pbr.world_normal = pbr_functions::prepare_world_normal(in.world_normal, true, is_front);
     pbr.N = normalize(pbr.world_normal);
-    pbr.material.perceptual_roughness = ROUGHNESS;
     pbr.material.metallic = 0.0;
-    pbr.material.reflectance = REFLECTANCE;
+    pbr.material.thickness = LEAF_THICKNESS;
     pbr.material.flags |= pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT
         | pbr_types::STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT;
 #ifdef VERTEX_COLORS
@@ -157,6 +162,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let leaf = burning && !remains && b1 > LEAF_OFFSET * 0.5;
     let alive = select(clamp(a, 0.0, 1.0), select(0.0, 1.0, leaf), burning);
     pbr.material.base_color = foliage_albedo(pbr.material.base_color, p, in.world_normal, alive);
+    pbr.material.perceptual_roughness = mix(WOOD_ROUGHNESS, LEAF_ROUGHNESS, alive);
+    pbr.material.reflectance = mix(WOOD_REFLECTANCE, LEAF_REFLECTANCE, alive);
+    pbr.material.diffuse_transmission = LEAF_TRANSMISSION * alive;
     if burning {
         let t0 = b1 - 1.0 - select(select(0.0, LEAF_OFFSET, leaf), REMAINS_OFFSET, remains);
         let prog = clamp((foliage.fire.y - t0) / max(foliage.fire.z, 1.0), 0.0, 1.0);

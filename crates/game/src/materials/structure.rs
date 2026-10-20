@@ -39,6 +39,18 @@ impl Finish {
     }
 }
 
+/// What a baked vertex is made of, by id, for its PBR response (`SURFACE_*`
+/// and `apply_surface` in `structure.wgsl`; the bakes' `SURFACES`, e.g.
+/// `scripts/build_unit_models.py`): 1 paint under a clear coat, 2 metal,
+/// 3 rubber, 4 glass, 5 lamp (glows), 6 skin, 7 cloth, 8 retroreflective tape,
+/// 9 leather, 10 wood, 11 louvred shutters; 0 none, the material as it is.
+///
+/// The vertex colour alpha that carries surface `id` (1.0 = none). The
+/// structure materials are opaque, so the alpha is free.
+pub fn surface_alpha(id: u8) -> f32 {
+    if id == 0 { 1.0 } else { id as f32 / 255.0 }
+}
+
 #[derive(Asset, AsBindGroup, TypePath, Clone, Default)]
 #[bind_group_data(Finish)]
 pub struct StructureFinish {

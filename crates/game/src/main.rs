@@ -50,6 +50,7 @@ mod roads;
 mod shader_lib;
 mod sea;
 mod sky;
+mod sky_light;
 mod sim;
 mod terrain_mesh;
 mod textures;
@@ -225,6 +226,7 @@ fn setup_scene(
         Camera3dBundle {
             camera: Camera { hdr: !cfg!(target_arch = "wasm32"), ..default() },
             tonemapping: Tonemapping::TonyMcMapface,
+            color_grading: grading(),
             transform: Transform::from_xyz(focus.x, focus.y + distance * 0.77, focus.z + distance * 0.77),
             projection: PerspectiveProjection { far: 40_000.0, ..default() }.into(),
             ..default()
@@ -320,4 +322,18 @@ fn kiosk_systems(app: &mut App) {
 
 fn map_camera_allowed(mario: Res<mario::Playground>) -> bool {
     !mario.active
+}
+
+/// The film look on top of the tone mapper: a touch more contrast in the
+/// midtones and saturation after it, so the sunlit island does not read
+/// washed out (TonyMcMapface desaturates bright, saturated colours). Tuned on
+/// snapshots against the sky's fill (`sky_light`), 2026-10-20.
+fn grading() -> bevy::render::view::ColorGrading {
+    use bevy::render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection};
+    let mut g = ColorGrading::with_identical_sections(
+        ColorGradingGlobal { post_saturation: 1.15, ..default() },
+        ColorGradingSection::default(),
+    );
+    g.midtones.contrast = 1.15;
+    g
 }

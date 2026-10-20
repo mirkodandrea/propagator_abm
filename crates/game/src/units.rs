@@ -28,6 +28,7 @@ use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
 use scenario::{Cell, Pos, Scenario};
 
+use crate::materials::{self, Finish, StructureMaterial};
 use crate::frame;
 use crate::rings::{ring_mesh, tube_transform, wall_mesh, TubeSpin, RING_LIFT_M};
 use crate::sim::Sim;
@@ -115,9 +116,6 @@ pub fn tint(state: UnitState) -> Color {
     }
 }
 
-/// How much the models glow on their own, so they stay findable in smoke
-/// shadow without flattening their colours.
-const SELF_LIGHT: f32 = 0.12;
 
 /// An animated part of a unit (a wheel, a propeller, a limb, a beacon): a child
 /// of the unit's symbol, turning about the pivot of its model.
@@ -145,6 +143,7 @@ pub fn setup(
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut bodies: ResMut<Assets<StructureMaterial>>,
 ) {
     // Blender models (scripts/build_unit_models.py): the engine, a firefighter
     // on foot (each person of a team is a unit of its own) and the air tanker.
@@ -154,16 +153,16 @@ pub fn setup(
 
     let vr = false;
     let symbol_scale = symbol_scale(vr);
-    let mut mat = |c: Color, emissive: f32| {
-        materials.add(StandardMaterial {
-            base_color: c,
-            // Strongly self-lit: these have to be findable in smoke shadow on a
-            // north-facing slope, which is precisely where the work is.
-            emissive: c.to_linear() * emissive,
-            perceptual_roughness: 0.5,
-            unlit: vr,
-            ..default()
-        })
+    // Paint, glass, metal, cloth... per vertex (`materials::surface_alpha`):
+    // the base only carries the status tint. A clear coat here turns the
+    // shader's clear-coat path on; the paint is the only part that keeps it.
+    // Findable in smoke shadow by their hi-vis tape and lamps, not by glowing
+    // all over.
+    let mut mat = |c: Color| {
+        bodies.add(materials::structure(
+            StandardMaterial { base_color: c, perceptual_roughness: 0.5, clearcoat: 1.0, unlit: vr, ..default() },
+            Finish::None,
+        ))
     };
 
     for u in &sim.crews.units {
@@ -173,7 +172,7 @@ pub fn setup(
             UnitKind::AirTanker => (tanker.clone(), symbol_scale * 1.6),
         };
         let ground = sim.scn.terrain.height_at(u.pos);
-        let material = mat(tint(u.state), SELF_LIGHT);
+        let material = mat(tint(u.state));
         let model = match u.kind {
             UnitKind::Engine => "engine",
             UnitKind::HandCrew => "firefighter",
@@ -181,7 +180,7 @@ pub fn setup(
         };
         commands
             .spawn((
-                MaterialMeshBundle::<StandardMaterial> {
+                MaterialMeshBundle::<StructureMaterial> {
                     mesh,
                     material: material.clone(),
                     transform: Transform::from_translation(frame::to_bevy(u.pos, ground))
@@ -199,7 +198,7 @@ pub fn setup(
             .with_children(|parent| {
                 for (_, part, rig) in crate::models::unit_parts(model) {
                     parent.spawn((
-                        MaterialMeshBundle::<StandardMaterial> {
+                        MaterialMeshBundle::<StructureMaterial> {
                             mesh: meshes.add(part),
                             material: material.clone(),
                             transform: Transform::from_translation(rig.pivot),
@@ -298,12 +297,12 @@ pub fn reset(
 
 pub fn update_units(
     sim: Res<Sim>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<StructureMaterial>>,
     mut query: Query<(
         &UnitView,
         &mut Transform,
         &mut Visibility,
-        &Handle<StandardMaterial>,
+        &Handle<StructureMaterial>,
     )>,
 ) {
     if !sim.is_changed() {
@@ -348,9 +347,8 @@ pub fn update_units(
         // unit visibly change state without a swap table.
         if let Some(m) = materials.get_mut(mat) {
             let c = tint(u.state);
-            if m.base_color != c {
-                m.base_color = c;
-                m.emissive = c.to_linear() * SELF_LIGHT;
+            if m.base.base_color != c {
+                m.base.base_color = c;
             }
         }
     }

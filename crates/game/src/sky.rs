@@ -162,6 +162,36 @@ impl Material for SkyMaterial {
     }
 }
 
+/// What the image-based light (`crate::sky_light`) needs from the sky, written
+/// by [`update_sky`] every frame.
+#[derive(Resource, Clone, Copy)]
+pub struct SkyEnv {
+    pub el_deg: f32,
+    /// The flat ambient brightness before `ambient_scale` is applied: the
+    /// unit the environment map's `intensity` is expressed in.
+    pub ambient_brightness: f32,
+    /// Fraction of the flat `AmbientLight` kept. 1 until the environment
+    /// map is attached to a camera, then lowered, so a failure to set the
+    /// map up leaves the old look.
+    pub ambient_scale: f32,
+}
+
+impl Default for SkyEnv {
+    fn default() -> Self {
+        SkyEnv { el_deg: 45.0, ambient_brightness: 1000.0, ambient_scale: 1.0 }
+    }
+}
+
+/// Zenith, horizon and sun colours for a sun elevation (degrees).
+pub fn sky_colors(el_deg: f32) -> ([f32; 3], [f32; 3], [f32; 3]) {
+    (ramp3(el_deg, &ZENITH), ramp3(el_deg, &HORIZON), ramp3(el_deg, &SUN_COLOR))
+}
+
+/// Sun illuminance (lux) for an elevation.
+pub fn sun_illuminance(el_deg: f32) -> f32 {
+    ramp1(el_deg, &ILLUMINANCE)
+}
+
 pub struct SkyPlugin;
 
 impl Plugin for SkyPlugin {
@@ -173,6 +203,8 @@ impl Plugin for SkyPlugin {
             Shader::from_wgsl
         );
         app.init_resource::<DayClock>()
+            .init_resource::<SkyEnv>()
+            .add_plugins(crate::sky_light::SkyLightPlugin)
             .init_resource::<SunState>()
             .add_plugins(MaterialPlugin::<SkyMaterial>::default())
             .add_systems(OnEnter(crate::AppState::Playing), spawn_sky)
@@ -414,6 +446,7 @@ pub fn update_sky(
     mut sky_materials: ResMut<Assets<SkyMaterial>>,
     mut sun_state: ResMut<SunState>,
     mut ambient: ResMut<AmbientLight>,
+    mut sky_env: ResMut<SkyEnv>,
     mut clear_color: ResMut<ClearColor>,
     mut sun_q: Query<(&mut Transform, &mut DirectionalLight), With<Sun>>,
     mut fog_q: Query<&mut FogSettings>,
@@ -473,7 +506,9 @@ pub fn update_sky(
         light.color = Color::srgb(sun_color[0], sun_color[1], sun_color[2]);
     }
 
-    ambient.brightness = ambient_brightness;
+    sky_env.el_deg = el_deg;
+    sky_env.ambient_brightness = ambient_brightness;
+    ambient.brightness = ambient_brightness * sky_env.ambient_scale;
     ambient.color = Color::srgb(ambient_color[0], ambient_color[1], ambient_color[2]);
     clear_color.0 = Color::srgb(horizon[0], horizon[1], horizon[2]);
 

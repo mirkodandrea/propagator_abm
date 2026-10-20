@@ -3,9 +3,10 @@
 //! - [`TerrainMaterial`]: the ground, its roads and meadows (`terrain.wgsl`).
 //! - [`FoliageMaterial`]: the vegetation, and its fire (`foliage.wgsl`, with
 //!   the vertex stages `veg_vertex.wgsl` / `veg_prepass.wgsl`).
-//! - [`StructureMaterial`]: buildings, landmarks, boats, rocks: StandardMaterial
-//!   plus a procedural [`Finish`] (`structure.wgsl`).
-//! - Everything else (units, pins, rings, fields) is a plain `StandardMaterial`.
+//! - [`StructureMaterial`]: buildings, landmarks, boats, rocks and the units:
+//!   StandardMaterial plus a procedural [`Finish`] and a PBR response per part
+//!   (`surface_alpha`, baked per vertex) (`structure.wgsl`).
+//! - Everything else (pins, rings, jets, fields) is a plain `StandardMaterial`.
 //!
 //! All of them are lit by Bevy's PBR (`apply_pbr_lighting`) and fogged by it.
 //! Terrain and foliage are materials of their own rather than extensions of
@@ -19,7 +20,7 @@ mod structure;
 mod terrain;
 
 pub use foliage::{FoliageMaterial, ATTRIBUTE_PLANT};
-pub use structure::{structure, Finish, StructureMaterial};
+pub use structure::{structure, surface_alpha, Finish, StructureMaterial};
 pub use terrain::TerrainMaterial;
 
 use bevy::asset::load_internal_asset;

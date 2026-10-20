@@ -43,7 +43,7 @@
 //! frame rate — draws every vegetation triangle once per pass, shadow
 //! cascades included. Both meshes burn together.
 
-use bevy::pbr::NotShadowCaster;
+use bevy::pbr::{NotShadowCaster, TransmittedShadowReceiver};
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
@@ -385,17 +385,19 @@ pub fn spawn(
             // Vegetation is visual only: Mario can run through trunks and
             // canopies, and the follow camera is not clipped by the forest.
             // The full models start on show, until the LOD system picks.
-            let full = commands.spawn(MaterialMeshBundle::<FoliageMaterial> {
+            // The light through the leaves is shadowed too: a crown in the
+            // shade of another does not glow as if the sun were behind it.
+            let full = commands.spawn((MaterialMeshBundle::<FoliageMaterial> {
                 mesh: mesh.clone(),
                 material: material.clone(),
                 ..default()
-            }).id();
-            let low = commands.spawn(MaterialMeshBundle::<FoliageMaterial> {
+            }, TransmittedShadowReceiver)).id();
+            let low = commands.spawn((MaterialMeshBundle::<FoliageMaterial> {
                 mesh: low_mesh.clone(),
                 material: material.clone(),
                 visibility: Visibility::Hidden,
                 ..default()
-            }).id();
+            }, TransmittedShadowReceiver)).id();
             // Same mesh handle as `low`: the burn edits reach it for free.
             let shadow = gfx.shadows.then(|| {
                 commands.spawn((

@@ -63,8 +63,9 @@ impl Material for FoliageMaterial {
         PREPASS_SHADER_HANDLE.into()
     }
 
-    /// Foliage is thin: both faces drawn, in every pass. The plant index joins
-    /// the mesh's one interleaved vertex buffer.
+    /// Foliage is thin: both faces drawn, in every pass, and light through the
+    /// leaves (Bevy's diffuse transmission, set per pixel in `foliage.wgsl`).
+    /// The plant index joins the mesh's one interleaved vertex buffer.
     fn specialize(
         _pipeline: &MaterialPipeline<Self>,
         descriptor: &mut RenderPipelineDescriptor,
@@ -72,6 +73,10 @@ impl Material for FoliageMaterial {
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         descriptor.primitive.cull_mode = None;
+        // leaves let the sun through: lit from behind, a crown glows
+        if let Some(fragment) = descriptor.fragment.as_mut() {
+            fragment.shader_defs.push("STANDARD_MATERIAL_DIFFUSE_TRANSMISSION".into());
+        }
         let plant = layout.0.get_layout(&[ATTRIBUTE_PLANT.at_shader_location(PLANT_LOCATION)])?;
         descriptor.vertex.buffers[0].attributes.extend(plant.attributes);
         Ok(())
