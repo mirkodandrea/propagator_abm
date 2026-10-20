@@ -1736,12 +1736,15 @@ fn respawn_nearby(
         // on the top of whatever stands there: the ground, or a model's roof
         let ground = runtime.collision_world.surface_top(sim, p.x, p.z);
         let feet = p.with_y(ground + 0.3);
+        // on a model's top (a roof, a wall-walk) the neighbouring slopes and
+        // merlons are not a reason to refuse: native Mario pushes out of walls
+        let on_model = ground > collision_ground(sim, p.x, p.z) + 1.0;
         let ids = runtime.collision_world.query(feet - Vec3::splat(3.0), feet + Vec3::splat(3.0));
         let blocked = ids.iter().any(|&i| {
             let t = &runtime.collision_world.triangles[i];
             // the surface Mario stands on is not an obstacle
             let floor = ray_triangle(feet + Vec3::Y * 2., Vec3::NEG_Y, t.vertices).is_some_and(|d| d < 3.);
-            !floor && (near(t.lo, t.hi, feet, 3.0) && t.hi.y > ground + 0.5 && t.lo.y < ground + 10.0)
+            !floor && (!on_model && near(t.lo, t.hi, feet, 3.0) && t.hi.y > ground + 0.5 && t.lo.y < ground + 10.0)
                 || ray_triangle(feet, Vec3::Y, t.vertices).is_some_and(|d| d < 100.0)
         });
         if blocked { continue; }
@@ -2063,6 +2066,32 @@ mod tests {
         let mut world = World::new();
         let mut state = bevy::ecs::system::SystemState::<Actors>::new(&mut world);
         let mut actors = state.get_mut(&mut world);
+        // seen from the overview camera, the pointer over the roof meets the roof
+        let camera = Vec3::new(sim.scn.world.width_m * 0.5, 14000., -sim.scn.world.height_m * 0.5);
+        let aim = (Vec3::new(centre.x, height, centre.z) - camera).normalize();
+        let to_ground = (Vec3::new(centre.x, terrain, centre.z) - camera).length();
+        let hit = runtime.collision_world.raycast(camera, aim, to_ground).expect("the ray meets the rocca before the ground");
+        let met = camera + aim * hit;
+        assert!(met.y > terrain + 20. && (met.x - centre.x).hypot(met.z - centre.z) < 40., "met {met:?}, roof at {centre:?}");
+        // every point of the rocca that rises above the ground takes Mario on top of it
+        let (mut tried, mut on_top) = (0, 0);
+        let mut x = at.x - 90.;
+        while x < at.x + 90. {
+            let mut z = at.z - 90.;
+            while z < at.z + 90. {
+                let high = runtime.collision_world.surface_top(&sim, x, z);
+                let ground = collision_ground(&sim, x, z);
+                if high > ground + 20. {
+                    tried += 1;
+                    assert!(respawn_nearby(&mut runtime, &meshes, &sim, Vec3::new(x, 0., z), &mut actors));
+                    if runtime.spawn.y > ground + 20. { on_top += 1; }
+                }
+                z += 6.;
+            }
+            x += 6.;
+        }
+        assert!(tried > 100, "the probe covers the rocca: {tried}");
+        assert_eq!(on_top, tried, "Mario stands on top in every one of them");
         assert!(respawn_nearby(&mut runtime, &meshes, &sim, centre, &mut actors));
         assert!(runtime.spawn.y > terrain + 20., "Mario stands on the roof, not under it: {}", runtime.spawn.y);
     }
