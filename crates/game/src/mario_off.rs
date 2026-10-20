@@ -9,6 +9,11 @@ pub struct Playground {
     pub active: bool,
 }
 
+impl Playground {
+    pub(crate) fn request_start_for_snapshot(&mut self, _wing_cap: bool) {}
+    pub(crate) fn snapshot_ready(&self) -> bool { true }
+}
+
 pub struct MarioPlugin;
 impl Plugin for MarioPlugin {
     fn build(&self, app: &mut App) {

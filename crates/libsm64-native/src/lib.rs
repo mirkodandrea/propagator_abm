@@ -277,6 +277,12 @@ impl Engine {
         self.state.flags & MARIO_WING_CAP != 0
     }
 
+    /// The victory pose: the star dance, arm raised.
+    pub fn victory_pose(&mut self) {
+        let Some(id) = self.id else { return };
+        unsafe { sm64_set_mario_action(id, 0x00001307) } // ACT_STAR_DANCE_NO_EXIT
+    }
+
     pub fn hurt(&mut self, source: [f32; 3], fire: bool) {
         let Some(id) = self.id else { return };
         if self.state.invincibility > 0 {

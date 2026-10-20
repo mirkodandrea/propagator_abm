@@ -20,6 +20,7 @@
 //! | `iso`    | `0`: no isochrones (lines and labels)                                |
 //! | `marks`  | `0`: no team, order, hex, road or flag marks on the map              |
 //! | `ui`     | `0`: no interface at all (panels, labels, buttons)                   |
+//! | `mario`  | `1`: Mario beside the fire, turned to the camera (needs `pause=1`)   |
 //!
 //! The game is that of the phase (the tutorial's fire or the played one).
 //! Time only goes forward: a state with an earlier `t` or another phase's
@@ -69,6 +70,7 @@ struct State {
     yaw: Option<f32>,
     pitch: Option<f32>,
     hide: SnapHide,
+    mario: bool,
 }
 
 /// What the state on show leaves out of the picture.
@@ -115,6 +117,7 @@ fn parse(spec: &str) -> Vec<State> {
                     "iso" => st.hide.iso = v == "0",
                     "marks" => st.hide.marks = v == "0",
                     "ui" => st.hide.ui = v == "0",
+                    "mario" => st.mario = v == "1",
                     other => eprintln!("snap: unknown key `{other}`"),
                 }
             }
@@ -256,6 +259,7 @@ pub fn drive(
     mut restarted: EventWriter<SimRestarted>,
     mut view: ResMut<SnapView>,
     mut hide: ResMut<SnapHide>,
+    mut mario: ResMut<crate::mario::Playground>,
     mut p: Local<Progress>,
 ) {
     let Ok(dir) = std::env::var("KIOSK_SNAP") else { return };
@@ -279,6 +283,9 @@ pub fn drive(
         p.goal = apply(&st, &mut kiosk, &mut sim, &mut restarted);
         p.applied = true;
         p.waited = 0.0;
+        if st.mario {
+            mario.request_start_for_snapshot(false);
+        }
     }
     p.waited += dt;
     *hide = st.hide;
@@ -301,7 +308,7 @@ pub fn drive(
     } else {
         *view = SnapView::default();
     }
-    let ready = st.phase != "fine" || kiosk.baseline().is_some();
+    let ready = (st.phase != "fine" || kiosk.baseline().is_some()) && (!st.mario || mario.snapshot_ready());
     if p.waited > SETTLE_S && ready {
         let _ = mgr.save_screenshot_to_disk(window, format!("{dir}/{}.png", st.name));
         eprintln!("snap: {} (t={} min, phase {})", st.name, st.t_min, st.phase);

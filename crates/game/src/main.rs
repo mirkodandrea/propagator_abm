@@ -98,6 +98,9 @@ fn main() -> anyhow::Result<()> {
                 r
             },
             mode: kiosk::window_mode(),
+            // KIOSK_SNAP renders to file: a hidden window, so it never takes the focus
+            visible: std::env::var("KIOSK_SNAP").is_err(),
+            focused: std::env::var("KIOSK_SNAP").is_err(),
             // in the browser: the page's canvas, filling it
             canvas: Some("#rocca".into()),
             fit_canvas_to_parent: true,
@@ -109,6 +112,8 @@ fn main() -> anyhow::Result<()> {
         ..default()
     }))
     .insert_resource(gfx.msaa())
+    // KIOSK_SNAP renders to file: no sound either
+    .insert_resource(bevy::audio::GlobalVolume::new(if std::env::var("KIOSK_SNAP").is_ok() { 0.0 } else { 1.0 }))
     .insert_resource(gfx)
     .insert_resource(bevy::pbr::DirectionalLightShadowMap { size: gfx.shadow_map })
     .add_plugins(EguiPlugin)

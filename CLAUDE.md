@@ -102,7 +102,7 @@ ricerca, vedere [`tools/factory/SCENARI.md`](tools/factory/SCENARI.md).
 
 ### Screenshot di stati arbitrari (`KIOSK_SNAP`)
 
-Per controllare grafica e UX **non giocare una partita**: `kiosk/snap.rs` porta il gioco a uno stato descritto in una riga e salva il PNG. Serve la build `--release` e una finestra vera.
+Per controllare grafica e UX **non giocare una partita**: `kiosk/snap.rs` porta il gioco a uno stato descritto in una riga e salva il PNG. Serve la build `--release`. Con `KIOSK_SNAP` la finestra è **invisibile e senza focus** e l’audio è a volume 0 (`main.rs`): il PNG viene scritto senza che compaia nulla sullo schermo (verificato su macOS, 2026-10-20).
 
 ```
 KIOSK_WINDOWED=1 KIOSK_SIZE=1600x1000 KIOSK_SCALE=1 KIOSK_SNAP=<cartella> KIOSK_SNAP_SPEC='name=a,phase=intro;name=b,phase=tutorial,step=4,pause=1,team=0;name=c,t=40,pause=1,move=0:5590:4400,select=Le Terrazze,at=fire' cargo run -p game --release

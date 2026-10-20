@@ -152,6 +152,9 @@ pub struct Playground {
     message: &'static str,
     /// Web: «M» was pressed before the ROM was loaded; start once it arrives.
     awaiting_rom: bool,
+    /// `KIOSK_SNAP` `mario=1`: start beside the fire, then turn to the camera.
+    snapshot: bool,
+    snapshot_time: f32,
 }
 
 impl Default for Playground {
@@ -159,7 +162,8 @@ impl Default for Playground {
         Self { active: false, simulation_speed: 0., nearby: "", toggle: false,
             snapshot_wing_cap: false, choose_position: false, relocating: false,
             confirm_position: false, cancel_position: false, error: None,
-            health: 0, wing_cap: false, message: "", awaiting_rom: false }
+            health: 0, wing_cap: false, message: "", awaiting_rom: false,
+            snapshot: false, snapshot_time: 0. }
     }
 }
 
@@ -172,7 +176,11 @@ impl Playground {
     pub(crate) fn request_start_for_snapshot(&mut self, wing_cap: bool) {
         self.toggle = true;
         self.snapshot_wing_cap = wing_cap;
+        self.snapshot = true;
+        self.snapshot_time = 0.;
     }
+    /// Mario is standing, turned to the camera: the picture can be taken.
+    pub(crate) fn snapshot_ready(&self) -> bool { self.active && self.snapshot_time > 5.2 }
 }
 
 #[derive(Component)]
@@ -760,8 +768,9 @@ fn drive(
             depth_prepass,
         });
         let demo = std::env::var_os("MARIO_DEMO").is_some();
-        let rocca = if demo { None } else { rocca_start(&sim) };
-        let base = if demo {
+        let beside_fire = demo || mode.snapshot;
+        let rocca = if beside_fire { None } else { rocca_start(&sim) };
+        let base = if beside_fire {
             // Stand just outside the eastern edge of the actual burning front.
             let fire = sim.fire.active_cells().iter()
                 .map(|&c| sim.scn.world.centre_of(c))
@@ -1081,6 +1090,15 @@ fn drive(
         }
     }
     let pos = from_sm64(runtime.engine.as_ref().unwrap().state.position, runtime.origin);
+    if mode.snapshot {
+        // walk towards the camera, stop facing it, strike the victory pose
+        let before = mode.snapshot_time;
+        mode.snapshot_time += dt;
+        if before < 2.2 && mode.snapshot_time >= 2.2 {
+            runtime.engine.as_mut().unwrap().victory_pose();
+        }
+        stick = if (1.3..1.9).contains(&mode.snapshot_time) { Vec2::new(0., 1.) } else { Vec2::ZERO };
+    }
     let engage = pressed(GamepadButtonType::LeftThumb)
         || keyboard_free && controls.keys.just_pressed(KeyCode::KeyF);
     engage_nearby(&mut runtime, &mut mode, &mut actors, &meshes, pos, engage);
@@ -1114,9 +1132,12 @@ fn drive(
             -10000.
         };
         let water_level = ((water_y - runtime.origin.y) * SCALE) as i32;
+        // the star dance turns Mario to where the camera looks: for the
+        // snapshot, tell it the camera looks the other way
+        let flip = if mode.snapshot && mode.snapshot_time >= 2.2 { -1. } else { 1. };
         let input = Input {
-            camera_x: -camera.yaw.sin(),
-            camera_z: -camera.yaw.cos(),
+            camera_x: -camera.yaw.sin() * flip,
+            camera_z: -camera.yaw.cos() * flip,
             stick_x: stick.x,
             stick_y: stick.y,
             jump: u8::from(jump || runtime.jump_latched),
