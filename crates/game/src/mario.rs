@@ -31,6 +31,8 @@ use std::collections::HashMap;
 #[path = "mario_audio.rs"]
 mod audio;
 use audio::NativeAudio;
+#[path = "mario_play.rs"]
+mod play;
 use bevy::audio::AddAudioSource;
 
 // Mario's ~160-unit height becomes 8 m, matching the exaggerated residents.
@@ -155,6 +157,13 @@ pub struct Playground {
     /// `KIOSK_SNAP` `mario=1`: start beside the fire, then turn to the camera.
     snapshot: bool,
     snapshot_time: f32,
+    /// For `play`: where Mario stands (None while he is not out), and what he
+    /// did this frame. Read-only for the game: nothing here reaches `Game`.
+    pos: Option<Vec3>,
+    punched: bool,
+    engaged: bool,
+    greeted_unit: Option<usize>,
+    victory: bool,
 }
 
 impl Default for Playground {
@@ -163,7 +172,8 @@ impl Default for Playground {
             snapshot_wing_cap: false, choose_position: false, relocating: false,
             confirm_position: false, cancel_position: false, error: None,
             health: 0, wing_cap: false, message: "", awaiting_rom: false,
-            snapshot: false, snapshot_time: 0. }
+            snapshot: false, snapshot_time: 0., pos: None, punched: false,
+            engaged: false, greeted_unit: None, victory: false }
     }
 }
 
@@ -372,6 +382,7 @@ impl Plugin for MarioPlugin {
             shadows_enabled: false,
             ..default()
         });
+        app.add_plugins(play::PlayPlugin);
         app.init_resource::<Playground>()
             .insert_non_send_resource(Runtime::default())
             .add_systems(
@@ -503,6 +514,7 @@ fn clear(mut commands: Commands, mut runtime: NonSendMut<Runtime>, mut mode: Res
     runtime.previous.clear();
     runtime.reactions.clear();
     mode.active = false;
+    mode.pos = None;
     mode.relocating = false;
     runtime.placement = None;
     mode.wing_cap = false;
@@ -644,7 +656,7 @@ fn drive(
     mut assets: RenderAssets,
     mut restarted: EventReader<SimRestarted>,
     buildings: Res<crate::buildings::Buildings>,
-    (mut wheel, mut gizmos): (EventReader<MouseWheel>, Gizmos),
+    (mut wheel, mut gizmos, unit_ids): (EventReader<MouseWheel>, Gizmos, Query<&crate::units::UnitView>),
 ) {
     // Drain even outside Mario so opening it never replays old map scrolling.
     let scroll: f32 = wheel.read().map(|event| match event.unit {
@@ -715,6 +727,7 @@ fn drive(
         runtime.impact_cooldown = 0.;
         mode.nearby = "";
         mode.active = false;
+        mode.pos = None;
         mode.relocating = false;
         runtime.placement = None;
         return;
@@ -1101,7 +1114,10 @@ fn drive(
     }
     let engage = pressed(GamepadButtonType::LeftThumb)
         || keyboard_free && controls.keys.just_pressed(KeyCode::KeyF);
-    engage_nearby(&mut runtime, &mut mode, &mut actors, &meshes, pos, engage);
+    let greeted = engage_nearby(&mut runtime, &mut mode, &mut actors, &meshes, pos, engage);
+    mode.engaged = engage;
+    mode.greeted_unit = greeted.map(|e| unit_ids.get(e).map_or(usize::MAX, |u| u.id));
+    mode.punched = attack || runtime.attack_latched;
     runtime.impact_cooldown = (runtime.impact_cooldown - dt).max(0.);
     runtime.accumulator += dt;
     while runtime.accumulator >= STEP {
@@ -1144,12 +1160,14 @@ fn drive(
             attack: u8::from(attack || runtime.attack_latched),
             crouch: u8::from(crouch),
         };
+        let celebrate = std::mem::take(&mut mode.victory);
         let boost = runtime.jump_latched;
         runtime.jump_latched = false;
         runtime.attack_latched = false;
         let engine = runtime.engine.as_mut().unwrap();
         if boost && engine.boost_flight() { mode.message = "Boost!"; }
         engine.water_level(water_level);
+        if celebrate { engine.victory_pose(); }
         engine.tick(&input);
         if let Some(start) = profile_start {
             eprintln!("mario collision: surfaces={} refresh_us={} tick_us={}",
@@ -1191,6 +1209,7 @@ fn drive(
     let origin = runtime.origin;
     let pos = from_sm64(runtime.engine.as_ref().unwrap().state.position, origin);
     let pos = if pos.is_finite() { pos } else { runtime.last_valid };
+    mode.pos = Some(pos);
     let alpha = (runtime.accumulator / STEP).clamp(0.0, 1.0);
     let camera_pos = runtime.previous_pose.position.lerp(pos, alpha);
     for (entity, _, mut tf, vis) in &mut actors {
@@ -1421,7 +1440,7 @@ fn road_spawn(sim: &Sim, focus: Vec3) -> Vec3 {
     crate::frame::to_bevy(p, sim.scn.terrain.height_at(p))
 }
 
-fn rocca_start(sim: &Sim) -> Option<(Vec3, f32)> {
+pub(super) fn rocca_start(sim: &Sim) -> Option<(Vec3, f32)> {
     let path = sim
         .data
         .join("scenarios")
@@ -1747,7 +1766,7 @@ fn interact(
 }
 
 fn engage_nearby(runtime: &mut Runtime, mode: &mut Playground, actors: &mut Actors,
-    meshes: &Assets<Mesh>, mario: Vec3, engage: bool) {
+    meshes: &Assets<Mesh>, mario: Vec3, engage: bool) -> Option<Entity> {
     let mut closest = 8.;
     let mut target = None;
     for (entity, handle, tf, visibility) in actors.iter_mut() {
@@ -1766,8 +1785,10 @@ fn engage_nearby(runtime: &mut Runtime, mode: &mut Playground, actors: &mut Acto
         if let Some((entity, reply)) = target {
             mode.message = reply;
             runtime.reactions.insert(entity, Reaction::new(0.9, Vec3::ZERO));
+            return Some(entity);
         }
     }
+    None
 }
 
 #[cfg(test)]

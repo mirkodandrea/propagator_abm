@@ -69,3 +69,26 @@ ownership e cleanup con ROM locale); `cargo test -p game --release mario`
 Screenshot riproducibile della modalità: `KIOSK_SNAP=out/mario
 KIOSK_SNAP_SPEC='name=rocca,phase=pianifica,mario=1' cargo run -p game
 --release`. Il campo `mario=1` è solo nativo; il programma salva il PNG e termina.
+
+## Passatempi (2026-10-20, richiesta dell'utente)
+
+Solo per divertimento, in `crates/game/src/mario_play.rs`. Leggono dove sta
+Mario e cosa fa; non toccano `Game`, ordini, agenti, punteggio o classifica, e
+con Mario chiuso non fanno nulla. I progressi durano quanto il programma; solo il
+record della corsa è su file (`~/.rocca_ventosa/mario_record.txt`, non scritto se
+`KIOSK_SCORES` è impostata). Restano nascosti: niente nel tutorial.
+
+- **Stelle** (colonna gialla visibile da lontano): rocca, una più in alto per il
+  solo Wing Cap, torre, porto, una per borgo. Il pannello in alto a destra dà
+  l'indizio della più vicina con distanza e direzione. Presa una stella, Mario
+  fa la posa della vittoria.
+- **Monete** lungo le strade (una ogni ≥ 90 m, al massimo 180, mai in mare).
+- **Saluti** (F / L3): ogni borgo (entro 90 m dal centro) e ogni squadra hanno
+  un fumetto diverso. Prima volta e ripetizioni sono contate.
+- **Corsa** dalla colonna azzurra del porto alla colonna azzurra della rocca,
+  con cronometro e record. Si annulla se Mario viene spostato (R) o recuperato.
+- **Fiammelle**: un pugno vicino a celle in fiamme ne fa uscire uno sbuffo e le
+  conta, ma il fuoco vero non cambia (lo dice il pannello).
+- **Titoli** (stelle, monete, saluti tutti): compaiono nel pannello.
+
+Verifiche: `cargo test -p game --release mario`. Non provato a schermo.
