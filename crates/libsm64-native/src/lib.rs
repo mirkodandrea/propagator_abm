@@ -13,6 +13,9 @@ pub const AUDIO_RATE: u32 = 32_000;
 pub const AUDIO_BUFFER_SAMPLES: usize = 544 * 2 * 2;
 const VERTICES: usize = 1024 * 3;
 const MARIO_WING_CAP: u32 = 0x00000008;
+const ACT_IDLE: u32 = 0x0C400201;
+const ACT_WATER_IDLE: u32 = 0x380022C0;
+const ACT_STAR_DANCE_NO_EXIT: u32 = 0x00001307;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
@@ -336,7 +339,16 @@ impl Engine {
     /// The victory pose: the star dance, arm raised.
     pub fn victory_pose(&mut self) {
         let Some(id) = self.id else { return };
-        unsafe { sm64_set_mario_action(id, 0x00001307) } // ACT_STAR_DANCE_NO_EXIT
+        unsafe { sm64_set_mario_action(id, ACT_STAR_DANCE_NO_EXIT) }
+    }
+
+    /// Ends [`Self::victory_pose`]: the no-exit star dance never finishes by
+    /// itself (the original leaves the level from it), so Mario is put back to
+    /// standing or treading water and answers the controls again.
+    pub fn end_victory(&mut self, in_water: bool) {
+        let Some(id) = self.id else { return };
+        if self.state.action != ACT_STAR_DANCE_NO_EXIT { return; }
+        unsafe { sm64_set_mario_action(id, if in_water { ACT_WATER_IDLE } else { ACT_IDLE }) }
     }
 
     pub fn hurt(&mut self, source: [f32; 3], fire: bool) {
@@ -437,6 +449,16 @@ mod tests {
             .iter()
             .flatten()
             .all(|x| x.is_finite()));
+        // the star dance holds Mario until it is ended, then the controls answer
+        engine.victory_pose();
+        for _ in 0..150 {
+            engine.tick(&Input { camera_z: -1., stick_y: -1., ..Default::default() });
+        }
+        assert_eq!(engine.state.action, ACT_STAR_DANCE_NO_EXIT, "the dance does not end by itself");
+        engine.end_victory(false);
+        engine.tick(&neutral);
+        assert_ne!(engine.state.action, ACT_STAR_DANCE_NO_EXIT);
+        engine.end_victory(false); // inert when no dance is on
         let walk = Input {
             camera_z: -1.,
             stick_y: -1.,

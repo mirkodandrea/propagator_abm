@@ -83,7 +83,8 @@ record della corsa è su file (`~/.rocca_ventosa/mario_record.txt`, non scritto 
   rocca (solo Wing Cap), ai piedi della torre (fuori dal suo ingombro), porto,
   una per borgo. Il pannello in alto a destra dà
   l'indizio della più vicina con distanza e direzione. Presa una stella, Mario
-  fa la posa della vittoria.
+  fa la posa della vittoria per 2,4 s e poi torna ai comandi (la danza della
+  stella non finisce da sola: `Engine::end_victory`).
 - **Monete** lungo le strade (una ogni ≥ 90 m, al massimo 180, mai in mare).
 - **Saluti** (F / L3): ogni borgo (entro 90 m dal centro) e ogni squadra hanno
   un fumetto diverso. Prima volta e ripetizioni sono contate.

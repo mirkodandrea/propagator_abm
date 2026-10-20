@@ -38,6 +38,8 @@ use bevy::audio::AddAudioSource;
 // Mario's ~160-unit height becomes 8 m, matching the exaggerated residents.
 const SCALE: f32 = 20.0;
 const STEP: f32 = 1.0 / 30.0;
+/// How long the star dance lasts before Mario answers the controls again.
+const VICTORY_S: f32 = 2.4;
 const COLLISION_RADIUS: f32 = 18.0;
 const PATCH_RADIUS: f32 = 26.0;
 const PATCH_STEP: f32 = 6.0;
@@ -356,6 +358,8 @@ struct Runtime {
     fire_cooldown: f32,
     jump_latched: bool,
     attack_latched: bool,
+    /// Seconds left of the star dance (it is ended by hand).
+    victory_left: f32,
     demo_time: f32,
     demo_fire: Vec3,
     profile_collisions: bool,
@@ -806,6 +810,7 @@ fn drive(
         runtime.fire_cooldown = 0.;
         runtime.jump_latched = false;
         runtime.attack_latched = false;
+        runtime.victory_left = 0.;
         if !respawn_nearby(&mut runtime, &meshes, &sim, base, &mut actors) {
             mode.error = Some("Mario non trova un terreno su cui stare.".into());
             runtime.saved = None;
@@ -1167,12 +1172,17 @@ fn drive(
         let boost = runtime.jump_latched;
         runtime.jump_latched = false;
         runtime.attack_latched = false;
+        if celebrate { runtime.victory_left = VICTORY_S; }
         let engine = runtime.engine.as_mut().unwrap();
         if boost && engine.boost_flight() { mode.message = "Boost!"; }
         engine.water_level(water_level);
         if celebrate { engine.victory_pose(); }
         for cue in cues.drain(..) { engine.cue(cue); }
         engine.tick(&input);
+        if runtime.victory_left > 0. {
+            runtime.victory_left -= STEP;
+            if runtime.victory_left <= 0. { runtime.engine.as_mut().unwrap().end_victory(water); }
+        }
         if let Some(start) = profile_start {
             eprintln!("mario collision: surfaces={} refresh_us={} tick_us={}",
                 runtime.collision_count, refresh_us.unwrap(),
