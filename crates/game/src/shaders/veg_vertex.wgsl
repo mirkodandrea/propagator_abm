@@ -1,7 +1,7 @@
 // Main-pass vertex stage of the vegetation (`rocca::veg_state`): Bevy 0.14's
 // `mesh.wgsl` vertex without morph targets and skinning (plants have neither),
 // plus the per-plant fire state. Only vegetation materials take this path
-// (`retro.rs`, `specialize`).
+// (`materials/foliage.rs`).
 #import bevy_pbr::{
     mesh_functions,
     forward_io::VertexOutput,

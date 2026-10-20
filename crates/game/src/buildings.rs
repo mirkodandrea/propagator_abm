@@ -38,11 +38,10 @@ use bevy::render::render_asset::RenderAssetUsages;
 use scenario::{Building, Pos, Scenario};
 
 use crate::sim::Sim;
-use crate::retro;
+use crate::materials::{self, Finish, StructureMaterial};
 
 #[path = "town_kit.rs"]
 mod town_kit;
-use crate::retro::RetroMaterial;
 
 /// Unlit window glass — dark enough that a daylit building reads as an
 /// ordinary wall with punched openings, not a lattice of black holes.
@@ -124,7 +123,7 @@ pub fn spawn(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<RetroMaterial>>,
+    mut materials: ResMut<Assets<StructureMaterial>>,
 ) {
     let scn = &sim.scn;
 
@@ -139,7 +138,7 @@ pub fn spawn(
         residents.entry(h.building).or_default().push(h.id as u32);
     }
 
-    let material = materials.add(retro::finished_material(StandardMaterial {
+    let material = materials.add(materials::structure(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 0.75,
         metallic: 0.0,
@@ -152,7 +151,7 @@ pub fn spawn(
         // plaster.
         unlit: false,
         ..default()
-    }, retro::RetroStyle::STRUCTURE, retro::Finish::Town));
+    }, Finish::Town));
 
     let cols = (scn.world.width_m / CHUNK_M).ceil() as usize + 1;
     let rows = (scn.world.height_m / CHUNK_M).ceil() as usize + 1;
@@ -211,7 +210,7 @@ pub fn spawn(
         tris += builder.indices.len() / 3;
         let base = builder.colors.clone();
         let mesh = meshes.add(builder.finish());
-        commands.spawn((MaterialMeshBundle::<RetroMaterial> {
+        commands.spawn((MaterialMeshBundle::<StructureMaterial> {
             mesh: mesh.clone(),
             material: material.clone(),
             ..default()

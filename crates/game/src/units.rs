@@ -29,8 +29,6 @@ use bevy::render::render_asset::RenderAssetUsages;
 use scenario::{Cell, Pos, Scenario};
 
 use crate::frame;
-use crate::retro;
-use crate::retro::RetroMaterial;
 use crate::rings::{ring_mesh, tube_transform, wall_mesh, TubeSpin, RING_LIFT_M};
 use crate::sim::Sim;
 
@@ -86,9 +84,9 @@ pub struct WorkOverlay;
 
 #[derive(Resource)]
 pub struct UnitAssets {
-    order_ring: Handle<RetroMaterial>,
-    line_cut: Handle<RetroMaterial>,
-    line_todo: Handle<RetroMaterial>,
+    order_ring: Handle<StandardMaterial>,
+    line_cut: Handle<StandardMaterial>,
+    line_todo: Handle<StandardMaterial>,
     /// Suppression generation the markers were built for.
     orders_gen: u64,
     /// Fire generation the work overlay was built for, plus the counts it was
@@ -146,7 +144,7 @@ pub fn setup(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<RetroMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // Blender models (scripts/build_unit_models.py): the engine, a firefighter
     // on foot (each person of a team is a unit of its own) and the air tanker.
@@ -157,7 +155,7 @@ pub fn setup(
     let vr = false;
     let symbol_scale = symbol_scale(vr);
     let mut mat = |c: Color, emissive: f32| {
-        materials.add(retro::material(StandardMaterial {
+        materials.add(StandardMaterial {
             base_color: c,
             // Strongly self-lit: these have to be findable in smoke shadow on a
             // north-facing slope, which is precisely where the work is.
@@ -165,7 +163,7 @@ pub fn setup(
             perceptual_roughness: 0.5,
             unlit: vr,
             ..default()
-        }, vr))
+        })
     };
 
     for u in &sim.crews.units {
@@ -183,7 +181,7 @@ pub fn setup(
         };
         commands
             .spawn((
-                MaterialMeshBundle::<RetroMaterial> {
+                MaterialMeshBundle::<StandardMaterial> {
                     mesh,
                     material: material.clone(),
                     transform: Transform::from_translation(frame::to_bevy(u.pos, ground))
@@ -201,7 +199,7 @@ pub fn setup(
             .with_children(|parent| {
                 for (_, part, rig) in crate::models::unit_parts(model) {
                     parent.spawn((
-                        MaterialMeshBundle::<RetroMaterial> {
+                        MaterialMeshBundle::<StandardMaterial> {
                             mesh: meshes.add(part),
                             material: material.clone(),
                             transform: Transform::from_translation(rig.pivot),
@@ -215,19 +213,19 @@ pub fn setup(
     info!("suppression layer: {} unit symbols", sim.crews.units.len());
 
     // The jets: one arc per engine, moved every frame by `animate_spray`.
-    let arc_mat = materials.add(retro::material(StandardMaterial {
+    let arc_mat = materials.add(StandardMaterial {
         base_color: Color::LinearRgba(LinearRgba::new(0.55, 1.3, 2.6, 0.6)),
         unlit: true,
         alpha_mode: AlphaMode::Blend,
         double_sided: true,
         cull_mode: None,
         ..default()
-    }, vr));
+    });
     for u in sim.crews.units.iter().filter(|u| u.kind == UnitKind::Engine) {
         // Never an empty mesh: the prepass panics on one. A flat arc is valid, and replaced on the first frame.
         let flat: Vec<(Vec3, f32)> = (0..=ARC_SEGMENTS).map(|_| (Vec3::ZERO, 0.0)).collect();
         commands.spawn((
-            MaterialMeshBundle::<RetroMaterial> {
+            MaterialMeshBundle::<StandardMaterial> {
                 mesh: meshes.add(arc_mesh(&flat)),
                 material: arc_mat.clone(),
                 visibility: Visibility::Hidden,
@@ -238,9 +236,9 @@ pub fn setup(
         ));
     }
 
-    let order_ring = hdr_blue(&mut materials, vr, 0.95);
+    let order_ring = hdr_blue(&mut materials, 0.95);
     let mut unlit = |r: f32, g: f32, b: f32, a: f32| {
-        materials.add(retro::material(StandardMaterial {
+        materials.add(StandardMaterial {
             base_color: Color::srgba(r, g, b, a),
             emissive: LinearRgba::rgb(r * 1.4, g * 1.4, b * 1.4),
             unlit: true,
@@ -248,7 +246,7 @@ pub fn setup(
             double_sided: true,
             cull_mode: None,
             ..default()
-        }, vr))
+        })
     };
     commands.insert_resource(UnitAssets {
         order_ring,
@@ -300,12 +298,12 @@ pub fn reset(
 
 pub fn update_units(
     sim: Res<Sim>,
-    mut materials: ResMut<Assets<RetroMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     mut query: Query<(
         &UnitView,
         &mut Transform,
         &mut Visibility,
-        &Handle<RetroMaterial>,
+        &Handle<StandardMaterial>,
     )>,
 ) {
     if !sim.is_changed() {
@@ -350,9 +348,9 @@ pub fn update_units(
         // unit visibly change state without a swap table.
         if let Some(m) = materials.get_mut(mat) {
             let c = tint(u.state);
-            if m.base.base_color != c {
-                m.base.base_color = c;
-                m.base.emissive = c.to_linear() * SELF_LIGHT;
+            if m.base_color != c {
+                m.base_color = c;
+                m.emissive = c.to_linear() * SELF_LIGHT;
             }
         }
     }
@@ -440,15 +438,15 @@ pub fn animate_units(
 /// while parked at their station; dark once caught by the fire.
 /// UI-in-3D blue, overbright: unlit output goes through the tone mapper, which
 /// greys anything at or under 1.0 against the terrain, so the glow is >1.
-fn hdr_blue(materials: &mut Assets<RetroMaterial>, vr: bool, a: f32) -> Handle<RetroMaterial> {
-    materials.add(retro::material(StandardMaterial {
+fn hdr_blue(materials: &mut Assets<StandardMaterial>, a: f32) -> Handle<StandardMaterial> {
+    materials.add(StandardMaterial {
         base_color: Color::LinearRgba(LinearRgba::new(0.15, 1.2, 3.0, a)),
         unlit: true,
         alpha_mode: AlphaMode::Blend,
         double_sided: true,
         cull_mode: None,
         ..default()
-    }, vr))
+    })
 }
 
 /// Rebuild the order markers when the orders change.
@@ -484,7 +482,7 @@ pub fn sync_orders(
             Task::Hold | Task::Return | Task::Attack { .. } => {}
             Task::Drop { at } => {
                 commands.spawn((
-                    MaterialMeshBundle::<RetroMaterial> {
+                    MaterialMeshBundle::<StandardMaterial> {
                         mesh: meshes.add(ring_mesh(&sim.scn, at, ORDER_RING_M)),
                         material: assets.order_ring.clone(),
                         ..default()
@@ -492,7 +490,7 @@ pub fn sync_orders(
                     OrderMarker,
                 ));
                 commands.spawn((
-                    MaterialMeshBundle::<RetroMaterial> {
+                    MaterialMeshBundle::<StandardMaterial> {
                         mesh: meshes.add(wall_mesh(&sim.scn, at, ORDER_RING_M)),
                         material: assets.order_ring.clone(),
                         transform: tube_transform(at),
@@ -512,7 +510,7 @@ pub fn sync_orders(
                 // that does not need a number.
                 if done > 0.001 {
                     commands.spawn((
-                        MaterialMeshBundle::<RetroMaterial> {
+                        MaterialMeshBundle::<StandardMaterial> {
                             mesh: meshes.add(ribbon(&sim.scn, from, head, 8.0)),
                             material: assets.line_cut.clone(),
                             ..default()
@@ -522,7 +520,7 @@ pub fn sync_orders(
                 }
                 if done < 0.999 {
                     commands.spawn((
-                        MaterialMeshBundle::<RetroMaterial> {
+                        MaterialMeshBundle::<StandardMaterial> {
                             mesh: meshes.add(dashed_ribbon(&sim.scn, head, to, 4.0)),
                             material: assets.line_todo.clone(),
                             ..default()

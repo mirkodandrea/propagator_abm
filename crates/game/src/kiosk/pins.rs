@@ -13,7 +13,6 @@ use bevy::prelude::*;
 use scenario::Pos;
 
 use super::{Kiosk, Phase};
-use crate::retro::{self, RetroMaterial};
 use crate::sim::Sim;
 use bevy_egui::egui::Color32;
 
@@ -79,28 +78,25 @@ pub fn feet(k: &Kiosk, sim: &Sim, eye: Vec3, right: Vec3) -> Vec<Option<(Pos, f3
 pub struct PinAssets {
     ring: Handle<Mesh>,
     /// One material per team colour.
-    teams: Vec<Handle<RetroMaterial>>,
+    teams: Vec<Handle<StandardMaterial>>,
 }
 
 /// See-through and bright: the rings must read on any ground without hiding it.
-fn glass(c: Color32) -> RetroMaterial {
+fn glass(c: Color32) -> StandardMaterial {
     let [r, g, b, _] = c.to_array();
     let l = Color::srgb_u8(r, g, b).to_linear();
-    retro::material(
-        StandardMaterial {
-            base_color: Color::LinearRgba(LinearRgba::new(l.red, l.green, l.blue, 0.6)),
-            emissive: LinearRgba::rgb(l.red * 1.4, l.green * 1.4, l.blue * 1.4),
-            unlit: true,
-            alpha_mode: AlphaMode::Blend,
-            double_sided: true,
-            cull_mode: None,
-            ..default()
-        },
-        false,
-    )
+    StandardMaterial {
+        base_color: Color::LinearRgba(LinearRgba::new(l.red, l.green, l.blue, 0.6)),
+        emissive: LinearRgba::rgb(l.red * 1.4, l.green * 1.4, l.blue * 1.4),
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        double_sided: true,
+        cull_mode: None,
+        ..default()
+    }
 }
 
-pub fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<RetroMaterial>>) {
+pub fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let ring = Mesh::from(Annulus::new(RING_R_M * 0.75, RING_R_M)).rotated_by(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2));
     commands.insert_resource(PinAssets {
         ring: meshes.add(ring),
@@ -130,7 +126,7 @@ pub fn update(
                 .with_children(|c| {
                     for mesh in [&assets.ring] {
                         c.spawn((
-                            MaterialMeshBundle::<RetroMaterial> { mesh: mesh.clone(), material: colour.clone(), ..default() },
+                            MaterialMeshBundle::<StandardMaterial> { mesh: mesh.clone(), material: colour.clone(), ..default() },
                             bevy::pbr::NotShadowCaster,
                             bevy::pbr::NotShadowReceiver,
                         ));

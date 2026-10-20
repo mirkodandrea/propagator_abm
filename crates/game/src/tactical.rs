@@ -4,7 +4,7 @@
 //! stand out. While time runs the same scenery is a little more saturated than
 //! its natural colours. One signed amount drives both: negative boosts the
 //! colour, positive greys it. The amount eases in and out; the shaders only
-//! read it (`retro.wgsl` for terrain and foliage, `water.wgsl`, and the sky
+//! read it (`terrain.wgsl`, `foliage.wgsl`, `water.wgsl`, and the sky
 //! here).
 
 use bevy::core_pipeline::bloom::BloomSettings;
@@ -14,7 +14,7 @@ use bevy::prelude::*;
 use crate::kiosk::{Kiosk, Phase};
 use crate::flat::FlatMaterial;
 use crate::forecast_zone::ZoneMaterial;
-use crate::retro::RetroMaterial;
+use crate::materials::{FoliageMaterial, TerrainMaterial};
 use crate::sea::WaterMaterial;
 use crate::sim::Sim;
 use crate::sky::{SkyHandle, SkyMaterial};
@@ -73,7 +73,8 @@ fn apply(
     kiosk: Option<Res<Kiosk>>,
     sim: Option<Res<Sim>>,
     mut tactical: ResMut<Tactical>,
-    mut retro: ResMut<Assets<RetroMaterial>>,
+    mut terrain: ResMut<Assets<TerrainMaterial>>,
+    mut foliage: ResMut<Assets<FoliageMaterial>>,
     mut cover: ResMut<Assets<crate::near_cover::NearCoverMaterial>>,
     mut water: ResMut<Assets<WaterMaterial>>,
     mut flats: ResMut<Assets<FlatMaterial>>,
@@ -90,15 +91,16 @@ fn apply(
     let amount = tactical.amount();
     // Writing marks the asset changed and rebuilds its bind group, so only
     // touch the materials whose value differs (new ones start at 0).
-    // Only the terrain (w = 1) and foliage (w = 2) materials read it.
-    let stale: Vec<_> = retro
-        .iter()
-        .filter(|(_, m)| (1.0..2.5).contains(&m.extension.enabled.w) && m.extension.tactical.x != amount)
-        .map(|(id, _)| id)
-        .collect();
+    let stale: Vec<_> = terrain.iter().filter(|(_, m)| m.tactical() != amount).map(|(id, _)| id).collect();
     for id in stale {
-        if let Some(m) = retro.get_mut(id) {
-            m.extension.tactical.x = amount;
+        if let Some(m) = terrain.get_mut(id) {
+            m.set_tactical(amount);
+        }
+    }
+    let stale: Vec<_> = foliage.iter().filter(|(_, m)| m.tactical() != amount).map(|(id, _)| id).collect();
+    for id in stale {
+        if let Some(m) = foliage.get_mut(id) {
+            m.set_tactical(amount);
         }
     }
     let stale: Vec<_> = cover.iter().filter(|(_, m)| m.extension.tactical() != amount).map(|(id, _)| id).collect();

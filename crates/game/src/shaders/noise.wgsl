@@ -1,5 +1,5 @@
-// Shared 2D hash and value noise. Imported as `rocca::noise` by the retro,
-// flame, fire-ground and water shaders (registered in `shader_lib.rs`).
+// Shared 2D hash and value noise. Imported as `rocca::noise` by the scenery
+// (terrain, foliage, structure), flame, fire-ground and water shaders (registered in `shader_lib.rs`).
 
 #define_import_path rocca::noise
 

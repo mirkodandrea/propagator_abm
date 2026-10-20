@@ -26,16 +26,15 @@
 //! foliage flares, then goes to charcoal. Only chunks whose cells actually
 //! changed are touched, so the cost tracks the front.
 //!
-//! On the desktop the meshes are never modified for that: every vertex carries
-//! its plant's index (`retro::ATTRIBUTE_PLANT`), a small per-chunk image holds
-//! each plant's state and ignition time, and the vertex stage
+//! The meshes are never modified for that: every vertex carries its plant's
+//! index (`materials::ATTRIBUTE_PLANT`), a small per-chunk image holds each
+//! plant's state and ignition time, and the vertex stage
 //! (`shaders/veg_state.wgsl`) collapses, recolours and flags the plant. A
 //! chunk is ~80 k triangles and Bevy clones and uploads a modified mesh whole:
 //! rewriting two or three of them every 0.15 s was a frame hitch of tens of
-//! milliseconds on both the main and the render thread. The browser has no
-//! texture unit to spare for the image (`retro::RetroExtension::plant_state`),
-//! and its plants are few: it keeps rewriting the meshes (`draw_standing`,
-//! `draw_char`, `paint`, which are also the reference for the shader).
+//! milliseconds on both the main and the render thread. `draw_standing`,
+//! `draw_char` and `paint` do the same on the CPU: they are the reference for
+//! the shader.
 //!
 //! Every chunk is built twice: with the authored models, and with a proxy of
 //! a couple of dozen faces per plant (a faceted crown on a three-sided
@@ -53,13 +52,12 @@ use fire::CellFire;
 use scenario::{Cell, CoverClass, Pos, Scenario};
 
 use crate::field::{noise, FireField};
-use crate::retro;
-use crate::retro::RetroMaterial;
+use crate::materials::{self, FoliageMaterial};
 use crate::sim::Sim;
 
 /// Plants burn through a per-chunk state image and the vertex stage (see the
 /// module doc); without it the meshes are rewritten.
-const GPU: bool = cfg!(not(target_arch = "wasm32"));
+const GPU: bool = true;
 
 /// Width of a chunk's state image in texels (`ROW` in `veg_state.wgsl`).
 const STATE_ROW: usize = 256;
@@ -232,9 +230,8 @@ struct CharMesh {
 }
 
 struct Chunk {
-    /// The material of this chunk's meshes: its own on the GPU path (it holds
-    /// the state image), the shared one otherwise.
-    material: Handle<RetroMaterial>,
+    /// The material of this chunk's meshes, its own: it holds the state image.
+    material: Handle<FoliageMaterial>,
     /// One texel per plant: fire state, ignition time (GPU path).
     state: Option<Handle<Image>>,
     /// Authored models and distant proxies (see the module doc).
@@ -281,7 +278,6 @@ struct Chunk {
 #[derive(Resource)]
 pub struct Vegetation {
     chunks: Vec<Chunk>,
-    material: Handle<RetroMaterial>,
     /// Beyond this distance from the camera a chunk shows its proxies.
     lod_m: f32,
     /// Simulated time the plants were last drawn at: the plants are a
@@ -303,7 +299,7 @@ pub fn spawn(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<RetroMaterial>>,
+    mut materials: ResMut<Assets<FoliageMaterial>>,
     mut images: ResMut<Assets<Image>>,
     gfx: Res<crate::quality::Graphics>,
 ) {
@@ -312,28 +308,6 @@ pub fn spawn(
     // 2026-10-08: fewer trees for now), less on weaker machines.
     let density = gfx.vegetation;
 
-    // VR-training dev scenarios tint every plant toward the palette's grid
-    // colour instead of leaving it white — vertex colour still carries the
-    // per-species shape, but the hue reads as training-ground foliage, not
-    // real macchia.
-    let base_color = Color::WHITE;
-    let material = materials.add(retro::material_with_style(StandardMaterial {
-        base_color,
-        perceptual_roughness: 0.92,
-        metallic: 0.0,
-        // Leaves are matte, not glassy: a near-zero reflectance is what
-        // stops a sunlit canopy from picking up a specular sheen no real
-        // macchia has.
-        reflectance: 0.04,
-        // Foliage is thin: lighting it from one side only makes a forest read
-        // as a flat dark mass from the shaded quarter.
-        double_sided: true,
-        cull_mode: None,
-        unlit: false,
-        ..default()
-    }, false, retro::RetroStyle::BACKGROUND));
-    // Foliage finish (clump / speckle shading) in the retro shader.
-    materials.get_mut(&material).unwrap().extension.enabled.w = 2.0;
 
     let (rows, cols) = (scn.world.fire_rows, scn.world.fire_cols);
     let chunks_y = rows.div_ceil(CHUNK_CELLS);
@@ -400,28 +374,23 @@ pub fn spawn(
             let (verts, low_verts) = (builder.full.positions.len(), builder.low.positions.len());
             let mut full_mesh = builder.full.finish();
             let (mut low, far_idx) = builder.low.finish_with_far();
-            let (state, material) = if GPU {
-                tag_plants(&mut full_mesh, verts, plants.iter().map(|p| (p.vert_start, p.vert_end)), 0);
-                tag_plants(&mut low, low_verts, plants.iter().map(|p| (p.low_start, p.low_end)), 0);
-                let image = images.add(state_image(plants.len()));
-                let mut m = materials.get(&material).unwrap().clone();
-                set_state(&mut m, image.clone());
-                (Some(image), materials.add(m))
-            } else {
-                (None, material.clone())
-            };
+            tag_plants(&mut full_mesh, verts, plants.iter().map(|p| (p.vert_start, p.vert_end)), 0);
+            tag_plants(&mut low, low_verts, plants.iter().map(|p| (p.low_start, p.low_end)), 0);
+            let image = images.add(state_image(plants.len()));
+            let material = materials.add(FoliageMaterial::new(image.clone()));
+            let state = Some(image);
             let mesh = meshes.add(full_mesh);
             let low_mesh = meshes.add(low);
 
             // Vegetation is visual only: Mario can run through trunks and
             // canopies, and the follow camera is not clipped by the forest.
             // The full models start on show, until the LOD system picks.
-            let full = commands.spawn(MaterialMeshBundle::<RetroMaterial> {
+            let full = commands.spawn(MaterialMeshBundle::<FoliageMaterial> {
                 mesh: mesh.clone(),
                 material: material.clone(),
                 ..default()
             }).id();
-            let low = commands.spawn(MaterialMeshBundle::<RetroMaterial> {
+            let low = commands.spawn(MaterialMeshBundle::<FoliageMaterial> {
                 mesh: low_mesh.clone(),
                 material: material.clone(),
                 visibility: Visibility::Hidden,
@@ -430,7 +399,7 @@ pub fn spawn(
             // Same mesh handle as `low`: the burn edits reach it for free.
             let shadow = gfx.shadows.then(|| {
                 commands.spawn((
-                    MaterialMeshBundle::<RetroMaterial> {
+                    MaterialMeshBundle::<FoliageMaterial> {
                         mesh: low_mesh.clone(),
                         material: material.clone(),
                         visibility: Visibility::Hidden,
@@ -477,7 +446,7 @@ pub fn spawn(
         tri_count as f32 / 1e6,
         low_tri_count as f32 / 1e6
     );
-    commands.insert_resource(Vegetation { chunks, material, lod_m: gfx.lod_m, drawn_at: None, drawn_cleared: 0 });
+    commands.insert_resource(Vegetation { chunks, lod_m: gfx.lod_m, drawn_at: None, drawn_cleared: 0 });
 }
 
 /// Whether `p` is within `margin` metres of a pitch, car park, assembly area,
@@ -704,7 +673,7 @@ fn scatter_plant(
             let height = (7.0 + rng.unit() * 5.0) * scale * crate::visual_scale::TREE;
             out.model("olive", base, Vec3::splat(height), yaw, [0.33, 0.40, 0.26], wood);
         }
-        // Meadow tufts are drawn by the terrain shader (`shaders/retro.wgsl`)
+        // Meadow tufts are drawn by the terrain shader (`shaders/terrain.wgsl`)
         // unless `ROCCA_GRASS_MESH` asks for the old geometry.
         Species::Grass if crate::ground_mask::shader_grass() => return None,
         Species::Grass => grass(out, base, scale, yaw, foliage, rng),
@@ -1142,7 +1111,7 @@ pub fn burn(
     mut veg: ResMut<Vegetation>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
-    mut materials: ResMut<Assets<RetroMaterial>>,
+    mut materials: ResMut<Assets<FoliageMaterial>>,
     mut restarted: EventReader<crate::sim::SimRestarted>,
     mut since: Local<f32>,
 ) {
@@ -1213,8 +1182,8 @@ pub fn burn(
             // group has to be made again to see it. The clock goes with it, so
             // a plant that has just caught is not drawn at the old time.
             if let Some(m) = materials.get_mut(&chunk.material) {
-                m.extension.tactical.y = now;
-                m.extension.tactical.z = PLANT_FLAMING_S;
+                m.fire.y = now;
+                m.fire.z = PLANT_FLAMING_S;
             }
             continue;
         }
@@ -1455,7 +1424,7 @@ fn build_char_layer(
         let mesh = meshes.add(mesh);
         let on = chunk.near != low;
         let entity = commands
-            .spawn(MaterialMeshBundle::<RetroMaterial> {
+            .spawn(MaterialMeshBundle::<FoliageMaterial> {
                 mesh: mesh.clone(),
                 material: material.clone(),
                 visibility: if on { Visibility::Inherited } else { Visibility::Hidden },
@@ -1473,7 +1442,7 @@ const BURN_REDRAW_S: f32 = 0.15;
 
 /// Vertex alpha of a burning vertex holds its ignition time: `-(1 + t0)` for
 /// wood, rock and grass, `-(1 + LEAF_OFFSET + t0)` for leaves (a plain 1.0
-/// would be lost in the sign). The foliage shader (`retro.wgsl`, `burning`)
+/// would be lost in the sign). The foliage shader (`foliage.wgsl`, `burning`)
 /// reads it back and consumes the plant against the simulated clock
 /// (`tactical.y`, see [`fire_clock`]), so the plant need not be rewritten
 /// while it burns.
@@ -1508,48 +1477,38 @@ fn paint(colors: &mut [[f32; 4]], state: u8, t0: f32) {
     }
 }
 
-/// Hand the simulated clock to the foliage shader (`tactical.y`, with the
-/// flaming time in `tactical.z`): a burning plant is consumed as a function
-/// of it, so the fire keeps eating the canopy between mesh rewrites and
-/// stands still while the world is paused.
+/// Hand the simulated clock to the foliage shader (`fire.y`, with the
+/// flaming time in `fire.z`): a burning plant is consumed as a function of
+/// it, so the fire keeps eating the canopy between state updates and stands
+/// still while the world is paused.
 ///
-/// On the GPU path every chunk has a material of its own, and only the chunks
-/// with a plant alight (or cleared) need the clock: a material written is a
-/// bind group made again, which two hundred chunks every frame would be.
-pub fn fire_clock(sim: Res<Sim>, veg: Res<Vegetation>, mut materials: ResMut<Assets<RetroMaterial>>) {
+/// Every chunk has a material of its own, and only the chunks with a plant
+/// alight need the clock: a material written is a bind group made again,
+/// which two hundred chunks every frame would be.
+pub fn fire_clock(sim: Res<Sim>, veg: Res<Vegetation>, mut materials: ResMut<Assets<FoliageMaterial>>) {
     let now = sim.time_s() as f32;
-    let mut set = |handle: &Handle<RetroMaterial>| {
-        let Some(m) = materials.get(handle) else { return };
-        if m.extension.tactical.y == now && m.extension.tactical.z == PLANT_FLAMING_S {
-            return;
+    for chunk in veg.chunks.iter().filter(|c| c.lit > c.burnt) {
+        let Some(m) = materials.get(&chunk.material) else { continue };
+        if m.fire.y == now && m.fire.z == PLANT_FLAMING_S {
+            continue;
         }
-        if let Some(m) = materials.get_mut(handle) {
-            m.extension.tactical.y = now;
-            m.extension.tactical.z = PLANT_FLAMING_S;
+        if let Some(m) = materials.get_mut(&chunk.material) {
+            m.fire.y = now;
+            m.fire.z = PLANT_FLAMING_S;
         }
-    };
-    if GPU {
-        for chunk in veg.chunks.iter().filter(|c| c.lit > c.burnt) {
-            set(&chunk.material);
-        }
-    } else {
-        set(&veg.material);
     }
 }
 
 /// `plants`' vertex ranges into the mesh's plant index attribute (the
 /// vertices outside every range read no plant). `flag` is [`CHAR_PLANT`] for
 /// the burnt-remains layer.
-#[cfg(not(target_arch = "wasm32"))]
 fn tag_plants(mesh: &mut Mesh, verts: usize, ranges: impl Iterator<Item = (u32, u32)>, flag: u32) {
     let mut ids = vec![NO_PLANT; verts];
     for (i, (a, b)) in ranges.enumerate() {
         ids[a as usize..b as usize].fill(i as u32 | flag);
     }
-    mesh.insert_attribute(retro::ATTRIBUTE_PLANT, ids);
+    mesh.insert_attribute(materials::ATTRIBUTE_PLANT, ids);
 }
-#[cfg(target_arch = "wasm32")]
-fn tag_plants(_: &mut Mesh, _: usize, _: impl Iterator<Item = (u32, u32)>, _: u32) {}
 
 /// Vertex plant index flag of the burnt-remains layer, and of "no plant".
 const CHAR_PLANT: u32 = 0x8000_0000;
@@ -1568,13 +1527,6 @@ fn state_image(plants: usize) -> Image {
         RenderAssetUsages::default(),
     )
 }
-
-#[cfg(not(target_arch = "wasm32"))]
-fn set_state(m: &mut RetroMaterial, image: Handle<Image>) {
-    m.extension.plant_state = Some(image);
-}
-#[cfg(target_arch = "wasm32")]
-fn set_state(_: &mut RetroMaterial, _: Handle<Image>) {}
 
 /// A plant's drawn state as the vertex stage reads it (`veg_state.wgsl`).
 fn gpu_mode(s: u8, plant: &Plant) -> f32 {

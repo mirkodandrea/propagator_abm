@@ -17,7 +17,7 @@ use bevy::render::render_asset::RenderAssetUsages;
 use scenario::{Pos, Scenario};
 
 use crate::models::{self, Kit};
-use crate::retro::{self, RetroMaterial};
+use crate::materials::{self, Finish, StructureMaterial};
 use crate::sea;
 use crate::sim::Sim;
 use crate::terrain_mesh::{cliff_elev, ShoreField};
@@ -212,22 +212,21 @@ fn spawn_coast(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<RetroMaterial>>,
+    mut materials: ResMut<Assets<StructureMaterial>>,
     mut done: Local<bool>,
 ) {
     if std::mem::replace(&mut *done, true) {
         return;
     }
     let rocks = scatter(&sim.scn);
-    let material = materials.add(retro::finished_material(
+    let material = materials.add(materials::structure(
         StandardMaterial {
             base_color: Color::WHITE,
             perceptual_roughness: 0.95,
             reflectance: 0.04,
             ..default()
         },
-        retro::RetroStyle::BACKGROUND,
-        retro::Finish::Rock,
+        Finish::Rock,
     ));
     let mut tiles: HashMap<(i32, i32), Vec<&Rock>> = HashMap::new();
     for r in &rocks {
@@ -236,7 +235,7 @@ fn spawn_coast(
     info!("coast: {} rocks in {} tiles", rocks.len(), tiles.len());
     for (_, tile) in tiles {
         commands.spawn((
-            MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(tile_mesh(&tile)), material: material.clone(), ..default() },
+            MaterialMeshBundle::<StructureMaterial> { mesh: meshes.add(tile_mesh(&tile)), material: material.clone(), ..default() },
             crate::terrain_mesh::PauseSolid,
         ));
     }

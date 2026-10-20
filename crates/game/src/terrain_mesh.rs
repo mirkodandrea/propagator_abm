@@ -6,11 +6,10 @@
 //! and the driver gets sensibly sized buffers.
 //!
 //! The ground colour and the normal are not vertex attributes but two
-//! textures, one texel per base sample (`retro.wgsl` reads them in the terrain
-//! branch), so the picture does not depend on how dense the mesh is. That
+//! textures, one texel per base sample (`shaders/terrain.wgsl` reads them), so the picture does not depend on how dense the mesh is. That
 //! lets every chunk be meshed at three levels (base stride x1, x2, x4: 32 k,
 //! 8 k and 2 k triangles) and drawn by distance with a [`VisibilityRange`]
-//! (abrupt: the retro fragment shader does not dither). Each level has a skirt
+//! (abrupt: the terrain shader does not dither). Each level has a skirt
 //! to hide the cracks between chunks at different levels. A ranged entity is
 //! never a shadow caster, so the shadows come from one extra entity per chunk
 //! on [`SHADOW_LAYER`] (the sun's layer, not the camera's), sharing the x2 mesh.
@@ -35,8 +34,7 @@ use bevy::render::view::{RenderLayers, VisibilityRange};
 use scenario::{Cell, Cover, CoverClass, Pos, Scenario};
 
 use crate::field::noise;
-use crate::retro;
-use crate::retro::RetroMaterial;
+use crate::materials::TerrainMaterial;
 
 /// Samples per chunk edge. 128 keeps each chunk at ~16 k vertices.
 const CHUNK: usize = 128;
@@ -494,15 +492,11 @@ fn level_mesh(
     let (nvx, nvy) = (xs.len(), ys.len());
     let mut positions = Vec::with_capacity(nvx * nvy + 2 * (nvx + nvy));
     let mut normals = Vec::with_capacity(positions.capacity());
-    #[cfg(target_arch = "wasm32")]
-    let mut colours: Vec<[f32; 4]> = Vec::with_capacity(positions.capacity());
     for &r in &ys {
         for &c in &xs {
             let i = r * grid.cols + c;
             positions.push([c as f32 * grid.posting - origin[0], grid.elev[i], r as f32 * grid.posting - height_m - origin[1]]);
             normals.push(grid.normal[i]);
-            #[cfg(target_arch = "wasm32")]
-            colours.push(grid.colour[i]);
         }
     }
     let mut indices = Vec::with_capacity((nvx - 1) * (nvy - 1) * 6 + 12 * (nvx + nvy));
@@ -530,8 +524,6 @@ fn level_mesh(
             let n = normals[v as usize];
             positions.push(p);
             normals.push(n);
-            #[cfg(target_arch = "wasm32")]
-            colours.push(colours[v as usize]);
         }
         for k in 0..edge.len() as u32 - 1 {
             let (a, b, c, d) = (edge[k as usize], edge[k as usize + 1], base + k, base + k + 1);
@@ -547,8 +539,6 @@ fn level_mesh(
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    #[cfg(target_arch = "wasm32")]
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colours);
     mesh.insert_indices(Indices::U32(indices));
     mesh
 }
@@ -560,17 +550,13 @@ struct Grid {
     elev: Vec<f32>,
     /// In Bevy's frame (z flipped).
     normal: Vec<[f32; 3]>,
-    /// Browser only: the ground colour (linear) as a vertex attribute, in place
-    /// of the colour texture (`retro::RetroExtension`).
-    #[cfg(target_arch = "wasm32")]
-    colour: Vec<[f32; 4]>,
 }
 
 pub fn build(
     scn: &Scenario,
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<RetroMaterial>,
+    materials: &mut Assets<TerrainMaterial>,
     images: &mut Assets<Image>,
     gfx: &crate::quality::Graphics,
 ) {
@@ -595,7 +581,7 @@ pub fn build(
 
     // Per sample: shaped height, normal and ground colour. The colour and the
     // normal go to textures, so the look does not depend on the mesh density.
-    let mut grid = Grid { cols, posting, elev: Vec::with_capacity(cols * rows), normal: Vec::with_capacity(cols * rows), #[cfg(target_arch = "wasm32")] colour: Vec::with_capacity(cols * rows) };
+    let mut grid = Grid { cols, posting, elev: Vec::with_capacity(cols * rows), normal: Vec::with_capacity(cols * rows) };
     let mut colour_px: Vec<u8> = Vec::with_capacity(cols * rows * 4);
     let mut normal_px: Vec<u8> = Vec::with_capacity(cols * rows * 8);
     for r in 0..rows {
@@ -635,8 +621,6 @@ pub fn build(
             let col = ground_color(scn, &sea, elev, n[1], p, shore_d);
             colour_px.extend(col.iter().map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8));
             colour_px.push(255);
-            #[cfg(target_arch = "wasm32")]
-            grid.colour.push(Color::srgb(col[0], col[1], col[2]).to_linear().to_f32_array());
         }
     }
     let colour_tex = images.add(ground_texture(cols, rows, colour_px, TextureFormat::Rgba8UnormSrgb));
@@ -649,17 +633,15 @@ pub fn build(
         t.height_m / (posting * rows as f32) + 0.5 / rows as f32,
     );
 
-    let material = materials.add(retro::terrain_material(StandardMaterial {
-        base_color: Color::WHITE,
-        perceptual_roughness: 1.0,
-        metallic: 0.0,
-        // Dry karst, not wet slate: a low reflectance keeps the sun's
-        // specular lobe from painting a bright sheet across every ridge.
-        reflectance: 0.02,
-        ..default()
-    // The terrain is the backdrop, not a participating neon object: keep the
-    // dev floor matte and opt it out of the animated edge treatment.
-    }, { images.insert(&crate::ground_mask::ROAD_MASK, mask.image); crate::ground_mask::ROAD_MASK }, mask.rect, colour_tex, normal_tex, tex_rect));
+    images.insert(&crate::ground_mask::ROAD_MASK, mask.image);
+    let material = materials.add(TerrainMaterial::new(
+        mask.rect,
+        tex_rect,
+        crate::ground_mask::ROAD_MASK,
+        crate::ground_mask::GRASS_MAP,
+        colour_tex,
+        normal_tex,
+    ));
 
     let levels: &[usize] = if stride >= 4 { &LEVELS[..1] } else { &LEVELS };
     // distances at which each level hands over to the next
@@ -688,7 +670,7 @@ pub fn build(
                 tris[k] += mesh.indices().map_or(0, |i| i.len() / 3);
                 let mesh = meshes.add(mesh);
                 let mut chunk = commands.spawn((
-                    MaterialMeshBundle::<RetroMaterial> {
+                    MaterialMeshBundle::<TerrainMaterial> {
                         mesh: mesh.clone(),
                         material: material.clone(),
                         transform: Transform::from_translation(centre),
@@ -709,7 +691,7 @@ pub fn build(
                 // the shadows come from the middle level, on the sun's layer only
                 if used.len() > 1 && k == 1 {
                     let mut shadow = commands.spawn((
-                        MaterialMeshBundle::<RetroMaterial> {
+                        MaterialMeshBundle::<TerrainMaterial> {
                             mesh,
                             material: material.clone(),
                             transform: Transform::from_translation(centre),

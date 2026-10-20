@@ -1,6 +1,6 @@
 //! The material of the signs on the map (hexes, routes, the forecast): a
 //! flat, bright colour that takes no light and no fog, drawn over the canopy.
-//! The terrain's material (`retro`) is for the scenery; a sign drawn with it
+//! The terrain's material (`materials::TerrainMaterial`) is for the scenery; a sign drawn with it
 //! fades with the haze and the tone mapper, and sinks under the trees.
 
 use bevy::asset::load_internal_asset;

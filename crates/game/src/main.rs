@@ -43,7 +43,7 @@ mod quality_live;
 mod flat;
 mod tactical;
 mod tape;
-mod retro;
+mod materials;
 mod rings;
 mod ground_mask;
 mod roads;
@@ -121,7 +121,7 @@ fn main() -> anyhow::Result<()> {
     .add_plugins(EguiPlugin)
     .add_plugins(shader_lib::ShaderLibPlugin)
     .add_plugins(fire_shader::FireShaderPlugin)
-    .add_plugins(retro::RetroShaderPlugin)
+    .add_plugins(materials::MaterialsPlugin)
     .add_plugins(near_cover::NearCoverPlugin)
     .add_plugins(flat::FlatPlugin)
     .add_plugins(forecast_zone::ZonePlugin)
@@ -194,11 +194,12 @@ fn setup_scene(
     sim: Res<Sim>,
     gfx: Res<quality::Graphics>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<retro::RetroMaterial>>,
+    mut terrain: ResMut<Assets<materials::TerrainMaterial>>,
+    mut standard: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    terrain_mesh::build(&sim.scn, &mut commands, &mut meshes, &mut materials, &mut images, &gfx);
-    fields::build(&sim.scn, &mut commands, &mut meshes, &mut materials);
+    terrain_mesh::build(&sim.scn, &mut commands, &mut meshes, &mut terrain, &mut images, &gfx);
+    fields::build(&sim.scn, &mut commands, &mut meshes, &mut standard);
     // Roads are drawn by the terrain shader from `ground_mask`; `roads::build`
     // (ribbon meshes) is no longer called.
 

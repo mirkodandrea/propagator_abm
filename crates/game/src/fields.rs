@@ -15,7 +15,6 @@ use bevy::render::render_asset::RenderAssetUsages;
 use scenario::{CoverClass, Pos, Scenario};
 
 use crate::field::noise;
-use crate::retro::{self, RetroMaterial};
 
 const ROT: f32 = 0.41;
 const HEDGE: [f32; 3] = [0.16, 0.30, 0.12];
@@ -47,7 +46,7 @@ struct Mesher {
     indices: Vec<u32>,
 }
 
-pub fn build(scn: &Scenario, commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<RetroMaterial>) {
+pub fn build(scn: &Scenario, commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>) {
     let Some(cover) = &scn.cover else { return };
     let (sn, cs) = ROT.sin_cos();
     // Extent of the plots in the turned frame.
@@ -110,12 +109,8 @@ pub fn build(scn: &Scenario, commands: &mut Commands, meshes: &mut Assets<Mesh>,
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, m.positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, m.colors);
     mesh.insert_indices(Indices::U32(m.indices));
-    let material = materials.add(retro::material_with_style(
-        StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 1.0, metallic: 0.0, reflectance: 0.02, ..default() },
-        false,
-        retro::RetroStyle::BACKGROUND,
-    ));
-    commands.spawn((MaterialMeshBundle::<RetroMaterial> { mesh: meshes.add(mesh), material, ..default() }, crate::terrain_mesh::PauseSolid));
+    let material = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 1.0, metallic: 0.0, reflectance: 0.02, ..default() });
+    commands.spawn((MaterialMeshBundle::<StandardMaterial> { mesh: meshes.add(mesh), material, ..default() }, crate::terrain_mesh::PauseSolid));
 }
 
 /// One parcel: the hedge as the full rectangle, the crop on top of it inside,

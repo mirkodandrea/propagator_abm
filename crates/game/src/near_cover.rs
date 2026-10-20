@@ -1,7 +1,7 @@
 //! Ground cover near the camera: grass tufts drawn by the GPU.
 //!
 //! Far away the meadow is a pattern the terrain shader paints on the ground
-//! (`shaders/retro.wgsl`), and the trees are merged meshes ([`crate::vegetation`]).
+//! (`shaders/terrain.wgsl`), and the trees are merged meshes ([`crate::vegetation`]).
 //! Between those, within a few tens of metres, the ground is flat: the pattern
 //! has no height. This layer fills it with real geometry that costs no memory
 //! per plant: a fixed lattice of cells built once, whose vertex shader

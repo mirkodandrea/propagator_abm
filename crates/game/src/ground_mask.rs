@@ -1,5 +1,5 @@
 //! Road mask: a signed-distance texture of the road network, sampled by the
-//! terrain's fragment shader (`shaders/retro.wgsl`).
+//! terrain's fragment shader (`shaders/terrain.wgsl`).
 //!
 //! The terrain mesh colours per vertex, one every 5 m, which is too coarse for
 //! a 10 m road. Rasterising the network once into a texture lets the shader draw

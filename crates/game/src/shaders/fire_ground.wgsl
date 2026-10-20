@@ -18,7 +18,7 @@
 @group(2) @binding(1) var road_samp: sampler;
 @group(2) @binding(2) var<uniform> mask_rect: vec4<f32>;
 
-// Keep in step with `ground_mask.rs` and `retro.wgsl`.
+// Keep in step with `ground_mask.rs` and `terrain.wgsl`.
 const RANGE_M: f32 = 12.0;
 
 // Fractal Brownian motion, domain-warped: the warp is what turns blobby

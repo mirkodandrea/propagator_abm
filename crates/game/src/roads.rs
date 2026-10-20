@@ -28,9 +28,6 @@ use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
 use scenario::{Pos, Scenario};
 
-use crate::retro;
-use crate::retro::RetroMaterial;
-
 /// Half-widths in metres, by road role. Generous: at command altitude a real
 /// 3 m lane is under a pixel, and the network has to stay legible while zoomed
 /// out. Same map-symbol exaggeration as `people::FIGURE_SCALE`.
@@ -68,12 +65,9 @@ pub fn build(
     scn: &Scenario,
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<RetroMaterial>,
+    materials: &mut Assets<StandardMaterial>,
 ) {
-    let dev = false;
-    let mut add = |base: StandardMaterial| {
-        materials.add(retro::material_with_style(base, dev, retro::RetroStyle::ROUTE))
-    };
+    let mut add = |base: StandardMaterial| materials.add(base);
     // Asphalt, and the darker shoulder under it. Rough and unlit-ish: a road
     // that specularly flares in the low sun draws the eye away from the fire.
     //
@@ -144,7 +138,7 @@ pub fn build(
             tri_count += builder.indices.len() / 3;
             chunk_count += 1;
             commands.spawn((
-                MaterialMeshBundle::<RetroMaterial> {
+                MaterialMeshBundle::<StandardMaterial> {
                     mesh: meshes.add(builder.finish()),
                     material: mat.clone(),
                     ..default()
