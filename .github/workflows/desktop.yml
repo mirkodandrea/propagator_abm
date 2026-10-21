@@ -80,21 +80,29 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Publish the rolling release
+      - name: Changelog summary (git-cliff, cliff.toml)
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          # tag: changes since the previous tag; rolling release: the last 15 commits
+          args: ${{ github.ref_type == 'tag' && '--latest' || '--unreleased HEAD~15..HEAD' }}
+        env:
+          OUTPUT: CHANGELOG.md
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           if [ "${{ github.ref_type }}" = tag ]; then
             gh release create "${{ github.ref_name }}" dist/*.zip --title "Isola di Roccavento ${{ github.ref_name }}" \
-              --generate-notes --latest
+              --notes-file CHANGELOG.md --latest
             exit 0
           fi
           {
             echo "Versioni per computer, aggiornate a ogni push (commit \`$(git rev-parse --short=8 HEAD)\`)."
             echo
             echo "## Novità recenti"
-            git log -n 15 --no-merges --pretty='- %s'
+            cat CHANGELOG.md
           } > notes.md
           gh release view download >/dev/null 2>&1 || gh release create download --prerelease \
             --title "Scarica il gioco" --notes-file notes.md

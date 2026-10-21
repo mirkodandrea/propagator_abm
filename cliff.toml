@@ -1,0 +1,29 @@
+# git-cliff: note di rilascio raggruppate per tema (i commit non usano prefissi convenzionali).
+[changelog]
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}\
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}\
+- {{ commit.message | split(pat="\n") | first | trim }}
+{% endfor %}
+{% endfor %}\
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = false
+filter_unconventional = false
+filter_commits = false
+topo_order = false
+sort_commits = "newest"
+commit_parsers = [
+  { message = "^(TODO|Docs|Project skills|Release notes)", skip = true },
+  { message = "^(Remove|Fix|Build on|Desktop bundle)|[Bb]ug", group = "Correzioni e build" },
+  { message = "^(Mario)", group = "Mario" },
+  { message = "^(Web|Title screen)", group = "Versione web" },
+  { message = "^(Rendering|Vegetation|Near |Flames|Graphics|Fire view|Adaptive|Antialiasing|Scene light|Service areas|Bevy)", group = "Grafica e prestazioni" },
+  { message = "^(Fire|Closed roads|Pad)", group = "Simulazione e controlli" },
+  { message = ".*", group = "Gioco" },
+]
