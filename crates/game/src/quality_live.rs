@@ -80,6 +80,7 @@ pub fn apply_live(
     }
     if let Some(mut veg) = veg {
         veg.set_lod_m(gfx.lod_m);
+        veg.set_keep(gfx.veg_keep);
     }
 }
 

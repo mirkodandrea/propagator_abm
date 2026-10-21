@@ -62,6 +62,9 @@ pub struct Graphics {
     /// shrubs reach 4x as far (see `near_cover`); 0 = none. Read when the
     /// scene is built.
     pub cover_m: f32,
+    /// Share of the plants built that are shown; changes while the game runs
+    /// (`adaptive` thins the forest before it takes the shadows away).
+    pub veg_keep: f32,
 }
 
 impl Graphics {
@@ -81,6 +84,7 @@ impl Graphics {
         terrain_shadows: true,
         terrain_stride: 1,
         cover_m: if cfg!(target_arch = "wasm32") { 0.0 } else { 45.0 },
+        veg_keep: 1.0,
     };
     pub const MEDIA: Graphics = Graphics {
         dof: false,
@@ -123,9 +127,10 @@ impl Graphics {
     };
 
     /// The top of the browser's adaptive ladder on a computer: `WEB_MEDIA` with
-    /// the shadows of `MEDIA` (three cascades, 2048); `adaptive` brings it down.
+    /// the shadows of `MEDIA` (three cascades, 2048) and twice the plants;
+    /// `adaptive` brings it down (the plants are hidden, not unbuilt).
     pub const WEB_TOP: Graphics = Graphics {
-        cascades: 3, shadow_distance: 2500.0, shadow_map: 2048,
+        cascades: 3, shadow_distance: 2500.0, shadow_map: 2048, vegetation: 0.10,
         ..Graphics::WEB_MEDIA
     };
 
@@ -209,7 +214,7 @@ impl Graphics {
         // the plant density and the terrain stride apply only at launch, and
         // the antialiasing is chosen apart, so they are not compared
         let same = |p: &Graphics| {
-            Graphics { vegetation: self.vegetation, terrain_stride: self.terrain_stride, cover_m: self.cover_m, msaa: self.msaa, smaa: self.smaa, ..*p } == *self
+            Graphics { vegetation: self.vegetation, terrain_stride: self.terrain_stride, cover_m: self.cover_m, veg_keep: self.veg_keep, msaa: self.msaa, smaa: self.smaa, ..*p } == *self
         };
         [("alta", &Graphics::ALTA), ("media", &Graphics::MEDIA), ("bassa", &Graphics::BASSA)]
             .into_iter()

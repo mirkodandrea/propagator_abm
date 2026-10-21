@@ -275,8 +275,25 @@ struct Chunk {
     burnt: usize,
 }
 
+/// Share of the built plants that are shown (bits of an `f32`; see
+/// [`Vegetation::set_keep`]). 1 = all: the plants are as spawned.
+static KEEP: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3f80_0000);
+
+fn keep() -> f32 {
+    f32::from_bits(KEEP.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+/// A plant's fixed place in the order in which the thinning takes plants
+/// away (0..1, from its position: the same plants go on every redraw).
+fn rank(plant: &Plant) -> f32 {
+    let h = plant.pos.x.to_bits().wrapping_mul(0x9E37_79B1) ^ plant.pos.y.to_bits().wrapping_mul(0x85EB_CA6B);
+    (h ^ (h >> 15)).wrapping_mul(0x2C1B_3C6D) as f32 / u32::MAX as f32
+}
+
 #[derive(Resource)]
 pub struct Vegetation {
+    /// The thinning changed: every chunk is looked at once.
+    thin_dirty: bool,
     chunks: Vec<Chunk>,
     /// Beyond this distance from the camera a chunk shows its proxies.
     lod_m: f32,
@@ -307,6 +324,8 @@ pub fn spawn(
     // Half the stand densities below at the top quality (user decision
     // 2026-10-08: fewer trees for now), less on weaker machines.
     let density = gfx.vegetation;
+    // a saved adaptive level may start thinned
+    KEEP.store(gfx.veg_keep.to_bits(), std::sync::atomic::Ordering::Relaxed);
 
 
     let (rows, cols) = (scn.world.fire_rows, scn.world.fire_cols);
@@ -442,7 +461,7 @@ pub fn spawn(
         tri_count as f32 / 1e6,
         low_tri_count as f32 / 1e6
     );
-    commands.insert_resource(Vegetation { chunks, lod_m: gfx.lod_m, drawn_at: None, drawn_cleared: 0 });
+    commands.insert_resource(Vegetation { thin_dirty: gfx.veg_keep < 1.0, chunks, lod_m: gfx.lod_m, drawn_at: None, drawn_cleared: 0 });
 }
 
 /// Whether `p` is within `margin` metres of a pitch, car park, assembly area,
@@ -1112,13 +1131,14 @@ pub fn burn(
     mut since: Local<f32>,
 ) {
     let restarted = restarted.read().count() > 0;
+    let thin = std::mem::take(&mut veg.thin_dirty);
     *since += time.delta_secs();
-    if !restarted && *since < BURN_REDRAW_S {
+    if !restarted && !thin && *since < BURN_REDRAW_S {
         return;
     }
     let now = sim.time_s() as f32;
     let line_cells = sim.fire.line_cells;
-    if veg.drawn_at == Some(now) && veg.drawn_cleared == line_cells && !restarted {
+    if veg.drawn_at == Some(now) && veg.drawn_cleared == line_cells && !restarted && !thin {
         return;
     }
     *since = 0.0;
@@ -1150,7 +1170,7 @@ pub fn burn(
         if chunk.burnt == chunk.plants.len() && !restarted {
             continue;
         }
-        if chunk.lit == 0 && !reached(chunk.cells) && !any_cleared(chunk.cells) {
+        if chunk.lit == 0 && !reached(chunk.cells) && !any_cleared(chunk.cells) && !thin {
             continue;
         }
         let (r0, r1, c0, c1) = chunk.cells;
@@ -1240,6 +1260,10 @@ fn ignition(field: &FireField, plant: &Plant) -> f32 {
 /// thinned the ground under it (`scan_cleared`: some cleared cell is near).
 fn wanted_state(field: &FireField, plant: &Plant, now: f32, scan_cleared: bool) -> u8 {
     let mut s = plant_state(field, plant, now);
+    // thinned for the machine's sake (a burnt plant is final: it stays)
+    if s != CellFire::Burnt as u8 && rank(plant) >= keep() {
+        return CLEARED;
+    }
     if s == CellFire::Unburnt as u8 && scan_cleared {
         // Thinned, not razed: the closer the plant is to the middle of
         // the cut, the likelier it is gone, decided by its own fixed
@@ -1281,7 +1305,8 @@ fn plan_redraw(
         }
         let s = wanted_state(field, plant, now, scan_cleared);
         if s != drawn[i] {
-            *lit = *lit + usize::from(s != UNBURNT) - usize::from(drawn[i] != UNBURNT);
+            let lit_state = |x: u8| x != UNBURNT && x != CLEARED;
+            *lit = *lit + usize::from(lit_state(s)) - usize::from(lit_state(drawn[i]));
             *burnt = *burnt + usize::from(s == BURNT) - usize::from(drawn[i] == BURNT);
             drawn[i] = s;
             out.push((i, s));
@@ -1538,6 +1563,17 @@ fn gpu_mode(s: u8, plant: &Plant) -> f32 {
 /// [`Vegetation::lod_m`], with a 10 % band so a chunk on the edge does not
 /// flicker while the camera drifts.
 impl Vegetation {
+    /// Show only this share of the plants built, whatever the fire does to
+    /// them: the rest are drawn as [`CLEARED`] (gone), so a weak machine
+    /// sheds fill rate without a rebuild. Vertices and memory stay.
+    pub fn set_keep(&mut self, k: f32) {
+        let k = k.clamp(0.0, 1.0);
+        if keep() != k {
+            KEEP.store(k.to_bits(), std::sync::atomic::Ordering::Relaxed);
+            self.thin_dirty = true;
+        }
+    }
+
     pub fn set_lod_m(&mut self, m: f32) {
         if self.lod_m != m {
             self.lod_m = m;
@@ -1653,6 +1689,18 @@ impl Rng {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_thinning_rank_is_spread_evenly_and_fixed() {
+        let plant = |x: f32, y: f32| Plant { pos: Pos { x, y }, lag_s: 0.0, vert_start: 0, vert_end: 0, low_start: 0, low_end: 0, remains: None };
+        let ranks: Vec<f32> = (0..4000).map(|i| rank(&plant((i % 80) as f32 * 7.3 + 0.37, (i / 80) as f32 * 11.1 + 0.91))).collect();
+        assert!(ranks.iter().all(|r| (0.0..=1.0).contains(r)));
+        for keep in [0.2f32, 0.35, 0.6] {
+            let shown = ranks.iter().filter(|&&r| r < keep).count() as f32 / ranks.len() as f32;
+            assert!((shown - keep).abs() < 0.05, "keep {keep}: {shown}");
+        }
+        assert_eq!(rank(&plant(10.0, 20.0)), rank(&plant(10.0, 20.0)));
+    }
+
     use super::*;
 
     /// What fire adds to every variety must build in range of the index

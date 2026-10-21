@@ -36,8 +36,9 @@ const CALM_S: f32 = 12.0;
 
 /// The rungs, best first. Consecutive rungs that would be the same are one.
 pub fn ladder(top: Graphics) -> Vec<Graphics> {
-    let ops: [fn(&mut Graphics); 7] = [
+    let ops: [fn(&mut Graphics); 10] = [
         |g| g.dof = false,
+        |g| g.veg_keep = g.veg_keep.min(0.6),
         |g| {
             if g.msaa >= 4 {
                 g.set_aa("smaa");
@@ -48,10 +49,12 @@ pub fn ladder(top: Graphics) -> Vec<Graphics> {
             g.shadow_distance = g.shadow_distance.min(1800.0);
             g.shadow_map = g.shadow_map.min(1024);
         },
+        |g| g.veg_keep = g.veg_keep.min(0.35),
         |g| g.bloom = false,
         |g| g.smaa = false,
         |g| g.terrain_shadows = false,
         |g| g.shadows = false,
+        |g| g.veg_keep = g.veg_keep.min(0.2),
     ];
     let mut out = vec![top];
     let mut g = top;
