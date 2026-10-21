@@ -24,6 +24,9 @@ use crate::tape::TapeMaterial;
 /// Width of the band along the roads where a team can be placed (a buffer of
 /// half of it on each side; the internal rule stays the hex grid).
 const BUFFER_M: f32 = 110.0;
+/// Half the width of the district's zone: the buffer around each home, so
+/// homes closer than twice this are one patch (user, 2026-10-21).
+const DISTRICT_BUFFER_M: f32 = 80.0;
 /// The dark under-stroke of the hex lines, wider, a little lower.
 const HEX_UNDER_M: f32 = 24.0;
 const HEX_PICK_M: f32 = 16.0;
@@ -51,6 +54,9 @@ const UNDER: f32 = 1.8;
 
 #[derive(Component)]
 pub struct HexMark;
+/// The ground a district covers: a buffer around its homes (pixel shader).
+#[derive(Component)]
+pub struct DistrictZoneMark;
 /// The drivable roads, shown while a move is chosen.
 #[derive(Component)]
 pub struct RoadNetMark;
@@ -71,6 +77,9 @@ pub struct ZoneBob;
 pub struct MarkAssets {
     /// The band where a team can be placed (pixel shader).
     reach: Handle<ReachMaterial>,
+    /// The ground of the chosen district.
+    district_zone: Handle<ReachMaterial>,
+    district_key: Option<usize>,
     /// The route a team would drive (pixel shader), per team colour.
     team_line: Vec<Handle<RouteMaterial>>,
     /// The drivable roads, while a move is chosen.
@@ -129,6 +138,8 @@ pub fn setup(mut commands: Commands, mut lines: ResMut<Assets<RouteMaterial>>, m
     commands.insert_resource(MarkAssets {
         team_line: TEAM_COLOURS.iter().map(|&c| lines.add(RouteMaterial::dashed(c, ROUTE_M * 1.0, ROUTE_M * 1.8, 0.95, 60.0))).collect(),
         reach: reaches.add(ReachMaterial::new([1.0, 1.0, 1.0], 0.22, BUFFER_M / 2.0)),
+        district_zone: reaches.add(ReachMaterial::new([0.43, 0.72, 1.0], 0.30, DISTRICT_BUFFER_M)),
+        district_key: None,
         road: lines.add(RouteMaterial::plain([1.0, 0.93, 0.62], ROAD_M * 0.5, ROAD_M * 0.9, 0.75)),
         under: materials.add(FlatMaterial::new([0.02, 0.03, 0.05]).pulled(HEX_PULL_M - 3.0)),
         pick: materials.add(FlatMaterial::new([1.0, 1.0, 1.0]).pulled(HEX_PULL_M + 4.0)),
@@ -312,6 +323,46 @@ pub fn update_hexes(
         commands.spawn((
             (Mesh3d(meshes.add(mesh)), MeshMaterial3d(assets.reach.clone())),
             HexMark,
+            bevy::light::NotShadowCaster,
+            bevy::light::NotShadowReceiver,
+            bevy::camera::visibility::NoFrustumCulling,
+        ));
+    }
+}
+
+/// The ground of the district chosen or under the pointer in the sidebar and
+/// on the map: the union of a buffer around each of its homes, so a district
+/// of scattered hamlets shows that the click takes all of them.
+pub fn update_district_zone(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    kiosk: Res<Kiosk>,
+    mut assets: ResMut<MarkAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    old: Query<Entity, With<DistrictZoneMark>>,
+) {
+    let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
+    let shown = match kiosk.selection {
+        Selection::District(d) => Some(d),
+        _ => kiosk.evac_hover.as_ref().map(|h| h.0),
+    };
+    let key = shown.filter(|&d| playing && d < sim.districts.len());
+    if key == assets.district_key {
+        return;
+    }
+    assets.district_key = key;
+    for e in &old {
+        commands.entity(e).despawn();
+    }
+    let Some(d) = key else { return };
+    let homes: Vec<[Pos; 2]> = sim.districts[d].households.iter().map(|&i| {
+        let p = Pos::from(sim.scn.population.households[i].pos);
+        [p, p]
+    }).collect();
+    if let Some(mesh) = band_mesh(&sim.scn, &homes, DISTRICT_BUFFER_M + 40.0) {
+        commands.spawn((
+            (Mesh3d(meshes.add(mesh)), MeshMaterial3d(assets.district_zone.clone())),
+            DistrictZoneMark,
             bevy::light::NotShadowCaster,
             bevy::light::NotShadowReceiver,
             bevy::camera::visibility::NoFrustumCulling,

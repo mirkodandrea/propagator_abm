@@ -387,6 +387,7 @@ def violations(S, fixed, roads):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--only", help="a single village, the others untouched")
     a = ap.parse_args()
     wd = World()
     dw = {d["osm_id"]: d for d in wd.pop["dwellings"]}
@@ -395,7 +396,7 @@ def main():
         by_dw.setdefault(h["building"], []).append(h)
     print("roads:", wd.road_report)
     cleared = 0
-    for loc in VILLAGES:
+    for loc in [v for v in VILLAGES if a.only in (None, v)]:
         S, fixed, roads = layout(wd, loc)
         v = violations(S, fixed, roads)
         mv = [float(np.hypot(*(s["c"] - s["c0"]))) for s in S]

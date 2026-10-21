@@ -859,11 +859,48 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
             });
         }
     }
+    // a district of scattered hamlets (Le Ghiande): chosen or under the
+    // pointer, every hamlet says it belongs to it, so one click is all homes
+    let shown = match k.selection {
+        Selection::District(d) => Some(d),
+        _ => k.evac_hover.as_ref().map(|h| h.0),
+    };
+    if let (Some(d), Some(badge)) = (shown, shown.and_then(|d| rects[d])) {
+        hamlet_tags(ctx, sim, cam, d, badge);
+    }
     team_flags(ctx, k, sim, cam, &placed);
     if k.phase == Phase::Tutorial {
         tutorial_pulse(ctx, k, sim, cam, &placed);
     }
     confirm_bubble(ctx, k, sim, cam);
+}
+
+/// For a district with several separate hamlets: a tag on each, with the
+/// district's name and its homes there, and a line from the district's badge.
+/// The click (and the evacuation) covers all of them.
+fn hamlet_tags(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform), d: usize, badge: egui::Rect) {
+    let district = &sim.districts[d];
+    if district.nuclei.len() < 2 {
+        return;
+    }
+    let mut homes = vec![0usize; district.nuclei.len()];
+    for &i in &district.households {
+        let p = Pos::from(sim.scn.population.households[i].pos);
+        let near = (0..homes.len()).min_by(|&a, &b| rocca::district::dist(p, district.nuclei[a]).total_cmp(&rocca::district::dist(p, district.nuclei[b])));
+        if let Some(n) = near {
+            homes[n] += 1;
+        }
+    }
+    let line = egui::Stroke::new(2.0, BLUE);
+    for (n, &at) in district.nuclei.iter().enumerate() {
+        let Some(s) = screen(cam, sim, at, 40.0) else { continue };
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new(("nucleo_linea", d)))).line_segment([badge.center(), s], line);
+        egui::Area::new(egui::Id::new(("nucleo", d, n))).fixed_pos(s).constrain(false).pivot(Align2::CENTER_CENTER).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
+            egui::Frame::NONE.fill(Color32::from_black_alpha(215)).stroke(line).corner_radius(6.0).inner_margin(egui::Margin::symmetric(6, 3)).show(ui, |ui| {
+                ui.label(RichText::new(format!("{} · {} case", district.name, homes[n])).size(14.0).strong().color(Color32::WHITE));
+            });
+        });
+    }
 }
 
 /// The handles of the teams' 3D flags (`pins`): clicking one stops the world;

@@ -353,6 +353,7 @@ fn kiosk_systems(app: &mut App) {
                 units::animate_spray,
                 kiosk::marks::update_hexes,
                 kiosk::marks::update_orders,
+                kiosk::marks::update_district_zone,
                 kiosk::marks::update_closed,
                 kiosk::marks::update_teams,
                 kiosk::marks::bob_zone,

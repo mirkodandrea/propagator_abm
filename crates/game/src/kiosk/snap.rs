@@ -481,6 +481,7 @@ pub fn hide_marks(
             Without<crate::forecast_view::ForecastMark>,
             Or<(
                 With<super::marks::HexMark>,
+                With<super::marks::DistrictZoneMark>,
                 With<super::marks::RoadNetMark>,
                 With<super::marks::OrderMark>,
                 With<super::marks::ClosedMark>,
