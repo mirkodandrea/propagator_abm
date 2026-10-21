@@ -20,8 +20,13 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use scenario::{Pos, Scenario};
 
-/// Metres per texel. The browser takes a quarter of the memory.
-const RES_M: f32 = if cfg!(target_arch = "wasm32") { 4.0 } else { 2.0 };
+/// Only the visual mask is coarser on phones: the simulation and road network
+/// retain their full data. 8 m takes a quarter of the web desktop mask's memory.
+fn resolution(gfx: &crate::quality::Graphics) -> f32 {
+    if !cfg!(target_arch = "wasm32") { 2.0 }
+    else if gfx.terrain_stride >= 4 { 8.0 }
+    else { 4.0 }
+}
 /// Half the encoded range, metres. Must match `RANGE_M` in the shader.
 const RANGE_M: f32 = 12.0;
 /// Half-widths of the ribbons, metres. Must match the shader.
@@ -56,9 +61,10 @@ pub struct RoadMask {
     pub rect: Vec4,
 }
 
-pub fn build(scn: &Scenario) -> RoadMask {
+pub fn build(scn: &Scenario, gfx: &crate::quality::Graphics) -> RoadMask {
+    let res_m = resolution(gfx);
     let (w_m, h_m) = (scn.world.width_m, scn.world.height_m);
-    let (nx, ny) = ((w_m / RES_M).ceil() as usize, (h_m / RES_M).ceil() as usize);
+    let (nx, ny) = ((w_m / res_m).ceil() as usize, (h_m / res_m).ceil() as usize);
     let mut field = [vec![RANGE_M; nx * ny], vec![RANGE_M; nx * ny]];
 
     for road in &scn.vectors.roads {
@@ -70,7 +76,7 @@ pub fn build(scn: &Scenario) -> RoadMask {
             continue;
         };
         for seg in road.line.windows(2) {
-            stamp(&mut field[ch], nx, ny, seg[0], seg[1], half);
+            stamp(&mut field[ch], nx, ny, seg[0], seg[1], half, res_m);
         }
     }
 
@@ -88,10 +94,10 @@ pub fn build(scn: &Scenario) -> RoadMask {
         data.extend_from_slice(&[encode(field[0][i]), encode(field[1][i]), 0, 0]);
     }
     drop(field);
-    for (pixel, paved) in data.chunks_exact_mut(4).zip(paved_field(scn, nx, ny)) {
+    for (pixel, paved) in data.chunks_exact_mut(4).zip(paved_field(scn, nx, ny, res_m)) {
         pixel[2] = paved;
     }
-    let (shore, sea) = shore_field(scn, nx, ny);
+    let (shore, sea) = shore_field(scn, nx, ny, res_m);
     for (pixel, shore) in data.chunks_exact_mut(4).zip(shore) {
         pixel[3] = shore;
     }
@@ -132,15 +138,15 @@ pub fn build(scn: &Scenario) -> RoadMask {
         anisotropy_clamp: 8,
         ..default()
     });
-    info!("road mask: {nx}x{ny} at {RES_M} m, {levels} levels");
-    RoadMask { image, rect: Vec4::new(1.0 / w_m, 1.0 / h_m, if shader_grass() { 1.0 } else { 0.0 }, 0.0), sea: SeaGrid { nx, ny, res: RES_M, sea } }
+    info!("road mask: {nx}x{ny} at {res_m} m, {levels} levels");
+    RoadMask { image, rect: Vec4::new(1.0 / w_m, 1.0 / h_m, if shader_grass() { 1.0 } else { 0.0 }, 0.0), sea: SeaGrid { nx, ny, res: res_m, sea } }
 }
 
 /// Share of paved ground (roads, buildings and yards of the cover raster) at
 /// each texel, as 0..255. The cover raster is 5 m; sampling its four nearest
 /// cells and blurring once turns the squares into a smooth field the shader
 /// can threshold into a crisp, noise-ragged edge.
-fn paved_field(scn: &Scenario, nx: usize, ny: usize) -> Vec<u8> {
+fn paved_field(scn: &Scenario, nx: usize, ny: usize, res_m: f32) -> Vec<u8> {
     use scenario::CoverClass;
     let mut out = vec![0u8; nx * ny];
     let Some(cover) = &scn.cover else { return out };
@@ -150,9 +156,9 @@ fn paved_field(scn: &Scenario, nx: usize, ny: usize) -> Vec<u8> {
     };
     let mut raw = vec![0u8; nx * ny];
     for j in 0..ny {
-        let y = (j as f32 + 0.5) * RES_M;
+        let y = (j as f32 + 0.5) * res_m;
         for i in 0..nx {
-            let x = (i as f32 + 0.5) * RES_M;
+            let x = (i as f32 + 0.5) * res_m;
             raw[j * nx + i] = is(x - h, y - h) + is(x + h, y - h) + is(x - h, y + h) + is(x + h, y + h);
         }
     }
@@ -182,13 +188,13 @@ const WATER_ELEV_MAX: f32 = 0.6;
 
 /// Signed distance to the waterline, metres, as 0..255: 127.5 at the shore,
 /// above it in the water, below it on land; 1 m a step, so ±127 m.
-fn shore_field(scn: &Scenario, nx: usize, ny: usize) -> (Vec<u8>, Vec<bool>) {
+fn shore_field(scn: &Scenario, nx: usize, ny: usize, res_m: f32) -> (Vec<u8>, Vec<bool>) {
     let n = nx * ny;
     let mut water = vec![false; n];
     for j in 0..ny {
-        let y = (j as f32 + 0.5) * RES_M;
+        let y = (j as f32 + 0.5) * res_m;
         for i in 0..nx {
-            let x = (i as f32 + 0.5) * RES_M;
+            let x = (i as f32 + 0.5) * res_m;
             water[j * nx + i] = scn.terrain.height_at(Pos { x, y }) <= WATER_ELEV_MAX;
         }
     }
@@ -199,7 +205,7 @@ fn shore_field(scn: &Scenario, nx: usize, ny: usize) -> (Vec<u8>, Vec<bool>) {
     let to_water = chamfer(&sea, nx, ny);
     let field = (0..n)
         .map(|i| {
-            let d = if sea[i] { to_land[i] } else { -to_water[i] } * RES_M;
+            let d = if sea[i] { to_land[i] } else { -to_water[i] } * res_m;
             (d.clamp(-127.0, 127.0) + 127.5) as u8
         })
         .collect();
@@ -275,17 +281,17 @@ fn encode(d: f32) -> u8 {
 }
 
 /// Min the distance-to-edge of one segment of half-width `half` into `field`.
-fn stamp(field: &mut [f32], nx: usize, ny: usize, a: [f32; 2], b: [f32; 2], half: f32) {
+fn stamp(field: &mut [f32], nx: usize, ny: usize, a: [f32; 2], b: [f32; 2], half: f32, res_m: f32) {
     let reach = half + RANGE_M;
-    let lo = |v: f32| ((v - reach) / RES_M).floor().max(0.0) as usize;
-    let (x0, x1) = (lo(a[0].min(b[0])), (((a[0].max(b[0]) + reach) / RES_M).ceil() as usize).min(nx));
-    let (y0, y1) = (lo(a[1].min(b[1])), (((a[1].max(b[1]) + reach) / RES_M).ceil() as usize).min(ny));
+    let lo = |v: f32| ((v - reach) / res_m).floor().max(0.0) as usize;
+    let (x0, x1) = (lo(a[0].min(b[0])), (((a[0].max(b[0]) + reach) / res_m).ceil() as usize).min(nx));
+    let (y0, y1) = (lo(a[1].min(b[1])), (((a[1].max(b[1]) + reach) / res_m).ceil() as usize).min(ny));
     let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
     let len2 = dx * dx + dy * dy;
     for j in y0..y1 {
-        let py = (j as f32 + 0.5) * RES_M;
+        let py = (j as f32 + 0.5) * res_m;
         for i in x0..x1 {
-            let px = (i as f32 + 0.5) * RES_M;
+            let px = (i as f32 + 0.5) * res_m;
             let t = if len2 < 1e-6 { 0.0 } else { (((px - a[0]) * dx + (py - a[1]) * dy) / len2).clamp(0.0, 1.0) };
             let (cx, cy) = (a[0] + dx * t - px, a[1] + dy * t - py);
             let d = (cx * cx + cy * cy).sqrt() - half;
@@ -346,7 +352,7 @@ mod tests {
     fn scenario_mask_pixels_are_unchanged() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
         let scn = Scenario::load_by_id(&dir, scenario::ID).unwrap();
-        let mask = build(&scn);
+        let mask = build(&scn, &crate::quality::Graphics::ALTA);
         let data = mask.image.data.as_ref().unwrap();
         let hash = data.iter().fold(0xcbf29ce484222325u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100000001b3));
         assert_eq!(data.len(), 85_332_856);

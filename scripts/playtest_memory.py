@@ -67,7 +67,10 @@ def main():
                     page.goto(f'http://127.0.0.1:{server.server_port}/?playtest=1{suffix}')
                     page.wait_for_function('window.roccaPlaytest?.state && !document.querySelector("#loading")')
                     frames(30)
-                    result = {'profile': profile, 'wasm_mib': memory(), 'errors': errors}
+                    result = {'profile': profile, 'wasm_mib': memory(), 'errors': errors,
+                              'js_data_mib': page.evaluate('Object.values(window.roccaData).reduce((n, b) => n + b.byteLength, 0) / 1048576'),
+                              'data_gzipped': page.evaluate('window.roccaDataGzip')}
+                    assert result['data_gzipped'] == (profile == 'bassa')
                     page.screenshot(path=str(args.output / f'{profile}.png'))
                     click('Gioca')
                     click('Nome')

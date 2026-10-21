@@ -211,6 +211,10 @@
         return phone ? 'bassa' : 'media';
       })();
 
+      // Keep compressed data on phones and avoid overlapping compilation,
+      // decompression and many downloads during the scene's startup peak.
+      const lowMemory = window.roccaProfile === 'bassa';
+
       // Download a file ourselves to show how much has arrived. The size shown
       // is of what travels (the data is gzipped by build_web.sh; the wasm is
       // compressed by the server), summed over every download in progress.
@@ -234,7 +238,10 @@
         if (response) return response;
         response = await fetch(url);
         if (!response.ok) throw new Error(`${url}: ${response.status}`);
-        if (store) store.put(url, response.clone()).catch(() => {});
+        // Cloning a large streamed wasm response can buffer an entire extra
+        // copy when the cache writer and compiler consume at different rates.
+        // Read existing cached wasm on phones, but let HTTP cache handle misses.
+        if (store && !(lowMemory && cacheName === 'rocca-wasm')) store.put(url, response.clone()).catch(() => {});
         if (!response.body) return response;
         const counted = response.body.pipeThrough(new TransformStream({
           transform(chunk, controller) {
@@ -248,8 +255,8 @@
 
       // The game's data files (the territory): gzipped, cached one by one under a
       // hashed URL, handed to the wasm as `window.roccaData` (path -> bytes).
-      // The browser inflates them when it can; if not, they stay gzipped
-      // (`roccaDataGzip`) and the wasm inflates them (crates/datafs).
+      // On phones they stay gzipped; other browsers inflate them when possible
+      // (`roccaDataGzip` tells crates/datafs which form to read).
       async function loadData() {
         // `?lang=de` forces the game's language (the game otherwise follows the browser's)
         const forcedLang = new URLSearchParams(location.search).get('lang');
@@ -265,13 +272,17 @@
           } catch (e) { /* the cache is an optimisation */ }
         }
         const files = {};
-        const native = typeof DecompressionStream === 'function';
+        const native = !lowMemory && typeof DecompressionStream === 'function';
         window.roccaDataGzip = !native;
-        await Promise.all(manifest.map(async file => {
-          const gz = await download(file.url, 'rocca-data', false);
-          const bytes = native ? gz.body.pipeThrough(new DecompressionStream('gzip')) : gz.body;
-          files[file.path] = new Uint8Array(await new Response(bytes).arrayBuffer());
-        }));
+        const pending = manifest.values();
+        async function worker() {
+          for (const file of pending) {
+            const gz = await download(file.url, 'rocca-data', false);
+            const bytes = native ? gz.body.pipeThrough(new DecompressionStream('gzip')) : gz.body;
+            files[file.path] = new Uint8Array(await new Response(bytes).arrayBuffer());
+          }
+        }
+        await Promise.all(Array.from({ length: lowMemory ? 2 : 6 }, worker));
         window.roccaData = files;
       }
 
@@ -373,8 +384,14 @@
         intro.classList.add('leaving');
         setTimeout(() => intro.remove(), 400);
         const { default: init } = await import('./game.js');
-        // The code and the data download side by side; the wasm starts when both are in.
-        Promise.all([WebAssembly.compileStreaming(download('./game_bg.wasm', 'rocca-wasm', true)), loadData()])
+        // On phones compilation finishes before loading data; on computers they overlap.
+        (async () => {
+          const compiling = WebAssembly.compileStreaming(download('./game_bg.wasm', 'rocca-wasm', true));
+          if (!lowMemory) return Promise.all([compiling, loadData()]);
+          const module = await compiling;
+          await loadData();
+          return [module];
+        })()
           .then(([module]) => {
             status.textContent = 'Avvio della simulazione…';
             return init({ module_or_path: module });

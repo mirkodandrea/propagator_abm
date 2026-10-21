@@ -569,7 +569,7 @@ pub fn build(
     // stride (`LOD1_M`, `LOD2_M`) and read the same textures.
     let stride = gfx.terrain_stride.max(1);
     let t = &scn.terrain;
-    let mut mask = crate::ground_mask::build(scn);
+    let mut mask = crate::ground_mask::build(scn, gfx);
     // beyond this distance from the eye there are no real blades: the terrain
     // shader adds a grain there so the meadow keeps its contrast (0 = no blades)
     mask.rect.w = if gfx.cover_m > 0.0 { crate::near_cover::BANDS_M[crate::near_cover::BANDS_M.len() - 1] } else { 0.0 };

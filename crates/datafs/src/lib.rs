@@ -47,7 +47,12 @@ mod store {
         if !gzipped {
             return Some(bytes);
         }
-        let mut plain = Vec::new();
+        // gzip ends with the original size (modulo 2^32). Reserving it avoids
+        // repeatedly growing and copying a 10 MB terrain buffer on restarts.
+        // Bound the hint: the decoder still validates the stream and can grow.
+        let size = bytes.get(bytes.len().checked_sub(4)?..)?;
+        let hint = u32::from_le_bytes(size.try_into().ok()?) as usize;
+        let mut plain = Vec::with_capacity(hint.min(64 * 1024 * 1024));
         flate2::read::GzDecoder::new(bytes.as_slice()).read_to_end(&mut plain).ok()?;
         Some(plain)
     }

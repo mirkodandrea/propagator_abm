@@ -2,6 +2,28 @@
 
 La stessa partita della versione desktop, nel browser, per chi non la scarica. Stesso motore (`rocca::Game`) e stessi dati, scaricati a parte dal `.wasm` (vedi «Dati separati dal codice»; `crates/datafs`).
 
+## Avvio su iPhone: crash segnalato (2026-10-21)
+
+Segnalazione su iPhone 13, iOS 27, Chrome: chiusura quando compare titolo/mappa, ricarica automatica e poi «can't open this page». **Causa non confermata sul dispositivo**: il sintomo è compatibile con pressione di memoria, ma le precedenti misure erano solo della memoria lineare Wasm. Non rappresentano RAM totale, compilazione del codice o GPU.
+
+Interventi locali:
+
+- Bevy web con le sole funzionalità usate: esclusi renderer UI/testo di Bevy (l'interfaccia è egui), glTF, scene, animazioni e morph. Conservati audio/Mario, gamepad e rendering del gioco; desktop nativo con le feature precedenti. Il modulo passa da circa **61 a 48 MiB**;
+- profilo `bassa`: texture grafica strade/costa a **8 m** anziché 4 m (un quarto dei texel), desktop web ancora a 4 m e nativo a 2 m. Dati della simulazione invariati;
+- dati del telefono conservati gzip in JS, **4,54 MiB** anziché 15,89 MiB; due download dati simultanei (sei sul computer), dopo la compilazione Wasm sul telefono;
+- sul telefono niente nuova copia Cache Storage del download Wasm durante la compilazione: si leggono cache già presenti, mentre sui miss si usa la cache HTTP. Evita la copia extra potenzialmente accumulata da [`Response.clone()`](https://developer.mozilla.org/en-US/docs/Web/API/Response/clone) quando i due lettori avanzano a velocità diverse;
+- decompressione Rust con capacità iniziale ricavata dal footer gzip, per evitare riallocazioni dei grandi raster.
+
+Verifiche: **25 test nativi superati**, maschera desktop identica, build wasm riuscita. WebKit emulato 390×844 a densità 3: titolo **256,1 MiB Wasm** contro 291,8 precedenti; tre ricariche consecutive, nome, tutorial e rotazione superati senza errori browser. Il tutorial sale a **292,8 MiB**. Chromium: `q=bassa` 256,25 MiB al titolo, **292,94 MiB** all'avvio della partita e fino al finale/riavvio; JS dati 4,54 MiB. I precedenti 291,88 MiB Wasm del profilo basso salivano meno entrando in partita, ma conservavano 15,89 MiB di dati JS. Questi numeri escludono codice compilato, resto del browser e GPU. Desktop web: media 357,63 MiB, adattiva 393,5 MiB; i tre flussi completi senza ordini passano. Screenshot verificati.
+
+```sh
+scripts/build_web.sh
+.venv/bin/python scripts/playtest_mobile.py --browser webkit --smoke --reloads 3 --output out/playtest/iphone-reloads
+.venv/bin/python scripts/playtest_memory.py --output out/playtest/iphone-memory-final
+```
+
+Report in `out/playtest/iphone-reloads/` e `out/playtest/iphone-memory-final/`. **Non provato su iPhone fisico e non pubblicato da questa sessione**: il confronto WebKit desktop non certifica il limite di memoria o la stabilità di iOS 27.
+
 ## Memoria condivisa con il desktop (2026-10-21)
 
 Ottimizzazioni a parità di qualità grafica, senza cambiare la simulazione:

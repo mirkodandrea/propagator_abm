@@ -19,6 +19,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--browser-executable')
     parser.add_argument('--browser', choices=['chromium', 'webkit'], default='chromium')
+    parser.add_argument('--reloads', type=int, default=0, help='Reload after the title, checking each fresh startup')
     parser.add_argument('--smoke', action='store_true', help='Test native taps through title, name and tutorial, in both orientations')
     parser.add_argument('--edge-pan', action='store_true', help='Test dragging at each map edge, stopping and cancellation')
     parser.add_argument('--output', type=Path, default=ROOT / 'out/playtest/mobile')
@@ -75,7 +76,9 @@ def main():
                 touch('touchEnd', [])
             def snap(name):
                 frames()
-                s = state(); samples.append({'name': name, 'memory_bytes': s['wasm_memory_bytes'], 'phase': s['phase']})
+                s = state()
+                data_bytes = page.evaluate('Object.values(window.roccaData).reduce((n, b) => n + b.byteLength, 0)')
+                samples.append({'name': name, 'memory_bytes': s['wasm_memory_bytes'], 'phase': s['phase'], 'js_data_bytes': data_bytes})
                 page.screenshot(path=str(args.output / f'{name}.png'), scale='css')
                 (args.output / f'{name}.json').write_text(json.dumps(s, ensure_ascii=False, indent=2))
                 print(name, s['phase'], s['expect'], round(s['wasm_memory_bytes'] / 1048576, 1), 'MiB', flush=True)
@@ -92,7 +95,15 @@ def main():
                 page.goto(f'http://127.0.0.1:{server.server_port}/?playtest=1')
                 page.wait_for_function('window.roccaPlaytest?.state && !document.querySelector("#loading")')
                 frames(); assert state()['camera']['pixels'] == [390, 844]
+                assert page.evaluate('window.roccaDataGzip === true'), 'Phone data should stay compressed'
+                assert page.evaluate('Object.values(window.roccaData).every(b => b[0] === 31 && b[1] === 139)'), 'Phone store must contain gzip bytes'
                 snap('01-title-portrait')
+                for reload in range(args.reloads):
+                    page.reload()
+                    page.wait_for_function('window.roccaPlaytest?.state && !document.querySelector("#loading")')
+                    frames(30)
+                    assert state()['phase'] == 'Intro' and state()['error'] is None
+                    snap(f'01-reload-{reload + 1}')
                 tap('Menu'); snap('01b-menu-portrait')
                 rotate(844, 390); snap('01c-menu-landscape'); tap('Menu'); rotate(390, 844)
                 tap('Gioca'); tap('Nome')
