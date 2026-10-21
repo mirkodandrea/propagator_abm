@@ -19,7 +19,7 @@ use rocca::tutorial::Expect;
 use scenario::Pos;
 
 use super::characters::{Logo, Portraits, ScenarioIcons};
-use super::{board, new_visit, screens, start_game, Kiosk, Phase, Selection};
+use super::{screens, Kiosk, Phase, Selection};
 use crate::sim::{Sim, SimRestarted};
 
 const PANEL: Color32 = Color32::from_rgba_premultiplied(18, 20, 24, 245);
@@ -151,7 +151,7 @@ pub fn draw(
     }
     egui::Area::new(egui::Id::new("menu_btn")).anchor(Align2::LEFT_BOTTOM, [10.0, -10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-        let r = ui.add(secondary(if k.operator { rocca::tr!("Chiudi menu") } else { rocca::tr!("Menu") }));
+        let r = ui.add(secondary(if k.operator { rocca::tr!("Chiudi impostazioni") } else { rocca::tr!("Impostazioni") }));
         crate::playtest::control("Menu", &r, true);
         if r.clicked() {
             k.operator = !k.operator;
@@ -241,7 +241,7 @@ pub fn draw(
         }
     }
     if k.operator {
-        operator(ctx, k, &mut sim, &mut restarted, &mut gfx, auto.as_deref(), &mut commands);
+        operator(ctx, k, &mut gfx, auto.as_deref(), &mut commands);
     }
     pad_mode.game = matches!(k.phase, Phase::Tutorial | Phase::Gioco);
     focus.pointer = ctx.is_pointer_over_egui();
@@ -1446,82 +1446,43 @@ fn notice(ctx: &egui::Context, k: &Kiosk) {
     });
 }
 
-/// The operator menu (F2): a new visit, the game straight away, the world
-/// stopped, the view, the graphics, the board.
-fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, gfx: &mut crate::quality::Graphics, auto: Option<&crate::adaptive::Adaptive>, commands: &mut Commands) {
+/// The settings menu (F2): language, view, graphics.
+fn operator(ctx: &egui::Context, k: &mut Kiosk, gfx: &mut crate::quality::Graphics, auto: Option<&crate::adaptive::Adaptive>, commands: &mut Commands) {
     if compact(ctx) {
         // On a phone: a page of its own over the screen, big buttons, and
         // «Chiudi» pinned under the scrolling controls.
         let mut close = false;
         super::screens::compact_page_footer(ctx, "operatore_mobile", |ui| {
-            ui.heading(rocca::tr!("Menu"));
-            operator_body(ui, k, sim, restarted, gfx, auto, commands, true);
+            ui.heading(rocca::tr!("Impostazioni"));
+            operator_body(ui, k, gfx, auto, commands, true);
         }, |ui| {
             close = ui.add_sized([ui.available_width(), 46.0], secondary(rocca::tr!("Chiudi"))).clicked();
         });
         if close { k.operator = false; }
         return;
     }
-    egui::Window::new(rocca::tr!("Menu")).id(egui::Id::new("operatore")).anchor(Align2::LEFT_BOTTOM, [8.0, -60.0]).default_width((ctx.viewport_rect().width() - 48.0).min(380.0)).max_height(ctx.viewport_rect().height() - 90.0).resizable(false).collapsible(false).vscroll(true).show(ctx, |ui| {
+    egui::Window::new(rocca::tr!("Impostazioni")).id(egui::Id::new("operatore")).anchor(Align2::LEFT_BOTTOM, [8.0, -60.0]).default_width((ctx.viewport_rect().width() - 48.0).min(380.0)).max_height(ctx.viewport_rect().height() - 90.0).resizable(false).collapsible(false).vscroll(true).show(ctx, |ui| {
         panel().show(ui, |ui| {
-            ui.label(RichText::new(rocca::tr!("Menu (F2 per chiudere)")).strong().color(Color32::WHITE));
-            operator_body(ui, k, sim, restarted, gfx, auto, commands, false);
+            ui.label(RichText::new(rocca::tr!("Impostazioni (F2 per chiudere)")).strong().color(Color32::WHITE));
+            operator_body(ui, k, gfx, auto, commands, false);
         });
     });
 }
 
 /// The controls of the operator menu. `touch`: finger-sized buttons.
-fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, gfx: &mut crate::quality::Graphics, auto: Option<&crate::adaptive::Adaptive>, commands: &mut Commands, touch: bool) {
+fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, gfx: &mut crate::quality::Graphics, auto: Option<&crate::adaptive::Adaptive>, commands: &mut Commands, touch: bool) {
     let button = |ui: &mut egui::Ui, label: &str| -> bool {
         if touch { ui.add_sized([ui.available_width(), 46.0], secondary(label)).clicked() } else { ui.add(secondary(label)).clicked() }
     };
     {
         {
-            let active_label = k.territory.levels.iter().find(|l| l.case == sim.case.name)
-                .map_or(sim.case.name.as_str(), |l| l.name.as_str());
-            ui.label(RichText::new(format!("{} · {} · seme {}", active_label, clock(sim.time_s()), sim.seed)).color(GREY));
-            ui.label(rocca::tr!("Scenario della prossima partita:"));
-            let label = k.territory.levels.iter().find(|l| l.case == k.selected_case)
-                .map_or(k.selected_case.as_str(), |l| l.name.as_str());
-            egui::ComboBox::from_id_salt("scenario_operatore").selected_text(label).width(ui.available_width().min(320.0)).show_ui(ui, |ui| {
-                // The default is always reachable, even with an older territory file.
-                if !k.territory.levels.iter().any(|l| l.case == k.territory.game) {
-                    ui.selectable_value(&mut k.selected_case, k.territory.game.clone(), rocca::tr!("Attuale (predefinito)"));
-                }
-                for level in &k.territory.levels {
-                    ui.selectable_value(&mut k.selected_case, level.case.clone(), &level.name);
-                }
+            ui.horizontal(|ui| {
+                ui.label(rocca::tr!("Lingua:"));
+                super::lang::picker_ui(ui);
             });
-            if let Some(level) = k.territory.levels.iter().find(|l| l.case == k.selected_case) {
-                ui.add(egui::Label::new(RichText::new(&level.about).color(GREY)).wrap());
+            if button(ui, rocca::tr!("Vista iniziale")) {
+                k.reset_view = true;
             }
-            ui.label(RichText::new(rocca::tr!("Si applica con Nuova visita o Vai alla partita.")).small().color(GREY));
-            ui.horizontal_wrapped(|ui| {
-                if button(ui, rocca::tr!("Nuova visita")) {
-                    new_visit(k, sim, restarted);
-                }
-                if button(ui, rocca::tr!("Vai alla partita")) {
-                    start_game(k, sim, restarted);
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label(rocca::tr!("Seme:"));
-                for s in 1..=3u64 {
-                    if touch {
-                        if ui.add_sized([56.0, 46.0], egui::Button::selectable(k.seed == s, s.to_string())).clicked() { k.seed = s; }
-                    } else {
-                        ui.selectable_value(&mut k.seed, s, s.to_string());
-                    }
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut k.frozen, rocca::tr!("Ferma il mondo"));
-                ui.add_enabled(k.phase == Phase::Intro, egui::Checkbox::new(&mut k.freecam, "Freecam (demo)"))
-                    .on_hover_text(rocca::tr!("Telecamera libera sulla demo: stessi controlli del gioco (trascina per spostare, tasto destro o Maiusc per ruotare, rotella per lo zoom)"));
-                if button(ui, rocca::tr!("Vista iniziale")) {
-                    k.reset_view = true;
-                }
-            });
             if !cfg!(target_arch = "wasm32") { ui.horizontal(|ui| {
                 use crate::quality::Graphics;
                 ui.label(rocca::tr!("Grafica:"));
@@ -1572,12 +1533,6 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
                     }
                 }
             });
-            }
-            if button(ui, rocca::tr!("Azzera classifica")) {
-                k.board = rocca::score::Board::default();
-                if let Err(e) = board::save(&k.board) {
-                    k.error = Some(e);
-                }
             }
             if let Some(e) = &k.error {
                 ui.colored_label(RED, e);

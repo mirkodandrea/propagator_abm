@@ -77,7 +77,7 @@ Variabili utili del gioco (prefisso storico `KIOSK_`):
 - `ROCCA_SCENARIO=<id>`: un altro territorio.
 - `ROCCA_LANG=<codice>`: la lingua (`de`, `en`, …, `tlh` è il klingon); sul web `?lang=`. Ogni testo nuovo va in `tr!("…")` e `python3 tools/i18n/keys.py --check` deve passare (`docs/01-GIOCO.md` §7).
 
-Il seme si sceglie dal menu operatore (F2).
+Il seme non si sceglie più dal gioco: F2 è il menu delle impostazioni (lingua, vista, grafica; 2026-10-21); il seme si dà alle prove headless.
 
 ### Immagini comparative degli scenari (senza finestre)
 

@@ -110,7 +110,7 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
   - Home per la vista iniziale.
 
   Funziona offline e senza audio, in italiano.
-- **Operatore** (F2 o «Menu»): selettore scenario (Attuale, Attraversamento del valico, Pressione su quattro borghi, Rotazione da est), nuova visita, vai alla partita, seme 1–3 (predefinito 2, utente 2026-10-15), «Ferma il mondo», vista iniziale, livello grafico, azzera la classifica.
+- **Impostazioni** (F2 o «Impostazioni», utente 2026-10-21; prima menu operatore): lingua (elenco con ricerca, anche nelle schermate iniziali), vista iniziale, livello grafico e antialiasing. Tolte le voci di debug (scenario, nuova visita, vai alla partita, seme, «Ferma il mondo», freecam, azzera classifica).
   Il selettore operatore si applica con «Nuova visita» o «Vai alla partita», senza interrompere la partita alla sola selezione. La scelta resta per le visite successive nella stessa sessione; al riavvio torna `medium`, lo scenario attuale predefinito. Tutorial invariato. Classifiche e confronto senza ordini usano il caso effettivamente giocato, anche se l’operatore ha già selezionato il successivo.
 - **Nessun reset per inattività** (non c'è più un chiosco presidiato, 2026-10-19).
 - **Mario** (easter egg, `docs/MARIO.md`): **scollegato** dal 2026-10-14. Usava le persone dell'IBM e i vecchi stati del chiosco. Da decidere se ricollegarlo.

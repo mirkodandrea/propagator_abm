@@ -92,22 +92,39 @@ pub fn toggle_klingon() {
     }
 }
 
+/// The language list as a combo box with a search field (38 entries).
+pub fn picker_ui(ui: &mut egui::Ui) {
+    let now = rocca::i18n::code();
+    let all = || rocca::i18n::LANGS.iter().chain((now == rocca::i18n::EASTER_EGG.0).then_some(&rocca::i18n::EASTER_EGG));
+    let name = all().find(|(c, _)| *c == now).map_or(now, |(_, n)| n);
+    let filter_id = egui::Id::new("lingua_filtro");
+    let mut picked = None;
+    let r = egui::ComboBox::from_id_salt("lingua_scelta").selected_text(format!("🌐 {name}")).height(420.0).show_ui(ui, |ui| {
+        let mut filter: String = ui.data_mut(|d| d.get_temp(filter_id)).unwrap_or_default();
+        ui.add(egui::TextEdit::singleline(&mut filter).hint_text(rocca::tr!("Cerca…")).desired_width(160.0));
+        ui.data_mut(|d| d.insert_temp(filter_id, filter.clone()));
+        let needle = filter.to_lowercase();
+        for (code, native) in all() {
+            if !needle.is_empty() && !native.to_lowercase().contains(&needle) && !code.contains(&needle) {
+                continue;
+            }
+            if ui.selectable_label(*code == now, format!("{native}  ({code})")).clicked() {
+                picked = Some(*code);
+            }
+        }
+    });
+    if r.inner.is_none() {
+        ui.data_mut(|d| d.remove_temp::<String>(filter_id));
+    }
+    crate::playtest::control("Lingua", &r.response, true);
+    if let Some(code) = picked {
+        choose(code);
+    }
+}
+
 /// The language picker, top left of the title and intro screens.
 pub fn picker(ctx: &egui::Context) {
     egui::Area::new(egui::Id::new("lingua")).anchor(Align2::LEFT_TOP, [10.0, 10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
-        let now = rocca::i18n::code();
-        let name = |c: &'static str| rocca::i18n::LANGS.iter().chain([&rocca::i18n::EASTER_EGG]).find(|(x, _)| *x == c).map_or(c, |(_, n)| n);
-        let mut picked = None;
-        egui::ComboBox::from_id_salt("lingua_scelta").selected_text(name(now)).height(420.0).show_ui(ui, |ui| {
-            for (code, native) in rocca::i18n::LANGS.iter().chain((now == rocca::i18n::EASTER_EGG.0).then_some(&rocca::i18n::EASTER_EGG)) {
-                if ui.selectable_label(*code == now, *native).clicked() {
-                    picked = Some(*code);
-                }
-            }
-        });
-        crate::playtest::control("Lingua", &ui.response(), true);
-        if let Some(code) = picked {
-            choose(code);
-        }
+        picker_ui(ui);
     });
 }
