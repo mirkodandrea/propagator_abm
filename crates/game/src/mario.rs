@@ -37,6 +37,8 @@ use bevy::audio::AddAudioSource;
 // Mario's ~160-unit height becomes 8 m, matching the exaggerated residents.
 const SCALE: f32 = 20.0;
 const STEP: f32 = 1.0 / 30.0;
+/// How long the star dance lasts before Mario answers the controls again.
+const VICTORY_S: f32 = 2.4;
 const COLLISION_RADIUS: f32 = 18.0;
 const PATCH_RADIUS: f32 = 26.0;
 const PATCH_STEP: f32 = 6.0;
@@ -184,6 +186,8 @@ pub struct Playground {
     engaged: bool,
     greeted_unit: Option<usize>,
     victory: bool,
+    /// Sounds and jingles asked for by `play`, played on the next tick.
+    cues: Vec<libsm64_native::Cue>,
 }
 
 impl Default for Playground {
@@ -193,7 +197,7 @@ impl Default for Playground {
             confirm_position: false, cancel_position: false, error: None,
             health: 0, wing_cap: false, message: "", awaiting_rom: false,
             snapshot: false, snapshot_time: 0., pos: None, punched: false,
-            engaged: false, greeted_unit: None, victory: false }
+            engaged: false, greeted_unit: None, victory: false, cues: Vec::new() }
     }
 }
 
@@ -257,6 +261,8 @@ impl CollisionTriangle {
 struct CollisionWorld {
     triangles: Vec<CollisionTriangle>,
     cells: HashMap<(i32, i32), Vec<usize>>,
+    /// Highest point of any triangle (a ray need not start above this).
+    top: f32,
 }
 
 impl CollisionWorld {
@@ -267,7 +273,43 @@ impl CollisionWorld {
                 self.cells.entry((x, z)).or_default().push(index);
             }
         }
+        self.top = self.top.max(triangle.hi.y);
         self.triangles.push(triangle);
+    }
+
+    /// Where a ray first meets the decorative and building meshes, as the
+    /// distance along it. Walks the ray cell by cell from the highest point of
+    /// the scenery, so it costs little however far the camera is.
+    fn raycast(&self, origin: Vec3, direction: Vec3, max_distance: f32) -> Option<f32> {
+        if self.triangles.is_empty() || direction.y > -1e-4 { return None; }
+        let horizontal = direction.xz().length();
+        let step = (COLLISION_CELL * 0.5 / horizontal.max(1e-3)).min(COLLISION_CELL);
+        let mut t = ((origin.y - self.top - 1.) / -direction.y).max(0.);
+        let mut ids = Vec::new();
+        while t < max_distance {
+            let p = origin + direction * t;
+            if let Some(cell) = self.cells.get(&(collision_cell(p.x), collision_cell(p.z))) {
+                ids.extend_from_slice(cell);
+            }
+            t += step;
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        ids.into_iter()
+            .filter_map(|i| ray_triangle(origin, direction, self.triangles[i].vertices))
+            .filter(|&d| d < max_distance)
+            .min_by(f32::total_cmp)
+    }
+
+    /// The highest surface above (x, z): the terrain floor, or the top of a
+    /// model standing there (the rocca's roof, the tower's).
+    fn surface_top(&self, sim: &Sim, x: f32, z: f32) -> f32 {
+        let ground = collision_ground(sim, x, z);
+        let start = Vec3::new(x, self.top.max(ground) + 1., z);
+        self.query(Vec3::new(x, start.y, z), Vec3::new(x, start.y, z)).into_iter()
+            .filter_map(|i| ray_triangle(start, Vec3::NEG_Y, self.triangles[i].vertices))
+            .map(|d| start.y - d)
+            .fold(ground, f32::max)
     }
 
     fn query(&self, lo: Vec3, hi: Vec3) -> Vec<usize> {
@@ -374,6 +416,8 @@ struct Runtime {
     fire_cooldown: f32,
     jump_latched: bool,
     attack_latched: bool,
+    /// Seconds left of the star dance (it is ended by hand).
+    victory_left: f32,
     demo_time: f32,
     demo_fire: Vec3,
     profile_collisions: bool,
@@ -803,6 +847,7 @@ fn drive(
         runtime.fire_cooldown = 0.;
         runtime.jump_latched = false;
         runtime.attack_latched = false;
+        runtime.victory_left = 0.;
         if !respawn_nearby(&mut runtime, &meshes, &sim, base, &mut actors) {
             mode.error = Some("Mario non trova un terreno su cui stare.".into());
             runtime.saved = None;
@@ -957,8 +1002,20 @@ fn drive(
             + f32::from(held(GamepadButton::RightTrigger))
             - f32::from(held(GamepadButton::LeftTrigger));
         let pointer_free = !contexts.ctx_mut().is_ok_and(|c| c.egui_wants_pointer_input());
+        // zoom towards the pointer: the ground under it stays under it
+        let anchor = windows.single().ok()
+            .filter(|_| pointer_free)
+            .and_then(|w| crate::pick::cursor_ground(&sim.scn, &render_camera, &GlobalTransform::from(*camera_tf), w));
+        let old_distance = camera.distance;
         camera.distance = (camera.distance * (zoom * dt * 1.5 - if pointer_free { scroll * 0.12 } else { 0. }).exp())
             .clamp(120., 25000.);
+        if let Some(p) = anchor.filter(|_| camera.distance != old_distance) {
+            let held = crate::frame::to_bevy(p, sim.scn.terrain.height_at(p));
+            let below = |distance: f32| (camera.focus.y + distance - held.y).max(1.);
+            let k = below(camera.distance) / below(old_distance);
+            let focus = held.with_y(camera.focus.y) - (held.with_y(camera.focus.y) - camera.focus) * k;
+            camera.focus = clamp_map_position(focus, sim.scn.world.width_m, sim.scn.world.height_m);
+        }
         let speed = camera.distance * 0.7 * dt;
         let movement = Vec2::new(
             axis(GamepadAxis::LeftStickX) + keyboard(KeyCode::KeyD, KeyCode::KeyA),
@@ -969,24 +1026,35 @@ fn drive(
             axis(GamepadAxis::RightStickX) + keyboard(KeyCode::ArrowRight, KeyCode::ArrowLeft),
             0., -axis(GamepadAxis::RightStickY) + keyboard(KeyCode::ArrowDown, KeyCode::ArrowUp),
         ) * speed;
-        if movement != Vec2::ZERO { camera.focus = placement.target.with_y(0.); }
+        if movement != Vec2::ZERO { camera.focus = placement.target.with_y(camera.focus.y); }
         camera.focus = clamp_map_position(camera.focus, sim.scn.world.width_m, sim.scn.world.height_m);
+        // the view is `distance` above the surface (a roof included), not above sea level
+        camera.focus.y += (placement.target.y - camera.focus.y) * (dt * 6.).min(1.);
         camera_tf.translation = camera.focus + Vec3::Y * camera.distance;
         camera_tf.look_at(camera.focus, Vec3::NEG_Z);
         let mut clicked_map = false;
         if let Ok(window) = windows.single() {
             let cursor = window.cursor_position();
             if pointer_free && (cursor != placement.cursor || controls.mouse.just_pressed(MouseButton::Left)) {
-                if let Some(p) = crate::pick::cursor_ground(&sim.scn, &render_camera,
-                    &GlobalTransform::from(*camera_tf), window) {
+                let view = GlobalTransform::from(*camera_tf);
+                if let Some(p) = crate::pick::cursor_ground(&sim.scn, &render_camera, &view, window) {
                     placement.target = crate::frame::to_bevy(p, sim.scn.terrain.height_at(p));
+                    // a model nearer than the ground (the rocca, the tower) wins
+                    if let Some(ray) = crate::pick::cursor_position(&render_camera, window)
+                        .and_then(|c| render_camera.viewport_to_world(&view, c).ok())
+                    {
+                        let to_ground = (placement.target - ray.origin).length();
+                        if let Some(d) = runtime.collision_world.raycast(ray.origin, *ray.direction, to_ground) {
+                            placement.target = ray.origin + *ray.direction * d;
+                        }
+                    }
                     clicked_map = controls.mouse.just_pressed(MouseButton::Left);
                 }
             }
             placement.cursor = cursor;
         }
         placement.target = clamp_map_position(placement.target, sim.scn.world.width_m, sim.scn.world.height_m);
-        placement.target.y = sim.scn.terrain.height_at(crate::frame::to_world(placement.target));
+        placement.target.y = runtime.collision_world.surface_top(&sim, placement.target.x, placement.target.z);
         let marker = placement.target.with_y(placement.target.y.max(1.) + 30.);
         let radius = (camera.distance * 0.012).max(4.);
         gizmos.line(marker - Vec3::X * radius, marker + Vec3::X * radius, Color::srgb(1., 0.85, 0.1));
@@ -1151,14 +1219,21 @@ fn drive(
             crouch: u8::from(crouch),
         };
         let celebrate = std::mem::take(&mut mode.victory);
+        let mut cues = std::mem::take(&mut mode.cues);
         let boost = runtime.jump_latched;
         runtime.jump_latched = false;
         runtime.attack_latched = false;
+        if celebrate { runtime.victory_left = VICTORY_S; }
         let engine = runtime.engine.as_mut().unwrap();
         if boost && engine.boost_flight() { mode.message = "Boost!"; }
         engine.water_level(water_level);
         if celebrate { engine.victory_pose(); }
+        for cue in cues.drain(..) { engine.cue(cue); }
         engine.tick(&input);
+        if runtime.victory_left > 0. {
+            runtime.victory_left -= STEP;
+            if runtime.victory_left <= 0. { runtime.engine.as_mut().unwrap().end_victory(water); }
+        }
         if let Some(start) = profile_start {
             eprintln!("mario collision: surfaces={} refresh_us={} tick_us={}",
                 runtime.collision_count, refresh_us.unwrap(),
@@ -1648,12 +1723,18 @@ fn respawn_nearby(
             || world.y > sim.scn.world.height_m {
             continue;
         }
-        let ground = collision_ground(sim, p.x, p.z);
+        // on the top of whatever stands there: the ground, or a model's roof
+        let ground = runtime.collision_world.surface_top(sim, p.x, p.z);
         let feet = p.with_y(ground + 0.3);
+        // on a model's top (a roof, a wall-walk) the neighbouring slopes and
+        // merlons are not a reason to refuse: native Mario pushes out of walls
+        let on_model = ground > collision_ground(sim, p.x, p.z) + 1.0;
         let ids = runtime.collision_world.query(feet - Vec3::splat(3.0), feet + Vec3::splat(3.0));
         let blocked = ids.iter().any(|&i| {
             let t = &runtime.collision_world.triangles[i];
-            (near(t.lo, t.hi, feet, 3.0) && t.hi.y > ground + 0.5 && t.lo.y < ground + 10.0)
+            // the surface Mario stands on is not an obstacle
+            let floor = ray_triangle(feet + Vec3::Y * 2., Vec3::NEG_Y, t.vertices).is_some_and(|d| d < 3.);
+            !floor && (!on_model && near(t.lo, t.hi, feet, 3.0) && t.hi.y > ground + 0.5 && t.lo.y < ground + 10.0)
                 || ray_triangle(feet, Vec3::Y, t.vertices).is_some_and(|d| d < 100.0)
         });
         if blocked { continue; }
@@ -1784,6 +1865,8 @@ fn engage_nearby(runtime: &mut Runtime, mode: &mut Playground, actors: &mut Acto
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// libsm64 has one owner at a time: the tests that load the ROM take turns.
+    static ROM: std::sync::Mutex<()> = std::sync::Mutex::new(());
     #[test]
     fn interaction_picks_a_nearby_visible_target_and_has_no_remote_effect() {
         use bevy::ecs::system::SystemState;
@@ -1812,6 +1895,7 @@ mod tests {
 
     #[test]
     fn rom_atlas_retains_wing_cutouts_and_white_feathers() {
+        let _turn = ROM.lock().unwrap_or_else(|e| e.into_inner());
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../data/mario64/Super Mario 64 (USA).z64");
         let Ok(rom) = std::fs::read(path) else {
@@ -1909,6 +1993,97 @@ mod tests {
         assert_eq!(runtime.engine.as_ref().unwrap().state.position, position);
         assert!(respawn_nearby(&mut runtime, &meshes, &sim, Vec3::splat(f32::NAN), &mut actors));
         assert!(runtime.engine.as_ref().unwrap().vertex_count > 0);
+    }
+
+    #[test]
+    fn rays_and_placement_find_the_top_of_the_models() {
+        let mut world = CollisionWorld::default();
+        // a flat roof 100 m up, and a wall beside it
+        world.insert(CollisionTriangle::new([
+            Vec3::new(-20., 100., -20.), Vec3::new(-20., 100., 20.), Vec3::new(20., 100., -20.),
+        ]));
+        let down = Vec3::NEG_Y;
+        let d = world.raycast(Vec3::new(-5., 5000., -5.), down, 6000.).unwrap();
+        assert!((5000. - d - 100.).abs() < 0.01);
+        assert!(world.raycast(Vec3::new(500., 5000., 500.), down, 6000.).is_none());
+        assert!(world.raycast(Vec3::new(-5., 5000., -5.), down, 4000.).is_none(), "the roof is farther than the ground");
+        assert!(world.raycast(Vec3::new(-5., 50., -5.), Vec3::Y, 6000.).is_none(), "only downwards");
+        // slanted rays still find it
+        let slant = Vec3::new(0.3, -1., 0.).normalize();
+        let origin = Vec3::new(-5., 100., -5.) - slant * (4900. / -slant.y);
+        assert!(world.raycast(origin, slant, 6000.).is_some());
+    }
+
+    #[test]
+    fn mario_can_be_placed_on_the_rocca_roof() {
+        let _turn = ROM.lock().unwrap_or_else(|e| e.into_inner());
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let Ok(rom) = std::fs::read(data.join("mario64/Super Mario 64 (USA).z64")) else {
+            eprintln!("Skipping ROM-dependent placement check: local ROM unavailable.");
+            return;
+        };
+        let mut images = Assets::<Image>::default();
+        let mut materials = Assets::<MarioMaterial>::default();
+        let (engine, _) = load_engine_from_rom(&rom, &mut images, &mut materials).unwrap();
+        let sim = Sim::new(&data, "easy", 17).unwrap();
+        let island: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(data.join("scenarios").join(&sim.scn.id).join("island.json")).unwrap()).unwrap();
+        let l = &island["landmarks"]["rocca"];
+        let (x, y) = (l["pos"][0].as_f64().unwrap() as f32, l["pos"][1].as_f64().unwrap() as f32);
+        let scale = l["scale"].as_f64().unwrap() as f32;
+        let at = crate::frame::to_bevy(scenario::Pos { x, y },
+            l["ground_m"].as_f64().unwrap() as f32 - 0.3);
+        let kit = crate::models::island("rocca");
+        let vertex = |i: u32| at + Vec3::from_array(kit.positions[i as usize]) * scale;
+        let mut runtime = Runtime { engine: Some(engine), origin: at, last_valid: at, ..default() };
+        let mut flat = Vec::new();
+        for t in kit.indices.chunks_exact(3) {
+            let v = [vertex(t[0]), vertex(t[1]), vertex(t[2])];
+            let normal = (v[1] - v[0]).cross(v[2] - v[0]);
+            if normal.normalize_or_zero().y.abs() > 0.95 { flat.push((normal.length(), v)); }
+            runtime.collision_world.insert(CollisionTriangle::new(v));
+        }
+        // the biggest flat triangle among the highest third of the model
+        let top = runtime.collision_world.top;
+        let (_, roof) = flat.into_iter()
+            .filter(|(_, v)| (v[0].y + v[1].y + v[2].y) / 3. > at.y + (top - at.y) * 0.6)
+            .max_by(|a, b| a.0.total_cmp(&b.0)).expect("the rocca has a high flat surface");
+        let centre = (roof[0] + roof[1] + roof[2]) / 3.;
+        let terrain = collision_ground(&sim, centre.x, centre.z);
+        let height = runtime.collision_world.surface_top(&sim, centre.x, centre.z);
+        assert!(height > terrain + 20., "the roof is above the ground: {height} over {terrain}");
+        let meshes = Assets::<Mesh>::default();
+        let mut world = World::new();
+        let mut state = bevy::ecs::system::SystemState::<Actors>::new(&mut world);
+        let mut actors = state.get_mut(&mut world).unwrap();
+        // seen from the overview camera, the pointer over the roof meets the roof
+        let camera = Vec3::new(sim.scn.world.width_m * 0.5, 14000., -sim.scn.world.height_m * 0.5);
+        let aim = (Vec3::new(centre.x, height, centre.z) - camera).normalize();
+        let to_ground = (Vec3::new(centre.x, terrain, centre.z) - camera).length();
+        let hit = runtime.collision_world.raycast(camera, aim, to_ground).expect("the ray meets the rocca before the ground");
+        let met = camera + aim * hit;
+        assert!(met.y > terrain + 20. && (met.x - centre.x).hypot(met.z - centre.z) < 40., "met {met:?}, roof at {centre:?}");
+        // every point of the rocca that rises above the ground takes Mario on top of it
+        let (mut tried, mut on_top) = (0, 0);
+        let mut x = at.x - 90.;
+        while x < at.x + 90. {
+            let mut z = at.z - 90.;
+            while z < at.z + 90. {
+                let high = runtime.collision_world.surface_top(&sim, x, z);
+                let ground = collision_ground(&sim, x, z);
+                if high > ground + 20. {
+                    tried += 1;
+                    assert!(respawn_nearby(&mut runtime, &meshes, &sim, Vec3::new(x, 0., z), &mut actors));
+                    if runtime.spawn.y > ground + 20. { on_top += 1; }
+                }
+                z += 6.;
+            }
+            x += 6.;
+        }
+        assert!(tried > 100, "the probe covers the rocca: {tried}");
+        assert_eq!(on_top, tried, "Mario stands on top in every one of them");
+        assert!(respawn_nearby(&mut runtime, &meshes, &sim, centre, &mut actors));
+        assert!(runtime.spawn.y > terrain + 20., "Mario stands on the roof, not under it: {}", runtime.spawn.y);
     }
 
     #[test]

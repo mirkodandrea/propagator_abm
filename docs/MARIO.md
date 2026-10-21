@@ -30,7 +30,9 @@ SM64, massimo 120); a terra resta il salto. Ali e fisica del volo sono gestite d
 Con R / △ o «Scegli posizione sulla mappa» si apre una vista verticale dell’intera
 mappa e Mario resta fermo durante la scelta. Muovi il mouse o WASD / stick sinistro
 per spostare il mirino; frecce / stick destro spostano la vista. Rotella, Q/E e L1/R1
-regolano lo zoom. Un clic sulla mappa, Spazio / × o «Posiziona» conferma;
+regolano lo zoom. Lo zoom (rotella) avvicina verso il puntatore: il punto sotto il mouse resta sotto il mouse.
+Il puntatore sceglie anche i modelli: sopra la rocca o la torre (e i tetti) Mario si
+posiziona in cima, non a terra (2026-10-20, richiesta dell'utente). Un clic sulla mappa, Spazio / × o «Posiziona» conferma;
 Esc, ○, R / △ o «Annulla» torna a Mario senza spostarlo. Puoi scegliere qualsiasi
 punto, anche in mare; nei punti occupati si cerca terreno libero entro circa 21 m,
 altrimenti la selezione resta aperta. Dopo la conferma si torna alla camera di Mario.
@@ -78,10 +80,13 @@ con Mario chiuso non fanno nulla. I progressi durano quanto il programma; solo i
 record della corsa è su file (`~/.rocca_ventosa/mario_record.txt`, non scritto se
 `KIOSK_SCORES` è impostata). Restano nascosti: niente nel tutorial.
 
-- **Stelle** (colonna gialla visibile da lontano): rocca, una più in alto per il
-  solo Wing Cap, torre, porto, una per borgo. Il pannello in alto a destra dà
+- **Stelle** (colonna gialla visibile da lontano): sul tetto della rocca (solo
+  Wing Cap; quota dalla mesh disegnata per scala), una più in alto vicino alla
+  rocca (solo Wing Cap), ai piedi della torre (fuori dal suo ingombro), porto,
+  una per borgo. Il pannello in alto a destra dà
   l'indizio della più vicina con distanza e direzione. Presa una stella, Mario
-  fa la posa della vittoria.
+  fa la posa della vittoria per 2,4 s e poi torna ai comandi (la danza della
+  stella non finisce da sola: `Engine::end_victory`).
 - **Monete** lungo le strade (una ogni ≥ 90 m, al massimo 180, mai in mare).
 - **Saluti** (F / L3): ogni borgo (entro 90 m dal centro) e ogni squadra hanno
   un fumetto diverso. Prima volta e ripetizioni sono contate.
@@ -91,4 +96,12 @@ record della corsa è su file (`~/.rocca_ventosa/mario_record.txt`, non scritto 
   conta, ma il fuoco vero non cambia (lo dice il pannello).
 - **Titoli** (stelle, monete, saluti tutti): compaiono nel pannello.
 
-Verifiche: `cargo test -p game --release mario`. Non provato a schermo.
+**Suoni** (2026-10-20): sono quelli della ROM, via `Engine::cue` (`Cue` in
+`libsm64-native`). Moneta: tintinnio; stella: suono della stella e fanfara di
+raccolta; saluto: «Yahoo!»; fiammella: sbuffo di fiamma spenta; via della corsa:
+sparo e «Here we go!»; arrivo: campanella; record: jingle del punteggio alto;
+titolo: jingle del rompicapo risolto. Il test della libreria verifica che ognuno
+produca audio vero sopra il silenzio. Non udito a orecchio.
+
+Verifiche: `cargo test -p game --release mario` e `cargo test -p libsm64-native`.
+Non provato a schermo.

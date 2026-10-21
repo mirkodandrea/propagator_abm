@@ -490,31 +490,63 @@ fn emit_building(
 
     // A shop: a striped awning over the street side and a sign board, so the
     // main street reads as shops with flats above from across the gazebo.
+    // Both hang on the footprint edge that faces most nearly south (weighted by
+    // its length), not on the bounding box: on a rotated or L-shaped footprint
+    // the box edge floats in the air beside the wall.
     if b.kind.as_deref() == Some("shop") {
-        let south = ring.iter().map(|p| p.y).fold(f32::MAX, f32::min);
-        let (x0, x1) = (
-            ring.iter().map(|p| p.x).fold(f32::MAX, f32::min) + 0.6,
-            ring.iter().map(|p| p.x).fold(f32::MIN, f32::max) - 0.6,
-        );
-        let g = scn.terrain.height_at(Pos { x: (x0 + x1) * 0.5, y: south });
-        let (top, low) = (g + 4.6, g + 3.4);
-        let stripes = [[0.92, 0.25, 0.22], [0.97, 0.95, 0.90], [0.20, 0.55, 0.35], [0.97, 0.95, 0.90], [0.25, 0.45, 0.85]];
-        let pick = stripes[(hash01(b.id as u64, 0x91) * 3.0) as usize % 3 * 2 % 5];
-        let n = 6;
-        for k in 0..n {
-            let xa = x0 + (x1 - x0) * k as f32 / n as f32;
-            let xb = x0 + (x1 - x0) * (k + 1) as f32 / n as f32;
-            let col = if k % 2 == 0 { pick } else { [0.97, 0.95, 0.90] };
-            // Wound so the face points up and out over the street (finding 11).
-            out.quad([xa, top, -(south - 0.05)], [xa, low, -(south - 2.4)], [xb, low, -(south - 2.4)], [xb, top, -(south - 0.05)], col);
+        let mut best: Option<(f32, Pos, Pos, (f32, f32))> = None;
+        for i in 0..m {
+            let (a, c) = (ring[i], ring[(i + 1) % m]);
+            let (dx, dy) = (c.x - a.x, c.y - a.y);
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < 3.0 {
+                continue;
+            }
+            let mut n = (dy / len, -dx / len);
+            if n.0 * ((a.x + c.x) * 0.5 - centroid.x) + n.1 * ((a.y + c.y) * 0.5 - centroid.y) < 0.0 {
+                n = (-n.0, -n.1);
+            }
+            let score = len * (-n.1).max(0.0);
+            if -n.1 > 0.5 && best.map_or(true, |b| score > b.0) {
+                best = Some((score, a, c, n));
+            }
         }
-        out.quad(
-            [x0 + 1.0, top + 1.6, -(south - 0.12)],
-            [x0 + 1.0, top + 0.4, -(south - 0.12)],
-            [x1 - 1.0, top + 0.4, -(south - 0.12)],
-            [x1 - 1.0, top + 1.6, -(south - 0.12)],
-            [0.98, 0.90, 0.55],
-        );
+        if let Some((_, a, c, n)) = best {
+            // Along the wall, so that the quads wind as they did on the
+            // south edge (t = +x when n = -y).
+            let t = (-n.1, n.0);
+            let (pa, pc) = (a.x * t.0 + a.y * t.1, c.x * t.0 + c.y * t.1);
+            let (lo_t, hi_t) = (pa.min(pc), pa.max(pc));
+            let (x0, x1) = (lo_t + 0.6, hi_t - 0.6);
+            let mid = Pos { x: (a.x + c.x) * 0.5, y: (a.y + c.y) * 0.5 };
+            let g = scn.terrain.height_at(mid);
+            // Never above the eave of a low shop.
+            let top = (g + 4.6).min(eave - 0.8).max(g + 2.2);
+            let low = top - 1.2;
+            // The point at distance `d` out from the wall, `u` along it.
+            let wall_d = mid.x * n.0 + mid.y * n.1;
+            let at = |u: f32, d: f32, y: f32| {
+                let o = wall_d + d;
+                [u * t.0 + o * n.0, y, -(u * t.1 + o * n.1)]
+            };
+            let stripes = [[0.92, 0.25, 0.22], [0.97, 0.95, 0.90], [0.20, 0.55, 0.35], [0.97, 0.95, 0.90], [0.25, 0.45, 0.85]];
+            let pick = stripes[(hash01(b.id as u64, 0x91) * 3.0) as usize % 3 * 2 % 5];
+            let cnt = 6;
+            for k in 0..cnt {
+                let xa = x0 + (x1 - x0) * k as f32 / cnt as f32;
+                let xb = x0 + (x1 - x0) * (k + 1) as f32 / cnt as f32;
+                let col = if k % 2 == 0 { pick } else { [0.97, 0.95, 0.90] };
+                // Wound so the face points up and out over the street (finding 11).
+                out.quad(at(xa, 0.05, top), at(xa, 2.4, low), at(xb, 2.4, low), at(xb, 0.05, top), col);
+            }
+            out.quad(
+                at(x0 + 1.0, 0.12, top + 1.6),
+                at(x0 + 1.0, 0.12, top + 0.4),
+                at(x1 - 1.0, 0.12, top + 0.4),
+                at(x1 - 1.0, 0.12, top + 1.6),
+                [0.98, 0.90, 0.55],
+            );
+        }
     }
 
     // The eave ring is the footprint pushed outward, which both casts the
