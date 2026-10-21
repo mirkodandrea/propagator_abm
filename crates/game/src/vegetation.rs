@@ -391,15 +391,25 @@ pub fn spawn(
             let pos_base = if GPU { Vec::new() } else { builder.full.positions.clone() };
             let low_pos_base = if GPU { Vec::new() } else { builder.low.positions.clone() };
             let (verts, low_verts) = (builder.full.positions.len(), builder.low.positions.len());
-            let mut full_mesh = builder.full.finish();
             let (mut low, far_idx) = builder.low.finish_with_far();
-            tag_plants(&mut full_mesh, verts, plants.iter().map(|p| (p.vert_start, p.vert_end)), 0);
             tag_plants(&mut low, low_verts, plants.iter().map(|p| (p.low_start, p.low_end)), 0);
             let image = images.add(state_image(plants.len()));
             let material = materials.add(FoliageMaterial::new(image.clone()));
             let state = Some(image);
-            let mesh = meshes.add(full_mesh);
             let low_mesh = meshes.add(low);
+            // The browser only draws proxies (lod_m = 0). Share their handle
+            // with the hidden near entity instead of uploading a second copy.
+            let mesh = if cfg!(target_arch = "wasm32") {
+                low_mesh.clone()
+            } else {
+                let mut full_mesh = builder.full.finish();
+                tag_plants(&mut full_mesh, verts, plants.iter().map(|p| (p.vert_start, p.vert_end)), 0);
+                if GPU {
+                    full_mesh.asset_usage = RenderAssetUsages::RENDER_WORLD;
+                    full_mesh.compress_indices();
+                }
+                meshes.add(full_mesh)
+            };
 
             // Vegetation is visual only: Mario can run through trunks and
             // canopies, and the follow camera is not clipped by the forest.
@@ -1439,6 +1449,8 @@ fn build_char_layer(
             // standing where the plants stood, whole and for good: the state
             // image shows it from the plant's ignition (`veg_state.wgsl`)
             tag_plants(&mut mesh, verts, ranges.iter().copied(), CHAR_PLANT);
+            mesh.asset_usage = RenderAssetUsages::RENDER_WORLD;
+            mesh.compress_indices();
         } else {
             // the normals above are those of the standing remains
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, hidden.clone());

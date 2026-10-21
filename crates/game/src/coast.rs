@@ -199,12 +199,13 @@ fn tile_mesh(rocks: &[&Rock]) -> Mesh {
         idx.extend(m.indices.iter().map(|i| start + i));
     }
     let n = pos.len();
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, nor);
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, col);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; n]);
     mesh.insert_indices(Indices::U32(idx));
+    mesh.compress_indices();
     mesh
 }
 

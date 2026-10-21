@@ -3002,6 +3002,7 @@ dependencies = [
  "libsm64-native",
  "rocca",
  "scenario",
+ "serde",
  "serde_json",
  "sys-locale",
  "uuid",

@@ -409,6 +409,7 @@ fn spawn_patch(
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
             mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
             mesh.insert_indices(Indices::U32(indices));
+            mesh.compress_indices();
 
             commands.spawn((
                 (Mesh3d(meshes.add(mesh)), MeshMaterial3d(handle.clone())),

@@ -74,48 +74,55 @@ pub fn build(scn: &Scenario) -> RoadMask {
         }
     }
 
-    let paved = paved_field(scn, nx, ny);
-    let (shore, sea) = shore_field(scn, nx, ny);
-
-    // Row j is world y = j * RES_M (south first), so v = y / height.
-    // R: drivable distance, G: track distance, B: paved share, A: spare.
-    let mut level: Vec<u8> = Vec::with_capacity(nx * ny * 4);
+    // Pack the roads before building the other raster channels: their float
+    // fields need not coexist with the shoreline's two distance fields.
+    // Reserve the entire mip chain once; growing a cloned base level doubled
+    // its allocation while the old and new buffers were both still live.
+    let (mut mw, mut mh, mut bytes) = (nx, ny, nx * ny * 4);
+    while mw > 1 || mh > 1 {
+        (mw, mh) = ((mw / 2).max(1), (mh / 2).max(1));
+        bytes += mw * mh * 4;
+    }
+    let mut data = Vec::with_capacity(bytes);
     for i in 0..nx * ny {
-        level.push(encode(field[0][i]));
-        level.push(encode(field[1][i]));
-        level.push(paved[i]);
-        level.push(shore[i]);
+        data.extend_from_slice(&[encode(field[0][i]), encode(field[1][i]), 0, 0]);
     }
     drop(field);
+    for (pixel, paved) in data.chunks_exact_mut(4).zip(paved_field(scn, nx, ny)) {
+        pixel[2] = paved;
+    }
+    let (shore, sea) = shore_field(scn, nx, ny);
+    for (pixel, shore) in data.chunks_exact_mut(4).zip(shore) {
+        pixel[3] = shore;
+    }
 
-    let mut data = level.clone();
-    let (mut lw, mut lh, mut levels) = (nx, ny, 1);
+    // Read the preceding level directly from the chain: no separate copy of
+    // the full-resolution image, or intermediate mip buffers.
+    let (mut lw, mut lh, mut levels, mut offset) = (nx, ny, 1, 0);
     while lw > 1 || lh > 1 {
         let (nw, nh) = ((lw / 2).max(1), (lh / 2).max(1));
-        let mut next = Vec::with_capacity(nw * nh * 4);
         for y in 0..nh {
             for x in 0..nw {
                 for c in 0..4 {
-                    let at = |xx: usize, yy: usize| level[(yy.min(lh - 1) * lw + xx.min(lw - 1)) * 4 + c] as u32;
+                    let at = |xx: usize, yy: usize| data[offset + (yy.min(lh - 1) * lw + xx.min(lw - 1)) * 4 + c] as u32;
                     let s = at(2 * x, 2 * y) + at(2 * x + 1, 2 * y) + at(2 * x, 2 * y + 1) + at(2 * x + 1, 2 * y + 1);
-                    next.push(((s + 2) / 4) as u8);
+                    data.push(((s + 2) / 4) as u8);
                 }
             }
         }
-        data.extend_from_slice(&next);
-        level = next;
+        offset += lw * lh * 4;
         (lw, lh) = (nw, nh);
         levels += 1;
     }
 
-    let mut image = Image::new(
+    let mut image = Image::new_uninit(
         Extent3d { width: nx as u32, height: ny as u32, depth_or_array_layers: 1 },
         TextureDimension::D2,
-        data,
         TextureFormat::Rgba8Unorm,
         RenderAssetUsages::RENDER_WORLD,
     );
     image.texture_descriptor.mip_level_count = levels;
+    image.data = Some(data);
     image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
         address_mode_u: ImageAddressMode::ClampToEdge,
         address_mode_v: ImageAddressMode::ClampToEdge,
@@ -185,39 +192,48 @@ fn shore_field(scn: &Scenario, nx: usize, ny: usize) -> (Vec<u8>, Vec<bool>) {
             water[j * nx + i] = scn.terrain.height_at(Pos { x, y }) <= WATER_ELEV_MAX;
         }
     }
-    // Only low ground reachable from the window's edge is sea.
-    let mut sea = vec![false; n];
-    let mut stack: Vec<usize> = Vec::new();
-    for i in 0..nx {
-        stack.push(i);
-        stack.push((ny - 1) * nx + i);
-    }
-    for j in 0..ny {
-        stack.push(j * nx);
-        stack.push(j * nx + nx - 1);
-    }
-    while let Some(k) = stack.pop() {
-        if sea[k] || !water[k] {
-            continue;
-        }
-        sea[k] = true;
-        let (i, j) = (k % nx, k / nx);
-        if i > 0 { stack.push(k - 1); }
-        if i + 1 < nx { stack.push(k + 1); }
-        if j > 0 { stack.push(k - nx); }
-        if j + 1 < ny { stack.push(k + nx); }
-    }
-    let water = sea.clone();
+    let sea = connected_sea(&water, nx, ny);
+    drop(water);
     // Distance from each water texel to land, and from each land texel to water.
-    let to_land = chamfer(&water.iter().map(|w| !w).collect::<Vec<_>>(), nx, ny);
-    let to_water = chamfer(&water, nx, ny);
+    let to_land = chamfer(&sea.iter().map(|w| !w).collect::<Vec<_>>(), nx, ny);
+    let to_water = chamfer(&sea, nx, ny);
     let field = (0..n)
         .map(|i| {
-            let d = if water[i] { to_land[i] } else { -to_water[i] } * RES_M;
+            let d = if sea[i] { to_land[i] } else { -to_water[i] } * RES_M;
             (d.clamp(-127.0, 127.0) + 127.5) as u8
         })
         .collect();
     (field, sea)
+}
+
+/// Only low ground reachable from the window's edge is sea. Mark cells
+/// when enqueuing them, so each is queued once. Breadth-first traversal keeps
+/// the frontier small on open water instead of retaining a per-pixel DFS stack.
+fn connected_sea(water: &[bool], nx: usize, ny: usize) -> Vec<bool> {
+    let mut sea = vec![false; nx * ny];
+    let mut queue = std::collections::VecDeque::new();
+    let enqueue = |k: usize, sea: &mut [bool], queue: &mut std::collections::VecDeque<usize>| {
+        if water[k] && !sea[k] {
+            sea[k] = true;
+            queue.push_back(k);
+        }
+    };
+    for i in 0..nx {
+        enqueue(i, &mut sea, &mut queue);
+        enqueue((ny - 1) * nx + i, &mut sea, &mut queue);
+    }
+    for j in 0..ny {
+        enqueue(j * nx, &mut sea, &mut queue);
+        enqueue(j * nx + nx - 1, &mut sea, &mut queue);
+    }
+    while let Some(k) = queue.pop_front() {
+        let (i, j) = (k % nx, k / nx);
+        if i > 0 { enqueue(k - 1, &mut sea, &mut queue); }
+        if i + 1 < nx { enqueue(k + 1, &mut sea, &mut queue); }
+        if j > 0 { enqueue(k - nx, &mut sea, &mut queue); }
+        if j + 1 < ny { enqueue(k + nx, &mut sea, &mut queue); }
+    }
+    sea
 }
 
 /// Distance in texels to the nearest `seed` texel (0 on it), by the two-pass
@@ -319,4 +335,21 @@ pub fn grass_map(scn: &Scenario) -> Image {
         ..default()
     });
     image
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+
+    /// The memory budget must not change roads, paving, shoreline or mipmaps.
+    #[test]
+    fn scenario_mask_pixels_are_unchanged() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let scn = Scenario::load_by_id(&dir, scenario::ID).unwrap();
+        let mask = build(&scn);
+        let data = mask.image.data.as_ref().unwrap();
+        let hash = data.iter().fold(0xcbf29ce484222325u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100000001b3));
+        assert_eq!(data.len(), 85_332_856);
+        assert_eq!(hash, 0xd4de3d2b63e08559, "roads, paving, coast and all mip levels must keep their pixels");
+    }
 }

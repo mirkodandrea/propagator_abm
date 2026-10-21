@@ -37,7 +37,7 @@ def main():
         with sync_playwright() as pw:
             gpu = ['--enable-gpu'] + (['--use-angle=metal'] if sys.platform == 'darwin' else [])
             browser = getattr(pw, args.browser).launch(headless=True, executable_path=args.browser_executable, args=gpu if args.browser == 'chromium' else [])
-            page = browser.new_page(viewport={'width': 390, 'height': 844}, device_scale_factor=3, is_mobile=True, has_touch=True)
+            page = browser.new_page(viewport={'width': 390, 'height': 844}, device_scale_factor=3, is_mobile=True, has_touch=True, locale='it-IT')
             page.set_default_timeout(120000)
             page.on('pageerror', lambda e: errors.append(str(e)) if 'Using exceptions for control flow' not in str(e) else None)
             page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)

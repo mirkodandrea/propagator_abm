@@ -2,6 +2,36 @@
 
 La stessa partita della versione desktop, nel browser, per chi non la scarica. Stesso motore (`rocca::Game`) e stessi dati, scaricati a parte dal `.wasm` (vedi «Dati separati dal codice»; `crates/datafs`).
 
+## Memoria condivisa con il desktop (2026-10-21)
+
+Ottimizzazioni a parità di qualità grafica, senza cambiare la simulazione:
+
+- modelli Blender deserializzati direttamente negli array tipizzati, senza albero `serde_json::Value` e copie intermedie;
+- maschera di strade e costa: raster temporanei liberati prima del canale successivo, mipmap costruite in un unico buffer prenotato, ricerca del mare con coda e celle marcate all'inserimento;
+- geometrie immutabili di costa, campi, modelli, vegetazione dettagliata e resti bruciati: copia CPU rilasciata dopo il caricamento GPU. Le proxy della vegetazione conservano la copia CPU perché il LOD cambia gli indici; le immagini degli stati restano modificabili;
+- indici delle mesh statiche a 16 bit quando ci sono al massimo 65.535 vertici, senza perdita di precisione; le proxy modificabili mantengono gli indici a 32 bit;
+- sul web le due entità della vegetazione condividono la stessa mesh proxy: prima la copia vicina, sempre nascosta, occupava comunque CPU e GPU.
+
+Confronto Chromium headless, viewport 1280×800, contesti nuovi, stesso scenario `medium` senza ordini fino al finale, confronto senza ordini pronto e nuova partita. Capacità della memoria lineare Wasm, **non RAM totale del browser o GPU**; il valore rimane uguale dal titolo al riavvio in questa prova:
+
+| Profilo | Prima | Dopo | Riduzione |
+| --- | ---: | ---: | ---: |
+| `q=bassa` | 342,3 MiB | 291,9 MiB | 14,7% |
+| `q=media` | 458,4 MiB | 362,8 MiB | 20,8% |
+| Adattiva desktop | 527,3 MiB | 402,4 MiB | 23,7% |
+
+Sul desktop nativo, due coppie di esecuzioni alternate a **1280×800 effettivi**, qualità `alta`, scena a T+90 min (`at=fire,dist=2600`), finestra nascosta: massimo RSS medio **2607 → 2279 MiB** (−12,6%; prima 2471–2743 MiB, dopo 2278–2279 MiB). Misurato con `/usr/bin/time -l`. Il `peak memory footprint` di macOS varia molto: media 4045 → 4001 MiB; non è una misura stabile del risparmio GPU. Le prime prove fullscreen avevano risoluzioni diverse e sono escluse. Screenshot controllati; log e misure in `out/playtest/memory-desktop-comparison/` e `out/memory-desktop-{0,1}-{before,after}.log`. **25 test nativi passati**, incluso il fingerprint identico degli 85.332.856 byte della maschera desktop con tutte le mipmap.
+
+Report JSON e PNG in `out/playtest/memory-game-before/` e `out/playtest/memory-final/`. Nessun errore browser nei tre flussi. Riproduzione:
+
+```sh
+scripts/build_web.sh
+.venv/bin/python scripts/playtest_memory.py
+.venv/bin/python scripts/playtest_mobile.py --smoke
+```
+
+Il test touch ha ora una lingua esplicita (`it-IT`), coerente con i testi che cerca. La prova completa preesistente si interrompe anche sulla build iniziale nella parte di trascinamento/cancellazione del tutorial: non viene considerata superata. La misura della partita completa usa il runner di memoria separato. Avvio, nome, tutorial e rotazione verificati con `--smoke`; nessuna prova su telefono fisico.
+
 ## Pagina introduttiva (2026-10-18)
 
 `web/index.html` mostra prima una pagina HTML+CSS nello stile di cimafoundation.org (hero con una scena di incendio e un riquadro «Dal gioco», tre card, un paragrafo sulla ricerca, chiusura, crediti). Testi brevi e narrativi, senza meccaniche, durata o numeri (2026-10-19, richiesta dell'utente). `game.js` e il `.wasm` si scaricano solo quando si preme «Gioca» (`import()` dinamico in `start()`); con `?playtest=1` si salta l'intro. Dopo «Gioca» compare la schermata del titolo del gioco, con il suo «Gioca» (decisione dell'utente, 2026-10-18: non va saltata). Immagini in `web/img/`, copiate da `build_web.sh`: screenshot veri del gioco (rifatti il 2026-10-19 con i nuovi effetti grafici; `KIOSK_SNAP`, 1600×1000): `tattica-*` con la UI tattica (ritagliati senza banner e chat, `t=45/90/120`, seme del menu), `scena-*` (`borgo`, `cicatrice`) e `hero` senza interfaccia (`ui=0,marks=0,iso=0`, `KIOSK_GFX=-dof KIOSK_TACTICAL=0 KIOSK_BOOST=0`, `t=80/140/165/170`). Provata solo come pagina statica (desktop e 390 px), non con la build wasm.
