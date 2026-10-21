@@ -113,6 +113,20 @@ fn main() -> anyhow::Result<()> {
             ..default()
         }),
         ..default()
+    }).set(bevy::render::RenderPlugin {
+        // Without texture binding arrays Bevy samples the sky's environment map
+        // as one view probe (`light_probe::binding_arrays_are_usable`) and binds
+        // materials one by one, as before 0.20. With them (Metal has them since
+        // wgpu 24) every lit pixel walks the clustered reflection-probe list and
+        // samples cube arrays indexed per pixel: measured 2026-10-21 at
+        // 5600x3500 «alta» about 61 -> 55 ms, snapshots unchanged (the scene has
+        // no reflection probes). Disabling only the non-uniform indexing instead
+        // breaks the bindless StandardMaterial shaders.
+        render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(bevy::render::settings::WgpuSettings {
+            disabled_features: Some(bevy::render::settings::WgpuFeatures::TEXTURE_BINDING_ARRAY),
+            ..default()
+        })),
+        ..default()
     }))
     // KIOSK_SNAP renders to file: no sound either
     .insert_resource(bevy::audio::GlobalVolume::new(bevy::audio::Volume::Linear(if std::env::var("KIOSK_SNAP").is_ok() { 0.0 } else { 1.0 })))
@@ -172,6 +186,10 @@ fn main() -> anyhow::Result<()> {
         web_input::normalize.before(bevy::input::InputSystems).before(bevy_egui::EguiPreUpdateSet::ProcessInput),
         web_input::finish_canceled_touch.after(bevy_egui::EguiPreUpdateSet::ProcessInput).before(bevy_egui::EguiPreUpdateSet::BeginPass),
     ));
+    #[cfg(not(target_arch = "wasm32"))]
+    if kiosk::snap::active() {
+        app.add_plugins(kiosk::snap::SnapPacingPlugin);
+    }
     if kiosk::snap::bench_s().is_some() {
         app.add_plugins(bench::BenchPlugin);
     }

@@ -168,6 +168,48 @@ pub fn active() -> bool {
     std::env::var_os("KIOSK_SNAP").is_some()
 }
 
+/// Frames the CPU may queue ahead of the GPU, as with a swap chain (Bevy's
+/// default `desired_maximum_frame_latency`).
+#[cfg(not(target_arch = "wasm32"))]
+const FRAMES_IN_FLIGHT: usize = 2;
+
+/// The frame pacing a window would give. Drawing into an image (see
+/// `redirect_camera`) there is no swap-chain texture to wait for, so the CPU
+/// runs ahead of the GPU until Metal's command-buffer budget (4096) is full:
+/// thousands of command buffers queued, seconds of latency, the GPU idle
+/// between them, and frame times 20–30 % worse than the game's in a window
+/// (measured 2026-10-21). Here each frame waits, before its views are
+/// prepared, for the GPU to finish the frame `FRAMES_IN_FLIGHT` back.
+#[cfg(not(target_arch = "wasm32"))]
+pub struct SnapPacingPlugin;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Resource, Default)]
+struct InFlight(std::collections::VecDeque<wgpu::SubmissionIndex>);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Plugin for SnapPacingPlugin {
+    fn build(&self, _app: &mut App) {}
+
+    fn finish(&self, app: &mut App) {
+        use bevy::render::renderer::{render_system, RenderDevice, RenderQueue};
+        use bevy::render::{Render, RenderApp, RenderSystems};
+        let Some(render) = app.get_sub_app_mut(RenderApp) else { return };
+        render
+            .init_resource::<InFlight>()
+            // the frame's work is all submitted by `render_system`: mark its end
+            .add_systems(Render, (|mut f: ResMut<InFlight>, q: Res<RenderQueue>| {
+                f.0.push_back(q.submit(std::iter::empty()));
+            }).in_set(RenderSystems::Render).after(render_system))
+            .add_systems(Render, (|mut f: ResMut<InFlight>, d: Res<RenderDevice>| {
+                while f.0.len() > FRAMES_IN_FLIGHT {
+                    let i = f.0.pop_front().expect("not empty");
+                    let _ = d.poll(wgpu::PollType::Wait { submission_index: Some(i), timeout: None });
+                }
+            }).in_set(RenderSystems::CreateViews));
+    }
+}
+
 #[derive(Default)]
 pub struct Progress {
     states: Option<Vec<State>>,
