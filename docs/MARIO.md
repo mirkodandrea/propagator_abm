@@ -1,8 +1,8 @@
 # Mario (solo build nativa)
 
-**Ricollegato il 2026-10-16.** Si apre con **Ctrl+Maiusc+M** (combinazione nascosta; il tasto Start del pad non lo apre più dal 2026-10-17) solo a mondo fermo: nel titolo o nella pausa della partita (non nel tutorial). Mentre Mario è attivo il mondo parte fermo e il pannello permette 0x, 1x, 5x, 10x, 30x, 60x (la pausa del gioco non scade), la UI del gioco è nascosta e la camera della mappa è sospesa. Dei vecchi attori restano solo le squadre (collisione e saluto con F / L3); persone e auto non esistono più. Non provato a schermo (solo test e build).
+**Ricollegato il 2026-10-16.** Si apre con **Ctrl+Maiusc+M** (combinazione nascosta; il tasto Start del pad non lo apre più dal 2026-10-17) nel titolo o nella partita, **in pausa o no** (2026-10-21, richiesta dell'utente; non nel tutorial). Mentre Mario è attivo il mondo parte a **1x** (prima fermo), con la grafica a colori anche se si entra dalla vista tattica, e il pannello permette 0x, 1x, 5x, 10x, 30x, 60x (la pausa del gioco non scade), la UI del gioco è nascosta e la camera della mappa è sospesa. Dei vecchi attori restano solo le squadre (collisione e saluto con F / L3); persone e auto non esistono più. Non provato a schermo (solo test e build).
 
-Durante la pausa, **Ctrl+Maiusc+M** apre Mario.
+**Ctrl+Maiusc+M** apre Mario, anche a partita in corso.
 Parte davanti all'ingresso della rocca, usando posizione, orientamento e scala
 di `island.json`; negli scenari senza rocca usa la strada più vicina alla vista.
 Ctrl+Maiusc+M o Esc torna al piano e ripristina camera, viewport e pausa.

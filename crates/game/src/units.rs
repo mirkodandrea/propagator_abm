@@ -138,6 +138,27 @@ pub struct Motion {
     pub speed: f32,
 }
 
+/// Where each unit is *drawn*. The game moves its people in steps of
+/// [`rocca::STEP_S`] simulated seconds, which at a slow speed are seconds of
+/// real time apart, so a walker would stand still and then jump. The drawing
+/// glides from the last drawn spot to the new one over the real time the step
+/// lasts. Only the picture: the game state is not touched.
+#[derive(Resource, Default)]
+pub struct Glide(Vec<Option<Glided>>);
+
+#[derive(Clone, Copy)]
+struct Glided {
+    from: Pos,
+    to: Pos,
+    shown: Pos,
+    /// Real time the glide began and lasts.
+    t0: f32,
+    span: f32,
+}
+
+/// A step longer than this is a cut (a restart, a move of the whole scene), not a walk.
+const GLIDE_MAX_M: f32 = 250.0;
+
 pub fn setup(
     mut commands: Commands,
     sim: Res<Sim>,
@@ -294,6 +315,8 @@ pub fn reset(
 
 pub fn update_units(
     sim: Res<Sim>,
+    time: Res<Time>,
+    mut glide: ResMut<Glide>,
     mut materials: ResMut<Assets<StructureMaterial>>,
     mut query: Query<(
         &UnitView,
@@ -302,13 +325,28 @@ pub fn update_units(
         &MeshMaterial3d<StructureMaterial>,
     )>,
 ) {
-    if !sim.is_changed() {
-        return;
+    let now = time.elapsed_secs();
+    if glide.0.len() != sim.crews.units.len() {
+        glide.0.clear();
+        glide.0.resize(sim.crews.units.len(), None);
+    }
+    // real seconds one game step lasts at this speed (0 = no glide)
+    let span = if sim.speed > 0.0 { rocca::STEP_S as f32 / sim.speed } else { 0.0 };
+    for (u, g) in sim.crews.units.iter().zip(glide.0.iter_mut()) {
+        let mut cur = g.unwrap_or(Glided { from: u.pos, to: u.pos, shown: u.pos, t0: now, span: 0.0 });
+        if (u.pos.x, u.pos.y) != (cur.to.x, cur.to.y) {
+            let far = (u.pos.x - cur.shown.x).hypot(u.pos.y - cur.shown.y) > GLIDE_MAX_M;
+            cur = Glided { from: if far { u.pos } else { cur.shown }, to: u.pos, shown: cur.shown, t0: now, span };
+        }
+        let f = if cur.span > 0.0 { ((now - cur.t0) / cur.span).clamp(0.0, 1.0) } else { 1.0 };
+        cur.shown = Pos { x: cur.from.x + (cur.to.x - cur.from.x) * f, y: cur.from.y + (cur.to.y - cur.from.y) * f };
+        *g = Some(cur);
     }
     for (view, mut tf, mut vis, mat) in &mut query {
         let Some(u) = sim.crews.units.get(view.id) else {
             continue;
         };
+        let shown = glide.0.get(view.id).copied().flatten().map_or(u.pos, |g| g.shown);
         // people sitting in the engine are the engine's symbol
         let want = if (u.on_scene() && !u.aboard) || u.state == UnitState::Lost {
             Visibility::Inherited
@@ -322,13 +360,13 @@ pub fn update_units(
             continue;
         }
 
-        let ground = sim.scn.terrain.height_at(u.pos);
+        let ground = sim.scn.terrain.height_at(shown);
         let lift = if u.kind.is_air() {
             AIR_ALTITUDE_M
         } else {
             0.05
         };
-        tf.translation = frame::to_bevy(u.pos, ground + lift);
+        tf.translation = frame::to_bevy(shown, ground + lift);
         // World bearing to Bevy yaw: north is -Z and the meshes' long axis is
         // +Z, so a heading of zero (due east) is a quarter turn. Same conversion
         // as the civilian vehicles, for the same reason.
@@ -359,6 +397,7 @@ pub fn update_units(
 pub fn animate_units(
     sim: Res<Sim>,
     time: Res<Time>,
+    glide: Res<Glide>,
     mut motion: Local<Vec<Option<Motion>>>,
     mut parts: Query<(&mut Rigged, &mut Transform, &mut Visibility)>,
 ) {
@@ -368,13 +407,15 @@ pub fn animate_units(
         motion.clear();
         motion.resize(sim.crews.units.len(), None);
     }
-    for (u, m) in sim.crews.units.iter().zip(motion.iter_mut()) {
-        let moved = m.map_or(0.0, |m| (u.pos.x - m.pos.x).hypot(u.pos.y - m.pos.y));
-        let prev = m.unwrap_or(Motion { pos: u.pos, moved_at: f32::NEG_INFINITY, speed: 0.0 });
-        *m = Some(if moved > 0.05 {
-            Motion { pos: u.pos, moved_at: now, speed: moved / dt }
+    for ((u, g), m) in sim.crews.units.iter().zip(glide.0.iter()).zip(motion.iter_mut()) {
+        // the drawn spot, not the game's: a walker at 1x moves 2 cm a frame
+        let pos = g.map_or(u.pos, |g| g.shown);
+        let moved = m.map_or(0.0, |m| (pos.x - m.pos.x).hypot(pos.y - m.pos.y));
+        let prev = m.unwrap_or(Motion { pos, moved_at: f32::NEG_INFINITY, speed: 0.0 });
+        *m = Some(if moved / dt > 0.2 {
+            Motion { pos, moved_at: now, speed: moved / dt }
         } else {
-            Motion { pos: u.pos, ..prev }
+            Motion { pos, ..prev }
         });
     }
 

@@ -72,6 +72,7 @@ fn apply(
     time: Res<Time>,
     kiosk: Option<Res<Kiosk>>,
     sim: Option<Res<Sim>>,
+    mario: Option<Res<crate::mario::Playground>>,
     mut tactical: ResMut<Tactical>,
     mut terrain: ResMut<Assets<TerrainMaterial>>,
     mut foliage: ResMut<Assets<FoliageMaterial>>,
@@ -83,7 +84,9 @@ fn apply(
 ) {
     if let (Some(kiosk), Some(sim)) = (kiosk, sim) {
         let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
-        let want = if playing && sim.paused() { 1.0 } else { 0.0 };
+        // Mario walks the island in full colour, paused or not
+        let exploring = mario.is_some_and(|m| m.active);
+        let want = if playing && sim.paused() && !exploring { 1.0 } else { 0.0 };
         // a screenshot of a state has no time to ease in
         let step = if std::env::var_os("KIOSK_SNAP").is_some() { 1.0 } else { time.delta_secs() / EASE_S };
         tactical.level = if want > tactical.level { (tactical.level + step).min(want) } else { (tactical.level - step).max(want) };

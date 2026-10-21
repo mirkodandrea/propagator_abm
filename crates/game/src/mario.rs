@@ -192,7 +192,7 @@ pub struct Playground {
 
 impl Default for Playground {
     fn default() -> Self {
-        Self { active: false, simulation_speed: 0., nearby: "", toggle: false,
+        Self { active: false, simulation_speed: 1., nearby: "", toggle: false,
             snapshot_wing_cap: false, choose_position: false, relocating: false,
             confirm_position: false, cancel_position: false, error: None,
             health: 0, wing_cap: false, message: "", awaiting_rom: false,
@@ -471,10 +471,10 @@ fn awaiting_rom_arrived(mode: &mut Playground) -> bool {
     false
 }
 
-/// Mario plays only while the world stands still: the title screen, or the
-/// pause of the played day (the pause is the only moment for orders).
-pub fn available(k: &Kiosk, sim: &Sim) -> bool {
-    k.title || (k.phase == Phase::Gioco && sim.paused())
+/// Mario plays on the title screen and in the played day, paused or not
+/// (2026-10-21; before, only in the pause).
+pub fn available(k: &Kiosk, _sim: &Sim) -> bool {
+    k.title || k.phase == Phase::Gioco
 }
 
 fn hud(
@@ -944,7 +944,7 @@ fn drive(
             dof.max_circle_of_confusion_diameter = 0.;
         }
         render_camera.viewport = None;
-        mode.simulation_speed = 0.;
+        mode.simulation_speed = 1.;
         mode.active = true;
         runtime.engine.as_mut().unwrap().set_audio_active(true);
         runtime.audio.start();

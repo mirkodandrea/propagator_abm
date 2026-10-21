@@ -152,6 +152,7 @@ fn main() -> anyhow::Result<()> {
     // sun, sky and ambient light from the game's clock; the sea and its wind; the boats
     .add_plugins((sky::SkyPlugin, sea::SeaPlugin, boats::BoatsPlugin, landmarks::LandmarksPlugin, coast::CoastPlugin))
     .init_state::<AppState>()
+    .init_resource::<units::Glide>()
     .init_resource::<kiosk::snap::SnapView>()
     .init_resource::<kiosk::snap::SnapHide>()
     .init_resource::<ui::UiFocus>()
