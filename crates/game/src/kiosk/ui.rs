@@ -145,9 +145,13 @@ pub fn draw(
     if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F2)) {
         k.operator = !k.operator;
     }
+    // Klingon, hidden: Ctrl+Shift+K
+    if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::K)) {
+        super::lang::toggle_klingon();
+    }
     egui::Area::new(egui::Id::new("menu_btn")).anchor(Align2::LEFT_BOTTOM, [10.0, -10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-        let r = ui.add(secondary(if k.operator { "Chiudi menu" } else { "Menu" }));
+        let r = ui.add(secondary(if k.operator { rocca::tr!("Chiudi menu") } else { rocca::tr!("Menu") }));
         crate::playtest::control("Menu", &r, true);
         if r.clicked() {
             k.operator = !k.operator;
@@ -162,6 +166,7 @@ pub fn draw(
         Phase::Intro => {
             k.side_w = 0.0;
             if cfg!(target_arch = "wasm32") && !compact(ctx) { banner(ctx); }
+            super::lang::picker(ctx);
             if k.title {
                 if screens::title(ctx, k, &sim, logo.as_deref()) {
                     k.title = false;
@@ -220,7 +225,7 @@ pub fn draw(
                             crate::playtest::control(label, &r, true);
                             if r.clicked() { k.zoom_steps += zoom; }
                         }
-                        let r = ui.add(secondary("Isola"));
+                        let r = ui.add(secondary(rocca::tr!("Isola")));
                         crate::playtest::control("Isola", &r, true);
                         if r.clicked() { k.reset_view = true; }
                     });
@@ -261,9 +266,9 @@ fn banner(ctx: &egui::Context) {
     egui::Area::new(egui::Id::new("provami")).anchor(Align2::RIGHT_TOP, [-14.0, 14.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         card(AMBER).inner_margin(10.0).show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Dicci cosa ne pensi").size(20.0).strong().color(AMBER));
+                ui.label(RichText::new(rocca::tr!("Dicci cosa ne pensi")).size(20.0).strong().color(AMBER));
                 ui.add_space(4.0);
-                if ui.add(primary("Dai un feedback")).clicked() {
+                if ui.add(primary(rocca::tr!("Dai un feedback"))).clicked() {
                     ctx.open_url(egui::OpenUrl::new_tab(feedback_url()));
                 }
             });
@@ -328,7 +333,7 @@ fn conditions(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform)) 
                 ui.add_space(8.0);
                 ui.vertical(|ui| {
                     ui.label(RichText::new(format!("{:.0} km/h", w.wind_speed_kmh)).size(32.0).strong().color(Color32::WHITE));
-                    ui.label(RichText::new(format!("da {}", rocca::words::compass(w.wind_dir_deg))).size(15.0).color(GREY));
+                    ui.label(RichText::new(rocca::tr!("da {0}", rocca::words::compass(w.wind_dir_deg))).size(15.0).color(GREY));
                 });
                 ui.add_space(14.0);
                 ui.separator();
@@ -338,14 +343,14 @@ fn conditions(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform)) 
                         icons::show(ui, Icon::Drop, 30.0, BLUE);
                         ui.label(RichText::new(format!("{:.0} %", w.moisture_pct)).size(32.0).strong().color(Color32::WHITE));
                     });
-                    ui.label(RichText::new("umidità").size(15.0).color(GREY));
+                    ui.label(RichText::new(rocca::tr!("umidità")).size(15.0).color(GREY));
                 });
             });
             // the forecast, while paused: the lines' legend and the wind to come
             if sim.paused() {
                 ui.separator();
                 ui.horizontal(|ui| {
-                    for (col, text) in crate::forecast_view::LINE_COLOURS.into_iter().zip(["1 h", "3 h"]) {
+                    for (col, text) in crate::forecast_view::LINE_COLOURS.into_iter().zip([rocca::tr!("1 h"), rocca::tr!("3 h")]) {
                         let (r, _) = ui.allocate_exact_size(egui::vec2(26.0, 24.0), egui::Sense::hover());
                         ui.painter().line_segment([r.left_center(), r.right_center()], egui::Stroke::new(5.0, col));
                         ui.label(RichText::new(text).size(20.0).strong().color(col));
@@ -487,9 +492,9 @@ fn select_district(k: &mut Kiosk, sim: &mut Sim, d: usize) {
 
 fn tutorial_hint(k: &Kiosk) -> String {
     match k.expect() {
-        Some(Expect::Select(_)) | Some(Expect::Move(..)) => "Segui l'istruzione: la squadra e la destinazione indicate.".into(),
-        Some(Expect::Evacuate(_)) => "Segui l'istruzione: il borgo indicato.".into(),
-        _ => "Segui l'istruzione in basso.".into(),
+        Some(Expect::Select(_)) | Some(Expect::Move(..)) => rocca::tr!("Segui l'istruzione: la squadra e la destinazione indicate.").into(),
+        Some(Expect::Evacuate(_)) => rocca::tr!("Segui l'istruzione: il borgo indicato.").into(),
+        _ => rocca::tr!("Segui l'istruzione in basso.").into(),
     }
 }
 
@@ -501,7 +506,7 @@ fn preview_move(k: &mut Kiosk, sim: &Sim, t: usize, at: rocca::Axial) {
     }
     k.move_hex = Some(at);
     k.move_plan = Some(match k.expect() {
-        Some(Expect::Move(_, want)) if at != want => Err("usa la destinazione evidenziata".into()),
+        Some(Expect::Move(_, want)) if at != want => Err(rocca::tr!("usa la destinazione evidenziata").into()),
         _ => sim.plan_move(t, at),
     });
 }
@@ -601,28 +606,28 @@ fn pad_orders(k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform), pa
 fn pad_help(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
     let rows: &[(&str, Color32, &str)] = match k.selection {
         Selection::Team(_) if sim.paused() => &[
-            ("Stick sx", Color32::WHITE, "porta il mirino sul punto"),
-            ("A", GREEN, "manda la squadra"),
-            ("B", RED, "annulla"),
-            ("◀ ▶", Color32::WHITE, "altra squadra"),
-            ("▲ ▼", Color32::WHITE, "scegli il borgo"),
+            ("Stick sx", Color32::WHITE, rocca::tr!("porta il mirino sul punto")),
+            ("A", GREEN, rocca::tr!("manda la squadra")),
+            ("B", RED, rocca::tr!("annulla")),
+            ("◀ ▶", Color32::WHITE, rocca::tr!("altra squadra")),
+            ("▲ ▼", Color32::WHITE, rocca::tr!("scegli il borgo")),
         ],
-        Selection::District(_) => &[("A", BLUE, "evacua"), ("B", RED, "annulla"), ("▲ ▼", Color32::WHITE, "altro borgo"), ("◀ ▶", Color32::WHITE, "scegli la squadra")],
+        Selection::District(_) => &[("A", BLUE, rocca::tr!("evacua")), ("B", RED, rocca::tr!("annulla")), ("▲ ▼", Color32::WHITE, rocca::tr!("altro borgo")), ("◀ ▶", Color32::WHITE, rocca::tr!("scegli la squadra"))],
         _ if matches!(k.phase, Phase::Tutorial | Phase::Gioco) => &[
-            ("◀ ▶", Color32::WHITE, "scegli la squadra"),
-            ("▲ ▼", Color32::WHITE, "scegli il borgo"),
-            ("Y", AMBER, "ferma / riprendi"),
-            ("Stick sx", Color32::WHITE, "muovi la mappa"),
-            ("Stick dx", Color32::WHITE, "ruota e inclina"),
-            ("LT RT", Color32::WHITE, "zoom"),
-            ("RB", Color32::WHITE, "tutta l'isola"),
-            ("LB + stick", Color32::WHITE, "cursore"),
+            ("◀ ▶", Color32::WHITE, rocca::tr!("scegli la squadra")),
+            ("▲ ▼", Color32::WHITE, rocca::tr!("scegli il borgo")),
+            ("Y", AMBER, rocca::tr!("ferma / riprendi")),
+            ("Stick sx", Color32::WHITE, rocca::tr!("muovi la mappa")),
+            ("Stick dx", Color32::WHITE, rocca::tr!("ruota e inclina")),
+            ("LT RT", Color32::WHITE, rocca::tr!("zoom")),
+            ("RB", Color32::WHITE, rocca::tr!("tutta l'isola")),
+            ("LB + stick", Color32::WHITE, rocca::tr!("cursore")),
         ],
-        _ => &[("Stick", Color32::WHITE, "cursore"), ("A", GREEN, "clic")],
+        _ => &[("Stick", Color32::WHITE, rocca::tr!("cursore")), ("A", GREEN, rocca::tr!("clic"))],
     };
     egui::Area::new(egui::Id::new("pad_help")).anchor(Align2::RIGHT_BOTTOM, [-10.0, -10.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
         panel().show(ui, |ui| {
-            ui.label(RichText::new("Gamepad").size(15.0).strong().color(Color32::from_gray(200)));
+            ui.label(RichText::new(rocca::tr!("Gamepad")).size(15.0).strong().color(Color32::from_gray(200)));
             for (key, col, what) in rows {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(format!(" {key} ")).size(16.0).strong().color(Color32::BLACK).background_color(*col));
@@ -658,12 +663,12 @@ fn pad_list(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
                         r.scroll_to_me(None);
                     }
                 };
-                ui.label(RichText::new("Squadre").size(14.0).strong().color(Color32::from_gray(170)));
+                ui.label(RichText::new(rocca::tr!("Squadre")).size(14.0).strong().color(Color32::from_gray(170)));
                 for (t, team) in sim.teams.iter().enumerate() {
                     row(ui, t, team_colour(t), &team.name, k.selection == Selection::Team(t));
                 }
                 ui.add_space(4.0);
-                ui.label(RichText::new("Borghi").size(14.0).strong().color(Color32::from_gray(170)));
+                ui.label(RichText::new(rocca::tr!("Borghi")).size(14.0).strong().color(Color32::from_gray(170)));
                 for (d, district) in sim.districts.iter().enumerate() {
                     row(ui, teams + d, EVAC, &district.name, k.selection == Selection::District(d));
                 }
@@ -808,7 +813,7 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
                             return r;
                         }
                         if evacuated && !hide {
-                            ui.label(RichText::new("evacuato").size(14.0).strong().color(GREEN));
+                            ui.label(RichText::new(rocca::tr!("evacuato")).size(14.0).strong().color(GREEN));
                         }
                         let (g, _) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
                         ring_gauge(ui.painter(), egui::pos2(g.center().x, r.rect.center().y), 9.0, life, life_col);
@@ -850,9 +855,9 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
                         Some((_, _, Ok(p))) => {
                             chip(ui, Icon::Family, &p.people.to_string(), Color32::WHITE);
                             ui.add_space(6.0);
-                            chip(ui, Icon::Clock, &format!("{:.0} min", p.total_min().ceil()), EVAC);
+                            chip(ui, Icon::Clock, &rocca::tr!("{0} min", format!("{:.0}", p.total_min().ceil())), EVAC);
                         }
-                        Some((_, _, Err(_))) => chip(ui, Icon::Alert, "strade chiuse", RED),
+                        Some((_, _, Err(_))) => chip(ui, Icon::Alert, rocca::tr!("strade chiuse"), RED),
                         None => {}
                     });
                 });
@@ -897,7 +902,7 @@ fn hamlet_tags(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform),
         ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new(("nucleo_linea", d)))).line_segment([badge.center(), s], line);
         egui::Area::new(egui::Id::new(("nucleo", d, n))).fixed_pos(s).constrain(false).pivot(Align2::CENTER_CENTER).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
             egui::Frame::NONE.fill(Color32::from_black_alpha(215)).stroke(line).corner_radius(6.0).inner_margin(egui::Margin::symmetric(6, 3)).show(ui, |ui| {
-                ui.label(RichText::new(format!("{} · {} case", district.name, homes[n])).size(14.0).strong().color(Color32::WHITE));
+                ui.label(RichText::new(rocca::tr!("{0} · {1} case", district.name, homes[n])).size(14.0).strong().color(Color32::WHITE));
             });
         });
     }
@@ -963,7 +968,7 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         let resp = inner.inner;
         crate::playtest::control(&sim.teams[t].name.clone(), &resp, true);
         // what is wrong, in two words under the badge
-        let trouble = if lost { Some(("fuori servizio", GREY)) } else if withdrawing { Some(("si ritira", RED)) } else if alarm { Some(("fuoco vicino!", RED)) } else { None };
+        let trouble = if lost { Some((rocca::tr!("fuori servizio"), GREY)) } else if withdrawing { Some((rocca::tr!("si ritira"), RED)) } else if alarm { Some((rocca::tr!("fuoco vicino!"), RED)) } else { None };
         if let Some((text, c)) = trouble {
             egui::Area::new(egui::Id::new(("stato_squadra", t))).fixed_pos(flag.center_bottom() + egui::vec2(0.0, 2.0)).pivot(Align2::CENTER_TOP).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
                 egui::Frame::NONE.fill(Color32::from_black_alpha(215)).stroke(egui::Stroke::new(1.5, c)).corner_radius(6.0).inner_margin(egui::Margin::symmetric(7, 2)).show(ui, |ui| {
@@ -1005,7 +1010,7 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 6.0;
                         let (icon, text, c) = match &k.move_plan {
-                            Some(Ok(plan)) => (Icon::Clock, format!("{:.0} min", plan.minutes.ceil()), AMBER),
+                            Some(Ok(plan)) => (Icon::Clock, rocca::tr!("{0} min", format!("{:.0}", plan.minutes.ceil())), AMBER),
                             Some(Err(e)) => (Icon::Cross, e.clone(), RED),
                             None => return,
                         };
@@ -1026,7 +1031,7 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
             let on_map = release.is_some_and(|p| drop_rect(ctx, k).contains(p));
             match k.dragging {
                 Some((_, g)) if on_map && may_drag => give_move(k, sim, t, rocca::Axial::of(g)),
-                _ => { k.clear_selection(); k.notify("Spostamento annullato: rilascia la squadra sulla mappa."); }
+                _ => { k.clear_selection(); k.notify(rocca::tr!("Spostamento annullato: rilascia la squadra sulla mappa.")); }
             }
         }
     }
@@ -1285,9 +1290,9 @@ fn confirm_bubble(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Came
             if compact(ctx) { ui.set_width((if k.side_w > 0.0 { k.side_w - 40.0 } else { ctx.viewport_rect().width() - 48.0 }).min(340.0)); }
             ui.label(RichText::new(&sim.districts[d].name).size(19.0).strong().color(BLUE));
             if ordered_here {
-                ui.horizontal(|ui| chip(ui, Icon::Exit, "evacuazione ordinata", GREEN));
+                ui.horizontal(|ui| chip(ui, Icon::Exit, rocca::tr!("evacuazione ordinata"), GREEN));
                 ui.horizontal(|ui| {
-                    let r = ui.add(secondary("Annulla l'evacuazione"));
+                    let r = ui.add(secondary(rocca::tr!("Annulla l'evacuazione")));
                     crate::playtest::control("Annulla l'evacuazione", &r, true);
                     if r.clicked() {
                         if let Err(e) = sim.cancel_evacuation() {
@@ -1295,7 +1300,7 @@ fn confirm_bubble(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Came
                         }
                         close = true;
                     }
-                    let r = ui.add(secondary("Chiudi"));
+                    let r = ui.add(secondary(rocca::tr!("Chiudi")));
                     close |= r.clicked();
                 });
                 return;
@@ -1308,18 +1313,18 @@ fn confirm_bubble(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Came
                     ui.horizontal(|ui| {
                         chip(ui, Icon::Family, &p.people.to_string(), Color32::WHITE);
                         ui.add_space(10.0);
-                        chip(ui, Icon::Clock, &format!("{:.0} min", p.total_min().ceil()), EVAC);
+                        chip(ui, Icon::Clock, &rocca::tr!("{0} min", format!("{:.0}", p.total_min().ceil())), EVAC);
                     });
                 }
             }
             let other = sim.evac.active().map(|e| e.district).filter(|&e| e != d);
             if let (Some(e), true) = (other, this_pause) {
-                ui.horizontal(|ui| chip(ui, Icon::Up, &format!("al posto di {}", sim.districts[e].name), AMBER));
+                ui.horizontal(|ui| chip(ui, Icon::Up, &rocca::tr!("al posto di {0}", sim.districts[e].name), AMBER));
             }
             let free = other.is_none() || this_pause;
             let ok = plan.is_ok() && sim.paused() && free && k.allows(Expect::Evacuate(d));
             ui.horizontal(|ui| {
-                let r = ui.add_enabled(ok, primary("Evacua"));
+                let r = ui.add_enabled(ok, primary(rocca::tr!("Evacua")));
                 crate::playtest::control("Evacua", &r, ok);
                 if r.clicked() {
                     match sim.evacuate(d) {
@@ -1331,12 +1336,12 @@ fn confirm_bubble(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Came
                         Err(e) => k.notify(e),
                     }
                 }
-                let r = ui.add(secondary("Annulla"));
+                let r = ui.add(secondary(rocca::tr!("Annulla")));
                 crate::playtest::control("Annulla", &r, true);
                 close |= r.clicked();
             });
             if let (Some(e), false) = (other, this_pause) {
-                ui.horizontal(|ui| chip(ui, Icon::Alert, &format!("in corso: {}", sim.districts[e].name), AMBER));
+                ui.horizontal(|ui| chip(ui, Icon::Alert, &rocca::tr!("in corso: {0}", sim.districts[e].name), AMBER));
             }
         });
     });
@@ -1380,7 +1385,7 @@ fn evac_timer(ui: &mut egui::Ui, sim: &Sim, d: usize) {
         if let Some(m) = minutes {
             let g = p.layout_no_wrap(format!("{m}"), egui::FontId::proportional(16.0), Color32::WHITE);
             p.galley(c - egui::vec2(g.size().x / 2.0, g.size().y / 2.0 + 3.0), g, Color32::WHITE);
-            let g = p.layout_no_wrap("min".into(), egui::FontId::proportional(9.0), GREY);
+            let g = p.layout_no_wrap(rocca::tr!("min").into(), egui::FontId::proportional(9.0), GREY);
             p.galley(c + egui::vec2(-g.size().x / 2.0, 5.0), g, GREY);
         }
         if let Some(icon) = icon {
@@ -1449,17 +1454,17 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut M
         // «Chiudi» pinned under the scrolling controls.
         let mut close = false;
         super::screens::compact_page_footer(ctx, "operatore_mobile", |ui| {
-            ui.heading("Menu");
+            ui.heading(rocca::tr!("Menu"));
             operator_body(ui, k, sim, restarted, gfx, auto, commands, true);
         }, |ui| {
-            close = ui.add_sized([ui.available_width(), 46.0], secondary("Chiudi")).clicked();
+            close = ui.add_sized([ui.available_width(), 46.0], secondary(rocca::tr!("Chiudi"))).clicked();
         });
         if close { k.operator = false; }
         return;
     }
-    egui::Window::new("Menu").id(egui::Id::new("operatore")).anchor(Align2::LEFT_BOTTOM, [8.0, -60.0]).default_width((ctx.viewport_rect().width() - 48.0).min(380.0)).max_height(ctx.viewport_rect().height() - 90.0).resizable(false).collapsible(false).vscroll(true).show(ctx, |ui| {
+    egui::Window::new(rocca::tr!("Menu")).id(egui::Id::new("operatore")).anchor(Align2::LEFT_BOTTOM, [8.0, -60.0]).default_width((ctx.viewport_rect().width() - 48.0).min(380.0)).max_height(ctx.viewport_rect().height() - 90.0).resizable(false).collapsible(false).vscroll(true).show(ctx, |ui| {
         panel().show(ui, |ui| {
-            ui.label(RichText::new("Menu (F2 per chiudere)").strong().color(Color32::WHITE));
+            ui.label(RichText::new(rocca::tr!("Menu (F2 per chiudere)")).strong().color(Color32::WHITE));
             operator_body(ui, k, sim, restarted, gfx, auto, commands, false);
         });
     });
@@ -1475,13 +1480,13 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
             let active_label = k.territory.levels.iter().find(|l| l.case == sim.case.name)
                 .map_or(sim.case.name.as_str(), |l| l.name.as_str());
             ui.label(RichText::new(format!("{} · {} · seme {}", active_label, clock(sim.time_s()), sim.seed)).color(GREY));
-            ui.label("Scenario della prossima partita:");
+            ui.label(rocca::tr!("Scenario della prossima partita:"));
             let label = k.territory.levels.iter().find(|l| l.case == k.selected_case)
                 .map_or(k.selected_case.as_str(), |l| l.name.as_str());
             egui::ComboBox::from_id_salt("scenario_operatore").selected_text(label).width(ui.available_width().min(320.0)).show_ui(ui, |ui| {
                 // The default is always reachable, even with an older territory file.
                 if !k.territory.levels.iter().any(|l| l.case == k.territory.game) {
-                    ui.selectable_value(&mut k.selected_case, k.territory.game.clone(), "Attuale (predefinito)");
+                    ui.selectable_value(&mut k.selected_case, k.territory.game.clone(), rocca::tr!("Attuale (predefinito)"));
                 }
                 for level in &k.territory.levels {
                     ui.selectable_value(&mut k.selected_case, level.case.clone(), &level.name);
@@ -1490,17 +1495,17 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
             if let Some(level) = k.territory.levels.iter().find(|l| l.case == k.selected_case) {
                 ui.add(egui::Label::new(RichText::new(&level.about).color(GREY)).wrap());
             }
-            ui.label(RichText::new("Si applica con Nuova visita o Vai alla partita.").small().color(GREY));
+            ui.label(RichText::new(rocca::tr!("Si applica con Nuova visita o Vai alla partita.")).small().color(GREY));
             ui.horizontal_wrapped(|ui| {
-                if button(ui, "Nuova visita") {
+                if button(ui, rocca::tr!("Nuova visita")) {
                     new_visit(k, sim, restarted);
                 }
-                if button(ui, "Vai alla partita") {
+                if button(ui, rocca::tr!("Vai alla partita")) {
                     start_game(k, sim, restarted);
                 }
             });
             ui.horizontal(|ui| {
-                ui.label("Seme:");
+                ui.label(rocca::tr!("Seme:"));
                 for s in 1..=3u64 {
                     if touch {
                         if ui.add_sized([56.0, 46.0], egui::Button::selectable(k.seed == s, s.to_string())).clicked() { k.seed = s; }
@@ -1510,23 +1515,23 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
                 }
             });
             ui.horizontal(|ui| {
-                ui.checkbox(&mut k.frozen, "Ferma il mondo");
+                ui.checkbox(&mut k.frozen, rocca::tr!("Ferma il mondo"));
                 ui.add_enabled(k.phase == Phase::Intro, egui::Checkbox::new(&mut k.freecam, "Freecam (demo)"))
-                    .on_hover_text("Telecamera libera sulla demo: stessi controlli del gioco (trascina per spostare, tasto destro o Maiusc per ruotare, rotella per lo zoom)");
-                if button(ui, "Vista iniziale") {
+                    .on_hover_text(rocca::tr!("Telecamera libera sulla demo: stessi controlli del gioco (trascina per spostare, tasto destro o Maiusc per ruotare, rotella per lo zoom)"));
+                if button(ui, rocca::tr!("Vista iniziale")) {
                     k.reset_view = true;
                 }
             });
             if !cfg!(target_arch = "wasm32") { ui.horizontal(|ui| {
                 use crate::quality::Graphics;
-                ui.label("Grafica:");
+                ui.label(rocca::tr!("Grafica:"));
                 let now_level = if auto.is_some() { None } else { gfx.level() };
                 let label = match auto {
                     Some(a) => format!("Auto ({}/{})", a.step() + 1, a.rungs()),
                     None => "Auto".to_string(),
                 };
                 if ui.selectable_label(auto.is_some(), label)
-                    .on_hover_text("Il livello segue la velocità di questo computer: scende se i frame sono lenti, risale se c'è margine")
+                    .on_hover_text(rocca::tr!("Il livello segue la velocità di questo computer: scende se i frame sono lenti, risale se c'è margine"))
                     .clicked() && auto.is_none()
                 {
                     let a = crate::adaptive::Adaptive::new(Graphics { vegetation: gfx.vegetation, ..Graphics::ALTA });
@@ -1551,7 +1556,7 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
                 }
             });
             ui.horizontal(|ui| {
-                ui.label("Antialiasing:");
+                ui.label(rocca::tr!("Antialiasing:"));
                 let now = gfx.aa();
                 for (name, label, tip) in [
                     ("msaa", "MSAA 4×", "Il più pulito sui bordi sottili; costa qualche ms a schermo grande"),
@@ -1568,7 +1573,7 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
                 }
             });
             }
-            if button(ui, "Azzera classifica") {
+            if button(ui, rocca::tr!("Azzera classifica")) {
                 k.board = rocca::score::Board::default();
                 if let Err(e) = board::save(&k.board) {
                     k.error = Some(e);
@@ -1593,7 +1598,7 @@ fn compact_top(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera,
                     let w = sim.weather();
                     ui.horizontal(|ui| {
                         wind_arrow(ui, cam, w.wind_dir_deg, 22.0, Color32::WHITE);
-                        ui.label(format!("{:.0} km/h · umidità {:.0}%", w.wind_speed_kmh, w.moisture_pct));
+                        ui.label(rocca::tr!("{0} km/h · umidità {1}%", format!("{:.0}", w.wind_speed_kmh), format!("{:.0}", w.moisture_pct)));
                     });
                     let frac = sim.time_s() as f32 / sim.case.duration_s().max(1) as f32;
                     ui.add(egui::ProgressBar::new(frac).desired_height(5.0));
@@ -1601,14 +1606,14 @@ fn compact_top(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera,
             });
             if sim.paused() {
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(if matches!(k.selection, Selection::Team(_)) { "Tocca la destinazione" } else { "Pausa" }).strong().color(GREEN));
-                    for (color, label) in crate::forecast_view::LINE_COLOURS.into_iter().zip(["1 h", "3 h"]) {
+                    ui.label(RichText::new(if matches!(k.selection, Selection::Team(_)) { rocca::tr!("Tocca la destinazione") } else { rocca::tr!("Pausa") }).strong().color(GREEN));
+                    for (color, label) in crate::forecast_view::LINE_COLOURS.into_iter().zip([rocca::tr!("1 h"), rocca::tr!("3 h")]) {
                         let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
                         ui.painter().line_segment([r.left_center(), r.right_center()], egui::Stroke::new(3.0, color));
                         ui.colored_label(color, label);
                     }
                     if let Some((at, w)) = sim.weather_ahead() {
-                        ui.label(format!("{}: {:.0} km/h da {}", clock(at), w.wind_speed_kmh, rocca::words::compass(w.wind_dir_deg)));
+                        ui.label(rocca::tr!("{0}: {1} km/h da {2}", clock(at), format!("{:.0}", w.wind_speed_kmh), rocca::words::compass(w.wind_dir_deg)));
                     }
                 });
             }

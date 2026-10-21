@@ -3003,6 +3003,7 @@ dependencies = [
  "rocca",
  "scenario",
  "serde_json",
+ "sys-locale",
  "uuid",
  "wasm-bindgen",
  "web-sys",

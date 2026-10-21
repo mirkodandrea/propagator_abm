@@ -92,19 +92,19 @@ pub fn title(ctx: &egui::Context, k: &Kiosk, sim: &Sim, logo: Option<&Logo>) -> 
                 ui.add_space(6.0);
             }
             ui.label(RichText::new(super::TITLE).size(84.0 * sc).strong().color(Color32::WHITE));
-            ui.label(RichText::new("Aiutaci a gestire un incendio.").size(26.0 * sc.max(0.6)).color(AMBER));
+            ui.label(RichText::new(rocca::tr!("Aiutaci a gestire un incendio.")).size(26.0 * sc.max(0.6)).color(AMBER));
         });
     });
     egui::Area::new(egui::Id::new("titolo_gioca")).anchor(Align2::CENTER_CENTER, [0.0, off]).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.vertical_centered(|ui| {
-            let b = egui::Button::new(RichText::new("Gioca").size(44.0 * sc.max(0.7)).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(16.0).min_size(egui::vec2(360.0 * sc.max(0.7), 96.0 * sc.max(0.6)));
+            let b = egui::Button::new(RichText::new(rocca::tr!("Gioca")).size(44.0 * sc.max(0.7)).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(16.0).min_size(egui::vec2(360.0 * sc.max(0.7), 96.0 * sc.max(0.6)));
             let r = ui.add(b);
             crate::playtest::control("Gioca", &r, true);
             play = super::icons::pointing(r).clicked();
         });
     });
     egui::Area::new(egui::Id::new("titolo_nota")).anchor(Align2::RIGHT_BOTTOM, [-18.0, -14.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
-        ui.label(RichText::new(format!("Simulazione dimostrativa · {} · versione {}", k.territory.levels.iter().find(|l| l.case == sim.case.name).map_or(sim.case.name.as_str(), |l| l.name.as_str()), super::BUILD)).size(14.0 * sc.max(0.7)).color(GREY.gamma_multiply(0.75)));
+        ui.label(RichText::new(rocca::tr!("Simulazione dimostrativa · {0} · versione {1}", k.territory.levels.iter().find(|l| l.case == sim.case.name).map_or(sim.case.name.as_str(), |l| l.name.as_str()), super::BUILD)).size(14.0 * sc.max(0.7)).color(GREY.gamma_multiply(0.75)));
     });
     ctx.request_repaint();
     play
@@ -133,16 +133,14 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
                 }
                 ui.vertical(|ui| {
                     ui.label(RichText::new(super::TITLE).size(44.0).strong().color(Color32::WHITE));
-                    ui.label(RichText::new("Aiutaci a gestire questa emergenza.").size(22.0).color(AMBER));
+                    ui.label(RichText::new(rocca::tr!("Aiutaci a gestire questa emergenza.")).size(22.0).color(AMBER));
                 });
             });
             ui.add_space(12.0);
             ui.separator();
             ui.add_space(10.0);
             let teams = k.territory.roster.len();
-            let text = format!(
-                "Un incendio minaccia i borghi dell'isola! Abbiamo {teams} squadre AIB, ma non bastano per tutti. Aiutaci a proteggere persone e case.",
-            );
+            let text = rocca::tr!("Un incendio minaccia i borghi dell'isola! Abbiamo {0} squadre AIB, ma non bastano per tutti. Aiutaci a proteggere persone e case.", teams);
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
                     ui.set_width(card_w - panel_w - gap);
@@ -157,8 +155,8 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
                     .show(ui, |ui| {
                         ui.set_width(panel_w - 34.0);
                         ui.vertical(|ui| {
-                            ui.label(RichText::new("Classifica di oggi").size(22.0).strong().color(Color32::WHITE));
-                            ui.label(RichText::new("le stelle di Persone, Case, Ettari").size(13.0).color(GREY));
+                            ui.label(RichText::new(rocca::tr!("Classifica di oggi")).size(22.0).strong().color(Color32::WHITE));
+                            ui.label(RichText::new(rocca::tr!("le stelle di Persone, Case, Ettari")).size(13.0).color(GREY));
                             ui.add_space(8.0);
                             let rows = if screen.height() >= 900.0 { rocca::score::BOARD_SHOWN } else { 4 };
                             board_rows(ui, k, &sim.case.name, None, rows);
@@ -166,7 +164,7 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
                     });
             });
             ui.add_space(12.0);
-            ui.label(RichText::new("LE PERSONE CON CUI LAVORI").size(13.0).strong().color(GREY.gamma_multiply(0.7)));
+            ui.label(RichText::new(rocca::tr!("LE PERSONE CON CUI LAVORI")).size(13.0).strong().color(GREY.gamma_multiply(0.7)));
             ui.add_space(6.0);
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = 14.0;
@@ -185,15 +183,15 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
                 }
             });
             ui.add_space(12.0);
-            ui.label(RichText::new("Alla fine vedrai com'è andata, confrontata con lo stesso incendio senza ordini.").size(15.0).italics().color(GREY));
+            ui.label(RichText::new(rocca::tr!("Alla fine vedrai com'è andata, confrontata con lo stesso incendio senza ordini.")).size(15.0).italics().color(GREY));
             ui.add_space(10.0);
             ui.separator();
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Come ti chiami?").size(20.0).strong().color(Color32::WHITE));
+                ui.label(RichText::new(rocca::tr!("Come ti chiami?")).size(20.0).strong().color(Color32::WHITE));
                 ui.add_space(8.0);
                 let edit = egui::TextEdit::singleline(&mut k.player)
-                    .hint_text("Il tuo nome")
+                    .hint_text(rocca::tr!("Il tuo nome"))
                     .font(egui::FontId::proportional(24.0))
                     .char_limit(rocca::score::NAME_MAX)
                     .desired_width(320.0)
@@ -209,7 +207,7 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 16.0;
                 let w = (card_w - 16.0) / 2.0;
-                let b = egui::Button::new(RichText::new("TUTORIAL").size(28.0).strong().color(Color32::WHITE))
+                let b = egui::Button::new(RichText::new(rocca::tr!("TUTORIAL")).size(28.0).strong().color(Color32::WHITE))
                     .fill(Color32::from_gray(62))
                     .stroke(egui::Stroke::new(1.0, Color32::from_gray(110)))
                     .corner_radius(12.0)
@@ -219,7 +217,7 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
                 if super::icons::pointing(r).clicked() {
                     go = Some(true);
                 }
-                let b = egui::Button::new(RichText::new("INIZIA").size(28.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(12.0).min_size(egui::vec2(w, 64.0));
+                let b = egui::Button::new(RichText::new(rocca::tr!("INIZIA")).size(28.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(12.0).min_size(egui::vec2(w, 64.0));
                 let r = ui.add(b);
                 crate::playtest::control("Inizia", &r, true);
                 if super::icons::pointing(r).clicked() {
@@ -228,7 +226,7 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
             });
             ui.add_space(10.0);
             ui.label(
-                RichText::new("Territorio immaginario, fuoco simulato con PROPAGATOR di Fondazione CIMA. Nella realtà segui sempre le indicazioni delle autorità.")
+                RichText::new(rocca::tr!("Territorio immaginario, fuoco simulato con PROPAGATOR di Fondazione CIMA. Nella realtà segui sempre le indicazioni delle autorità."))
                     .size(13.0)
                     .color(GREY.gamma_multiply(0.75)),
             );
@@ -256,7 +254,7 @@ pub fn tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
     }
     highlight(ctx, k, step.expect);
     if super::ui::compact(ctx) {
-        compact_tutorial(ctx, k, sim, restarted, &step.text, step.expect);
+        compact_tutorial(ctx, k, sim, restarted, &step.touch, step.expect);
         return;
     }
     let total = k.script.as_ref().map_or(0, |s| s.steps.len());
@@ -273,28 +271,28 @@ pub fn tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
                 ui.vertical(|ui| {
                     ui.set_max_width(650.0);
                     // «benvenuto/a» would guess a gender: greet by the name
-                    let hello = if k.player.is_empty() { "Ciao, grazie dell'aiuto!".to_string() } else { format!("Ciao {}, grazie dell'aiuto!", k.player) };
+                    let hello = if k.player.is_empty() { rocca::tr!("Ciao, grazie dell'aiuto!").to_string() } else { rocca::tr!("Ciao {0}, grazie dell'aiuto!", k.player) };
                     let text = if k.step == 0 { format!("{hello} {}", step.text) } else { step.text.clone() };
                     characters::says(ui, Who::Volontaria, &text, 650.0);
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        let r = ui.add(secondary("Salta il tutorial"));
+                        let r = ui.add(secondary(rocca::tr!("Salta il tutorial")));
                         crate::playtest::control("Salta il tutorial", &r, true);
                         skip = r.clicked();
                         ui.label(RichText::new(format!("{}/{total}", k.step + 1)).size(15.0).color(Color32::from_gray(110)));
                         if step.expect == Expect::Next {
-                            let label = "Avanti";
+                            let label = rocca::tr!("Avanti");
                             let w = 180.0;
                             ui.add_space((ui.available_width() - w).max(0.0));
                             let r = ui.add(primary(label).min_size(egui::vec2(w, 48.0)));
-                            crate::playtest::control(label, &r, true);
+                            crate::playtest::control("Avanti", &r, true);
                             if r.clicked() {
                                 k.done(Expect::Next);
                             }
                         } else {
                             // the step waits for the player's own action
                             let glow = 0.55 + 0.45 * (t * 3.0).sin();
-                            let hint = if matches!(step.expect, Expect::Run(_)) { "guarda" } else { "tocca a te" };
+                            let hint = if matches!(step.expect, Expect::Run(_)) { rocca::tr!("guarda") } else { rocca::tr!("tocca a te") };
                             ui.label(RichText::new(hint).size(16.0).strong().color(AMBER.gamma_multiply(glow)));
                         }
                     });
@@ -366,13 +364,14 @@ fn highlight(ctx: &egui::Context, k: &Kiosk, expect: Expect) {
 
 /// The label of a scenario's difficulty and its colour.
 fn difficulty_style(d: &str) -> (String, Color32) {
-    let colour = match d.to_lowercase().as_str() {
-        "facile" => Color32::from_rgb(120, 200, 110),
-        "medio" => Color32::from_rgb(240, 200, 70),
-        "difficile" => Color32::from_rgb(240, 140, 60),
-        _ => Color32::from_rgb(230, 80, 70),
+    let (word, colour) = match d.to_lowercase().as_str() {
+        "facile" => (rocca::tr!("facile"), Color32::from_rgb(120, 200, 110)),
+        "medio" => (rocca::tr!("medio"), Color32::from_rgb(240, 200, 70)),
+        "difficile" => (rocca::tr!("difficile"), Color32::from_rgb(240, 140, 60)),
+        _ => (rocca::tr!("estremo"), Color32::from_rgb(230, 80, 70)),
     };
-    (format!(" {} ", d.to_uppercase()), colour)
+    let word = if matches!(d.to_lowercase().as_str(), "facile" | "medio" | "difficile") { word.to_string() } else { d.to_string() };
+    (format!(" {} ", word.to_uppercase()), colour)
 }
 
 /// After «Inizia»: the fire to fight (the four named scenarios) and the level.
@@ -381,7 +380,7 @@ pub fn scenario(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
     let mut go = false;
     let mut back = false;
     let body = |ui: &mut egui::Ui, k: &mut Kiosk, wide: bool| {
-        ui.label(RichText::new("Scegli l'incendio").size(if wide { 36.0 } else { 22.0 }).strong().color(Color32::WHITE));
+        ui.label(RichText::new(rocca::tr!("Scegli l'incendio")).size(if wide { 36.0 } else { 22.0 }).strong().color(Color32::WHITE));
         ui.add_space(6.0);
         let levels = k.territory.levels.clone();
         let card_w = if wide { (ui.available_width() - 14.0) / 2.0 } else { ui.available_width() };
@@ -438,10 +437,10 @@ pub fn scenario(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
         let full = ui.available_width();
         ui.horizontal(|ui| {
             let back_w = if wide { 160.0 } else { full * 0.3 };
-            let r = ui.add_sized([back_w, 60.0], secondary("Indietro"));
+            let r = ui.add_sized([back_w, 60.0], secondary(rocca::tr!("Indietro")));
             crate::playtest::control("Indietro", &r, true);
             if r.clicked() { *back = true; }
-            let r = ui.add_sized([full - back_w - ui.spacing().item_spacing.x, 60.0], egui::Button::new(RichText::new("PARTI").size(28.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(12.0));
+            let r = ui.add_sized([full - back_w - ui.spacing().item_spacing.x, 60.0], egui::Button::new(RichText::new(rocca::tr!("PARTI")).size(28.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(12.0));
             crate::playtest::control("Parti", &r, true);
             if super::icons::pointing(r).clicked() { *go = true; }
         });
@@ -490,9 +489,9 @@ fn star(ui: &mut egui::Ui, fill: Color32, size: f32) {
 /// The three star rows, big: the category, its stars, what it counts.
 fn big_stars(ui: &mut egui::Ui, st: &rocca::score::Stars, size: f32) {
     for (name, n, what) in [
-        ("Persone", st.persone, "persone che il fuoco non ha raggiunto"),
-        ("Case", st.case, "case che il fuoco non ha colpito"),
-        ("Ettari", st.ettari, "bosco che non è bruciato"),
+        (rocca::tr!("Persone"), st.persone, rocca::tr!("persone che il fuoco non ha raggiunto")),
+        (rocca::tr!("Case"), st.case, rocca::tr!("case che il fuoco non ha colpito")),
+        (rocca::tr!("Ettari"), st.ettari, rocca::tr!("bosco che non è bruciato")),
     ] {
         ui.horizontal(|ui| {
             ui.allocate_ui_with_layout(egui::vec2(120.0, size), egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -506,7 +505,7 @@ fn big_stars(ui: &mut egui::Ui, st: &rocca::score::Stars, size: f32) {
                     }
                 }
                 None => {
-                    ui.label(RichText::new("nessun danno nel riferimento").size(15.0).color(GREY));
+                    ui.label(RichText::new(rocca::tr!("nessun danno nel riferimento")).size(15.0).color(GREY));
                 }
             }
         });
@@ -519,13 +518,13 @@ fn big_stars(ui: &mut egui::Ui, st: &rocca::score::Stars, size: f32) {
 fn verdict(name: &str, mine: &rocca::Outcome, none: &rocca::Outcome) -> (Mood, String) {
     let (caught, saved) = (mine.caught(), none.caught().saturating_sub(mine.caught()));
     let (mood, text) = if caught == 0 && saved > 0 {
-        (Mood::Calmo, format!("Il fuoco non ha raggiunto nessuno. Senza i tuoi ordini avrebbe colpito {saved} persone: hai fatto la differenza!"))
+        (Mood::Calmo, rocca::tr!("Il fuoco non ha raggiunto nessuno. Senza i tuoi ordini avrebbe colpito {0} persone: hai fatto la differenza!", saved))
     } else if caught == 0 {
-        (Mood::Calmo, "Il fuoco non ha raggiunto nessuno. Vediamo insieme come sono andate anche le altre cose.".to_string())
+        (Mood::Calmo, rocca::tr!("Il fuoco non ha raggiunto nessuno. Vediamo insieme come sono andate anche le altre cose.").to_string())
     } else if saved > 0 {
-        (Mood::Preoccupato, format!("Con i tuoi ordini il fuoco ha raggiunto {saved} persone in meno. Ne ha colpite {caught}: proviamo a migliorare ancora."))
+        (Mood::Preoccupato, rocca::tr!("Con i tuoi ordini il fuoco ha raggiunto {0} persone in meno. Ne ha colpite {1}: proviamo a migliorare ancora.", saved, caught))
     } else {
-        (Mood::Preoccupato, format!("Il fuoco ha raggiunto {caught} persone. Puoi riprovare: la previsione ti aiuta a capire quando evacuare."))
+        (Mood::Preoccupato, rocca::tr!("Il fuoco ha raggiunto {0} persone. Puoi riprovare: la previsione ti aiuta a capire quando evacuare.", caught))
     };
     (mood, characters::to(name, &text))
 }
@@ -534,7 +533,7 @@ fn verdict(name: &str, mine: &rocca::Outcome, none: &rocca::Outcome) -> (Mood, S
 fn learning(ui: &mut egui::Ui, mine: &rocca::Outcome, none: Option<&rocca::Outcome>) {
     if let Some(none) = none {
         let report = rocca::score::debrief(mine, none);
-        ui.label(RichText::new("Confronto con la partita senza ordini").strong().size(18.0).color(Color32::WHITE));
+        ui.label(RichText::new(rocca::tr!("Confronto con la partita senza ordini")).strong().size(18.0).color(Color32::WHITE));
         for text in &report.results {
             ui.add(egui::Label::new(RichText::new(text).size(15.0).color(GREY)).wrap());
         }
@@ -542,17 +541,17 @@ fn learning(ui: &mut egui::Ui, mine: &rocca::Outcome, none: Option<&rocca::Outco
         ui.add(egui::Label::new(RichText::new(report.next_try).size(15.0).color(AMBER)).wrap());
     }
     if mine.units_lost > 0 {
-        ui.label(RichText::new(format!("Unità di soccorso perse: {}.", mine.units_lost)).color(AMBER));
+        ui.label(RichText::new(rocca::tr!("Unità di soccorso perse: {0}.", mine.units_lost)).color(AMBER));
     }
     ui.add_space(10.0);
     ui.separator();
-    ui.label(RichText::new("Nella realtà: protezione civile").strong().size(18.0).color(Color32::WHITE));
-    for (title, text) in rocca::score::CIVIL_PROTECTION {
+    ui.label(RichText::new(rocca::tr!("Nella realtà: protezione civile")).strong().size(18.0).color(Color32::WHITE));
+    for (title, text) in rocca::score::civil_protection() {
         ui.label(RichText::new(title).strong().size(15.0).color(AMBER));
         ui.add(egui::Label::new(RichText::new(text).size(15.0).color(GREY)).wrap());
     }
-    ui.hyperlink_to("Fonte: Io non rischio · Protezione Civile", rocca::score::CIVIL_PROTECTION_SOURCE);
-    ui.add(egui::Label::new(RichText::new("Quest'isola è immaginaria. Nella realtà, segui sempre le indicazioni delle autorità.").size(13.0).italics().color(GREY)).wrap());
+    ui.hyperlink_to(rocca::tr!("Fonte: Io non rischio · Protezione Civile"), rocca::score::CIVIL_PROTECTION_SOURCE);
+    ui.add(egui::Label::new(RichText::new(rocca::tr!("Quest'isola è immaginaria. Nella realtà, segui sempre le indicazioni delle autorità.")).size(13.0).italics().color(GREY)).wrap());
 }
 
 /// A level's board, the best `rows`; the player's own row (`mine`: name and
@@ -561,7 +560,7 @@ fn board_rows(ui: &mut egui::Ui, k: &Kiosk, case: &str, mine: Option<(&str, u64)
     let (day, _) = board::now();
     let ranking = k.board.ranking(case, &day);
     if ranking.is_empty() {
-        ui.label(RichText::new("Nessuna partita oggi").size(14.0).color(GREY.gamma_multiply(0.8)));
+        ui.label(RichText::new(rocca::tr!("Nessuna partita oggi")).size(14.0).color(GREY.gamma_multiply(0.8)));
         return;
     }
     let is_mine = |e: &rocca::score::Played| mine.is_some_and(|(n, at)| e.at == at && e.name == n);
@@ -592,9 +591,9 @@ fn board_rows(ui: &mut egui::Ui, k: &Kiosk, case: &str, mine: Option<(&str, u64)
 /// «Sei al 3º posto su 12 oggi».
 fn place_words(place: usize, of: usize) -> String {
     match place {
-        0 if of == 1 => "Sei il primo di oggi".to_string(),
-        0 => format!("Sei al 1º posto su {of} oggi"),
-        p => format!("Sei al {}º posto su {of} oggi", p + 1),
+        0 if of == 1 => rocca::tr!("Sei il primo di oggi").to_string(),
+        0 => rocca::tr!("Sei al 1º posto su {0} oggi", of),
+        p => rocca::tr!("Sei al {0}º posto su {1} oggi", p + 1, of),
     }
 }
 
@@ -617,18 +616,18 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Me
         let mut retry = false;
         // «Nuova partita» stays in view under the scrolling results
         compact_page_footer(ctx, "fine_mobile", |ui| {
-            ui.heading(if k.player.trim().is_empty() { "Com'è andata".to_string() } else { format!("Com'è andata, {}", k.player.trim()) });
+            ui.heading(if k.player.trim().is_empty() { rocca::tr!("Com'è andata").to_string() } else { rocca::tr!("Com'è andata, {0}", k.player.trim()) });
             match &base {
-                None => { ui.label("Confronto con lo stesso incendio senza ordini…"); }
+                None => { ui.label(rocca::tr!("Confronto con lo stesso incendio senza ordini…")); }
                 Some(Err(e)) => { ui.colored_label(RED, e); }
                 Some(Ok(none)) => {
                     let st = rocca::score::stars(&mine, none);
-                    for (label, n) in [("Persone", st.persone), ("Case", st.case), ("Ettari", st.ettari)] {
+                    for (label, n) in [(rocca::tr!("Persone"), st.persone), (rocca::tr!("Case"), st.case), (rocca::tr!("Ettari"), st.ettari)] {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(label).size(18.0));
                             if let Some(n) = n {
                                 for i in 0..5 { star(ui, if i < n { AMBER } else { GREY.gamma_multiply(0.3) }, 22.0); }
-                            } else { ui.label("nessun danno nel riferimento"); }
+                            } else { ui.label(rocca::tr!("nessun danno nel riferimento")); }
                         });
                     }
                     ui.label(verdict(&k.player, &mine, none).1);
@@ -636,12 +635,12 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Me
             }
             learning(ui, &mine, base.as_ref().and_then(|r| r.as_ref().ok()));
             ui.separator();
-            ui.heading("Classifica di oggi");
+            ui.heading(rocca::tr!("Classifica di oggi"));
             let name = rocca::score::name(&k.player);
             board_rows(ui, k, &sim.case.name, k.saved.as_ref().map(|(_, at)| (name.as_str(), *at)), rocca::score::BOARD_SHOWN);
         }, |ui| {
-            retry = action(ui, "Riprova");
-            again = action(ui, "Nuova partita");
+            retry = action(ui, rocca::tr!("Riprova"));
+            again = action(ui, rocca::tr!("Nuova partita"));
         });
         if retry { super::retry(k, sim, restarted); }
         else if again { new_visit(k, sim, restarted); }
@@ -662,12 +661,12 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Me
                 ui.allocate_ui_with_layout(egui::vec2(left, (screen.height() - 150.0).max(160.0)), egui::Layout::top_down(egui::Align::Min), |ui| {
                     ui.set_width(left);
                     egui::ScrollArea::vertical().id_salt("fine_spiegazione").max_height((screen.height() - 150.0).max(160.0)).show(ui, |ui| {
-                        let title = if k.player.trim().is_empty() { "Com'è andata".to_string() } else { format!("Com'è andata, {}", k.player.trim()) };
+                        let title = if k.player.trim().is_empty() { rocca::tr!("Com'è andata").to_string() } else { rocca::tr!("Com'è andata, {0}", k.player.trim()) };
                         ui.label(RichText::new(title).size(34.0).strong().color(Color32::WHITE));
                         ui.add_space(12.0);
                         match &base {
                             None => {
-                                ui.label(RichText::new("Confronto con lo stesso incendio senza ordini…").size(20.0).color(GREY));
+                                ui.label(RichText::new(rocca::tr!("Confronto con lo stesso incendio senza ordini…")).size(20.0).color(GREY));
                             }
                             Some(Err(e)) => {
                                 ui.colored_label(RED, e);
@@ -679,14 +678,14 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Me
                                 volunteer(ui, faces, mood, 90.0, &text, left - 190.0);
                                 ui.add_space(10.0);
                                 ui.label(
-                                    RichText::new(format!(
-                                        "Tu: {} persone e {} case colpite, {:.0} ettari bruciati. Senza ordini: {} persone, {} case, {:.0} ettari.",
+                                    RichText::new(rocca::tr!(
+                                        "Tu: {0} persone e {1} case colpite, {2} ettari bruciati. Senza ordini: {3} persone, {4} case, {5} ettari.",
                                         mine.caught(),
                                         mine.homes_hit(),
-                                        mine.hectares,
+                                        format!("{:.0}", mine.hectares),
                                         none.caught(),
                                         none.homes_hit(),
-                                        none.hectares
+                                        format!("{:.0}", none.hectares)
                                     ))
                                     .size(15.0)
                                     .color(GREY),
@@ -709,19 +708,19 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Me
                                 ui.add(egui::Label::new(RichText::new(place_words(p, of)).size(22.0).strong().color(Color32::WHITE)).wrap());
                             }
                         }
-                        ui.label(RichText::new("Classifica di oggi").size(14.0).color(GREY));
+                        ui.label(RichText::new(rocca::tr!("Classifica di oggi")).size(14.0).color(GREY));
                         ui.add_space(6.0);
                         board_rows(ui, k, &sim.case.name, stamp, rocca::score::BOARD_SHOWN);
                     });
                     ui.add_space(12.0);
-                    ui.add(egui::Label::new(RichText::new("Nella realtà, quando arriva l'ordine di evacuazione si parte subito. Aspettare di vedere il fuoco è uno degli errori più pericolosi.").size(13.0).italics().color(AMBER)).wrap());
+                    ui.add(egui::Label::new(RichText::new(rocca::tr!("Nella realtà, quando arriva l'ordine di evacuazione si parte subito. Aspettare di vedere il fuoco è uno degli errori più pericolosi.")).size(13.0).italics().color(AMBER)).wrap());
                     ui.add_space(12.0);
-                    let again_btn = egui::Button::new(RichText::new("Riprova").size(26.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(12.0);
+                    let again_btn = egui::Button::new(RichText::new(rocca::tr!("Riprova")).size(26.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(12.0);
                     let r = ui.add_sized([side, 64.0], again_btn);
                     crate::playtest::control("Riprova", &r, true);
                     retry = super::icons::pointing(r).clicked();
                     ui.add_space(8.0);
-                    let big = egui::Button::new(RichText::new("Nuova partita").size(26.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(12.0);
+                    let big = egui::Button::new(RichText::new(rocca::tr!("Nuova partita")).size(26.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(12.0);
                     let r = ui.add_sized([side, 64.0], big);
                     crate::playtest::control("Nuova partita", &r, true);
                     again = super::icons::pointing(r).clicked();
@@ -762,8 +761,8 @@ pub(super) fn compact_page_footer(ctx: &egui::Context, id: &str, content: impl F
             egui::ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
                 content(ui);
                 ui.add_space(8.0);
-                ui.label(RichText::new(format!("versione {}", super::BUILD)).size(12.0).color(GREY));
-                if cfg!(target_arch = "wasm32") && ui.add(secondary("Dai un feedback")).clicked() {
+                ui.label(RichText::new(rocca::tr!("versione {0}", super::BUILD)).size(12.0).color(GREY));
+                if cfg!(target_arch = "wasm32") && ui.add(secondary(rocca::tr!("Dai un feedback"))).clicked() {
                     ctx.open_url(egui::OpenUrl::new_tab(super::ui::feedback_url()));
                 }
             });
@@ -792,7 +791,7 @@ fn compact_intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &
     let mut go = None;
     compact_page(ctx, "intro_mobile", |ui| {
         ui.heading(super::TITLE);
-        ui.label("Metti in pausa per spostare le squadre e ordinare l'evacuazione dei borghi.");
+        ui.label(rocca::tr!("Metti in pausa per spostare le squadre e ordinare l'evacuazione dei borghi."));
         ui.add_space(6.0);
         #[cfg(target_arch = "wasm32")]
         {
@@ -804,7 +803,7 @@ fn compact_intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &
                     let _ = js_sys::Reflect::delete_property(&window, &"roccaPlayerName".into());
                 }
             }
-            let label = if k.player.is_empty() { "Come ti chiami?".to_string() } else { format!("Nome: {}", k.player) };
+            let label = if k.player.is_empty() { rocca::tr!("Come ti chiami?").to_string() } else { rocca::tr!("Nome: {0}", k.player) };
             let r = ui.add_sized([ui.available_width(), 44.0], secondary(&label));
             crate::playtest::control("Nome", &r, true);
             if r.clicked() {
@@ -814,15 +813,15 @@ fn compact_intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &
             }
         }
         #[cfg(not(target_arch = "wasm32"))]
-        { ui.add(egui::TextEdit::singleline(&mut k.player).hint_text("Come ti chiami?")); }
-        if action(ui, "TUTORIAL") { go = Some(true); }
-        let r = ui.add_sized([ui.available_width(), 44.0], secondary("INIZIA"));
+        { ui.add(egui::TextEdit::singleline(&mut k.player).hint_text(rocca::tr!("Come ti chiami?"))); }
+        if action(ui, rocca::tr!("TUTORIAL")) { go = Some(true); }
+        let r = ui.add_sized([ui.available_width(), 44.0], secondary(rocca::tr!("INIZIA")));
         crate::playtest::control("Inizia", &r, true);
         if r.clicked() { go = Some(false); }
-        ui.label("Tocca una squadra, poi il punto dove mandarla. Tocca un borgo per evacuare. Puoi anche trascinare le squadre.");
+        ui.label(rocca::tr!("Tocca una squadra, poi il punto dove mandarla. Tocca un borgo per evacuare. Puoi anche trascinare le squadre."));
         ui.separator();
-        ui.collapsing("Classifica di oggi", |ui| board_rows(ui, k, &sim.case.name, None, rocca::score::BOARD_SHOWN));
-        ui.label(RichText::new("Territorio immaginario. Nella realtà segui le indicazioni delle autorità.").size(13.0));
+        ui.collapsing(rocca::tr!("Classifica di oggi"), |ui| board_rows(ui, k, &sim.case.name, None, rocca::score::BOARD_SHOWN));
+        ui.label(RichText::new(rocca::tr!("Territorio immaginario. Nella realtà segui le indicazioni delle autorità.")).size(13.0));
     });
     if go.is_some() { k.player = rocca::score::name(&k.player); }
     match go {
@@ -840,7 +839,7 @@ fn compact_tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted
     let landscape = rect.width() > rect.height();
     let anchor = if landscape { Align2::RIGHT_TOP } else { Align2::CENTER_BOTTOM };
     let offset = if landscape { [-8.0, 8.0] } else { [0.0, -58.0] };
-    let text = text.replace("**", "").replace("__", "").replace("In basso a destra", "In alto").replace(" Esc annulla.", "").replace("clicca", "tocca").replace("cliccando", "toccando").replace("cliccala", "toccala").replace("Trascina la squadra", "Tocca la squadra e poi la destinazione, oppure trascina la squadra");
+    let text = text.replace("**", "").replace("__", "");
     let steps = k.script.as_ref().map_or(0, |s| s.steps.len());
     let progress = (k.step + 1) as f32 / steps.max(1) as f32;
     egui::Area::new(egui::Id::new("tutorial_mobile")).anchor(anchor, offset).order(egui::Order::Foreground).show(ctx, |ui| {
@@ -849,11 +848,11 @@ fn compact_tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted
             let buttons = |ui: &mut egui::Ui, skip: &mut bool, k: &mut Kiosk| {
                 ui.horizontal(|ui| {
                     // «Avanti» takes the room left: the easiest thing to hit
-                    let r = ui.add(secondary("Salta").min_size(egui::vec2(60.0, 44.0)));
+                    let r = ui.add(secondary(rocca::tr!("Salta")).min_size(egui::vec2(60.0, 44.0)));
                     crate::playtest::control("Salta il tutorial", &r, true);
                     *skip = r.clicked();
                     if expect == Expect::Next {
-                        let r = ui.add_sized([ui.available_width(), 44.0], primary("Avanti"));
+                        let r = ui.add_sized([ui.available_width(), 44.0], primary(rocca::tr!("Avanti")));
                         crate::playtest::control("Avanti", &r, true);
                         if r.clicked() { k.done(Expect::Next); }
                     }
@@ -863,7 +862,7 @@ fn compact_tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted
                 // A column the height of the screen: where we are on top, the
                 // text filling the middle, the buttons pinned under it.
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("TUTORIAL").size(13.0).strong().color(AMBER));
+                    ui.label(RichText::new(rocca::tr!("TUTORIAL")).size(13.0).strong().color(AMBER));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(RichText::new(format!("{}/{}", k.step + 1, steps)).size(13.0).color(GREY));
                     });

@@ -12,6 +12,10 @@ La stessa partita della versione desktop, nel browser, per chi non la scarica. S
 
 **Profilo.** La pagina sceglie `window.roccaProfile` e `quality::Graphics::from_env` lo legge: **`bassa`** (`Graphics::WEB`, il profilo di sotto) su telefoni e tablet (puntatore primario grossolano, `(pointer: coarse)`, o `userAgentData.mobile`); **`media`** (`Graphics::WEB_MEDIA`) su computer: come `WEB` più ombre del sole (2 cascate, 1024), terreno a passo 2 e vegetazione 0,05. `?q=bassa` o `?q=media` forzano il profilo, per le prove. I tetti del fuoco, il mare e la risoluzione del suolo restano uguali nei due profili. Dal 2026-10-21 su computer il livello è **adattivo** (`adaptive.rs`, vedi `TODO.md`): parte da `WEB_TOP` (`WEB_MEDIA` con ombre da 3 cascate, 2048) e scende se i frame sono lenti; `?q=` lo spegne. Verificato in Chrome su desktop con entrambi i valori di `?q=` (parte, grafica a vista); **non misurati gli FPS** (dal 2026-10-20 il terreno web usa colore e normale per vertice, senza le texture `ground_*`: WebGL2 ha 16 unità texture, vedi `TODO.md`) e non provato su un telefono vero.
 
+## Lingua (2026-10-21)
+
+Il gioco segue la lingua del browser (`navigator.language`); `?lang=de` la forza (la pagina la passa al wasm come `window.roccaLang`). I cataloghi `data/i18n/*.json` sono nel manifesto dei dati come gli altri (`scripts/build_web.sh`; `keys.json` è escluso). **La pagina introduttiva e i testi di caricamento restano in italiano.**
+
 ## Telefono e budget grafico (2026-10-15)
 
 La versione web usa un profilo leggero anche sui computer: terreno a 20 m,

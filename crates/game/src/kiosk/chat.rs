@@ -28,9 +28,9 @@ struct Seen {
 
 fn who(sim: &Sim, voice: Voice) -> (Who, String) {
     match voice {
-        Voice::Team(t) => (Who::Vigili, sim.teams.get(t).map_or_else(|| "Squadra".into(), |t| t.name.clone())),
-        Voice::Mayor => (Who::Sindaca, "Sindaca".into()),
-        Voice::Expert => (Who::Esperto, "Esperto".into()),
+        Voice::Team(t) => (Who::Vigili, sim.teams.get(t).map_or_else(|| rocca::tr!("Squadra").into(), |t| t.name.clone())),
+        Voice::Mayor => (Who::Sindaca, rocca::tr!("Sindaca").into()),
+        Voice::Expert => (Who::Esperto, rocca::tr!("Esperto").into()),
     }
 }
 

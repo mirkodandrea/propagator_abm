@@ -115,7 +115,16 @@ Non c'è più il modello individuale delle persone (IBM). Ogni casa è una famig
 - **Nessun reset per inattività** (non c'è più un chiosco presidiato, 2026-10-19).
 - **Mario** (easter egg, `docs/MARIO.md`): **scollegato** dal 2026-10-14. Usava le persone dell'IBM e i vecchi stati del chiosco. Da decidere se ricollegarlo.
 
-## 7. Fuori dal gioco (per ora)
+## 7. Lingue (richiesta dell'utente, 2026-10-21)
+
+- Il gioco parla 38 lingue d'Europa: le 24 dell'Unione più norvegese, islandese, catalano, galiziano, basco, lussemburghese, gallese, bosniaco, serbo, macedone, albanese, ucraino, bielorusso, russo e turco (elenco in `rocca::i18n::LANGS`). **L'italiano è la lingua dei sorgenti**: ogni testo è scritto in italiano nel codice con `tr!("…")` e quel testo è la chiave del catalogo `data/i18n/<codice>.json` (italiano senza catalogo, inerte).
+- **Scelta**: `ROCCA_LANG` (sul web `?lang=de`), poi l'ultima scelta del giocatore (`~/.rocca_ventosa/lingua.txt`, `localStorage`), poi la lingua del sistema o del browser, poi italiano. Il selettore è in alto a sinistra nel titolo e nell'introduzione. **La lingua si legge quando il testo nasce**: righe di registro e messaggi della chat restano nella lingua in cui furono scritti; si sceglie prima di cominciare.
+- **Nomi propri non tradotti**: borghi, nomi dei luoghi, nome del giocatore, titolo del gioco.
+- **Easter egg: klingon** (`tlh`, trascrizione latina, **Ctrl+Maiusc+K** a tastiera libera, di nuovo per tornare indietro; non è nel selettore e non si salva). **Il klingon è un'approssimazione**: vocabolario canonico dove noto, per il resto parole ricomposte; da far rivedere a chi lo parla.
+- **Nuovo testo = nuova chiave**: dopo aver scritto un `tr!` nuovo, `python3 tools/i18n/keys.py` aggiorna `data/i18n/keys.json` e `python3 tools/i18n/keys.py --check` dice quali cataloghi mancano o hanno segnaposto (`{0}`), `**`, `__` o a capo diversi. I valori si passano numerati: `tr!("{0} verso {1}", a, b)`; i formati (`{:.0}`) si applicano prima.
+- **Fuori dalla traduzione** (restano in italiano): i passatempi di Mario (`mario*.rs`), i messaggi di errore di salvataggio e tecnici, il menu operatore tranne le voci già passate da `tr!`, la pagina introduttiva `web/index.html` (compresi i testi di caricamento).
+
+## 8. Fuori dal gioco (per ora)
 
 - Sindaca, preallerta, pattuglie porta a porta, coordinatore automatico: tolti il 2026-10-14. La comunicazione si riscrive dopo.
 - Mezzi aerei e squadre a piedi: non previsti.

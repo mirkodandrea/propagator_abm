@@ -17,10 +17,21 @@ pub fn km(m: f32) -> String {
     format!("{:.1} km", m / 1000.0).replace('.', ",")
 }
 
+use crate::tr;
+
 /// The wind's bearing (where it blows FROM) as a compass word: "sud-ovest".
 pub fn compass(deg: f64) -> &'static str {
-    const N: [&str; 8] = ["nord", "nord-est", "est", "sud-est", "sud", "sud-ovest", "ovest", "nord-ovest"];
-    N[(((deg + 22.5).rem_euclid(360.0)) / 45.0) as usize % 8]
+    let n = [
+        tr!("nord"),
+        tr!("nord-est"),
+        tr!("est"),
+        tr!("sud-est"),
+        tr!("sud"),
+        tr!("sud-ovest"),
+        tr!("ovest"),
+        tr!("nord-ovest"),
+    ];
+    n[(((deg + 22.5).rem_euclid(360.0)) / 45.0) as usize % 8]
 }
 
 #[cfg(test)]

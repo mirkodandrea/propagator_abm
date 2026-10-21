@@ -17,20 +17,20 @@ pub enum Who {
 impl Who {
     pub fn name(self) -> &'static str {
         match self {
-            Who::Volontaria => "La volontaria di protezione civile",
-            Who::Esperto => "L'esperto di previsioni",
-            Who::Vigili => "Il caposquadra AIB",
-            Who::Sindaca => "La sindaca",
+            Who::Volontaria => rocca::tr!("La volontaria di protezione civile"),
+            Who::Esperto => rocca::tr!("L'esperto di previsioni"),
+            Who::Vigili => rocca::tr!("Il caposquadra AIB"),
+            Who::Sindaca => rocca::tr!("La sindaca"),
         }
     }
 
     /// A short label for the team row of the opening screen.
     pub fn short(self) -> &'static str {
         match self {
-            Who::Volontaria => "La volontaria",
-            Who::Esperto => "L'esperto",
-            Who::Vigili => "I caposquadra AIB",
-            Who::Sindaca => "La sindaca",
+            Who::Volontaria => rocca::tr!("La volontaria"),
+            Who::Esperto => rocca::tr!("L'esperto"),
+            Who::Vigili => rocca::tr!("I caposquadra AIB"),
+            Who::Sindaca => rocca::tr!("La sindaca"),
         }
     }
 
