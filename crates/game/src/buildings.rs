@@ -33,16 +33,15 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use scenario::{Building, Pos, Scenario};
 
 use crate::sim::Sim;
-use crate::retro;
+use crate::materials::{self, Finish, StructureMaterial};
 
 #[path = "town_kit.rs"]
 mod town_kit;
-use crate::retro::RetroMaterial;
 
 /// Unlit window glass — dark enough that a daylit building reads as an
 /// ordinary wall with punched openings, not a lattice of black holes.
@@ -124,7 +123,7 @@ pub fn spawn(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<RetroMaterial>>,
+    mut materials: ResMut<Assets<StructureMaterial>>,
 ) {
     let scn = &sim.scn;
 
@@ -139,7 +138,7 @@ pub fn spawn(
         residents.entry(h.building).or_default().push(h.id as u32);
     }
 
-    let material = materials.add(retro::finished_material(StandardMaterial {
+    let material = materials.add(materials::structure(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 0.75,
         metallic: 0.0,
@@ -152,7 +151,7 @@ pub fn spawn(
         // plaster.
         unlit: false,
         ..default()
-    }, retro::RetroStyle::STRUCTURE, retro::Finish::Town));
+    }, Finish::Town));
 
     let cols = (scn.world.width_m / CHUNK_M).ceil() as usize + 1;
     let rows = (scn.world.height_m / CHUNK_M).ceil() as usize + 1;
@@ -211,11 +210,7 @@ pub fn spawn(
         tris += builder.indices.len() / 3;
         let base = builder.colors.clone();
         let mesh = meshes.add(builder.finish());
-        commands.spawn((MaterialMeshBundle::<RetroMaterial> {
-            mesh: mesh.clone(),
-            material: material.clone(),
-            ..default()
-        },
+        commands.spawn(((Mesh3d(mesh.clone()), MeshMaterial3d(material.clone())),
             crate::terrain_mesh::PauseSolid,
         ));
         chunks.push(Chunk {
@@ -295,6 +290,10 @@ mod palette {
         [0.55, 0.42, 0.50],
         [0.34, 0.50, 0.58],
     ];
+    /// Louvred shutters: Ligurian green, a darker green, chestnut, grey.
+    pub const SHUTTERS: [[f32; 3]; 4] = [[0.20, 0.42, 0.28], [0.13, 0.30, 0.20], [0.42, 0.26, 0.14], [0.55, 0.58, 0.55]];
+    /// Window sills and the cornice: pale stone and lime.
+    pub const SILL: [f32; 3] = [0.90, 0.87, 0.80];
     pub const INDUSTRIAL_WALL: [f32; 3] = [0.74, 0.74, 0.72];
     pub const INDUSTRIAL_ROOF: [f32; 3] = [0.52, 0.55, 0.57];
     pub const CIVIC_WALL: [f32; 3] = [0.90, 0.89, 0.85];
@@ -422,6 +421,7 @@ fn emit_building(
     let eave = hi + wall_h;
 
     let centroid = centroid(&ring);
+    // The palettes are sRGB, as picked; vertex colours are linear.
     let (wall, roof) = (
             match kind {
                 Kind::Industrial => palette::INDUSTRIAL_WALL,
@@ -433,6 +433,7 @@ fn emit_building(
                 _ => palette::ROOFS[(hash01(b.id as u64, 0x3D) * 6.0) as usize % 6],
             },
         );
+    let (wall, roof) = (linear(wall), linear(roof));
     // A plinth: the darker, damper base course every masonry building on this
     // coast has. It is also what stops a wall reading as an untextured plane.
     let plinth_top = base + (eave - base).min(1.0) * 0.9 + 0.6;
@@ -474,34 +475,78 @@ fn emit_building(
         }
     }
     let window_end = out.positions.len() as u32;
+    if matches!(kind, Kind::House | Kind::Apartments | Kind::Civic) {
+        let rows = (storeys.round() as usize).clamp(1, 6);
+        // Shutters on most homes (green or brown, as on this coast), stone
+        // sills under every window, and a pale cornice under the eave.
+        let shutters = (kind != Kind::Civic && hash01(b.id as u64, 0x5A) < 0.8)
+            .then(|| linear(palette::SHUTTERS[(hash01(b.id as u64, 0x5B) * 4.0) as usize % 4]));
+        for i in 0..m {
+            let (a, c) = (ring[i], ring[(i + 1) % m]);
+            emit_window_dressing(a, c, plinth_top, eave, rows, shutters, out);
+            emit_cornice(a, c, eave, out);
+        }
+    }
 
     // A shop: a striped awning over the street side and a sign board, so the
     // main street reads as shops with flats above from across the gazebo.
+    // Both hang on the footprint edge that faces most nearly south (weighted by
+    // its length), not on the bounding box: on a rotated or L-shaped footprint
+    // the box edge floats in the air beside the wall.
     if b.kind.as_deref() == Some("shop") {
-        let south = ring.iter().map(|p| p.y).fold(f32::MAX, f32::min);
-        let (x0, x1) = (
-            ring.iter().map(|p| p.x).fold(f32::MAX, f32::min) + 0.6,
-            ring.iter().map(|p| p.x).fold(f32::MIN, f32::max) - 0.6,
-        );
-        let g = scn.terrain.height_at(Pos { x: (x0 + x1) * 0.5, y: south });
-        let (top, low) = (g + 4.6, g + 3.4);
-        let stripes = [[0.92, 0.25, 0.22], [0.97, 0.95, 0.90], [0.20, 0.55, 0.35], [0.97, 0.95, 0.90], [0.25, 0.45, 0.85]];
-        let pick = stripes[(hash01(b.id as u64, 0x91) * 3.0) as usize % 3 * 2 % 5];
-        let n = 6;
-        for k in 0..n {
-            let xa = x0 + (x1 - x0) * k as f32 / n as f32;
-            let xb = x0 + (x1 - x0) * (k + 1) as f32 / n as f32;
-            let col = if k % 2 == 0 { pick } else { [0.97, 0.95, 0.90] };
-            // Wound so the face points up and out over the street (finding 11).
-            out.quad([xa, top, -(south - 0.05)], [xa, low, -(south - 2.4)], [xb, low, -(south - 2.4)], [xb, top, -(south - 0.05)], col);
+        let mut best: Option<(f32, Pos, Pos, (f32, f32))> = None;
+        for i in 0..m {
+            let (a, c) = (ring[i], ring[(i + 1) % m]);
+            let (dx, dy) = (c.x - a.x, c.y - a.y);
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < 3.0 {
+                continue;
+            }
+            let mut n = (dy / len, -dx / len);
+            if n.0 * ((a.x + c.x) * 0.5 - centroid.x) + n.1 * ((a.y + c.y) * 0.5 - centroid.y) < 0.0 {
+                n = (-n.0, -n.1);
+            }
+            let score = len * (-n.1).max(0.0);
+            if -n.1 > 0.5 && best.map_or(true, |b| score > b.0) {
+                best = Some((score, a, c, n));
+            }
         }
-        out.quad(
-            [x0 + 1.0, top + 1.6, -(south - 0.12)],
-            [x0 + 1.0, top + 0.4, -(south - 0.12)],
-            [x1 - 1.0, top + 0.4, -(south - 0.12)],
-            [x1 - 1.0, top + 1.6, -(south - 0.12)],
-            [0.98, 0.90, 0.55],
-        );
+        if let Some((_, a, c, n)) = best {
+            // Along the wall, so that the quads wind as they did on the
+            // south edge (t = +x when n = -y).
+            let t = (-n.1, n.0);
+            let (pa, pc) = (a.x * t.0 + a.y * t.1, c.x * t.0 + c.y * t.1);
+            let (lo_t, hi_t) = (pa.min(pc), pa.max(pc));
+            let (x0, x1) = (lo_t + 0.6, hi_t - 0.6);
+            let mid = Pos { x: (a.x + c.x) * 0.5, y: (a.y + c.y) * 0.5 };
+            let g = scn.terrain.height_at(mid);
+            // Never above the eave of a low shop.
+            let top = (g + 4.6).min(eave - 0.8).max(g + 2.2);
+            let low = top - 1.2;
+            // The point at distance `d` out from the wall, `u` along it.
+            let wall_d = mid.x * n.0 + mid.y * n.1;
+            let at = |u: f32, d: f32, y: f32| {
+                let o = wall_d + d;
+                [u * t.0 + o * n.0, y, -(u * t.1 + o * n.1)]
+            };
+            let stripes = [[0.92, 0.25, 0.22], [0.97, 0.95, 0.90], [0.20, 0.55, 0.35], [0.97, 0.95, 0.90], [0.25, 0.45, 0.85]];
+            let pick = stripes[(hash01(b.id as u64, 0x91) * 3.0) as usize % 3 * 2 % 5];
+            let cnt = 6;
+            for k in 0..cnt {
+                let xa = x0 + (x1 - x0) * k as f32 / cnt as f32;
+                let xb = x0 + (x1 - x0) * (k + 1) as f32 / cnt as f32;
+                let col = if k % 2 == 0 { pick } else { [0.97, 0.95, 0.90] };
+                // Wound so the face points up and out over the street (finding 11).
+                out.quad(at(xa, 0.05, top), at(xa, 2.4, low), at(xb, 2.4, low), at(xb, 0.05, top), col);
+            }
+            out.quad(
+                at(x0 + 1.0, 0.12, top + 1.6),
+                at(x0 + 1.0, 0.12, top + 0.4),
+                at(x1 - 1.0, 0.12, top + 0.4),
+                at(x1 - 1.0, 0.12, top + 1.6),
+                [0.98, 0.90, 0.55],
+            );
+        }
     }
 
     // The eave ring is the footprint pushed outward, which both casts the
@@ -633,6 +678,69 @@ fn emit_windows(a: Pos, c: Pos, plinth_top: f32, eave: f32, rows: usize, out: &m
     }
 }
 
+/// The shutters and sills of the windows `emit_windows` punches in the same
+/// wall: the same layout, so they frame them. Outside the window range, so a
+/// lit window does not light its shutters.
+fn emit_window_dressing(a: Pos, c: Pos, plinth_top: f32, eave: f32, rows: usize, shutters: Option<[f32; 3]>, out: &mut Builder) {
+    let elen = ((c.x - a.x).powi(2) + (c.y - a.y).powi(2)).sqrt();
+    if elen < 3.0 {
+        return;
+    }
+    let cols: &[f32] = if elen > 7.0 { &[0.32, 0.68] } else { &[0.5] };
+    let half_w = (elen * 0.09).clamp(0.35, 0.9);
+    let wn = normal([a.x, plinth_top, -a.y], [c.x, plinth_top, -c.y], [c.x, eave, -c.y]);
+    let off = |p: [f32; 3], d: f32| [p[0] + wn[0] * d, p[1] + wn[1] * d, p[2] + wn[2] * d];
+    let (tx, ty) = ((c.x - a.x) / elen, (c.y - a.y) / elen);
+    let sill = linear(palette::SILL);
+    let band = (eave - plinth_top) / rows as f32;
+    for r in 0..rows {
+        let y_lo = plinth_top + band * r as f32 + band * 0.25;
+        let y_hi = y_lo + band * 0.5;
+        for &t in cols {
+            let (cx, cy) = (a.x + (c.x - a.x) * t, a.y + (c.y - a.y) * t);
+            let at = |k: f32, y: f32| [cx + tx * half_w * k, y, -(cy + ty * half_w * k)];
+            if let Some(col) = shutters {
+                // open, against the wall either side
+                for (k0, k1) in [(-2.0, -1.08), (1.08, 2.0)] {
+                    out.quad_on(off(at(k0, y_lo), 0.07), off(at(k1, y_lo), 0.07), off(at(k1, y_hi), 0.07), off(at(k0, y_hi), 0.07), col, SHUTTER);
+                }
+            }
+            // sill: a top and a front face, proud of the wall
+            let (s0, s1) = (at(-1.15, y_lo - 0.02), at(1.15, y_lo - 0.02));
+            out.quad(off(s0, 0.0), off(s0, 0.22), off(s1, 0.22), off(s1, 0.0), sill);
+            let (f0, f1) = (at(-1.15, y_lo - 0.18), at(1.15, y_lo - 0.18));
+            out.quad(off(f0, 0.22), off(f1, 0.22), off(s1, 0.22), off(s0, 0.22), sill);
+        }
+    }
+}
+
+/// A pale moulded band under the eave, proud of the wall: the line that
+/// closes a Ligurian facade at the top.
+fn emit_cornice(a: Pos, c: Pos, eave: f32, out: &mut Builder) {
+    let elen = ((c.x - a.x).powi(2) + (c.y - a.y).powi(2)).sqrt();
+    if elen < 0.5 {
+        return;
+    }
+    let wn = normal([a.x, eave, -a.y], [c.x, eave, -c.y], [c.x, eave + 1.0, -c.y]);
+    let off = |p: [f32; 3], d: f32| [p[0] + wn[0] * d, p[1], p[2] + wn[2] * d];
+    let col = linear(palette::SILL);
+    let (lo, hi) = (eave - 0.7, eave - 0.05);
+    let (a0, c0) = ([a.x, lo, -a.y], [c.x, lo, -c.y]);
+    let (a1, c1) = ([a.x, hi, -a.y], [c.x, hi, -c.y]);
+    out.quad(off(a0, 0.18), off(c0, 0.18), off(c1, 0.18), off(a1, 0.18), col);
+    // its underside, in shadow
+    out.quad(off(a0, 0.0), off(c0, 0.0), off(c0, 0.18), off(a0, 0.18), col);
+}
+
+/// sRGB (as the palettes are picked) to the linear vertex colour.
+fn linear(c: [f32; 3]) -> [f32; 3] {
+    let l = Color::srgb(c[0], c[1], c[2]).to_linear();
+    [l.red, l.green, l.blue]
+}
+
+/// Vertex surface of the shutters (`materials::surface_alpha`): louvres.
+const SHUTTER: u8 = 11;
+
 fn signed_area(ring: &[Pos]) -> f32 {
     let n = ring.len();
     let mut acc = 0.0;
@@ -684,12 +792,18 @@ impl Builder {
     /// buildings want hard edges, and sharing would smooth the corners into
     /// something inflatable.
     fn quad(&mut self, a: [f32; 3], b: [f32; 3], c: [f32; 3], d: [f32; 3], color: [f32; 3]) {
+        self.quad_on(a, b, c, d, color, 0);
+    }
+
+    /// A quad of a given vertex surface (`materials::surface_alpha`).
+    fn quad_on(&mut self, a: [f32; 3], b: [f32; 3], c: [f32; 3], d: [f32; 3], color: [f32; 3], surface: u8) {
         let n = normal(a, b, c);
         let start = self.positions.len() as u32;
+        let alpha = materials::surface_alpha(surface);
         for v in [a, b, c, d] {
             self.positions.push(v);
             self.normals.push(n);
-            self.colors.push([color[0], color[1], color[2], 1.0]);
+            self.colors.push([color[0], color[1], color[2], alpha]);
         }
         self.indices
             .extend_from_slice(&[start, start + 1, start + 2, start, start + 2, start + 3]);
@@ -786,7 +900,7 @@ impl Buildings {
 /// a restart has to clear by hand, or the new run opens with the old run's
 /// charred buildings still standing in it.
 pub fn reset(
-    mut restarted: EventReader<crate::sim::SimRestarted>,
+    mut restarted: MessageReader<crate::sim::SimRestarted>,
     mut buildings: ResMut<Buildings>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
@@ -801,7 +915,7 @@ pub fn reset(
             s.drawn = Damage::None as u8;
             s.lit = false;
         }
-        if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
+        if let Some(mut mesh) = meshes.get_mut(&chunk.mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, chunk.base.clone());
         }
     }
@@ -812,6 +926,7 @@ pub fn reset(
 /// those two fields) and the hover pass (which only ever replays them) so
 /// the two can never disagree about what an un-hovered, undamaged building
 /// looks like.
+/// The alpha (the vertex surface) is kept whatever the state.
 fn recolor_structure(colors: &mut [[f32; 4]], base: &[[f32; 4]], s: &Structure) {
     let range = s.vert_start as usize..s.vert_end as usize;
     match s.drawn {
@@ -821,14 +936,14 @@ fn recolor_structure(colors: &mut [[f32; 4]], base: &[[f32; 4]], s: &Structure) 
             for i in range {
                 let c = base[i];
                 // A warm cast, not a colour change: the street still reads.
-                colors[i] = [(c[0] * 0.85 + 0.18).min(1.3), c[1] * 0.80 + 0.06, c[2] * 0.6, 1.0];
+                colors[i] = [(c[0] * 0.85 + 0.18).min(1.3), c[1] * 0.80 + 0.06, c[2] * 0.6, c[3]];
             }
         }
         x if x == Damage::Alight as u8 => {
             // Above 1.0 so the bloom pass catches it, like the vegetation
             // flare.
             for i in range {
-                colors[i] = [2.4, 0.75, 0.14, 1.0];
+                colors[i] = [2.4, 0.75, 0.14, base[i][3]];
             }
         }
         x if x == Damage::Destroyed as u8 => {
@@ -838,7 +953,7 @@ fn recolor_structure(colors: &mut [[f32; 4]], base: &[[f32; 4]], s: &Structure) 
                     0.10 + c[0] * 0.08,
                     0.09 + c[1] * 0.07,
                     0.09 + c[2] * 0.07,
-                    1.0,
+                    c[3],
                 ];
             }
         }
@@ -908,7 +1023,7 @@ pub fn damage(
         for s in &chunk.structures {
             recolor_structure(&mut colors, &chunk.base, s);
         }
-        if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
+        if let Some(mut mesh) = meshes.get_mut(&chunk.mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
         }
     }

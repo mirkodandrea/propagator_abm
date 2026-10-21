@@ -13,8 +13,55 @@ pub const AUDIO_RATE: u32 = 32_000;
 pub const AUDIO_BUFFER_SAMPLES: usize = 544 * 2 * 2;
 const VERTICES: usize = 1024 * 3;
 const MARIO_WING_CAP: u32 = 0x00000008;
+const ACT_IDLE: u32 = 0x0C400201;
+const ACT_WATER_IDLE: u32 = 0x380022C0;
+const ACT_STAR_DANCE_NO_EXIT: u32 = 0x00001307;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
+
+/// SM64's `SOUND_ARG_LOAD(bank, play flags, id, priority, flags2)`, status «starting».
+const fn sound(bank: u32, play: u32, id: u32, priority: u32, flags2: u32) -> i32 {
+    (bank << 28 | play << 24 | id << 16 | priority << 8 | flags2 << 4 | 1) as i32
+}
+
+/// SM64's own sounds and jingles, for the game to ask for by name. Each is a
+/// sound effect, a jingle on the environment sequence player, or both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cue {
+    /// `SOUND_GENERAL_COIN`.
+    Coin,
+    /// `SOUND_MENU_STAR_SOUND` and the star-collect fanfare (`SEQ_EVENT_CUTSCENE_COLLECT_STAR`).
+    Star,
+    /// `SOUND_GENERAL_FLAME_OUT`.
+    FlameOut,
+    /// Mario's «Yahoo!».
+    Hello,
+    /// The starting gun (`SOUND_GENERAL_RACE_GUN_SHOT`) and Mario's «Here we go!».
+    Go,
+    /// `SOUND_MENU_COLLECT_SECRET`: the chime of a secret found.
+    Chime,
+    /// The high-score jingle (`SEQ_EVENT_HIGH_SCORE`).
+    Record,
+    /// The puzzle-solved jingle (`SEQ_EVENT_SOLVE_PUZZLE`).
+    Solved,
+}
+
+impl Cue {
+    /// (sound effects, jingle sequence)
+    fn parts(self) -> ([Option<i32>; 2], Option<u8>) {
+        let one = |bits| ([Some(bits), None], None);
+        match self {
+            Cue::Coin => one(sound(3, 8, 0x11, 0x80, 8)),
+            Cue::Star => ([Some(sound(7, 0, 0x1E, 0xFF, 8)), None], Some(0x01)),
+            Cue::FlameOut => one(sound(3, 0, 0x03, 0x80, 8)),
+            Cue::Hello => one(sound(2, 4, 0x04, 0x80, 8)),
+            Cue::Go => ([Some(sound(3, 1, 0x4D, 0x40, 8)), Some(sound(2, 4, 0x0C, 0x80, 8))], None),
+            Cue::Chime => one(sound(7, 0, 0x30, 0x20, 8)),
+            Cue::Record => ([None, None], Some(0x12)),
+            Cue::Solved => ([None, None], Some(0x1B)),
+        }
+    }
+}
 
 static IN_USE: AtomicBool = AtomicBool::new(false);
 
@@ -73,6 +120,8 @@ extern "C" {
     fn sm64_audio_tick(queued: u32, desired: u32, buffer: *mut i16) -> u32;
     fn sm64_play_music(player: u8, sequence: u16, fade: u16);
     fn sm64_stop_background_music(sequence: u16);
+    fn sm64_seq_player_play_sequence(player: u8, sequence: u8, arg: u16);
+    fn sm64_play_sound_global(bits: i32);
     #[cfg(test)]
     fn sm64_get_current_background_music() -> u16;
     fn sm64_static_surfaces_load(surfaces: *const Surface, count: u32);
@@ -158,6 +207,16 @@ impl Engine {
             unsafe { sm64_audio_set_active(u8::from(active)); }
             self.audio_active = active;
             self.flight_music = false;
+        }
+    }
+
+    /// Plays a sound or jingle of the ROM. Inert while the audio is off.
+    pub fn cue(&mut self, cue: Cue) {
+        if !self.audio_active { return; }
+        let (sounds, jingle) = cue.parts();
+        unsafe {
+            for bits in sounds.into_iter().flatten() { sm64_play_sound_global(bits); }
+            if let Some(sequence) = jingle { sm64_seq_player_play_sequence(1, sequence, 0); }
         }
     }
 
@@ -280,7 +339,16 @@ impl Engine {
     /// The victory pose: the star dance, arm raised.
     pub fn victory_pose(&mut self) {
         let Some(id) = self.id else { return };
-        unsafe { sm64_set_mario_action(id, 0x00001307) } // ACT_STAR_DANCE_NO_EXIT
+        unsafe { sm64_set_mario_action(id, ACT_STAR_DANCE_NO_EXIT) }
+    }
+
+    /// Ends [`Self::victory_pose`]: the no-exit star dance never finishes by
+    /// itself (the original leaves the level from it), so Mario is put back to
+    /// standing or treading water and answers the controls again.
+    pub fn end_victory(&mut self, in_water: bool) {
+        let Some(id) = self.id else { return };
+        if self.state.action != ACT_STAR_DANCE_NO_EXIT { return; }
+        unsafe { sm64_set_mario_action(id, if in_water { ACT_WATER_IDLE } else { ACT_IDLE }) }
     }
 
     pub fn hurt(&mut self, source: [f32; 3], fire: bool) {
@@ -381,6 +449,16 @@ mod tests {
             .iter()
             .flatten()
             .all(|x| x.is_finite()));
+        // the star dance holds Mario until it is ended, then the controls answer
+        engine.victory_pose();
+        for _ in 0..150 {
+            engine.tick(&Input { camera_z: -1., stick_y: -1., ..Default::default() });
+        }
+        assert_eq!(engine.state.action, ACT_STAR_DANCE_NO_EXIT, "the dance does not end by itself");
+        engine.end_victory(false);
+        engine.tick(&neutral);
+        assert_ne!(engine.state.action, ACT_STAR_DANCE_NO_EXIT);
+        engine.end_victory(false); // inert when no dance is on
         let walk = Input {
             camera_z: -1.,
             stick_y: -1.,
@@ -459,8 +537,23 @@ mod tests {
         assert_eq!(unsafe { sm64_get_current_background_music() }, 0xFFFF);
         engine.set_audio_active(false);
         assert_eq!(engine.audio_tick(0, &mut pcm), 0);
+        engine.cue(Cue::Star); // inert while the audio is off
         engine.set_audio_active(true);
         assert_eq!(engine.audio_tick(0, &mut pcm), AUDIO_BUFFER_SAMPLES);
+        // the ROM's sounds and jingles are really synthesized
+        let mut loudest = |engine: &mut Engine, cue: Option<Cue>| {
+            for _ in 0..20 { engine.audio_tick(0, &mut pcm); } // let the last sound die away
+            if let Some(cue) = cue { engine.cue(cue); }
+            (0..40).map(|_| {
+                let n = engine.audio_tick(0, &mut pcm);
+                pcm[..n].iter().map(|s| i32::from(*s).abs()).max().unwrap_or(0)
+            }).max().unwrap()
+        };
+        let quiet = loudest(&mut engine, None);
+        for cue in [Cue::Coin, Cue::Star, Cue::FlameOut, Cue::Hello, Cue::Go, Cue::Chime, Cue::Record, Cue::Solved] {
+            let peak = loudest(&mut engine, Some(cue));
+            assert!(peak > quiet + 200, "{cue:?} is audible: {peak} over {quiet}");
+        }
         engine.despawn();
         engine.load_surfaces(&[]);
         drop(engine);

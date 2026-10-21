@@ -23,7 +23,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
+      - run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
       - run: ./scripts/build_web.sh
       - uses: actions/upload-pages-artifact@v3
         with:

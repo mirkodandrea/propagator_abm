@@ -38,18 +38,20 @@ mod overlays;
 mod pad;
 mod pick;
 mod playtest;
+mod adaptive;
 mod quality;
 mod quality_live;
 mod flat;
 mod tactical;
 mod tape;
-mod retro;
+mod materials;
 mod rings;
 mod ground_mask;
 mod roads;
 mod shader_lib;
 mod sea;
 mod sky;
+mod sky_light;
 mod sim;
 mod terrain_mesh;
 mod textures;
@@ -63,9 +65,9 @@ mod window_state;
 #[cfg(target_arch = "wasm32")]
 mod web_input;
 
-use bevy::core_pipeline::bloom::BloomSettings;
+use bevy::post_process::bloom::Bloom;
 use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::pbr::CascadeShadowConfigBuilder;
+use bevy::light::CascadeShadowConfigBuilder;
 use bevy_egui::EguiPlugin;
 
 use crate::camera::OrbitCamera;
@@ -77,8 +79,13 @@ pub struct DataPath(pub std::path::PathBuf);
 
 fn main() -> anyhow::Result<()> {
     let data = std::env::var("ROCCA_DATA").unwrap_or_else(|_| "data".to_string());
-    let gfx = quality::Graphics::from_env();
-    info!("grafica: {gfx:?}");
+    let mut gfx = quality::Graphics::from_env();
+    // the level follows the machine unless it was chosen by hand (see `adaptive`)
+    let auto = quality::Graphics::auto_wanted().then(|| adaptive::Adaptive::new(gfx));
+    if let Some(a) = &auto {
+        gfx = a.initial();
+    }
+    info!("grafica: {gfx:?}{}", if auto.is_some() { " (adattiva)" } else { "" });
 
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -89,8 +96,8 @@ fn main() -> anyhow::Result<()> {
             resolution: {
                 // KIOSK_SIZE=900x600 checks the layout on a small screen.
                 let (w, h) = std::env::var("KIOSK_SIZE").ok()
-                    .and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse::<f32>().ok()?, h.parse::<f32>().ok()?))))
-                    .unwrap_or((1600.0, 1000.0));
+                    .and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?))))
+                    .unwrap_or((1600, 1000));
                 let mut r: bevy::window::WindowResolution = (w, h).into();
                 if let Some(s) = std::env::var("KIOSK_SCALE").ok().and_then(|v| v.parse::<f32>().ok()) {
                     r = r.with_scale_factor_override(s);
@@ -112,16 +119,29 @@ fn main() -> anyhow::Result<()> {
             ..default()
         }),
         ..default()
+    }).set(bevy::render::RenderPlugin {
+        // Without texture binding arrays Bevy samples the sky's environment map
+        // as one view probe (`light_probe::binding_arrays_are_usable`) and binds
+        // materials one by one, as before 0.20. With them (Metal has them since
+        // wgpu 24) every lit pixel walks the clustered reflection-probe list and
+        // samples cube arrays indexed per pixel: measured 2026-10-21 at
+        // 5600x3500 «alta» about 61 -> 55 ms, snapshots unchanged (the scene has
+        // no reflection probes). Disabling only the non-uniform indexing instead
+        // breaks the bindless StandardMaterial shaders.
+        render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(bevy::render::settings::WgpuSettings {
+            disabled_features: Some(bevy::render::settings::WgpuFeatures::TEXTURE_BINDING_ARRAY),
+            ..default()
+        })),
+        ..default()
     }))
-    .insert_resource(gfx.msaa())
     // KIOSK_SNAP renders to file: no sound either
-    .insert_resource(bevy::audio::GlobalVolume::new(if std::env::var("KIOSK_SNAP").is_ok() { 0.0 } else { 1.0 }))
+    .insert_resource(bevy::audio::GlobalVolume::new(bevy::audio::Volume::Linear(if std::env::var("KIOSK_SNAP").is_ok() { 0.0 } else { 1.0 })))
     .insert_resource(gfx)
-    .insert_resource(bevy::pbr::DirectionalLightShadowMap { size: gfx.shadow_map })
-    .add_plugins(EguiPlugin)
+    .insert_resource(bevy::light::DirectionalLightShadowMap { size: gfx.shadow_map })
+    .add_plugins(EguiPlugin::default())
     .add_plugins(shader_lib::ShaderLibPlugin)
     .add_plugins(fire_shader::FireShaderPlugin)
-    .add_plugins(retro::RetroShaderPlugin)
+    .add_plugins(materials::MaterialsPlugin)
     .add_plugins(near_cover::NearCoverPlugin)
     .add_plugins(flat::FlatPlugin)
     .add_plugins(forecast_zone::ZonePlugin)
@@ -132,10 +152,11 @@ fn main() -> anyhow::Result<()> {
     // sun, sky and ambient light from the game's clock; the sea and its wind; the boats
     .add_plugins((sky::SkyPlugin, sea::SeaPlugin, boats::BoatsPlugin, landmarks::LandmarksPlugin, coast::CoastPlugin))
     .init_state::<AppState>()
+    .init_resource::<units::Glide>()
     .init_resource::<kiosk::snap::SnapView>()
     .init_resource::<kiosk::snap::SnapHide>()
     .init_resource::<ui::UiFocus>()
-    .add_event::<sim::SimRestarted>()
+    .add_message::<sim::SimRestarted>()
     .insert_resource(DataPath(std::path::PathBuf::from(&data)))
     // Everything that spawns a scene entity or caches a per-scenario handle
     // builds on entry and is torn down on exit, so a town change is a genuine
@@ -162,16 +183,20 @@ fn main() -> anyhow::Result<()> {
 
     // The FPS counter in the demo reads these diagnostics; KIOSK_FPS also logs them.
     #[cfg(not(target_arch = "wasm32"))]
-    app.add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin);
+    app.add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin::default());
     #[cfg(not(target_arch = "wasm32"))]
     if std::env::var("KIOSK_FPS").is_ok() {
-        app.add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::filtered(vec![bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS]));
+        app.add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::filtered([bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS].into_iter().collect()));
     }
     #[cfg(target_arch = "wasm32")]
     app.add_systems(PreUpdate, (
-        web_input::normalize.before(bevy::input::InputSystem).before(bevy_egui::EguiSet::ProcessInput),
-        web_input::finish_canceled_touch.after(bevy_egui::EguiSet::ProcessInput).before(bevy_egui::EguiSet::BeginFrame),
+        web_input::normalize.before(bevy::input::InputSystems).before(bevy_egui::EguiPreUpdateSet::ProcessInput),
+        web_input::finish_canceled_touch.after(bevy_egui::EguiPreUpdateSet::ProcessInput).before(bevy_egui::EguiPreUpdateSet::BeginPass),
     ));
+    #[cfg(not(target_arch = "wasm32"))]
+    if kiosk::snap::active() {
+        app.add_plugins(kiosk::snap::SnapPacingPlugin);
+    }
     if kiosk::snap::bench_s().is_some() {
         app.add_plugins(bench::BenchPlugin);
     }
@@ -179,8 +204,15 @@ fn main() -> anyhow::Result<()> {
     app.add_plugins(pad::PadPlugin);
     kiosk_systems(&mut app);
     app.add_plugins(forecast_view::ForecastPlugin);
-    app.add_systems(PostUpdate, kiosk::snap::hide_ui.after(bevy_egui::EguiSet::ProcessOutput));
+    app.add_systems(PostUpdate, kiosk::snap::redirect_camera);
+    app.add_systems(PostUpdate, kiosk::snap::hide_ui.after(bevy_egui::EguiPostUpdateSet::ProcessOutput));
     app.add_systems(Update, quality_live::apply_live.run_if(resource_changed::<quality::Graphics>.and_then(not(resource_added::<quality::Graphics>))));
+    // MSAA is per camera since Bevy 0.15: every camera takes the profile's.
+    app.add_systems(PostUpdate, quality_live::msaa_on_new_cameras);
+    if let Some(a) = auto {
+        app.insert_resource(a);
+        app.add_systems(Update, adaptive::adapt);
+    }
     let exit = app.run();
     #[cfg(not(target_arch = "wasm32"))]
     if let bevy::app::AppExit::Error(code) = exit {
@@ -194,56 +226,66 @@ fn setup_scene(
     sim: Res<Sim>,
     gfx: Res<quality::Graphics>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<retro::RetroMaterial>>,
+    mut terrain: ResMut<Assets<materials::TerrainMaterial>>,
+    mut standard: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    terrain_mesh::build(&sim.scn, &mut commands, &mut meshes, &mut materials, &mut images, &gfx);
-    fields::build(&sim.scn, &mut commands, &mut meshes, &mut materials);
+    terrain_mesh::build(&sim.scn, &mut commands, &mut meshes, &mut terrain, &mut images, &gfx);
+    fields::build(&sim.scn, &mut commands, &mut meshes, &mut standard);
     // Roads are drawn by the terrain shader from `ground_mask`; `roads::build`
     // (ribbon meshes) is no longer called.
 
     // The sun: `sky::update_sky` places and colours it from the game's clock
     // (11:00 to 14:00), so the shadows lengthen and the light warms as it runs.
-    commands.spawn((DirectionalLightBundle {
-        directional_light: DirectionalLight { shadows_enabled: gfx.shadows, ..default() },
-        cascade_shadow_config: CascadeShadowConfigBuilder {
+    commands.spawn((
+        DirectionalLight { shadow_maps_enabled: gfx.shadows, ..default() },
+        bevy::light::CascadeShadowConfig::from(CascadeShadowConfigBuilder {
             num_cascades: gfx.cascades,
             minimum_distance: 2.0,
             maximum_distance: gfx.shadow_distance,
             first_cascade_far_bound: 80.0,
             overlap_proportion: 0.3,
-        }
-        .into(),
-        ..default()
-    }, sky::Sun, bevy::render::view::RenderLayers::from_layers(&[0, terrain_mesh::SHADOW_LAYER])));
+        }),
+        sky::Sun,
+        bevy::camera::visibility::RenderLayers::from_layers(&[0, terrain_mesh::SHADOW_LAYER]),
+    ));
 
     let (p, h) = terrain_mesh::cell_ground(&sim.scn, sim.scn.world.cell_of(sim.case.ignition()));
     let distance = 2600.0;
     let focus = frame::to_bevy(p, h);
     let mut camera = commands.spawn((
-        Camera3dBundle {
-            camera: Camera { hdr: !cfg!(target_arch = "wasm32"), ..default() },
-            tonemapping: Tonemapping::TonyMcMapface,
-            transform: Transform::from_xyz(focus.x, focus.y + distance * 0.77, focus.z + distance * 0.77),
-            projection: PerspectiveProjection { far: 40_000.0, ..default() }.into(),
-            ..default()
-        },
+        Camera3d::default(),
+        Tonemapping::TonyMcMapface,
+        gfx.msaa(),
+        grading(),
+        Transform::from_xyz(focus.x, focus.y + distance * 0.77, focus.z + distance * 0.77),
+        Projection::from(PerspectiveProjection { far: 40_000.0, ..default() }),
         OrbitCamera { focus, distance, ..default() },
         // colour and reach are set every frame by `sky::update_sky`
-        bevy::pbr::FogSettings::default(),
+        DistanceFog::default(),
     ));
+    // Metal has no multi-draw-indirect: the GPU-driven path only adds an indirect
+    // buffer per batch (measured 2026-10-21: frame 16.5 -> 13.5 ms at 1600x1000).
+    // WebGL2 has no indirect drawing at all.
+    if !cfg!(target_arch = "wasm32") {
+        camera.insert(bevy::render::view::NoIndirectDrawing);
+    }
+    // an HDR target on the desktop (WebGL2 has no multisampled HDR targets)
+    if !cfg!(target_arch = "wasm32") {
+        camera.insert(bevy::camera::Hdr);
+    }
     if gfx.smaa {
-        camera.insert(bevy::core_pipeline::smaa::SmaaSettings::default());
+        camera.insert(bevy::anti_alias::smaa::Smaa::default());
     }
     if gfx.bloom {
-        camera.insert(BloomSettings { intensity: 0.20, ..BloomSettings::NATURAL });
+        camera.insert(Bloom { intensity: 0.20, ..Bloom::NATURAL });
     }
     // The depth prepass is there for the depth of field only.
     if gfx.dof {
         camera.insert((
             bevy::core_pipeline::prepass::DepthPrepass,
-            bevy::core_pipeline::dof::DepthOfFieldSettings {
-                mode: bevy::core_pipeline::dof::DepthOfFieldMode::Gaussian,
+            bevy::post_process::dof::DepthOfField {
+                mode: bevy::post_process::dof::DepthOfFieldMode::Gaussian,
                 focal_distance: distance,
                 sensor_height: 0.01866,
                 aperture_f_stops: 0.012,
@@ -261,23 +303,27 @@ fn setup_scene(
 /// and cannot go stale when something new is spawned.
 fn teardown_scene(
     mut commands: Commands,
-    roots: Query<Entity, (With<Transform>, Without<Parent>)>,
+    roots: Query<Entity, (With<Transform>, Without<ChildOf>)>,
 ) {
     for e in &roots {
-        commands.entity(e).despawn_recursive();
+        commands.entity(e).despawn();
     }
 }
 
 /// The kiosk's schedule.
 fn kiosk_systems(app: &mut App) {
+    // Since bevy_egui 0.42 the interface is drawn only inside the egui pass
+    // (`EguiPrimaryContextPass`, in `PostUpdate`), no longer in `Update`
+    // before `kiosk::step`: what is clicked there reaches `step` on the next frame.
+    app.add_systems(bevy_egui::EguiPrimaryContextPass, kiosk::ui::draw.run_if(in_state(AppState::Playing)));
     #[cfg(not(target_arch = "wasm32"))]
-    app.add_systems(Update, kiosk::ui::fps.after(kiosk::ui::draw).run_if(in_state(AppState::Playing)));
+    app.add_systems(bevy_egui::EguiPrimaryContextPass, kiosk::ui::fps.after(kiosk::ui::draw).run_if(in_state(AppState::Playing)));
     app.add_systems(Update, near_cover::update.run_if(in_state(AppState::Playing)));
     app.add_systems(
         Update,
         (
             kiosk::launch.run_if(in_state(AppState::SelectingScenario)),
-            (kiosk::ui::draw, kiosk::step, kiosk::snap::drive, kiosk::view::camera.run_if(map_camera_allowed), kiosk::snap::hold, playtest::observe)
+            (kiosk::step, kiosk::snap::drive, kiosk::view::camera.run_if(map_camera_allowed), kiosk::snap::hold, playtest::observe)
                 .chain()
                 .run_if(in_state(AppState::Playing)),
             kiosk::snap::hide_marks
@@ -291,7 +337,12 @@ fn kiosk_systems(app: &mut App) {
             (
                 fire_view::update_overlay,
                 fire_view::update_flames,
-                (vegetation::burn, vegetation::lod, vegetation::fire_clock),
+                (
+                    // `lod` may toggle a burnt-remains layer `burn` has just spawned: since
+                    // Bevy 0.20 an entity exists only once the spawning command is applied
+                    (vegetation::burn, vegetation::lod).chain(),
+                    vegetation::fire_clock,
+                ),
                 buildings::damage,
                 units::update_units,
                 units::animate_units,
@@ -303,6 +354,7 @@ fn kiosk_systems(app: &mut App) {
                 units::animate_spray,
                 kiosk::marks::update_hexes,
                 kiosk::marks::update_orders,
+                kiosk::marks::update_district_zone,
                 kiosk::marks::update_closed,
                 kiosk::marks::update_teams,
                 kiosk::marks::bob_zone,
@@ -319,4 +371,18 @@ fn kiosk_systems(app: &mut App) {
 
 fn map_camera_allowed(mario: Res<mario::Playground>) -> bool {
     !mario.active
+}
+
+/// The film look on top of the tone mapper: a touch more contrast in the
+/// midtones and saturation after it, so the sunlit island does not read
+/// washed out (TonyMcMapface desaturates bright, saturated colours). Tuned on
+/// snapshots against the sky's fill (`sky_light`), 2026-10-20.
+fn grading() -> bevy::render::view::ColorGrading {
+    use bevy::render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection};
+    let mut g = ColorGrading::with_identical_sections(
+        ColorGradingGlobal { post_saturation: 1.15, ..default() },
+        ColorGradingSection::default(),
+    );
+    g.midtones.contrast = 1.15;
+    g
 }

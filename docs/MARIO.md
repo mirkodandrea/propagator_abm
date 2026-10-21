@@ -1,8 +1,8 @@
 # Mario (solo build nativa)
 
-**Ricollegato il 2026-10-16.** Si apre con **Ctrl+Maiusc+M** (combinazione nascosta; il tasto Start del pad non lo apre più dal 2026-10-17) solo a mondo fermo: nel titolo o nella pausa della partita (non nel tutorial). Mentre Mario è attivo il mondo parte fermo e il pannello permette 0x, 1x, 5x, 10x, 30x, 60x (la pausa del gioco non scade), la UI del gioco è nascosta e la camera della mappa è sospesa. Dei vecchi attori restano solo le squadre (collisione e saluto con F / L3); persone e auto non esistono più. Non provato a schermo (solo test e build).
+**Ricollegato il 2026-10-16.** Si apre con **Ctrl+Maiusc+M** (combinazione nascosta; il tasto Start del pad non lo apre più dal 2026-10-17) nel titolo o nella partita, **in pausa o no** (2026-10-21, richiesta dell'utente; non nel tutorial). Mentre Mario è attivo il mondo parte a **1x** (prima fermo), con la grafica a colori anche se si entra dalla vista tattica, e il pannello permette 0x, 1x, 5x, 10x, 30x, 60x (la pausa del gioco non scade), la UI del gioco è nascosta e la camera della mappa è sospesa. Dei vecchi attori restano solo le squadre (collisione e saluto con F / L3); persone e auto non esistono più. Non provato a schermo (solo test e build).
 
-Durante la pausa, **Ctrl+Maiusc+M** apre Mario.
+**Ctrl+Maiusc+M** apre Mario, anche a partita in corso.
 Parte davanti all'ingresso della rocca, usando posizione, orientamento e scala
 di `island.json`; negli scenari senza rocca usa la strada più vicina alla vista.
 Ctrl+Maiusc+M o Esc torna al piano e ripristina camera, viewport e pausa.
@@ -30,7 +30,9 @@ SM64, massimo 120); a terra resta il salto. Ali e fisica del volo sono gestite d
 Con R / △ o «Scegli posizione sulla mappa» si apre una vista verticale dell’intera
 mappa e Mario resta fermo durante la scelta. Muovi il mouse o WASD / stick sinistro
 per spostare il mirino; frecce / stick destro spostano la vista. Rotella, Q/E e L1/R1
-regolano lo zoom. Un clic sulla mappa, Spazio / × o «Posiziona» conferma;
+regolano lo zoom. Lo zoom (rotella) avvicina verso il puntatore: il punto sotto il mouse resta sotto il mouse.
+Il puntatore sceglie anche i modelli: sopra la rocca o la torre (e i tetti) Mario si
+posiziona in cima, non a terra (2026-10-20, richiesta dell'utente). Un clic sulla mappa, Spazio / × o «Posiziona» conferma;
 Esc, ○, R / △ o «Annulla» torna a Mario senza spostarlo. Puoi scegliere qualsiasi
 punto, anche in mare; nei punti occupati si cerca terreno libero entro circa 21 m,
 altrimenti la selezione resta aperta. Dopo la conferma si torna alla camera di Mario.
@@ -69,3 +71,37 @@ ownership e cleanup con ROM locale); `cargo test -p game --release mario`
 Screenshot riproducibile della modalità: `KIOSK_SNAP=out/mario
 KIOSK_SNAP_SPEC='name=rocca,phase=pianifica,mario=1' cargo run -p game
 --release`. Il campo `mario=1` è solo nativo; il programma salva il PNG e termina.
+
+## Passatempi (2026-10-20, richiesta dell'utente)
+
+Solo per divertimento, in `crates/game/src/mario_play.rs`. Leggono dove sta
+Mario e cosa fa; non toccano `Game`, ordini, agenti, punteggio o classifica, e
+con Mario chiuso non fanno nulla. I progressi durano quanto il programma; solo il
+record della corsa è su file (`~/.rocca_ventosa/mario_record.txt`, non scritto se
+`KIOSK_SCORES` è impostata). Restano nascosti: niente nel tutorial.
+
+- **Stelle** (colonna gialla visibile da lontano): sul tetto della rocca (solo
+  Wing Cap; quota dalla mesh disegnata per scala), una più in alto vicino alla
+  rocca (solo Wing Cap), ai piedi della torre (fuori dal suo ingombro), porto,
+  una per borgo. Il pannello in alto a destra dà
+  l'indizio della più vicina con distanza e direzione. Presa una stella, Mario
+  fa la posa della vittoria per 2,4 s e poi torna ai comandi (la danza della
+  stella non finisce da sola: `Engine::end_victory`).
+- **Monete** lungo le strade (una ogni ≥ 90 m, al massimo 180, mai in mare).
+- **Saluti** (F / L3): ogni borgo (entro 90 m dal centro) e ogni squadra hanno
+  un fumetto diverso. Prima volta e ripetizioni sono contate.
+- **Corsa** dalla colonna azzurra del porto alla colonna azzurra della rocca,
+  con cronometro e record. Si annulla se Mario viene spostato (R) o recuperato.
+- **Fiammelle**: un pugno vicino a celle in fiamme ne fa uscire uno sbuffo e le
+  conta, ma il fuoco vero non cambia (lo dice il pannello).
+- **Titoli** (stelle, monete, saluti tutti): compaiono nel pannello.
+
+**Suoni** (2026-10-20): sono quelli della ROM, via `Engine::cue` (`Cue` in
+`libsm64-native`). Moneta: tintinnio; stella: suono della stella e fanfara di
+raccolta; saluto: «Yahoo!»; fiammella: sbuffo di fiamma spenta; via della corsa:
+sparo e «Here we go!»; arrivo: campanella; record: jingle del punteggio alto;
+titolo: jingle del rompicapo risolto. Il test della libreria verifica che ognuno
+produca audio vero sopra il silenzio. Non udito a orecchio.
+
+Verifiche: `cargo test -p game --release mario` e `cargo test -p libsm64-native`.
+Non provato a schermo.

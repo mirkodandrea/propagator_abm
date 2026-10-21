@@ -6,11 +6,9 @@
 // given). No light and no fog; vertices pulled toward the camera as in
 // flat.wgsl.
 
-#import bevy_pbr::{
-    mesh_functions,
-    mesh_view_bindings::{view, globals},
-    view_transformations::position_world_to_clip,
-}
+import bevy_pbr::render::mesh_functions;
+import bevy_pbr::render::mesh_view_bindings::{view, globals};
+import bevy_pbr::render::view_transformations::position_world_to_clip;
 
 struct Route {
     color: vec4<f32>,
@@ -21,7 +19,7 @@ struct Route {
     // z: dash period in metres (0 = unbroken), the dashes march along the route
     look: vec4<f32>,
 };
-@group(2) @binding(0) var<uniform> route: Route;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> route: Route;
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,

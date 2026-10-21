@@ -1,10 +1,8 @@
 //! Blender-authored meshes baked by `scripts/build_models.py`.
 //! Embedded for identical native/web loading; one mesh and material per symbol.
 use bevy::prelude::*;
-use bevy::render::{
-    mesh::{Indices, PrimitiveTopology},
-    render_asset::RenderAssetUsages,
-};
+use bevy::asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
 use std::{collections::HashMap, sync::OnceLock};
 
 pub struct Model {
@@ -55,6 +53,9 @@ pub struct Kit {
     pub footprint: Option<[f32; 2]>,
     /// Set on the animated parts of a unit (`<unit>.<part>` in `units.json`).
     pub rig: Option<Rig>,
+    /// What each vertex is made of (`materials::Surface` ids), where the bake
+    /// says: the units. Empty elsewhere.
+    pub surfaces: Vec<u8>,
 }
 
 /// How an animated part of a unit moves: about `pivot` (model space, metres)
@@ -82,6 +83,7 @@ fn parse_kit(json: &str, what: &str) -> HashMap<String, Kit> {
                     colors: serde_json::from_value(v["colors"].clone()).unwrap(),
                     indices: serde_json::from_value(v["indices"].clone()).unwrap(),
                     footprint: serde_json::from_value(v["footprint"].clone()).unwrap_or(None),
+                    surfaces: serde_json::from_value(v["surfaces"].clone()).unwrap_or_default(),
                     rig: v.get("rig").map(|r| Rig {
                         pivot: Vec3::from_array(serde_json::from_value(r["pivot"].clone()).unwrap()),
                         axis: Vec3::from_array(serde_json::from_value(r["axis"].clone()).unwrap()),
@@ -215,12 +217,16 @@ fn units() -> &'static HashMap<String, Kit> {
     UNITS.get_or_init(|| parse_kit(include_str!("../../../assets/models/units.json"), "unit models"))
 }
 
+/// The surface of each vertex goes in its colour's alpha
+/// (`materials::Surface::alpha`), for the structure shader.
 fn kit_to_mesh(m: &Kit, shift: Vec3) -> Mesh {
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
     let positions: Vec<[f32; 3]> = m.positions.iter().map(|p| (Vec3::from_array(*p) - shift).to_array()).collect();
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, m.normals.clone());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, m.colors.iter().map(|c| [c[0], c[1], c[2], 1.0]).collect::<Vec<_>>());
+    let alpha = |i: usize| m.surfaces.get(i).map_or(1.0, |&s| crate::materials::surface_alpha(s));
+    let colors: Vec<[f32; 4]> = m.colors.iter().enumerate().map(|(i, c)| [c[0], c[1], c[2], alpha(i)]).collect();
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; m.positions.len()]);
     mesh.insert_indices(Indices::U32(m.indices.clone()));
     mesh

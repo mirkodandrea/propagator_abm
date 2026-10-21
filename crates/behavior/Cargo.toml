@@ -18,7 +18,7 @@ inventory = "0.3"
 # Optional so the model crates stay Bevy-free (see the dependency direction in
 # CLAUDE.md). `game` turns it on to put the value types in Bevy's type
 # registry.
-bevy_reflect = { version = "0.14", optional = true }
+bevy_reflect = { version = "0.20", optional = true }
 
 [features]
 default = []

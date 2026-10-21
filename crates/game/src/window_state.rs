@@ -43,7 +43,7 @@ fn save(
     path: Res<SavedWindow>,
     mut previous: Local<Option<serde_json::Value>>,
 ) {
-    let Ok(window) = windows.get_single() else { return };
+    let Ok(window) = windows.single() else { return };
     if window.mode != bevy::window::WindowMode::Windowed { return; }
     let bevy::window::WindowPosition::At(pos) = window.position else { return };
     if window.physical_width() == 0 || window.physical_height() == 0 { return; }
@@ -61,12 +61,12 @@ fn save(
 fn restart(
     keys: Res<ButtonInput<KeyCode>>,
     mut contexts: bevy_egui::EguiContexts,
-    mut exit: EventWriter<AppExit>,
+    mut exit: MessageWriter<AppExit>,
 ) {
     if std::env::var_os("KIOSK_RELOAD").is_some()
         && keys.just_pressed(KeyCode::F5)
-        && !contexts.ctx_mut().wants_keyboard_input()
+        && !contexts.ctx_mut().is_ok_and(|c| c.egui_wants_keyboard_input())
     {
-        exit.send(AppExit::Error(NonZeroU8::new(75).unwrap()));
+        exit.write(AppExit::Error(NonZeroU8::new(75).unwrap()));
     }
 }

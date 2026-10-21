@@ -24,13 +24,12 @@
 
 use abm::suppression::{Task, UnitKind, UnitState};
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use scenario::{Cell, Pos, Scenario};
 
+use crate::materials::{self, Finish, StructureMaterial};
 use crate::frame;
-use crate::retro;
-use crate::retro::RetroMaterial;
 use crate::rings::{ring_mesh, tube_transform, wall_mesh, TubeSpin, RING_LIFT_M};
 use crate::sim::Sim;
 
@@ -86,9 +85,9 @@ pub struct WorkOverlay;
 
 #[derive(Resource)]
 pub struct UnitAssets {
-    order_ring: Handle<RetroMaterial>,
-    line_cut: Handle<RetroMaterial>,
-    line_todo: Handle<RetroMaterial>,
+    order_ring: Handle<StandardMaterial>,
+    line_cut: Handle<StandardMaterial>,
+    line_todo: Handle<StandardMaterial>,
     /// Suppression generation the markers were built for.
     orders_gen: u64,
     /// Fire generation the work overlay was built for, plus the counts it was
@@ -117,9 +116,6 @@ pub fn tint(state: UnitState) -> Color {
     }
 }
 
-/// How much the models glow on their own, so they stay findable in smoke
-/// shadow without flattening their colours.
-const SELF_LIGHT: f32 = 0.12;
 
 /// An animated part of a unit (a wheel, a propeller, a limb, a beacon): a child
 /// of the unit's symbol, turning about the pivot of its model.
@@ -142,11 +138,33 @@ pub struct Motion {
     pub speed: f32,
 }
 
+/// Where each unit is *drawn*. The game moves its people in steps of
+/// [`rocca::STEP_S`] simulated seconds, which at a slow speed are seconds of
+/// real time apart, so a walker would stand still and then jump. The drawing
+/// glides from the last drawn spot to the new one over the real time the step
+/// lasts. Only the picture: the game state is not touched.
+#[derive(Resource, Default)]
+pub struct Glide(Vec<Option<Glided>>);
+
+#[derive(Clone, Copy)]
+struct Glided {
+    from: Pos,
+    to: Pos,
+    shown: Pos,
+    /// Real time the glide began and lasts.
+    t0: f32,
+    span: f32,
+}
+
+/// A step longer than this is a cut (a restart, a move of the whole scene), not a walk.
+const GLIDE_MAX_M: f32 = 250.0;
+
 pub fn setup(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<RetroMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut bodies: ResMut<Assets<StructureMaterial>>,
 ) {
     // Blender models (scripts/build_unit_models.py): the engine, a firefighter
     // on foot (each person of a team is a unit of its own) and the air tanker.
@@ -156,16 +174,16 @@ pub fn setup(
 
     let vr = false;
     let symbol_scale = symbol_scale(vr);
-    let mut mat = |c: Color, emissive: f32| {
-        materials.add(retro::material(StandardMaterial {
-            base_color: c,
-            // Strongly self-lit: these have to be findable in smoke shadow on a
-            // north-facing slope, which is precisely where the work is.
-            emissive: c.to_linear() * emissive,
-            perceptual_roughness: 0.5,
-            unlit: vr,
-            ..default()
-        }, vr))
+    // Paint, glass, metal, cloth... per vertex (`materials::surface_alpha`):
+    // the base only carries the status tint. A clear coat here turns the
+    // shader's clear-coat path on; the paint is the only part that keeps it.
+    // Findable in smoke shadow by their hi-vis tape and lamps, not by glowing
+    // all over.
+    let mut mat = |c: Color| {
+        bodies.add(materials::structure(
+            StandardMaterial { base_color: c, perceptual_roughness: 0.5, clearcoat: 1.0, unlit: vr, ..default() },
+            Finish::None,
+        ))
     };
 
     for u in &sim.crews.units {
@@ -175,7 +193,7 @@ pub fn setup(
             UnitKind::AirTanker => (tanker.clone(), symbol_scale * 1.6),
         };
         let ground = sim.scn.terrain.height_at(u.pos);
-        let material = mat(tint(u.state), SELF_LIGHT);
+        let material = mat(tint(u.state));
         let model = match u.kind {
             UnitKind::Engine => "engine",
             UnitKind::HandCrew => "firefighter",
@@ -183,30 +201,28 @@ pub fn setup(
         };
         commands
             .spawn((
-                MaterialMeshBundle::<RetroMaterial> {
-                    mesh,
-                    material: material.clone(),
-                    transform: Transform::from_translation(frame::to_bevy(u.pos, ground))
+                (
+                    Mesh3d(mesh),
+                    MeshMaterial3d(material.clone()),
+                    Transform::from_translation(frame::to_bevy(u.pos, ground))
                         .with_scale(Vec3::splat(scale)),
                     // Air support is not on the map until it is actually here.
-                    visibility: if u.on_scene() {
+                    if u.on_scene() {
                         Visibility::Inherited
                     } else {
                         Visibility::Hidden
                     },
-                    ..default()
-                },
+                ),
                 UnitView { id: u.id },
             ))
             .with_children(|parent| {
                 for (_, part, rig) in crate::models::unit_parts(model) {
                     parent.spawn((
-                        MaterialMeshBundle::<RetroMaterial> {
-                            mesh: meshes.add(part),
-                            material: material.clone(),
-                            transform: Transform::from_translation(rig.pivot),
-                            ..default()
-                        },
+                        (
+                            Mesh3d(meshes.add(part)),
+                            MeshMaterial3d(material.clone()),
+                            Transform::from_translation(rig.pivot),
+                        ),
                         Rigged { unit: u.id, rig, clock: 0.0, amp: 0.0 },
                     ));
                 }
@@ -215,32 +231,31 @@ pub fn setup(
     info!("suppression layer: {} unit symbols", sim.crews.units.len());
 
     // The jets: one arc per engine, moved every frame by `animate_spray`.
-    let arc_mat = materials.add(retro::material(StandardMaterial {
+    let arc_mat = materials.add(StandardMaterial {
         base_color: Color::LinearRgba(LinearRgba::new(0.55, 1.3, 2.6, 0.6)),
         unlit: true,
         alpha_mode: AlphaMode::Blend,
         double_sided: true,
         cull_mode: None,
         ..default()
-    }, vr));
+    });
     for u in sim.crews.units.iter().filter(|u| u.kind == UnitKind::Engine) {
         // Never an empty mesh: the prepass panics on one. A flat arc is valid, and replaced on the first frame.
         let flat: Vec<(Vec3, f32)> = (0..=ARC_SEGMENTS).map(|_| (Vec3::ZERO, 0.0)).collect();
         commands.spawn((
-            MaterialMeshBundle::<RetroMaterial> {
-                mesh: meshes.add(arc_mesh(&flat)),
-                material: arc_mat.clone(),
-                visibility: Visibility::Hidden,
-                ..default()
-            },
-            bevy::render::view::NoFrustumCulling,
+            (
+                Mesh3d(meshes.add(arc_mesh(&flat))),
+                MeshMaterial3d(arc_mat.clone()),
+                Visibility::Hidden,
+            ),
+            bevy::camera::visibility::NoFrustumCulling,
             Jet { unit: u.id },
         ));
     }
 
-    let order_ring = hdr_blue(&mut materials, vr, 0.95);
+    let order_ring = hdr_blue(&mut materials, 0.95);
     let mut unlit = |r: f32, g: f32, b: f32, a: f32| {
-        materials.add(retro::material(StandardMaterial {
+        materials.add(StandardMaterial {
             base_color: Color::srgba(r, g, b, a),
             emissive: LinearRgba::rgb(r * 1.4, g * 1.4, b * 1.4),
             unlit: true,
@@ -248,7 +263,7 @@ pub fn setup(
             double_sided: true,
             cull_mode: None,
             ..default()
-        }, vr))
+        })
     };
     commands.insert_resource(UnitAssets {
         order_ring,
@@ -278,7 +293,7 @@ pub fn setup(
 /// otherwise decide the overlay is still current.
 pub fn reset(
     mut commands: Commands,
-    mut restarted: EventReader<crate::sim::SimRestarted>,
+    mut restarted: MessageReader<crate::sim::SimRestarted>,
     mut assets: ResMut<UnitAssets>,
     markers: Query<Entity, With<OrderMarker>>,
     overlay: Query<Entity, With<WorkOverlay>>,
@@ -300,21 +315,38 @@ pub fn reset(
 
 pub fn update_units(
     sim: Res<Sim>,
-    mut materials: ResMut<Assets<RetroMaterial>>,
+    time: Res<Time>,
+    mut glide: ResMut<Glide>,
+    mut materials: ResMut<Assets<StructureMaterial>>,
     mut query: Query<(
         &UnitView,
         &mut Transform,
         &mut Visibility,
-        &Handle<RetroMaterial>,
+        &MeshMaterial3d<StructureMaterial>,
     )>,
 ) {
-    if !sim.is_changed() {
-        return;
+    let now = time.elapsed_secs();
+    if glide.0.len() != sim.crews.units.len() {
+        glide.0.clear();
+        glide.0.resize(sim.crews.units.len(), None);
+    }
+    // real seconds one game step lasts at this speed (0 = no glide)
+    let span = if sim.speed > 0.0 { rocca::STEP_S as f32 / sim.speed } else { 0.0 };
+    for (u, g) in sim.crews.units.iter().zip(glide.0.iter_mut()) {
+        let mut cur = g.unwrap_or(Glided { from: u.pos, to: u.pos, shown: u.pos, t0: now, span: 0.0 });
+        if (u.pos.x, u.pos.y) != (cur.to.x, cur.to.y) {
+            let far = (u.pos.x - cur.shown.x).hypot(u.pos.y - cur.shown.y) > GLIDE_MAX_M;
+            cur = Glided { from: if far { u.pos } else { cur.shown }, to: u.pos, shown: cur.shown, t0: now, span };
+        }
+        let f = if cur.span > 0.0 { ((now - cur.t0) / cur.span).clamp(0.0, 1.0) } else { 1.0 };
+        cur.shown = Pos { x: cur.from.x + (cur.to.x - cur.from.x) * f, y: cur.from.y + (cur.to.y - cur.from.y) * f };
+        *g = Some(cur);
     }
     for (view, mut tf, mut vis, mat) in &mut query {
         let Some(u) = sim.crews.units.get(view.id) else {
             continue;
         };
+        let shown = glide.0.get(view.id).copied().flatten().map_or(u.pos, |g| g.shown);
         // people sitting in the engine are the engine's symbol
         let want = if (u.on_scene() && !u.aboard) || u.state == UnitState::Lost {
             Visibility::Inherited
@@ -328,13 +360,13 @@ pub fn update_units(
             continue;
         }
 
-        let ground = sim.scn.terrain.height_at(u.pos);
+        let ground = sim.scn.terrain.height_at(shown);
         let lift = if u.kind.is_air() {
             AIR_ALTITUDE_M
         } else {
             0.05
         };
-        tf.translation = frame::to_bevy(u.pos, ground + lift);
+        tf.translation = frame::to_bevy(shown, ground + lift);
         // World bearing to Bevy yaw: north is -Z and the meshes' long axis is
         // +Z, so a heading of zero (due east) is a quarter turn. Same conversion
         // as the civilian vehicles, for the same reason.
@@ -348,11 +380,10 @@ pub fn update_units(
         // One material per entity here rather than a shared palette: there are
         // eight of these, and mutating the material in place is what makes a
         // unit visibly change state without a swap table.
-        if let Some(m) = materials.get_mut(mat) {
+        if let Some(mut m) = materials.get_mut(mat) {
             let c = tint(u.state);
             if m.base.base_color != c {
                 m.base.base_color = c;
-                m.base.emissive = c.to_linear() * SELF_LIGHT;
             }
         }
     }
@@ -366,22 +397,25 @@ pub fn update_units(
 pub fn animate_units(
     sim: Res<Sim>,
     time: Res<Time>,
+    glide: Res<Glide>,
     mut motion: Local<Vec<Option<Motion>>>,
     mut parts: Query<(&mut Rigged, &mut Transform, &mut Visibility)>,
 ) {
-    let now = time.elapsed_seconds();
-    let dt = time.delta_seconds().max(1e-4);
+    let now = time.elapsed_secs();
+    let dt = time.delta_secs().max(1e-4);
     if motion.len() != sim.crews.units.len() {
         motion.clear();
         motion.resize(sim.crews.units.len(), None);
     }
-    for (u, m) in sim.crews.units.iter().zip(motion.iter_mut()) {
-        let moved = m.map_or(0.0, |m| (u.pos.x - m.pos.x).hypot(u.pos.y - m.pos.y));
-        let prev = m.unwrap_or(Motion { pos: u.pos, moved_at: f32::NEG_INFINITY, speed: 0.0 });
-        *m = Some(if moved > 0.05 {
-            Motion { pos: u.pos, moved_at: now, speed: moved / dt }
+    for ((u, g), m) in sim.crews.units.iter().zip(glide.0.iter()).zip(motion.iter_mut()) {
+        // the drawn spot, not the game's: a walker at 1x moves 2 cm a frame
+        let pos = g.map_or(u.pos, |g| g.shown);
+        let moved = m.map_or(0.0, |m| (pos.x - m.pos.x).hypot(pos.y - m.pos.y));
+        let prev = m.unwrap_or(Motion { pos, moved_at: f32::NEG_INFINITY, speed: 0.0 });
+        *m = Some(if moved / dt > 0.2 {
+            Motion { pos, moved_at: now, speed: moved / dt }
         } else {
-            Motion { pos: u.pos, ..prev }
+            Motion { pos, ..prev }
         });
     }
 
@@ -440,15 +474,15 @@ pub fn animate_units(
 /// while parked at their station; dark once caught by the fire.
 /// UI-in-3D blue, overbright: unlit output goes through the tone mapper, which
 /// greys anything at or under 1.0 against the terrain, so the glow is >1.
-fn hdr_blue(materials: &mut Assets<RetroMaterial>, vr: bool, a: f32) -> Handle<RetroMaterial> {
-    materials.add(retro::material(StandardMaterial {
+fn hdr_blue(materials: &mut Assets<StandardMaterial>, a: f32) -> Handle<StandardMaterial> {
+    materials.add(StandardMaterial {
         base_color: Color::LinearRgba(LinearRgba::new(0.15, 1.2, 3.0, a)),
         unlit: true,
         alpha_mode: AlphaMode::Blend,
         double_sided: true,
         cull_mode: None,
         ..default()
-    }, vr))
+    })
 }
 
 /// Rebuild the order markers when the orders change.
@@ -484,20 +518,18 @@ pub fn sync_orders(
             Task::Hold | Task::Return | Task::Attack { .. } => {}
             Task::Drop { at } => {
                 commands.spawn((
-                    MaterialMeshBundle::<RetroMaterial> {
-                        mesh: meshes.add(ring_mesh(&sim.scn, at, ORDER_RING_M)),
-                        material: assets.order_ring.clone(),
-                        ..default()
-                    },
+                    (
+                        Mesh3d(meshes.add(ring_mesh(&sim.scn, at, ORDER_RING_M))),
+                        MeshMaterial3d(assets.order_ring.clone()),
+                    ),
                     OrderMarker,
                 ));
                 commands.spawn((
-                    MaterialMeshBundle::<RetroMaterial> {
-                        mesh: meshes.add(wall_mesh(&sim.scn, at, ORDER_RING_M)),
-                        material: assets.order_ring.clone(),
-                        transform: tube_transform(at),
-                        ..default()
-                    },
+                    (
+                        Mesh3d(meshes.add(wall_mesh(&sim.scn, at, ORDER_RING_M))),
+                        MeshMaterial3d(assets.order_ring.clone()),
+                        tube_transform(at),
+                    ),
                     OrderMarker,
                     TubeSpin,
                 ));
@@ -512,21 +544,19 @@ pub fn sync_orders(
                 // that does not need a number.
                 if done > 0.001 {
                     commands.spawn((
-                        MaterialMeshBundle::<RetroMaterial> {
-                            mesh: meshes.add(ribbon(&sim.scn, from, head, 8.0)),
-                            material: assets.line_cut.clone(),
-                            ..default()
-                        },
+                        (
+                            Mesh3d(meshes.add(ribbon(&sim.scn, from, head, 8.0))),
+                            MeshMaterial3d(assets.line_cut.clone()),
+                        ),
                         OrderMarker,
                     ));
                 }
                 if done < 0.999 {
                     commands.spawn((
-                        MaterialMeshBundle::<RetroMaterial> {
-                            mesh: meshes.add(dashed_ribbon(&sim.scn, head, to, 4.0)),
-                            material: assets.line_todo.clone(),
-                            ..default()
-                        },
+                        (
+                            Mesh3d(meshes.add(dashed_ribbon(&sim.scn, head, to, 4.0))),
+                            MeshMaterial3d(assets.line_todo.clone()),
+                        ),
                         OrderMarker,
                     ));
                 }
@@ -830,9 +860,9 @@ pub fn animate_spray(
     time: Res<Time>,
     assets: Res<UnitAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut arcs: Query<(&Jet, &Handle<Mesh>, &mut Visibility)>,
+    mut arcs: Query<(&Jet, &Mesh3d, &mut Visibility)>,
 ) {
-    let now = time.elapsed_seconds();
+    let now = time.elapsed_secs();
     let w = sim.scn.world;
     let reach = rocca::game::ENGINE_RANGE_M * 1.5;
     // The targets of each engine, computed once per frame and not per jet.
@@ -890,7 +920,7 @@ pub fn animate_spray(
                 (frame::to_bevy(p, y), width)
             })
             .collect();
-        if let Some(m) = meshes.get_mut(handle) {
+        if let Some(mut m) = meshes.get_mut(handle) {
             *m = arc_mesh(&points);
         }
         if *vis != Visibility::Inherited {

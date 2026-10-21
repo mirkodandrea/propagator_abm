@@ -8,8 +8,8 @@
 //! but the key cleared.
 
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
+use bevy::asset::RenderAssetUsages;
 use rocca::tutorial::Expect;
 use scenario::Pos;
 
@@ -24,6 +24,9 @@ use crate::tape::TapeMaterial;
 /// Width of the band along the roads where a team can be placed (a buffer of
 /// half of it on each side; the internal rule stays the hex grid).
 const BUFFER_M: f32 = 110.0;
+/// Half the width of the district's zone: the buffer around each home, so
+/// homes closer than twice this are one patch (user, 2026-10-21).
+const DISTRICT_BUFFER_M: f32 = 80.0;
 /// The dark under-stroke of the hex lines, wider, a little lower.
 const HEX_UNDER_M: f32 = 24.0;
 const HEX_PICK_M: f32 = 16.0;
@@ -51,6 +54,9 @@ const UNDER: f32 = 1.8;
 
 #[derive(Component)]
 pub struct HexMark;
+/// The ground a district covers: a buffer around its homes (pixel shader).
+#[derive(Component)]
+pub struct DistrictZoneMark;
 /// The drivable roads, shown while a move is chosen.
 #[derive(Component)]
 pub struct RoadNetMark;
@@ -71,6 +77,9 @@ pub struct ZoneBob;
 pub struct MarkAssets {
     /// The band where a team can be placed (pixel shader).
     reach: Handle<ReachMaterial>,
+    /// The ground of the chosen district.
+    district_zone: Handle<ReachMaterial>,
+    district_key: Option<usize>,
     /// The route a team would drive (pixel shader), per team colour.
     team_line: Vec<Handle<RouteMaterial>>,
     /// The drivable roads, while a move is chosen.
@@ -129,6 +138,8 @@ pub fn setup(mut commands: Commands, mut lines: ResMut<Assets<RouteMaterial>>, m
     commands.insert_resource(MarkAssets {
         team_line: TEAM_COLOURS.iter().map(|&c| lines.add(RouteMaterial::dashed(c, ROUTE_M * 1.0, ROUTE_M * 1.8, 0.95, 60.0))).collect(),
         reach: reaches.add(ReachMaterial::new([1.0, 1.0, 1.0], 0.22, BUFFER_M / 2.0)),
+        district_zone: reaches.add(ReachMaterial::new([0.43, 0.72, 1.0], 0.30, DISTRICT_BUFFER_M)),
+        district_key: None,
         road: lines.add(RouteMaterial::plain([1.0, 0.93, 0.62], ROAD_M * 0.5, ROAD_M * 0.9, 0.75)),
         under: materials.add(FlatMaterial::new([0.02, 0.03, 0.05]).pulled(HEX_PULL_M - 3.0)),
         pick: materials.add(FlatMaterial::new([1.0, 1.0, 1.0]).pulled(HEX_PULL_M + 4.0)),
@@ -209,11 +220,11 @@ fn area_circle(at: rocca::Axial) -> Vec<Pos> {
 
 fn spawn<M: Component>(commands: &mut Commands, meshes: &mut Assets<Mesh>, mesh: Mesh, mat: &Handle<FlatMaterial>, tag: M) -> Entity {
     commands.spawn((
-        MaterialMeshBundle::<FlatMaterial> { mesh: meshes.add(mesh), material: mat.clone(), ..default() },
+        (Mesh3d(meshes.add(mesh)), MeshMaterial3d(mat.clone())),
         tag,
-        bevy::pbr::NotShadowCaster,
-        bevy::pbr::NotShadowReceiver,
-        bevy::render::view::NoFrustumCulling,
+        bevy::light::NotShadowCaster,
+        bevy::light::NotShadowReceiver,
+        bevy::camera::visibility::NoFrustumCulling,
     )).id()
 }
 
@@ -254,11 +265,11 @@ pub fn update_hexes(
         }
         if let Some(mesh) = sparse_mesh(&sim.scn, &segments, ROAD_M * 0.9 + 6.0, 5.0) {
             commands.spawn((
-                MaterialMeshBundle::<RouteMaterial> { mesh: meshes.add(mesh), material: assets.road.clone(), visibility: Visibility::Hidden, ..default() },
+                (Mesh3d(meshes.add(mesh)), MeshMaterial3d(assets.road.clone()), Visibility::Hidden),
                 RoadNetMark,
-                bevy::pbr::NotShadowCaster,
-                bevy::pbr::NotShadowReceiver,
-                bevy::render::view::NoFrustumCulling,
+                bevy::light::NotShadowCaster,
+                bevy::light::NotShadowReceiver,
+                bevy::camera::visibility::NoFrustumCulling,
             ));
         }
         return;
@@ -310,11 +321,51 @@ pub fn update_hexes(
     }
     if let Some(mesh) = band_mesh(&sim.scn, &segments, BUFFER_M) {
         commands.spawn((
-            MaterialMeshBundle::<ReachMaterial> { mesh: meshes.add(mesh), material: assets.reach.clone(), ..default() },
+            (Mesh3d(meshes.add(mesh)), MeshMaterial3d(assets.reach.clone())),
             HexMark,
-            bevy::pbr::NotShadowCaster,
-            bevy::pbr::NotShadowReceiver,
-            bevy::render::view::NoFrustumCulling,
+            bevy::light::NotShadowCaster,
+            bevy::light::NotShadowReceiver,
+            bevy::camera::visibility::NoFrustumCulling,
+        ));
+    }
+}
+
+/// The ground of the district chosen or under the pointer in the sidebar and
+/// on the map: the union of a buffer around each of its homes, so a district
+/// of scattered hamlets shows that the click takes all of them.
+pub fn update_district_zone(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    kiosk: Res<Kiosk>,
+    mut assets: ResMut<MarkAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    old: Query<Entity, With<DistrictZoneMark>>,
+) {
+    let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
+    let shown = match kiosk.selection {
+        Selection::District(d) => Some(d),
+        _ => kiosk.evac_hover.as_ref().map(|h| h.0),
+    };
+    let key = shown.filter(|&d| playing && d < sim.districts.len());
+    if key == assets.district_key {
+        return;
+    }
+    assets.district_key = key;
+    for e in &old {
+        commands.entity(e).despawn();
+    }
+    let Some(d) = key else { return };
+    let homes: Vec<[Pos; 2]> = sim.districts[d].households.iter().map(|&i| {
+        let p = Pos::from(sim.scn.population.households[i].pos);
+        [p, p]
+    }).collect();
+    if let Some(mesh) = band_mesh(&sim.scn, &homes, DISTRICT_BUFFER_M + 40.0) {
+        commands.spawn((
+            (Mesh3d(meshes.add(mesh)), MeshMaterial3d(assets.district_zone.clone())),
+            DistrictZoneMark,
+            bevy::light::NotShadowCaster,
+            bevy::light::NotShadowReceiver,
+            bevy::camera::visibility::NoFrustumCulling,
         ));
     }
 }
@@ -395,11 +446,11 @@ pub fn update_orders(
     if let (Some(Ok(p)), Some(t)) = (&kiosk.move_plan, chosen) {
         if let Some(mesh) = route_mesh(&sim.scn, &p.path, ROUTE_M * 1.8 + 6.0) {
             commands.spawn((
-                MaterialMeshBundle::<RouteMaterial> { mesh: meshes.add(mesh), material: assets.team_line[t % TEAM_COLOURS.len()].clone(), ..default() },
+                (Mesh3d(meshes.add(mesh)), MeshMaterial3d(assets.team_line[t % TEAM_COLOURS.len()].clone())),
                 OrderMark,
-                bevy::pbr::NotShadowCaster,
-                bevy::pbr::NotShadowReceiver,
-                bevy::render::view::NoFrustumCulling,
+                bevy::light::NotShadowCaster,
+                bevy::light::NotShadowReceiver,
+                bevy::camera::visibility::NoFrustumCulling,
             ));
         }
     }
@@ -410,11 +461,11 @@ pub fn update_orders(
         if let Some(mesh) = route_mesh(&sim.scn, pts, ROUTE_M * 1.8 + 6.0) {
             let material = if plan { assets.evac_plan.clone() } else { assets.evac_line.clone() };
             commands.spawn((
-                MaterialMeshBundle::<RouteMaterial> { mesh: meshes.add(mesh), material, ..default() },
+                (Mesh3d(meshes.add(mesh)), MeshMaterial3d(material)),
                 OrderMark,
-                bevy::pbr::NotShadowCaster,
-                bevy::pbr::NotShadowReceiver,
-                bevy::render::view::NoFrustumCulling,
+                bevy::light::NotShadowCaster,
+                bevy::light::NotShadowReceiver,
+                bevy::camera::visibility::NoFrustumCulling,
             ));
         }
     }
@@ -470,7 +521,7 @@ pub fn update_teams(
 /// The zone line floats up and down a little, on real time: the world is
 /// paused when it matters most.
 pub fn bob_zone(time: Res<Time<Real>>, mut marks: Query<&mut Transform, With<ZoneBob>>) {
-    let y = ZONE_BOB_M * 0.5 * (1.0 - (time.elapsed_seconds() * std::f32::consts::TAU / ZONE_BOB_S).cos());
+    let y = ZONE_BOB_M * 0.5 * (1.0 - (time.elapsed_secs() * std::f32::consts::TAU / ZONE_BOB_S).cos());
     for mut t in &mut marks {
         t.translation.y = y;
     }
@@ -512,17 +563,17 @@ pub fn update_closed(
     for (parts, mat) in [(shut, &assets.tape), (open, &assets.tape_open)] {
         if !parts.is_empty() {
             commands.spawn((
-                MaterialMeshBundle::<TapeMaterial> { mesh: meshes.add(merge(parts)), material: mat.clone(), ..default() },
+                (Mesh3d(meshes.add(merge(parts))), MeshMaterial3d(mat.clone())),
                 ClosedMark,
-                bevy::pbr::NotShadowCaster,
-                bevy::pbr::NotShadowReceiver,
-                bevy::render::view::NoFrustumCulling,
+                bevy::light::NotShadowCaster,
+                bevy::light::NotShadowReceiver,
+                bevy::camera::visibility::NoFrustumCulling,
             ));
         }
     }
 }
 
-pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut assets: ResMut<MarkAssets>) {
+pub fn reset(mut restarted: MessageReader<crate::sim::SimRestarted>, mut assets: ResMut<MarkAssets>) {
     if !restarted.is_empty() {
         restarted.clear();
         assets.hex_key = None;

@@ -1,19 +1,26 @@
-// Vegetation fire state on the GPU (`vegetation.rs`, `retro.rs`).
+// The vegetation material's bindings (`materials/foliage.rs`) and the plants'
+// fire state on the GPU (`vegetation.rs`).
 //
 // Plants used to be redrawn on the CPU when the fire reached them, which meant
 // re-uploading whole chunk meshes. Now the meshes never change: every vertex
 // carries the index of its plant, a small per-chunk texture holds one texel per
 // plant (x = state, y = ignition time), and the vertex stage does what
 // `vegetation::draw_standing` / `draw_char` / `paint` do on the CPU (those stay
-// as the browser's path, and as the reference for the tests).
+// as the reference for the tests).
 //
 // It runs in the vertex stage, shadow and depth passes included, so a plant that
 // is gone casts no shadow. The colour comes out in the encoding the fragment
-// stage already reads (`retro.wgsl`): a negative alpha holds the ignition time.
-#define_import_path rocca::veg_state
+// stage reads (`foliage.wgsl`): a negative alpha holds the ignition time.
 
+
+struct Foliage {
+    // x: tactical desaturation (`tactical.rs`); y: the simulated clock, s;
+    // z: how long a plant flames, s (`vegetation::fire_clock`)
+    fire: vec4<f32>,
+};
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> foliage: Foliage;
 // one texel per plant, rows of 256: Rg32Float, read with textureLoad
-@group(2) @binding(112) var veg_state: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var veg_state: texture_2d<f32>;
 
 const ROW: u32 = 256u;
 // bit 31 of a vertex's plant index: the vertex belongs to the burnt-remains layer

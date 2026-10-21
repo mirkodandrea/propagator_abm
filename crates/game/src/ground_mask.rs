@@ -1,5 +1,5 @@
 //! Road mask: a signed-distance texture of the road network, sampled by the
-//! terrain's fragment shader (`shaders/retro.wgsl`).
+//! terrain's fragment shader (`shaders/terrain.wgsl`).
 //!
 //! The terrain mesh colours per vertex, one every 5 m, which is too coarse for
 //! a 10 m road. Rasterising the network once into a texture lets the shader draw
@@ -13,10 +13,11 @@
 //! to 0..255. A distance field survives box-filtered mip levels, so a trilinear
 //! sample is a plain blur of the roads at a distance, never a hole in them.
 
+use bevy::asset::uuid_handle;
 use bevy::prelude::*;
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use bevy::render::texture::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
+use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use scenario::{Pos, Scenario};
 
 /// Metres per texel. The browser takes a quarter of the memory.
@@ -29,7 +30,7 @@ pub const TRACK_HALF_W: f32 = 1.6;
 
 /// Where the mask lives in `Assets<Image>`: a fixed weak handle, so the fire's
 /// ground overlay can bind it without waiting for the terrain to be built.
-pub const ROAD_MASK: Handle<Image> = Handle::weak_from_u128(0x5A3C_91E0_77B2_4D18_8E41_C0A6_1F2D_7B09);
+pub const ROAD_MASK: Handle<Image> = uuid_handle!("5a3c91e0-77b2-4d18-8e41-c0a61f2d7b09");
 
 /// Which texels are open sea (low ground connected to the window's edge), so
 /// an inland hollow below sea level is not painted as water.
@@ -287,7 +288,7 @@ pub fn shader_grass() -> bool {
     *ON.get_or_init(|| std::env::var_os("ROCCA_GRASS_MESH").is_none())
 }
 
-pub const GRASS_MAP: Handle<Image> = Handle::weak_from_u128(0x2F7B_C4D1_0A93_4E66_B5C8_91D3_6E0A_48F2);
+pub const GRASS_MAP: Handle<Image> = uuid_handle!("2f7bc4d1-0a93-4e66-b5c8-91d36e0a48f2");
 
 /// Meadow cover on the fire grid, one texel per cell, row 0 at the south so
 /// that `v = y / height` indexes it like the mask. 255 where the fuel is

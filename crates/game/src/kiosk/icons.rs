@@ -76,7 +76,7 @@ pub fn draw(p: &Painter, r: Rect, icon: Icon, col: Color32) {
             p.circle_filled(at(r, 0.5, 0.88), s * 0.09, col);
         }
         Icon::Exit => {
-            p.rect_stroke(Rect::from_min_max(at(r, 0.08, 0.1), at(r, 0.5, 0.9)), 1.0, st);
+            p.rect_stroke(Rect::from_min_max(at(r, 0.08, 0.1), at(r, 0.5, 0.9)), 1.0, st, egui::StrokeKind::Middle);
             p.line_segment([at(r, 0.32, 0.5), at(r, 0.92, 0.5)], st);
             p.line_segment([at(r, 0.92, 0.5), at(r, 0.74, 0.32)], st);
             p.line_segment([at(r, 0.92, 0.5), at(r, 0.74, 0.68)], st);
@@ -141,9 +141,9 @@ pub fn button(ui: &mut egui::Ui, icon: Icon, text: &str, on: bool, colour: Color
     let fill = if on { colour } else if hot { Color32::from_gray(70) } else { Color32::from_gray(46) };
     let p = ui.painter();
     p.rect_filled(r, 9.0, fill);
-    p.rect_stroke(r, 9.0, Stroke::new(2.0, colour));
+    p.rect_stroke(r, 9.0, Stroke::new(2.0, colour), egui::StrokeKind::Middle);
     if hot {
-        p.rect_stroke(r.expand(2.0), 10.0, Stroke::new(2.0, Color32::WHITE));
+        p.rect_stroke(r.expand(2.0), 10.0, Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Middle);
     }
     let icon_rect = Rect::from_min_size(r.min, vec2(H, H)).shrink(11.0);
     draw(p, icon_rect, icon, if on { Color32::BLACK } else { colour });
@@ -161,7 +161,7 @@ pub fn button(ui: &mut egui::Ui, icon: Icon, text: &str, on: bool, colour: Color
 /// level buttons did not say they were buttons). egui's own buttons get it
 /// from `Visuals::interact_cursor`; drawn ones call this.
 pub fn pointing(resp: egui::Response) -> egui::Response {
-    if resp.enabled() && resp.sense.click {
+    if resp.enabled() && resp.sense.senses_click() {
         resp.on_hover_cursor(egui::CursorIcon::PointingHand)
     } else {
         resp
@@ -182,9 +182,9 @@ pub fn tall_button(ui: &mut egui::Ui, icon: Icon, text: &str, on: bool, colour: 
     let fg = if on { Color32::BLACK } else if dead { Color32::from_gray(120) } else { Color32::WHITE };
     let p = ui.painter();
     p.rect_filled(r, 9.0, fill);
-    p.rect_stroke(r, 9.0, Stroke::new(2.0, colour));
+    p.rect_stroke(r, 9.0, Stroke::new(2.0, colour), egui::StrokeKind::Middle);
     if hot {
-        p.rect_stroke(r.expand(2.0), 10.0, Stroke::new(2.0, Color32::WHITE));
+        p.rect_stroke(r.expand(2.0), 10.0, Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Middle);
     }
     draw(p, Rect::from_center_size(pos2(r.center().x, r.top() + 22.0), vec2(28.0, 28.0)), icon, if on { Color32::BLACK } else { colour });
     let g = p.layout_no_wrap(text.to_string(), egui::FontId::proportional(17.0), fg);
@@ -213,5 +213,5 @@ pub fn stack_bar(ui: &mut egui::Ui, width: f32, parts: &[(usize, Color32)]) {
         }
         x += w;
     }
-    p.rect_stroke(r, 4.0, Stroke::new(1.0, Color32::from_gray(90)));
+    p.rect_stroke(r, 4.0, Stroke::new(1.0, Color32::from_gray(90)), egui::StrokeKind::Middle);
 }

@@ -61,9 +61,9 @@ pub(super) struct PcmDecoder {
     index: usize,
 }
 
-impl Iterator for PcmDecoder {
-    type Item = i16;
-    fn next(&mut self) -> Option<i16> {
+impl PcmDecoder {
+    /// The PCM as libsm64 makes it, interleaved stereo.
+    fn next_i16(&mut self) -> Option<i16> {
         if self.index >= self.block.len() {
             let mut q = self.queue.lock().unwrap();
             if !q.active { return None; }
@@ -78,17 +78,28 @@ impl Iterator for PcmDecoder {
         self.index += 1;
         Some(sample)
     }
+    #[cfg(test)]
+    fn pcm(&mut self) -> impl Iterator<Item = i16> + '_ {
+        std::iter::from_fn(move || self.next_i16())
+    }
+}
+
+/// rodio (0.22, Bevy 0.20) plays `f32` samples only.
+impl Iterator for PcmDecoder {
+    type Item = f32;
+    fn next(&mut self) -> Option<f32> {
+        self.next_i16().map(|s| f32::from(s) / 32768.0)
+    }
 }
 
 impl Source for PcmDecoder {
-    fn current_frame_len(&self) -> Option<usize> { None }
-    fn channels(&self) -> u16 { 2 }
-    fn sample_rate(&self) -> u32 { libsm64_native::AUDIO_RATE }
+    fn current_span_len(&self) -> Option<usize> { None }
+    fn channels(&self) -> bevy::audio::ChannelCount { bevy::audio::ChannelCount::new(2).unwrap() }
+    fn sample_rate(&self) -> bevy::audio::SampleRate { bevy::audio::SampleRate::new(libsm64_native::AUDIO_RATE).unwrap() }
     fn total_duration(&self) -> Option<Duration> { None }
 }
 
 impl Decodable for NativeAudio {
-    type DecoderItem = i16;
     type Decoder = PcmDecoder;
     fn decoder(&self) -> PcmDecoder {
         PcmDecoder { queue: self.queue.clone(), block: Vec::with_capacity(BLOCK_SAMPLES), index: 0 }
@@ -104,11 +115,11 @@ mod tests {
         source.start();
         source.push(&[10, -10, 20, -20]);
         let mut decoder = source.decoder();
-        assert_eq!(decoder.by_ref().take(4).collect::<Vec<_>>(), [10, -10, 20, -20]);
-        assert_eq!(decoder.next(), Some(0));
+        assert_eq!(decoder.pcm().take(4).collect::<Vec<_>>(), [10, -10, 20, -20]);
+        assert_eq!(decoder.next_i16(), Some(0));
         source.stop();
-        for _ in 1..BLOCK_SAMPLES { assert_eq!(decoder.next(), Some(0)); }
-        assert_eq!(decoder.next(), None);
+        for _ in 1..BLOCK_SAMPLES { assert_eq!(decoder.next_i16(), Some(0)); }
+        assert_eq!(decoder.next_i16(), None);
         source.start();
         assert_eq!(source.queued_frames(), 0);
     }
@@ -118,7 +129,7 @@ mod tests {
         source.start();
         source.honk();
         source.push(&vec![32000; 3200]);
-        let samples: Vec<_> = source.decoder().take(3200).collect();
+        let samples: Vec<_> = source.decoder().pcm().take(3200).collect();
         assert!(samples.iter().any(|&s| s == i16::MAX));
         assert!(samples.iter().any(|&s| s < 32000));
         assert!(samples.chunks_exact(2).all(|f| f[0] == f[1]));
@@ -127,7 +138,7 @@ mod tests {
         assert!(!source.queue.lock().unwrap().horn, "the horn finishes without another interaction");
         source.clear();
         source.push(&[42, -42]);
-        assert_eq!(source.decoder().take(2).collect::<Vec<_>>(), [42, -42]);
+        assert_eq!(source.decoder().pcm().take(2).collect::<Vec<_>>(), [42, -42]);
     }
     #[test]
     fn a_missing_audio_device_cannot_accumulate_unbounded_latency() {
@@ -136,7 +147,7 @@ mod tests {
         source.push(&vec![1; MAX_SAMPLES]);
         source.push(&[2, 3]);
         assert_eq!(source.queued_frames(), MAX_SAMPLES / 2);
-        let samples: Vec<_> = source.decoder().take(MAX_SAMPLES).collect();
+        let samples: Vec<_> = source.decoder().pcm().take(MAX_SAMPLES).collect();
         assert_eq!(&samples[MAX_SAMPLES - 2..], &[2, 3]);
     }
 }

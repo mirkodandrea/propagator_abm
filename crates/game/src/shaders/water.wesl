@@ -9,12 +9,12 @@
 // sines. A second, finer normal wobble from scrolling noise adds wind chop
 // at a scale too small to be worth displacing geometry for.
 
-#import bevy_pbr::forward_io::{Vertex, VertexOutput}
-#import bevy_pbr::mesh_functions
-#import bevy_pbr::view_transformations::position_world_to_clip
-#import bevy_pbr::mesh_view_bindings::{view, globals}
-#import rocca::scene_light::apply_scene_fog
-#import rocca::noise::{hash21, value_noise}
+import bevy_pbr::render::forward_io::{Vertex, VertexOutput};
+import bevy_pbr::render::mesh_functions;
+import bevy_pbr::render::view_transformations::position_world_to_clip;
+import bevy_pbr::render::mesh_view_bindings::{view, globals};
+import game::shaders::scene_light::apply_scene_fog;
+import game::shaders::noise::{hash21, value_noise};
 
 struct WaterUniform {
     // xy: downwind unit direction in world XZ (bevy x, z). z: wind speed, m/s.
@@ -29,11 +29,11 @@ struct WaterUniform {
     // x: tactical desaturation, 0 (full colour) to 1.
     tactical: vec4<f32>,
 };
-@group(2) @binding(0) var<uniform> water: WaterUniform;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> water: WaterUniform;
 // The ground mask; its alpha is the signed distance to the waterline, 1 m a
 // step around 127.5 (above: in the water). See `ground_mask.rs`.
-@group(2) @binding(1) var shore_tex: texture_2d<f32>;
-@group(2) @binding(2) var shore_samp: sampler;
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var shore_tex: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(2) var shore_samp: sampler;
 
 // A wave the lattice cannot sample (under ~2 points per wavelength) only
 // aliases into a checkerboard, so each component fades out as the local

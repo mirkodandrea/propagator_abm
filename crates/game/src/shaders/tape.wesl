@@ -3,12 +3,10 @@
 // lies on the road, depth-tested like the ground. Shaded by the sun and
 // hazed by the fog like the terrain it lies on (`rocca::scene_light`).
 
-#import bevy_pbr::{
-    mesh_functions,
-    mesh_view_bindings::globals,
-    view_transformations::position_world_to_clip,
-}
-#import rocca::scene_light::{scene_shade, apply_scene_fog}
+import bevy_pbr::render::mesh_functions;
+import bevy_pbr::render::mesh_view_bindings::globals;
+import bevy_pbr::render::view_transformations::position_world_to_clip;
+import game::shaders::scene_light::{scene_shade, apply_scene_fog};
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
@@ -33,7 +31,7 @@ fn vertex(v: Vertex) -> VertexOutput {
     return out;
 }
 
-@group(2) @binding(0) var<uniform> mode: vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> mode: vec4<f32>;
 
 // Tactical view: saturation gain in mode.y, 0 = the colour as given.
 fn sat(c: vec3<f32>) -> vec3<f32> {

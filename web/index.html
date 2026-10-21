@@ -206,7 +206,7 @@
       // reads it from `window.roccaProfile` when it starts.
       window.roccaProfile = (() => {
         const forced = new URLSearchParams(location.search).get('q');
-        if (forced === 'bassa' || forced === 'media') return forced;
+        if (forced === 'bassa' || forced === 'media') { window.roccaProfileForced = true; return forced; }
         const phone = navigator.userAgentData?.mobile === true || matchMedia('(pointer: coarse)').matches;
         return phone ? 'bassa' : 'media';
       })();

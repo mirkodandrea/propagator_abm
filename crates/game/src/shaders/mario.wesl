@@ -1,12 +1,11 @@
 // SM64-style Gouraud shade and decal/cutout combiners. No scene PBR or rim.
-#import bevy_pbr::{
-    forward_io::{Vertex, VertexOutput},
-    mesh_functions,
-    view_transformations::position_world_to_clip,
-}
 
-@group(2) @binding(0) var atlas: texture_2d<f32>;
-@group(2) @binding(1) var atlas_sampler: sampler;
+import bevy_pbr::render::forward_io::{Vertex, VertexOutput};
+import bevy_pbr::render::mesh_functions;
+import bevy_pbr::render::view_transformations::position_world_to_clip;
+
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var atlas: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var atlas_sampler: sampler;
 
 @vertex
 fn vertex(in: Vertex) -> VertexOutput {
@@ -21,9 +20,8 @@ fn vertex(in: Vertex) -> VertexOutput {
     let diffuse = max(dot(normalize(out.world_normal), normalize(vec3<f32>(1.0))), 0.0);
     let shade = min(0.5 + diffuse, 1.0);
     out.color = vec4<f32>(in.color.rgb * shade, 1.0);
-#ifdef VERTEX_OUTPUT_INSTANCE_INDEX
+    @if(VERTEX_OUTPUT_INSTANCE_INDEX)
     out.instance_index = in.instance_index;
-#endif
     return out;
 }
 

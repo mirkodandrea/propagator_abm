@@ -8,6 +8,8 @@ set -euo pipefail
 # Serve it with any static server, or GitHub Pages.
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
+tgt="${CARGO_TARGET_DIR:-$root/target}"
+out="$tgt/web"
 
 command -v wasm-bindgen >/dev/null || {
   echo "wasm-bindgen-cli is required (same version as the wasm-bindgen crate in Cargo.lock)" >&2
@@ -17,17 +19,17 @@ command -v wasm-bindgen >/dev/null || {
 # libsm64 (Mario) is C: it needs an LLVM clang that targets wasm (brew install llvm);
 # crates/libsm64-native/build.rs finds it, or set CC_wasm32_unknown_unknown.
 cargo build --package game --target wasm32-unknown-unknown --profile wasm-release
-rm -rf target/web
-mkdir -p target/web
-wasm-bindgen --target web --no-typescript --out-dir target/web --out-name game \
-  target/wasm32-unknown-unknown/wasm-release/game.wasm
+rm -rf "$out"
+mkdir -p "$out"
+wasm-bindgen --target web --no-typescript --out-dir "$out" --out-name game \
+  "$tgt/wasm32-unknown-unknown/wasm-release/game.wasm"
 # A version in the URLs, so a browser that has the previous build cached
 # fetches the new one (python's server and GitHub Pages both let it cache).
-v="$(shasum target/web/game_bg.wasm | cut -c1-12)"
-sed -e "s#'./game.js'#'./game.js?v=$v'#" -e "s#'./game_bg.wasm'#'./game_bg.wasm?v=$v'#" web/index.html > target/web/index.html
-cp -R web/img target/web/img
+v="$(shasum "$out"/game_bg.wasm | cut -c1-12)"
+sed -e "s#'./game.js'#'./game.js?v=$v'#" -e "s#'./game_bg.wasm'#'./game_bg.wasm?v=$v'#" web/index.html > "$out"/index.html
+cp -R web/img "$out"/img
 # What the game loads: the one scenario, the behaviours, the fuels.
-python3 -I - "$root" target/web <<'PY'
+python3 -I - "$root" "$out" <<'PY'
 import gzip, hashlib, json, os, sys
 
 root, out = sys.argv[1], sys.argv[2]
@@ -52,7 +54,7 @@ print("data: %d files, %.1f MB gzipped (of %.1f MB)" % (
     sum(os.path.getsize(os.path.join(root, m["path"])) for m in manifest) / 1e6))
 PY
 if command -v wasm-opt >/dev/null; then
-  wasm-opt -Os --strip-debug -o target/web/game.opt.wasm target/web/game_bg.wasm
-  mv target/web/game.opt.wasm target/web/game_bg.wasm
+  wasm-opt -Os --strip-debug -o "$out"/game.opt.wasm "$out"/game_bg.wasm
+  mv "$out"/game.opt.wasm "$out"/game_bg.wasm
 fi
-echo "Built $root/target/web ($(du -sh target/web/game_bg.wasm | cut -f1) wasm)"
+echo "Built $out ($(du -sh "$out"/game_bg.wasm | cut -f1) wasm)"

@@ -9,7 +9,7 @@ Un solo territorio sintetico e plausibile, riusato con diversi inneschi e venti:
 - **Dati:** `data/scenarios/rocca_ventosa/`, l'unico scenario del gioco. Contiene `dem.f64`, `fuel.i32`, `cover.u8`, `population.json`, `osm.json`, `game.json` (stazioni, squadre, evacuazione, tutorial, incendi) e il terreno di rendering.
 - **Sei borghi:**
   - a est del massiccio: **Castelvento** (190 famiglie, presidio AIB), **Fornaci** (90), **Le Terrazze** (30), **San Rocco** (100);
-  - a ovest: **Pian dei Grilli** (90) e **Le Ghiande** (38, nuclei sparsi).
+  - a ovest: **Pian dei Grilli** (90) e **Le Ghiande** (38, un solo nucleo dal 2026-10-21: `tools/factory/ghiande.py`).
 - **Aree di raccolta scelte a mano** (2026-10-14, `evacuation.refuges`; agganciate alla rete con `nearest_reachable`; esempio `examples/rifugi.rs`). Prima molti borghi finivano in un'area lontana o oltre il fuoco (Pian dei Grilli a 9 km sopra il valico, Castelvento e San Rocco lungo la SP 12 attraverso l'innesco):
 
   | Borgo | Area di raccolta | Posizione (m) |

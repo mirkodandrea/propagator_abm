@@ -43,3 +43,5 @@ inherits = "release"
 opt-level = "s"
 lto = "thin"
 codegen-units = 1
+# Drop the 60 MB wasm "name" section.
+strip = "symbols"

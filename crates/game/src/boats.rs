@@ -8,12 +8,12 @@
 //! water. Sizes are diorama sizes ([`crate::visual_scale::BOAT`]): a 9 m boat
 //! is invisible from the camera's distance otherwise.
 
-use bevy::pbr::{NotShadowCaster, NotShadowReceiver};
+use bevy::light::{NotShadowCaster, NotShadowReceiver};
 use bevy::prelude::*;
 use scenario::Pos;
 
 use crate::models;
-use crate::retro::{self, RetroMaterial};
+use crate::materials::{self, Finish, StructureMaterial};
 use crate::sea;
 use crate::sim::Sim;
 use crate::visual_scale;
@@ -74,17 +74,19 @@ fn spawn_boats(
     mut commands: Commands,
     sim: Res<Sim>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<RetroMaterial>>,
+    mut materials: ResMut<Assets<StructureMaterial>>,
 ) {
     let scn = &sim.scn;
-    let material = materials.add(retro::finished_material(StandardMaterial {
+    let material = materials.add(materials::structure(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 0.55,
         reflectance: 0.2,
+        // turns the clear-coat path on: the painted hulls keep it (`boat_pbr`)
+        clearcoat: 1.0,
         cull_mode: None,
         double_sided: true,
         ..default()
-    }, retro::RetroStyle::STANDARD, retro::Finish::Boat));
+    }, Finish::Boat));
     // The Blender models (`scripts/build_island_models.py`): sloops under sail
     // for the open sea, the same hulls with the sails furled for the berths.
     let sailing_meshes: Vec<_> = ["veliero_bianco", "veliero_crema", "veliero_rosso", "veliero_blu", "veliero_giallo"]
@@ -96,14 +98,13 @@ fn spawn_boats(
     let upwind = (-drift.y).atan2(-drift.x);
     let mut rng = Lcg(0x0B0A_7500_1D);
     let scale = Vec3::splat(visual_scale::BOAT);
-    let bundle = |mesh: Handle<Mesh>, material: Handle<RetroMaterial>, at: Vec3, heading: f32| {
+    let bundle = |mesh: Handle<Mesh>, material: Handle<StructureMaterial>, at: Vec3, heading: f32| {
         (
-            MaterialMeshBundle::<RetroMaterial> {
-                mesh,
-                material,
-                transform: Transform { translation: at, rotation: Quat::from_rotation_y(-heading), scale },
-                ..default()
-            },
+            (
+                Mesh3d(mesh),
+                MeshMaterial3d(material),
+                Transform { translation: at, rotation: Quat::from_rotation_y(-heading), scale },
+            ),
             NotShadowCaster,
             NotShadowReceiver,
         )
@@ -159,8 +160,8 @@ fn angle_diff(a: f32, b: f32) -> f32 {
 }
 
 fn move_boats(time: Res<Time>, sim: Res<Sim>, mut boats: Query<(&mut Transform, &mut Boat)>) {
-    let dt = time.delta_seconds().min(0.1);
-    let t = time.elapsed_seconds_wrapped();
+    let dt = time.delta_secs().min(0.1);
+    let t = time.elapsed_secs_wrapped();
     let scn = &sim.scn;
     let (drift, wind) = sea::wind_drift(&sim);
     let upwind = (-drift.y).atan2(-drift.x);

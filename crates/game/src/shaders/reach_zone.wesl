@@ -5,11 +5,9 @@
 // junctions. No light and no fog; vertices are pulled toward the camera as in
 // flat.wgsl.
 
-#import bevy_pbr::{
-    mesh_functions,
-    mesh_view_bindings::view,
-    view_transformations::position_world_to_clip,
-}
+import bevy_pbr::render::mesh_functions;
+import bevy_pbr::render::mesh_view_bindings::view;
+import bevy_pbr::render::view_transformations::position_world_to_clip;
 
 struct Reach {
     // rgb: colour; a: opacity
@@ -18,7 +16,7 @@ struct Reach {
     band: vec4<f32>,
     pull: vec4<f32>,
 };
-@group(2) @binding(0) var<uniform> reach: Reach;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> reach: Reach;
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,

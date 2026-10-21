@@ -84,13 +84,13 @@ fn fit_distance(camera: &Camera, sim: &Sim, focus: Vec3, yaw: f32, pitch: f32) -
     let fits = |d: f32| {
         let gt = GlobalTransform::from(eye(focus, yaw, pitch, d));
         pts.iter().all(|p| {
-            camera.world_to_viewport(&gt, *p).is_some_and(|s| {
+            camera.world_to_viewport(&gt, *p).is_ok_and(|s| {
                 s.x >= 0.08 * size.x && s.x <= 0.92 * size.x && s.y >= 0.18 * size.y && s.y <= 0.80 * size.y
             })
         })
     };
     // Not projected yet (first frames): every test would fail; wait.
-    camera.world_to_viewport(&GlobalTransform::default(), Vec3::NEG_Z)?;
+    camera.world_to_viewport(&GlobalTransform::default(), Vec3::NEG_Z).ok()?;
     let (mut lo, mut hi) = (MIN_DIST * 4.0, MAX_DIST);
     if !fits(hi) {
         return Some(hi);
@@ -139,10 +139,10 @@ pub struct Drag {
 pub struct ViewInput<'w, 's> {
     buttons: Res<'w, ButtonInput<MouseButton>>,
     keys: Res<'w, ButtonInput<KeyCode>>,
-    motion: EventReader<'w, 's, MouseMotion>,
-    wheel: EventReader<'w, 's, MouseWheel>,
-    pinch: EventReader<'w, 's, PinchGesture>,
-    rotation: EventReader<'w, 's, RotationGesture>,
+    motion: MessageReader<'w, 's, MouseMotion>,
+    wheel: MessageReader<'w, 's, MouseWheel>,
+    pinch: MessageReader<'w, 's, PinchGesture>,
+    rotation: MessageReader<'w, 's, RotationGesture>,
     touches: Res<'w, Touches>,
 }
 
@@ -161,7 +161,7 @@ pub fn camera(
     padview: Res<crate::pad::PadView>,
     mut input: ViewInput,
     windows: Query<&Window, With<PrimaryWindow>>,
-    mut query: Query<(&mut OrbitCamera, &mut Transform, &mut Camera, &GlobalTransform, Option<&mut bevy::core_pipeline::dof::DepthOfFieldSettings>)>,
+    mut query: Query<(&mut OrbitCamera, &mut Transform, &mut Camera, &GlobalTransform, Option<&mut bevy::post_process::dof::DepthOfField>)>,
     time: Res<Time>,
     mut drag: Local<Drag>,
     mut settled: Local<Option<(String, u64)>>,
@@ -172,7 +172,7 @@ pub fn camera(
     mut smooth_h: Local<Option<(f32, f32)>>,
 ) {
     input.motion.clear();
-    let cursor = windows.get_single().ok().and_then(|w| w.cursor_position());
+    let cursor = windows.single().ok().and_then(|w| w.cursor_position());
     let delta = match (cursor, *last_cursor) {
         (Some(c), Some(l)) => c - l,
         _ => Vec2::ZERO,
@@ -189,9 +189,9 @@ pub fn camera(
     let pinch: f32 = input.pinch.read().map(|e| e.0).sum();
     let rotation: f32 = input.rotation.read().map(|e| e.0).sum();
     let buttons = &input.buttons;
-    let Ok((mut orbit, mut tf, mut camera, gt, mut dof)) = query.get_single_mut() else { return };
+    let Ok((mut orbit, mut tf, mut camera, gt, mut dof)) = query.single_mut() else { return };
     // The map is drawn left of the side bar, framed in what can be seen.
-    if let Ok(w) = windows.get_single() {
+    if let Ok(w) = windows.single() {
         let side = (kiosk.side_w * w.scale_factor()).round() as u32;
         let full = UVec2::new(w.physical_width(), w.physical_height());
         let size = UVec2::new(full.x.saturating_sub(side).max(1), full.y.max(1));
@@ -207,15 +207,15 @@ pub fn camera(
             }
             refit.0 = Some(size);
             refit.1 = 2;
-            camera.viewport = (size != full).then(|| bevy::render::camera::Viewport { physical_position: UVec2::ZERO, physical_size: size, ..default() });
+            camera.viewport = (size != full).then(|| bevy::camera::Viewport { physical_position: UVec2::ZERO, physical_size: size, ..default() });
         }
     }
     let camera = &*camera;
     let home = home_focus(&sim);
-    let mobile_web = cfg!(target_arch = "wasm32") && windows.get_single().is_ok_and(|w| w.width() < 1000.0 || w.height() < 600.0);
+    let mobile_web = cfg!(target_arch = "wasm32") && windows.single().is_ok_and(|w| w.width() < 1000.0 || w.height() < 600.0);
     let scene_pitch = if mobile_web { NADIR_PITCH } else { -0.80 };
 
-    let window = windows.get_single().ok();
+    let window = windows.single().ok();
     let touch_frame = input.touches.iter().next().is_some()
         || input.touches.iter_just_released().next().is_some()
         || input.touches.iter_just_canceled().next().is_some();
@@ -257,7 +257,7 @@ pub fn camera(
         pan(&mut orbit, delta, height);
     }
     if padview.active() {
-        let dt = time.delta_seconds().min(0.1);
+        let dt = time.delta_secs().min(0.1);
         pan(&mut orbit, Vec2::new(-padview.pan.x, padview.pan.y) * 700.0 * dt, height);
         orbit.distance *= (-padview.zoom * 1.2 * dt).exp();
         orbit.yaw += padview.look.x * 1.6 * dt;
@@ -307,7 +307,7 @@ pub fn camera(
         for t in input.touches.iter_just_released() {
             if Some(t.id()) == drag.touch_id && !drag.multi && drag.touch_moved.max(t.distance().length()) < CLICK_PX && !focus.pointer {
                 kiosk.click = crate::pick::window_to_viewport(camera, t.position())
-                    .and_then(|p| camera.viewport_to_world(gt, p))
+                    .and_then(|p| camera.viewport_to_world(gt, p).ok())
                     .and_then(|ray| crate::pick::ray_ground(&sim.scn, ray.origin, *ray.direction));
             }
         }
@@ -332,7 +332,7 @@ pub fn camera(
         kiosk.shot = None;
         // Opposite to finger-panning: approaching the right edge reveals
         // ground to the right. Use real time so holding still keeps moving.
-        pan(&mut orbit, -kiosk.drag_pan * 280.0 * time.delta_seconds().min(0.1), height);
+        pan(&mut orbit, -kiosk.drag_pan * 280.0 * time.delta_secs().min(0.1), height);
     }
     // a new game: settle on the home framing once
     let game_key = (sim.case.name.clone(), sim.generation.min(1));
@@ -367,7 +367,7 @@ pub fn camera(
     }
     // the tutorial's flight to what the step is about
     if let (Some(shot), Some((_, d))) = (kiosk.shot, *home_view) {
-        let dt = time.delta_seconds().min(0.1);
+        let dt = time.delta_secs().min(0.1);
         let goal = shot.at.map_or(home, |p| crate::frame::to_bevy(p, sim.scn.terrain.height_at(p)));
         let goal_d = (d * shot_zoom() * shot.zoom).clamp(MIN_DIST, MAX_DIST);
         let a = 1.0 - (-2.5 * dt).exp();
@@ -422,7 +422,7 @@ pub fn camera(
             let goal = Vec3::new(home.x + off.x, goal.y, home.z + off.y);
             // the goal itself is smoothed (a crew moves in jumps), then the
             // camera eases to it: two slow stages, no sudden move
-            let dt = time.delta_seconds().min(0.1);
+            let dt = time.delta_secs().min(0.1);
             let (g, gd) = tracked.get_or_insert((Vec2::new(goal.x, goal.z), dist));
             // a new subject far from where the camera is (or much nearer or
             // wider) is a cut, not a flight: fade out, jump, fade in
@@ -477,7 +477,7 @@ pub fn camera(
     // the fire runs: follow it, slowly
     if kiosk.follow && kiosk.shot.is_none() && matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco) {
         if let (Some((_, d)), Some((mid, span))) = (*home_view, fire_extent(&sim)) {
-            let dt = time.delta_seconds().min(0.1);
+            let dt = time.delta_secs().min(0.1);
             let (t_mid, t_span) = tracked.get_or_insert((mid, span));
             let s = 1.0 - (-0.6 * dt).exp();
             *t_mid += (mid - *t_mid) * s;
@@ -533,7 +533,7 @@ pub fn camera(
     };
     // the focus rides the broad shape of the ground (a ring average, eased),
     // never the wiggle of every ridge
-    let dt = time.delta_seconds().min(0.1);
+    let dt = time.delta_secs().min(0.1);
     let (fy, _) = area(crate::frame::to_world(orbit.focus), 300.0);
     let (sf, sg) = *smooth_h.get_or_insert((fy, 0.0));
     let sf = if kiosk.phase == Phase::Intro && !kiosk.frozen && !freecam {

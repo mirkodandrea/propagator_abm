@@ -4,17 +4,17 @@
 //! stand out. While time runs the same scenery is a little more saturated than
 //! its natural colours. One signed amount drives both: negative boosts the
 //! colour, positive greys it. The amount eases in and out; the shaders only
-//! read it (`retro.wgsl` for terrain and foliage, `water.wgsl`, and the sky
+//! read it (`terrain.wgsl`, `foliage.wgsl`, `water.wgsl`, and the sky
 //! here).
 
-use bevy::core_pipeline::bloom::BloomSettings;
-use bevy::pbr::{FogFalloff, FogSettings};
+use bevy::post_process::bloom::Bloom;
+use bevy::pbr::{FogFalloff, DistanceFog};
 use bevy::prelude::*;
 
 use crate::kiosk::{Kiosk, Phase};
 use crate::flat::FlatMaterial;
 use crate::forecast_zone::ZoneMaterial;
-use crate::retro::RetroMaterial;
+use crate::materials::{FoliageMaterial, TerrainMaterial};
 use crate::sea::WaterMaterial;
 use crate::sim::Sim;
 use crate::sky::{SkyHandle, SkyMaterial};
@@ -72,8 +72,10 @@ fn apply(
     time: Res<Time>,
     kiosk: Option<Res<Kiosk>>,
     sim: Option<Res<Sim>>,
+    mario: Option<Res<crate::mario::Playground>>,
     mut tactical: ResMut<Tactical>,
-    mut retro: ResMut<Assets<RetroMaterial>>,
+    mut terrain: ResMut<Assets<TerrainMaterial>>,
+    mut foliage: ResMut<Assets<FoliageMaterial>>,
     mut cover: ResMut<Assets<crate::near_cover::NearCoverMaterial>>,
     mut water: ResMut<Assets<WaterMaterial>>,
     mut flats: ResMut<Assets<FlatMaterial>>,
@@ -82,28 +84,31 @@ fn apply(
 ) {
     if let (Some(kiosk), Some(sim)) = (kiosk, sim) {
         let playing = matches!(kiosk.phase, Phase::Tutorial | Phase::Gioco);
-        let want = if playing && sim.paused() { 1.0 } else { 0.0 };
+        // Mario walks the island in full colour, paused or not
+        let exploring = mario.is_some_and(|m| m.active);
+        let want = if playing && sim.paused() && !exploring { 1.0 } else { 0.0 };
         // a screenshot of a state has no time to ease in
-        let step = if std::env::var_os("KIOSK_SNAP").is_some() { 1.0 } else { time.delta_seconds() / EASE_S };
+        let step = if std::env::var_os("KIOSK_SNAP").is_some() { 1.0 } else { time.delta_secs() / EASE_S };
         tactical.level = if want > tactical.level { (tactical.level + step).min(want) } else { (tactical.level - step).max(want) };
     }
     let amount = tactical.amount();
     // Writing marks the asset changed and rebuilds its bind group, so only
     // touch the materials whose value differs (new ones start at 0).
-    // Only the terrain (w = 1) and foliage (w = 2) materials read it.
-    let stale: Vec<_> = retro
-        .iter()
-        .filter(|(_, m)| (1.0..2.5).contains(&m.extension.enabled.w) && m.extension.tactical.x != amount)
-        .map(|(id, _)| id)
-        .collect();
+    let stale: Vec<_> = terrain.iter().filter(|(_, m)| m.tactical() != amount).map(|(id, _)| id).collect();
     for id in stale {
-        if let Some(m) = retro.get_mut(id) {
-            m.extension.tactical.x = amount;
+        if let Some(mut m) = terrain.get_mut(id) {
+            m.set_tactical(amount);
+        }
+    }
+    let stale: Vec<_> = foliage.iter().filter(|(_, m)| m.tactical() != amount).map(|(id, _)| id).collect();
+    for id in stale {
+        if let Some(mut m) = foliage.get_mut(id) {
+            m.set_tactical(amount);
         }
     }
     let stale: Vec<_> = cover.iter().filter(|(_, m)| m.extension.tactical() != amount).map(|(id, _)| id).collect();
     for id in stale {
-        if let Some(m) = cover.get_mut(id) {
+        if let Some(mut m) = cover.get_mut(id) {
             m.extension.set_tactical(amount);
         }
     }
@@ -112,25 +117,25 @@ fn apply(
     let gain = tactical.eased() * if tactical.max > 0.0 { SIGN_GAIN } else { 0.0 };
     let stale: Vec<_> = flats.iter().filter(|(_, m)| m.saturation() != gain).map(|(id, _)| id).collect();
     for id in stale {
-        if let Some(m) = flats.get_mut(id) {
+        if let Some(mut m) = flats.get_mut(id) {
             m.set_saturation(gain);
         }
     }
     let stale: Vec<_> = zones.iter().filter(|(_, m)| m.saturation() != gain).map(|(id, _)| id).collect();
     for id in stale {
-        if let Some(m) = zones.get_mut(id) {
+        if let Some(mut m) = zones.get_mut(id) {
             m.set_saturation(gain);
         }
     }
     let stale: Vec<_> = tapes.iter().filter(|(_, m)| m.mode.y != gain).map(|(id, _)| id).collect();
     for id in stale {
-        if let Some(m) = tapes.get_mut(id) {
+        if let Some(mut m) = tapes.get_mut(id) {
             m.mode.y = gain;
         }
     }
     let stale: Vec<_> = water.iter().filter(|(_, m)| m.uniform.tactical.x != amount).map(|(id, _)| id).collect();
     for id in stale {
-        if let Some(m) = water.get_mut(id) {
+        if let Some(mut m) = water.get_mut(id) {
             m.uniform.tactical.x = amount;
         }
     }
@@ -142,8 +147,8 @@ fn apply(
 /// the sky. At rest (running, no boost) nothing changes.
 fn effects_off(
     tactical: Res<Tactical>,
-    mut fog: Query<&mut FogSettings>,
-    mut bloom: Query<&mut BloomSettings>,
+    mut fog: Query<&mut DistanceFog>,
+    mut bloom: Query<&mut Bloom>,
     mut bloom_base: Local<Option<f32>>,
     sky_handle: Option<Res<SkyHandle>>,
     mut skies: ResMut<Assets<SkyMaterial>>,
@@ -151,7 +156,7 @@ fn effects_off(
     let amount = tactical.amount();
     // how far the effects are off: only the pause turns them off
     let k = tactical.eased() * tactical.max;
-    if let Some(mat) = sky_handle.and_then(|h| skies.get_mut(&h.0)) {
+    if let Some(mut mat) = sky_handle.and_then(|h| skies.get_mut(&h.0)) {
         let u = &mut mat.uniform;
         let luma = |c: Vec4| c.truncate().dot(Vec3::new(0.2126, 0.7152, 0.0722));
         let flat = u.horizon_color.lerp(u.zenith_color, 0.25);

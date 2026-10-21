@@ -35,7 +35,7 @@ pub fn cursor_ground(
     window: &Window,
 ) -> Option<Pos> {
     let cursor = cursor_position(camera, window)?;
-    let ray = camera.viewport_to_world(cam_tf, cursor)?;
+    let ray = camera.viewport_to_world(cam_tf, cursor).ok()?;
     ray_ground(scn, ray.origin, *ray.direction)
 }
 

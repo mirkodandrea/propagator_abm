@@ -36,7 +36,7 @@ mod browser {
             (Some(rocca::tutorial::Expect::Move(t, hex)), Some((camera, transform, _))) => {
                 let p = hex.centre();
                 let pos = crate::frame::to_bevy(p, sim.scn.terrain.height_at(p));
-                camera.world_to_viewport(transform, pos).map(|v| serde_json::json!({"team": t, "x": v.x, "y": v.y}))
+                camera.world_to_viewport(transform, pos).ok().map(|v| serde_json::json!({"team": t, "x": v.x, "y": v.y}))
             }
             _ => None,
         };
@@ -103,6 +103,6 @@ pub fn tick(sim: &mut Sim, dt: f32) -> anyhow::Result<bool> {
     sim.tick(dt)
 }
 pub fn observe(kiosk: bevy::prelude::Res<Kiosk>, sim: bevy::prelude::Res<Sim>, cameras: bevy::prelude::Query<(&bevy::prelude::Camera, &bevy::prelude::GlobalTransform, &crate::camera::OrbitCamera)>) {
-    #[cfg(target_arch = "wasm32")] browser::publish(&kiosk, &sim, cameras.get_single().ok());
+    #[cfg(target_arch = "wasm32")] browser::publish(&kiosk, &sim, cameras.single().ok());
     #[cfg(not(target_arch = "wasm32"))] let _ = (kiosk, sim, cameras);
 }

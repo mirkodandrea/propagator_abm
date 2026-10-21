@@ -1,5 +1,6 @@
 .env
 /target
+/target-web
 /results
 /dist
 

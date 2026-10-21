@@ -705,7 +705,7 @@ impl Game {
         let mut seen: HashSet<(u32, u32)> = HashSet::new();
         let mut out = vec![];
         // walk each stretch from a junction, until the next one
-        let mut walk = |start: u32, first: u32, seen: &mut HashSet<(u32, u32)>| {
+        let walk = |start: u32, first: u32, seen: &mut HashSet<(u32, u32)>| {
             let mut path = vec![start];
             let (mut prev, mut cur) = (start, first);
             let mut any = false;

@@ -14,14 +14,12 @@
 //   uv       = (side * 0.5 + 0.5, height fraction)
 //   color    = unused (present so the pipeline defines VERTEX_COLORS)
 
-#import bevy_pbr::{
-    mesh_view_bindings::{view, globals},
-    forward_io::{Vertex, VertexOutput},
-    view_transformations::position_world_to_clip,
-    pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
-    pbr_fragment::pbr_input_from_standard_material,
-}
-#import rocca::noise::{hash21, value_noise}
+import bevy_pbr::render::mesh_view_bindings::{view, globals};
+import bevy_pbr::render::forward_io::{Vertex, VertexOutput};
+import bevy_pbr::render::view_transformations::position_world_to_clip;
+import bevy_pbr::render::pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing};
+import bevy_pbr::render::pbr_fragment::pbr_input_from_standard_material;
+import game::shaders::noise::{hash21, value_noise};
 
 struct Params {
     // lattice centre (world x, world z), draw radius, cell size
@@ -33,12 +31,12 @@ struct Params {
     // 1 / world width, 1 / world height, spare, spare (road mask coordinates)
     rect: vec4<f32>,
 };
-@group(2) @binding(100) var<uniform> params: Params;
-@group(2) @binding(101) var height_tex: texture_2d<f32>;
-@group(2) @binding(102) var cover_tex: texture_2d<f32>;
-@group(2) @binding(103) var cover_samp: sampler;
-@group(2) @binding(104) var road_tex: texture_2d<f32>;
-@group(2) @binding(105) var road_samp: sampler;
+@group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> params: Params;
+@group(constants::MATERIAL_BIND_GROUP) @binding(101) var height_tex: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(102) var cover_tex: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(103) var cover_samp: sampler;
+@group(constants::MATERIAL_BIND_GROUP) @binding(104) var road_tex: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(105) var road_samp: sampler;
 
 const RANGE_M: f32 = 12.0;
 const HASH_K: u32 = 747796405u;
@@ -51,7 +49,7 @@ fn pcg(v: u32) -> u32 {
 
 // Three decorrelated uniform numbers in [0, 1) from a lattice cell and a salt.
 fn rnd3(c: vec2<i32>, salt: u32) -> vec3<f32> {
-    let h0 = pcg(u32(c.x) * 1597334677u ^ pcg(u32(c.y) + salt * 3266489917u));
+    let h0 = pcg((u32(c.x) * 1597334677u) ^ pcg(u32(c.y) + salt * 3266489917u));
     let h1 = pcg(h0 + 374761393u);
     let h2 = pcg(h1 + 668265263u);
     return vec3<f32>(f32(h0), f32(h1), f32(h2)) * (1.0 / 4294967296.0);
@@ -191,9 +189,8 @@ fn vertex(v: Vertex) -> VertexOutput {
     out.position = position_world_to_clip(wpos);
     out.world_normal = nrm;
     out.uv = v.uv;
-#ifdef VERTEX_OUTPUT_INSTANCE_INDEX
+    @if(VERTEX_OUTPUT_INSTANCE_INDEX)
     out.instance_index = v.instance_index;
-#endif
 
     // Colour. Palette from the fuel group (cover.b: 0 meadow, 1/3 broadleaf,
     // 2/3 macchia, 1 pine), tuned in `near_cover.rs`; dry/green by patch.

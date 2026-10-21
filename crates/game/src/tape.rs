@@ -2,11 +2,12 @@
 //! (`shaders/tape.wgsl`). Laid on the road (a little above it, like the road's
 //! own surface), not floating: no light, no fog, hidden by what stands in front.
 
-use bevy::asset::load_internal_asset;
+use bevy::asset::uuid_handle;
 use bevy::prelude::*;
-use bevy::render::render_resource::{AsBindGroup, ShaderRef};
+use bevy::render::render_resource::AsBindGroup;
+use bevy::shader::ShaderRef;
 
-const TAPE_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x7A3E_51C2_0B94_4D6F_8E17_C2A9_55B0_1D83);
+const TAPE_SHADER_HANDLE: Handle<Shader> = uuid_handle!("7a3e51c2-0b94-4d6f-8e17-c2a955b01d83");
 
 #[derive(Asset, AsBindGroup, TypePath, Clone)]
 pub struct TapeMaterial {
@@ -30,6 +31,13 @@ impl TapeMaterial {
 }
 
 impl Material for TapeMaterial {
+    // no depth prepass and no shadows (was `MaterialPlugin { prepass_enabled, shadows_enabled }` before Bevy 0.17)
+    fn enable_prepass() -> bool {
+        false
+    }
+    fn enable_shadows() -> bool {
+        false
+    }
     fn vertex_shader() -> ShaderRef {
         TAPE_SHADER_HANDLE.into()
     }
@@ -40,9 +48,9 @@ impl Material for TapeMaterial {
         1.0
     }
     fn specialize(
-        _: &bevy::pbr::MaterialPipeline<Self>,
+        _: &bevy::pbr::MaterialPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
-        _: &bevy::render::mesh::MeshVertexBufferLayoutRef,
+        _: &bevy::mesh::MeshVertexBufferLayoutRef,
         _: bevy::pbr::MaterialPipelineKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         descriptor.primitive.cull_mode = None;
@@ -54,7 +62,7 @@ pub struct TapePlugin;
 
 impl Plugin for TapePlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, TAPE_SHADER_HANDLE, "shaders/tape.wgsl", Shader::from_wgsl);
-        app.add_plugins(MaterialPlugin::<TapeMaterial> { prepass_enabled: false, shadows_enabled: false, ..default() });
+        crate::load_wesl!(app, TAPE_SHADER_HANDLE, "shaders/tape.wesl");
+        app.add_plugins(MaterialPlugin::<TapeMaterial>::default());
     }
 }

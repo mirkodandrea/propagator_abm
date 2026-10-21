@@ -36,7 +36,7 @@
 
 use bevy::app::AppExit;
 use bevy::prelude::*;
-use bevy::render::view::screenshot::ScreenshotManager;
+use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 use bevy::window::PrimaryWindow;
 use scenario::Pos;
 
@@ -132,8 +132,82 @@ fn parse(spec: &str) -> Vec<State> {
         .collect()
 }
 
+/// Since Bevy 0.20 the screenshot of a hidden window comes out black (seen on
+/// macOS): with `KIOSK_SNAP` the game camera draws into an image of the
+/// window's size instead, and that image is what gets saved.
+#[derive(Resource)]
+pub struct SnapTarget(pub Handle<Image>);
+
+pub fn redirect_camera(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    cams: Query<Entity, Added<OrbitCamera>>,
+) {
+    if !active() {
+        return;
+    }
+    let Ok(w) = windows.single() else { return };
+    for e in &cams {
+        let image = Image::new_target_texture(
+            w.physical_width(),
+            w.physical_height(),
+            bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+            None,
+        );
+        let handle = images.add(image);
+        commands.entity(e).insert(bevy::camera::RenderTarget::Image(bevy::camera::ImageRenderTarget {
+            handle: handle.clone(),
+            scale_factor: w.scale_factor(),
+        }));
+        commands.insert_resource(SnapTarget(handle));
+    }
+}
+
 pub fn active() -> bool {
     std::env::var_os("KIOSK_SNAP").is_some()
+}
+
+/// Frames the CPU may queue ahead of the GPU, as with a swap chain (Bevy's
+/// default `desired_maximum_frame_latency`).
+#[cfg(not(target_arch = "wasm32"))]
+const FRAMES_IN_FLIGHT: usize = 2;
+
+/// The frame pacing a window would give. Drawing into an image (see
+/// `redirect_camera`) there is no swap-chain texture to wait for, so the CPU
+/// runs ahead of the GPU until Metal's command-buffer budget (4096) is full:
+/// thousands of command buffers queued, seconds of latency, the GPU idle
+/// between them, and frame times 20–30 % worse than the game's in a window
+/// (measured 2026-10-21). Here each frame waits, before its views are
+/// prepared, for the GPU to finish the frame `FRAMES_IN_FLIGHT` back.
+#[cfg(not(target_arch = "wasm32"))]
+pub struct SnapPacingPlugin;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Resource, Default)]
+struct InFlight(std::collections::VecDeque<wgpu::SubmissionIndex>);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Plugin for SnapPacingPlugin {
+    fn build(&self, _app: &mut App) {}
+
+    fn finish(&self, app: &mut App) {
+        use bevy::render::renderer::{render_system, RenderDevice, RenderQueue};
+        use bevy::render::{Render, RenderApp, RenderSystems};
+        let Some(render) = app.get_sub_app_mut(RenderApp) else { return };
+        render
+            .init_resource::<InFlight>()
+            // the frame's work is all submitted by `render_system`: mark its end
+            .add_systems(Render, (|mut f: ResMut<InFlight>, q: Res<RenderQueue>| {
+                f.0.push_back(q.submit(std::iter::empty()));
+            }).in_set(RenderSystems::Render).after(render_system))
+            .add_systems(Render, (|mut f: ResMut<InFlight>, d: Res<RenderDevice>| {
+                while f.0.len() > FRAMES_IN_FLIGHT {
+                    let i = f.0.pop_front().expect("not empty");
+                    let _ = d.poll(wgpu::PollType::Wait { submission_index: Some(i), timeout: None });
+                }
+            }).in_set(RenderSystems::CreateViews));
+    }
 }
 
 #[derive(Default)]
@@ -154,7 +228,7 @@ pub fn bench_s() -> Option<f32> {
 }
 
 /// Bring the game to the state.
-fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) -> Option<(Vec3, Option<f32>, Option<f32>, Option<f32>)> {
+fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>) -> Option<(Vec3, Option<f32>, Option<f32>, Option<f32>)> {
     let phase = match st.phase.as_str() {
         "intro" | "title" => Phase::Intro,
         "tutorial" => Phase::Tutorial,
@@ -171,7 +245,7 @@ fn apply(st: &State, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<S
         if let Err(e) = sim.restart(&case, k.seed) {
             k.error = Some(format!("{e:#}"));
         }
-        restarted.send(SimRestarted);
+        restarted.write(SimRestarted);
         if phase == Phase::Fine {
             k.start_baseline(&case);
         }
@@ -268,17 +342,18 @@ pub fn drive(
     mut sim: ResMut<Sim>,
     mut orbit: Query<&mut OrbitCamera>,
     windows: Query<Entity, With<PrimaryWindow>>,
-    mut mgr: ResMut<ScreenshotManager>,
-    mut exit: EventWriter<AppExit>,
-    mut restarted: EventWriter<SimRestarted>,
+    mut commands: Commands,
+    mut exit: MessageWriter<AppExit>,
+    mut restarted: MessageWriter<SimRestarted>,
     mut view: ResMut<SnapView>,
     mut hide: ResMut<SnapHide>,
     mut mario: ResMut<crate::mario::Playground>,
     costs: Option<Res<crate::bench::Costs>>,
+    target: Option<Res<SnapTarget>>,
     mut p: Local<Progress>,
 ) {
     let Ok(dir) = std::env::var("KIOSK_SNAP") else { return };
-    let Ok(window) = windows.get_single() else { return };
+    let Ok(window) = windows.single() else { return };
     if p.states.is_none() {
         let spec = std::env::var("KIOSK_SNAP_SPEC").unwrap_or_else(|_| "name=snap0".into());
         p.states = Some(parse(&spec));
@@ -286,11 +361,11 @@ pub fn drive(
         eprintln!("snap: cases {:?}", kiosk.territory.cases.iter().map(|c| c.name.as_str()).collect::<Vec<_>>());
         eprintln!("snap: districts {:?}", sim.districts.iter().map(|d| d.name.as_str()).collect::<Vec<_>>());
     }
-    let dt = time.delta_seconds();
+    let dt = time.delta_secs();
     let Some(st) = p.states.as_ref().and_then(|s| s.get(p.at)).cloned() else {
         p.done_s += dt;
         if p.done_s > 1.0 {
-            exit.send(AppExit::Success);
+            exit.write(AppExit::Success);
         }
         return;
     };
@@ -306,7 +381,7 @@ pub fn drive(
     *hide = st.hide;
     if let Some((focus, dist, yaw, pitch)) = p.goal {
         *view = SnapView { focus: (!focus.is_nan()).then_some(focus), dist, yaw: yaw.map(f32::to_radians), pitch: pitch.map(f32::to_radians) };
-        if let Ok(mut o) = orbit.get_single_mut() {
+        if let Ok(mut o) = orbit.single_mut() {
             if let Some(f) = view.focus {
                 o.focus = f;
             }
@@ -334,7 +409,7 @@ pub fn drive(
             }
         }
         if p.waited < SETTLE_S + b {
-            p.frames.push(real.delta_seconds());
+            p.frames.push(real.delta_secs());
             return;
         }
         let stat = |v: &mut Vec<f32>| {
@@ -358,7 +433,8 @@ pub fn drive(
         }
     }
     if p.waited > SETTLE_S && ready {
-        let _ = mgr.save_screenshot_to_disk(window, format!("{dir}/{}.png", st.name));
+        let shot = target.as_ref().map_or(Screenshot::window(window), |t| Screenshot::image(t.0.clone()));
+        commands.spawn(shot).observe(save_to_disk(format!("{dir}/{}.png", st.name)));
         eprintln!("snap: {} (t={} min, phase {})", st.name, st.t_min, st.phase);
         p.at += 1;
         p.applied = false;
@@ -366,11 +442,11 @@ pub fn drive(
 }
 
 /// Runs after the kiosk camera: puts the camera exactly where the state asks.
-pub fn hold(view: Res<SnapView>, sim: Res<Sim>, mut cam: Query<(&mut OrbitCamera, &mut Transform, Option<&mut bevy::core_pipeline::dof::DepthOfFieldSettings>)>) {
+pub fn hold(view: Res<SnapView>, sim: Res<Sim>, mut cam: Query<(&mut OrbitCamera, &mut Transform, Option<&mut bevy::post_process::dof::DepthOfField>)>) {
     if !active() || (view.focus.is_none() && view.dist.is_none() && view.yaw.is_none() && view.pitch.is_none()) {
         return;
     }
-    let Ok((mut orbit, mut tf, mut dof)) = cam.get_single_mut() else { return };
+    let Ok((mut orbit, mut tf, mut dof)) = cam.single_mut() else { return };
     if let Some(f) = view.focus {
         orbit.focus = f;
     }
@@ -405,6 +481,7 @@ pub fn hide_marks(
             Without<crate::forecast_view::ForecastMark>,
             Or<(
                 With<super::marks::HexMark>,
+                With<super::marks::DistrictZoneMark>,
                 With<super::marks::RoadNetMark>,
                 With<super::marks::OrderMark>,
                 With<super::marks::ClosedMark>,
@@ -435,7 +512,7 @@ pub fn hide_marks(
 pub fn hide_ui(hide: Res<SnapHide>, mut out: Query<&mut bevy_egui::EguiRenderOutput>) {
     if hide.ui {
         for mut o in &mut out {
-            o.paint_jobs.clear();
+            o.paint_jobs = Default::default();
         }
     }
 }

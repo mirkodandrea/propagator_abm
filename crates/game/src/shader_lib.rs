@@ -1,21 +1,41 @@
-//! WGSL modules shared between the game's shaders.
+//! WESL modules shared between the game's shaders, and how the game's
+//! shaders are registered.
 
-use bevy::asset::load_internal_asset;
+use bevy::asset::uuid_handle;
 use bevy::prelude::*;
 
 const NOISE_SHADER_HANDLE: Handle<Shader> =
-    Handle::weak_from_u128(0x2D6A_C0F3_5E19_4B87_8A41_7C03_E9B5_1D62);
+    uuid_handle!("2d6ac0f3-5e19-4b87-8a41-7c03e9b51d62");
 
 const SCENE_LIGHT_SHADER_HANDLE: Handle<Shader> =
-    Handle::weak_from_u128(0x5B1E_93A7_C4D2_4F08_B6E3_1A7D_28C9_F054);
+    uuid_handle!("5b1e93a7-c4d2-4f08-b6e3-1a7d28c9f054");
 
-/// Registers `rocca::noise` (`shaders/noise.wgsl`) and `rocca::scene_light`. Shaders `#import` it by
-/// path, so the order of the plugins does not matter.
+/// Registers `game::shaders::noise` (`shaders/noise.wesl`) and
+/// `game::shaders::scene_light`. Shaders `import` them by path, so the order
+/// of the plugins does not matter.
 pub struct ShaderLibPlugin;
 
 impl Plugin for ShaderLibPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, NOISE_SHADER_HANDLE, "shaders/noise.wgsl", Shader::from_wgsl);
-        load_internal_asset!(app, SCENE_LIGHT_SHADER_HANDLE, "shaders/scene_light.wgsl", Shader::from_wgsl);
+        crate::load_wesl!(app, NOISE_SHADER_HANDLE, "shaders/noise.wesl");
+        crate::load_wesl!(app, SCENE_LIGHT_SHADER_HANDLE, "shaders/scene_light.wesl");
     }
+}
+
+/// Puts a WESL shader (Bevy 0.20 dropped naga_oil's WGSL dialect) under a
+/// fixed handle, importable by the other shaders as `game::shaders::<stem>`.
+#[macro_export]
+macro_rules! load_wesl {
+    ($app:expr, $handle:expr, $path:literal) => {
+        $crate::shader_lib::insert_wesl($app, &$handle, include_str!($path), $path)
+    };
+}
+
+pub fn insert_wesl(app: &mut App, handle: &Handle<Shader>, source: &'static str, path: &str) {
+    let stem = std::path::Path::new(path).file_stem().and_then(|s| s.to_str()).expect("a shader file name");
+    let shader = Shader::from_wesl(source, format!("embedded://game/shaders/{stem}.wesl"));
+    app.world_mut()
+        .resource_mut::<Assets<Shader>>()
+        .insert(handle.id(), shader)
+        .expect("a fixed shader handle");
 }
