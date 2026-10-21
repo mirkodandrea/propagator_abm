@@ -33,7 +33,7 @@ Dettagli in `docs/01-GIOCO.md`.
 | `scenario` | Lettura dei dati dello scenario; `scenario::id()` legge `ROCCA_SCENARIO`. |
 | `abm` | Rete stradale (`network`), guida (`drive`), squadre e spegnimento (`suppression`), aree sicure (`refuge`). |
 | `behavior` | Grafi di comportamento delle squadre (`data/behaviours`). |
-| `rocca` | Il gioco: `game` (pausa, ordini, passo), `hex`, `evac`, `tutorial`, `forecast`, `score`, `district`, `case`. CLI `rocca`, esempio `tutorial_cerca`, test. |
+| `rocca` | Il gioco: `game` (pausa, ordini, passo), `hex`, `evac`, `tutorial`, `forecast`, `score`, `district`, `case`, `i18n` (lingue: `tr!`, cataloghi in `data/i18n/`). CLI `rocca`, esempio `tutorial_cerca`, test. |
 | `game` | Il gioco Bevy (la cartella e le variabili si chiamano ancora `kiosk`/`KIOSK_*`): `sim.rs` (orologio attorno a `Game`), `kiosk/` (flusso, `ui`, `marks` sulla mappa, camera e clic in `view`, `snap`), rendering del diorama, `forecast_view`. Gamepad come mouse virtuale (`pad.rs`, spento mentre Mario è attivo). Mario (`mario.rs`, Ctrl+Maiusc+M a mondo fermo). |
 | `datafs`, `libsm64-native` | Accesso ai dati (anche dal web); Mario. |
 
@@ -75,8 +75,9 @@ Variabili utili del gioco (prefisso storico `KIOSK_`):
 - `KIOSK_FPS=1`: misura degli FPS.
 - `KIOSK_SCORES=<file>`: classifica in un altro file, per le prove (non toccare `~/.rocca_ventosa/`).
 - `ROCCA_SCENARIO=<id>`: un altro territorio.
+- `ROCCA_LANG=<codice>`: la lingua (`de`, `en`, …, `tlh` è il klingon); sul web `?lang=`. Ogni testo nuovo va in `tr!("…")` e `python3 tools/i18n/keys.py --check` deve passare (`docs/01-GIOCO.md` §7).
 
-Il seme si sceglie dal menu operatore (F2).
+Il seme non si sceglie più dal gioco: F2 è il menu delle impostazioni (lingua, vista, grafica; 2026-10-21); il seme si dà alle prove headless.
 
 ### Immagini comparative degli scenari (senza finestre)
 

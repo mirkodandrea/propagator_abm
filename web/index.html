@@ -251,6 +251,9 @@
       // The browser inflates them when it can; if not, they stay gzipped
       // (`roccaDataGzip`) and the wasm inflates them (crates/datafs).
       async function loadData() {
+        // `?lang=de` forces the game's language (the game otherwise follows the browser's)
+        const forcedLang = new URLSearchParams(location.search).get('lang');
+        if (forcedLang) window.roccaLang = forcedLang;
         const listed = await fetch('./data/manifest.json', { cache: 'no-cache' });
         if (!listed.ok) throw new Error(`data/manifest.json: ${listed.status}`);
         const manifest = await listed.json();

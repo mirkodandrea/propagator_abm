@@ -9,6 +9,7 @@
 //! Each order has a preview that reads the state and changes nothing
 //! ([`Game::plan_move`], [`Game::plan_evacuation`]).
 
+use crate::tr;
 use std::path::Path;
 
 use abm::network::{self, RoadNetwork};
@@ -312,14 +313,14 @@ impl Game {
             .enumerate()
             .map(|(i, s)| {
                 // «Squadra A», «Squadra B»…: all teams are AIB, told apart by a letter (user, 2026-10-16)
-                let name = format!("Squadra {}", (b'A' + i as u8) as char);
+                let name = tr!("Squadra {0}", (b'A' + i as u8) as char);
                 let unit = next;
                 crews.units[unit].callsign = name.clone();
                 let crew_units: Vec<usize> = (unit + 1..unit + 1 + s.crew.max(1) as usize).collect();
                 next = unit + 1 + crew_units.len();
                 for (j, &c) in crew_units.iter().enumerate() {
                     let u = &mut crews.units[c];
-                    u.callsign = format!("{name}, a piedi {}", j + 1);
+                    u.callsign = tr!("{0}, a piedi {1}", name, j + 1);
                     u.carrier = Some(unit);
                     u.aboard = true;
                 }
@@ -399,7 +400,7 @@ impl Game {
     /// Ask the expert: the pause begins, the forecast is due.
     pub fn pause(&mut self) -> Result<(), String> {
         if self.paused() {
-            return Err("sei già in pausa".into());
+            return Err(tr!("sei già in pausa").into());
         }
         self.pause_from = Some(self.time_s());
         self.pauses += 1;
@@ -430,14 +431,14 @@ impl Game {
 
     /// What sending team `t` to hex `at` would be, from the state now.
     pub fn plan_move(&self, t: usize, at: Axial) -> Result<MovePlan, String> {
-        let team = self.teams.get(t).ok_or("squadra inesistente")?;
+        let team = self.teams.get(t).ok_or(tr!("squadra inesistente"))?;
         let u = &self.crews.units[team.unit];
         if u.state == UnitState::Lost {
-            return Err("fuori servizio".into());
+            return Err(tr!("fuori servizio").into());
         }
-        let hex = *self.hexes.get(at).ok_or("no strade")?;
-        let from = self.net.nearest(u.pos, true).ok_or("squadra isolata")?;
-        let nodes = network::route(&self.net, from, hex.node, self.fire.threat(), true).ok_or("strade chiuse dal fuoco")?;
+        let hex = *self.hexes.get(at).ok_or(tr!("no strade"))?;
+        let from = self.net.nearest(u.pos, true).ok_or(tr!("squadra isolata"))?;
+        let nodes = network::route(&self.net, from, hex.node, self.fire.threat(), true).ok_or(tr!("strade chiuse dal fuoco"))?;
         let path: Vec<Pos> = std::iter::once(u.pos).chain(std::iter::once(self.net.pos(from))).chain(nodes.iter().map(|&n| self.net.pos(n))).collect();
         let way: Vec<_> = std::iter::once(from).chain(nodes.iter().copied()).collect();
         let secs = abm::drive::route_time_s(&self.net, u.pos, Some(u.heading), None, &way, abm::suppression::vehicle(u.kind));
@@ -479,18 +480,18 @@ impl Game {
     /// it. Only during a pause.
     pub fn move_team(&mut self, t: usize, at: Axial) -> Result<MovePlan, String> {
         if !self.paused() {
-            return Err("gli ordini si danno solo in pausa".into());
+            return Err(tr!("gli ordini si danno solo in pausa").into());
         }
         let plan = self.plan_move(t, at)?;
         let unit = self.teams[t].unit;
         if self.crews.units[unit].state == UnitState::Lost {
-            return Err(format!("{} è fuori servizio", self.teams[t].name));
+            return Err(tr!("{0} è fuori servizio", self.teams[t].name));
         }
         // the engine leaves when its people are aboard; they work from where it stops
         self.teams[t].pending = Some(plan.hex.target);
         self.dispatch(t);
         self.teams[t].hex = Some(at);
-        let text = format!("{} verso {} ({} min)", self.teams[t].name, self.place_name(plan.hex.target), plan.minutes.ceil());
+        let text = tr!("{0} verso {1} ({2} min)", self.teams[t].name, self.place_name(plan.hex.target), plan.minutes.ceil());
         self.log.push(LogEntry { at_s: self.time_s(), text });
         Ok(plan)
     }
@@ -564,17 +565,17 @@ impl Game {
         let u = &self.crews.units[self.teams[t].unit];
         match u.state {
             UnitState::Moving => match self.team_eta_min(t) {
-                Some(m) => format!("in viaggio, {} min", m.ceil()),
-                None => "in viaggio".into(),
+                Some(m) => tr!("in viaggio, {0} min", m.ceil()),
+                None => tr!("in viaggio").into(),
             },
-            UnitState::Working if u.note.starts_with("waiting") => "in attesa del fuoco".into(),
-            UnitState::Working => "al lavoro".into(),
-            UnitState::Refilling => format!("ricarica l'acqua, {} min", ((1.0 - u.water_frac()) * self.tuning.refill_s / 60.0).ceil()),
-            UnitState::Withdrawing => "si ritira: troppo pericoloso".into(),
-            UnitState::Lost => "fuori servizio".into(),
-            UnitState::Staged if self.teams[t].hex.is_none() => "in caserma".into(),
-            UnitState::Staged => "ferma".into(),
-            UnitState::Unavailable | UnitState::Inbound => "non disponibile".into(),
+            UnitState::Working if u.note.starts_with("waiting") => tr!("in attesa del fuoco").into(),
+            UnitState::Working => tr!("al lavoro").into(),
+            UnitState::Refilling => tr!("ricarica l'acqua, {0} min", ((1.0 - u.water_frac()) * self.tuning.refill_s / 60.0).ceil()),
+            UnitState::Withdrawing => tr!("si ritira: troppo pericoloso").into(),
+            UnitState::Lost => tr!("fuori servizio").into(),
+            UnitState::Staged if self.teams[t].hex.is_none() => tr!("in caserma").into(),
+            UnitState::Staged => tr!("ferma").into(),
+            UnitState::Unavailable | UnitState::Inbound => tr!("non disponibile").into(),
         }
     }
 
@@ -582,10 +583,10 @@ impl Game {
 
     /// What evacuating district `d` now would be.
     pub fn plan_evacuation(&self, d: usize) -> Result<EvacPlan, String> {
-        let dd = self.districts.get(d).ok_or("borgo inesistente")?;
-        let plan = self.evac.plan(d, &self.districts, &self.net, &self.fire).ok_or_else(|| format!("da {} tutte le strade sono chiuse dal fuoco", dd.name))?;
+        let dd = self.districts.get(d).ok_or(tr!("borgo inesistente"))?;
+        let plan = self.evac.plan(d, &self.districts, &self.net, &self.fire).ok_or_else(|| tr!("da {0} tutte le strade sono chiuse dal fuoco", dd.name))?;
         if plan.families == 0 {
-            return Err(format!("a {} non c'è più nessuno da evacuare", dd.name));
+            return Err(tr!("a {0} non c'è più nessuno da evacuare", dd.name));
         }
         Ok(plan)
     }
@@ -603,7 +604,7 @@ impl Game {
             self.cancel_evacuation()?;
         }
         self.evac.start(&plan, &self.districts, self.time_s())?;
-        let text = format!("evacuazione di {}: {} persone verso {} ({} min)", self.districts[d].name, plan.people, plan.path.to, plan.total_min().ceil());
+        let text = tr!("evacuazione di {0}: {1} persone verso {2} ({3} min)", self.districts[d].name, plan.people, plan.path.to, plan.total_min().ceil());
         self.log.push(LogEntry { at_s: self.time_s(), text });
         Ok(plan)
     }
@@ -618,11 +619,11 @@ impl Game {
     /// Take back the evacuation ordered in this pause.
     pub fn cancel_evacuation(&mut self) -> Result<usize, String> {
         if !self.can_cancel_evacuation() {
-            return Err("si può annullare solo l'evacuazione decisa in questa pausa".into());
+            return Err(tr!("si può annullare solo l'evacuazione decisa in questa pausa").into());
         }
         let since = self.pause_from.unwrap_or(i64::MAX);
-        let d = self.evac.cancel(since).ok_or("l'evacuazione è già cominciata")?;
-        self.log.push(LogEntry { at_s: self.time_s(), text: format!("evacuazione di {} annullata", self.districts[d].name) });
+        let d = self.evac.cancel(since).ok_or(tr!("l'evacuazione è già cominciata"))?;
+        self.log.push(LogEntry { at_s: self.time_s(), text: tr!("evacuazione di {0} annullata", self.districts[d].name) });
         Ok(d)
     }
 
@@ -761,8 +762,8 @@ impl Game {
         if let Some((at, w)) = self.territory.shifted(&self.case) {
             if self.time_s() >= at && self.fire.weather().wind_dir_deg != w.wind_dir_deg {
                 self.fire.set_weather(w)?;
-                self.log.push(LogEntry { at_s: self.time_s(), text: format!("il vento gira: ora soffia da {}", crate::words::compass(w.wind_dir_deg)) });
-                self.say(Voice::Expert, Kind::Wind, format!("attenzione, il vento gira: ora da {} 💨", crate::words::compass(w.wind_dir_deg)));
+                self.log.push(LogEntry { at_s: self.time_s(), text: tr!("il vento gira: ora soffia da {0}", crate::words::compass(w.wind_dir_deg)) });
+                self.say(Voice::Expert, Kind::Wind, tr!("attenzione, il vento gira: ora da {0} 💨", crate::words::compass(w.wind_dir_deg)));
             }
         }
         self.fire.advance(STEP_S)?;
@@ -782,18 +783,18 @@ impl Game {
         for e in self.evac.step(STEP_S as f32, now, &self.districts, &self.net, &self.fire) {
             let line = match e {
                 evac::Event::Rerouted { .. } => None,
-                evac::Event::Interrupted { district, families } => Some((Kind::EvacStuck, format!("{}: nessuna strada aperta, {families} famiglie restano al riparo 🏠", self.districts[district].name))),
-                evac::Event::Done { district } => Some((Kind::EvacDone, format!("{}: evacuazione completata! ✅", self.districts[district].name))),
+                evac::Event::Interrupted { district, families } => Some((Kind::EvacStuck, tr!("{0}: nessuna strada aperta, {1} famiglie restano al riparo 🏠", self.districts[district].name, families))),
+                evac::Event::Done { district } => Some((Kind::EvacDone, tr!("{0}: evacuazione completata! ✅", self.districts[district].name))),
             };
             if let Some((kind, chat)) = line {
                 self.say(Voice::Mayor, kind, chat);
             }
             let text = match e {
-                evac::Event::Rerouted { district } => format!("evacuazione di {}: strada chiusa dal fuoco, nuovo percorso", self.districts[district].name),
+                evac::Event::Rerouted { district } => tr!("evacuazione di {0}: strada chiusa dal fuoco, nuovo percorso", self.districts[district].name),
                 evac::Event::Interrupted { district, families } => {
-                    format!("evacuazione di {} interrotta: nessuna strada aperta, {families} famiglie in autoprotezione", self.districts[district].name)
+                    tr!("evacuazione di {0} interrotta: nessuna strada aperta, {1} famiglie in autoprotezione", self.districts[district].name, families)
                 }
-                evac::Event::Done { district } => format!("evacuazione di {}: tutti in strada", self.districts[district].name),
+                evac::Event::Done { district } => tr!("evacuazione di {0}: tutti in strada", self.districts[district].name),
             };
             self.log.push(LogEntry { at_s: now, text });
         }
@@ -805,8 +806,8 @@ impl Game {
             }
             if let Some(t) = self.teams.iter().position(|t| t.unit == k) {
                 let line = match (was, u.state) {
-                    (_, UnitState::Withdrawing) => Some((Kind::Withdraw, "ci ritiriamo, troppo fuoco ⚠️")),
-                    (_, UnitState::Lost) => Some((Kind::Lost, "il fuoco ci ha raggiunti, SOS 🆘")),
+                    (_, UnitState::Withdrawing) => Some((Kind::Withdraw, tr!("ci ritiriamo, troppo fuoco ⚠️"))),
+                    (_, UnitState::Lost) => Some((Kind::Lost, tr!("il fuoco ci ha raggiunti, SOS 🆘"))),
                     _ => None,
                 };
                 if let Some((kind, text)) = line {
@@ -815,8 +816,8 @@ impl Game {
             }
             let u = &self.crews.units[k];
             let text = match u.state {
-                UnitState::Withdrawing => format!("{} si ritira vicino a {}: il fuoco è troppo vicino", u.callsign, self.place_name(u.pos)),
-                UnitState::Lost => format!("il fuoco ha raggiunto {} vicino a {}: fuori servizio", u.callsign, self.place_name(u.pos)),
+                UnitState::Withdrawing => tr!("{0} si ritira vicino a {1}: il fuoco è troppo vicino", u.callsign, self.place_name(u.pos)),
+                UnitState::Lost => tr!("il fuoco ha raggiunto {0} vicino a {1}: fuori servizio", u.callsign, self.place_name(u.pos)),
                 _ => continue,
             };
             self.log.push(LogEntry { at_s: now, text });
@@ -1161,7 +1162,7 @@ impl Game {
             let level = if hit * 3 >= homes.max(1) { 2 } else { u8::from(hit > 0) };
             if level > self.told_homes[d] {
                 self.told_homes[d] = level;
-                let text = if level == 1 { format!("{}: il fuoco ha raggiunto le prime case 🏠🔥", self.districts[d].name) } else { format!("{}: colpita una casa su tre 🔥", self.districts[d].name) };
+                let text = if level == 1 { tr!("{0}: il fuoco ha raggiunto le prime case 🏠🔥", self.districts[d].name) } else { tr!("{0}: colpita una casa su tre 🔥", self.districts[d].name) };
                 self.say(Voice::Mayor, Kind::HomesHit, text);
             }
         }

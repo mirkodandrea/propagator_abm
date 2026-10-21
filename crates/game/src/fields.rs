@@ -104,11 +104,12 @@ pub fn build(scn: &Scenario, commands: &mut Commands, meshes: &mut Assets<Mesh>,
         }
     }
     info!("fields: {parcels} parcels, {} k triangles", m.indices.len() / 3000);
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 1.0, 0.0]; m.positions.len()]);
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, m.positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, m.colors);
     mesh.insert_indices(Indices::U32(m.indices));
+    mesh.compress_indices();
     let material = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 1.0, metallic: 0.0, reflectance: 0.02, ..default() });
     commands.spawn(((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material)), crate::terrain_mesh::PauseSolid));
 }

@@ -5,6 +5,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use std::{collections::HashMap, sync::OnceLock};
 
+#[derive(serde::Deserialize)]
 pub struct Model {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
@@ -19,32 +20,15 @@ const PLANTS: [&str; 6] = ["pine", "oak", "chestnut", "bush", "olive", "cypress"
 pub fn model(name: &str) -> &'static Model {
     static MODELS: OnceLock<HashMap<String, Model>> = OnceLock::new();
     &MODELS.get_or_init(|| {
-        let value: serde_json::Value =
-            serde_json::from_str(include_str!("../../../assets/models/meshes.json"))
-                .expect("valid Blender mesh bake");
-        value
-            .as_object()
-            .unwrap()
-            .iter()
-            .map(|(name, v)| {
-                (
-                    name.clone(),
-                    Model {
-                        positions: serde_json::from_value(v["positions"].clone()).unwrap(),
-                        normals: serde_json::from_value(v["normals"].clone()).unwrap(),
-                        colors: serde_json::from_value(v["colors"].clone()).unwrap(),
-                        indices: serde_json::from_value(v["indices"].clone()).unwrap(),
-                        wood: serde_json::from_value(v["wood"].clone()).unwrap(),
-                    },
-                )
-            })
-            .collect()
+        serde_json::from_str(include_str!("../../../assets/models/meshes.json"))
+            .expect("valid Blender mesh bake")
     })[name]
 }
 
 /// One piece of the town kit (`scripts/build_town_models.py`): landmarks,
 /// props, vehicle and people variants. Same layout as [`Model`], no bark mask;
 /// `footprint` is the (width, depth) a landmark was authored at.
+#[derive(serde::Deserialize)]
 pub struct Kit {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
@@ -55,45 +39,32 @@ pub struct Kit {
     pub rig: Option<Rig>,
     /// What each vertex is made of (`materials::Surface` ids), where the bake
     /// says: the units. Empty elsewhere.
+    #[serde(default)]
     pub surfaces: Vec<u8>,
 }
 
 /// How an animated part of a unit moves: about `pivot` (model space, metres)
 /// around `axis`, in the way `kind` names (wheel, prop, swing, tool, blink).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Deserialize)]
 pub struct Rig {
+    #[serde(deserialize_with = "vec3")]
     pub pivot: Vec3,
+    #[serde(deserialize_with = "vec3")]
     pub axis: Vec3,
     pub kind: String,
+    #[serde(default)]
     pub phase: f32,
 }
 
+fn vec3<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Vec3, D::Error> {
+    <[f32; 3] as serde::Deserialize>::deserialize(de).map(Vec3::from_array)
+}
+
 fn parse_kit(json: &str, what: &str) -> HashMap<String, Kit> {
-    let value: serde_json::Value = serde_json::from_str(json).unwrap_or_else(|_| panic!("valid {what} bake"));
-    value
-        .as_object()
-        .unwrap()
-        .iter()
-        .map(|(name, v)| {
-            (
-                name.clone(),
-                Kit {
-                    positions: serde_json::from_value(v["positions"].clone()).unwrap(),
-                    normals: serde_json::from_value(v["normals"].clone()).unwrap(),
-                    colors: serde_json::from_value(v["colors"].clone()).unwrap(),
-                    indices: serde_json::from_value(v["indices"].clone()).unwrap(),
-                    footprint: serde_json::from_value(v["footprint"].clone()).unwrap_or(None),
-                    surfaces: serde_json::from_value(v["surfaces"].clone()).unwrap_or_default(),
-                    rig: v.get("rig").map(|r| Rig {
-                        pivot: Vec3::from_array(serde_json::from_value(r["pivot"].clone()).unwrap()),
-                        axis: Vec3::from_array(serde_json::from_value(r["axis"].clone()).unwrap()),
-                        kind: r["kind"].as_str().unwrap().to_string(),
-                        phase: r["phase"].as_f64().unwrap_or(0.0) as f32,
-                    }),
-                },
-            )
-        })
-        .collect()
+    // Decode straight into the vertex arrays. A serde_json::Value tree keeps
+    // coordinates as generic values in nested arrays; cloning its fields
+    // increases that temporary heap. Wasm's linear memory never shrinks after this peak.
+    serde_json::from_str(json).unwrap_or_else(|e| panic!("invalid {what} bake: {e}"))
 }
 
 pub fn kit(name: &str) -> &'static Kit {
@@ -125,12 +96,13 @@ pub fn coast(name: &str) -> &'static Kit {
 /// An island model as a mesh.
 pub fn island_mesh(name: &str) -> Mesh {
     let m = island(name);
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, m.positions.clone());
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, m.normals.clone());
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, m.colors.iter().map(|c| [c[0], c[1], c[2], 1.0]).collect::<Vec<_>>());
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; m.positions.len()]);
     mesh.insert_indices(Indices::U32(m.indices.clone()));
+    mesh.compress_indices();
     mesh
 }
 
@@ -138,6 +110,7 @@ pub fn island_mesh(name: &str) -> Mesh {
 /// its crown and the debris on the ground (`debris` flags the latter). The
 /// trunk and boughs are the live plant's own, charred in place by the shader.
 /// Colours are absolute sRGB.
+#[derive(serde::Deserialize)]
 pub struct Piece {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
@@ -148,6 +121,7 @@ pub struct Piece {
 
 /// One variety of a plant (`scripts/build_vegetation_models.py`): the live
 /// model, what the fire adds near the camera, and the same far away.
+#[derive(serde::Deserialize)]
 pub struct Variety {
     pub live: Model,
     pub remains: Piece,
@@ -177,31 +151,8 @@ pub fn variety(name: &str) -> &'static Variety {
     static VARIETIES: OnceLock<HashMap<String, Variety>> = OnceLock::new();
     VARIETIES
         .get_or_init(|| {
-            let value: serde_json::Value =
-                serde_json::from_str(include_str!("../../../assets/models/vegetation.json")).expect("valid vegetation bake");
-            let piece = |v: &serde_json::Value| Piece {
-                positions: serde_json::from_value(v["positions"].clone()).unwrap(),
-                normals: serde_json::from_value(v["normals"].clone()).unwrap(),
-                colors: serde_json::from_value(v["colors"].clone()).unwrap(),
-                indices: serde_json::from_value(v["indices"].clone()).unwrap(),
-                debris: serde_json::from_value(v["debris"].clone()).unwrap(),
-            };
-            value
-                .as_object()
-                .unwrap()
-                .iter()
-                .map(|(name, v)| {
-                    let l = &v["live"];
-                    let live = Model {
-                        positions: serde_json::from_value(l["positions"].clone()).unwrap(),
-                        normals: serde_json::from_value(l["normals"].clone()).unwrap(),
-                        colors: serde_json::from_value(l["colors"].clone()).unwrap(),
-                        indices: serde_json::from_value(l["indices"].clone()).unwrap(),
-                        wood: serde_json::from_value(l["wood"].clone()).unwrap(),
-                    };
-                    (name.clone(), Variety { live, remains: piece(&v["remains"]), low: piece(&v["low"]) })
-                })
-                .collect()
+            serde_json::from_str(include_str!("../../../assets/models/vegetation.json"))
+                .expect("valid vegetation bake")
         })
         .get(name)
         .unwrap_or_else(|| panic!("vegetation has no variety `{name}`"))
@@ -220,7 +171,7 @@ fn units() -> &'static HashMap<String, Kit> {
 /// The surface of each vertex goes in its colour's alpha
 /// (`materials::Surface::alpha`), for the structure shader.
 fn kit_to_mesh(m: &Kit, shift: Vec3) -> Mesh {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
     let positions: Vec<[f32; 3]> = m.positions.iter().map(|p| (Vec3::from_array(*p) - shift).to_array()).collect();
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, m.normals.clone());
@@ -229,6 +180,7 @@ fn kit_to_mesh(m: &Kit, shift: Vec3) -> Mesh {
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; m.positions.len()]);
     mesh.insert_indices(Indices::U32(m.indices.clone()));
+    mesh.compress_indices();
     mesh
 }
 
@@ -257,12 +209,13 @@ pub fn unit_parts(name: &str) -> Vec<(String, Mesh, Rig)> {
 /// A kit piece as a standalone mesh (people and vehicles, which move).
 pub fn kit_mesh(name: &str) -> Mesh {
     let m = kit(name);
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, m.positions.clone());
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, m.normals.clone());
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, m.colors.iter().map(|c| [c[0], c[1], c[2], 1.0]).collect::<Vec<_>>());
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; m.positions.len()]);
     mesh.insert_indices(Indices::U32(m.indices.clone()));
+    mesh.compress_indices();
     mesh
 }
 
@@ -270,13 +223,14 @@ pub fn mesh(name: &str) -> Mesh {
     let m = model(name);
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
+        RenderAssetUsages::RENDER_WORLD,
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, m.positions.clone());
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, m.normals.clone());
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, m.colors.clone());
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; m.positions.len()]);
     mesh.insert_indices(Indices::U32(m.indices.clone()));
+    mesh.compress_indices();
     mesh
 }
 

@@ -20,6 +20,7 @@
 //!   at the door reaches [`fire::threat::IMPASSABLE`];
 //! - on the road: the threat where they are reaches `IMPASSABLE`.
 
+use crate::tr;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -366,12 +367,12 @@ impl Evacuations {
     /// Order district `d` out along the plan's route.
     pub fn start(&mut self, plan: &EvacPlan, districts: &[District], now: i64) -> Result<(), String> {
         if let Some(e) = self.active() {
-            return Err(format!("si sta già evacuando {}", districts[e.district].name));
+            return Err(tr!("si sta già evacuando {0}", districts[e.district].name));
         }
         let dd = &districts[plan.district];
         let mut queue: Vec<usize> = dd.households.iter().copied().filter(|&i| matches!(self.families[i].state, State::Home | State::SelfDefence)).collect();
         if queue.is_empty() {
-            return Err(format!("a {} non c'è più nessuno da evacuare", dd.name));
+            return Err(tr!("a {0} non c'è più nessuno da evacuare", dd.name));
         }
         queue.sort_by(|&a, &b| dist(self.families[a].home, dd.departure).total_cmp(&dist(self.families[b].home, dd.departure)).then(a.cmp(&b)));
         let before = queue.iter().map(|&i| (i, self.families[i].state)).collect();
@@ -545,9 +546,9 @@ impl Evacuations {
 fn refuge_name(p: Pos, districts: &[District], is_exit: bool) -> String {
     let near = districts.iter().min_by(|a, b| dist(a.centre, p).total_cmp(&dist(b.centre, p)));
     match near {
-        _ if is_exit => "l'uscita".into(),
-        Some(d) if dist(d.centre, p) < 900.0 => format!("l'area di raccolta di {}", d.name),
-        Some(d) => format!("l'area sicura vicino a {}", d.name),
-        None => "l'area sicura".into(),
+        _ if is_exit => tr!("l'uscita").into(),
+        Some(d) if dist(d.centre, p) < 900.0 => tr!("l'area di raccolta di {0}", d.name),
+        Some(d) => tr!("l'area sicura vicino a {0}", d.name),
+        None => tr!("l'area sicura").into(),
     }
 }

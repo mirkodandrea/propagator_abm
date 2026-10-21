@@ -8,6 +8,7 @@
 //! fire played well beats a large one played badly. Nothing here reads the
 //! simulation: it only weighs two [`Outcome`]s.
 
+use crate::tr;
 use serde::{Deserialize, Serialize};
 
 use crate::Outcome;
@@ -66,37 +67,37 @@ pub fn debrief(mine: &Outcome, without: &Outcome) -> Debrief {
     fn result(label: &str, lost: f64, risk: f64, unit: &str) -> String {
         if risk <= 0.0 {
             return if lost > 0.0 {
-                format!("{label}: il fuoco ha colpito {lost:.0} {unit}, mentre senza ordini nessuno sarebbe stato colpito.")
+                tr!("{0}: il fuoco ha colpito {1} {2}, mentre senza ordini nessuno sarebbe stato colpito.", label, format!("{lost:.0}"), unit)
             } else {
-                format!("{label}: qui non ci sono stati danni, nemmeno senza ordini. Questa voce non assegna stelle.")
+                tr!("{0}: qui non ci sono stati danni, nemmeno senza ordini. Questa voce non assegna stelle.", label)
             };
         }
         let difference = risk - lost;
         if difference < 0.0 {
-            format!("{label}: il fuoco ha colpito {:.0} {unit} in più rispetto alla partita senza ordini.", -difference)
+            tr!("{0}: il fuoco ha colpito {1} {2} in più rispetto alla partita senza ordini.", label, format!("{:.0}", -difference), unit)
         } else if difference == 0.0 {
-            format!("{label}: il fuoco ha colpito {lost:.0} {unit}, lo stesso danno della partita senza ordini.")
+            tr!("{0}: il fuoco ha colpito {1} {2}, lo stesso danno della partita senza ordini.", label, format!("{lost:.0}"), unit)
         } else {
             let percent = 100.0 * difference / risk;
-            format!("{label}: il fuoco ha colpito {:.0} {unit} in meno. Hai evitato il {percent:.0}% del danno.", difference)
+            tr!("{0}: il fuoco ha colpito {1} {2} in meno. Hai evitato il {3}% del danno.", label, format!("{difference:.0}"), unit, format!("{percent:.0}"))
         }
     }
     let next_try = if mine.caught() > 0 {
-        "La prossima volta, guarda quanto richiede l'evacuazione e dove potrebbe arrivare il fuoco. Metti al primo posto le persone."
+        tr!("La prossima volta, guarda quanto richiede l'evacuazione e dove potrebbe arrivare il fuoco. Metti al primo posto le persone.")
     } else if mine.districts.iter().any(|d| d.on_the_road > 0) {
-        "Il fuoco non ha raggiunto nessuno, ma alcune persone sono ancora in viaggio: devono ancora arrivare al sicuro."
+        tr!("Il fuoco non ha raggiunto nessuno, ma alcune persone sono ancora in viaggio: devono ancora arrivare al sicuro.")
     } else if mine.units_lost > 0 {
-        "Anche i soccorritori hanno bisogno di protezione. Prima di spostarli, controlla il percorso e la previsione."
+        tr!("Anche i soccorritori hanno bisogno di protezione. Prima di spostarli, controlla il percorso e la previsione.")
     } else if mine.homes_hit() > 0 {
-        "La prossima volta, prova a difendere i borghi minacciati ricordando che anche le squadre hanno bisogno di tempo per arrivare."
+        tr!("La prossima volta, prova a difendere i borghi minacciati ricordando che anche le squadre hanno bisogno di tempo per arrivare.")
     } else {
-        "Prova a cambiare il momento degli ordini e osserva cosa succede. La previsione ti aiuta, ma non può dirti tutto con certezza."
+        tr!("Prova a cambiare il momento degli ordini e osserva cosa succede. La previsione ti aiuta, ma non può dirti tutto con certezza.")
     };
     Debrief {
         results: [
-            result("Persone", mine.caught() as f64, without.caught() as f64, "abitanti"),
-            result("Case", mine.homes_hit() as f64, without.homes_hit() as f64, "edifici"),
-            result("Bosco", mine.hectares as f64, without.hectares as f64, "ettari"),
+            result(tr!("Persone"), mine.caught() as f64, without.caught() as f64, tr!("abitanti")),
+            result(tr!("Case"), mine.homes_hit() as f64, without.homes_hit() as f64, tr!("edifici")),
+            result(tr!("Bosco"), mine.hectares as f64, without.hectares as f64, tr!("ettari")),
         ],
         next_try,
     }
@@ -104,11 +105,13 @@ pub fn debrief(mine: &Outcome, without: &Outcome) -> Debrief {
 
 /// Offline-readable civic advice, paraphrased from the official Io non rischio
 /// wildfire guidance. These are citizen actions, not simulated crew tactics.
-pub const CIVIL_PROTECTION: [(&str, &str); 3] = [
-    ("Preparati prima", "Sai cosa fare se un incendio si avvicina? Informati sul Piano di protezione civile del tuo Comune: meglio prepararsi prima."),
-    ("Segnala fumo e fiamme", "Se vedi fumo o fiamme, chiama subito il 115 o, dove attivo, il 112. Spiega bene dove sei: non aspettare che chiami qualcun altro."),
-    ("Lascia passare i soccorsi", "Lascia libere le strade per chi sta intervenendo. Segui le indicazioni delle autorità e, se ti chiedono di evacuare, parti subito."),
-];
+pub fn civil_protection() -> [(&'static str, &'static str); 3] {
+    [
+        (tr!("Preparati prima"), tr!("Sai cosa fare se un incendio si avvicina? Informati sul Piano di protezione civile del tuo Comune: meglio prepararsi prima.")),
+        (tr!("Segnala fumo e fiamme"), tr!("Se vedi fumo o fiamme, chiama subito il 115 o, dove attivo, il 112. Spiega bene dove sei: non aspettare che chiami qualcun altro.")),
+        (tr!("Lascia passare i soccorsi"), tr!("Lascia libere le strade per chi sta intervenendo. Segui le indicazioni delle autorità e, se ti chiedono di evacuare, parti subito.")),
+    ]
+}
 pub const CIVIL_PROTECTION_SOURCE: &str = "https://iononrischio.protezionecivile.gov.it/it/preparati/incendi-boschivi/cosa-fare/";
 
 impl Stars {

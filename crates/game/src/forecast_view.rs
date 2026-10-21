@@ -33,7 +33,9 @@ pub const LINE_COLOURS: [bevy_egui::egui::Color32; HORIZONS] = [
     bevy_egui::egui::Color32::from_rgb(255, 10, 5),
     bevy_egui::egui::Color32::from_rgb(255, 217, 0),
 ];
-pub const LABELS: [&str; HORIZONS] = ["tra 1 ora", "tra 3 ore"];
+pub fn label(h: usize) -> &'static str {
+    [rocca::tr!("tra 1 ora"), rocca::tr!("tra 3 ore")][h]
+}
 /// A label keeps this far from the others on the screen, pixels.
 const LABEL_APART_PX: egui::Vec2 = egui::vec2(96.0, 26.0);
 
@@ -244,7 +246,7 @@ pub fn labels(
                     .corner_radius(5.0)
                     .inner_margin(egui::Margin::symmetric(6, 2))
                     .show(ui, |ui| {
-                        ui.add(egui::Label::new(egui::RichText::new(LABELS[h]).size(14.0).strong().color(egui::Color32::from_rgb(c[0], c[1], c[2]))).extend());
+                        ui.add(egui::Label::new(egui::RichText::new(label(h)).size(14.0).strong().color(egui::Color32::from_rgb(c[0], c[1], c[2]))).extend());
                     });
             });
     }

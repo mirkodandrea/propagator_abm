@@ -16,6 +16,7 @@ pub mod board;
 pub mod chat;
 pub mod characters;
 pub mod icons;
+pub mod lang;
 pub mod marks;
 pub mod pins;
 pub mod screens;
@@ -290,6 +291,7 @@ impl Kiosk {
 }
 
 pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<NextState<AppState>>, mut exit: MessageWriter<AppExit>) {
+    lang::init(&data.0);
     let built = Territory::load(&data.0).and_then(|t| {
         let k = Kiosk::new(t, data.0.clone());
         let sim = Sim::new(&data.0, &k.territory.game, k.seed)?;

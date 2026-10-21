@@ -34,13 +34,13 @@ import gzip, hashlib, json, os, sys
 
 root, out = sys.argv[1], sys.argv[2]
 files = []
-for sub in ("data/scenarios/rocca_ventosa", "data/behaviours"):
+for sub in ("data/scenarios/rocca_ventosa", "data/behaviours", "data/i18n"):
     for d, _, names in os.walk(os.path.join(root, sub)):
         for n in names:
             files.append(os.path.relpath(os.path.join(d, n), root).replace(os.sep, "/"))
 files.append("data/fuels_eu12.json")
 manifest = []
-for path in sorted(f for f in files if not f.endswith("params.json")):
+for path in sorted(f for f in files if not f.endswith(("params.json", "i18n/keys.json"))):
     raw = open(os.path.join(root, path), "rb").read()
     gz = gzip.compress(raw, 9, mtime=0)
     dest = os.path.join(out, path + ".gz")

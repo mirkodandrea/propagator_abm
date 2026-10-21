@@ -19,6 +19,7 @@ behavior.workspace = true
 anyhow.workspace = true
 datafs.workspace = true
 libsm64-native = { path = "../libsm64-native", optional = true }
+serde.workspace = true
 serde_json.workspace = true
 bevy = { version = "0.20", default-features = true, features = ["track_location"] }
 # Only for the timestamp queries of `bench.rs` (QuerySet, RenderPassTimestampWrites are not
@@ -28,6 +29,7 @@ bevy_egui = { version = "0.43.1", default-features = false, features = ["open_ur
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libc = "0.2"
+sys-locale = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["Window", "Storage", "Document", "Element"] }
