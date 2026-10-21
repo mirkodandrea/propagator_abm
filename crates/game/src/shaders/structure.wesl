@@ -10,19 +10,18 @@
 // the geometry and the colour, a baked model (the units) says per vertex what
 // it is made of, in the vertex colour's alpha (`Surface` in `structure.rs`).
 
-#import bevy_pbr::{
-    pbr_functions::alpha_discard,
-    pbr_fragment::pbr_input_from_standard_material,
-    pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
-    pbr_types::{PbrInput, STANDARD_MATERIAL_FLAGS_UNLIT_BIT},
-    forward_io::{VertexOutput, FragmentOutput},
-}
-#import bevy_pbr::mesh_functions::get_world_from_local
-#import rocca::noise::{hash21, value_noise}
-#import rocca::scenery::{limestone, rock_bed, rock_bump}
 
 // What a baked vertex is made of: as `materials::Surface` (and the bakes'
 // `SURFACES`). The alpha is id / 255; 1.0 (no id) leaves the material alone.
+
+import bevy_pbr::render::pbr_functions::{alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing};
+import bevy_pbr::render::pbr_fragment::pbr_input_from_standard_material;
+import bevy_pbr::render::pbr_types::{PbrInput, STANDARD_MATERIAL_FLAGS_UNLIT_BIT};
+import bevy_pbr::render::forward_io::{VertexOutput, FragmentOutput};
+import bevy_pbr::render::mesh_functions::get_world_from_local;
+import game::shaders::noise::{hash21, value_noise};
+import game::shaders::scenery::{limestone, rock_bed, rock_bump};
+
 const SURFACE_PAINT: u32 = 1u;
 const SURFACE_METAL: u32 = 2u;
 const SURFACE_RUBBER: u32 = 3u;
@@ -45,7 +44,7 @@ fn surface_id(alpha: f32) -> u32 {
 fn set_pbr(pbr: ptr<function, PbrInput>, roughness: f32, metallic: f32, reflectance: f32) {
     (*pbr).material.perceptual_roughness = roughness;
     (*pbr).material.metallic = metallic;
-    (*pbr).material.reflectance = reflectance;
+    (*pbr).material.reflectance = vec3<f32>(reflectance);
     (*pbr).material.clearcoat = 0.0;
 }
 
@@ -338,28 +337,27 @@ fn boat_pbr(pbr: ptr<function, PbrInput>, c: vec3<f32>, normal: vec3<f32>) {
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     var pbr = pbr_input_from_standard_material(in, is_front);
-#ifdef VERTEX_COLORS
+    @if(VERTEX_COLORS)
     let surface = surface_id(in.color.a);
-#else
+    @else
     let surface = 0u;
-#endif
-    pbr.material.base_color = alpha_discard(pbr.material, pbr.material.base_color);
+    pbr.material.base_color = alpha_discard(pbr.material.flags, pbr.material.alpha_cutoff, pbr.material.base_color);
     let p = in.world_position.xyz;
     let c = pbr.material.base_color;
-#ifdef FINISH_TOWN
-    town_pbr(&pbr, c.rgb, in.world_normal);
-    pbr.material.base_color = town_albedo(c, p, in.world_normal);
-#else ifdef FINISH_STONE
-    set_pbr(&pbr, 0.85, 0.0, 0.3);
-    pbr.material.base_color = stone_albedo(c, local_metres(p, in.instance_index), in.world_normal, p);
-#else ifdef FINISH_BOAT
-    boat_pbr(&pbr, c.rgb, in.world_normal);
-    pbr.material.base_color = boat_albedo(c, local_metres(p, in.instance_index), in.world_normal, p);
-#else ifdef FINISH_ROCK
-    set_pbr(&pbr, 0.9, 0.0, 0.3);
-    pbr.material.base_color = rock_albedo(c, p, in.world_normal);
-    pbr.N = normalize(pbr.N + rock_bump(p, normalize(in.world_normal)));
-#endif
+    @if(FINISH_TOWN) {
+        town_pbr(&pbr, c.rgb, in.world_normal);
+        pbr.material.base_color = town_albedo(c, p, in.world_normal);
+    } @elif(FINISH_STONE) {
+        set_pbr(&pbr, 0.85, 0.0, 0.3);
+        pbr.material.base_color = stone_albedo(c, local_metres(p, in.instance_index), in.world_normal, p);
+    } @elif(FINISH_BOAT) {
+        boat_pbr(&pbr, c.rgb, in.world_normal);
+        pbr.material.base_color = boat_albedo(c, local_metres(p, in.instance_index), in.world_normal, p);
+    } @elif(FINISH_ROCK) {
+        set_pbr(&pbr, 0.9, 0.0, 0.3);
+        pbr.material.base_color = rock_albedo(c, p, in.world_normal);
+        pbr.N = normalize(pbr.N + rock_bump(p, normalize(in.world_normal)));
+    }
     if surface != 0u {
         apply_surface(&pbr, surface, local_metres(p, in.instance_index), p);
     }

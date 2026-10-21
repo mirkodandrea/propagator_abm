@@ -10,7 +10,7 @@
 //! Cleared when no forecast is due any more, on a restart, and on the title
 //! screen.
 
-use bevy::pbr::{NotShadowCaster, NotShadowReceiver};
+use bevy::light::{NotShadowCaster, NotShadowReceiver};
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use rocca::forecast::{Epoch, Forecast, Job, HORIZONS};
@@ -61,11 +61,12 @@ pub struct ForecastPlugin;
 
 impl Plugin for ForecastPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<ForecastView>().add_systems(
-            Update,
-            (update.after(crate::kiosk::step), labels.after(crate::kiosk::ui::draw))
-                .run_if(in_state(crate::AppState::Playing)),
-        );
+        app.init_resource::<ForecastView>()
+            .add_systems(Update, update.after(crate::kiosk::step).run_if(in_state(crate::AppState::Playing)))
+            .add_systems(
+                bevy_egui::EguiPrimaryContextPass,
+                labels.after(crate::kiosk::ui::draw).run_if(in_state(crate::AppState::Playing)),
+            );
     }
 }
 
@@ -118,7 +119,7 @@ pub fn update(
     mut view: ResMut<ForecastView>,
     sim: Res<Sim>,
     kiosk: Res<crate::kiosk::Kiosk>,
-    mut restarted: EventReader<SimRestarted>,
+    mut restarted: MessageReader<SimRestarted>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<crate::forecast_zone::ZoneMaterial>>,
     mut marks: Query<(Entity, &mut Visibility), With<ForecastMark>>,
@@ -174,12 +175,11 @@ pub fn update(
                     all[h] = lines;
                 }
                 commands.spawn((
-                    MaterialMeshBundle::<crate::forecast_zone::ZoneMaterial> {
-                        mesh: meshes.add(crate::forecast_zone::grid_mesh(&sim.scn, &all, &f.eta_s)),
-                        material: materials.add(crate::forecast_zone::ZoneMaterial::new(LINES)),
-                        ..default()
-                    },
-                    bevy::render::view::NoFrustumCulling,
+                    (
+                        Mesh3d(meshes.add(crate::forecast_zone::grid_mesh(&sim.scn, &all, &f.eta_s))),
+                        MeshMaterial3d(materials.add(crate::forecast_zone::ZoneMaterial::new(LINES))),
+                    ),
+                    bevy::camera::visibility::NoFrustumCulling,
                     NotShadowCaster,
                     NotShadowReceiver,
                     ForecastMark,
@@ -217,16 +217,16 @@ pub fn labels(
     if !matches!(kiosk.phase, crate::kiosk::Phase::Tutorial | crate::kiosk::Phase::Gioco) {
         return;
     }
-    let Ok((cam, gt)) = cameras.get_single() else { return };
-    let ctx = contexts.ctx_mut();
+    let Ok((cam, gt)) = cameras.single() else { return };
+    let Ok(ctx) = contexts.ctx_mut() else { return };
     // after the sidebar: what is left is the map
-    let map = ctx.available_rect().shrink(40.0);
+    let map = ctx.viewport_rect().shrink(40.0);
     let mut placed: Vec<egui::Pos2> = vec![];
     for (h, pts) in at.iter().enumerate() {
         // the first point on the map that is not on top of an earlier label
         let on_map = pts.iter().find_map(|&p| {
             let v = crate::frame::to_bevy(p, sim.scn.terrain.height_at(p) + LABEL_LIFT_M);
-            let s = cam.world_to_viewport(gt, v).filter(|s| map.contains(egui::pos2(s.x, s.y)))?;
+            let s = cam.world_to_viewport(gt, v).ok().filter(|s| map.contains(egui::pos2(s.x, s.y)))?;
             let s = egui::pos2(s.x, s.y);
             placed.iter().all(|q| (s.x - q.x).abs() >= LABEL_APART_PX.x || (s.y - q.y).abs() >= LABEL_APART_PX.y).then_some(s)
         });
@@ -238,11 +238,11 @@ pub fn labels(
             .order(egui::Order::Background)
             .interactable(false)
             .show(ctx, |ui| {
-                egui::Frame::none()
+                egui::Frame::NONE
                     .fill(egui::Color32::from_rgba_unmultiplied(14, 16, 18, 215))
                     .stroke(egui::Stroke::new(1.5, egui::Color32::from_rgb(c[0], c[1], c[2])))
-                    .rounding(5.0)
-                    .inner_margin(egui::Margin::symmetric(6.0, 2.0))
+                    .corner_radius(5.0)
+                    .inner_margin(egui::Margin::symmetric(6, 2))
                     .show(ui, |ui| {
                         ui.add(egui::Label::new(egui::RichText::new(LABELS[h]).size(14.0).strong().color(egui::Color32::from_rgb(c[0], c[1], c[2]))).extend());
                     });

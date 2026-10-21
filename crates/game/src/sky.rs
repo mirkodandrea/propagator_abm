@@ -17,16 +17,15 @@
 //! its glint from, so the sky, the terrain's shadows and the sea's highlight
 //! all agree about where the sun is.
 
-use bevy::asset::load_internal_asset;
-use bevy::pbr::{
-    FogFalloff, FogSettings, Material, MaterialPipeline, MaterialPipelineKey, NotShadowCaster,
-    NotShadowReceiver,
-};
+use bevy::pbr::{FogFalloff, DistanceFog, Material, MaterialPipeline, MaterialPipelineKey};
+use bevy::light::{NotShadowCaster, NotShadowReceiver};
+use bevy::asset::uuid_handle;
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::shader::ShaderRef;
+use bevy::mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use bevy::render::render_resource::{
-    AsBindGroup, RenderPipelineDescriptor, ShaderRef, ShaderType, SpecializedMeshPipelineError,
+    AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError,
 };
 
 use crate::sim::Sim;
@@ -41,7 +40,7 @@ const SITE_LAT_DEG: f32 = 44.2;
 const DAY_OF_YEAR: f32 = 210.0;
 
 const SKY_SHADER_HANDLE: Handle<Shader> =
-    Handle::weak_from_u128(0x7A11_9C40_55EE_4B21_9E33_11AA_22BB_33CC);
+    uuid_handle!("7a119c40-55ee-4b21-9e33-11aa22bb33cc");
 
 /// Radius of the sky dome. Comfortably inside the camera's far plane
 /// (40 000 m, see `main::setup_scene`) and comfortably outside anywhere the
@@ -150,7 +149,7 @@ impl Material for SkyMaterial {
     }
 
     fn specialize(
-        _pipeline: &MaterialPipeline<Self>,
+        _pipeline: &MaterialPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         _layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
@@ -196,12 +195,7 @@ pub struct SkyPlugin;
 
 impl Plugin for SkyPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(
-            app,
-            SKY_SHADER_HANDLE,
-            "shaders/sky.wgsl",
-            Shader::from_wgsl
-        );
+        crate::load_wesl!(app, SKY_SHADER_HANDLE, "shaders/sky.wesl");
         app.init_resource::<DayClock>()
             .init_resource::<SkyEnv>()
             .add_plugins(crate::sky_light::SkyLightPlugin)
@@ -226,11 +220,7 @@ fn spawn_sky(
     });
     commands.insert_resource(SkyHandle(handle.clone()));
     commands.spawn((
-        MaterialMeshBundle {
-            mesh,
-            material: handle,
-            ..default()
-        },
+        (Mesh3d(mesh), MeshMaterial3d(handle)),
         SkyDome,
         // A 30 km sphere left as a default shadow caster/receiver blows up
         // the directional light's cascade-fitting: Bevy sizes each cascade's
@@ -445,11 +435,11 @@ pub fn update_sky(
     sky_handle: Option<Res<SkyHandle>>,
     mut sky_materials: ResMut<Assets<SkyMaterial>>,
     mut sun_state: ResMut<SunState>,
-    mut ambient: ResMut<AmbientLight>,
+    mut ambient: ResMut<GlobalAmbientLight>,
     mut sky_env: ResMut<SkyEnv>,
     mut clear_color: ResMut<ClearColor>,
     mut sun_q: Query<(&mut Transform, &mut DirectionalLight), With<Sun>>,
-    mut fog_q: Query<&mut FogSettings>,
+    mut fog_q: Query<&mut DistanceFog>,
     mut dome_q: Query<&mut Visibility, With<SkyDome>>,
     time: Res<Time>,
     mut cloud_offset: Local<Vec2>,
@@ -458,7 +448,7 @@ pub fn update_sky(
     // wind shift turns the drift without making the clouds jump. Real time,
     // not sim time: at ×0 the sky stays alive, at ×N it does not race.
     let (drift, wind) = crate::sea::wind_drift(&sim);
-    *cloud_offset += drift * wind * CLOUD_SPEED_FACTOR * time.delta_seconds();
+    *cloud_offset += drift * wind * CLOUD_SPEED_FACTOR * time.delta_secs();
 
     let hour = day.hour(sim.time_s() as f32);
     let (el, az) = solar_position(hour);
@@ -513,7 +503,7 @@ pub fn update_sky(
     clear_color.0 = Color::srgb(horizon[0], horizon[1], horizon[2]);
 
     if let Some(handle) = sky_handle {
-        if let Some(mat) = sky_materials.get_mut(&handle.0) {
+        if let Some(mut mat) = sky_materials.get_mut(&handle.0) {
             mat.uniform = SkyUniform {
                 sun_dir: dir.extend(day_gate),
                 sun_color: Vec3::from(sun_color).extend(1.0),

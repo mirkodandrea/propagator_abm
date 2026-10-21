@@ -3,11 +3,12 @@
 //! The terrain's material (`materials::TerrainMaterial`) is for the scenery; a sign drawn with it
 //! fades with the haze and the tone mapper, and sinks under the trees.
 
-use bevy::asset::load_internal_asset;
+use bevy::asset::uuid_handle;
 use bevy::prelude::*;
-use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
+use bevy::render::render_resource::{AsBindGroup, ShaderType};
+use bevy::shader::ShaderRef;
 
-const FLAT_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x5C1E_7A0B_93D4_4F28_B6E1_0D2A_7F35_C9E4);
+const FLAT_SHADER_HANDLE: Handle<Shader> = uuid_handle!("5c1e7a0b-93d4-4f28-b6e1-0d2a7f35c9e4");
 
 /// How far toward the camera a sign is pulled: this fraction of its
 /// distance, between the two bounds (metres). Above the tallest trees on
@@ -65,6 +66,13 @@ impl FlatMaterial {
 }
 
 impl Material for FlatMaterial {
+    // no depth prepass and no shadows (was `MaterialPlugin { prepass_enabled, shadows_enabled }` before Bevy 0.17)
+    fn enable_prepass() -> bool {
+        false
+    }
+    fn enable_shadows() -> bool {
+        false
+    }
     fn vertex_shader() -> ShaderRef {
         FLAT_SHADER_HANDLE.into()
     }
@@ -78,9 +86,9 @@ impl Material for FlatMaterial {
         self.order
     }
     fn specialize(
-        _: &bevy::pbr::MaterialPipeline<Self>,
+        _: &bevy::pbr::MaterialPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
-        _: &bevy::render::mesh::MeshVertexBufferLayoutRef,
+        _: &bevy::mesh::MeshVertexBufferLayoutRef,
         _: bevy::pbr::MaterialPipelineKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         descriptor.primitive.cull_mode = None;
@@ -92,9 +100,9 @@ pub struct FlatPlugin;
 
 impl Plugin for FlatPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, FLAT_SHADER_HANDLE, "shaders/flat.wgsl", Shader::from_wgsl);
+        crate::load_wesl!(app, FLAT_SHADER_HANDLE, "shaders/flat.wesl");
         // no prepass: it would write the depth of the sign where it is, not
         // where it is drawn
-        app.add_plugins(MaterialPlugin::<FlatMaterial> { prepass_enabled: false, shadows_enabled: false, ..default() });
+        app.add_plugins(MaterialPlugin::<FlatMaterial>::default());
     }
 }

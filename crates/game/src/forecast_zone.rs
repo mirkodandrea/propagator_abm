@@ -3,15 +3,16 @@
 //! draped over the island carries each vertex's signed distance to them, and
 //! the shader fills what is inside and draws the line.
 
-use bevy::asset::load_internal_asset;
+use bevy::asset::uuid_handle;
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
-use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
+use bevy::render::render_resource::{AsBindGroup, ShaderType};
+use bevy::shader::ShaderRef;
 use rocca::forecast::HORIZONS;
 use scenario::{Pos, Scenario};
 
-const ZONE_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x7A21_C0DE_55B3_4E90_8D16_3F4A_B2C7_E581);
+const ZONE_SHADER_HANDLE: Handle<Shader> = uuid_handle!("7a21c0de-55b3-4e90-8d16-3f4ab2c7e581");
 
 /// Spacing of the draped grid, metres.
 const GRID_M: f32 = 30.0;
@@ -70,6 +71,13 @@ impl ZoneMaterial {
 }
 
 impl Material for ZoneMaterial {
+    // no depth prepass and no shadows (was `MaterialPlugin { prepass_enabled, shadows_enabled }` before Bevy 0.17)
+    fn enable_prepass() -> bool {
+        false
+    }
+    fn enable_shadows() -> bool {
+        false
+    }
     fn vertex_shader() -> ShaderRef {
         ZONE_SHADER_HANDLE.into()
     }
@@ -83,9 +91,9 @@ impl Material for ZoneMaterial {
         -2.0
     }
     fn specialize(
-        _: &bevy::pbr::MaterialPipeline<Self>,
+        _: &bevy::pbr::MaterialPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
-        _: &bevy::render::mesh::MeshVertexBufferLayoutRef,
+        _: &bevy::mesh::MeshVertexBufferLayoutRef,
         _: bevy::pbr::MaterialPipelineKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         descriptor.primitive.cull_mode = None;
@@ -97,8 +105,8 @@ pub struct ZonePlugin;
 
 impl Plugin for ZonePlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, ZONE_SHADER_HANDLE, "shaders/forecast_zone.wgsl", Shader::from_wgsl);
-        app.add_plugins(MaterialPlugin::<ZoneMaterial> { prepass_enabled: false, shadows_enabled: false, ..default() });
+        crate::load_wesl!(app, ZONE_SHADER_HANDLE, "shaders/forecast_zone.wesl");
+        app.add_plugins(MaterialPlugin::<ZoneMaterial>::default());
     }
 }
 

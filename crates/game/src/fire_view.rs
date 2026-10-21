@@ -21,10 +21,10 @@
 //! what a cell can threaten.
 
 use bevy::prelude::*;
-use bevy::pbr::{FogFalloff, FogSettings};
-use bevy::render::camera::Exposure;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::pbr::{FogFalloff, DistanceFog};
+use bevy::camera::Exposure;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use fire::exposure::flame_length_m;
 use fire::CellFire;
 use scenario::Pos;
@@ -210,44 +210,28 @@ pub fn setup(
     let smoke_mat = smoke_materials.add(SmokeMaterial { texture: puff_tex });
 
     commands.spawn((
-        MaterialMeshBundle {
-            mesh: overlay.clone(),
-            material: overlay_mat,
-            ..default()
-        },
+        (Mesh3d(overlay.clone()), MeshMaterial3d(overlay_mat)),
         FireOverlay,
-        bevy::render::view::NoFrustumCulling,
-        bevy::pbr::NotShadowCaster,
+        bevy::camera::visibility::NoFrustumCulling,
+        bevy::light::NotShadowCaster,
     ));
     commands.spawn((
-        MaterialMeshBundle {
-            mesh: flames.clone(),
-            material: flame_mat,
-            ..default()
-        },
+        (Mesh3d(flames.clone()), MeshMaterial3d(flame_mat)),
         // Mesh vertices change every frame; Bevy's cached bounds do not.
-        bevy::render::view::NoFrustumCulling,
-        bevy::pbr::NotShadowCaster,
+        bevy::camera::visibility::NoFrustumCulling,
+        bevy::light::NotShadowCaster,
     ));
     commands.spawn((
-        MaterialMeshBundle {
-            mesh: sparks.clone(),
-            material: spark_mat,
-            ..default()
-        },
+        (Mesh3d(sparks.clone()), MeshMaterial3d(spark_mat)),
         // Mesh vertices change every frame; Bevy's cached bounds do not.
-        bevy::render::view::NoFrustumCulling,
-        bevy::pbr::NotShadowCaster,
+        bevy::camera::visibility::NoFrustumCulling,
+        bevy::light::NotShadowCaster,
     ));
     commands.spawn((
-        MaterialMeshBundle {
-            mesh: smoke_mesh.clone(),
-            material: smoke_mat,
-            ..default()
-        },
+        (Mesh3d(smoke_mesh.clone()), MeshMaterial3d(smoke_mat)),
         // Mesh vertices change every frame; Bevy's cached bounds do not.
-        bevy::render::view::NoFrustumCulling,
-        bevy::pbr::NotShadowCaster,
+        bevy::camera::visibility::NoFrustumCulling,
+        bevy::light::NotShadowCaster,
     ));
 
     commands.init_resource::<FireLayer>();
@@ -269,16 +253,31 @@ pub fn setup(
     });
 }
 
+/// A mesh that draws nothing: one degenerate triangle with every attribute the
+/// materials read. A mesh without vertices is not uploaded (Bevy's mesh
+/// allocator warns about it every frame) and the prepass pipelines choke on it.
 fn empty_mesh() -> Mesh {
     let mut m = Mesh::new(
         PrimitiveTopology::TriangleList,
         RenderAssetUsages::default(),
     );
-    m.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<[f32; 3]>::new());
-    m.insert_attribute(Mesh::ATTRIBUTE_NORMAL, Vec::<[f32; 3]>::new());
-    m.insert_attribute(Mesh::ATTRIBUTE_COLOR, Vec::<[f32; 4]>::new());
-    m.insert_attribute(Mesh::ATTRIBUTE_UV_0, Vec::<[f32; 2]>::new());
-    m.insert_indices(Indices::U32(Vec::new()));
+    m.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0f32; 3]; 3]);
+    m.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; 3]);
+    m.insert_attribute(Mesh::ATTRIBUTE_COLOR, vec![[0.0f32; 4]; 3]);
+    m.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32; 2]; 3]);
+    m.insert_indices(Indices::U32(vec![0, 1, 2]));
+    m
+}
+
+/// `mesh`, or [`empty_mesh`] (with the attributes `mesh` has) when it has no vertices.
+fn or_empty(mesh: Mesh) -> Mesh {
+    if mesh.count_vertices() > 0 {
+        return mesh;
+    }
+    let mut m = empty_mesh();
+    if !mesh.contains_attribute(Mesh::ATTRIBUTE_NORMAL) {
+        m.remove_attribute(Mesh::ATTRIBUTE_NORMAL);
+    }
     m
 }
 
@@ -289,7 +288,7 @@ fn empty_mesh() -> Mesh {
 /// and embers are the exception: they are *simulated here*, carrying their own
 /// position and age, and a plume left over from the old fire would go on
 /// drifting over a landscape that never burnt.
-pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut view: ResMut<FireView>) {
+pub fn reset(mut restarted: MessageReader<crate::sim::SimRestarted>, mut view: ResMut<FireView>) {
     if restarted.is_empty() {
         return;
     }
@@ -307,7 +306,7 @@ pub fn update_overlay(
     mut view: ResMut<FireView>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    view.since_overlay += time.delta_seconds();
+    view.since_overlay += time.delta_secs();
     let layer = *layer;
     let stale = sim.generation != view.last_generation || layer != view.last_layer;
     if !stale || view.since_overlay < OVERLAY_MIN_INTERVAL_S {
@@ -330,9 +329,11 @@ pub fn update_overlay(
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, o.colors);
             mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.5, 0.5]; n]);
             mesh.insert_indices(Indices::U32(o.indices));
-            meshes.insert(&view.overlay, mesh);
+            let _ = meshes.insert(&view.overlay, mesh);
         }
-        None => meshes.insert(&view.overlay, empty_mesh()),
+        None => {
+            let _ = meshes.insert(&view.overlay, empty_mesh());
+        }
     }
 }
 
@@ -760,17 +761,17 @@ pub fn update_flames(
     time: Res<Time>,
     camera: Query<&Transform, (With<Camera3d>, Without<crate::camera::AuxiliaryCamera>)>,
     buildings: Res<crate::buildings::Buildings>,
-    fog: Query<(&FogSettings, Option<&Exposure>), With<Camera3d>>,
+    fog: Query<(&DistanceFog, Option<&Exposure>), With<Camera3d>>,
     suns: Query<(&GlobalTransform, &DirectionalLight)>,
     mut view: ResMut<FireView>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    let Ok(cam) = camera.get_single() else {
+    let Ok(cam) = camera.single() else {
         return;
     };
     let scn = &sim.scn;
-    let t = time.elapsed_seconds();
-    let dt = time.delta_seconds().min(0.1);
+    let t = time.elapsed_secs();
+    let dt = time.delta_secs().min(0.1);
     let now = sim.time_s() as f32;
 
     // Billboard axes: horizontal-facing, so flames stay upright rather than
@@ -1018,9 +1019,9 @@ pub fn update_flames(
     }
 
     view.last_flame_verts = flames.positions.len();
-    meshes.insert(&view.flames, flames.finish());
-    meshes.insert(&view.smoke_mesh, smoke.finish());
-    meshes.insert(&view.sparks, sparks.finish());
+    let _ = meshes.insert(&view.flames, or_empty(flames.finish()));
+    let _ = meshes.insert(&view.smoke_mesh, or_empty(smoke.finish()));
+    let _ = meshes.insert(&view.sparks, or_empty(sparks.finish()));
 }
 
 
@@ -1041,12 +1042,12 @@ struct PuffFog {
 
 impl PuffFog {
     fn new(
-        fog: &Query<(&FogSettings, Option<&Exposure>), With<Camera3d>>,
+        fog: &Query<(&DistanceFog, Option<&Exposure>), With<Camera3d>>,
         suns: &Query<(&GlobalTransform, &DirectionalLight)>,
         eye: Vec3,
     ) -> Self {
         let mut out = PuffFog { eye, atmo: None, lights: Vec::new() };
-        let Ok((f, exposure)) = fog.get_single() else {
+        let Ok((f, exposure)) = fog.single() else {
             return out;
         };
         let FogFalloff::Atmospheric { extinction, inscattering } = f.falloff else {

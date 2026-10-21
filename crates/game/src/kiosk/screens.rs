@@ -22,7 +22,7 @@ const TALK_W: f32 = 560.0;
 
 /// The dim behind a full-screen card.
 fn backdrop(ctx: &egui::Context, id: &str, alpha: u8) {
-    let screen = ctx.screen_rect();
+    let screen = ctx.viewport_rect();
     egui::Area::new(egui::Id::new(id)).fixed_pos(screen.min).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
         ui.painter().rect_filled(screen, 0.0, Color32::from_rgba_premultiplied(8, 10, 14, alpha));
     });
@@ -30,12 +30,12 @@ fn backdrop(ctx: &egui::Context, id: &str, alpha: u8) {
 
 /// The big card of the opening and the end.
 fn big_card() -> egui::Frame {
-    egui::Frame::none()
+    egui::Frame::NONE
         .fill(INK)
         .stroke(egui::Stroke::new(1.5, AMBER.gamma_multiply(0.55)))
-        .shadow(egui::epaint::Shadow { offset: egui::vec2(0.0, 10.0), blur: 40.0, spread: 4.0, color: Color32::from_black_alpha(160) })
-        .rounding(18.0)
-        .inner_margin(egui::Margin { left: 36.0, right: 36.0, top: 28.0, bottom: 24.0 })
+        .shadow(egui::epaint::Shadow { offset: [0, 10], blur: 40, spread: 4, color: Color32::from_black_alpha(160) })
+        .corner_radius(18.0)
+        .inner_margin(egui::Margin { left: 36, right: 36, top: 28, bottom: 24 })
 }
 
 /// The volunteer speaking, with her portrait.
@@ -55,7 +55,7 @@ fn volunteer(ui: &mut egui::Ui, faces: Option<&Portraits>, mood: Mood, size: f32
 /// The title screen: the fire plays behind it with the roaming camera, here
 /// only the name and «Gioca». True when «Gioca» was pressed.
 pub fn title(ctx: &egui::Context, k: &Kiosk, sim: &Sim, logo: Option<&Logo>) -> bool {
-    let screen = ctx.screen_rect();
+    let screen = ctx.viewport_rect();
     // phones get the same screen, scaled down to the width
     let sc = (screen.width() / 1000.0).clamp(0.4, 1.0).min((screen.height() / 560.0).max(0.4));
     let mut play = false;
@@ -97,7 +97,7 @@ pub fn title(ctx: &egui::Context, k: &Kiosk, sim: &Sim, logo: Option<&Logo>) -> 
     });
     egui::Area::new(egui::Id::new("titolo_gioca")).anchor(Align2::CENTER_CENTER, [0.0, off]).order(egui::Order::Foreground).show(ctx, |ui| {
         ui.vertical_centered(|ui| {
-            let b = egui::Button::new(RichText::new("Gioca").size(44.0 * sc.max(0.7)).strong().color(Color32::BLACK)).fill(AMBER).rounding(16.0).min_size(egui::vec2(360.0 * sc.max(0.7), 96.0 * sc.max(0.6)));
+            let b = egui::Button::new(RichText::new("Gioca").size(44.0 * sc.max(0.7)).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(16.0).min_size(egui::vec2(360.0 * sc.max(0.7), 96.0 * sc.max(0.6)));
             let r = ui.add(b);
             crate::playtest::control("Gioca", &r, true);
             play = super::icons::pointing(r).clicked();
@@ -112,12 +112,12 @@ pub fn title(ctx: &egui::Context, k: &Kiosk, sim: &Sim, logo: Option<&Logo>) -> 
 
 // --- the opening --------------------------------------------------------------
 
-pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, logo: Option<&Logo>, faces: Option<&Portraits>) {
+pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, logo: Option<&Logo>, faces: Option<&Portraits>) {
     if super::ui::compact(ctx) {
         compact_intro(ctx, k, sim, restarted);
         return;
     }
-    let screen = ctx.screen_rect();
+    let screen = ctx.viewport_rect();
     backdrop(ctx, "intro_fondo", 190);
     // one centred card: the volunteer on the left, today's board on the right
     let (panel_w, gap) = (290.0, 28.0);
@@ -149,11 +149,11 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
                     volunteer(ui, faces, Mood::Preoccupato, 110.0, &text, (card_w - panel_w - gap - 230.0).max(260.0));
                 });
                 ui.add_space(gap);
-                egui::Frame::none()
+                egui::Frame::NONE
                     .fill(Color32::from_white_alpha(8))
                     .stroke(egui::Stroke::new(1.0, AMBER.gamma_multiply(0.35)))
-                    .rounding(14.0)
-                    .inner_margin(egui::Margin { left: 16.0, right: 16.0, top: 14.0, bottom: 10.0 })
+                    .corner_radius(14.0)
+                    .inner_margin(egui::Margin { left: 16, right: 16, top: 14, bottom: 10 })
                     .show(ui, |ui| {
                         ui.set_width(panel_w - 34.0);
                         ui.vertical(|ui| {
@@ -171,11 +171,11 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = 14.0;
                 for who in [Who::Volontaria, Who::Esperto, Who::Vigili] {
-                    egui::Frame::none()
+                    egui::Frame::NONE
                         .fill(who.colour().gamma_multiply(0.10))
                         .stroke(egui::Stroke::new(1.0, who.colour().gamma_multiply(0.35)))
-                        .rounding(40.0)
-                        .inner_margin(egui::Margin { left: 6.0, right: 14.0, top: 6.0, bottom: 6.0 })
+                        .corner_radius(40.0)
+                        .inner_margin(egui::Margin { left: 6, right: 14, top: 6, bottom: 6 })
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 characters::portrait(ui, faces, who, Mood::Calmo, 48.0);
@@ -212,14 +212,14 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
                 let b = egui::Button::new(RichText::new("TUTORIAL").size(28.0).strong().color(Color32::WHITE))
                     .fill(Color32::from_gray(62))
                     .stroke(egui::Stroke::new(1.0, Color32::from_gray(110)))
-                    .rounding(12.0)
+                    .corner_radius(12.0)
                     .min_size(egui::vec2(w, 64.0));
                 let r = ui.add(b);
                 crate::playtest::control("Tutorial", &r, true);
                 if super::icons::pointing(r).clicked() {
                     go = Some(true);
                 }
-                let b = egui::Button::new(RichText::new("INIZIA").size(28.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0).min_size(egui::vec2(w, 64.0));
+                let b = egui::Button::new(RichText::new("INIZIA").size(28.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(12.0).min_size(egui::vec2(w, 64.0));
                 let r = ui.add(b);
                 crate::playtest::control("Inizia", &r, true);
                 if super::icons::pointing(r).clicked() {
@@ -249,7 +249,7 @@ pub fn intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut 
 /// The volunteer's bubble at the top of the map: the step's text, «Avanti»
 /// when the step only asks to read, «Salta» always. The map stays usable:
 /// the step asks the player to act on it.
-pub fn tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, faces: Option<&Portraits>, cam: (&Camera, &GlobalTransform)) {
+pub fn tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, faces: Option<&Portraits>, _cam: (&Camera, &GlobalTransform)) {
     let Some(step) = k.script.as_ref().and_then(|s| s.steps.get(k.step)).cloned() else { return };
     if k.shot_for != Some(k.step) {
         fly_to(k, sim, step.expect);
@@ -303,7 +303,7 @@ pub fn tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
         });
     });
     ctx.request_repaint();
-    if skip || (!ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Escape))) {
+    if skip || (!ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Escape))) {
         start_game(k, sim, restarted);
     }
 }
@@ -356,9 +356,9 @@ fn highlight(ctx: &egui::Context, k: &Kiosk, expect: Expect) {
     for r in targets.into_iter().flatten() {
         let r = r.expand(8.0);
         // a dark edge under the amber one, so it reads on any ground
-        p.rect_stroke(r, 12.0, egui::Stroke::new(8.0, Color32::from_black_alpha((160.0 * fade) as u8)));
-        p.rect_stroke(r, 12.0, egui::Stroke::new(5.0, AMBER.gamma_multiply(glow)));
-        p.rect_stroke(r.expand(8.0), 18.0, egui::Stroke::new(2.0, AMBER.gamma_multiply(glow * 0.6)));
+        p.rect_stroke(r, 12.0, egui::Stroke::new(8.0, Color32::from_black_alpha((160.0 * fade) as u8)), egui::StrokeKind::Middle);
+        p.rect_stroke(r, 12.0, egui::Stroke::new(5.0, AMBER.gamma_multiply(glow)), egui::StrokeKind::Middle);
+        p.rect_stroke(r.expand(8.0), 18.0, egui::Stroke::new(2.0, AMBER.gamma_multiply(glow * 0.6)), egui::StrokeKind::Middle);
     }
 }
 
@@ -376,7 +376,7 @@ fn difficulty_style(d: &str) -> (String, Color32) {
 }
 
 /// After «Inizia»: the fire to fight (the four named scenarios) and the level.
-pub fn scenario(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, icons: Option<&super::characters::ScenarioIcons>) {
+pub fn scenario(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, icons: Option<&super::characters::ScenarioIcons>) {
     let compact = super::ui::compact(ctx);
     let mut go = false;
     let mut back = false;
@@ -392,7 +392,7 @@ pub fn scenario(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
             let stroke = if on { egui::Stroke::new(3.0, AMBER) } else { egui::Stroke::new(1.0, Color32::from_gray(90)) };
             let icon = if wide { 148.0 } else { 88.0 };
             let (name, colour) = difficulty_style(&l.difficulty);
-            let r = egui::Frame::none().fill(fill).stroke(stroke).rounding(14.0).inner_margin(10.0).show(ui, |ui| {
+            let r = egui::Frame::NONE.fill(fill).stroke(stroke).corner_radius(14.0).inner_margin(10.0).show(ui, |ui| {
                 ui.set_width(card_w - 22.0);
                 ui.set_min_height(icon);
                 ui.horizontal_top(|ui| {
@@ -400,9 +400,9 @@ pub fn scenario(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
                     let (rect, _) = ui.allocate_exact_size(egui::vec2(icon, icon), egui::Sense::hover());
                     ui.painter().rect_filled(rect, 10.0, Color32::from_gray(30));
                     if let Some(t) = icons.and_then(|x| x.get(&l.case)) {
-                        egui::Image::new(egui::load::SizedTexture::new(t, rect.size())).rounding(10.0).paint_at(ui, rect);
+                        egui::Image::new(egui::load::SizedTexture::new(t, rect.size())).corner_radius(10.0).paint_at(ui, rect);
                     }
-                    ui.painter().rect_stroke(rect, 10.0, egui::Stroke::new(2.0, colour));
+                    ui.painter().rect_stroke(rect, 10.0, egui::Stroke::new(2.0, colour), egui::StrokeKind::Middle);
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 4.0;
                         ui.label(RichText::new(name.trim()).size(if wide { 14.0 } else { 12.0 }).strong().color(Color32::BLACK).background_color(colour));
@@ -441,7 +441,7 @@ pub fn scenario(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &m
             let r = ui.add_sized([back_w, 60.0], secondary("Indietro"));
             crate::playtest::control("Indietro", &r, true);
             if r.clicked() { *back = true; }
-            let r = ui.add_sized([full - back_w - ui.spacing().item_spacing.x, 60.0], egui::Button::new(RichText::new("PARTI").size(28.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0));
+            let r = ui.add_sized([full - back_w - ui.spacing().item_spacing.x, 60.0], egui::Button::new(RichText::new("PARTI").size(28.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(12.0));
             crate::playtest::control("Parti", &r, true);
             if super::icons::pointing(r).clicked() { *go = true; }
         });
@@ -573,7 +573,7 @@ fn board_rows(ui: &mut egui::Ui, k: &Kiosk, case: &str, mine: Option<(&str, u64)
         let me = is_mine(e);
         let ink = if me { Color32::BLACK } else { Color32::WHITE };
         let s: Vec<String> = e.stars.iter().map(|s| s.map_or("–".into(), |n| n.to_string())).collect();
-        egui::Frame::none().fill(if me { AMBER } else { Color32::TRANSPARENT }).rounding(6.0).inner_margin(egui::Margin::symmetric(6.0, 1.0)).show(ui, |ui| {
+        egui::Frame::NONE.fill(if me { AMBER } else { Color32::TRANSPARENT }).corner_radius(6.0).inner_margin(egui::Margin::symmetric(6, 1)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.add_sized([22.0, 20.0], egui::Label::new(RichText::new(format!("{}", i + 1)).size(15.0).strong().color(if me { ink } else { GREY })));
@@ -598,7 +598,7 @@ fn place_words(place: usize, of: usize) -> String {
     }
 }
 
-pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, faces: Option<&Portraits>) {
+pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, faces: Option<&Portraits>) {
     let mine = sim.outcome();
     let base = k.baseline();
     // on the board once, when the yardstick is ready
@@ -648,7 +648,7 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
         return;
     }
     backdrop(ctx, "fine_fondo", 200);
-    let screen = ctx.screen_rect();
+    let screen = ctx.viewport_rect();
     let side = 340.0;
     let inner = (screen.width() - 48.0 - 72.0).min(1060.0);
     let left = (inner - side - 24.0).max(420.0);
@@ -661,7 +661,7 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
             ui.horizontal_top(|ui| {
                 ui.allocate_ui_with_layout(egui::vec2(left, (screen.height() - 150.0).max(160.0)), egui::Layout::top_down(egui::Align::Min), |ui| {
                     ui.set_width(left);
-                    egui::ScrollArea::vertical().id_source("fine_spiegazione").max_height((screen.height() - 150.0).max(160.0)).show(ui, |ui| {
+                    egui::ScrollArea::vertical().id_salt("fine_spiegazione").max_height((screen.height() - 150.0).max(160.0)).show(ui, |ui| {
                         let title = if k.player.trim().is_empty() { "Com'è andata".to_string() } else { format!("Com'è andata, {}", k.player.trim()) };
                         ui.label(RichText::new(title).size(34.0).strong().color(Color32::WHITE));
                         ui.add_space(12.0);
@@ -716,12 +716,12 @@ pub fn end(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut Ev
                     ui.add_space(12.0);
                     ui.add(egui::Label::new(RichText::new("Nella realtà, quando arriva l'ordine di evacuazione si parte subito. Aspettare di vedere il fuoco è uno degli errori più pericolosi.").size(13.0).italics().color(AMBER)).wrap());
                     ui.add_space(12.0);
-                    let again_btn = egui::Button::new(RichText::new("Riprova").size(26.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0);
+                    let again_btn = egui::Button::new(RichText::new("Riprova").size(26.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(12.0);
                     let r = ui.add_sized([side, 64.0], again_btn);
                     crate::playtest::control("Riprova", &r, true);
                     retry = super::icons::pointing(r).clicked();
                     ui.add_space(8.0);
-                    let big = egui::Button::new(RichText::new("Nuova partita").size(26.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(12.0);
+                    let big = egui::Button::new(RichText::new("Nuova partita").size(26.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(12.0);
                     let r = ui.add_sized([side, 64.0], big);
                     crate::playtest::control("Nuova partita", &r, true);
                     again = super::icons::pointing(r).clicked();
@@ -745,7 +745,7 @@ fn compact_page(ctx: &egui::Context, id: &str, content: impl FnOnce(&mut egui::U
 /// `compact_page` with a `footer` pinned under the scrolling content.
 pub(super) fn compact_page_footer(ctx: &egui::Context, id: &str, content: impl FnOnce(&mut egui::Ui), footer: impl FnOnce(&mut egui::Ui)) {
     backdrop(ctx, "mobile_backdrop", 200);
-    let rect = ctx.screen_rect();
+    let rect = ctx.viewport_rect();
     let width = (rect.width() - 40.0).min(600.0).max(120.0);
     // the footer, when there is one, takes its row out of the scroll area
     let mut footer_h = 0.0;
@@ -788,7 +788,7 @@ fn action(ui: &mut egui::Ui, label: &str) -> bool {
     r.clicked()
 }
 
-fn compact_intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+fn compact_intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>) {
     let mut go = None;
     compact_page(ctx, "intro_mobile", |ui| {
         ui.heading(super::TITLE);
@@ -832,11 +832,11 @@ fn compact_intro(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &
     }
 }
 
-fn compact_tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, text: &str, expect: Expect) {
+fn compact_tutorial(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, text: &str, expect: Expect) {
     // The evacuation card carries the requested action while it is open.
     if matches!(k.selection, super::Selection::District(_)) { return; }
     let mut skip = false;
-    let rect = ctx.screen_rect();
+    let rect = ctx.viewport_rect();
     let landscape = rect.width() > rect.height();
     let anchor = if landscape { Align2::RIGHT_TOP } else { Align2::CENTER_BOTTOM };
     let offset = if landscape { [-8.0, 8.0] } else { [0.0, -58.0] };

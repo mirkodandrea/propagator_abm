@@ -17,7 +17,7 @@
 
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::mouse::MouseButtonInput;
-use bevy::input::{ButtonState, InputSystem};
+use bevy::input::{ButtonState, InputSystems};
 use bevy::prelude::*;
 use bevy::window::{CursorMoved, PrimaryWindow};
 
@@ -71,8 +71,8 @@ impl Plugin for PadPlugin {
         app.init_resource::<PadView>().init_resource::<PadMode>().add_systems(
             PreUpdate,
             virtual_mouse
-                .before(InputSystem)
-                .before(bevy_egui::EguiSet::ProcessInput),
+                .before(InputSystems)
+                .before(bevy_egui::EguiPreUpdateSet::ProcessInput),
         );
     }
 }
@@ -87,47 +87,43 @@ fn deadzone(v: Vec2) -> Vec2 {
 
 #[allow(clippy::too_many_arguments)]
 fn virtual_mouse(
-    pads: Res<Gamepads>,
-    buttons: Res<ButtonInput<GamepadButton>>,
-    axes: Res<Axis<GamepadAxis>>,
-    triggers: Res<Axis<GamepadButton>>,
+    pads: Query<&Gamepad>,
     mario: Res<Playground>,
     mode: Res<PadMode>,
     mut held: Local<bool>,
     time: Res<Time>,
     mut windows: Query<(Entity, &mut Window), With<PrimaryWindow>>,
     mut view: ResMut<PadView>,
-    mut moved: EventWriter<CursorMoved>,
-    mut clicks: EventWriter<MouseButtonInput>,
-    mut keys: EventWriter<KeyboardInput>,
+    mut moved: MessageWriter<CursorMoved>,
+    mut clicks: MessageWriter<MouseButtonInput>,
+    mut keys: MessageWriter<KeyboardInput>,
 ) {
     *view = PadView::default();
-    let (Ok((entity, mut window)), Some(pad)) = (windows.get_single_mut(), pads.iter().next()) else { return };
+    let (Ok((entity, mut window)), Some(pad)) = (windows.single_mut(), pads.iter().next()) else { return };
     if mario.active || !window.focused {
         return;
     }
-    let axis = |a| axes.get(GamepadAxis::new(pad, a)).unwrap_or(0.0);
-    let button = |b| GamepadButton::new(pad, b);
-    let trigger = |b| triggers.get(button(b)).unwrap_or(0.0).max(f32::from(buttons.pressed(button(b))));
-    let pressed = |b| buttons.pressed(button(b));
-    let just = |b| buttons.just_pressed(button(b));
+    let axis = |a: GamepadAxis| pad.get(a).unwrap_or(0.0);
+    let trigger = |b: GamepadButton| pad.get(b).unwrap_or(0.0).max(f32::from(pad.pressed(b)));
+    let pressed = |b| pad.pressed(b);
+    let just = |b| pad.just_pressed(b);
 
-    let left = deadzone(Vec2::new(axis(GamepadAxisType::LeftStickX), -axis(GamepadAxisType::LeftStickY)));
-    let south = button(GamepadButtonType::South);
+    let left = deadzone(Vec2::new(axis(GamepadAxis::LeftStickX), -axis(GamepadAxis::LeftStickY)));
+    let south = GamepadButton::South;
     // the sticks are the camera in the game, a cursor elsewhere or with LB held
-    let cursor = !mode.game || pressed(GamepadButtonType::LeftTrigger);
+    let cursor = !mode.game || pressed(GamepadButton::LeftTrigger);
     if mode.game {
         if !cursor {
             view.pan = Vec2::new(left.x, -left.y);
         }
-        view.look = deadzone(Vec2::new(axis(GamepadAxisType::RightStickX), axis(GamepadAxisType::RightStickY)));
-        view.zoom = trigger(GamepadButtonType::RightTrigger2) - trigger(GamepadButtonType::LeftTrigger2);
-        view.home = just(GamepadButtonType::RightTrigger);
-        view.pause = just(GamepadButtonType::North);
-        view.confirm = !cursor && buttons.just_pressed(south);
-        view.evacuate = just(GamepadButtonType::West);
-        view.team = i32::from(just(GamepadButtonType::DPadRight)) - i32::from(just(GamepadButtonType::DPadLeft));
-        view.district = i32::from(just(GamepadButtonType::DPadDown)) - i32::from(just(GamepadButtonType::DPadUp));
+        view.look = deadzone(Vec2::new(axis(GamepadAxis::RightStickX), axis(GamepadAxis::RightStickY)));
+        view.zoom = trigger(GamepadButton::RightTrigger2) - trigger(GamepadButton::LeftTrigger2);
+        view.home = just(GamepadButton::RightTrigger);
+        view.pause = just(GamepadButton::North);
+        view.confirm = !cursor && pad.just_pressed(south);
+        view.evacuate = just(GamepadButton::West);
+        view.team = i32::from(just(GamepadButton::DPadRight)) - i32::from(just(GamepadButton::DPadLeft));
+        view.district = i32::from(just(GamepadButton::DPadDown)) - i32::from(just(GamepadButton::DPadUp));
     }
 
     let size = Vec2::new(window.width(), window.height());
@@ -135,27 +131,27 @@ fn virtual_mouse(
     if cursor {
         // Start from where the cursor is, so a real mouse and the pad can mix.
         if left != Vec2::ZERO {
-            let step = left * left.length() * CURSOR_SPEED * time.delta_seconds().min(0.1);
+            let step = left * left.length() * CURSOR_SPEED * time.delta_secs().min(0.1);
             let to = (here + step).clamp(Vec2::ZERO, size - Vec2::ONE);
             window.set_cursor_position(Some(to));
-            moved.send(CursorMoved { window: entity, position: to, delta: Some(to - here) });
+            moved.write(CursorMoved { window: entity, position: to, delta: Some(to - here) });
         } else if window.cursor_position().is_none() {
             window.set_cursor_position(Some(here));
         }
-        if buttons.just_pressed(south) {
+        if pad.just_pressed(south) {
             *held = true;
-            clicks.send(MouseButtonInput { button: MouseButton::Left, state: ButtonState::Pressed, window: entity });
+            clicks.write(MouseButtonInput { button: MouseButton::Left, state: ButtonState::Pressed, window: entity });
         }
     }
     // a press that began as a mouse button always gets its release
-    if *held && buttons.just_released(south) {
+    if *held && pad.just_released(south) {
         *held = false;
-        clicks.send(MouseButtonInput { button: MouseButton::Left, state: ButtonState::Released, window: entity });
+        clicks.write(MouseButtonInput { button: MouseButton::Left, state: ButtonState::Released, window: entity });
     }
-    let east = button(GamepadButtonType::East);
-    for (state, on) in [(ButtonState::Pressed, buttons.just_pressed(east)), (ButtonState::Released, buttons.just_released(east))] {
+    let east = GamepadButton::East;
+    for (state, on) in [(ButtonState::Pressed, pad.just_pressed(east)), (ButtonState::Released, pad.just_released(east))] {
         if on {
-            keys.send(KeyboardInput { key_code: KeyCode::Escape, logical_key: Key::Escape, state, window: entity });
+            keys.write(KeyboardInput { key_code: KeyCode::Escape, logical_key: Key::Escape, state, window: entity, repeat: false, text: None });
         }
     }
 }

@@ -9,27 +9,29 @@ use crate::quality::Graphics;
 pub fn apply_live(
     gfx: Res<Graphics>,
     mut commands: Commands,
-    mut msaa: ResMut<Msaa>,
-    mut shadow_map: ResMut<bevy::pbr::DirectionalLightShadowMap>,
-    mut suns: Query<(&mut DirectionalLight, &mut bevy::pbr::CascadeShadowConfig), With<crate::sky::Sun>>,
+    mut msaa: Query<&mut Msaa>,
+    mut shadow_map: ResMut<bevy::light::DirectionalLightShadowMap>,
+    mut suns: Query<(&mut DirectionalLight, &mut bevy::light::CascadeShadowConfig), With<crate::sky::Sun>>,
     cameras: Query<(
         Entity,
-        Has<bevy::core_pipeline::bloom::BloomSettings>,
-        Has<bevy::core_pipeline::dof::DepthOfFieldSettings>,
-        Has<bevy::core_pipeline::smaa::SmaaSettings>,
+        Has<bevy::post_process::bloom::Bloom>,
+        Has<bevy::post_process::dof::DepthOfField>,
+        Has<bevy::anti_alias::smaa::Smaa>,
         &crate::camera::OrbitCamera,
     )>,
     veg: Option<ResMut<crate::vegetation::Vegetation>>,
-    terrain: Query<(Entity, Has<bevy::pbr::NotShadowCaster>), With<crate::terrain_mesh::TerrainChunk>>,
+    terrain: Query<(Entity, Has<bevy::light::NotShadowCaster>), With<crate::terrain_mesh::TerrainChunk>>,
 ) {
-    use bevy::core_pipeline::{bloom::BloomSettings, dof::*, prepass::DepthPrepass};
-    *msaa = gfx.msaa();
+    use bevy::{post_process::{bloom::Bloom, dof::*}, core_pipeline::prepass::DepthPrepass};
+    for mut m in &mut msaa {
+        *m = gfx.msaa();
+    }
     if shadow_map.size != gfx.shadow_map {
         shadow_map.size = gfx.shadow_map;
     }
     for (mut light, mut cascades) in &mut suns {
-        light.shadows_enabled = gfx.shadows;
-        *cascades = bevy::pbr::CascadeShadowConfigBuilder {
+        light.shadow_maps_enabled = gfx.shadows;
+        *cascades = bevy::light::CascadeShadowConfigBuilder {
             num_cascades: gfx.cascades,
             minimum_distance: 2.0,
             maximum_distance: gfx.shadow_distance,
@@ -41,20 +43,20 @@ pub fn apply_live(
     for (e, has_bloom, has_dof, has_smaa, orbit) in &cameras {
         let mut cam = commands.entity(e);
         match (gfx.smaa, has_smaa) {
-            (true, false) => { cam.insert(bevy::core_pipeline::smaa::SmaaSettings::default()); }
-            (false, true) => { cam.remove::<bevy::core_pipeline::smaa::SmaaSettings>(); }
+            (true, false) => { cam.insert(bevy::anti_alias::smaa::Smaa::default()); }
+            (false, true) => { cam.remove::<bevy::anti_alias::smaa::Smaa>(); }
             _ => {}
         }
         match (gfx.bloom, has_bloom) {
-            (true, false) => { cam.insert(BloomSettings { intensity: 0.20, ..BloomSettings::NATURAL }); }
-            (false, true) => { cam.remove::<BloomSettings>(); }
+            (true, false) => { cam.insert(Bloom { intensity: 0.20, ..Bloom::NATURAL }); }
+            (false, true) => { cam.remove::<Bloom>(); }
             _ => {}
         }
         match (gfx.dof, has_dof) {
             (true, false) => {
                 cam.insert((
                     DepthPrepass,
-                    DepthOfFieldSettings {
+                    DepthOfField {
                         mode: DepthOfFieldMode::Gaussian,
                         focal_distance: orbit.distance,
                         sensor_height: 0.01866,
@@ -64,19 +66,27 @@ pub fn apply_live(
                     },
                 ));
             }
-            (false, true) => { cam.remove::<(DepthPrepass, DepthOfFieldSettings)>(); }
+            (false, true) => { cam.remove::<(DepthPrepass, DepthOfField)>(); }
             _ => {}
         }
     }
     // the terrain's shadow casting (its stride needs a restart, like the plant density)
     for (e, no_cast) in &terrain {
         match (gfx.terrain_shadows, no_cast) {
-            (false, false) => { commands.entity(e).insert(bevy::pbr::NotShadowCaster); }
-            (true, true) => { commands.entity(e).remove::<bevy::pbr::NotShadowCaster>(); }
+            (false, false) => { commands.entity(e).insert(bevy::light::NotShadowCaster); }
+            (true, true) => { commands.entity(e).remove::<bevy::light::NotShadowCaster>(); }
             _ => {}
         }
     }
     if let Some(mut veg) = veg {
         veg.set_lod_m(gfx.lod_m);
+    }
+}
+
+/// MSAA is a camera component since Bevy 0.15 (it was one resource for all):
+/// every new camera starts with the profile's sample count.
+pub fn msaa_on_new_cameras(gfx: Res<Graphics>, mut cams: Query<&mut Msaa, Added<Camera>>) {
+    for mut m in &mut cams {
+        *m = gfx.msaa();
     }
 }

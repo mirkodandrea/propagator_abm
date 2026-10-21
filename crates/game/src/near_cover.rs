@@ -15,14 +15,16 @@
 //! keeps blades off the asphalt and the shore. Nothing here decides anything
 //! about the game: it is only a picture of the fuel.
 
-use bevy::asset::load_internal_asset;
-use bevy::pbr::{ExtendedMaterial, MaterialExtension, MaterialPlugin, NotShadowCaster};
+use bevy::pbr::{ExtendedMaterial, MaterialExtension, MaterialPlugin};
+use bevy::light::{NotShadowCaster};
+use bevy::asset::uuid_handle;
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::primitives::Aabb;
-use bevy::render::render_asset::RenderAssetUsages;
-use bevy::render::render_resource::{AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat};
-use bevy::render::texture::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::camera::primitives::Aabb;
+use bevy::asset::RenderAssetUsages;
+use bevy::render::render_resource::{AsBindGroup, Extent3d, ShaderType, TextureDimension, TextureFormat};
+use bevy::shader::ShaderRef;
+use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use fire::CellFire;
 use scenario::{Cell, Scenario};
 
@@ -30,8 +32,8 @@ use crate::camera::{AuxiliaryCamera, OrbitCamera};
 use crate::quality::Graphics;
 use crate::sim::Sim;
 
-const SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x6C41_D90B_3A57_4E12_9F08_B3D7_52AE_1C74);
-const COVER_MAP: Handle<Image> = Handle::weak_from_u128(0x71D2_0E5C_9B84_4A36_8C1F_6A09_E3B2_D547);
+const SHADER_HANDLE: Handle<Shader> = uuid_handle!("6c41d90b-3a57-4e12-9f08-b3d752ae1c74");
+const COVER_MAP: Handle<Image> = uuid_handle!("71d20e5c-9b84-4a36-8c1f-6a09e3b2d547");
 
 /// Cell edge of the grass lattice and blades per tuft. A tuft is a clump of
 /// blades fanning out of one point, which is the unit a meadow is made of at
@@ -90,6 +92,13 @@ impl NearCoverExtension {
 pub type NearCoverMaterial = ExtendedMaterial<StandardMaterial, NearCoverExtension>;
 
 impl MaterialExtension for NearCoverExtension {
+    // no depth prepass and no shadows (was `MaterialPlugin { prepass_enabled, shadows_enabled }` before Bevy 0.17)
+    fn enable_prepass() -> bool {
+        false
+    }
+    fn enable_shadows() -> bool {
+        false
+    }
     fn vertex_shader() -> ShaderRef {
         SHADER_HANDLE.into()
     }
@@ -102,15 +111,11 @@ pub struct NearCoverPlugin;
 
 impl Plugin for NearCoverPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SHADER_HANDLE, "shaders/near_cover.wgsl", Shader::from_wgsl);
+        crate::load_wesl!(app, SHADER_HANDLE, "shaders/near_cover.wesl");
         // No prepass and no shadow pass: both would run the stock vertex
         // stage on a mesh whose positions are lattice indices. The layer is
         // too fine to cast shadows worth their cost; it still receives them.
-        app.add_plugins(MaterialPlugin::<NearCoverMaterial> {
-            prepass_enabled: false,
-            shadows_enabled: false,
-            ..default()
-        });
+        app.add_plugins(MaterialPlugin::<NearCoverMaterial>::default());
     }
 }
 
@@ -209,7 +214,7 @@ pub fn spawn(
         min_filter: ImageFilterMode::Nearest,
         ..default()
     });
-    images.insert(&COVER_MAP, cover);
+    let _ = images.insert(&COVER_MAP, cover);
 
     // cells per ring side: `cover_m` is the inner ring's radius at scale 1 for a
     // single lattice; rings are cheaper, so fewer cells each
@@ -240,20 +245,18 @@ pub fn spawn(
 
     let mut ring_entities = Vec::new();
     let _root = commands
-        .spawn((SpatialBundle::default(), Name::new("near_cover")))
+        .spawn((Transform::default(), Visibility::default(), Name::new("near_cover")))
         .with_children(|p| {
             let mesh = meshes.add(tuft_mesh(n_tuft));
             for material in &ring_materials {
                 let id = p.spawn((
-                    MaterialMeshBundle {
-                        mesh: mesh.clone(),
-                        material: material.clone(),
-                        ..default()
-                    },
+                    (Mesh3d(mesh.clone()), MeshMaterial3d(material.clone())),
                     // positions are lattice indices, not metres: the bounds
                     // are meaningless, the shader keeps everything near the
                     // camera
                     Aabb::from_min_max(Vec3::splat(-1.0e6), Vec3::splat(1.0e6)),
+                    // and Bevy (0.20) must not recompute them from the mesh
+                    bevy::camera::visibility::NoAutoAabb,
                     NotShadowCaster,
                 )).id();
                 ring_entities.push(id);
@@ -330,7 +333,7 @@ pub fn update(
     let Some(mut state) = state else { return };
 
 
-    state.since_write_s += time.delta_seconds();
+    state.since_write_s += time.delta_secs();
     let key = (sim.time_s(), sim.generation);
     if state.written != Some(key) && (state.written.is_none() || state.since_write_s >= FIRE_REFRESH_S) {
         state.written = Some(key);
@@ -340,7 +343,7 @@ pub fn update(
         // 0 untouched, 128 burning, 255 burnt, 195 cleared to bare ground: the
         // shaders tell them apart by thresholds.
         {
-            let Some(image) = images.get_mut(&COVER_MAP) else { return };
+            let Some(mut image) = images.get_mut(&COVER_MAP) else { return };
             for r in 0..w.fire_rows {
                 for c in 0..w.fire_cols {
                     let i = r * w.fire_cols + c;
@@ -350,7 +353,7 @@ pub fn update(
                         CellFire::Burning => 128,
                         CellFire::Burnt => 255,
                     };
-                    image.data[((w.fire_rows - 1 - r) * w.fire_cols + c) * 4 + 3] = code;
+                    image.data.as_mut().expect("CPU copy")[((w.fire_rows - 1 - r) * w.fire_cols + c) * 4 + 3] = code;
                 }
             }
         }
@@ -376,7 +379,7 @@ pub fn update(
             // `hi` around the eye is inside it, with the room spent in front
             let cell = 2.5 * hi / n;
             let centre = eye_xz + ahead * 0.25 * hi;
-            if let Some(m) = materials.get_mut(&state.materials[k]) {
+            if let Some(mut m) = materials.get_mut(&state.materials[k]) {
                 let p = &mut m.extension.params;
                 p.focus = Vec4::new(centre.x, centre.y, 0.5 * n * cell, cell);
                 p.fire = Vec4::new(sim.time_s() as f32, cell / TUFT_CELL_M, lo, hi);

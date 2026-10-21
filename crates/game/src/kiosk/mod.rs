@@ -47,7 +47,7 @@ pub fn window_mode() -> WindowMode {
     if cfg!(target_arch = "wasm32") || std::env::var("KIOSK_WINDOWED").is_ok() {
         WindowMode::Windowed
     } else {
-        WindowMode::BorderlessFullscreen
+        WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Current)
     }
 }
 
@@ -289,7 +289,7 @@ impl Kiosk {
     }
 }
 
-pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<NextState<AppState>>, mut exit: EventWriter<AppExit>) {
+pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<NextState<AppState>>, mut exit: MessageWriter<AppExit>) {
     let built = Territory::load(&data.0).and_then(|t| {
         let k = Kiosk::new(t, data.0.clone());
         let sim = Sim::new(&data.0, &k.territory.game, k.seed)?;
@@ -303,7 +303,7 @@ pub fn launch(data: Res<DataPath>, mut commands: Commands, mut next: ResMut<Next
         }
         Err(e) => {
             eprintln!("kiosk: {e:#}");
-            exit.send(AppExit::error());
+            exit.write(AppExit::error());
         }
     }
 }
@@ -349,12 +349,12 @@ pub fn demo_shot(t: f32) -> usize {
 
 /// The fire behind the name screen: the played case, no orders, from its
 /// start; when it has run its course it starts again.
-fn demo_restart(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, case: &str, seed: u64) {
+fn demo_restart(k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, case: &str, seed: u64) {
     if let Err(e) = sim.restart(case, seed) {
         k.error = Some(format!("{e:#}"));
         return;
     }
-    restarted.send(SimRestarted);
+    restarted.write(SimRestarted);
     k.demo_pick = (usize::MAX, Subject::Wide);
     k.cut = Some((0.0, false));
     k.demo_order_at = k.demo_t + 2.0;
@@ -413,7 +413,7 @@ fn demo_give_orders(k: &mut Kiosk, sim: &mut Sim) {
 }
 
 /// A new visit: the played fire runs by itself under the name screen.
-pub fn new_visit(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+pub fn new_visit(k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>) {
     let case = k.selected_case.clone();
     demo_restart(k, sim, restarted, &case, k.seed);
     k.demo_t = 0.0;
@@ -429,7 +429,7 @@ pub fn new_visit(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRe
 }
 
 /// «Inizia»: the tutorial, or straight to the game if there is none.
-pub fn start_tutorial(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+pub fn start_tutorial(k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>) {
     if k.territory.tutorial.is_none() {
         start_game(k, sim, restarted);
         return;
@@ -439,7 +439,7 @@ pub fn start_tutorial(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<
         if let Err(e) = sim.restart(&case, k.seed) {
             k.error = Some(format!("{e:#}"));
         }
-        restarted.send(SimRestarted);
+        restarted.write(SimRestarted);
     }
     k.script = Script::of(sim);
     // like the game: it opens still
@@ -457,13 +457,13 @@ pub fn choose_scenario(k: &mut Kiosk) {
 }
 
 /// The played fire, with its no-orders twin started beside it.
-pub fn start_game(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+pub fn start_game(k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>) {
     let case = k.selected_case.clone();
     if let Err(e) = sim.restart(&case, k.seed) {
         k.error = Some(format!("{e:#}"));
         return;
     }
-    restarted.send(SimRestarted);
+    restarted.write(SimRestarted);
     k.start_baseline(&case);
     k.saved = None;
     k.log_seen = 0;
@@ -476,13 +476,13 @@ pub fn start_game(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimR
 
 
 /// «Riprova»: the fire just played, same seed, from the start.
-pub fn retry(k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>) {
+pub fn retry(k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>) {
     k.selected_case = sim.case.name.clone();
     start_game(k, sim, restarted);
 }
 
 /// The clock and the previews. Runs before the view systems.
-pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: EventWriter<SimRestarted>, mut baseline_job: Local<Option<rocca::Game>>, mario: Res<crate::mario::Playground>) {
+pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut restarted: MessageWriter<SimRestarted>, mut baseline_job: Local<Option<rocca::Game>>, mario: Res<crate::mario::Playground>) {
     #[cfg(not(target_arch = "wasm32"))]
     let _ = &mut baseline_job;
     #[cfg(target_arch = "wasm32")]
@@ -512,7 +512,7 @@ pub fn step(time: Res<Time>, mut kiosk: ResMut<Kiosk>, mut sim: ResMut<Sim>, mut
             }
         }
     }
-    let dt = crate::playtest::delta(time.delta_seconds());
+    let dt = crate::playtest::delta(time.delta_secs());
     let k = &mut *kiosk;
     if !k.frozen {
         k.phase_t += dt;
@@ -611,9 +611,9 @@ mod scenario_selection_tests {
         assert_eq!(sim.case.name, "medium", "selecting alone leaves the running fire intact");
         let previous = k.baseline.clone();
         let mut world = World::new();
-        world.init_resource::<Events<SimRestarted>>();
-        let mut state = SystemState::<EventWriter<SimRestarted>>::new(&mut world);
-        let mut events = state.get_mut(&mut world);
+        world.init_resource::<Messages<SimRestarted>>();
+        let mut state = SystemState::<MessageWriter<SimRestarted>>::new(&mut world);
+        let mut events = state.get_mut(&mut world).unwrap();
         start_game(&mut k, &mut sim, &mut events);
         assert_eq!(sim.case.name, next);
         assert_eq!(k.phase, Phase::Gioco);

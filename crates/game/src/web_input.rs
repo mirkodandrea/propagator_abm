@@ -1,20 +1,20 @@
 //! Winit's web pointer coordinates use the browser DPR, even when Bevy's
 //! backing canvas uses a scale-factor override. Normalize before both Bevy
 //! and egui read them, so a 1x canvas has CSS-pixel hit targets on a 3x phone.
-use bevy::ecs::event::ManualEventReader;
+use bevy::ecs::message::MessageCursor;
 use bevy::input::touch::TouchInput;
 use bevy::prelude::*;
 use bevy::window::{CursorMoved, PrimaryWindow, WindowResized};
 
 pub fn normalize(
     mut windows: Query<(Entity, &mut Window), With<PrimaryWindow>>,
-    mut resized: EventWriter<WindowResized>,
-    mut touches: ResMut<Events<TouchInput>>,
-    mut cursors: ResMut<Events<CursorMoved>>,
-    mut touch_reader: Local<ManualEventReader<TouchInput>>,
-    mut cursor_reader: Local<ManualEventReader<CursorMoved>>,
+    mut resized: MessageWriter<WindowResized>,
+    mut touches: ResMut<Messages<TouchInput>>,
+    mut cursors: ResMut<Messages<CursorMoved>>,
+    mut touch_reader: Local<MessageCursor<TouchInput>>,
+    mut cursor_reader: Local<MessageCursor<CursorMoved>>,
 ) {
-    let Ok((entity, mut window)) = windows.get_single_mut() else { return };
+    let Ok((entity, mut window)) = windows.single_mut() else { return };
     // WebKit's ResizeObserver reports CSS size × browser DPR even with our
     // 1x override. Keep rendering, egui layout and input in CSS pixels after
     // every resize (including rotation and Safari's changing browser bars).
@@ -27,7 +27,7 @@ pub fn normalize(
             && (window.physical_width(), window.physical_height()) != (width, height)
         {
             window.resolution.set_physical_resolution(width, height);
-            resized.send(WindowResized { window: entity, width: window.width(), height: window.height() });
+            resized.write(WindowResized { window: entity, width: window.width(), height: window.height() });
         }
     }
     let ratio = window.resolution.scale_factor() / window.resolution.base_scale_factor();
@@ -44,10 +44,10 @@ pub fn normalize(
     // Publish only fresh events. Advance our readers past the replacement
     // events so the next frame never repeats a press/release or rescales it.
     touches.clear();
-    touches.send_batch(touch_events);
+    touches.write_batch(touch_events);
     touch_reader.clear(&touches);
     cursors.clear();
-    cursors.send_batch(cursor_events);
+    cursors.write_batch(cursor_events);
     cursor_reader.clear(&cursors);
 }
 
@@ -62,7 +62,7 @@ pub fn finish_canceled_touch(mut inputs: Query<&mut bevy_egui::EguiInput>) {
             _ => None,
         });
         if let Some(pos) = canceled {
-            let modifiers = input.modifiers;
+            let modifiers = egui::Modifiers::NONE; // egui 0.36: RawInput no longer carries modifiers
             input.events.push(egui::Event::PointerButton {
                 pos, button: egui::PointerButton::Primary, pressed: false, modifiers,
             });

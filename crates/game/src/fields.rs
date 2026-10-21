@@ -10,8 +10,8 @@
 //! did this per pixel.
 
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use scenario::{CoverClass, Pos, Scenario};
 
 use crate::field::noise;
@@ -110,7 +110,7 @@ pub fn build(scn: &Scenario, commands: &mut Commands, meshes: &mut Assets<Mesh>,
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, m.colors);
     mesh.insert_indices(Indices::U32(m.indices));
     let material = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 1.0, metallic: 0.0, reflectance: 0.02, ..default() });
-    commands.spawn((MaterialMeshBundle::<StandardMaterial> { mesh: meshes.add(mesh), material, ..default() }, crate::terrain_mesh::PauseSolid));
+    commands.spawn(((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material)), crate::terrain_mesh::PauseSolid));
 }
 
 /// One parcel: the hedge as the full rectangle, the crop on top of it inside,

@@ -113,22 +113,22 @@ pub fn update(
     cameras: Query<&GlobalTransform, With<crate::camera::OrbitCamera>>,
     mut pins: Query<(Entity, &Pin, &mut Transform, &mut Visibility)>,
 ) {
-    let Ok(cam) = cameras.get_single() else { return };
+    let Ok(cam) = cameras.single() else { return };
     let have = pins.iter().count();
     if have != sim.teams.len() {
         for (e, ..) in &pins {
-            commands.entity(e).despawn_recursive();
+            commands.entity(e).despawn();
         }
         for t in 0..sim.teams.len() {
             let colour = assets.teams[t % assets.teams.len()].clone();
             commands
-                .spawn((SpatialBundle { visibility: Visibility::Hidden, ..default() }, Pin(t)))
+                .spawn((Transform::default(), Visibility::Hidden, Pin(t)))
                 .with_children(|c| {
                     for mesh in [&assets.ring] {
                         c.spawn((
-                            MaterialMeshBundle::<StandardMaterial> { mesh: mesh.clone(), material: colour.clone(), ..default() },
-                            bevy::pbr::NotShadowCaster,
-                            bevy::pbr::NotShadowReceiver,
+                            (Mesh3d(mesh.clone()), MeshMaterial3d(colour.clone())),
+                            bevy::light::NotShadowCaster,
+                            bevy::light::NotShadowReceiver,
                         ));
                     }
                 });

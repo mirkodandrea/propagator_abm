@@ -1,15 +1,12 @@
 // Screen-space silhouette contour, tested against scene-only depth.
-#import bevy_pbr::{
-    forward_io::{Vertex, VertexOutput},
-    mesh_view_bindings::view,
-}
-#ifdef DEPTH_PREPASS
-#import bevy_pbr::prepass_utils::prepass_depth
-#endif
 
-@group(2) @binding(0) var mario_mask: texture_2d<f32>;
-@group(2) @binding(1) var mask_sampler: sampler;
-@group(2) @binding(2) var<uniform> bounds: vec4<f32>;
+import bevy_pbr::render::forward_io::{Vertex, VertexOutput};
+import bevy_pbr::render::mesh_view_bindings::view;
+@if(DEPTH_PREPASS) import bevy_pbr::prepass::utils::prepass_depth;
+
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var mario_mask: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var mask_sampler: sampler;
+@group(constants::MATERIAL_BIND_GROUP) @binding(2) var<uniform> bounds: vec4<f32>;
 
 @vertex
 fn vertex(in: Vertex) -> VertexOutput {
@@ -18,9 +15,8 @@ fn vertex(in: Vertex) -> VertexOutput {
     out.world_position = vec4<f32>(0.0);
     out.world_normal = vec3<f32>(0.0, 0.0, 1.0);
     out.uv = vec2<f32>(in.position.x * 0.5 + 0.5, 0.5 - in.position.y * 0.5);
-#ifdef VERTEX_OUTPUT_INSTANCE_INDEX
+    @if(VERTEX_OUTPUT_INSTANCE_INDEX)
     out.instance_index = in.instance_index;
-#endif
     return out;
 }
 
@@ -40,14 +36,14 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             let neighbour = textureLoad(mario_mask, sample_pixel, 0);
             coverage_min = min(coverage_min, neighbour.a);
             coverage_max = max(coverage_max, neighbour.a);
-#ifdef DEPTH_PREPASS
+            @if(DEPTH_PREPASS) {
             // Compare at the covered sample itself. Testing an expanded rim
             // against nearby foreground ground would outline visible feet.
             let scene_depth = prepass_depth(vec4<f32>(vec2<f32>(sample_pixel), 0.0, 1.0), 0u);
             if neighbour.a > 0.5 && neighbour.r < scene_depth - 0.000001 {
                 hidden_coverage = max(hidden_coverage, neighbour.a);
             }
-#endif
+            }
         }
     }
     let edge = coverage_max - coverage_min;

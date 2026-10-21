@@ -8,7 +8,7 @@
 //! water. Sizes are diorama sizes ([`crate::visual_scale::BOAT`]): a 9 m boat
 //! is invisible from the camera's distance otherwise.
 
-use bevy::pbr::{NotShadowCaster, NotShadowReceiver};
+use bevy::light::{NotShadowCaster, NotShadowReceiver};
 use bevy::prelude::*;
 use scenario::Pos;
 
@@ -100,12 +100,11 @@ fn spawn_boats(
     let scale = Vec3::splat(visual_scale::BOAT);
     let bundle = |mesh: Handle<Mesh>, material: Handle<StructureMaterial>, at: Vec3, heading: f32| {
         (
-            MaterialMeshBundle::<StructureMaterial> {
-                mesh,
-                material,
-                transform: Transform { translation: at, rotation: Quat::from_rotation_y(-heading), scale },
-                ..default()
-            },
+            (
+                Mesh3d(mesh),
+                MeshMaterial3d(material),
+                Transform { translation: at, rotation: Quat::from_rotation_y(-heading), scale },
+            ),
             NotShadowCaster,
             NotShadowReceiver,
         )
@@ -161,8 +160,8 @@ fn angle_diff(a: f32, b: f32) -> f32 {
 }
 
 fn move_boats(time: Res<Time>, sim: Res<Sim>, mut boats: Query<(&mut Transform, &mut Boat)>) {
-    let dt = time.delta_seconds().min(0.1);
-    let t = time.elapsed_seconds_wrapped();
+    let dt = time.delta_secs().min(0.1);
+    let t = time.elapsed_secs_wrapped();
     let scn = &sim.scn;
     let (drift, wind) = sea::wind_drift(&sim);
     let upwind = (-drift.y).atan2(-drift.x);

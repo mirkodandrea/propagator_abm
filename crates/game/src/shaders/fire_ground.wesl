@@ -9,14 +9,14 @@
 // that already-decided glow. Every other layer (Intensity, Arrival, Hazard)
 // never sets red above 1.0, so they pass through unanimated.
 
-#import bevy_pbr::forward_io::VertexOutput
-#import bevy_pbr::mesh_view_bindings::globals
-#import rocca::noise::{hash21, value_noise}
-#import rocca::scene_light::{scene_shade, apply_scene_fog}
+import bevy_pbr::render::forward_io::VertexOutput;
+import bevy_pbr::render::mesh_view_bindings::globals;
+import game::shaders::noise::{hash21, value_noise};
+import game::shaders::scene_light::{scene_shade, apply_scene_fog};
 
-@group(2) @binding(0) var road_tex: texture_2d<f32>;
-@group(2) @binding(1) var road_samp: sampler;
-@group(2) @binding(2) var<uniform> mask_rect: vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var road_tex: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var road_samp: sampler;
+@group(constants::MATERIAL_BIND_GROUP) @binding(2) var<uniform> mask_rect: vec4<f32>;
 
 // Keep in step with `ground_mask.rs` and `terrain.wgsl`.
 const RANGE_M: f32 = 12.0;

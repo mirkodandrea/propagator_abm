@@ -6,8 +6,8 @@
 //! the reason the road ribbons are (finding 11).
 
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use scenario::{Pos, Scenario};
 
 /// Segments around a ring. Fixed rather than radius-dependent: even the
@@ -94,7 +94,7 @@ pub(crate) fn tube_transform(centre: Pos) -> Transform {
 
 /// Turn every tube (`overlays::spin_tubes` runs this each frame).
 pub(crate) fn spin(time: Res<Time>, mut q: Query<&mut Transform, With<TubeSpin>>) {
-    let a = time.elapsed_seconds() * 0.35;
+    let a = time.elapsed_secs() * 0.35;
     for mut tf in &mut q {
         tf.rotation = Quat::from_rotation_y(a);
     }

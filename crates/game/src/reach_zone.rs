@@ -3,14 +3,15 @@
 //! road segments carries each vertex's distance to the nearest one; the shader
 //! cuts the band at the half width, so the zone is a single surface.
 
-use bevy::asset::load_internal_asset;
+use bevy::asset::uuid_handle;
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
-use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
+use bevy::render::render_resource::{AsBindGroup, ShaderType};
+use bevy::shader::ShaderRef;
 use scenario::{Pos, Scenario};
 
-const REACH_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x3B9E_7A10_C4D2_4F61_A58E_92D0_1E7B_6C33);
+const REACH_SHADER_HANDLE: Handle<Shader> = uuid_handle!("3b9e7a10-c4d2-4f61-a58e-92d01e7b6c33");
 
 /// Spacing of the draped grid, metres.
 const GRID_M: f32 = 20.0;
@@ -38,6 +39,13 @@ impl ReachMaterial {
 }
 
 impl Material for ReachMaterial {
+    // no depth prepass and no shadows (was `MaterialPlugin { prepass_enabled, shadows_enabled }` before Bevy 0.17)
+    fn enable_prepass() -> bool {
+        false
+    }
+    fn enable_shadows() -> bool {
+        false
+    }
     fn vertex_shader() -> ShaderRef {
         REACH_SHADER_HANDLE.into()
     }
@@ -51,9 +59,9 @@ impl Material for ReachMaterial {
         -2.0
     }
     fn specialize(
-        _: &bevy::pbr::MaterialPipeline<Self>,
+        _: &bevy::pbr::MaterialPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
-        _: &bevy::render::mesh::MeshVertexBufferLayoutRef,
+        _: &bevy::mesh::MeshVertexBufferLayoutRef,
         _: bevy::pbr::MaterialPipelineKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         descriptor.primitive.cull_mode = None;
@@ -65,8 +73,8 @@ pub struct ReachPlugin;
 
 impl Plugin for ReachPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, REACH_SHADER_HANDLE, "shaders/reach_zone.wgsl", Shader::from_wgsl);
-        app.add_plugins(MaterialPlugin::<ReachMaterial> { prepass_enabled: false, shadows_enabled: false, ..default() });
+        crate::load_wesl!(app, REACH_SHADER_HANDLE, "shaders/reach_zone.wesl");
+        app.add_plugins(MaterialPlugin::<ReachMaterial>::default());
     }
 }
 
@@ -136,7 +144,7 @@ pub fn band_mesh(scn: &Scenario, segments: &[[Pos; 2]], reach_m: f32) -> Option<
 
 // ---- the route of a move ---------------------------------------------------
 
-const ROUTE_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x5C14_90AB_7E3D_41F8_B2A6_0D9E_44C1_F7A2);
+const ROUTE_SHADER_HANDLE: Handle<Shader> = uuid_handle!("5c1490ab-7e3d-41f8-b2a6-0d9e44c1f7a2");
 /// Spacing of the sparse grid along a route, metres.
 const ROUTE_GRID_M: f32 = 10.0;
 
@@ -185,6 +193,13 @@ impl RouteMaterial {
 }
 
 impl Material for RouteMaterial {
+    // no depth prepass and no shadows (was `MaterialPlugin { prepass_enabled, shadows_enabled }` before Bevy 0.17)
+    fn enable_prepass() -> bool {
+        false
+    }
+    fn enable_shadows() -> bool {
+        false
+    }
     fn vertex_shader() -> ShaderRef {
         ROUTE_SHADER_HANDLE.into()
     }
@@ -198,9 +213,9 @@ impl Material for RouteMaterial {
         -2.0
     }
     fn specialize(
-        _: &bevy::pbr::MaterialPipeline<Self>,
+        _: &bevy::pbr::MaterialPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
-        _: &bevy::render::mesh::MeshVertexBufferLayoutRef,
+        _: &bevy::mesh::MeshVertexBufferLayoutRef,
         _: bevy::pbr::MaterialPipelineKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         descriptor.primitive.cull_mode = None;
@@ -212,8 +227,8 @@ pub struct RoutePlugin;
 
 impl Plugin for RoutePlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, ROUTE_SHADER_HANDLE, "shaders/route_line.wgsl", Shader::from_wgsl);
-        app.add_plugins(MaterialPlugin::<RouteMaterial> { prepass_enabled: false, shadows_enabled: false, ..default() });
+        crate::load_wesl!(app, ROUTE_SHADER_HANDLE, "shaders/route_line.wesl");
+        app.add_plugins(MaterialPlugin::<RouteMaterial>::default());
     }
 }
 

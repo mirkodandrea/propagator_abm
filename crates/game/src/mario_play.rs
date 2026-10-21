@@ -10,11 +10,9 @@
 use super::Playground;
 use crate::{frame, sim::Sim, AppState};
 use bevy::{
+    asset::RenderAssetUsages,
+    mesh::{Indices, PrimitiveTopology},
     prelude::*,
-    render::{
-        mesh::{Indices, PrimitiveTopology},
-        render_asset::RenderAssetUsages,
-    },
 };
 use bevy_egui::{egui, EguiContexts};
 use scenario::Pos;
@@ -140,8 +138,10 @@ impl Plugin for PlayPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Play>().add_systems(
             Update,
-            (update, animate, panel).chain().run_if(in_state(AppState::Playing)),
-        );
+            (update, animate).chain().run_if(in_state(AppState::Playing)),
+        )
+        // egui draws only in its pass (bevy_egui 0.42+)
+        .add_systems(bevy_egui::EguiPrimaryContextPass, panel.after(crate::kiosk::ui::draw).run_if(in_state(AppState::Playing)));
     }
 }
 
@@ -327,16 +327,15 @@ fn spawn_item(commands: &mut Commands, look: &Look, kind: Kind, at: Vec3, phase:
         Kind::Coin => None,
     };
     commands
-        .spawn((SpatialBundle::from_transform(Transform::from_translation(at)), Spin(spin), Bob { base: at.y, phase }))
+        .spawn((Transform::from_translation(at), Visibility::default(), Spin(spin), Bob { base: at.y, phase }))
         .with_children(|p| {
-            p.spawn(PbrBundle { mesh, material, transform: Transform::from_rotation(tilt), ..default() });
+            p.spawn((Mesh3d(mesh), MeshMaterial3d(material), Transform::from_rotation(tilt)));
             if let Some(scale) = beam {
-                p.spawn(PbrBundle {
-                    mesh: look.beam.clone(),
-                    material: look.beam_mat.clone(),
-                    transform: Transform { translation: Vec3::Y * scale.y * 0.5, scale, ..default() },
-                    ..default()
-                });
+                p.spawn((
+                    Mesh3d(look.beam.clone()),
+                    MeshMaterial3d(look.beam_mat.clone()),
+                    Transform { translation: Vec3::Y * scale.y * 0.5, scale, ..default() },
+                ));
             }
         })
         .id()
@@ -344,21 +343,20 @@ fn spawn_item(commands: &mut Commands, look: &Look, kind: Kind, at: Vec3, phase:
 
 fn spawn_gate(commands: &mut Commands, look: &Look, at: Vec3) -> Entity {
     commands
-        .spawn(PbrBundle {
-            mesh: look.beam.clone(),
-            material: look.gate_mat.clone(),
-            transform: Transform { translation: at + Vec3::Y * 60., scale: Vec3::new(GATE_REACH * 0.5, 120., GATE_REACH * 0.5), ..default() },
-            ..default()
-        })
+        .spawn((
+            Mesh3d(look.beam.clone()),
+            MeshMaterial3d(look.gate_mat.clone()),
+            Transform { translation: at + Vec3::Y * 60., scale: Vec3::new(GATE_REACH * 0.5, 120., GATE_REACH * 0.5), ..default() },
+        ))
         .id()
 }
 
 fn clear_scene(commands: &mut Commands, play: &mut Play) {
     for (_, e) in play.entities.drain() {
-        commands.entity(e).despawn_recursive();
+        commands.entity(e).despawn();
     }
     for e in play.gates.drain(..) {
-        commands.entity(e).despawn_recursive();
+        commands.entity(e).despawn();
     }
     play.out = false;
     play.race = None;
@@ -375,7 +373,7 @@ fn update(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let dt = time.delta_seconds().min(0.1);
+    let dt = time.delta_secs().min(0.1);
     let Some(pos) = mode.pos.filter(|_| mode.active) else {
         if play.out {
             clear_scene(&mut commands, &mut play);
@@ -416,7 +414,7 @@ fn update(
     for i in got {
         play.star_got.insert(i);
         if let Some(e) = play.entities.remove(&(Kind::Star, i)) {
-            commands.entity(e).despawn_recursive();
+            commands.entity(e).despawn();
         }
         mode.victory = true;
         let (n, total) = (play.star_got.len(), play.stars.len());
@@ -431,7 +429,7 @@ fn update(
     for i in got {
         play.coin_got.insert(i);
         if let Some(e) = play.entities.remove(&(Kind::Coin, i)) {
-            commands.entity(e).despawn_recursive();
+            commands.entity(e).despawn();
         }
         if play.coin_got.len() == play.coins.len() {
             play.award("Tesoriere dell’isola", &mut mode);
@@ -480,12 +478,11 @@ fn update(
             let look = play.look.as_ref().unwrap();
             for p in &near {
                 commands.spawn((
-                    PbrBundle {
-                        mesh: look.puff.clone(),
-                        material: look.puff_mat.clone(),
-                        transform: Transform::from_translation(frame::to_bevy(*p, sim.scn.terrain.height_at(*p) + 3.)),
-                        ..default()
-                    },
+                    (
+                        Mesh3d(look.puff.clone()),
+                        MeshMaterial3d(look.puff_mat.clone()),
+                        Transform::from_translation(frame::to_bevy(*p, sim.scn.terrain.height_at(*p) + 3.)),
+                    ),
                     Puff(0.),
                 ));
             }
@@ -531,14 +528,14 @@ fn animate(
     mut spinning: Query<(&mut Transform, &Spin, &Bob), Without<Puff>>,
     mut puffs: Query<(Entity, &mut Transform, &mut Puff)>,
 ) {
-    let t = time.elapsed_seconds();
+    let t = time.elapsed_secs();
     for (mut tf, spin, bob) in &mut spinning {
         tf.rotation = Quat::from_rotation_y(t * spin.0 + bob.phase);
         tf.translation.y = bob.base + (t * 2. + bob.phase).sin() * 0.8;
     }
     for (entity, mut tf, mut puff) in &mut puffs {
-        puff.0 += time.delta_seconds();
-        tf.translation.y += time.delta_seconds() * 4.;
+        puff.0 += time.delta_secs();
+        tf.translation.y += time.delta_secs() * 4.;
         tf.scale = Vec3::splat(1. + puff.0 * 2.5);
         if puff.0 > 1.4 {
             commands.entity(entity).despawn();
@@ -548,7 +545,7 @@ fn animate(
 
 fn panel(mut contexts: EguiContexts, play: Res<Play>, mode: Res<Playground>, sim: Res<Sim>) {
     let Some(pos) = mode.pos.filter(|_| mode.active) else { return };
-    let ctx = contexts.ctx_mut();
+    let Ok(ctx) = contexts.ctx_mut() else { return };
     egui::Area::new(egui::Id::new("mario_play"))
         .anchor(egui::Align2::RIGHT_TOP, [-16., 16.])
         .order(egui::Order::Foreground)

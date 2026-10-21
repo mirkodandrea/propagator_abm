@@ -78,16 +78,16 @@ impl ScenarioIcons {
 fn texture(bytes: &[u8], images: &mut Assets<Image>, contexts: &mut EguiContexts) -> Option<egui::TextureId> {
     let img = Image::from_buffer(
         bytes,
-        bevy::render::texture::ImageType::Extension("png"),
-        bevy::render::texture::CompressedImageFormats::NONE,
+        bevy::image::ImageType::Extension("png"),
+        bevy::image::CompressedImageFormats::NONE,
         true,
-        bevy::render::texture::ImageSampler::linear(),
+        bevy::image::ImageSampler::linear(),
         // Not RENDER_WORLD alone: Bevy then drops the image from the main world
         // after upload, and bevy_egui forgets the texture on that removal.
-        bevy::render::render_asset::RenderAssetUsages::all(),
+        bevy::asset::RenderAssetUsages::all(),
     )
     .ok()?;
-    Some(contexts.add_image(images.add(img)))
+    Some(contexts.add_image(bevy_egui::EguiTextureHandle::Strong(images.add(img))))
 }
 
 pub fn load_portraits(mut commands: Commands, mut images: ResMut<Assets<Image>>, mut contexts: EguiContexts) {
@@ -132,7 +132,7 @@ pub fn portrait(ui: &mut egui::Ui, portraits: Option<&Portraits>, who: Who, mood
     let (r, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
     ui.painter().circle_filled(r.center(), size * 0.5, egui::Color32::from_rgb(29, 36, 48));
     if let Some(t) = portraits.and_then(|x| x.get(who, mood)) {
-        egui::Image::new(egui::load::SizedTexture::new(t, r.size())).rounding(size * 0.5).paint_at(ui, r.shrink(3.0));
+        egui::Image::new(egui::load::SizedTexture::new(t, r.size())).corner_radius(size * 0.5).paint_at(ui, r.shrink(3.0));
     }
     ui.painter().circle_stroke(r.center(), size * 0.5 - 1.5, egui::Stroke::new(4.0, who.colour()));
 }
@@ -140,7 +140,7 @@ pub fn portrait(ui: &mut egui::Ui, portraits: Option<&Portraits>, who: Who, mood
 /// The speech bubble: a frame with a tail pointing left at the portrait.
 pub fn bubble<R>(ui: &mut egui::Ui, who: Who, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let fill = egui::Color32::from_rgb(245, 245, 240);
-    let inner = egui::Frame::none().fill(fill).rounding(14.0).inner_margin(egui::Margin::symmetric(16.0, 12.0)).stroke(egui::Stroke::new(3.0, who.colour())).show(ui, add);
+    let inner = egui::Frame::NONE.fill(fill).corner_radius(14.0).inner_margin(egui::Margin::symmetric(16, 12)).stroke(egui::Stroke::new(3.0, who.colour())).show(ui, add);
     let r = inner.response.rect;
     let y = r.bottom() - 34.0;
     let tail = vec![egui::pos2(r.left() + 1.5, y - 10.0), egui::pos2(r.left() - 14.0, y + 6.0), egui::pos2(r.left() + 1.5, y + 10.0)];

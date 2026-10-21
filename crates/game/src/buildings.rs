@@ -33,8 +33,8 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use scenario::{Building, Pos, Scenario};
 
 use crate::sim::Sim;
@@ -210,11 +210,7 @@ pub fn spawn(
         tris += builder.indices.len() / 3;
         let base = builder.colors.clone();
         let mesh = meshes.add(builder.finish());
-        commands.spawn((MaterialMeshBundle::<StructureMaterial> {
-            mesh: mesh.clone(),
-            material: material.clone(),
-            ..default()
-        },
+        commands.spawn(((Mesh3d(mesh.clone()), MeshMaterial3d(material.clone())),
             crate::terrain_mesh::PauseSolid,
         ));
         chunks.push(Chunk {
@@ -872,7 +868,7 @@ impl Buildings {
 /// a restart has to clear by hand, or the new run opens with the old run's
 /// charred buildings still standing in it.
 pub fn reset(
-    mut restarted: EventReader<crate::sim::SimRestarted>,
+    mut restarted: MessageReader<crate::sim::SimRestarted>,
     mut buildings: ResMut<Buildings>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
@@ -887,7 +883,7 @@ pub fn reset(
             s.drawn = Damage::None as u8;
             s.lit = false;
         }
-        if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
+        if let Some(mut mesh) = meshes.get_mut(&chunk.mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, chunk.base.clone());
         }
     }
@@ -995,7 +991,7 @@ pub fn damage(
         for s in &chunk.structures {
             recolor_structure(&mut colors, &chunk.base, s);
         }
-        if let Some(mesh) = meshes.get_mut(&chunk.mesh) {
+        if let Some(mut mesh) = meshes.get_mut(&chunk.mesh) {
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
         }
     }

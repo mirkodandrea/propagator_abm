@@ -15,15 +15,15 @@
 //! wind shift from the Wildfire panel chops the sea up exactly when it
 //! shifts the fire.
 
-use bevy::asset::load_internal_asset;
-use bevy::pbr::{
-    Material, MaterialPipeline, MaterialPipelineKey, NotShadowCaster, NotShadowReceiver,
-};
+use bevy::pbr::{Material, MaterialPipeline, MaterialPipelineKey};
+use bevy::light::{NotShadowCaster, NotShadowReceiver};
+use bevy::asset::uuid_handle;
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::shader::ShaderRef;
+use bevy::mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use bevy::render::render_resource::{
-    AsBindGroup, RenderPipelineDescriptor, ShaderRef, ShaderType, SpecializedMeshPipelineError,
+    AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError,
 };
 use scenario::{Pos, Scenario};
 
@@ -31,7 +31,7 @@ use crate::sim::Sim;
 use crate::sky::SunState;
 
 const WATER_SHADER_HANDLE: Handle<Shader> =
-    Handle::weak_from_u128(0x2C6E_88AA_401D_47CC_8F19_55DD_66EE_77FF);
+    uuid_handle!("2c6e88aa-401d-47cc-8f19-55dd66ee77ff");
 
 /// Lattice spacing for the water mesh: coarser than the 5 m terrain posting,
 /// since the wave shapes it carries (tens of metres) do not need it and the
@@ -199,6 +199,13 @@ pub struct WaterMaterial {
 }
 
 impl Material for WaterMaterial {
+    // no depth prepass and no shadows (was `MaterialPlugin { prepass_enabled, shadows_enabled }` before Bevy 0.17)
+    fn enable_prepass() -> bool {
+        false
+    }
+    fn enable_shadows() -> bool {
+        false
+    }
     fn alpha_mode(&self) -> AlphaMode {
         AlphaMode::Blend
     }
@@ -212,7 +219,7 @@ impl Material for WaterMaterial {
     }
 
     fn specialize(
-        _pipeline: &MaterialPipeline<Self>,
+        _pipeline: &MaterialPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         _layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
@@ -226,17 +233,12 @@ pub struct SeaPlugin;
 
 impl Plugin for SeaPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(
-            app,
-            WATER_SHADER_HANDLE,
-            "shaders/water.wgsl",
-            Shader::from_wgsl
-        );
+        crate::load_wesl!(app, WATER_SHADER_HANDLE, "shaders/water.wesl");
         // The vertex stage displaces the lattice and the prepass would draw the
         // flat one: wherever a wave sits below the flat plane its fragment then
         // fails the depth test against its own prepass depth, and the swell
         // shows as bands of missing water. The sea draws in the main pass only.
-        app.add_plugins(MaterialPlugin::<WaterMaterial> { prepass_enabled: false, shadows_enabled: false, ..default() })
+        app.add_plugins(MaterialPlugin::<WaterMaterial>::default())
             .add_systems(OnEnter(crate::AppState::Playing), spawn_sea)
             .add_systems(Update, update_water.run_if(bevy::prelude::in_state(crate::AppState::Playing)));
     }
@@ -409,11 +411,7 @@ fn spawn_patch(
             mesh.insert_indices(Indices::U32(indices));
 
             commands.spawn((
-                MaterialMeshBundle {
-                    mesh: meshes.add(mesh),
-                    material: handle.clone(),
-                    ..default()
-                },
+                (Mesh3d(meshes.add(mesh)), MeshMaterial3d(handle.clone())),
                 SeaMesh,
                 // The water shader computes its own lighting from scratch
                 // (see `shaders/water.wgsl`) and never samples the scene's
@@ -436,7 +434,7 @@ fn update_water(
     mut materials: ResMut<Assets<WaterMaterial>>,
 ) {
     let Some(handle) = handle else { return };
-    let Some(mat) = materials.get_mut(&handle.0) else {
+    let Some(mut mat) = materials.get_mut(&handle.0) else {
         return;
     };
 

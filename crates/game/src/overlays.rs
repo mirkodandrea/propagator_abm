@@ -96,33 +96,33 @@ pub fn no_ui_shadows(
         Entity,
         (
             Or<(Added<OrderRing>, Added<RouteMark>, Added<DynamicMarker>, Added<BeaconLayer>, Added<UiGlyph>, Added<crate::units::OrderMarker>)>,
-            Without<bevy::pbr::NotShadowCaster>,
+            Without<bevy::light::NotShadowCaster>,
         ),
     >,
 ) {
     for e in &new {
         // may already be despawned this frame (rings are rebuilt eagerly)
-        commands.entity(e).try_insert((bevy::pbr::NotShadowCaster, bevy::pbr::NotShadowReceiver));
+        commands.entity(e).try_insert((bevy::light::NotShadowCaster, bevy::light::NotShadowReceiver));
     }
 }
 
 /// Rings and routes breathe: a slow pulse of alpha and glow, out of phase per
 /// colour, so they read as UI laid over the landscape and not as scenery.
 pub fn pulse_rings(time: Res<Time>, assets: Res<OverlayAssets>, mut materials: ResMut<Assets<StandardMaterial>>) {
-    let t = time.elapsed_seconds();
+    let t = time.elapsed_secs();
     let set = [
         (&assets.ring_cover, [0.00, 0.90, 1.00], 2.2),
         (&assets.ring_white, [0.65, 0.90, 1.00], 3.3),
     ];
     for (h, c, phase) in set {
         let k = 0.5 + 0.5 * (t * 2.6 + phase).sin();
-        if let Some(m) = materials.get_mut(h) {
+        if let Some(mut m) = materials.get_mut(h) {
             m.base_color = hdr(c, 0.70 + 0.30 * k, 2.2 + 1.8 * k);
         }
     }
 }
 
-pub fn reset(mut restarted: EventReader<crate::sim::SimRestarted>, mut assets: ResMut<OverlayAssets>) {
+pub fn reset(mut restarted: MessageReader<crate::sim::SimRestarted>, mut assets: ResMut<OverlayAssets>) {
     if !restarted.is_empty() {
         restarted.clear();
         assets.key = (usize::MAX, 0, 0);

@@ -24,8 +24,8 @@
 //! throw a spike across the hillside.
 
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use scenario::{Pos, Scenario};
 
 /// Half-widths in metres, by road role. Generous: at command altitude a real
@@ -138,11 +138,7 @@ pub fn build(
             tri_count += builder.indices.len() / 3;
             chunk_count += 1;
             commands.spawn((
-                MaterialMeshBundle::<StandardMaterial> {
-                    mesh: meshes.add(builder.finish()),
-                    material: mat.clone(),
-                    ..default()
-                },
+                (Mesh3d(meshes.add(builder.finish())), MeshMaterial3d(mat.clone())),
                 RoadChunk,
                 crate::terrain_mesh::PauseSolid,
             ));

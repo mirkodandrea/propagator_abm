@@ -7,16 +7,17 @@
 // Map signs (flat, reach_zone, route_line, forecast_zone) deliberately do NOT
 // use this: they are interface and must stay legible in shadow and distance.
 
-#define_import_path rocca::scene_light
 
-#import bevy_pbr::mesh_view_bindings::{view, fog, lights}
-#import bevy_pbr::mesh_view_types
-#import bevy_pbr::fog as scene_fog
-#import bevy_pbr::shadows
 
 // Brightness multiplier for a surface with unit normal `n` at `world_pos`:
 // ambient plus the sun (Lambert, with the cascaded shadow map). `frag` is the
 // `@builtin(position)` of the fragment. Multiply an albedo by it.
+
+import bevy_pbr::render::mesh_view_bindings::{view, fog, lights};
+import bevy_pbr::render::mesh_view_types;
+import bevy_pbr::render::fog as scene_fog;
+import bevy_pbr::render::shadows;
+
 fn scene_shade(world_pos: vec3<f32>, n: vec3<f32>, frag: vec4<f32>) -> vec3<f32> {
     var lit = lights.ambient_color.rgb * view.exposure;
     if lights.n_directional_lights > 0u {
@@ -30,7 +31,7 @@ fn scene_shade(world_pos: vec3<f32>, n: vec3<f32>, frag: vec4<f32>) -> vec3<f32>
         ), vec4<f32>(world_pos, 1.0));
         var shadow = 1.0;
         if (light.flags & mesh_view_types::DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT) != 0u {
-            shadow = shadows::fetch_directional_shadow(0u, vec4<f32>(world_pos, 1.0), n, view_z);
+            shadow = shadows::fetch_directional_shadow(0u, vec4<f32>(world_pos, 1.0), n, view_z, frag.xy);
         }
         lit += light.color.rgb * view.exposure * ndl * shadow * 0.3183;
     }

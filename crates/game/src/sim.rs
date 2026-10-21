@@ -23,7 +23,7 @@ pub struct Sim {
 
 /// Raised on the frame a new game started, so views holding state the game no
 /// longer explains (a burning roof, a vehicle entity) can drop it.
-#[derive(Event)]
+#[derive(Message)]
 pub struct SimRestarted;
 
 impl Deref for Sim {

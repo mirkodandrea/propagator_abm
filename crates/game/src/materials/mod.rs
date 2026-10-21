@@ -23,16 +23,16 @@ pub use foliage::{FoliageMaterial, ATTRIBUTE_PLANT};
 pub use structure::{structure, surface_alpha, Finish, StructureMaterial};
 pub use terrain::TerrainMaterial;
 
-use bevy::asset::load_internal_asset;
+use bevy::asset::uuid_handle;
 use bevy::prelude::*;
 
-const SCENERY_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x91A7_44D2_6B0E_4C71_AA90_2201_88C4_2F14);
+const SCENERY_SHADER_HANDLE: Handle<Shader> = uuid_handle!("91a744d2-6b0e-4c71-aa90-220188c42f14");
 
 pub struct MaterialsPlugin;
 
 impl Plugin for MaterialsPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SCENERY_SHADER_HANDLE, "../shaders/scenery.wgsl", Shader::from_wgsl);
+        crate::load_wesl!(app, SCENERY_SHADER_HANDLE, "../shaders/scenery.wesl");
         app.add_plugins((terrain::TerrainPlugin, foliage::FoliagePlugin, structure::StructurePlugin));
     }
 }

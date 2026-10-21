@@ -24,8 +24,8 @@
 
 use abm::suppression::{Task, UnitKind, UnitState};
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use scenario::{Cell, Pos, Scenario};
 
 use crate::materials::{self, Finish, StructureMaterial};
@@ -180,30 +180,28 @@ pub fn setup(
         };
         commands
             .spawn((
-                MaterialMeshBundle::<StructureMaterial> {
-                    mesh,
-                    material: material.clone(),
-                    transform: Transform::from_translation(frame::to_bevy(u.pos, ground))
+                (
+                    Mesh3d(mesh),
+                    MeshMaterial3d(material.clone()),
+                    Transform::from_translation(frame::to_bevy(u.pos, ground))
                         .with_scale(Vec3::splat(scale)),
                     // Air support is not on the map until it is actually here.
-                    visibility: if u.on_scene() {
+                    if u.on_scene() {
                         Visibility::Inherited
                     } else {
                         Visibility::Hidden
                     },
-                    ..default()
-                },
+                ),
                 UnitView { id: u.id },
             ))
             .with_children(|parent| {
                 for (_, part, rig) in crate::models::unit_parts(model) {
                     parent.spawn((
-                        MaterialMeshBundle::<StructureMaterial> {
-                            mesh: meshes.add(part),
-                            material: material.clone(),
-                            transform: Transform::from_translation(rig.pivot),
-                            ..default()
-                        },
+                        (
+                            Mesh3d(meshes.add(part)),
+                            MeshMaterial3d(material.clone()),
+                            Transform::from_translation(rig.pivot),
+                        ),
                         Rigged { unit: u.id, rig, clock: 0.0, amp: 0.0 },
                     ));
                 }
@@ -224,13 +222,12 @@ pub fn setup(
         // Never an empty mesh: the prepass panics on one. A flat arc is valid, and replaced on the first frame.
         let flat: Vec<(Vec3, f32)> = (0..=ARC_SEGMENTS).map(|_| (Vec3::ZERO, 0.0)).collect();
         commands.spawn((
-            MaterialMeshBundle::<StandardMaterial> {
-                mesh: meshes.add(arc_mesh(&flat)),
-                material: arc_mat.clone(),
-                visibility: Visibility::Hidden,
-                ..default()
-            },
-            bevy::render::view::NoFrustumCulling,
+            (
+                Mesh3d(meshes.add(arc_mesh(&flat))),
+                MeshMaterial3d(arc_mat.clone()),
+                Visibility::Hidden,
+            ),
+            bevy::camera::visibility::NoFrustumCulling,
             Jet { unit: u.id },
         ));
     }
@@ -275,7 +272,7 @@ pub fn setup(
 /// otherwise decide the overlay is still current.
 pub fn reset(
     mut commands: Commands,
-    mut restarted: EventReader<crate::sim::SimRestarted>,
+    mut restarted: MessageReader<crate::sim::SimRestarted>,
     mut assets: ResMut<UnitAssets>,
     markers: Query<Entity, With<OrderMarker>>,
     overlay: Query<Entity, With<WorkOverlay>>,
@@ -302,7 +299,7 @@ pub fn update_units(
         &UnitView,
         &mut Transform,
         &mut Visibility,
-        &Handle<StructureMaterial>,
+        &MeshMaterial3d<StructureMaterial>,
     )>,
 ) {
     if !sim.is_changed() {
@@ -345,7 +342,7 @@ pub fn update_units(
         // One material per entity here rather than a shared palette: there are
         // eight of these, and mutating the material in place is what makes a
         // unit visibly change state without a swap table.
-        if let Some(m) = materials.get_mut(mat) {
+        if let Some(mut m) = materials.get_mut(mat) {
             let c = tint(u.state);
             if m.base.base_color != c {
                 m.base.base_color = c;
@@ -365,8 +362,8 @@ pub fn animate_units(
     mut motion: Local<Vec<Option<Motion>>>,
     mut parts: Query<(&mut Rigged, &mut Transform, &mut Visibility)>,
 ) {
-    let now = time.elapsed_seconds();
-    let dt = time.delta_seconds().max(1e-4);
+    let now = time.elapsed_secs();
+    let dt = time.delta_secs().max(1e-4);
     if motion.len() != sim.crews.units.len() {
         motion.clear();
         motion.resize(sim.crews.units.len(), None);
@@ -480,20 +477,18 @@ pub fn sync_orders(
             Task::Hold | Task::Return | Task::Attack { .. } => {}
             Task::Drop { at } => {
                 commands.spawn((
-                    MaterialMeshBundle::<StandardMaterial> {
-                        mesh: meshes.add(ring_mesh(&sim.scn, at, ORDER_RING_M)),
-                        material: assets.order_ring.clone(),
-                        ..default()
-                    },
+                    (
+                        Mesh3d(meshes.add(ring_mesh(&sim.scn, at, ORDER_RING_M))),
+                        MeshMaterial3d(assets.order_ring.clone()),
+                    ),
                     OrderMarker,
                 ));
                 commands.spawn((
-                    MaterialMeshBundle::<StandardMaterial> {
-                        mesh: meshes.add(wall_mesh(&sim.scn, at, ORDER_RING_M)),
-                        material: assets.order_ring.clone(),
-                        transform: tube_transform(at),
-                        ..default()
-                    },
+                    (
+                        Mesh3d(meshes.add(wall_mesh(&sim.scn, at, ORDER_RING_M))),
+                        MeshMaterial3d(assets.order_ring.clone()),
+                        tube_transform(at),
+                    ),
                     OrderMarker,
                     TubeSpin,
                 ));
@@ -508,21 +503,19 @@ pub fn sync_orders(
                 // that does not need a number.
                 if done > 0.001 {
                     commands.spawn((
-                        MaterialMeshBundle::<StandardMaterial> {
-                            mesh: meshes.add(ribbon(&sim.scn, from, head, 8.0)),
-                            material: assets.line_cut.clone(),
-                            ..default()
-                        },
+                        (
+                            Mesh3d(meshes.add(ribbon(&sim.scn, from, head, 8.0))),
+                            MeshMaterial3d(assets.line_cut.clone()),
+                        ),
                         OrderMarker,
                     ));
                 }
                 if done < 0.999 {
                     commands.spawn((
-                        MaterialMeshBundle::<StandardMaterial> {
-                            mesh: meshes.add(dashed_ribbon(&sim.scn, head, to, 4.0)),
-                            material: assets.line_todo.clone(),
-                            ..default()
-                        },
+                        (
+                            Mesh3d(meshes.add(dashed_ribbon(&sim.scn, head, to, 4.0))),
+                            MeshMaterial3d(assets.line_todo.clone()),
+                        ),
                         OrderMarker,
                     ));
                 }
@@ -826,9 +819,9 @@ pub fn animate_spray(
     time: Res<Time>,
     assets: Res<UnitAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut arcs: Query<(&Jet, &Handle<Mesh>, &mut Visibility)>,
+    mut arcs: Query<(&Jet, &Mesh3d, &mut Visibility)>,
 ) {
-    let now = time.elapsed_seconds();
+    let now = time.elapsed_secs();
     let w = sim.scn.world;
     let reach = rocca::game::ENGINE_RANGE_M * 1.5;
     // The targets of each engine, computed once per frame and not per jet.
@@ -886,7 +879,7 @@ pub fn animate_spray(
                 (frame::to_bevy(p, y), width)
             })
             .collect();
-        if let Some(m) = meshes.get_mut(handle) {
+        if let Some(mut m) = meshes.get_mut(handle) {
             *m = arc_mesh(&points);
         }
         if *vis != Visibility::Inherited {

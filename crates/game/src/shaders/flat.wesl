@@ -4,11 +4,9 @@
 // (and anything else a few tens of metres tall), while a hill in front still
 // hides it.
 
-#import bevy_pbr::{
-    mesh_functions,
-    mesh_view_bindings::view,
-    view_transformations::position_world_to_clip,
-}
+import bevy_pbr::render::mesh_functions;
+import bevy_pbr::render::mesh_view_bindings::view;
+import bevy_pbr::render::view_transformations::position_world_to_clip;
 
 struct Flat {
     color: vec4<f32>,
@@ -16,7 +14,7 @@ struct Flat {
     // w: saturation gain (tactical view), 0 = the colour as given
     pull: vec4<f32>,
 };
-@group(2) @binding(0) var<uniform> flat: Flat;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> flat: Flat;
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,

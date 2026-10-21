@@ -57,14 +57,14 @@ fn line(ui: &mut egui::Ui, sim: &Sim, faces: Option<&Portraits>, m: &ChatMsg, ag
         let (r, _) = ui.allocate_exact_size(egui::vec2(PORTRAIT, PORTRAIT), egui::Sense::hover());
         ui.painter().circle_filled(r.center(), PORTRAIT * 0.5, night);
         if let Some(t) = faces.and_then(|f| f.get(face, mood(m.kind))) {
-            egui::Image::new(egui::load::SizedTexture::new(t, r.size())).rounding(PORTRAIT * 0.5).paint_at(ui, r.shrink(2.0));
+            egui::Image::new(egui::load::SizedTexture::new(t, r.size())).corner_radius(PORTRAIT * 0.5).paint_at(ui, r.shrink(2.0));
         }
         ui.painter().circle_stroke(r.center(), PORTRAIT * 0.5 - 1.0, egui::Stroke::new(2.0, dim(face.colour(), night)));
-        egui::Frame::none()
+        egui::Frame::NONE
             .fill(dim(Color32::from_rgb(247, 247, 242), night))
-            .rounding(egui::Rounding { nw: 3.0, ne: 10.0, sw: 10.0, se: 10.0 })
-            .inner_margin(egui::Margin::symmetric(10.0, 6.0))
-            .shadow(egui::epaint::Shadow { offset: egui::vec2(0.0, 2.0), blur: 6.0, spread: 0.0, color: Color32::from_black_alpha(90) })
+            .corner_radius(egui::CornerRadius { nw: 3, ne: 10, sw: 10, se: 10 })
+            .inner_margin(egui::Margin::symmetric(10, 6))
+            .shadow(egui::epaint::Shadow { offset: [0, 2], blur: 6, spread: 0, color: Color32::from_black_alpha(90) })
             .show(ui, |ui| {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 1.0;
@@ -104,7 +104,7 @@ pub(super) fn show(ctx: &egui::Context, sim: &Sim, faces: Option<&Portraits>, no
             return;
         }
         egui::Area::new(egui::Id::new("chat_toast")).anchor(Align2::CENTER_TOP, [0.0, top]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
-            let width = (ctx.screen_rect().width() - 48.0 - PORTRAIT).clamp(160.0, 360.0);
+            let width = (ctx.viewport_rect().width() - 48.0 - PORTRAIT).clamp(160.0, 360.0);
             for i in latest {
                 line(ui, sim, faces, &sim.chat[i], 0.0, width);
             }

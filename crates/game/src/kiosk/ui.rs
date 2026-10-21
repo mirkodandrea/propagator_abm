@@ -41,7 +41,7 @@ pub(super) fn team_colour(t: usize) -> Color32 {
 
 /// Use the same layout in either orientation, including short phone viewports.
 pub(super) fn compact(ctx: &egui::Context) -> bool {
-    let r = ctx.screen_rect();
+    let r = ctx.viewport_rect();
     r.width() < 1000.0 || r.height() < 600.0
 }
 
@@ -53,20 +53,20 @@ pub(super) fn secondary(text: &str) -> egui::Button<'static> {
     egui::Button::new(RichText::new(text.to_string()).size(17.0).color(Color32::WHITE))
         .fill(Color32::from_gray(62))
         .stroke(egui::Stroke::new(1.0, Color32::from_gray(110)))
-        .rounding(8.0)
+        .corner_radius(8.0)
         .min_size(egui::vec2(44.0, 40.0))
 }
 
 pub(super) fn primary(text: &str) -> egui::Button<'static> {
-    egui::Button::new(RichText::new(text.to_string()).size(20.0).strong().color(Color32::BLACK)).fill(AMBER).rounding(10.0).min_size(egui::vec2(140.0, 46.0))
+    egui::Button::new(RichText::new(text.to_string()).size(20.0).strong().color(Color32::BLACK)).fill(AMBER).corner_radius(10.0).min_size(egui::vec2(140.0, 46.0))
 }
 
 fn panel() -> egui::Frame {
-    egui::Frame::none().fill(PANEL).rounding(8.0).inner_margin(egui::Margin::symmetric(12.0, 8.0))
+    egui::Frame::NONE.fill(PANEL).corner_radius(8.0).inner_margin(egui::Margin::symmetric(12, 8))
 }
 
 pub(super) fn card(tint: Color32) -> egui::Frame {
-    egui::Frame::none().fill(PANEL).stroke(egui::Stroke::new(1.5, tint.gamma_multiply(0.8))).rounding(14.0).inner_margin(18.0)
+    egui::Frame::NONE.fill(PANEL).stroke(egui::Stroke::new(1.5, tint.gamma_multiply(0.8))).corner_radius(14.0).inner_margin(18.0)
 }
 
 /// Expanding rings that repeat for as long as the step waits: on the team to
@@ -75,7 +75,7 @@ fn tutorial_pulse(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &Glo
     let Some(Expect::Move(t, at)) = k.expect() else { return };
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new("tutorial_pulse")));
     let time = ctx.input(|i| i.time) as f32;
-    let mut ring = |centre: egui::Pos2, base: f32| {
+    let ring = |centre: egui::Pos2, base: f32| {
         // three rings a third of a period apart, each growing and fading out
         for i in 0..3 {
             let phase = (time * 0.8 + i as f32 / 3.0).fract();
@@ -102,7 +102,7 @@ fn tutorial_pulse(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &Glo
 /// World point to screen point, `lift_m` above the ground.
 pub(super) fn screen(cam: (&Camera, &GlobalTransform), sim: &Sim, p: Pos, lift_m: f32) -> Option<egui::Pos2> {
     let v = crate::frame::to_bevy(p, sim.scn.terrain.height_at(p) + lift_m);
-    let s = cam.0.world_to_viewport(cam.1, v)?;
+    let s = cam.0.world_to_viewport(cam.1, v).ok()?;
     Some(egui::pos2(s.x, s.y))
 }
 
@@ -112,7 +112,7 @@ pub fn draw(
     mut kiosk: ResMut<Kiosk>,
     mut sim: ResMut<Sim>,
     mut focus: ResMut<crate::ui::UiFocus>,
-    mut restarted: EventWriter<SimRestarted>,
+    mut restarted: MessageWriter<SimRestarted>,
     cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::OrbitCamera>>,
     mut gfx: ResMut<crate::quality::Graphics>,
     faces: Option<Res<Portraits>>,
@@ -120,27 +120,27 @@ pub fn draw(
     scenario_icons: Option<Res<ScenarioIcons>>,
     mario: Res<crate::mario::Playground>,
     pad: Res<crate::pad::PadView>,
-    pads: Res<Gamepads>,
+    pads: Query<(), With<Gamepad>>,
     mut pad_mode: ResMut<crate::pad::PadMode>,
 ) {
     crate::playtest::begin();
-    let ctx = contexts.ctx_mut();
+    let Ok(ctx) = contexts.ctx_mut() else { return };
     // Mario has the screen: his own panel is all there is
     if mario.active {
-        focus.pointer = ctx.is_pointer_over_area();
+        focus.pointer = ctx.is_pointer_over_egui();
         return;
     }
     let k = &mut *kiosk;
     k.drag_pan = Vec2::ZERO;
-    let Ok(cam) = cameras.get_single() else { return };
-    if ctx.style().visuals.interact_cursor.is_none() {
-        ctx.style_mut(|s| {
+    let Ok(cam) = cameras.single() else { return };
+    if ctx.global_style().visuals.interact_cursor.is_none() {
+        ctx.global_style_mut(|s| {
             s.visuals.interact_cursor = Some(egui::CursorIcon::PointingHand);
             s.animation_time = 0.0;
             s.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(3.0, Color32::WHITE);
         });
     }
-    if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F2)) {
+    if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F2)) {
         k.operator = !k.operator;
     }
     egui::Area::new(egui::Id::new("menu_btn")).anchor(Align2::LEFT_BOTTOM, [10.0, -10.0]).order(egui::Order::Foreground).show(ctx, |ui| {
@@ -180,11 +180,11 @@ pub fn draw(
             screens::end(ctx, k, &mut sim, &mut restarted, faces.as_deref());
         }
         Phase::Tutorial | Phase::Gioco => {
-            let r = ctx.screen_rect();
+            let r = ctx.viewport_rect();
             k.side_w = if compact(ctx) && r.width() > r.height() && k.phase == Phase::Tutorial { (r.width() * 0.37).clamp(220.0, 316.0) } else { 0.0 };
             top_bar(ctx, k, &mut sim, cam);
             // Esc takes back a choice first (and is then used up: in the tutorial it would also skip)
-            if !ctx.wants_keyboard_input() && k.selection != Selection::None && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            if !ctx.egui_wants_keyboard_input() && k.selection != Selection::None && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
                 k.clear_selection();
             }
             map_badges(ctx, k, &mut sim, cam);
@@ -237,12 +237,12 @@ pub fn draw(
         operator(ctx, k, &mut sim, &mut restarted, &mut gfx);
     }
     pad_mode.game = matches!(k.phase, Phase::Tutorial | Phase::Gioco);
-    focus.pointer = ctx.is_pointer_over_area();
-    focus.keyboard = ctx.wants_keyboard_input();
+    focus.pointer = ctx.is_pointer_over_egui();
+    focus.keyboard = ctx.egui_wants_keyboard_input();
     if k.fade > 0.0 && k.phase == Phase::Intro {
         let a = (k.fade.clamp(0.0, 1.0) * 255.0) as u8;
         ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("cut_fade")))
-            .rect_filled(ctx.screen_rect(), 0.0, Color32::from_black_alpha(a));
+            .rect_filled(ctx.viewport_rect(), 0.0, Color32::from_black_alpha(a));
     }
     k.click = None;
 }
@@ -321,7 +321,7 @@ fn conditions(ctx: &egui::Context, sim: &Sim, cam: (&Camera, &GlobalTransform)) 
                 let north = Vec3::new(0.0, 0.0, -1.0);
                 let n = egui::vec2(north.dot(right), -north.dot(fwd)).normalized();
                 ui.painter().text(c + n * size * 0.40, Align2::CENTER_CENTER, "N", egui::FontId::proportional(15.0), GREY);
-                let mut inner = ui.child_ui(r.shrink(size * 0.17), *ui.layout(), None);
+                let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r.shrink(size * 0.17)).layout(*ui.layout()));
                 wind_arrow(&mut inner, cam, w.wind_dir_deg, size * 0.66, Color32::WHITE);
                 ui.add_space(8.0);
                 ui.vertical(|ui| {
@@ -420,7 +420,7 @@ fn pause_dial(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     crate::playtest::control(if paused { "Riprendi" } else { "Pausa" }, &resp, enabled);
-    let space = enabled && !ui.ctx().wants_keyboard_input() && ui.ctx().input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space));
+    let space = enabled && !ui.ctx().egui_wants_keyboard_input() && ui.ctx().input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space));
     if resp.clicked() || space {
         if paused {
             sim.resume();
@@ -569,7 +569,7 @@ fn pad_orders(k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform), pa
     }
     match k.selection {
         Selection::Team(t) if connected => {
-            let r = ctx.screen_rect();
+            let r = ctx.viewport_rect();
             let centre = egui::pos2((r.width() - k.side_w) * 0.5, r.height() * 0.5);
             if let Some(g) = ground_at(sim, cam, centre) {
                 preview_move(k, sim, t, rocca::Axial::of(snap_to_target(sim, t, g)));
@@ -634,17 +634,17 @@ fn pad_help(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
 /// The teams, then the districts, with the chosen one outlined.
 fn pad_list(ctx: &egui::Context, k: &Kiosk, sim: &Sim) {
     let teams = sim.teams.len();
-    let max_h = (ctx.screen_rect().height() * 0.55).max(120.0);
+    let max_h = (ctx.viewport_rect().height() * 0.55).max(120.0);
     egui::Area::new(egui::Id::new("pad_list")).anchor(Align2::LEFT_CENTER, [10.0 + k.side_w, 0.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.set_min_width(170.0);
             egui::ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
-                let row = |ui: &mut egui::Ui, i: usize, dot: Color32, name: &str, chosen: bool| {
-                                        let r = egui::Frame::none()
+                let row = |ui: &mut egui::Ui, _i: usize, dot: Color32, name: &str, chosen: bool| {
+                                        let r = egui::Frame::NONE
                         .fill(if chosen { Color32::from_gray(70) } else { Color32::TRANSPARENT })
                         .stroke(egui::Stroke::new(2.0, if chosen { AMBER } else { Color32::TRANSPARENT }))
-                        .rounding(6.0)
-                        .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+                        .corner_radius(6.0)
+                        .inner_margin(egui::Margin::symmetric(8, 3))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.label(RichText::new("●").size(16.0).color(dot));
@@ -703,7 +703,7 @@ fn map_click(k: &mut Kiosk, sim: &mut Sim, touch: bool) {
 /// (outline, road and minutes) before the click that sends the team there.
 fn hover_move(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera, &GlobalTransform)) {
     let Selection::Team(t) = k.selection else { return };
-    if !sim.paused() || k.dragging.is_some() || ctx.dragged_id().is_some() || ctx.is_pointer_over_area() {
+    if !sim.paused() || k.dragging.is_some() || ctx.dragged_id().is_some() || ctx.is_pointer_over_egui() {
         return;
     }
     let Some(p) = ctx.pointer_hover_pos().filter(|&p| drop_rect(ctx, k).contains(p)) else { return };
@@ -730,7 +730,7 @@ fn snap_to_target(sim: &Sim, t: usize, g: Pos) -> Pos {
 /// The ground under a screen point (egui logical px).
 fn ground_at(sim: &Sim, cam: (&Camera, &GlobalTransform), p: egui::Pos2) -> Option<Pos> {
     let vp = crate::pick::window_to_viewport(cam.0, Vec2::new(p.x, p.y))?;
-    let ray = cam.0.viewport_to_world(cam.1, vp)?;
+    let ray = cam.0.viewport_to_world(cam.1, vp).ok()?;
     crate::pick::ray_ground(&sim.scn, ray.origin, *ray.direction)
 }
 
@@ -786,11 +786,11 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
                 .frame(false)
                 .min_size(egui::vec2(if mini { 26.0 } else { 44.0 }, if compact(ctx) { 44.0 } else if mini { 24.0 } else { 28.0 }));
             // one container: name, life of the homes, evacuation timer
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(if on { BLUE.gamma_multiply(0.6) } else if evacuated { Color32::from_rgb(18, 70, 40) } else if hit > 0 { Color32::from_rgba_unmultiplied(tint.r() / 3, tint.g() / 3, tint.b() / 3, 235) } else { Color32::from_black_alpha(190) })
                 .stroke(egui::Stroke::new(if on { 3.0 } else if tint != BLUE { 2.5 } else { 1.0 }, if on { Color32::WHITE } else { tint }))
-                .rounding(8.0)
-                .inner_margin(if mini { egui::Margin::symmetric(3.0, 1.0) } else { egui::Margin::symmetric(6.0, 3.0) })
+                .corner_radius(8.0)
+                .inner_margin(if mini { egui::Margin::symmetric(3, 1) } else { egui::Margin::symmetric(6, 3) })
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
@@ -843,7 +843,7 @@ fn map_badges(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         if let (Some(rect), true) = (rects[d], k.selection != Selection::District(d)) {
             use super::icons::Icon;
             egui::Area::new(egui::Id::new(("evacua_su", d))).fixed_pos(rect.left_bottom() + egui::vec2(0.0, 6.0)).order(egui::Order::Tooltip).interactable(false).show(ctx, |ui| {
-                egui::Frame::none().fill(Color32::from_black_alpha(215)).rounding(6.0).inner_margin(egui::Margin::symmetric(8.0, 4.0)).show(ui, |ui| {
+                egui::Frame::NONE.fill(Color32::from_black_alpha(215)).corner_radius(6.0).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
                     ui.horizontal(|ui| match &k.evac_hover {
                         Some((_, _, Ok(p))) => {
                             chip(ui, Icon::Family, &p.people.to_string(), Color32::WHITE);
@@ -906,7 +906,7 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
             let hot = on || resp.hovered();
             let (fill, edge) = if blink { (Color32::from_rgb(200, 30, 25), Color32::WHITE) } else { (Color32::from_black_alpha(215), if alarm { RED } else if hot { Color32::WHITE } else { col }) };
             p.rect_filled(badge, 16.0, fill);
-            p.rect_stroke(badge, 16.0, egui::Stroke::new(if hot || alarm { 4.0 } else { 3.0 }, edge));
+            p.rect_stroke(badge, 16.0, egui::Stroke::new(if hot || alarm { 4.0 } else { 3.0 }, edge), egui::StrokeKind::Middle);
             let ink = if blink { Color32::WHITE } else { col };
             if small {
                 let g = p.layout_no_wrap(letter.clone(), egui::FontId::proportional(26.0), ink);
@@ -927,7 +927,7 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         let trouble = if lost { Some(("fuori servizio", GREY)) } else if withdrawing { Some(("si ritira", RED)) } else if alarm { Some(("fuoco vicino!", RED)) } else { None };
         if let Some((text, c)) = trouble {
             egui::Area::new(egui::Id::new(("stato_squadra", t))).fixed_pos(flag.center_bottom() + egui::vec2(0.0, 2.0)).pivot(Align2::CENTER_TOP).order(egui::Order::Middle).interactable(false).show(ctx, |ui| {
-                egui::Frame::none().fill(Color32::from_black_alpha(215)).stroke(egui::Stroke::new(1.5, c)).rounding(6.0).inner_margin(egui::Margin::symmetric(7.0, 2.0)).show(ui, |ui| {
+                egui::Frame::NONE.fill(Color32::from_black_alpha(215)).stroke(egui::Stroke::new(1.5, c)).corner_radius(6.0).inner_margin(egui::Margin::symmetric(7, 2)).show(ui, |ui| {
                     ui.add(egui::Label::new(RichText::new(text).size(15.0).strong().color(c)).wrap_mode(egui::TextWrapMode::Extend));
                 });
             });
@@ -952,7 +952,7 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
         }
         // where it would go: the time on the road, next to the flag or the pointer
         let dragged = k.dragging.is_some_and(|(d, _)| d == t);
-        let hovering = on && !dragged && sim.paused() && k.move_hex.is_some() && !ctx.is_pointer_over_area();
+        let hovering = on && !dragged && sim.paused() && k.move_hex.is_some() && !ctx.is_pointer_over_egui();
         if dragged || hovering {
             use super::icons::Icon;
             let at = match ctx.pointer_hover_pos() {
@@ -961,7 +961,7 @@ fn team_flags(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, 
                 _ => flag.right_top() + egui::vec2(8.0, 4.0),
             };
             egui::Area::new(egui::Id::new("trascina")).fixed_pos(at).order(egui::Order::Tooltip).interactable(false).show(ctx, |ui| {
-                egui::Frame::none().fill(Color32::from_black_alpha(215)).stroke(egui::Stroke::new(2.0, col)).rounding(6.0).inner_margin(egui::Margin::symmetric(8.0, 4.0)).show(ui, |ui| {
+                egui::Frame::NONE.fill(Color32::from_black_alpha(215)).stroke(egui::Stroke::new(2.0, col)).corner_radius(6.0).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
                     // one short line: an icon and a few words, never wrapped
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 6.0;
@@ -1022,7 +1022,7 @@ fn declutter(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTr
         must: bool,
     }
     let compact = compact(ctx);
-    let bounds = if compact { drop_rect(ctx, k).shrink(4.0) } else { ctx.screen_rect().shrink(4.0) };
+    let bounds = if compact { drop_rect(ctx, k).shrink(4.0) } else { ctx.viewport_rect().shrink(4.0) };
     let size_of = |kind: &str, i: usize, dflt: egui::Vec2| ctx.data(|m| m.get_temp::<egui::Vec2>(egui::Id::new(("bsz", kind, i)))).unwrap_or(dflt);
     let mut items: Vec<Item> = vec![];
     let right: Vec3 = cam.1.right().into();
@@ -1030,7 +1030,7 @@ fn declutter(ctx: &egui::Context, k: &Kiosk, sim: &Sim, cam: (&Camera, &GlobalTr
     for t in 0..sim.teams.len() {
         let Some((foot, sc)) = feet[t] else { continue };
         let lift = crate::rings::RING_LIFT_M + pins::LIFT_M * sc;
-        let Some(a) = cam.0.world_to_viewport(cam.1, crate::frame::to_bevy(foot, sim.scn.terrain.height_at(foot) + lift)) else { continue };
+        let Ok(a) = cam.0.world_to_viewport(cam.1, crate::frame::to_bevy(foot, sim.scn.terrain.height_at(foot) + lift)) else { continue };
         let unit = &sim.crews.units[sim.teams[t].unit];
         let lost = unit.state == abm::suppression::UnitState::Lost;
         let alarm = !lost && sim.team_in_danger(t);
@@ -1167,7 +1167,7 @@ fn offscreen_alerts(ctx: &egui::Context, k: &mut Kiosk, sim: &Sim, cam: (&Camera
     items.sort_by(|a, b| b.4.total_cmp(&a.4));
     for (i, (icon, at, col, label, _)) in items.into_iter().enumerate() {
         let v = crate::frame::to_bevy(at, sim.scn.terrain.height_at(at) + 20.0);
-        let shown = cam.0.world_to_viewport(cam.1, v);
+        let shown = cam.0.world_to_viewport(cam.1, v).ok();
         if shown.is_some_and(|s| seen.contains(egui::pos2(s.x, s.y))) {
             continue;
         }
@@ -1233,7 +1233,7 @@ fn confirm_bubble(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Came
     let Selection::District(d) = k.selection else { return };
     let Some(plan) = k.evac_plan.clone() else { return };
     let s = if compact(ctx) {
-        egui::pos2(if k.side_w > 0.0 { ctx.screen_rect().right() - k.side_w * 0.5 } else { ctx.screen_rect().center().x }, if k.side_w > 0.0 { 8.0 } else { 100.0 })
+        egui::pos2(if k.side_w > 0.0 { ctx.viewport_rect().right() - k.side_w * 0.5 } else { ctx.viewport_rect().center().x }, if k.side_w > 0.0 { 8.0 } else { 100.0 })
     } else {
         let Some(s) = screen(cam, sim, sim.districts[d].centre, 40.0) else { return };
         s
@@ -1243,7 +1243,7 @@ fn confirm_bubble(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Came
     let mut close = false;
     egui::Area::new(egui::Id::new("conferma")).fixed_pos(s + egui::vec2(0.0, 24.0)).pivot(Align2::CENTER_TOP).order(egui::Order::Foreground).show(ctx, |ui| {
         card(BLUE).inner_margin(if compact(ctx) { 10.0 } else { 18.0 }).show(ui, |ui| {
-            if compact(ctx) { ui.set_width((if k.side_w > 0.0 { k.side_w - 40.0 } else { ctx.screen_rect().width() - 48.0 }).min(340.0)); }
+            if compact(ctx) { ui.set_width((if k.side_w > 0.0 { k.side_w - 40.0 } else { ctx.viewport_rect().width() - 48.0 }).min(340.0)); }
             ui.label(RichText::new(&sim.districts[d].name).size(19.0).strong().color(BLUE));
             if ordered_here {
                 ui.horizontal(|ui| chip(ui, Icon::Exit, "evacuazione ordinata", GREEN));
@@ -1366,7 +1366,7 @@ pub fn fps(
     }
     // Low-pass the frame time (about 1.5 s), not the FPS: a hitch then weighs
     // what it costs. The label is rewritten twice a second so it can be read.
-    let dt = time.delta_seconds().min(0.5);
+    let dt = time.delta_secs().min(0.5);
     if dt <= 0.0 {
         return;
     }
@@ -1378,13 +1378,13 @@ pub fn fps(
         *since = 0.0;
     }
     let fps = *shown;
-    let ctx = contexts.ctx_mut();
+    let Ok(ctx) = contexts.ctx_mut() else { return };
     egui::Area::new(egui::Id::new("fps")).anchor(Align2::LEFT_TOP, [10.0, 10.0]).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
-        egui::Frame::none()
+        egui::Frame::NONE
             .fill(Color32::from_black_alpha(230))
             .stroke(egui::Stroke::new(1.5, Color32::from_gray(140)))
-            .rounding(6.0)
-            .inner_margin(egui::Margin::symmetric(10.0, 4.0))
+            .corner_radius(6.0)
+            .inner_margin(egui::Margin::symmetric(10, 4))
             .show(ui, |ui| {
                 ui.label(RichText::new(format!("{fps:.0} FPS")).size(18.0).strong().monospace().color(Color32::WHITE));
             });
@@ -1396,7 +1396,7 @@ fn notice(ctx: &egui::Context, k: &Kiosk) {
     let Some((text, _)) = &k.notice else { return };
     egui::Area::new(egui::Id::new("avviso")).anchor(Align2::CENTER_TOP, [0.0, if compact(ctx) { 116.0 } else if k.phase == Phase::Tutorial { 170.0 } else { 10.0 }]).order(egui::Order::Foreground).show(ctx, |ui| {
         panel().show(ui, |ui| {
-            if compact(ctx) { ui.set_width((ctx.screen_rect().width() - 48.0).min(480.0)); }
+            if compact(ctx) { ui.set_width((ctx.viewport_rect().width() - 48.0).min(480.0)); }
             ui.add(egui::Label::new(RichText::new(text).size(16.0).color(Color32::WHITE)).wrap());
         });
     });
@@ -1404,7 +1404,7 @@ fn notice(ctx: &egui::Context, k: &Kiosk) {
 
 /// The operator menu (F2): a new visit, the game straight away, the world
 /// stopped, the view, the graphics, the board.
-fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, gfx: &mut crate::quality::Graphics) {
+fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, gfx: &mut crate::quality::Graphics) {
     if compact(ctx) {
         // On a phone: a page of its own over the screen, big buttons, and
         // «Chiudi» pinned under the scrolling controls.
@@ -1418,7 +1418,7 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
         if close { k.operator = false; }
         return;
     }
-    egui::Window::new("Menu").id(egui::Id::new("operatore")).anchor(Align2::LEFT_BOTTOM, [8.0, -60.0]).default_width((ctx.screen_rect().width() - 48.0).min(380.0)).max_height(ctx.screen_rect().height() - 90.0).resizable(false).collapsible(false).vscroll(true).show(ctx, |ui| {
+    egui::Window::new("Menu").id(egui::Id::new("operatore")).anchor(Align2::LEFT_BOTTOM, [8.0, -60.0]).default_width((ctx.viewport_rect().width() - 48.0).min(380.0)).max_height(ctx.viewport_rect().height() - 90.0).resizable(false).collapsible(false).vscroll(true).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.label(RichText::new("Menu (F2 per chiudere)").strong().color(Color32::WHITE));
             operator_body(ui, k, sim, restarted, gfx, false);
@@ -1427,7 +1427,7 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut E
 }
 
 /// The controls of the operator menu. `touch`: finger-sized buttons.
-fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mut EventWriter<SimRestarted>, gfx: &mut crate::quality::Graphics, touch: bool) {
+fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, gfx: &mut crate::quality::Graphics, touch: bool) {
     let button = |ui: &mut egui::Ui, label: &str| -> bool {
         if touch { ui.add_sized([ui.available_width(), 46.0], secondary(label)).clicked() } else { ui.add(secondary(label)).clicked() }
     };
@@ -1439,7 +1439,7 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
             ui.label("Scenario della prossima partita:");
             let label = k.territory.levels.iter().find(|l| l.case == k.selected_case)
                 .map_or(k.selected_case.as_str(), |l| l.name.as_str());
-            egui::ComboBox::from_id_source("scenario_operatore").selected_text(label).width(ui.available_width().min(320.0)).show_ui(ui, |ui| {
+            egui::ComboBox::from_id_salt("scenario_operatore").selected_text(label).width(ui.available_width().min(320.0)).show_ui(ui, |ui| {
                 // The default is always reachable, even with an older territory file.
                 if !k.territory.levels.iter().any(|l| l.case == k.territory.game) {
                     ui.selectable_value(&mut k.selected_case, k.territory.game.clone(), "Attuale (predefinito)");
@@ -1464,7 +1464,7 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
                 ui.label("Seme:");
                 for s in 1..=3u64 {
                     if touch {
-                        if ui.add_sized([56.0, 46.0], egui::SelectableLabel::new(k.seed == s, s.to_string())).clicked() { k.seed = s; }
+                        if ui.add_sized([56.0, 46.0], egui::Button::selectable(k.seed == s, s.to_string())).clicked() { k.seed = s; }
                     } else {
                         ui.selectable_value(&mut k.seed, s, s.to_string());
                     }
@@ -1529,7 +1529,7 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
 fn compact_top(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera, &GlobalTransform)) {
     egui::Area::new(egui::Id::new("barra_mobile")).anchor(Align2::LEFT_TOP, [8.0, 8.0]).order(egui::Order::Foreground).show(ctx, |ui| {
         panel().inner_margin(8.0).show(ui, |ui| {
-            ui.set_width((ctx.screen_rect().width() - k.side_w - 32.0).min(460.0));
+            ui.set_width((ctx.viewport_rect().width() - k.side_w - 32.0).min(460.0));
             ui.horizontal(|ui| {
                 pause_dial(ui, k, sim);
                 ui.vertical(|ui| {
@@ -1562,11 +1562,11 @@ fn compact_top(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, cam: (&Camera,
 
 
 fn drop_rect(ctx: &egui::Context, k: &Kiosk) -> egui::Rect {
-    let mut r = ctx.screen_rect();
+    let mut r = ctx.viewport_rect();
     if compact(ctx) {
         r.min.y += 116.0;
         r.max.x -= k.side_w;
-        r.max.y -= if k.phase == Phase::Tutorial && k.side_w == 0.0 { (ctx.screen_rect().height() * 0.20).clamp(42.0, 120.0) + 126.0 } else { 58.0 };
+        r.max.y -= if k.phase == Phase::Tutorial && k.side_w == 0.0 { (ctx.viewport_rect().height() * 0.20).clamp(42.0, 120.0) + 126.0 } else { 58.0 };
     }
     r
 }

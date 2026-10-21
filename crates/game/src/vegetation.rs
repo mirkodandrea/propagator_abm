@@ -43,10 +43,10 @@
 //! frame rate — draws every vegetation triangle once per pass, shadow
 //! cascades included. Both meshes burn together.
 
-use bevy::pbr::{NotShadowCaster, TransmittedShadowReceiver};
+use bevy::light::{NotShadowCaster, TransmittedShadowReceiver};
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use fire::CellFire;
 use scenario::{Cell, CoverClass, Pos, Scenario};
@@ -387,27 +387,21 @@ pub fn spawn(
             // The full models start on show, until the LOD system picks.
             // The light through the leaves is shadowed too: a crown in the
             // shade of another does not glow as if the sun were behind it.
-            let full = commands.spawn((MaterialMeshBundle::<FoliageMaterial> {
-                mesh: mesh.clone(),
-                material: material.clone(),
-                ..default()
-            }, TransmittedShadowReceiver)).id();
-            let low = commands.spawn((MaterialMeshBundle::<FoliageMaterial> {
-                mesh: low_mesh.clone(),
-                material: material.clone(),
-                visibility: Visibility::Hidden,
-                ..default()
-            }, TransmittedShadowReceiver)).id();
+            let full = commands.spawn(((Mesh3d(mesh.clone()), MeshMaterial3d(material.clone())), TransmittedShadowReceiver)).id();
+            let low = commands.spawn(((
+                Mesh3d(low_mesh.clone()),
+                MeshMaterial3d(material.clone()),
+                Visibility::Hidden,
+            ), TransmittedShadowReceiver)).id();
             // Same mesh handle as `low`: the burn edits reach it for free.
             let shadow = gfx.shadows.then(|| {
                 commands.spawn((
-                    MaterialMeshBundle::<FoliageMaterial> {
-                        mesh: low_mesh.clone(),
-                        material: material.clone(),
-                        visibility: Visibility::Hidden,
-                        ..default()
-                    },
-                    bevy::render::view::RenderLayers::layer(crate::terrain_mesh::SHADOW_LAYER),
+                    (
+                        Mesh3d(low_mesh.clone()),
+                        MeshMaterial3d(material.clone()),
+                        Visibility::Hidden,
+                    ),
+                    bevy::camera::visibility::RenderLayers::layer(crate::terrain_mesh::SHADOW_LAYER),
                 )).id()
             });
             chunks.push(Chunk {
@@ -1114,11 +1108,11 @@ pub fn burn(
     mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<FoliageMaterial>>,
-    mut restarted: EventReader<crate::sim::SimRestarted>,
+    mut restarted: MessageReader<crate::sim::SimRestarted>,
     mut since: Local<f32>,
 ) {
     let restarted = restarted.read().count() > 0;
-    *since += time.delta_seconds();
+    *since += time.delta_secs();
     if !restarted && *since < BURN_REDRAW_S {
         return;
     }
@@ -1173,17 +1167,18 @@ pub fn burn(
         if GPU {
             // Only the plants in `redraw` change, in the chunk's state image
             // (a few hundred kilobytes at most, against megabytes of mesh).
-            if let Some(image) = chunk.state.as_ref().and_then(|h| images.get_mut(h)) {
+            if let Some(mut image) = chunk.state.as_ref().and_then(|h| images.get_mut(h)) {
+                let data = image.data.as_mut().expect("the state image keeps its CPU copy");
                 for (&(i, s), &t0) in redraw.iter().zip(&t0s) {
                     let at = i * 8;
-                    image.data[at..at + 4].copy_from_slice(&gpu_mode(s, &chunk.plants[i]).to_le_bytes());
-                    image.data[at + 4..at + 8].copy_from_slice(&t0.to_le_bytes());
+                    data[at..at + 4].copy_from_slice(&gpu_mode(s, &chunk.plants[i]).to_le_bytes());
+                    data[at + 4..at + 8].copy_from_slice(&t0.to_le_bytes());
                 }
             }
             // A changed image is a new texture on the GPU: the material's bind
             // group has to be made again to see it. The clock goes with it, so
             // a plant that has just caught is not drawn at the old time.
-            if let Some(m) = materials.get_mut(&chunk.material) {
+            if let Some(mut m) = materials.get_mut(&chunk.material) {
                 m.fire.y = now;
                 m.fire.z = PLANT_FLAMING_S;
             }
@@ -1223,8 +1218,8 @@ pub fn burn(
 /// Run `f` on a mesh's position and colour attributes, in place. The
 /// attributes are moved out and back rather than cloned.
 fn edit_mesh(meshes: &mut Assets<Mesh>, handle: &Handle<Mesh>, f: impl FnOnce(&mut [[f32; 3]], &mut [[f32; 4]])) {
-    use bevy::render::mesh::VertexAttributeValues::{Float32x3, Float32x4};
-    let Some(mesh) = meshes.get_mut(handle) else { return };
+    use bevy::mesh::VertexAttributeValues::{Float32x3, Float32x4};
+    let Some(mut mesh) = meshes.get_mut(handle) else { return };
     let (Some(Float32x3(mut pos)), Some(Float32x4(mut col))) =
         (mesh.remove_attribute(Mesh::ATTRIBUTE_POSITION), mesh.remove_attribute(Mesh::ATTRIBUTE_COLOR))
     else {
@@ -1426,12 +1421,11 @@ fn build_char_layer(
         let mesh = meshes.add(mesh);
         let on = chunk.near != low;
         let entity = commands
-            .spawn(MaterialMeshBundle::<FoliageMaterial> {
-                mesh: mesh.clone(),
-                material: material.clone(),
-                visibility: if on { Visibility::Inherited } else { Visibility::Hidden },
-                ..default()
-            })
+            .spawn((
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(material.clone()),
+                if on { Visibility::Inherited } else { Visibility::Hidden },
+            ))
             .id();
         if on && !chunk.full_casts { commands.entity(entity).insert(NotShadowCaster); }
         CharMesh { mesh, entity, shown, hidden, ranges, colors }
@@ -1494,7 +1488,7 @@ pub fn fire_clock(sim: Res<Sim>, veg: Res<Vegetation>, mut materials: ResMut<Ass
         if m.fire.y == now && m.fire.z == PLANT_FLAMING_S {
             continue;
         }
-        if let Some(m) = materials.get_mut(&chunk.material) {
+        if let Some(mut m) = materials.get_mut(&chunk.material) {
             m.fire.y = now;
             m.fire.z = PLANT_FLAMING_S;
         }
@@ -1560,7 +1554,7 @@ pub fn lod(
     mut visibility: Query<&mut Visibility>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    let Ok(eye) = camera.get_single().map(|t: &Transform| t.translation) else { return };
+    let Ok(eye) = camera.single().map(|t: &Transform| t.translation) else { return };
     let lod_m = veg.lod_m;
     let far_m = (lod_m * FAR_TIER).max(FAR_TIER_MIN_M);
         for chunk in &mut veg.chunks {
@@ -1570,9 +1564,11 @@ pub fn lod(
         // the proxies' own two tiers: the same vertices, fewer triangles
         let far = !near && if chunk.far { d > far_m / 1.1 } else { d > far_m };
         if far != chunk.far {
-            if let Some(Indices::U32(idx)) = meshes.get_mut(&chunk.low_mesh).and_then(|m| m.indices_mut()) {
-                std::mem::swap(idx, &mut chunk.far_idx);
-                chunk.far = far;
+            if let Some(mut m) = meshes.get_mut(&chunk.low_mesh) {
+                if let Some(Indices::U32(idx)) = m.indices_mut() {
+                    std::mem::swap(idx, &mut chunk.far_idx);
+                    chunk.far = far;
+                }
             }
         }
         let full_casts = near && if chunk.full_casts { d < FULL_SHADOW_M * 1.1 } else { d < FULL_SHADOW_M };
@@ -1691,8 +1687,8 @@ mod tests {
             assert!(tris * 2 <= model, "{name}: {tris} proxy triangles for {model}");
 
             let mesh = b.finish();
-            let Some(bevy::render::mesh::VertexAttributeValues::Float32x3(pos)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) else { panic!() };
-            let Some(bevy::render::mesh::VertexAttributeValues::Float32x3(nor)) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL) else { panic!() };
+            let Some(bevy::mesh::VertexAttributeValues::Float32x3(pos)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) else { panic!() };
+            let Some(bevy::mesh::VertexAttributeValues::Float32x3(nor)) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL) else { panic!() };
             let (lo, hi) = pos.iter().fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(lo, hi), p| (lo.min(Vec3::from(*p)), hi.max(Vec3::from(*p))));
             let (crown_lo, crown_hi) = proxy(name).crown;
             let centre = Vec3::new((lo.x + hi.x) * 0.5, (crown_lo.y + crown_hi.y) * 5.0, (lo.z + hi.z) * 0.5);

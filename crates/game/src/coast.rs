@@ -12,8 +12,8 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use scenario::{Pos, Scenario};
 
 use crate::models::{self, Kit};
@@ -235,7 +235,7 @@ fn spawn_coast(
     info!("coast: {} rocks in {} tiles", rocks.len(), tiles.len());
     for (_, tile) in tiles {
         commands.spawn((
-            MaterialMeshBundle::<StructureMaterial> { mesh: meshes.add(tile_mesh(&tile)), material: material.clone(), ..default() },
+            (Mesh3d(meshes.add(tile_mesh(&tile))), MeshMaterial3d(material.clone())),
             crate::terrain_mesh::PauseSolid,
         ));
     }

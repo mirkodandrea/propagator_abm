@@ -26,11 +26,11 @@
 //! not land cover — which is both honest and far better looking.
 
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use bevy::render::texture::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
-use bevy::render::view::{RenderLayers, VisibilityRange};
+use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
+use bevy::camera::visibility::{RenderLayers, VisibilityRange};
 use scenario::{Cell, Cover, CoverClass, Pos, Scenario};
 
 use crate::field::noise;
@@ -572,7 +572,7 @@ pub fn build(
     // beyond this distance from the eye there are no real blades: the terrain
     // shader adds a grain there so the meadow keeps its contrast (0 = no blades)
     mask.rect.w = if gfx.cover_m > 0.0 { crate::near_cover::BANDS_M[crate::near_cover::BANDS_M.len() - 1] } else { 0.0 };
-    images.insert(&crate::ground_mask::GRASS_MAP, crate::ground_mask::grass_map(scn));
+    let _ = images.insert(&crate::ground_mask::GRASS_MAP, crate::ground_mask::grass_map(scn));
 
     // the base grid: every `stride`-th sample
     let (cols, rows, posting) = ((t.cols - 1) / stride + 1, (t.rows - 1) / stride + 1, t.posting * stride as f32);
@@ -633,7 +633,7 @@ pub fn build(
         t.height_m / (posting * rows as f32) + 0.5 / rows as f32,
     );
 
-    images.insert(&crate::ground_mask::ROAD_MASK, mask.image);
+    let _ = images.insert(&crate::ground_mask::ROAD_MASK, mask.image);
     let material = materials.add(TerrainMaterial::new(
         mask.rect,
         tex_rect,
@@ -670,38 +670,36 @@ pub fn build(
                 tris[k] += mesh.indices().map_or(0, |i| i.len() / 3);
                 let mesh = meshes.add(mesh);
                 let mut chunk = commands.spawn((
-                    MaterialMeshBundle::<TerrainMaterial> {
-                        mesh: mesh.clone(),
-                        material: material.clone(),
-                        transform: Transform::from_translation(centre),
+                    (
+                        Mesh3d(mesh.clone()),
+                        MeshMaterial3d(material.clone()),
+                        Transform::from_translation(centre),
                         // still spawned: Mario swims over it, and needs a floor
-                        visibility: if under { Visibility::Hidden } else { Visibility::Inherited },
-                        ..default()
-                    },
+                        if under { Visibility::Hidden } else { Visibility::Inherited },
+                    ),
                     TerrainChunk,
                     PauseSolid,
                 ));
                 if used.len() > 1 {
                     let near = if k == 0 { 0.0 } else { cuts[k - 1] };
                     let far = cuts.get(k).copied().unwrap_or(1.0e9);
-                    chunk.insert((VisibilityRange::abrupt(near, far), bevy::pbr::NotShadowCaster));
+                    chunk.insert((VisibilityRange::abrupt(near, far), bevy::light::NotShadowCaster));
                 } else if !gfx.terrain_shadows {
-                    chunk.insert(bevy::pbr::NotShadowCaster);
+                    chunk.insert(bevy::light::NotShadowCaster);
                 }
                 // the shadows come from the middle level, on the sun's layer only
                 if used.len() > 1 && k == 1 {
                     let mut shadow = commands.spawn((
-                        MaterialMeshBundle::<TerrainMaterial> {
-                            mesh,
-                            material: material.clone(),
-                            transform: Transform::from_translation(centre),
-                            ..default()
-                        },
+                        (
+                            Mesh3d(mesh),
+                            MeshMaterial3d(material.clone()),
+                            Transform::from_translation(centre),
+                        ),
                         TerrainChunk,
                         RenderLayers::layer(SHADOW_LAYER),
                     ));
                     if !gfx.terrain_shadows {
-                        shadow.insert(bevy::pbr::NotShadowCaster);
+                        shadow.insert(bevy::light::NotShadowCaster);
                     }
                 }
             }

@@ -61,12 +61,11 @@ fn spawn_landmarks(
         info!("landmark {key}: {model} at ({x:.0}, {y:.0}), ground {ground:.1} m, scale {scale}, yaw {:.0} deg", yaw.to_degrees());
         let transform = Transform { translation: at, rotation: Quat::from_rotation_y(yaw), scale: Vec3::splat(scale) };
         for (name, material) in std::iter::once((model, material.clone())).chain(rock_model.map(|m| (m, rock.clone()))) {
-            commands.spawn((MaterialMeshBundle::<StructureMaterial> {
-                mesh: meshes.add(models::island_mesh(name)),
-                material,
+            commands.spawn(((
+                Mesh3d(meshes.add(models::island_mesh(name))),
+                MeshMaterial3d(material),
                 transform,
-                ..default()
-            },
+            ),
                 crate::terrain_mesh::PauseSolid,
             ));
         }

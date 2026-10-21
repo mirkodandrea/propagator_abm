@@ -1,10 +1,8 @@
 //! Blender-authored meshes baked by `scripts/build_models.py`.
 //! Embedded for identical native/web loading; one mesh and material per symbol.
 use bevy::prelude::*;
-use bevy::render::{
-    mesh::{Indices, PrimitiveTopology},
-    render_asset::RenderAssetUsages,
-};
+use bevy::asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
 use std::{collections::HashMap, sync::OnceLock};
 
 pub struct Model {

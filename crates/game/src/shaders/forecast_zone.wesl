@@ -5,11 +5,9 @@
 // and no fog, like the other signs; vertices are pulled toward the camera as
 // in flat.wgsl.
 
-#import bevy_pbr::{
-    mesh_functions,
-    mesh_view_bindings::{view, globals},
-    view_transformations::position_world_to_clip,
-}
+import bevy_pbr::render::mesh_functions;
+import bevy_pbr::render::mesh_view_bindings::{view, globals};
+import bevy_pbr::render::view_transformations::position_world_to_clip;
 
 struct Zone {
     // rgb: colour of +1 h / +3 h; a: fill opacity
@@ -19,7 +17,7 @@ struct Zone {
     line: vec4<f32>,
     pull: vec4<f32>,
 };
-@group(2) @binding(0) var<uniform> zone: Zone;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> zone: Zone;
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
