@@ -122,6 +122,8 @@ pub fn draw(
     pad: Res<crate::pad::PadView>,
     pads: Query<(), With<Gamepad>>,
     mut pad_mode: ResMut<crate::pad::PadMode>,
+    auto: Option<Res<crate::adaptive::Adaptive>>,
+    mut commands: Commands,
 ) {
     crate::playtest::begin();
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -234,7 +236,7 @@ pub fn draw(
         }
     }
     if k.operator {
-        operator(ctx, k, &mut sim, &mut restarted, &mut gfx);
+        operator(ctx, k, &mut sim, &mut restarted, &mut gfx, auto.as_deref(), &mut commands);
     }
     pad_mode.game = matches!(k.phase, Phase::Tutorial | Phase::Gioco);
     focus.pointer = ctx.is_pointer_over_egui();
@@ -1404,14 +1406,14 @@ fn notice(ctx: &egui::Context, k: &Kiosk) {
 
 /// The operator menu (F2): a new visit, the game straight away, the world
 /// stopped, the view, the graphics, the board.
-fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, gfx: &mut crate::quality::Graphics) {
+fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, gfx: &mut crate::quality::Graphics, auto: Option<&crate::adaptive::Adaptive>, commands: &mut Commands) {
     if compact(ctx) {
         // On a phone: a page of its own over the screen, big buttons, and
         // «Chiudi» pinned under the scrolling controls.
         let mut close = false;
         super::screens::compact_page_footer(ctx, "operatore_mobile", |ui| {
             ui.heading("Menu");
-            operator_body(ui, k, sim, restarted, gfx, true);
+            operator_body(ui, k, sim, restarted, gfx, auto, commands, true);
         }, |ui| {
             close = ui.add_sized([ui.available_width(), 46.0], secondary("Chiudi")).clicked();
         });
@@ -1421,13 +1423,13 @@ fn operator(ctx: &egui::Context, k: &mut Kiosk, sim: &mut Sim, restarted: &mut M
     egui::Window::new("Menu").id(egui::Id::new("operatore")).anchor(Align2::LEFT_BOTTOM, [8.0, -60.0]).default_width((ctx.viewport_rect().width() - 48.0).min(380.0)).max_height(ctx.viewport_rect().height() - 90.0).resizable(false).collapsible(false).vscroll(true).show(ctx, |ui| {
         panel().show(ui, |ui| {
             ui.label(RichText::new("Menu (F2 per chiudere)").strong().color(Color32::WHITE));
-            operator_body(ui, k, sim, restarted, gfx, false);
+            operator_body(ui, k, sim, restarted, gfx, auto, commands, false);
         });
     });
 }
 
 /// The controls of the operator menu. `touch`: finger-sized buttons.
-fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, gfx: &mut crate::quality::Graphics, touch: bool) {
+fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mut MessageWriter<SimRestarted>, gfx: &mut crate::quality::Graphics, auto: Option<&crate::adaptive::Adaptive>, commands: &mut Commands, touch: bool) {
     let button = |ui: &mut egui::Ui, label: &str| -> bool {
         if touch { ui.add_sized([ui.available_width(), 46.0], secondary(label)).clicked() } else { ui.add(secondary(label)).clicked() }
     };
@@ -1481,7 +1483,24 @@ fn operator_body(ui: &mut egui::Ui, k: &mut Kiosk, sim: &mut Sim, restarted: &mu
             if !cfg!(target_arch = "wasm32") { ui.horizontal(|ui| {
                 use crate::quality::Graphics;
                 ui.label("Grafica:");
-                let now_level = gfx.level();
+                let now_level = if auto.is_some() { None } else { gfx.level() };
+                let label = match auto {
+                    Some(a) => format!("Auto ({}/{})", a.step() + 1, a.rungs()),
+                    None => "Auto".to_string(),
+                };
+                if ui.selectable_label(auto.is_some(), label)
+                    .on_hover_text("Il livello segue la velocità di questo computer: scende se i frame sono lenti, risale se c'è margine")
+                    .clicked() && auto.is_none()
+                {
+                    let a = crate::adaptive::Adaptive::new(Graphics { vegetation: gfx.vegetation, ..Graphics::ALTA });
+                    *gfx = a.initial();
+                    commands.insert_resource(a);
+                    #[cfg(not(target_arch = "wasm32"))]
+                    crate::quality::forget_aa();
+                    if let Err(e) = crate::quality::save("auto") {
+                        k.error = Some(e);
+                    }
+                }
                 for (name, label, preset) in [("alta", "Alta", Graphics::ALTA), ("media", "Media", Graphics::MEDIA), ("bassa", "Bassa", Graphics::BASSA)] {
                     if ui.selectable_label(now_level == Some(name), label).clicked() && now_level != Some(name) {
                         // a level brings its own antialiasing: the choice made apart is dropped

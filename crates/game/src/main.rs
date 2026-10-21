@@ -38,6 +38,7 @@ mod overlays;
 mod pad;
 mod pick;
 mod playtest;
+mod adaptive;
 mod quality;
 mod quality_live;
 mod flat;
@@ -78,8 +79,13 @@ pub struct DataPath(pub std::path::PathBuf);
 
 fn main() -> anyhow::Result<()> {
     let data = std::env::var("ROCCA_DATA").unwrap_or_else(|_| "data".to_string());
-    let gfx = quality::Graphics::from_env();
-    info!("grafica: {gfx:?}");
+    let mut gfx = quality::Graphics::from_env();
+    // the level follows the machine unless it was chosen by hand (see `adaptive`)
+    let auto = quality::Graphics::auto_wanted().then(|| adaptive::Adaptive::new(gfx));
+    if let Some(a) = &auto {
+        gfx = a.initial();
+    }
+    info!("grafica: {gfx:?}{}", if auto.is_some() { " (adattiva)" } else { "" });
 
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -202,6 +208,10 @@ fn main() -> anyhow::Result<()> {
     app.add_systems(Update, quality_live::apply_live.run_if(resource_changed::<quality::Graphics>.and_then(not(resource_added::<quality::Graphics>))));
     // MSAA is per camera since Bevy 0.15: every camera takes the profile's.
     app.add_systems(PostUpdate, quality_live::msaa_on_new_cameras);
+    if let Some(a) = auto {
+        app.insert_resource(a);
+        app.add_systems(Update, adaptive::adapt);
+    }
     let exit = app.run();
     #[cfg(not(target_arch = "wasm32"))]
     if let bevy::app::AppExit::Error(code) = exit {

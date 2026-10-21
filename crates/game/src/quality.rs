@@ -122,15 +122,27 @@ impl Graphics {
         ..Graphics::WEB
     };
 
+    /// The top of the browser's adaptive ladder on a computer: `WEB_MEDIA` with
+    /// the shadows of `MEDIA` (three cascades, 2048); `adaptive` brings it down.
+    pub const WEB_TOP: Graphics = Graphics {
+        cascades: 3, shadow_distance: 2500.0, shadow_map: 2048,
+        ..Graphics::WEB_MEDIA
+    };
+
     /// The preset from `KIOSK_QUALITY`, then the `KIOSK_GFX` overrides, then
     /// the old `KIOSK_VEG_DENSITY` (which still wins for the vegetation).
     /// In the browser the page decides (`window.roccaProfile`, see `web/index.html`).
     pub fn from_env() -> Graphics {
         if cfg!(target_arch = "wasm32") {
-            return if web_profile().as_deref() == Some("media") { Graphics::WEB_MEDIA } else { Graphics::WEB };
+            return match web_profile().as_deref() {
+                Some("media") if Graphics::auto_wanted() => Graphics::WEB_TOP,
+                Some("media") => Graphics::WEB_MEDIA,
+                _ => Graphics::WEB,
+            };
         }
         let name = std::env::var("KIOSK_QUALITY").ok().or_else(saved);
         let mut g = match name.as_deref() {
+            // "auto" starts from the top; `adaptive` brings it down if it must
             Some("bassa" | "low") => Graphics::BASSA,
             Some("media" | "medium") => Graphics::MEDIA,
             _ => Graphics::ALTA,
@@ -146,6 +158,21 @@ impl Graphics {
             g.vegetation = v;
         }
         g
+    }
+
+    /// Whether the level follows the machine (`adaptive`): the default, unless a
+    /// level was chosen by hand (`KIOSK_QUALITY`, `KIOSK_GFX`, a level saved from
+    /// the operator bar, `?q=` in the browser), a snapshot is being taken, or
+    /// `KIOSK_ADAPT=0`.
+    pub fn auto_wanted() -> bool {
+        if cfg!(target_arch = "wasm32") {
+            return !web_forced();
+        }
+        let off = |k: &str| std::env::var_os(k).is_some();
+        if off("KIOSK_QUALITY") || off("KIOSK_GFX") || off("KIOSK_SNAP") || std::env::var("KIOSK_ADAPT").as_deref() == Ok("0") {
+            return false;
+        }
+        matches!(saved().as_deref(), None | Some("auto"))
     }
 
     fn apply(&mut self, spec: &str) {
@@ -262,6 +289,44 @@ fn web_profile() -> Option<String> {
 #[cfg(not(target_arch = "wasm32"))]
 fn web_profile() -> Option<String> {
     None
+}
+
+/// The page forced a profile with `?q=`.
+#[cfg(target_arch = "wasm32")]
+fn web_forced() -> bool {
+    js_sys::Reflect::get(&js_sys::global(), &"roccaProfileForced".into()).ok().and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn web_forced() -> bool {
+    false
+}
+
+/// The adaptive rung the last run settled on (0 = the top).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn saved_step() -> Option<usize> {
+    std::fs::read_to_string(saved_path().with_file_name("grafica_auto.txt")).ok()?.trim().parse().ok()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn save_step(step: usize) {
+    let p = saved_path().with_file_name("grafica_auto.txt");
+    if let Some(dir) = p.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(p, step.to_string());
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn saved_step() -> Option<usize> {
+    web_sys::window()?.local_storage().ok()??.get_item("rocca_ventosa_grafica_auto").ok()??.parse().ok()
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn save_step(step: usize) {
+    if let Some(s) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = s.set_item("rocca_ventosa_grafica_auto", &step.to_string());
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
