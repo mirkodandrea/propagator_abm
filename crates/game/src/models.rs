@@ -96,7 +96,11 @@ pub fn coast(name: &str) -> &'static Kit {
 /// An island model as a mesh.
 pub fn island_mesh(name: &str) -> Mesh {
     let m = island(name);
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
+    // Landmark meshes are PauseSolid and Mario reads them for collisions.
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, m.positions.clone());
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, m.normals.clone());
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, m.colors.iter().map(|c| [c[0], c[1], c[2], 1.0]).collect::<Vec<_>>());

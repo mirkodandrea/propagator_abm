@@ -805,7 +805,9 @@ fn drive(
             if terrain.is_some() || road.is_some() {
                 continue;
             }
-            if let Some(mesh) = meshes.get(handle) {
+            if let Some(mesh) = meshes.get(handle).filter(|mesh| {
+                mesh.asset_usage.contains(RenderAssetUsages::MAIN_WORLD)
+            }) {
                 triangles(mesh, |v| {
                     runtime.collision_world.insert(CollisionTriangle::new(
                         v.map(|p| tf.transform_point(p)),
